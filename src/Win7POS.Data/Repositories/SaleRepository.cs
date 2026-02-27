@@ -53,5 +53,18 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal);
             );
             return rows.ToList();
         }
+
+        public async Task<IReadOnlyList<Sale>> GetSalesBetweenAsync(long fromMs, long toMs)
+        {
+            using var conn = _factory.Open();
+            var rows = await conn.QueryAsync<Sale>(
+                @"SELECT id, code, createdAt, total, paidCash, paidCard, change
+                  FROM sales
+                  WHERE createdAt >= @fromMs AND createdAt < @toMs
+                  ORDER BY createdAt ASC, id ASC",
+                new { fromMs, toMs }
+            );
+            return rows.ToList();
+        }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Win7POS.Core.Models;
 
 namespace Win7POS.Core.Receipt
@@ -15,6 +16,7 @@ namespace Win7POS.Core.Receipt
             if (sale == null) throw new ArgumentNullException(nameof(sale));
             options = options ?? ReceiptOptions.Default42();
             shop = shop ?? new ReceiptShopInfo();
+            var culture = CultureInfo.GetCultureInfo(options.CultureName ?? "it-IT");
 
             var width = options.Width < 16 ? 16 : options.Width;
             var result = new List<string>();
@@ -32,27 +34,27 @@ namespace Win7POS.Core.Receipt
                 foreach (var x in lines)
                 {
                     var qty = x.Quantity < 0 ? 0 : x.Quantity;
-                    var unit = FormatAmount(x.UnitPrice, options.Currency);
-                    var lineTotal = FormatAmount(x.LineTotal, options.Currency);
-                    AddLine(result, width, TrimToWidth(x.Name ?? "-", width));
+                    var unit = FormatAmount(x.UnitPrice, options.Currency, culture);
+                    var lineTotal = FormatAmount(x.LineTotal, options.Currency, culture);
+                    AddWrappedLine(result, width, x.Name ?? "-");
                     AddLeftRight(result, width, $"  {qty} x {unit}", lineTotal);
                 }
             }
 
             AddLine(result, width, new string('-', width));
-            AddLeftRight(result, width, "Totale", FormatAmount(sale.Total, options.Currency));
-            AddLeftRight(result, width, "Cash", FormatAmount(sale.PaidCash, options.Currency));
-            AddLeftRight(result, width, "Card", FormatAmount(sale.PaidCard, options.Currency));
-            AddLeftRight(result, width, "Change", FormatAmount(sale.Change, options.Currency));
+            AddLeftRight(result, width, "Totale", FormatAmount(sale.Total, options.Currency, culture));
+            AddLeftRight(result, width, "Cash", FormatAmount(sale.PaidCash, options.Currency, culture));
+            AddLeftRight(result, width, "Card", FormatAmount(sale.PaidCard, options.Currency, culture));
+            AddLeftRight(result, width, "Change", FormatAmount(sale.Change, options.Currency, culture));
             AddLine(result, width, new string('-', width));
             AddCentered(result, width, shop.Footer);
             return result;
         }
 
-        private static string FormatAmount(int amountMinor, string currency)
+        private static string FormatAmount(int amountMinor, string currency, CultureInfo culture)
         {
             var value = amountMinor / 100.0m;
-            return $"{value:0.00} {currency}";
+            return $"{value.ToString("N2", culture)} {currency}";
         }
 
         private static void AddCentered(List<string> lines, int width, string text)
@@ -83,6 +85,25 @@ namespace Win7POS.Core.Receipt
         private static void AddLine(List<string> lines, int width, string text)
         {
             lines.Add(TrimToWidth(text ?? string.Empty, width));
+        }
+
+        private static void AddWrappedLine(List<string> lines, int width, string text)
+        {
+            var input = text ?? string.Empty;
+            if (input.Length == 0)
+            {
+                AddLine(lines, width, string.Empty);
+                return;
+            }
+
+            var start = 0;
+            while (start < input.Length)
+            {
+                var len = input.Length - start;
+                if (len > width) len = width;
+                AddLine(lines, width, input.Substring(start, len));
+                start += len;
+            }
         }
 
         private static string TrimToWidth(string value, int width)
