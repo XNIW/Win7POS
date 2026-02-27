@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Import;
@@ -468,13 +469,7 @@ internal static class Program
         Console.WriteLine("ImportApply PASS");
 
         Console.WriteLine("自检 PASS");
-        if (keepDb)
-        {
-            Console.WriteLine($"DB kept at: {opt.DbPath}");
-            return;
-        }
-
-        if (File.Exists(opt.DbPath)) File.Delete(opt.DbPath);
+        CleanupSelfTestDb(opt.DbPath, keepDb);
     }
 
     private static async Task RunDailyAsync(string dateArg, string dbPath)
@@ -627,6 +622,44 @@ internal static class Program
     private static PosDbOptions ResolveDbOptions(string dbPath)
     {
         return string.IsNullOrWhiteSpace(dbPath) ? PosDbOptions.Default() : PosDbOptions.ForPath(dbPath);
+    }
+
+    private static void CleanupSelfTestDb(string dbPath, bool keepDb)
+    {
+        if (keepDb)
+        {
+            Console.WriteLine($"DB kept at: {dbPath}");
+            return;
+        }
+
+        // Make sure pooled SQLite handles are released before deleting DB file on Windows runners.
+        SqliteConnection.ClearAllPools();
+        DeleteFileWithRetry(dbPath, 10, 200);
+    }
+
+    private static void DeleteFileWithRetry(string path, int maxAttempts, int delayMs)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+
+        for (var i = 0; i < maxAttempts; i++)
+        {
+            try
+            {
+                if (File.Exists(path)) File.Delete(path);
+                return;
+            }
+            catch (IOException) when (i + 1 < maxAttempts)
+            {
+                Thread.Sleep(delayMs);
+            }
+            catch (UnauthorizedAccessException) when (i + 1 < maxAttempts)
+            {
+                Thread.Sleep(delayMs);
+            }
+        }
+
+        if (File.Exists(path))
+            throw new IOException("Failed to delete selftest DB after retries: " + path);
     }
 
     private static IReadOnlyList<ImportRow> UniqueRows(IReadOnlyList<ImportRow> rows)
