@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Import;
@@ -64,6 +63,12 @@ internal static class Program
     {
         try
         {
+            if (TryParseContractCheckArgs(args))
+            {
+                RunContractCheck();
+                return;
+            }
+
             if (TryParseDailyArgs(args, out var dailyParams))
             {
                 await RunDailyAsync(dailyParams);
@@ -120,6 +125,7 @@ internal static class Program
     {
         Console.WriteLine("Unknown args.");
         Console.WriteLine("Usage:");
+        Console.WriteLine("  --contract-check");
         Console.WriteLine("  --selftest [--keepdb] [--format text|json] [--out <path>]");
         Console.WriteLine("  --daily yyyy-MM-dd [--db <path>] [--format text|json] [--out <path>]");
         Console.WriteLine("  --analyze-csv <path> [--db <path>] [--format text|json] [--out <path>]");
@@ -130,6 +136,26 @@ internal static class Program
         Console.WriteLine("Example:");
         Console.WriteLine("  dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -- --analyze-csv samples/import_sample.csv");
         Console.WriteLine("  dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -- --apply-csv samples/import_sample.csv --dry-run");
+    }
+
+    private static bool TryParseContractCheckArgs(string[] args)
+    {
+        for (var i = 0; i < args.Length; i++)
+            if (string.Equals(args[i], "--contract-check", StringComparison.OrdinalIgnoreCase))
+                return true;
+        return false;
+    }
+
+    private static void RunContractCheck()
+    {
+        if (JsonContractGuard.Run(out var error))
+        {
+            Console.WriteLine("JsonContract PASS");
+            return;
+        }
+
+        Console.WriteLine($"JsonContract FAIL: {error}");
+        Environment.Exit(1);
     }
 
     private static bool TryParseSelfTestArgs(string[] args, out SelfTestParams parameters)
@@ -581,11 +607,9 @@ internal static class Program
             Console.WriteLine("Apply #2");
             Console.Write(applyText);
             Console.WriteLine("ImportApply PASS");
-            Console.WriteLine("自检 PASS");
         }
 
         var diffJson = JsonProtocol.BuildDiff(opt.DbPath, csvPath, 20, analysis, diff, JsonProtocol.FromParseErrors(parse.Errors));
-        ValidateProtocolJson(diffJson, "diff", false);
         var applyJson = JsonProtocol.BuildApply(
             opt.DbPath,
             csvPath,
@@ -596,14 +620,17 @@ internal static class Program
             applySecond,
             false,
             JsonProtocol.FromParseErrors(parse.Errors));
-        ValidateProtocolJson(applyJson, "apply", true);
+        JsonContractGuard.ValidateGeneratedAgainstFixture(diffJson, "diff_v1.json", "diff", false);
+        JsonContractGuard.ValidateGeneratedAgainstFixture(applyJson, "apply_dryrun_v1.json", "apply", true);
+        Console.WriteLine("JsonContract PASS");
 
         if (parameters.Format == "json")
         {
             var selftestJson = JsonProtocol.BuildSelfTest(opt.DbPath, parameters.KeepDb, true, new JsonProtocol.JsonError[0]);
-            ValidateProtocolJson(selftestJson, "selftest", false);
+            JsonContractGuard.ValidateJson(selftestJson, "selftest", false);
             WriteJsonOutput(selftestJson, parameters.OutPath);
         }
+        Console.WriteLine("自检 PASS");
 
         if (parameters.KeepDb)
         {
@@ -1164,28 +1191,6 @@ internal static class Program
         if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
         File.WriteAllText(full, json, Encoding.UTF8);
         Console.WriteLine($"Output: {full}");
-    }
-
-    private static void ValidateProtocolJson(string json, string command, bool requireApplyResult)
-    {
-        using (var doc = JsonDocument.Parse(json))
-        {
-            var root = doc.RootElement;
-            Assert(root.GetProperty("schemaVersion").GetInt32() == JsonProtocol.SchemaVersion, "Invalid schemaVersion.");
-            Assert(root.GetProperty("command").GetString() == command, "Invalid command in json.");
-            Assert(root.TryGetProperty("timestampUtc", out _), "Missing timestampUtc.");
-            Assert(root.TryGetProperty("dbPath", out _), "Missing dbPath.");
-            Assert(root.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array, "Missing errors array.");
-            Assert(root.TryGetProperty("diff", out var diff), "Missing diff object.");
-            if (diff.ValueKind == JsonValueKind.Object)
-                Assert(diff.TryGetProperty("items", out var items) && items.ValueKind == JsonValueKind.Array, "Missing diff.items.");
-            Assert(root.TryGetProperty("apply", out var apply), "Missing apply object.");
-            if (requireApplyResult)
-            {
-                Assert(apply.ValueKind == JsonValueKind.Object, "apply must be object.");
-                Assert(apply.TryGetProperty("result", out var result) && result.ValueKind == JsonValueKind.Object, "Missing apply.result.");
-            }
-        }
     }
 
     private static string EscapeCsv(string text)
