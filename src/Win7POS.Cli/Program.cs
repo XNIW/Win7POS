@@ -16,12 +16,22 @@ using Win7POS.Data.Repositories;
 
 internal static class Program
 {
+    private sealed class DiffParams
+    {
+        public string CsvPath = string.Empty;
+        public string DbPath = string.Empty;
+        public int MaxItems = 20;
+        public string Format = "text";
+    }
+
     private sealed class ApplyParams
     {
         public string CsvPath = string.Empty;
         public string DbPath = string.Empty;
         public ImportApplyOptions Options = new ImportApplyOptions();
         public int FailAfter;
+        public int MaxItems = 20;
+        public string Format = "text";
     }
 
     private static async Task Main(string[] args)
@@ -34,9 +44,9 @@ internal static class Program
                 return;
             }
 
-            if (TryParseDiffCsvArgs(args, out var diffCsv, out var diffDb))
+            if (TryParseDiffCsvArgs(args, out var diffParams))
             {
-                await RunDiffCsvAsync(diffCsv, diffDb);
+                await RunDiffCsvAsync(diffParams);
                 return;
             }
 
@@ -87,8 +97,8 @@ internal static class Program
         Console.WriteLine("  --selftest [--keepdb]");
         Console.WriteLine("  --daily yyyy-MM-dd [--db <path>]");
         Console.WriteLine("  --analyze-csv <path>");
-        Console.WriteLine("  --diff-csv <path> [--db <path>]");
-        Console.WriteLine("  --apply-csv <path> [--db <path>] [--dry-run] [--no-insert] [--no-update-price] [--update-name]");
+            Console.WriteLine("  --diff-csv <path> [--db <path>] [--max-items N] [--format text|json]");
+            Console.WriteLine("  --apply-csv <path> [--db <path>] [--dry-run] [--no-insert] [--no-update-price] [--update-name] [--max-items N] [--format text|json]");
         Console.WriteLine("  --export-products <out.csv> [--db <path>]");
         Console.WriteLine("  --backup-db <out.db> [--db <path>]");
         Console.WriteLine("Example:");
@@ -152,17 +162,18 @@ internal static class Program
         return false;
     }
 
-    private static bool TryParseDiffCsvArgs(string[] args, out string csvPath, out string dbPath)
+    private static bool TryParseDiffCsvArgs(string[] args, out DiffParams parameters)
     {
-        csvPath = string.Empty;
-        dbPath = string.Empty;
+        parameters = new DiffParams();
+        var hasDiff = false;
         for (var i = 0; i < args.Length; i++)
         {
             var arg = args[i];
             if (string.Equals(arg, "--diff-csv", StringComparison.OrdinalIgnoreCase))
             {
                 if (i + 1 >= args.Length) return false;
-                csvPath = args[i + 1];
+                parameters.CsvPath = args[i + 1];
+                hasDiff = true;
                 i += 1;
                 continue;
             }
@@ -170,12 +181,29 @@ internal static class Program
             if (string.Equals(arg, "--db", StringComparison.OrdinalIgnoreCase))
             {
                 if (i + 1 >= args.Length) return false;
-                dbPath = args[i + 1];
+                parameters.DbPath = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--max-items", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                if (!int.TryParse(args[i + 1], out var n)) return false;
+                parameters.MaxItems = n;
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--format", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.Format = args[i + 1].ToLowerInvariant();
                 i += 1;
             }
         }
 
-        return csvPath.Length > 0;
+        return hasDiff;
     }
 
     private static bool TryParseApplyCsvArgs(string[] args, out ApplyParams parameters)
@@ -231,6 +259,23 @@ internal static class Program
                 if (i + 1 >= args.Length) return false;
                 if (!int.TryParse(args[i + 1], out var n)) return false;
                 parameters.FailAfter = n;
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--max-items", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                if (!int.TryParse(args[i + 1], out var n)) return false;
+                parameters.MaxItems = n;
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--format", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.Format = args[i + 1].ToLowerInvariant();
                 i += 1;
             }
         }
@@ -372,7 +417,12 @@ internal static class Program
         Assert(diff.Summary.UpdateBoth == 1, "Expected UpdateBoth == 1.");
         Assert(diff.Summary.NoChange == 1, "Expected NoChange == 1.");
         Assert(diff.Summary.NewProduct == 1, "Expected NewProduct == 1.");
-        PrintDiff(diff);
+        Assert(diff.Items.Count <= 20, "Expected diff preview items <= 20.");
+        var diffText = RenderDiffTextToString(diff, 20);
+        Assert(diffText.Contains("DIFF SUMMARY"), "Expected DIFF SUMMARY section.");
+        Assert(diffText.Contains("DIFF PREVIEW"), "Expected DIFF PREVIEW section.");
+        Assert(diffText.Contains("Kind") && diffText.Contains("Barcode"), "Expected diff table headers.");
+        Console.Write(diffText);
         Console.WriteLine("ImportDiff PASS");
 
         var dryRun = await ApplyWithTransactionAsync(factory, uniqueRows, new ImportApplyOptions { DryRun = true });
@@ -410,7 +460,11 @@ internal static class Program
 
         var applySecond = await ApplyWithTransactionAsync(factory, uniqueRows, new ImportApplyOptions());
         Console.WriteLine("Apply #2");
-        PrintImportApplyResult(applySecond);
+        var applyText = RenderApplyTextToString(new ImportApplyOptions(), diff, applySecond, 20, false);
+        Assert(applyText.Contains("APPLY RESULT"), "Expected APPLY RESULT section.");
+        Assert(applyText.Contains("APPLY OPTIONS"), "Expected APPLY OPTIONS section.");
+        Assert(applyText.Contains("CHANGES APPLIED PREVIEW"), "Expected changes preview section.");
+        Console.Write(applyText);
         Console.WriteLine("ImportApply PASS");
 
         Console.WriteLine("自检 PASS");
@@ -445,20 +499,27 @@ internal static class Program
         if (analysis.ValidRows == 0) throw new InvalidOperationException("No valid rows found.");
     }
 
-    private static async Task RunDiffCsvAsync(string csvPath, string dbPath)
+    private static async Task RunDiffCsvAsync(DiffParams parameters)
     {
-        var parse = await LoadCsvAsync(csvPath);
+        var parse = await LoadCsvAsync(parameters.CsvPath);
         var analysis = ImportAnalyzer.Analyze(parse);
-        var opt = ResolveDbOptions(dbPath);
+        var opt = ResolveDbOptions(parameters.DbPath);
         Console.WriteLine($"DB path: {opt.DbPath}");
         DbInitializer.EnsureCreated(opt);
         var products = new ProductRepository(new SqliteConnectionFactory(opt));
-        var diff = await new ImportDiffer(new ProductSnapshotLookupAdapter(products)).DiffAsync(UniqueRows(parse.Rows), 20);
+        var diff = await new ImportDiffer(new ProductSnapshotLookupAdapter(products)).DiffAsync(UniqueRows(parse.Rows), parameters.MaxItems);
+
+        if (parameters.Format == "json")
+        {
+            Console.WriteLine(RenderDiffJson(diff, analysis, parameters.MaxItems));
+            return;
+        }
+
         Console.WriteLine("CSV Diff");
-        Console.WriteLine($"Path: {csvPath}");
+        Console.WriteLine($"Path: {parameters.CsvPath}");
         PrintErrors(parse.Errors, 10);
         PrintImportAnalysis(analysis);
-        PrintDiff(diff);
+        RenderDiffText(diff, parameters.MaxItems);
     }
 
     private static async Task RunApplyCsvAsync(ApplyParams parameters)
@@ -471,16 +532,29 @@ internal static class Program
         DbInitializer.EnsureCreated(opt);
 
         var products = new ProductRepository(new SqliteConnectionFactory(opt));
-        var diff = await new ImportDiffer(new ProductSnapshotLookupAdapter(products)).DiffAsync(rows, 20);
+        var diff = await new ImportDiffer(new ProductSnapshotLookupAdapter(products)).DiffAsync(rows, parameters.MaxItems);
         Console.WriteLine("CSV Apply");
         Console.WriteLine($"Path: {parameters.CsvPath}");
         PrintErrors(parse.Errors, 10);
         PrintImportAnalysis(analysis);
-        PrintDiff(diff);
         if (analysis.ValidRows == 0) throw new InvalidOperationException("No valid rows found.");
 
-        var apply = await ApplyWithTransactionAsync(new SqliteConnectionFactory(opt), rows, parameters.Options, parameters.FailAfter);
-        PrintImportApplyResult(apply);
+        try
+        {
+            var apply = await ApplyWithTransactionAsync(new SqliteConnectionFactory(opt), rows, parameters.Options, parameters.FailAfter);
+            if (parameters.Format == "json")
+                Console.WriteLine(RenderApplyJson(diff, parameters.Options, apply, parameters.MaxItems, false));
+            else
+                RenderApplyText(parameters.Options, diff, apply, parameters.MaxItems, false);
+        }
+        catch
+        {
+            if (parameters.Format == "json")
+                Console.WriteLine(RenderApplyJson(diff, parameters.Options, null, parameters.MaxItems, true));
+            else
+                RenderApplyText(parameters.Options, diff, null, parameters.MaxItems, true);
+            throw;
+        }
     }
 
     private static async Task RunExportProductsAsync(string outputPath, string dbPath)
@@ -599,19 +673,262 @@ internal static class Program
             Console.WriteLine($"- L{errors[i].LineNumber}: {errors[i].Message}");
     }
 
-    private static void PrintDiff(ImportDiffResult diff)
+    private static string RenderDiffTextToString(ImportDiffResult diff, int maxItems)
+    {
+        using (var sw = new StringWriter())
+        {
+            RenderDiffText(sw, diff, maxItems);
+            return sw.ToString();
+        }
+    }
+
+    private static void RenderDiffText(ImportDiffResult diff, int maxItems)
+    {
+        RenderDiffText(Console.Out, diff, maxItems);
+    }
+
+    private static void RenderDiffText(TextWriter writer, ImportDiffResult diff, int maxItems)
     {
         var s = diff.Summary;
-        Console.WriteLine("DiffSummary");
-        Console.WriteLine($"NewProduct: {s.NewProduct}");
-        Console.WriteLine($"UpdatePrice: {s.UpdatePrice}");
-        Console.WriteLine($"UpdateName: {s.UpdateName}");
-        Console.WriteLine($"UpdateBoth: {s.UpdateBoth}");
-        Console.WriteLine($"NoChange: {s.NoChange}");
-        Console.WriteLine($"InvalidRow: {s.InvalidRow}");
-        Console.WriteLine("DiffItems:");
-        foreach (var x in diff.Items)
-            Console.WriteLine($"- {x.Kind} {x.Barcode} old=({x.ExistingName},{x.ExistingPrice}) new=({x.IncomingName},{x.IncomingPrice})");
+        ConsoleFormat.PrintSection(writer, "DIFF SUMMARY");
+        ConsoleFormat.PrintKeyValues(writer, new List<KeyValuePair<string, string>>
+        {
+            new KeyValuePair<string, string>("New", s.NewProduct.ToString()),
+            new KeyValuePair<string, string>("UpdatePrice", s.UpdatePrice.ToString()),
+            new KeyValuePair<string, string>("UpdateName", s.UpdateName.ToString()),
+            new KeyValuePair<string, string>("UpdateBoth", s.UpdateBoth.ToString()),
+            new KeyValuePair<string, string>("NoChange", s.NoChange.ToString()),
+            new KeyValuePair<string, string>("InvalidRow", s.InvalidRow.ToString())
+        });
+
+        ConsoleFormat.PrintSection(writer, $"DIFF PREVIEW (TOP {maxItems})");
+        foreach (var kind in new[] { ImportDiffKind.NewProduct, ImportDiffKind.UpdatePrice, ImportDiffKind.UpdateName, ImportDiffKind.UpdateBoth, ImportDiffKind.NoChange, ImportDiffKind.InvalidRow })
+        {
+            var rows = BuildDiffRows(diff, kind, maxItems);
+            if (rows.Count == 0) continue;
+            ConsoleFormat.PrintSection(writer, kind.ToString());
+            ConsoleFormat.PrintTable(
+                writer,
+                new[] { "Kind", "Barcode", "OldName", "OldPrice", "NewName", "NewPrice" },
+                rows,
+                24,
+                maxItems);
+        }
+
+        ConsoleFormat.PrintSection(writer, "NOTES");
+        writer.WriteLine("default policy: UpdatePrice=true, UpdateName=false, InsertNew=true");
+    }
+
+    private static IReadOnlyList<IReadOnlyList<string>> BuildDiffRows(ImportDiffResult diff, ImportDiffKind kind, int maxItems)
+    {
+        var list = new List<IReadOnlyList<string>>();
+        var sorted = new List<ImportDiffItem>(diff.Items);
+        sorted.Sort((a, b) =>
+        {
+            var c = GetKindPriority(a.Kind).CompareTo(GetKindPriority(b.Kind));
+            if (c != 0) return c;
+            return string.CompareOrdinal(a.Barcode ?? string.Empty, b.Barcode ?? string.Empty);
+        });
+
+        for (var i = 0; i < sorted.Count; i++)
+        {
+            var x = sorted[i];
+            if (x.Kind != kind) continue;
+            list.Add(new[]
+            {
+                x.Kind.ToString(),
+                x.Barcode ?? string.Empty,
+                x.ExistingName ?? string.Empty,
+                x.ExistingPrice.HasValue ? x.ExistingPrice.Value.ToString() : "-",
+                x.IncomingName ?? string.Empty,
+                x.IncomingPrice.ToString()
+            });
+            if (list.Count >= maxItems) break;
+        }
+
+        return list;
+    }
+
+    private static int GetKindPriority(ImportDiffKind kind)
+    {
+        switch (kind)
+        {
+            case ImportDiffKind.NewProduct: return 1;
+            case ImportDiffKind.UpdatePrice: return 2;
+            case ImportDiffKind.UpdateName: return 3;
+            case ImportDiffKind.UpdateBoth: return 4;
+            case ImportDiffKind.NoChange: return 5;
+            case ImportDiffKind.InvalidRow: return 6;
+            default: return 99;
+        }
+    }
+
+    private static string RenderApplyTextToString(ImportApplyOptions options, ImportDiffResult diff, ImportApplyResult? apply, int maxItems, bool rolledBack)
+    {
+        using (var sw = new StringWriter())
+        {
+            RenderApplyText(sw, options, diff, apply, maxItems, rolledBack);
+            return sw.ToString();
+        }
+    }
+
+    private static void RenderApplyText(ImportApplyOptions options, ImportDiffResult diff, ImportApplyResult? apply, int maxItems, bool rolledBack)
+    {
+        RenderApplyText(Console.Out, options, diff, apply, maxItems, rolledBack);
+    }
+
+    private static void RenderApplyText(TextWriter writer, ImportApplyOptions options, ImportDiffResult diff, ImportApplyResult? apply, int maxItems, bool rolledBack)
+    {
+        ConsoleFormat.PrintSection(writer, "APPLY OPTIONS");
+        ConsoleFormat.PrintKeyValues(writer, new List<KeyValuePair<string, string>>
+        {
+            new KeyValuePair<string, string>("DryRun", options.DryRun.ToString()),
+            new KeyValuePair<string, string>("InsertNew", options.InsertNew.ToString()),
+            new KeyValuePair<string, string>("UpdatePrice", options.UpdatePrice.ToString()),
+            new KeyValuePair<string, string>("UpdateName", options.UpdateName.ToString()),
+            new KeyValuePair<string, string>("Transaction", "true")
+        });
+
+        RenderDiffText(writer, diff, maxItems);
+        ConsoleFormat.PrintSection(writer, "APPLY RESULT");
+        if (apply != null)
+        {
+            ConsoleFormat.PrintKeyValues(writer, new List<KeyValuePair<string, string>>
+            {
+                new KeyValuePair<string, string>("AppliedInserted", apply.AppliedInserted.ToString()),
+                new KeyValuePair<string, string>("AppliedUpdated", apply.AppliedUpdated.ToString()),
+                new KeyValuePair<string, string>("NoChange", apply.NoChange.ToString()),
+                new KeyValuePair<string, string>("Skipped", apply.Skipped.ToString()),
+                new KeyValuePair<string, string>("ErrorsCount", apply.ErrorsCount.ToString())
+            });
+        }
+
+        if (rolledBack)
+            writer.WriteLine("TRANSACTION ROLLED BACK");
+
+        if (apply != null)
+        {
+            ConsoleFormat.PrintSection(writer, $"CHANGES APPLIED PREVIEW (TOP {maxItems})");
+            var rows = new List<IReadOnlyList<string>>();
+            var take = apply.ChangedBarcodes.Count < maxItems ? apply.ChangedBarcodes.Count : maxItems;
+            for (var i = 0; i < take; i++)
+                rows.Add(new[] { options.DryRun ? "WouldApply" : "Applied", apply.ChangedBarcodes[i] });
+            ConsoleFormat.PrintTable(writer, new[] { "Status", "Barcode" }, rows, 24, maxItems);
+        }
+    }
+
+    private static string RenderDiffJson(ImportDiffResult diff, ImportAnalysis analysis, int maxItems)
+    {
+        var sb = new StringBuilder();
+        sb.Append("{");
+        sb.Append("\"summary\":");
+        sb.Append(ToSummaryJson(diff.Summary));
+        sb.Append(",\"analysis\":");
+        sb.Append(ToAnalysisJson(analysis));
+        sb.Append(",\"items\":");
+        sb.Append(ToItemsJson(diff.Items, maxItems));
+        sb.Append("}");
+        return sb.ToString();
+    }
+
+    private static string RenderApplyJson(ImportDiffResult diff, ImportApplyOptions options, ImportApplyResult? apply, int maxItems, bool rolledBack)
+    {
+        var sb = new StringBuilder();
+        sb.Append("{");
+        sb.Append("\"options\":");
+        sb.Append(ToOptionsJson(options));
+        sb.Append(",\"summary\":");
+        sb.Append(ToSummaryJson(diff.Summary));
+        sb.Append(",\"items\":");
+        sb.Append(ToItemsJson(diff.Items, maxItems));
+        sb.Append(",\"applyResult\":");
+        sb.Append(ToApplyJson(apply));
+        sb.Append(",\"rolledBack\":");
+        sb.Append(rolledBack ? "true" : "false");
+        sb.Append("}");
+        return sb.ToString();
+    }
+
+    private static string ToSummaryJson(ImportDiffSummary s)
+    {
+        return "{" +
+               "\"new\":" + s.NewProduct + "," +
+               "\"updatePrice\":" + s.UpdatePrice + "," +
+               "\"updateName\":" + s.UpdateName + "," +
+               "\"updateBoth\":" + s.UpdateBoth + "," +
+               "\"noChange\":" + s.NoChange + "," +
+               "\"invalidRow\":" + s.InvalidRow +
+               "}";
+    }
+
+    private static string ToAnalysisJson(ImportAnalysis a)
+    {
+        return "{" +
+               "\"totalRows\":" + a.TotalRows + "," +
+               "\"validRows\":" + a.ValidRows + "," +
+               "\"duplicates\":" + a.Duplicates + "," +
+               "\"missingBarcode\":" + a.MissingBarcode + "," +
+               "\"invalidPrice\":" + a.InvalidPrice + "," +
+               "\"errorRows\":" + a.ErrorRows +
+               "}";
+    }
+
+    private static string ToOptionsJson(ImportApplyOptions o)
+    {
+        return "{" +
+               "\"dryRun\":" + (o.DryRun ? "true" : "false") + "," +
+               "\"insertNew\":" + (o.InsertNew ? "true" : "false") + "," +
+               "\"updatePrice\":" + (o.UpdatePrice ? "true" : "false") + "," +
+               "\"updateName\":" + (o.UpdateName ? "true" : "false") +
+               "}";
+    }
+
+    private static string ToApplyJson(ImportApplyResult? a)
+    {
+        if (a == null) return "null";
+        var sb = new StringBuilder();
+        sb.Append("{");
+        sb.Append("\"appliedInserted\":" + a.AppliedInserted + ",");
+        sb.Append("\"appliedUpdated\":" + a.AppliedUpdated + ",");
+        sb.Append("\"noChange\":" + a.NoChange + ",");
+        sb.Append("\"skipped\":" + a.Skipped + ",");
+        sb.Append("\"errorsCount\":" + a.ErrorsCount + ",");
+        sb.Append("\"changedBarcodes\":[");
+        for (var i = 0; i < a.ChangedBarcodes.Count; i++)
+        {
+            if (i > 0) sb.Append(",");
+            sb.Append("\"" + EscapeJson(a.ChangedBarcodes[i]) + "\"");
+        }
+        sb.Append("]}");
+        return sb.ToString();
+    }
+
+    private static string ToItemsJson(IReadOnlyList<ImportDiffItem> items, int maxItems)
+    {
+        var sb = new StringBuilder();
+        sb.Append("[");
+        var take = items.Count < maxItems ? items.Count : maxItems;
+        for (var i = 0; i < take; i++)
+        {
+            if (i > 0) sb.Append(",");
+            var x = items[i];
+            sb.Append("{");
+            sb.Append("\"kind\":\"" + EscapeJson(x.Kind.ToString()) + "\",");
+            sb.Append("\"barcode\":\"" + EscapeJson(x.Barcode) + "\",");
+            sb.Append("\"oldName\":\"" + EscapeJson(x.ExistingName) + "\",");
+            sb.Append("\"oldPrice\":" + (x.ExistingPrice.HasValue ? x.ExistingPrice.Value.ToString() : "null") + ",");
+            sb.Append("\"newName\":\"" + EscapeJson(x.IncomingName) + "\",");
+            sb.Append("\"newPrice\":" + x.IncomingPrice);
+            sb.Append("}");
+        }
+        sb.Append("]");
+        return sb.ToString();
+    }
+
+    private static string EscapeJson(string text)
+    {
+        var t = text ?? string.Empty;
+        return t.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r");
     }
 
     private static void PrintDailyTakings(DateTime date, DailyTakings report)

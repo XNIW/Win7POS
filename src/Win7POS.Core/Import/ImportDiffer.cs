@@ -18,6 +18,7 @@ namespace Win7POS.Core.Import
             var result = new ImportDiffResult();
             if (rows == null) return result;
             if (previewTake < 0) previewTake = 0;
+            var all = new List<ImportDiffItem>();
 
             foreach (var row in rows)
             {
@@ -33,7 +34,7 @@ namespace Win7POS.Core.Import
                 {
                     item.Kind = ImportDiffKind.InvalidRow;
                     Count(result.Summary, item.Kind);
-                    TryAddItem(result.Items, item, previewTake);
+                    all.Add(item);
                     continue;
                 }
 
@@ -44,7 +45,7 @@ namespace Win7POS.Core.Import
                 {
                     item.Kind = ImportDiffKind.NewProduct;
                     Count(result.Summary, item.Kind);
-                    TryAddItem(result.Items, item, previewTake);
+                    all.Add(item);
                     continue;
                 }
 
@@ -52,8 +53,17 @@ namespace Win7POS.Core.Import
                 item.ExistingPrice = existing.UnitPrice;
                 item.Kind = ResolveKind(existing, row);
                 Count(result.Summary, item.Kind);
-                TryAddItem(result.Items, item, previewTake);
+                all.Add(item);
             }
+
+            all.Sort((a, b) =>
+            {
+                var k = KindPriority(a.Kind).CompareTo(KindPriority(b.Kind));
+                if (k != 0) return k;
+                return string.CompareOrdinal(a.Barcode ?? string.Empty, b.Barcode ?? string.Empty);
+            });
+            for (var i = 0; i < all.Count && i < previewTake; i++)
+                result.Items.Add(all[i]);
 
             return result;
         }
@@ -69,12 +79,6 @@ namespace Win7POS.Core.Import
             return ImportDiffKind.UpdatePrice;
         }
 
-        private static void TryAddItem(List<ImportDiffItem> items, ImportDiffItem item, int previewTake)
-        {
-            if (items.Count >= previewTake) return;
-            items.Add(item);
-        }
-
         private static void Count(ImportDiffSummary summary, ImportDiffKind kind)
         {
             switch (kind)
@@ -85,6 +89,20 @@ namespace Win7POS.Core.Import
                 case ImportDiffKind.UpdateBoth: summary.UpdateBoth += 1; break;
                 case ImportDiffKind.NoChange: summary.NoChange += 1; break;
                 case ImportDiffKind.InvalidRow: summary.InvalidRow += 1; break;
+            }
+        }
+
+        private static int KindPriority(ImportDiffKind kind)
+        {
+            switch (kind)
+            {
+                case ImportDiffKind.NewProduct: return 1;
+                case ImportDiffKind.UpdatePrice: return 2;
+                case ImportDiffKind.UpdateName: return 3;
+                case ImportDiffKind.UpdateBoth: return 4;
+                case ImportDiffKind.NoChange: return 5;
+                case ImportDiffKind.InvalidRow: return 6;
+                default: return 99;
             }
         }
     }
