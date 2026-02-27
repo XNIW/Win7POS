@@ -4,10 +4,11 @@ namespace Win7POS.Core.Import
 {
     public sealed class ImportApplyResult
     {
-        public int Inserted { get; set; }
-        public int Updated { get; set; }
+        public int AppliedInserted { get; set; }
+        public int AppliedUpdated { get; set; }
+        public int NoChange { get; set; }
         public int Skipped { get; set; }
         public int ErrorsCount { get; set; }
-        public List<string> AppliedBarcodes { get; } = new List<string>();
+        public List<string> ChangedBarcodes { get; } = new List<string>();
     }
 }

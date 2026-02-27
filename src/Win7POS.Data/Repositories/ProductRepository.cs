@@ -1,4 +1,6 @@
 using System.Threading.Tasks;
+using System.Collections.Generic;
+using System.Linq;
 using Dapper;
 using Win7POS.Core.Models;
 
@@ -40,6 +42,14 @@ SELECT last_insert_rowid();", p);
                 "SELECT id FROM products WHERE barcode = @Barcode",
                 new { p.Barcode }
             );
+        }
+
+        public async Task<IReadOnlyList<Product>> ListAllAsync()
+        {
+            using var conn = _factory.Open();
+            var rows = await conn.QueryAsync<Product>(
+                "SELECT id, barcode, name, unitPrice FROM products ORDER BY barcode ASC");
+            return rows.ToList();
         }
     }
 }
