@@ -33,4 +33,4 @@ jobs:
         run: dotnet build src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-restore
 
       - name: Selftest (fast)
-        run: dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build -- --selftest
+        run: dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build -- --selftest --keepdb
