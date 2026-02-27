@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-check:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Print .NET info
+        run: dotnet --info
+
+      - name: Restore CLI
+        run: dotnet restore src/Win7POS.Cli/Win7POS.Cli.csproj
+
+      - name: Build Core (Release)
+        run: dotnet build src/Win7POS.Core/Win7POS.Core.csproj -c Release --no-restore
+
+      - name: Build CLI (Release)
+        run: dotnet build src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-restore
+
+      - name: Contract check
+        run: dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build -- --contract-check
