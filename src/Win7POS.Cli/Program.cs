@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
+using Win7POS.Core.Import;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Reports;
@@ -23,13 +25,33 @@ internal static class Program
                 return;
             }
 
-            if (args.Length == 0 || HasSelfTestArg(args))
+            if (TryParseApplyCsvArgs(args, out var applyPath, out var applyDbPath))
             {
-                await RunSelfTest();
+                await RunApplyCsvAsync(applyPath, applyDbPath);
                 return;
             }
 
-            Console.WriteLine("Unknown args. Use --selftest or --daily yyyy-MM-dd.");
+            if (TryParseAnalyzeCsvArgs(args, out var analyzePath))
+            {
+                await RunAnalyzeCsvAsync(analyzePath);
+                return;
+            }
+
+            if (TryParseSelfTestArgs(args, out var keepDb))
+            {
+                await RunSelfTest(keepDb);
+                return;
+            }
+
+            Console.WriteLine("Unknown args.");
+            Console.WriteLine("Usage:");
+            Console.WriteLine("  --selftest [--keepdb]");
+            Console.WriteLine("  --daily yyyy-MM-dd [--db <path>]");
+            Console.WriteLine("  --analyze-csv <path>");
+            Console.WriteLine("  --apply-csv <path> [--db <path>]");
+            Console.WriteLine("Example:");
+            Console.WriteLine("  dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -- --analyze-csv samples/import_sample.csv");
+            Console.WriteLine("  dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -- --apply-csv samples/import_sample.csv");
             Environment.Exit(1);
         }
         catch (Exception ex)
@@ -39,15 +61,21 @@ internal static class Program
         }
     }
 
-    private static bool HasSelfTestArg(string[] args)
+    private static bool TryParseSelfTestArgs(string[] args, out bool keepDb)
     {
+        keepDb = false;
+        if (args.Length == 0) return true;
+
+        var hasSelfTest = false;
         foreach (var arg in args)
         {
             if (string.Equals(arg, "--selftest", StringComparison.OrdinalIgnoreCase))
-                return true;
+                hasSelfTest = true;
+            if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase))
+                keepDb = true;
         }
 
-        return false;
+        return hasSelfTest;
     }
 
     private static bool TryParseDailyArgs(string[] args, out string dateArg, out string dbPath)
@@ -77,7 +105,50 @@ internal static class Program
         return dateArg.Length > 0;
     }
 
-    private static async Task RunSelfTest()
+    private static bool TryParseAnalyzeCsvArgs(string[] args, out string csvPath)
+    {
+        csvPath = string.Empty;
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (!string.Equals(args[i], "--analyze-csv", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (i + 1 >= args.Length)
+                return false;
+            csvPath = args[i + 1];
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryParseApplyCsvArgs(string[] args, out string csvPath, out string dbPath)
+    {
+        csvPath = string.Empty;
+        dbPath = string.Empty;
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (string.Equals(arg, "--apply-csv", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                csvPath = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--db", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                dbPath = args[i + 1];
+                i += 1;
+                continue;
+            }
+        }
+
+        return csvPath.Length > 0;
+    }
+
+    private static async Task RunSelfTest(bool keepDb)
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
         var dbPath = Path.Combine(tempRoot, $"selftest_{Guid.NewGuid():N}.db");
@@ -272,9 +343,51 @@ internal static class Program
         Assert(exactReport.ChangeTotal == 0, "Expected target daily change total to be 0.");
         PrintDailyTakings(targetDate, exactReport);
 
+        var csvPath = Path.Combine(tempRoot, $"import_selftest_{Guid.NewGuid():N}.csv");
+        var csvContent = string.Join("\n", new[]
+        {
+            "Barcode;Name;UnitPrice",
+            "A001;Item A;100",
+            "A001;Item A duplicate;100",
+            ";Missing barcode;200",
+            "B001;Invalid price;abc",
+            "C001;Item C;300"
+        });
+        File.WriteAllText(csvPath, csvContent, Encoding.UTF8);
+        var parse = CsvImportParser.Parse(csvContent);
+        var analysis = ImportAnalyzer.Analyze(parse);
+        Assert(analysis.Duplicates == 1, "Expected Duplicates == 1.");
+        Assert(analysis.MissingBarcode == 1, "Expected MissingBarcode == 1.");
+        Assert(analysis.InvalidPrice == 1, "Expected InvalidPrice == 1.");
+        Assert(analysis.ValidRows == 2, "Expected ValidRows == 2.");
+        PrintImportAnalysis(analysis);
+        Console.WriteLine("ImportAnalysis PASS");
+
+        var upserter = new ProductUpserterAdapter(products);
+        var applier = new ImportApplier(upserter);
+        var applyFirst = await applier.ApplyAsync(parse.Rows);
+        Assert(applyFirst.Inserted == 2, "Expected first apply inserted=2.");
+        Assert(applyFirst.Updated == 0, "Expected first apply updated=0.");
+        var applySecond = await applier.ApplyAsync(parse.Rows);
+        Assert(applySecond.Inserted == 0, "Expected second apply inserted=0.");
+        Assert(applySecond.Updated == 2, "Expected second apply updated=2.");
+        var pA = await products.GetByBarcodeAsync("A001");
+        var pC = await products.GetByBarcodeAsync("C001");
+        Assert(pA != null && pA.UnitPrice == 100 && pA.Name == "Item A", "Expected product A001 persisted.");
+        Assert(pC != null && pC.UnitPrice == 300 && pC.Name == "Item C", "Expected product C001 persisted.");
+        PrintImportApplyResult(applySecond);
+        Console.WriteLine("ImportApply PASS");
+
         Console.WriteLine("自检 PASS");
 
-        // Keep DB file so --daily --db can verify inserted records.
+        if (keepDb)
+        {
+            Console.WriteLine($"DB kept at: {opt.DbPath}");
+            return;
+        }
+
+        if (File.Exists(opt.DbPath))
+            File.Delete(opt.DbPath);
     }
 
     private static void Assert(bool condition, string message)
@@ -308,6 +421,101 @@ internal static class Program
         Console.WriteLine($"CashTotal: {report.CashTotal}");
         Console.WriteLine($"CardTotal: {report.CardTotal}");
         Console.WriteLine($"ChangeTotal: {report.ChangeTotal}");
+    }
+
+    private static async Task RunAnalyzeCsvAsync(string csvPath)
+    {
+        if (string.IsNullOrWhiteSpace(csvPath))
+            throw new InvalidOperationException("Missing CSV path.");
+        if (!File.Exists(csvPath))
+            throw new FileNotFoundException("CSV file not found.", csvPath);
+
+        var content = await File.ReadAllTextAsync(csvPath, Encoding.UTF8);
+        var parse = CsvImportParser.Parse(content);
+        var analysis = ImportAnalyzer.Analyze(parse);
+
+        Console.WriteLine("CSV Analyze");
+        Console.WriteLine($"Path: {csvPath}");
+        if (parse.Errors.Count > 0)
+        {
+            Console.WriteLine("Errors:");
+            var limit = parse.Errors.Count < 10 ? parse.Errors.Count : 10;
+            for (var i = 0; i < limit; i++)
+            {
+                var e = parse.Errors[i];
+                Console.WriteLine($"- L{e.LineNumber}: {e.Message}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("Errors: none");
+        }
+
+        PrintImportAnalysis(analysis);
+        if (analysis.ValidRows == 0)
+            throw new InvalidOperationException("No valid rows found.");
+    }
+
+    private static async Task RunApplyCsvAsync(string csvPath, string dbPath)
+    {
+        if (string.IsNullOrWhiteSpace(csvPath))
+            throw new InvalidOperationException("Missing CSV path.");
+        if (!File.Exists(csvPath))
+            throw new FileNotFoundException("CSV file not found.", csvPath);
+
+        var opt = string.IsNullOrWhiteSpace(dbPath) ? PosDbOptions.Default() : PosDbOptions.ForPath(dbPath);
+        Console.WriteLine($"DB path: {opt.DbPath}");
+        DbInitializer.EnsureCreated(opt);
+
+        var content = await File.ReadAllTextAsync(csvPath, Encoding.UTF8);
+        var parse = CsvImportParser.Parse(content);
+        var analysis = ImportAnalyzer.Analyze(parse);
+        Console.WriteLine("CSV Apply");
+        Console.WriteLine($"Path: {csvPath}");
+        if (parse.Errors.Count > 0)
+        {
+            Console.WriteLine("Errors:");
+            var limit = parse.Errors.Count < 10 ? parse.Errors.Count : 10;
+            for (var i = 0; i < limit; i++)
+            {
+                var e = parse.Errors[i];
+                Console.WriteLine($"- L{e.LineNumber}: {e.Message}");
+            }
+        }
+        else
+        {
+            Console.WriteLine("Errors: none");
+        }
+
+        PrintImportAnalysis(analysis);
+        if (analysis.ValidRows == 0)
+            throw new InvalidOperationException("No valid rows found.");
+
+        var factory = new SqliteConnectionFactory(opt);
+        var products = new ProductRepository(factory);
+        var applier = new ImportApplier(new ProductUpserterAdapter(products));
+        var apply = await applier.ApplyAsync(parse.Rows);
+        PrintImportApplyResult(apply);
+    }
+
+    private static void PrintImportAnalysis(ImportAnalysis analysis)
+    {
+        Console.WriteLine("ImportAnalysis");
+        Console.WriteLine($"TotalRows: {analysis.TotalRows}");
+        Console.WriteLine($"ValidRows: {analysis.ValidRows}");
+        Console.WriteLine($"Duplicates: {analysis.Duplicates}");
+        Console.WriteLine($"MissingBarcode: {analysis.MissingBarcode}");
+        Console.WriteLine($"InvalidPrice: {analysis.InvalidPrice}");
+        Console.WriteLine($"ErrorRows: {analysis.ErrorRows}");
+    }
+
+    private static void PrintImportApplyResult(ImportApplyResult apply)
+    {
+        Console.WriteLine("ApplyResult");
+        Console.WriteLine($"Inserted: {apply.Inserted}");
+        Console.WriteLine($"Updated: {apply.Updated}");
+        Console.WriteLine($"Skipped: {apply.Skipped}");
+        Console.WriteLine($"ErrorsCount: {apply.ErrorsCount}");
     }
 
     private static bool ContainsText(System.Collections.Generic.IEnumerable<string> lines, string expected)

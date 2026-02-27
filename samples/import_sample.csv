@@ -1,0 +1,6 @@
+Barcode;Name;UnitPrice
+A001;Sample Cola 500ml;1200
+A001;Sample Cola 500ml duplicate;1200
+;Missing Barcode Row;800
+B001;Invalid Price Row;abc
+C001;Sample Water 500ml;700
