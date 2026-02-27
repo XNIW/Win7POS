@@ -16,36 +16,12 @@ using Win7POS.Data.Repositories;
 
 internal static class Program
 {
-    private sealed class SelfTestParams
-    {
-        public bool KeepDb;
-        public string Format = "text";
-        public string OutPath = string.Empty;
-    }
-
-    private sealed class DailyParams
-    {
-        public string DateArg = string.Empty;
-        public string DbPath = string.Empty;
-        public string Format = "text";
-        public string OutPath = string.Empty;
-    }
-
-    private sealed class AnalyzeParams
-    {
-        public string CsvPath = string.Empty;
-        public string DbPath = string.Empty;
-        public string Format = "text";
-        public string OutPath = string.Empty;
-    }
-
     private sealed class DiffParams
     {
         public string CsvPath = string.Empty;
         public string DbPath = string.Empty;
         public int MaxItems = 20;
         public string Format = "text";
-        public string OutPath = string.Empty;
     }
 
     private sealed class ApplyParams
@@ -56,22 +32,15 @@ internal static class Program
         public int FailAfter;
         public int MaxItems = 20;
         public string Format = "text";
-        public string OutPath = string.Empty;
     }
 
     private static async Task Main(string[] args)
     {
         try
         {
-            if (TryParseContractCheckArgs(args))
+            if (TryParseDailyArgs(args, out var dailyDateArg, out var dailyDbPath))
             {
-                RunContractCheck();
-                return;
-            }
-
-            if (TryParseDailyArgs(args, out var dailyParams))
-            {
-                await RunDailyAsync(dailyParams);
+                await RunDailyAsync(dailyDateArg, dailyDbPath);
                 return;
             }
 
@@ -87,9 +56,9 @@ internal static class Program
                 return;
             }
 
-            if (TryParseAnalyzeCsvArgs(args, out var analyzeParams))
+            if (TryParseAnalyzeCsvArgs(args, out var analyzePath))
             {
-                await RunAnalyzeCsvAsync(analyzeParams);
+                await RunAnalyzeCsvAsync(analyzePath);
                 return;
             }
 
@@ -105,9 +74,9 @@ internal static class Program
                 return;
             }
 
-            if (TryParseSelfTestArgs(args, out var selfTestParams))
+            if (TryParseSelfTestArgs(args, out var keepDb))
             {
-                await RunSelfTest(selfTestParams);
+                await RunSelfTest(keepDb);
                 return;
             }
 
@@ -125,12 +94,11 @@ internal static class Program
     {
         Console.WriteLine("Unknown args.");
         Console.WriteLine("Usage:");
-        Console.WriteLine("  --contract-check");
-        Console.WriteLine("  --selftest [--keepdb] [--format text|json] [--out <path>]");
-        Console.WriteLine("  --daily yyyy-MM-dd [--db <path>] [--format text|json] [--out <path>]");
-        Console.WriteLine("  --analyze-csv <path> [--db <path>] [--format text|json] [--out <path>]");
-        Console.WriteLine("  --diff-csv <path> [--db <path>] [--max-items N] [--format text|json] [--out <path>]");
-        Console.WriteLine("  --apply-csv <path> [--db <path>] [--dry-run] [--no-insert] [--no-update-price] [--update-name] [--max-items N] [--format text|json] [--out <path>]");
+        Console.WriteLine("  --selftest [--keepdb]");
+        Console.WriteLine("  --daily yyyy-MM-dd [--db <path>]");
+        Console.WriteLine("  --analyze-csv <path>");
+            Console.WriteLine("  --diff-csv <path> [--db <path>] [--max-items N] [--format text|json]");
+            Console.WriteLine("  --apply-csv <path> [--db <path>] [--dry-run] [--no-insert] [--no-update-price] [--update-name] [--max-items N] [--format text|json]");
         Console.WriteLine("  --export-products <out.csv> [--db <path>]");
         Console.WriteLine("  --backup-db <out.db> [--db <path>]");
         Console.WriteLine("Example:");
@@ -138,66 +106,32 @@ internal static class Program
         Console.WriteLine("  dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -- --apply-csv samples/import_sample.csv --dry-run");
     }
 
-    private static bool TryParseContractCheckArgs(string[] args)
+    private static bool TryParseSelfTestArgs(string[] args, out bool keepDb)
     {
-        for (var i = 0; i < args.Length; i++)
-            if (string.Equals(args[i], "--contract-check", StringComparison.OrdinalIgnoreCase))
-                return true;
-        return false;
-    }
-
-    private static void RunContractCheck()
-    {
-        if (JsonContractGuard.Run(out var error))
-        {
-            Console.WriteLine("JsonContract PASS");
-            return;
-        }
-
-        Console.WriteLine($"JsonContract FAIL: {error}");
-        Environment.Exit(1);
-    }
-
-    private static bool TryParseSelfTestArgs(string[] args, out SelfTestParams parameters)
-    {
-        parameters = new SelfTestParams();
+        keepDb = false;
         if (args.Length == 0) return true;
 
         var hasSelfTest = false;
-        for (var i = 0; i < args.Length; i++)
+        foreach (var arg in args)
         {
-            var arg = args[i];
             if (string.Equals(arg, "--selftest", StringComparison.OrdinalIgnoreCase)) hasSelfTest = true;
-            if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase)) parameters.KeepDb = true;
-            if (string.Equals(arg, "--format", StringComparison.OrdinalIgnoreCase))
-            {
-                if (i + 1 >= args.Length) return false;
-                parameters.Format = args[i + 1].ToLowerInvariant();
-                i += 1;
-                continue;
-            }
-
-            if (string.Equals(arg, "--out", StringComparison.OrdinalIgnoreCase))
-            {
-                if (i + 1 >= args.Length) return false;
-                parameters.OutPath = args[i + 1];
-                i += 1;
-            }
+            if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase)) keepDb = true;
         }
 
         return hasSelfTest;
     }
 
-    private static bool TryParseDailyArgs(string[] args, out DailyParams parameters)
+    private static bool TryParseDailyArgs(string[] args, out string dateArg, out string dbPath)
     {
-        parameters = new DailyParams();
+        dateArg = string.Empty;
+        dbPath = string.Empty;
         for (var i = 0; i < args.Length; i++)
         {
             var arg = args[i];
             if (string.Equals(arg, "--daily", StringComparison.OrdinalIgnoreCase))
             {
                 if (i + 1 >= args.Length) return false;
-                parameters.DateArg = args[i + 1];
+                dateArg = args[i + 1];
                 i += 1;
                 continue;
             }
@@ -205,69 +139,27 @@ internal static class Program
             if (string.Equals(arg, "--db", StringComparison.OrdinalIgnoreCase))
             {
                 if (i + 1 >= args.Length) return false;
-                parameters.DbPath = args[i + 1];
-                i += 1;
-                continue;
-            }
-
-            if (string.Equals(arg, "--format", StringComparison.OrdinalIgnoreCase))
-            {
-                if (i + 1 >= args.Length) return false;
-                parameters.Format = args[i + 1].ToLowerInvariant();
-                i += 1;
-                continue;
-            }
-
-            if (string.Equals(arg, "--out", StringComparison.OrdinalIgnoreCase))
-            {
-                if (i + 1 >= args.Length) return false;
-                parameters.OutPath = args[i + 1];
+                dbPath = args[i + 1];
                 i += 1;
             }
         }
 
-        return parameters.DateArg.Length > 0;
+        return dateArg.Length > 0;
     }
 
-    private static bool TryParseAnalyzeCsvArgs(string[] args, out AnalyzeParams parameters)
+    private static bool TryParseAnalyzeCsvArgs(string[] args, out string csvPath)
     {
-        parameters = new AnalyzeParams();
+        csvPath = string.Empty;
         for (var i = 0; i < args.Length; i++)
         {
-            var arg = args[i];
-            if (string.Equals(arg, "--analyze-csv", StringComparison.OrdinalIgnoreCase))
-            {
-                if (i + 1 >= args.Length) return false;
-                parameters.CsvPath = args[i + 1];
-                i += 1;
+            if (!string.Equals(args[i], "--analyze-csv", StringComparison.OrdinalIgnoreCase))
                 continue;
-            }
-
-            if (string.Equals(arg, "--db", StringComparison.OrdinalIgnoreCase))
-            {
-                if (i + 1 >= args.Length) return false;
-                parameters.DbPath = args[i + 1];
-                i += 1;
-                continue;
-            }
-
-            if (string.Equals(arg, "--format", StringComparison.OrdinalIgnoreCase))
-            {
-                if (i + 1 >= args.Length) return false;
-                parameters.Format = args[i + 1].ToLowerInvariant();
-                i += 1;
-                continue;
-            }
-
-            if (string.Equals(arg, "--out", StringComparison.OrdinalIgnoreCase))
-            {
-                if (i + 1 >= args.Length) return false;
-                parameters.OutPath = args[i + 1];
-                i += 1;
-            }
+            if (i + 1 >= args.Length) return false;
+            csvPath = args[i + 1];
+            return true;
         }
 
-        return parameters.CsvPath.Length > 0;
+        return false;
     }
 
     private static bool TryParseDiffCsvArgs(string[] args, out DiffParams parameters)
@@ -307,14 +199,6 @@ internal static class Program
             {
                 if (i + 1 >= args.Length) return false;
                 parameters.Format = args[i + 1].ToLowerInvariant();
-                i += 1;
-                continue;
-            }
-
-            if (string.Equals(arg, "--out", StringComparison.OrdinalIgnoreCase))
-            {
-                if (i + 1 >= args.Length) return false;
-                parameters.OutPath = args[i + 1];
                 i += 1;
             }
         }
@@ -393,14 +277,6 @@ internal static class Program
                 if (i + 1 >= args.Length) return false;
                 parameters.Format = args[i + 1].ToLowerInvariant();
                 i += 1;
-                continue;
-            }
-
-            if (string.Equals(arg, "--out", StringComparison.OrdinalIgnoreCase))
-            {
-                if (i + 1 >= args.Length) return false;
-                parameters.OutPath = args[i + 1];
-                i += 1;
             }
         }
 
@@ -459,21 +335,21 @@ internal static class Program
         return outputPath.Length > 0;
     }
 
-    private static async Task RunSelfTest(SelfTestParams parameters)
+    private static async Task RunSelfTest(bool keepDb)
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
         var dbPath = Path.Combine(tempRoot, $"selftest_{Guid.NewGuid():N}.db");
         var opt = PosDbOptions.ForPath(dbPath);
-        if (parameters.Format != "json") Console.WriteLine($"DB path: {opt.DbPath}");
+        Console.WriteLine($"DB path: {opt.DbPath}");
         var dbDir = Path.GetDirectoryName(opt.DbPath);
         if (string.IsNullOrWhiteSpace(dbDir))
             throw new InvalidOperationException("DB directory is invalid.");
         Directory.CreateDirectory(dbDir);
-        if (parameters.Format != "json") Console.WriteLine($"DB dir exists: {Directory.Exists(dbDir)}");
+        Console.WriteLine($"DB dir exists: {Directory.Exists(dbDir)}");
 
         var probePath = Path.Combine(dbDir, $"write_probe_{Guid.NewGuid():N}.tmp");
         File.WriteAllText(probePath, "ok");
-        if (parameters.Format != "json") Console.WriteLine($"DB dir writable: {File.Exists(probePath)}");
+        Console.WriteLine($"DB dir writable: {File.Exists(probePath)}");
         if (File.Exists(probePath)) File.Delete(probePath);
 
         DbInitializer.EnsureCreated(opt);
@@ -493,7 +369,7 @@ internal static class Program
         }
         catch (PosException ex) when (ex.Code == PosErrorCode.EmptyCart)
         {
-            if (parameters.Format != "json") Console.WriteLine("Carrello vuoto: pagamento bloccato (PASS).");
+            Console.WriteLine("Carrello vuoto: pagamento bloccato (PASS).");
         }
 
         await session.AddByBarcodeAsync("1234567890123");
@@ -504,18 +380,12 @@ internal static class Program
         session.RemoveLine("9876543210000");
 
         var completed = await session.PayCashAsync();
-        if (parameters.Format != "json")
-        {
-            Console.WriteLine("Vendita salvata");
-            PrintReceiptPreview(completed);
-        }
+        Console.WriteLine("Vendita salvata");
+        PrintReceiptPreview(completed);
 
         var last = await new DataSalesStore(sales).LastSalesAsync(5);
-        if (parameters.Format != "json")
-        {
-            Console.WriteLine("Ultime vendite:");
-            foreach (var s in last) Console.WriteLine($"- {s.Id} {s.Code} total={s.Total} at={s.CreatedAt}");
-        }
+        Console.WriteLine("Ultime vendite:");
+        foreach (var s in last) Console.WriteLine($"- {s.Id} {s.Code} total={s.Total} at={s.CreatedAt}");
 
         var csvPath = Path.Combine(tempRoot, $"import_selftest_{Guid.NewGuid():N}.csv");
         var csvContent = string.Join("\n", new[]
@@ -535,11 +405,8 @@ internal static class Program
         Assert(analysis.MissingBarcode == 1, "Expected MissingBarcode == 1.");
         Assert(analysis.InvalidPrice == 1, "Expected InvalidPrice == 1.");
         Assert(analysis.ValidRows == 3, "Expected ValidRows == 3.");
-        if (parameters.Format != "json")
-        {
-            PrintImportAnalysis(analysis);
-            Console.WriteLine("ImportAnalysis PASS");
-        }
+        PrintImportAnalysis(analysis);
+        Console.WriteLine("ImportAnalysis PASS");
 
         await products.UpsertAsync(new Product { Barcode = "A001", Name = "Old A", UnitPrice = 90 });
         await products.UpsertAsync(new Product { Barcode = "C001", Name = "Item C", UnitPrice = 300 });
@@ -555,11 +422,8 @@ internal static class Program
         Assert(diffText.Contains("DIFF SUMMARY"), "Expected DIFF SUMMARY section.");
         Assert(diffText.Contains("DIFF PREVIEW"), "Expected DIFF PREVIEW section.");
         Assert(diffText.Contains("Kind") && diffText.Contains("Barcode"), "Expected diff table headers.");
-        if (parameters.Format != "json")
-        {
-            Console.Write(diffText);
-            Console.WriteLine("ImportDiff PASS");
-        }
+        Console.Write(diffText);
+        Console.WriteLine("ImportDiff PASS");
 
         var dryRun = await ApplyWithTransactionAsync(factory, uniqueRows, new ImportApplyOptions { DryRun = true });
         Assert(dryRun.AppliedInserted == 1 && dryRun.AppliedUpdated == 1 && dryRun.NoChange == 1, "Unexpected dry-run counts.");
@@ -572,11 +436,8 @@ internal static class Program
         Assert(applyPriceOnly.AppliedInserted == 1 && applyPriceOnly.AppliedUpdated == 1, "Price-only apply counts mismatch.");
         var aAfterPrice = await products.GetByBarcodeAsync("A001");
         Assert(aAfterPrice != null && aAfterPrice.Name == "Old A" && aAfterPrice.UnitPrice == 100, "Price-only apply should keep old name.");
-        if (parameters.Format != "json")
-        {
-            Console.WriteLine("Apply #1");
-            PrintImportApplyResult(applyPriceOnly);
-        }
+        Console.WriteLine("Apply #1");
+        PrintImportApplyResult(applyPriceOnly);
 
         var nameOnlyRows = new List<ImportRow> { new ImportRow { Barcode = "A001", Name = "New Name A", UnitPrice = 100 } };
         var applyNameOnly = await ApplyWithTransactionAsync(factory, nameOnlyRows, new ImportApplyOptions { InsertNew = false, UpdatePrice = false, UpdateName = true });
@@ -598,81 +459,41 @@ internal static class Program
         Assert((beforeRollback == null && afterRollback == null) || (beforeRollback != null && afterRollback != null), "Rollback should keep DB consistent.");
 
         var applySecond = await ApplyWithTransactionAsync(factory, uniqueRows, new ImportApplyOptions());
+        Console.WriteLine("Apply #2");
         var applyText = RenderApplyTextToString(new ImportApplyOptions(), diff, applySecond, 20, false);
         Assert(applyText.Contains("APPLY RESULT"), "Expected APPLY RESULT section.");
         Assert(applyText.Contains("APPLY OPTIONS"), "Expected APPLY OPTIONS section.");
         Assert(applyText.Contains("CHANGES APPLIED PREVIEW"), "Expected changes preview section.");
-        if (parameters.Format != "json")
-        {
-            Console.WriteLine("Apply #2");
-            Console.Write(applyText);
-            Console.WriteLine("ImportApply PASS");
-        }
+        Console.Write(applyText);
+        Console.WriteLine("ImportApply PASS");
 
-        var diffJson = JsonProtocol.BuildDiff(opt.DbPath, csvPath, 20, analysis, diff, JsonProtocol.FromParseErrors(parse.Errors));
-        var applyJson = JsonProtocol.BuildApply(
-            opt.DbPath,
-            csvPath,
-            20,
-            analysis,
-            diff,
-            new ImportApplyOptions(),
-            applySecond,
-            false,
-            JsonProtocol.FromParseErrors(parse.Errors));
-        JsonContractGuard.ValidateGeneratedAgainstFixture(diffJson, "diff_v1.json", "diff", false);
-        JsonContractGuard.ValidateGeneratedAgainstFixture(applyJson, "apply_dryrun_v1.json", "apply", true);
-        Console.WriteLine("JsonContract PASS");
-
-        if (parameters.Format == "json")
-        {
-            var selftestJson = JsonProtocol.BuildSelfTest(opt.DbPath, parameters.KeepDb, true, new JsonProtocol.JsonError[0]);
-            JsonContractGuard.ValidateJson(selftestJson, "selftest", false);
-            WriteJsonOutput(selftestJson, parameters.OutPath);
-        }
         Console.WriteLine("自检 PASS");
-
-        if (parameters.KeepDb)
+        if (keepDb)
         {
-            if (parameters.Format != "json") Console.WriteLine($"DB kept at: {opt.DbPath}");
+            Console.WriteLine($"DB kept at: {opt.DbPath}");
             return;
         }
 
         if (File.Exists(opt.DbPath)) File.Delete(opt.DbPath);
     }
 
-    private static async Task RunDailyAsync(DailyParams parameters)
+    private static async Task RunDailyAsync(string dateArg, string dbPath)
     {
-        if (!DateTime.TryParseExact(parameters.DateArg, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+        if (!DateTime.TryParseExact(dateArg, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
             throw new InvalidOperationException("Invalid date format. Use yyyy-MM-dd.");
-        var opt = ResolveDbOptions(parameters.DbPath);
-        if (parameters.Format != "json") Console.WriteLine($"DB path: {opt.DbPath}");
+        var opt = ResolveDbOptions(dbPath);
+        Console.WriteLine($"DB path: {opt.DbPath}");
         DbInitializer.EnsureCreated(opt);
         var service = new DailyTakingsService(new SalesQueryAdapter(new SaleRepository(new SqliteConnectionFactory(opt))));
-        var report = await service.GetForDateAsync(date.Date);
-        if (parameters.Format == "json")
-        {
-            var json = JsonProtocol.BuildDaily(opt.DbPath, date.Date, report, new JsonProtocol.JsonError[0]);
-            WriteJsonOutput(json, parameters.OutPath);
-            return;
-        }
-        PrintDailyTakings(date.Date, report);
+        PrintDailyTakings(date.Date, await service.GetForDateAsync(date.Date));
     }
 
-    private static async Task RunAnalyzeCsvAsync(AnalyzeParams parameters)
+    private static async Task RunAnalyzeCsvAsync(string csvPath)
     {
-        var parse = await LoadCsvAsync(parameters.CsvPath);
+        var parse = await LoadCsvAsync(csvPath);
         var analysis = ImportAnalyzer.Analyze(parse);
-        var opt = ResolveDbOptions(parameters.DbPath);
-        if (parameters.Format == "json")
-        {
-            var json = JsonProtocol.BuildAnalyze(opt.DbPath, parameters.CsvPath, analysis, JsonProtocol.FromParseErrors(parse.Errors));
-            WriteJsonOutput(json, parameters.OutPath);
-            if (analysis.ValidRows == 0) throw new InvalidOperationException("No valid rows found.");
-            return;
-        }
         Console.WriteLine("CSV Analyze");
-        Console.WriteLine($"Path: {parameters.CsvPath}");
+        Console.WriteLine($"Path: {csvPath}");
         PrintErrors(parse.Errors, 10);
         PrintImportAnalysis(analysis);
         if (analysis.ValidRows == 0) throw new InvalidOperationException("No valid rows found.");
@@ -683,21 +504,14 @@ internal static class Program
         var parse = await LoadCsvAsync(parameters.CsvPath);
         var analysis = ImportAnalyzer.Analyze(parse);
         var opt = ResolveDbOptions(parameters.DbPath);
-        if (parameters.Format != "json") Console.WriteLine($"DB path: {opt.DbPath}");
+        Console.WriteLine($"DB path: {opt.DbPath}");
         DbInitializer.EnsureCreated(opt);
         var products = new ProductRepository(new SqliteConnectionFactory(opt));
         var diff = await new ImportDiffer(new ProductSnapshotLookupAdapter(products)).DiffAsync(UniqueRows(parse.Rows), parameters.MaxItems);
 
         if (parameters.Format == "json")
         {
-            var json = JsonProtocol.BuildDiff(
-                opt.DbPath,
-                parameters.CsvPath,
-                parameters.MaxItems,
-                analysis,
-                diff,
-                JsonProtocol.FromParseErrors(parse.Errors));
-            WriteJsonOutput(json, parameters.OutPath);
+            Console.WriteLine(RenderDiffJson(diff, analysis, parameters.MaxItems));
             return;
         }
 
@@ -714,58 +528,29 @@ internal static class Program
         var analysis = ImportAnalyzer.Analyze(parse);
         var rows = UniqueRows(parse.Rows);
         var opt = ResolveDbOptions(parameters.DbPath);
-        if (parameters.Format != "json") Console.WriteLine($"DB path: {opt.DbPath}");
+        Console.WriteLine($"DB path: {opt.DbPath}");
         DbInitializer.EnsureCreated(opt);
 
         var products = new ProductRepository(new SqliteConnectionFactory(opt));
         var diff = await new ImportDiffer(new ProductSnapshotLookupAdapter(products)).DiffAsync(rows, parameters.MaxItems);
-        if (parameters.Format != "json")
-        {
-            Console.WriteLine("CSV Apply");
-            Console.WriteLine($"Path: {parameters.CsvPath}");
-            PrintErrors(parse.Errors, 10);
-            PrintImportAnalysis(analysis);
-        }
+        Console.WriteLine("CSV Apply");
+        Console.WriteLine($"Path: {parameters.CsvPath}");
+        PrintErrors(parse.Errors, 10);
+        PrintImportAnalysis(analysis);
         if (analysis.ValidRows == 0) throw new InvalidOperationException("No valid rows found.");
 
         try
         {
             var apply = await ApplyWithTransactionAsync(new SqliteConnectionFactory(opt), rows, parameters.Options, parameters.FailAfter);
             if (parameters.Format == "json")
-            {
-                var json = JsonProtocol.BuildApply(
-                    opt.DbPath,
-                    parameters.CsvPath,
-                    parameters.MaxItems,
-                    analysis,
-                    diff,
-                    parameters.Options,
-                    apply,
-                    false,
-                    JsonProtocol.FromParseErrors(parse.Errors));
-                WriteJsonOutput(json, parameters.OutPath);
-            }
+                Console.WriteLine(RenderApplyJson(diff, parameters.Options, apply, parameters.MaxItems, false));
             else
                 RenderApplyText(parameters.Options, diff, apply, parameters.MaxItems, false);
         }
-        catch (Exception ex)
+        catch
         {
             if (parameters.Format == "json")
-            {
-                var errors = new List<JsonProtocol.JsonError>(JsonProtocol.FromParseErrors(parse.Errors));
-                errors.Add(JsonProtocol.RuntimeError(ex.Message));
-                var json = JsonProtocol.BuildApply(
-                    opt.DbPath,
-                    parameters.CsvPath,
-                    parameters.MaxItems,
-                    analysis,
-                    diff,
-                    parameters.Options,
-                    new ImportApplyResult(),
-                    true,
-                    errors);
-                WriteJsonOutput(json, parameters.OutPath);
-            }
+                Console.WriteLine(RenderApplyJson(diff, parameters.Options, null, parameters.MaxItems, true));
             else
                 RenderApplyText(parameters.Options, diff, null, parameters.MaxItems, true);
             throw;
@@ -1176,21 +961,6 @@ internal static class Program
         Console.WriteLine($"NoChange: {apply.NoChange}");
         Console.WriteLine($"Skipped: {apply.Skipped}");
         Console.WriteLine($"ErrorsCount: {apply.ErrorsCount}");
-    }
-
-    private static void WriteJsonOutput(string json, string outputPath)
-    {
-        if (string.IsNullOrWhiteSpace(outputPath))
-        {
-            Console.WriteLine(json);
-            return;
-        }
-
-        var full = Path.GetFullPath(outputPath);
-        var dir = Path.GetDirectoryName(full);
-        if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(full, json, Encoding.UTF8);
-        Console.WriteLine($"Output: {full}");
     }
 
     private static string EscapeCsv(string text)

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using Win7POS.Core;
 
 namespace Win7POS.Data
 {
@@ -15,10 +16,8 @@ namespace Win7POS.Data
 
         public static PosDbOptions Default()
         {
-            var baseDir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var dir = Path.Combine(baseDir, "Win7POS");
-            Directory.CreateDirectory(dir);
-            return new PosDbOptions(Path.Combine(dir, "pos.db"));
+            AppPaths.EnsureDataDirectories();
+            return new PosDbOptions(AppPaths.DbPath);
         }
 
         public static PosDbOptions ForPath(string dbPath)
