@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
@@ -12,6 +13,7 @@ namespace Win7POS.Wpf.ViewModels
     public sealed class PosViewModel : ObservableObject
     {
         private readonly PosSession _session;
+        private bool _isSyncing;
 
         public ObservableCollection<CartLineVm> Cart { get; } = new ObservableCollection<CartLineVm>();
 
@@ -53,7 +55,7 @@ namespace Win7POS.Wpf.ViewModels
                 RaisePropertyChanged(nameof(Total));
                 PayCashCommand.RaiseCanExecuteChanged();
             }
-            catch (System.InvalidOperationException ex)
+            catch (PosException ex)
             {
                 MessageBox.Show(ex.Message);
             }
@@ -64,26 +66,72 @@ namespace Win7POS.Wpf.ViewModels
         private async Task PayCashAsync()
         {
             if (!Cart.Any()) return;
-            var sale = await _session.PayCashAsync();
-            SyncCartFromSession();
-            RaisePropertyChanged(nameof(Total));
-            PayCashCommand.RaiseCanExecuteChanged();
-            MessageBox.Show($"Vendita salvata: {sale.Code}");
+            try
+            {
+                var completed = await _session.PayCashAsync();
+                SyncCartFromSession();
+                RaisePropertyChanged(nameof(Total));
+                PayCashCommand.RaiseCanExecuteChanged();
+                MessageBox.Show($"Vendita salvata: {completed.Sale.Code}");
+            }
+            catch (PosException ex)
+            {
+                MessageBox.Show(ex.Message);
+            }
         }
 
         private void SyncCartFromSession()
         {
-            Cart.Clear();
-            foreach (var x in _session.Lines)
+            _isSyncing = true;
+            try
             {
-                Cart.Add(new CartLineVm
+                UnsubscribeCartLineEvents();
+                Cart.Clear();
+                foreach (var x in _session.Lines)
                 {
-                    ProductId = x.ProductId,
-                    Barcode = x.Barcode,
-                    Name = x.Name,
-                    Quantity = x.Quantity,
-                    UnitPrice = x.UnitPrice
-                });
+                    var vm = new CartLineVm
+                    {
+                        ProductId = x.ProductId,
+                        Barcode = x.Barcode,
+                        Name = x.Name,
+                        Quantity = x.Quantity,
+                        UnitPrice = x.UnitPrice
+                    };
+                    vm.PropertyChanged += OnCartLinePropertyChanged;
+                    Cart.Add(vm);
+                }
+            }
+            finally
+            {
+                _isSyncing = false;
+            }
+        }
+
+        private void UnsubscribeCartLineEvents()
+        {
+            foreach (var oldLine in Cart)
+                oldLine.PropertyChanged -= OnCartLinePropertyChanged;
+        }
+
+        private void OnCartLinePropertyChanged(object sender, PropertyChangedEventArgs e)
+        {
+            if (_isSyncing) return;
+            if (e.PropertyName != nameof(CartLineVm.Quantity)) return;
+
+            var line = sender as CartLineVm;
+            if (line == null) return;
+
+            try
+            {
+                _session.SetQuantity(line.Barcode, line.Quantity);
+                SyncCartFromSession();
+                RaisePropertyChanged(nameof(Total));
+                PayCashCommand.RaiseCanExecuteChanged();
+            }
+            catch (PosException ex)
+            {
+                MessageBox.Show(ex.Message);
+                SyncCartFromSession();
             }
         }
     }

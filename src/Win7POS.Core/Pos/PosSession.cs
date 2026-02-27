@@ -9,6 +9,7 @@ namespace Win7POS.Core.Pos
 {
     public sealed class PosSession
     {
+        private const int MaxQuantity = 100000;
         private readonly IProductLookup _productLookup;
         private readonly ISalesStore _salesStore;
         private readonly List<PosLine> _lines = new List<PosLine>();
@@ -28,7 +29,7 @@ namespace Win7POS.Core.Pos
             if (code.Length == 0) return;
 
             var product = await _productLookup.GetByBarcodeAsync(code);
-            if (product == null) throw new InvalidOperationException($"Prodotto non trovato: {code}");
+            if (product == null) throw new PosException(PosErrorCode.ProductNotFound, code);
 
             var existing = _lines.FirstOrDefault(x => x.Barcode == product.Barcode);
             if (existing != null)
@@ -47,9 +48,31 @@ namespace Win7POS.Core.Pos
             });
         }
 
-        public async Task<Sale> PayCashAsync()
+        public void SetQuantity(string barcode, int quantity)
         {
-            if (_lines.Count == 0) throw new InvalidOperationException("Cart is empty.");
+            var code = (barcode ?? "").Trim();
+            if (code.Length == 0) throw new PosException(PosErrorCode.InvalidBarcode);
+            if (quantity < 0 || quantity > MaxQuantity) throw new PosException(PosErrorCode.InvalidQuantity, quantity.ToString());
+
+            var line = _lines.FirstOrDefault(x => x.Barcode == code);
+            if (line == null) throw new PosException(PosErrorCode.ProductNotFound, code);
+
+            if (quantity == 0)
+            {
+                _lines.Remove(line);
+                return;
+            }
+
+            line.Quantity = quantity;
+        }
+
+        public void RemoveLine(string barcode) => SetQuantity(barcode, 0);
+
+        public void Clear() => _lines.Clear();
+
+        public async Task<SaleCompleted> PayCashAsync()
+        {
+            if (_lines.Count == 0) throw new PosException(PosErrorCode.EmptyCart);
 
             var total = Total;
             var sale = new Sale
@@ -68,13 +91,14 @@ namespace Win7POS.Core.Pos
                 Barcode = x.Barcode,
                 Name = x.Name,
                 Quantity = x.Quantity,
-                UnitPrice = x.UnitPrice
+                UnitPrice = x.UnitPrice,
+                LineTotal = x.LineTotal
             }).ToList();
 
             await _salesStore.InsertSaleAsync(sale, saleLines);
-            _lines.Clear();
+            Clear();
 
-            return sale;
+            return new SaleCompleted(sale, saleLines);
         }
     }
 }

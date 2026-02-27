@@ -20,5 +20,15 @@ namespace Win7POS.Data
             Directory.CreateDirectory(dir);
             return new PosDbOptions(Path.Combine(dir, "pos.db"));
         }
+
+        public static PosDbOptions ForPath(string dbPath)
+        {
+            if (string.IsNullOrWhiteSpace(dbPath)) throw new ArgumentException("dbPath is empty");
+            var fullPath = Path.GetFullPath(dbPath);
+            var dir = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrWhiteSpace(dir))
+                Directory.CreateDirectory(dir);
+            return new PosDbOptions(fullPath);
+        }
     }
 }
