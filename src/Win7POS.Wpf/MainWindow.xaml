@@ -1,48 +1,28 @@
 <Window x:Class="Win7POS.Wpf.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:vm="clr-namespace:Win7POS.Wpf.ViewModels"
+        xmlns:pos="clr-namespace:Win7POS.Wpf.Pos"
+        xmlns:imp="clr-namespace:Win7POS.Wpf.Import"
+        xmlns:core="clr-namespace:Win7POS.Core;assembly=Win7POS.Core"
         Title="Win7POS" Height="650" Width="900">
-    <Window.DataContext>
-        <vm:PosViewModel/>
-    </Window.DataContext>
-
     <Grid Margin="12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal" Grid.Row="0">
-            <TextBlock Text="Barcode:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <TextBox x:Name="BarcodeBox"
-                     Width="320"
-                     Text="{Binding BarcodeInput, UpdateSourceTrigger=PropertyChanged}"
-                     KeyDown="BarcodeBox_KeyDown"/>
-            <TextBlock Text="(Invio per aggiungere)" VerticalAlignment="Center" Margin="8,0,0,0"/>
-        </StackPanel>
+        <TabControl Grid.Row="0">
+            <TabItem Header="POS">
+                <pos:PosView/>
+            </TabItem>
+            <TabItem Header="Import">
+                <imp:ImportView/>
+            </TabItem>
+        </TabControl>
 
-        <DataGrid Grid.Row="1" Margin="0,12,0,12"
-                  ItemsSource="{Binding Cart}"
-                  AutoGenerateColumns="False"
-                  CanUserAddRows="False"
-                  IsReadOnly="False">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" Width="*"/>
-                <DataGridTextColumn Header="Nome" Binding="{Binding Name}" Width="2*"/>
-                <DataGridTextColumn Header="Qta" Binding="{Binding Quantity}" Width="80"/>
-                <DataGridTextColumn Header="Prezzo" Binding="{Binding UnitPrice}" Width="100"/>
-                <DataGridTextColumn Header="Totale riga" Binding="{Binding LineTotal}" Width="120" IsReadOnly="True"/>
-            </DataGrid.Columns>
-        </DataGrid>
-
-        <DockPanel Grid.Row="2">
-            <TextBlock DockPanel.Dock="Left" FontSize="20" FontWeight="Bold"
-                       Text="{Binding Total, StringFormat=Totale: {0}}" />
-            <Button DockPanel.Dock="Right" Width="180" Height="44" Margin="12,0,0,0"
-                    Content="Paga Contanti"
-                    Command="{Binding PayCashCommand}"/>
-        </DockPanel>
+        <StatusBar Grid.Row="1">
+            <TextBlock Text="DB: "/>
+            <TextBlock Text="{x:Static core:AppPaths.DbPath}"/>
+        </StatusBar>
     </Grid>
 </Window>

@@ -340,7 +340,7 @@ internal static class Program
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
         var dbPath = Path.Combine(tempRoot, $"selftest_{Guid.NewGuid():N}.db");
-        var opt = PosDbOptions.ForPath(dbPath);
+        var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
         Console.WriteLine($"DB path: {opt.DbPath}");
         var dbDir = Path.GetDirectoryName(opt.DbPath);
         if (string.IsNullOrWhiteSpace(dbDir))

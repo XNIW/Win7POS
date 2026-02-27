@@ -1,0 +1,127 @@
+<UserControl x:Class="Win7POS.Wpf.Pos.PosView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="720" d:DesignWidth="1100">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="180"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBox x:Name="BarcodeBox"
+                     Grid.Column="0"
+                     MinHeight="30"
+                     Text="{Binding BarcodeInput, UpdateSourceTrigger=PropertyChanged}">
+                <TextBox.InputBindings>
+                    <KeyBinding Key="Enter" Command="{Binding AddBarcodeCommand}"/>
+                </TextBox.InputBindings>
+            </TextBox>
+            <Button Grid.Column="1" Margin="8,0,0,0" MinWidth="90" Content="Add"
+                    Command="{Binding AddBarcodeCommand}"/>
+            <Button Grid.Column="2" Margin="8,0,0,0" MinWidth="90" Content="Pay"
+                    Command="{Binding PayCommand}"/>
+            <Button Grid.Column="3" Margin="8,0,0,0" MinWidth="130" Content="Receipt preview"
+                    Command="{Binding ReceiptPreviewCommand}"/>
+            <CheckBox Grid.Column="4" Margin="12,0,0,0" VerticalAlignment="Center"
+                      Content="Use 42 cols" IsChecked="{Binding UseReceipt42}"/>
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="0,0,0,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*"/>
+                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="2*"/>
+            </Grid.ColumnDefinitions>
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+                    <Button MinWidth="70" Margin="0,0,8,0" Content="Qty +" Command="{Binding IncreaseQtyCommand}"/>
+                    <Button MinWidth="70" Margin="0,0,8,0" Content="Qty -" Command="{Binding DecreaseQtyCommand}"/>
+                    <Button MinWidth="90" Content="Remove line" Command="{Binding RemoveLineCommand}"/>
+                </StackPanel>
+                <DataGrid Grid.Row="1"
+                          ItemsSource="{Binding CartItems}"
+                          SelectedItem="{Binding SelectedCartItem}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*"/>
+                        <DataGridTextColumn Header="Qty" Binding="{Binding Quantity}" Width="80"/>
+                        <DataGridTextColumn Header="Price" Binding="{Binding UnitPrice}" Width="100"/>
+                        <DataGridTextColumn Header="Total" Binding="{Binding LineTotal}" Width="120"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+
+            <GroupBox Grid.Column="2" Header="Ultime vendite">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <DataGrid Grid.Row="0"
+                              ItemsSource="{Binding RecentSales}"
+                              SelectedItem="{Binding SelectedRecentSale}"
+                              AutoGenerateColumns="False"
+                              IsReadOnly="True"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="SaleNo" Binding="{Binding SaleCode}" Width="*"/>
+                            <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" Width="*"/>
+                            <DataGridTextColumn Header="Total" Binding="{Binding Total}" Width="80"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
+                        <Button MinWidth="110" Margin="0,0,8,0" Content="Reload" Command="{Binding LoadRecentSalesCommand}"/>
+                        <Button MinWidth="140" Content="Ristampa (preview)" Command="{Binding ReprintPreviewCommand}"/>
+                    </StackPanel>
+                </Grid>
+            </GroupBox>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Margin="0,0,0,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="1" Margin="0,0,16,0" VerticalAlignment="Center"
+                           Text="{Binding Subtotal, StringFormat=Subtotal: {0}}"/>
+                <TextBlock Grid.Column="2" FontSize="18" FontWeight="Bold" VerticalAlignment="Center"
+                           Text="{Binding Total, StringFormat=Total: {0}}"/>
+            </Grid>
+            <TextBlock Margin="0,4,0,0" VerticalAlignment="Center" Foreground="DimGray"
+                       Text="{Binding StatusMessage}"/>
+        </StackPanel>
+
+        <GroupBox Grid.Row="3" Header="Receipt Preview">
+            <TextBox Text="{Binding ReceiptPreview}"
+                     IsReadOnly="True"
+                     TextWrapping="NoWrap"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     FontFamily="Consolas"/>
+        </GroupBox>
+    </Grid>
+</UserControl>

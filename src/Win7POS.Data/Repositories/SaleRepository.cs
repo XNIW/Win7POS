@@ -66,5 +66,25 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal);
             );
             return rows.ToList();
         }
+
+        public async Task<Sale> GetByIdAsync(long saleId)
+        {
+            using var conn = _factory.Open();
+            return await conn.QuerySingleOrDefaultAsync<Sale>(
+                "SELECT id, code, createdAt, total, paidCash, paidCard, change FROM sales WHERE id = @saleId",
+                new { saleId });
+        }
+
+        public async Task<IReadOnlyList<SaleLine>> GetLinesBySaleIdAsync(long saleId)
+        {
+            using var conn = _factory.Open();
+            var rows = await conn.QueryAsync<SaleLine>(
+                @"SELECT id, saleId, productId, barcode, name, quantity, unitPrice, lineTotal
+                  FROM sale_lines
+                  WHERE saleId = @saleId
+                  ORDER BY id ASC",
+                new { saleId });
+            return rows.ToList();
+        }
     }
 }
