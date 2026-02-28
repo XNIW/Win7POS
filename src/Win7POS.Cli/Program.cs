@@ -391,9 +391,10 @@ internal static class Program
 
         var originalSaleId = completed.Sale.Id;
         var returnableBefore = await sales.GetReturnableLinesAsync(originalSaleId);
-        Assert(returnableBefore.Count >= 2, "Expected at least 2 lines for refund selftest.");
-        var partialTarget = returnableBefore.FirstOrDefault(x => x.RemainingQty >= 1);
-        Assert(partialTarget != null, "Expected one returnable line for partial refund.");
+        Assert(returnableBefore != null && returnableBefore.Count >= 1, "Expected at least 1 line for refund selftest.");
+        var line0 = returnableBefore[0];
+        var qtyPartial = Math.Min(1, line0.RemainingQty);
+        Assert(qtyPartial >= 1, "No remaining qty to refund.");
 
         var partialReq = new RefundCreateRequest
         {
@@ -401,23 +402,23 @@ internal static class Program
             IsFullVoid = false,
             Payment = new RefundPaymentInfo
             {
-                CashMinor = partialTarget.UnitPrice,
+                CashMinor = line0.UnitPrice * qtyPartial,
                 CardMinor = 0
             },
             Reason = "SELFTEST_PARTIAL"
         };
         partialReq.Lines.Add(new RefundLineRequest
         {
-            OriginalLineId = partialTarget.OriginalLineId,
-            Barcode = partialTarget.Barcode,
-            Name = partialTarget.Name,
-            UnitPriceMinor = partialTarget.UnitPrice,
-            QtyToRefund = 1
+            OriginalLineId = line0.OriginalLineId,
+            Barcode = line0.Barcode,
+            Name = line0.Name,
+            UnitPriceMinor = line0.UnitPrice,
+            QtyToRefund = qtyPartial
         });
         var partialRefund = await CreateRefundForSelfTestAsync(factory, sales, partialReq);
         Assert(partialRefund.TotalMinor < 0, "Partial refund total should be negative.");
-        var refundedQtyAfterPartial = await sales.GetRefundedQtyAsync(originalSaleId, partialTarget.OriginalLineId);
-        Assert(refundedQtyAfterPartial == 1, "Expected refunded qty == 1 after partial refund.");
+        var refundedQtyAfterPartial = await sales.GetRefundedQtyAsync(originalSaleId, line0.OriginalLineId);
+        Assert(refundedQtyAfterPartial == qtyPartial, "Expected refunded qty == qtyPartial after partial refund.");
         Console.WriteLine("Refund partial: PASS");
 
         try
@@ -428,18 +429,18 @@ internal static class Program
                 IsFullVoid = false,
                 Payment = new RefundPaymentInfo
                 {
-                    CashMinor = partialTarget.UnitPrice * (partialTarget.RemainingQty + 1),
+                    CashMinor = line0.UnitPrice * (line0.RemainingQty + 1),
                     CardMinor = 0
                 },
                 Reason = "SELFTEST_OVER"
             };
             overReq.Lines.Add(new RefundLineRequest
             {
-                OriginalLineId = partialTarget.OriginalLineId,
-                Barcode = partialTarget.Barcode,
-                Name = partialTarget.Name,
-                UnitPriceMinor = partialTarget.UnitPrice,
-                QtyToRefund = partialTarget.RemainingQty + 1
+                OriginalLineId = line0.OriginalLineId,
+                Barcode = line0.Barcode,
+                Name = line0.Name,
+                UnitPriceMinor = line0.UnitPrice,
+                QtyToRefund = line0.RemainingQty + 1
             });
             await CreateRefundForSelfTestAsync(factory, sales, overReq);
             Assert(false, "Expected over-remaining refund to fail.");
