@@ -390,10 +390,10 @@ internal static class Program
         foreach (var s in last) Console.WriteLine($"- {s.Id} {s.Code} total={s.Total} at={s.CreatedAt}");
 
         var originalSaleId = completed.Sale.Id;
-        var returnableBefore = await sales.GetReturnableLinesAsync(originalSaleId);
-        Assert(returnableBefore != null && returnableBefore.Count >= 1, "Expected at least 1 line for refund selftest.");
-        var line0 = returnableBefore[0];
-        var qtyPartial = Math.Min(1, line0.RemainingQty);
+        var soldLines = await sales.GetLinesBySaleIdAsync(originalSaleId);
+        Assert(soldLines != null && soldLines.Count >= 1, "Sale has 0 lines; cannot run refund selftest.");
+        var line0 = soldLines[0];
+        var qtyPartial = Math.Min(1, line0.Quantity);
         Assert(qtyPartial >= 1, "No remaining qty to refund.");
 
         var partialReq = new RefundCreateRequest
@@ -409,7 +409,7 @@ internal static class Program
         };
         partialReq.Lines.Add(new RefundLineRequest
         {
-            OriginalLineId = line0.OriginalLineId,
+            OriginalLineId = line0.Id,
             Barcode = line0.Barcode,
             Name = line0.Name,
             UnitPriceMinor = line0.UnitPrice,
@@ -429,18 +429,18 @@ internal static class Program
                 IsFullVoid = false,
                 Payment = new RefundPaymentInfo
                 {
-                    CashMinor = line0.UnitPrice * (line0.RemainingQty + 1),
+                    CashMinor = line0.UnitPrice * (line0.Quantity - refundedQtyAfterPartial + 1),
                     CardMinor = 0
                 },
                 Reason = "SELFTEST_OVER"
             };
             overReq.Lines.Add(new RefundLineRequest
             {
-                OriginalLineId = line0.OriginalLineId,
+                OriginalLineId = line0.Id,
                 Barcode = line0.Barcode,
                 Name = line0.Name,
                 UnitPriceMinor = line0.UnitPrice,
-                QtyToRefund = line0.RemainingQty + 1
+                QtyToRefund = line0.Quantity - refundedQtyAfterPartial + 1
             });
             await CreateRefundForSelfTestAsync(factory, sales, overReq);
             Assert(false, "Expected over-remaining refund to fail.");
@@ -450,8 +450,14 @@ internal static class Program
             Console.WriteLine("Refund over-remaining check: PASS");
         }
 
-        var returnableForVoid = await sales.GetReturnableLinesAsync(originalSaleId);
-        var remainingTotal = returnableForVoid.Sum(x => x.RemainingQty * x.UnitPrice);
+        var remainingTotal = 0;
+        foreach (var line in soldLines)
+        {
+            var refunded = await sales.GetRefundedQtyAsync(originalSaleId, line.Id);
+            var remaining = line.Quantity - refunded;
+            if (remaining > 0)
+                remainingTotal += remaining * line.UnitPrice;
+        }
         Assert(remainingTotal > 0, "Expected remaining refundable amount > 0 before full void.");
         var fullVoidReq = new RefundCreateRequest
         {
@@ -727,27 +733,34 @@ internal static class Program
         if (originalSale == null) throw new InvalidOperationException("Original sale not found.");
         if (originalSale.Kind != (int)SaleKind.Sale) throw new InvalidOperationException("Only normal sale can be refunded.");
 
-        var returnable = await sales.GetReturnableLinesAsync(req.OriginalSaleId);
-        if (returnable.Count == 0) throw new InvalidOperationException("No returnable lines.");
+        var soldLines = await sales.GetLinesBySaleIdAsync(req.OriginalSaleId);
+        if (soldLines == null || soldLines.Count == 0) throw new InvalidOperationException("No sold lines.");
 
         if (req.IsFullVoid && await sales.IsVoidedAsync(req.OriginalSaleId))
             throw new InvalidOperationException("Sale already voided.");
 
-        var map = returnable.ToDictionary(x => x.OriginalLineId, x => x);
+        var map = new Dictionary<long, (SaleLine line, int remainingQty)>();
+        foreach (var sold in soldLines)
+        {
+            var refundedQty = await sales.GetRefundedQtyAsync(req.OriginalSaleId, sold.Id);
+            var remaining = sold.Quantity - refundedQty;
+            if (remaining < 0) remaining = 0;
+            map[sold.Id] = (sold, remaining);
+        }
         var selected = new List<RefundLineRequest>();
 
         if (req.IsFullVoid)
         {
-            foreach (var x in returnable)
+            foreach (var x in map.Values)
             {
-                if (x.RemainingQty <= 0) continue;
+                if (x.remainingQty <= 0) continue;
                 selected.Add(new RefundLineRequest
                 {
-                    OriginalLineId = x.OriginalLineId,
-                    Barcode = x.Barcode ?? string.Empty,
-                    Name = x.Name ?? string.Empty,
-                    UnitPriceMinor = x.UnitPrice,
-                    QtyToRefund = x.RemainingQty
+                    OriginalLineId = x.line.Id,
+                    Barcode = x.line.Barcode ?? string.Empty,
+                    Name = x.line.Name ?? string.Empty,
+                    UnitPriceMinor = x.line.UnitPrice,
+                    QtyToRefund = x.remainingQty
                 });
             }
         }
@@ -758,15 +771,15 @@ internal static class Program
                 if (line == null || line.QtyToRefund <= 0) continue;
                 if (!map.TryGetValue(line.OriginalLineId, out var source))
                     throw new InvalidOperationException("Refund line not found in original sale.");
-                if (line.QtyToRefund > source.RemainingQty)
+                if (line.QtyToRefund > source.remainingQty)
                     throw new InvalidOperationException("Refund quantity exceeds remaining quantity.");
 
                 selected.Add(new RefundLineRequest
                 {
-                    OriginalLineId = source.OriginalLineId,
-                    Barcode = source.Barcode ?? string.Empty,
-                    Name = source.Name ?? string.Empty,
-                    UnitPriceMinor = source.UnitPrice,
+                    OriginalLineId = source.line.Id,
+                    Barcode = source.line.Barcode ?? string.Empty,
+                    Name = source.line.Name ?? string.Empty,
+                    UnitPriceMinor = source.line.UnitPrice,
                     QtyToRefund = line.QtyToRefund
                 });
             }
