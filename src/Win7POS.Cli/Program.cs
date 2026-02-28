@@ -784,7 +784,7 @@ internal static class Program
 
         var refundSale = new Sale
         {
-            Code = SaleCodeGenerator.NewCode("R"),
+            Code = NewSaleCode(),
             CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
             Kind = (int)SaleKind.Refund,
             RelatedSaleId = req.OriginalSaleId,
@@ -811,10 +811,7 @@ internal static class Program
         {
             try
             {
-                var refundSaleId = await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change)
-VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change);
-SELECT last_insert_rowid();", refundSale, tx);
+                var refundSaleId = await InsertRefundSaleAsync(conn, tx, refundSale).ConfigureAwait(false);
                 refundSale.Id = refundSaleId;
 
                 foreach (var line in refundLines)
@@ -862,6 +859,42 @@ SELECT last_insert_rowid();", refundSale, tx);
             Receipt32 = receipt32,
             TotalMinor = refundSale.Total
         };
+    }
+
+    private static async Task<long> InsertRefundSaleAsync(SqliteConnection conn, SqliteTransaction tx, Sale sale)
+    {
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = @"
+INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change)
+VALUES(@code, @createdAt, @kind, @relatedSaleId, @reason, @total, @paidCash, @paidCard, @change);
+SELECT last_insert_rowid();";
+
+            cmd.Parameters.AddWithValue("@code", (object)sale.Code ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@createdAt", sale.CreatedAt);
+            cmd.Parameters.AddWithValue("@kind", sale.Kind);
+            cmd.Parameters.AddWithValue("@relatedSaleId", (object?)sale.RelatedSaleId ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@reason", (object?)sale.Reason ?? DBNull.Value);
+            cmd.Parameters.AddWithValue("@total", sale.Total);
+            cmd.Parameters.AddWithValue("@paidCash", sale.PaidCash);
+            cmd.Parameters.AddWithValue("@paidCard", sale.PaidCard);
+            cmd.Parameters.AddWithValue("@change", sale.Change);
+
+            var obj = await cmd.ExecuteScalarAsync().ConfigureAwait(false);
+            return ToInt64(obj);
+        }
+    }
+
+    private static string NewSaleCode()
+    {
+        return Guid.NewGuid().ToString("N").Substring(0, 12).ToUpperInvariant();
+    }
+
+    private static long ToInt64(object value)
+    {
+        if (value == null || value == DBNull.Value) return 0;
+        return Convert.ToInt64(value, CultureInfo.InvariantCulture);
     }
 
     private static async Task<CsvParseResult> LoadCsvAsync(string csvPath)

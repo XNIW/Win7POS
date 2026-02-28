@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Printing;
 using System.IO;
@@ -10,98 +9,92 @@ namespace Win7POS.Wpf.Printing
 {
     public sealed class WindowsSpoolerReceiptPrinter : IReceiptPrinter
     {
-        private readonly object _printSync = new object();
-        private int _lineIndex;
-
-        public Task PrintAsync(string receiptText, ReceiptPrintOptions opt)
+        public async Task PrintAsync(string receiptText, ReceiptPrintOptions opt)
         {
-            return Task.Run(() =>
+            if (receiptText == null) throw new ArgumentNullException(nameof(receiptText));
+            if (opt == null) throw new ArgumentNullException(nameof(opt));
+
+            // 1) Optional: save copy to file (debug / no printer)
+            if (opt.SaveCopyToFile && !string.IsNullOrWhiteSpace(opt.OutputPath))
             {
-                var text = receiptText ?? string.Empty;
-                var options = opt ?? new ReceiptPrintOptions();
+                var dir = Path.GetDirectoryName(opt.OutputPath);
+                if (!string.IsNullOrWhiteSpace(dir))
+                    Directory.CreateDirectory(dir);
 
-                if (options.SaveCopyToFile && !string.IsNullOrWhiteSpace(options.OutputPath))
-                {
-                    var dir = Path.GetDirectoryName(options.OutputPath);
-                    if (!string.IsNullOrWhiteSpace(dir))
-                        Directory.CreateDirectory(dir);
-                    File.WriteAllText(options.OutputPath, text);
-                }
-
-                try
-                using (var font = CreateFont())
-                {
-                    PrintOnce(text, options, font);
-                }
-                catch (Exception ex)
-                {
-                    Trace.WriteLine("Receipt print failed, retrying once: " + ex);
-                    Thread.Sleep(300);
-                    using (var font = CreateFont())
-                    {
-                        PrintOnce(text, options, font);
-                    }
-                }
-            });
-        }
-
-        private void PrintOnce(string text, ReceiptPrintOptions options, Font font)
-        {
-            var lines = (text ?? string.Empty).Replace("\r\n", "\n").Split('\n');
-
-            lock (_printSync)
-            {
-                _lineIndex = 0;
-                using (var doc = new PrintDocument())
-                {
-                    if (!string.IsNullOrWhiteSpace(options.PrinterName))
-                        doc.PrinterSettings.PrinterName = options.PrinterName;
-
-                    if (options.Copies > 0 && options.Copies <= short.MaxValue)
-                        doc.PrinterSettings.Copies = (short)options.Copies;
-
-                    doc.DocumentName = "Win7POS Receipt";
-                    doc.PrintPage += (sender, e) =>
-                    {
-                        var bounds = e.MarginBounds;
-                        var y = bounds.Top;
-                        var lineHeight = (int)Math.Ceiling(font.GetHeight(e.Graphics));
-                        if (lineHeight < 1) lineHeight = 1;
-
-                        while (_lineIndex < lines.Length && y + lineHeight <= bounds.Bottom)
-                        {
-                            var line = lines[_lineIndex] ?? string.Empty;
-                            e.Graphics.DrawString(line, font, Brushes.Black, bounds.Left, y);
-                            y += lineHeight;
-                            _lineIndex += 1;
-                        }
-
-                        if (_lineIndex < lines.Length)
-                        {
-                            e.HasMorePages = true;
-                        }
-                        else
-                        {
-                            e.HasMorePages = false;
-                            _lineIndex = 0;
-                        }
-                    };
-
-                    doc.Print();
-                    _lineIndex = 0;
-                }
+                File.WriteAllText(opt.OutputPath, receiptText);
             }
+
+            // 2) Print via Windows spooler driver
+            await Task.Run(() =>
+            {
+                TryPrintWithRetry(receiptText, opt);
+            }).ConfigureAwait(false);
         }
 
-        private static Font CreateFont()
+        private static void TryPrintWithRetry(string receiptText, ReceiptPrintOptions opt)
         {
             try
             {
-                return new Font("Consolas", 9f, FontStyle.Regular, GraphicsUnit.Point);
+                PrintOnce(receiptText, opt);
             }
             catch
             {
-                return new Font("Courier New", 9f, FontStyle.Regular, GraphicsUnit.Point);
+                // light retry once
+                Thread.Sleep(300);
+                PrintOnce(receiptText, opt);
+            }
+        }
+
+        private static void PrintOnce(string receiptText, ReceiptPrintOptions opt)
+        {
+            var lines = receiptText.Replace("\r\n", "\n").Split('\n');
+            var lineIndex = 0;
+
+            using (var doc = new PrintDocument())
+            {
+                // default printer: do NOT set PrinterName if empty
+                if (!string.IsNullOrWhiteSpace(opt.PrinterName))
+                    doc.PrinterSettings.PrinterName = opt.PrinterName;
+
+                doc.PrinterSettings.Copies = (short)Math.Max(1, opt.Copies);
+
+                Font font = null;
+                try
+                {
+                    // prefer monospace
+                    try { font = new Font("Consolas", 10f); }
+                    catch { font = new Font("Courier New", 10f); }
+
+                    doc.PrintPage += (s, e) =>
+                    {
+                        float y = e.MarginBounds.Top;
+                        float lineHeight = font.GetHeight(e.Graphics);
+
+                        while (lineIndex < lines.Length)
+                        {
+                            if (y + lineHeight > e.MarginBounds.Bottom)
+                                break;
+
+                            e.Graphics.DrawString(lines[lineIndex], font, Brushes.Black, e.MarginBounds.Left, y);
+                            y += lineHeight;
+                            lineIndex++;
+                        }
+
+                        e.HasMorePages = lineIndex < lines.Length;
+                    };
+
+                    doc.EndPrint += (s, e) =>
+                    {
+                        if (font != null) font.Dispose();
+                        font = null;
+                    };
+
+                    doc.Print();
+                }
+                finally
+                {
+                    if (font != null) font.Dispose();
+                }
             }
         }
     }
