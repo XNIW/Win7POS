@@ -64,10 +64,11 @@ namespace Win7POS.Wpf
                     return;
                 }
 
-                var valid = await _cashierService.VerifyPinAsync(prompt.Pin).ConfigureAwait(true);
-                if (!valid)
+                var result = await _cashierService.VerifyPinWithLockoutAsync(prompt.Pin).ConfigureAwait(true);
+                if (!result.Ok)
                 {
-                    MessageBox.Show(this, "PIN errato.", "PIN", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    var message = string.IsNullOrWhiteSpace(result.ErrorMessage) ? "PIN errato." : result.ErrorMessage;
+                    MessageBox.Show(this, message, "PIN", MessageBoxButton.OK, MessageBoxImage.Warning);
                     RevertCashierModeCheck();
                     return;
                 }
