@@ -131,8 +131,14 @@ namespace Win7POS.Wpf.Import
             if (!File.Exists(csvPath))
                 throw new FileNotFoundException("CSV file not found.", csvPath);
 
-            var content = await File.ReadAllTextAsync(csvPath, Encoding.UTF8).ConfigureAwait(false);
+            var content = await ReadAllTextCompatAsync(csvPath).ConfigureAwait(false);
             return CsvImportParser.Parse(content);
+        }
+
+        private static async Task<string> ReadAllTextCompatAsync(string path)
+        {
+            using (var sr = new StreamReader(path, Encoding.UTF8))
+                return await sr.ReadToEndAsync().ConfigureAwait(false);
         }
 
         private static PosDbOptions ResolveDbOptions(string dbPath)

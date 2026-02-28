@@ -582,10 +582,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     try
                     {
-                        var refundSaleId = await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change)
-VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change);
-SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
+                        var refundSaleId = await ExecuteInsertRefundSaleIdAsync(conn, tx, refundSale).ConfigureAwait(false);
                         refundSale.Id = refundSaleId;
 
                         foreach (var line in refundLines)
@@ -851,6 +848,32 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
         {
             var baseText = BuildReceiptPreview(completed, use42);
             return "RESO/STORNO" + Environment.NewLine + baseText;
+        }
+
+        private static async Task<long> ExecuteInsertRefundSaleIdAsync(SqliteConnection conn, SqliteTransaction tx, Sale refundSale)
+        {
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.Transaction = tx;
+                cmd.CommandText = @"
+INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change)
+VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change);
+SELECT last_insert_rowid();";
+
+                cmd.Parameters.AddWithValue("@Code", (object)refundSale.Code ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@CreatedAt", refundSale.CreatedAt);
+                cmd.Parameters.AddWithValue("@Kind", refundSale.Kind);
+                cmd.Parameters.AddWithValue("@RelatedSaleId", (object?)refundSale.RelatedSaleId ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Reason", (object?)refundSale.Reason ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@Total", refundSale.Total);
+                cmd.Parameters.AddWithValue("@PaidCash", refundSale.PaidCash);
+                cmd.Parameters.AddWithValue("@PaidCard", refundSale.PaidCard);
+                cmd.Parameters.AddWithValue("@Change", refundSale.Change);
+
+                var obj = await cmd.ExecuteScalarAsync().ConfigureAwait(false);
+                if (obj == null || obj == DBNull.Value) return 0;
+                return Convert.ToInt64(obj, CultureInfo.InvariantCulture);
+            }
         }
 
         private async Task<PosPrinterSettings> ReadPrinterSettingsNoLockAsync()
