@@ -417,7 +417,7 @@ internal static class Program
         });
         var partialRefund = await CreateRefundForSelfTestAsync(factory, sales, partialReq);
         Assert(partialRefund.TotalMinor < 0, "Partial refund total should be negative.");
-        var refundedQtyAfterPartial = await sales.GetRefundedQtyAsync(originalSaleId, line0.OriginalLineId);
+        var refundedQtyAfterPartial = await sales.GetRefundedQtyAsync(originalSaleId, line0.Id);
         Assert(refundedQtyAfterPartial == qtyPartial, "Expected refunded qty == qtyPartial after partial refund.");
         Console.WriteLine("Refund partial: PASS");
 
