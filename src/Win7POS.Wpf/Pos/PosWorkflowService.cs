@@ -16,6 +16,7 @@ using Win7POS.Data;
 using Win7POS.Data.Adapters;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Printing;
 
 namespace Win7POS.Wpf.Pos
 {
@@ -36,6 +37,8 @@ namespace Win7POS.Wpf.Pos
         private readonly DbMaintenanceRepository _dbMaintenance;
         private readonly PosSession _session;
         private readonly PosDbOptions _options;
+        private readonly SqliteConnectionFactory _factory;
+        private readonly IReceiptPrinter _receiptPrinter = new WindowsSpoolerReceiptPrinter();
 
         private SaleCompleted _lastCompletedSale;
 
@@ -44,11 +47,11 @@ namespace Win7POS.Wpf.Pos
             _options = PosDbOptions.Default();
             DbInitializer.EnsureCreated(_options);
 
-            var factory = new SqliteConnectionFactory(_options);
-            _products = new ProductRepository(factory);
-            _sales = new SaleRepository(factory);
-            _settings = new SettingsRepository(factory);
-            _dbMaintenance = new DbMaintenanceRepository(factory);
+            _factory = new SqliteConnectionFactory(_options);
+            _products = new ProductRepository(_factory);
+            _sales = new SaleRepository(_factory);
+            _settings = new SettingsRepository(_factory);
+            _dbMaintenance = new DbMaintenanceRepository(_factory);
             _session = new PosSession(new DataProductLookup(_products), new DataSalesStore(_sales));
         }
 
@@ -85,23 +88,7 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var printerName = await _settings.GetStringAsync(KeyPrinterName).ConfigureAwait(false) ?? string.Empty;
-                var copies = await _settings.GetIntAsync(KeyPrinterCopies).ConfigureAwait(false) ?? 1;
-                if (copies < 1) copies = 1;
-                var autoPrint = await _settings.GetBoolAsync(KeyAutoPrint).ConfigureAwait(false);
-                var saveCopy = await _settings.GetBoolAsync(KeySaveReceiptCopy).ConfigureAwait(false);
-                var outputDir = await _settings.GetStringAsync(KeyReceiptOutputDirectory).ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(outputDir))
-                    outputDir = Path.Combine(AppPaths.DataDirectory, "receipts");
-
-                return new PosPrinterSettings
-                {
-                    PrinterName = printerName,
-                    Copies = copies,
-                    AutoPrint = autoPrint ?? true,
-                    SaveCopyToFile = saveCopy ?? false,
-                    OutputDirectory = outputDir
-                };
+                return await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
             }
             finally
             {
@@ -234,12 +221,14 @@ namespace Win7POS.Wpf.Pos
                 var path = Path.Combine(AppPaths.ExportsDirectory, fileName);
                 using (var sw = new StreamWriter(path, false, Encoding.UTF8))
                 {
-                    await sw.WriteLineAsync("saleId;code;createdAt;total;paidCash;paidCard;change").ConfigureAwait(false);
+                    await sw.WriteLineAsync("saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change").ConfigureAwait(false);
                     foreach (var s in rows)
                     {
                         await sw.WriteLineAsync(
                             s.Id + ";" +
                             EscapeCsv(s.Code) + ";" +
+                            s.Kind + ";" +
+                            (s.RelatedSaleId.HasValue ? s.RelatedSaleId.Value.ToString(CultureInfo.InvariantCulture) : string.Empty) + ";" +
                             s.CreatedAt + ";" +
                             s.Total + ";" +
                             s.PaidCash + ";" +
@@ -443,6 +432,223 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        public async Task<RefundPreviewModel> BuildRefundPreviewAsync(long originalSaleId)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                DbInitializer.EnsureCreated(_options);
+                var sale = await _sales.GetByIdAsync(originalSaleId).ConfigureAwait(false);
+                if (sale == null)
+                    throw new InvalidOperationException("Vendita non trovata.");
+                if (sale.Kind != (int)SaleKind.Sale)
+                    throw new InvalidOperationException("Solo le vendite normali possono essere rimborsate.");
+
+                var lines = await _sales.GetReturnableLinesAsync(originalSaleId).ConfigureAwait(false);
+                var rows = lines.Select(x => new RefundPreviewLine
+                {
+                    OriginalLineId = x.OriginalLineId,
+                    Barcode = x.Barcode ?? string.Empty,
+                    Name = x.Name ?? string.Empty,
+                    UnitPriceMinor = x.UnitPrice,
+                    SoldQty = x.SoldQty,
+                    RefundedQty = x.RefundedQty,
+                    RemainingQty = x.RemainingQty,
+                    QtyToRefund = 0
+                }).ToList();
+
+                return new RefundPreviewModel
+                {
+                    OriginalSaleId = sale.Id,
+                    OriginalSaleCode = sale.Code ?? string.Empty,
+                    OriginalCreatedAtMs = sale.CreatedAt,
+                    OriginalTotalMinor = sale.Total,
+                    IsAlreadyVoided = sale.VoidedBySaleId.HasValue,
+                    Lines = rows,
+                    MaxRefundableMinor = rows.Sum(x => x.RemainingQty * x.UnitPriceMinor)
+                };
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<RefundCreateResult> CreateRefundAsync(RefundCreateRequest req, bool useReceipt42, bool autoPrint)
+        {
+            if (req == null) throw new ArgumentNullException(nameof(req));
+            if (req.OriginalSaleId <= 0) throw new ArgumentException("invalid original sale id");
+
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                DbInitializer.EnsureCreated(_options);
+                var original = await _sales.GetByIdAsync(req.OriginalSaleId).ConfigureAwait(false);
+                if (original == null)
+                    throw new InvalidOperationException("Vendita originale non trovata.");
+                if (original.Kind != (int)SaleKind.Sale)
+                    throw new InvalidOperationException("La vendita selezionata non e rimborsabile.");
+
+                var returnable = await _sales.GetReturnableLinesAsync(req.OriginalSaleId).ConfigureAwait(false);
+                var returnableMap = returnable.ToDictionary(x => x.OriginalLineId, x => x);
+                if (returnableMap.Count == 0)
+                    throw new InvalidOperationException("Nessuna riga rimborsabile.");
+
+                var selected = new List<RefundLineRequest>();
+                if (req.IsFullVoid)
+                {
+                    if (original.VoidedBySaleId.HasValue)
+                        throw new InvalidOperationException("Vendita gia stornata.");
+                    foreach (var x in returnable)
+                    {
+                        if (x.RemainingQty <= 0) continue;
+                        selected.Add(new RefundLineRequest
+                        {
+                            OriginalLineId = x.OriginalLineId,
+                            Barcode = x.Barcode ?? string.Empty,
+                            Name = x.Name ?? string.Empty,
+                            UnitPriceMinor = x.UnitPrice,
+                            QtyToRefund = x.RemainingQty
+                        });
+                    }
+                }
+                else
+                {
+                    foreach (var line in req.Lines ?? new List<RefundLineRequest>())
+                    {
+                        if (line == null || line.QtyToRefund <= 0) continue;
+                        if (!returnableMap.TryGetValue(line.OriginalLineId, out var source))
+                            throw new InvalidOperationException("Riga reso non valida.");
+                        if (line.QtyToRefund > source.RemainingQty)
+                            throw new InvalidOperationException("Quantita reso oltre il disponibile.");
+
+                        selected.Add(new RefundLineRequest
+                        {
+                            OriginalLineId = source.OriginalLineId,
+                            Barcode = source.Barcode ?? string.Empty,
+                            Name = source.Name ?? string.Empty,
+                            UnitPriceMinor = source.UnitPrice,
+                            QtyToRefund = line.QtyToRefund
+                        });
+                    }
+                }
+
+                if (selected.Count == 0)
+                    throw new InvalidOperationException("Nessuna riga selezionata per il reso.");
+
+                var refundPositiveTotal = selected.Sum(x => x.QtyToRefund * x.UnitPriceMinor);
+                if (refundPositiveTotal <= 0)
+                    throw new InvalidOperationException("Totale rimborso non valido.");
+
+                var cash = req.Payment == null ? 0 : req.Payment.CashMinor;
+                var card = req.Payment == null ? 0 : req.Payment.CardMinor;
+                if (cash < 0 || card < 0)
+                    throw new InvalidOperationException("Pagamento rimborso non valido.");
+                if (cash + card != refundPositiveTotal)
+                    throw new InvalidOperationException("Cash + Card deve essere uguale al totale rimborso.");
+
+                var refundSale = new Sale
+                {
+                    Code = SaleCodeGenerator.NewCode("R"),
+                    CreatedAt = UnixTime.NowMs(),
+                    Kind = (int)SaleKind.Refund,
+                    RelatedSaleId = original.Id,
+                    Reason = (req.Reason ?? string.Empty).Trim(),
+                    Total = -Math.Abs(refundPositiveTotal),
+                    PaidCash = -Math.Abs(cash),
+                    PaidCard = -Math.Abs(card),
+                    Change = 0
+                };
+
+                var refundLines = selected.Select(x => new SaleLine
+                {
+                    ProductId = null,
+                    Barcode = x.Barcode ?? string.Empty,
+                    Name = x.Name ?? string.Empty,
+                    Quantity = x.QtyToRefund,
+                    UnitPrice = x.UnitPriceMinor,
+                    LineTotal = -Math.Abs(x.QtyToRefund * x.UnitPriceMinor),
+                    RelatedOriginalLineId = x.OriginalLineId
+                }).ToList();
+
+                using (var conn = _factory.Open())
+                using (var tx = conn.BeginTransaction())
+                {
+                    try
+                    {
+                        var refundSaleId = await conn.ExecuteScalarAsync<long>(@"
+INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change)
+VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change);
+SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
+                        refundSale.Id = refundSaleId;
+
+                        foreach (var line in refundLines)
+                            line.SaleId = refundSaleId;
+
+                        await _sales.InsertSaleLinesAsync(conn, tx, refundLines).ConfigureAwait(false);
+
+                        if (req.IsFullVoid)
+                            await _sales.MarkSaleVoidedAsync(conn, tx, original.Id, refundSaleId, UnixTime.NowMs()).ConfigureAwait(false);
+
+                        tx.Commit();
+                    }
+                    catch
+                    {
+                        tx.Rollback();
+                        throw;
+                    }
+                }
+
+                var completed = new SaleCompleted(refundSale, refundLines);
+                var receipt42 = BuildRefundReceiptPreview(completed, true);
+                var receipt32 = BuildRefundReceiptPreview(completed, false);
+
+                if (autoPrint)
+                {
+                    try
+                    {
+                        var printer = await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
+                        var receiptText = useReceipt42 ? receipt42 : receipt32;
+                        var outputDirectory = string.IsNullOrWhiteSpace(printer.OutputDirectory)
+                            ? Path.Combine(AppPaths.DataDirectory, "receipts")
+                            : printer.OutputDirectory;
+                        var outputPath = Path.Combine(outputDirectory, "REFUND_" + refundSale.Code + ".txt");
+
+                        await _receiptPrinter.PrintAsync(receiptText, new ReceiptPrintOptions
+                        {
+                            PrinterName = printer.PrinterName,
+                            Copies = printer.Copies < 1 ? 1 : printer.Copies,
+                            CharactersPerLine = useReceipt42 ? 42 : 32,
+                            SaveCopyToFile = printer.SaveCopyToFile,
+                            OutputPath = outputPath
+                        }).ConfigureAwait(false);
+                    }
+                    catch (Exception printEx)
+                    {
+                        _logger.LogError(printEx, "POS refund print failed");
+                    }
+                }
+
+                return new RefundCreateResult
+                {
+                    RefundSaleId = refundSale.Id,
+                    RefundSaleCode = refundSale.Code,
+                    Receipt42 = receipt42,
+                    Receipt32 = receipt32,
+                    TotalMinor = refundSale.Total
+                };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "POS create refund failed");
+                throw;
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         public async Task<PosWorkflowSnapshot> IncreaseQtyAsync(string barcode)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
@@ -502,7 +708,9 @@ namespace Win7POS.Wpf.Pos
                     SaleId = x.Id,
                     SaleCode = x.Code ?? string.Empty,
                     CreatedAtMs = x.CreatedAt,
-                    TotalMinor = x.Total
+                    TotalMinor = x.Total,
+                    Kind = x.Kind,
+                    RelatedSaleId = x.RelatedSaleId
                 }).ToList();
             }
             finally
@@ -520,6 +728,8 @@ namespace Win7POS.Wpf.Pos
                 if (sale == null) return string.Empty;
                 var lines = await _sales.GetLinesBySaleIdAsync(saleId).ConfigureAwait(false);
                 var completed = new SaleCompleted(sale, lines);
+                if (sale.Kind == (int)SaleKind.Refund)
+                    return BuildRefundReceiptPreview(completed, use42);
                 return BuildReceiptPreview(completed, use42);
             }
             finally
@@ -620,10 +830,60 @@ namespace Win7POS.Wpf.Pos
             return string.Join(Environment.NewLine, lines);
         }
 
+        private static string BuildRefundReceiptPreview(SaleCompleted completed, bool use42)
+        {
+            var baseText = BuildReceiptPreview(completed, use42);
+            return "RESO/STORNO" + Environment.NewLine + baseText;
+        }
+
+        private async Task<PosPrinterSettings> ReadPrinterSettingsNoLockAsync()
+        {
+            var printerName = await _settings.GetStringAsync(KeyPrinterName).ConfigureAwait(false) ?? string.Empty;
+            var copies = await _settings.GetIntAsync(KeyPrinterCopies).ConfigureAwait(false) ?? 1;
+            if (copies < 1) copies = 1;
+            var autoPrint = await _settings.GetBoolAsync(KeyAutoPrint).ConfigureAwait(false);
+            var saveCopy = await _settings.GetBoolAsync(KeySaveReceiptCopy).ConfigureAwait(false);
+            var outputDir = await _settings.GetStringAsync(KeyReceiptOutputDirectory).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(outputDir))
+                outputDir = Path.Combine(AppPaths.DataDirectory, "receipts");
+
+            return new PosPrinterSettings
+            {
+                PrinterName = printerName,
+                Copies = copies,
+                AutoPrint = autoPrint ?? true,
+                SaveCopyToFile = saveCopy ?? false,
+                OutputDirectory = outputDir
+            };
+        }
+
         private static string EscapeCsv(string value)
         {
             return (value ?? string.Empty).Replace(";", ",");
         }
+    }
+
+    public sealed class RefundPreviewModel
+    {
+        public long OriginalSaleId { get; set; }
+        public string OriginalSaleCode { get; set; } = string.Empty;
+        public long OriginalCreatedAtMs { get; set; }
+        public int OriginalTotalMinor { get; set; }
+        public bool IsAlreadyVoided { get; set; }
+        public int MaxRefundableMinor { get; set; }
+        public List<RefundPreviewLine> Lines { get; set; } = new List<RefundPreviewLine>();
+    }
+
+    public sealed class RefundPreviewLine
+    {
+        public long OriginalLineId { get; set; }
+        public string Barcode { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public int UnitPriceMinor { get; set; }
+        public int SoldQty { get; set; }
+        public int RefundedQty { get; set; }
+        public int RemainingQty { get; set; }
+        public int QtyToRefund { get; set; }
     }
 
     public sealed class PosWorkflowSnapshot
@@ -676,6 +936,8 @@ namespace Win7POS.Wpf.Pos
         public string SaleCode { get; set; } = string.Empty;
         public long CreatedAtMs { get; set; }
         public int TotalMinor { get; set; }
+        public int Kind { get; set; }
+        public long? RelatedSaleId { get; set; }
     }
 
     public sealed class PosCartLine

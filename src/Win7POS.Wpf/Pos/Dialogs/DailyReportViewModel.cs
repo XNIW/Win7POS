@@ -18,6 +18,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private int _totalAmount;
         private int _cashAmount;
         private int _cardAmount;
+        private int _grossSalesAmount;
+        private int _refundsAmount;
+        private int _netAmount;
         private bool _isBusy;
 
         public DailyReportViewModel(Pos.PosWorkflowService service)
@@ -69,6 +72,24 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _isBusy = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
+        public int GrossSalesAmount
+        {
+            get => _grossSalesAmount;
+            set { _grossSalesAmount = value; OnPropertyChanged(); }
+        }
+
+        public int RefundsAmount
+        {
+            get => _refundsAmount;
+            set { _refundsAmount = value; OnPropertyChanged(); }
+        }
+
+        public int NetAmount
+        {
+            get => _netAmount;
+            set { _netAmount = value; OnPropertyChanged(); }
+        }
+
         public ICommand LoadCommand { get; }
         public ICommand ExportCsvCommand { get; }
 
@@ -90,6 +111,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 TotalAmount = summary.TotalAmount;
                 CashAmount = summary.CashAmount;
                 CardAmount = summary.CardAmount;
+                GrossSalesAmount = summary.GrossSalesAmount;
+                RefundsAmount = summary.RefundsAmount;
+                NetAmount = summary.NetAmount;
                 Status = "Report caricato.";
             }
             catch (Exception ex)

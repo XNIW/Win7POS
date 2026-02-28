@@ -1,0 +1,87 @@
+<Window x:Class="Win7POS.Wpf.Pos.Dialogs.RefundDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Reso / Storno"
+        Width="860"
+        Height="620"
+        WindowStartupLocation="CenterOwner"
+        KeyDown="OnKeyDown">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="170"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="Vendita:" VerticalAlignment="Center"/>
+        <TextBlock Grid.Row="0" Grid.Column="1">
+            <Run Text="{Binding SaleCodeText}"/>
+            <Run Text="  "/>
+            <Run Text="{Binding TimeText}"/>
+            <Run Text="  Totale: "/>
+            <Run Text="{Binding OriginalTotalText}"/>
+        </TextBlock>
+
+        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,10,0,8">
+            <RadioButton Content="Storno totale" Margin="0,0,16,0" IsChecked="{Binding IsFullVoid}"/>
+            <RadioButton Content="Reso parziale" IsChecked="{Binding IsPartialReturn}"/>
+        </StackPanel>
+
+        <DataGrid Grid.Row="2" Grid.ColumnSpan="2"
+                  ItemsSource="{Binding Lines}"
+                  AutoGenerateColumns="False"
+                  CanUserAddRows="False"
+                  CanUserDeleteRows="False"
+                  IsReadOnly="{Binding IsFullVoid}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" IsReadOnly="True" Width="2*"/>
+                <DataGridTextColumn Header="Name" Binding="{Binding Name}" IsReadOnly="True" Width="3*"/>
+                <DataGridTextColumn Header="SoldQty" Binding="{Binding SoldQty}" IsReadOnly="True" Width="90"/>
+                <DataGridTextColumn Header="RefundedQty" Binding="{Binding RefundedQty}" IsReadOnly="True" Width="110"/>
+                <DataGridTextColumn Header="RemainingQty" Binding="{Binding RemainingQty}" IsReadOnly="True" Width="110"/>
+                <DataGridTextColumn Header="QtyToRefund" Binding="{Binding QtyToRefund, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Grid Grid.Row="3" Grid.ColumnSpan="2" Margin="0,10,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="170"/>
+                <ColumnDefinition Width="180"/>
+                <ColumnDefinition Width="170"/>
+                <ColumnDefinition Width="180"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Refund total:"/>
+            <TextBox Grid.Column="1" IsReadOnly="True" Text="{Binding RefundTotalText}"/>
+            <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center" Text="Reason:"/>
+            <TextBox Grid.Column="3" Margin="8,0,0,0" Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}"/>
+        </Grid>
+
+        <Grid Grid.Row="4" Grid.ColumnSpan="2" Margin="0,10,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="170"/>
+                <ColumnDefinition Width="160"/>
+                <ColumnDefinition Width="170"/>
+                <ColumnDefinition Width="160"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Cash refund:"/>
+            <TextBox x:Name="CashRefundBox" Grid.Column="1" Text="{Binding CashRefund, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center" Text="Card refund:"/>
+            <TextBox Grid.Column="3" Margin="8,0,0,0" Text="{Binding CardRefund, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBlock Grid.Column="4" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="DarkRed" Text="{Binding MissingText}"/>
+        </Grid>
+
+        <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+            <Button MinWidth="110" Height="34" Margin="0,0,8,0" Content="OK" Command="{Binding ConfirmCommand}"/>
+            <Button MinWidth="110" Height="34" Content="Cancel" Command="{Binding CancelCommand}"/>
+        </StackPanel>
+    </Grid>
+</Window>

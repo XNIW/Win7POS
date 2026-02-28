@@ -106,12 +106,14 @@
                               CanUserDeleteRows="False">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="SaleNo" Binding="{Binding SaleCode}" Width="*"/>
+                            <DataGridTextColumn Header="Kind" Binding="{Binding KindText}" Width="80"/>
                             <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" Width="*"/>
                             <DataGridTextColumn Header="Total" Binding="{Binding Total}" Width="80"/>
                         </DataGrid.Columns>
                     </DataGrid>
                     <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
                         <Button MinWidth="110" Margin="0,0,8,0" Content="Reload" Command="{Binding LoadRecentSalesCommand}"/>
+                        <Button MinWidth="120" Margin="0,0,8,0" Content="Reso / Storno" Command="{Binding RefundCommand}"/>
                         <Button MinWidth="140" Content="Ristampa (preview)" Command="{Binding ReprintPreviewCommand}"/>
                     </StackPanel>
                 </Grid>

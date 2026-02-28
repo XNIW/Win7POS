@@ -3,11 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Chiusura cassa / Daily report"
         Width="560"
-        Height="320"
+        Height="390"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize">
     <Grid Margin="12">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -43,10 +46,19 @@
             <Run Text="{Binding CardAmount}"/>
         </TextBlock>
 
-        <TextBlock Grid.Row="5" Grid.ColumnSpan="2" Margin="0,14,0,0" Foreground="DimGray" TextWrapping="Wrap"
+        <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,8,0,0" Text="Gross sales:"/>
+        <TextBlock Grid.Row="5" Grid.Column="1" Margin="8,8,0,0" Text="{Binding GrossSalesAmount}"/>
+
+        <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,8,0,0" Text="Refunds:"/>
+        <TextBlock Grid.Row="6" Grid.Column="1" Margin="8,8,0,0" Text="{Binding RefundsAmount}"/>
+
+        <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,8,0,0" FontWeight="Bold" Text="Net:"/>
+        <TextBlock Grid.Row="7" Grid.Column="1" Margin="8,8,0,0" FontWeight="Bold" Text="{Binding NetAmount}"/>
+
+        <TextBlock Grid.Row="8" Grid.ColumnSpan="2" Margin="0,14,0,0" Foreground="DimGray" TextWrapping="Wrap"
                    Text="{Binding Status}"/>
 
-        <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+        <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button MinWidth="110" Height="34" Content="Chiudi" IsCancel="True"/>
         </StackPanel>
     </Grid>

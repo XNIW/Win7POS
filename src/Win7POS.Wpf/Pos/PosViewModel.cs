@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using Win7POS.Wpf.Printing;
+using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos.Dialogs;
@@ -111,6 +112,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand DailyReportCommand { get; }
         public ICommand DbMaintenanceCommand { get; }
         public ICommand AboutSupportCommand { get; }
+        public ICommand RefundCommand { get; }
 
         public PosViewModel()
         {
@@ -128,6 +130,7 @@ namespace Win7POS.Wpf.Pos
             DailyReportCommand = new AsyncRelayCommand(OpenDailyReportAsync, _ => !IsBusy);
             DbMaintenanceCommand = new AsyncRelayCommand(OpenDbMaintenanceAsync, _ => !IsBusy);
             AboutSupportCommand = new AsyncRelayCommand(OpenAboutSupportAsync, _ => !IsBusy);
+            RefundCommand = new AsyncRelayCommand(OpenRefundAsync, _ => !IsBusy && SelectedRecentSale != null && SelectedRecentSale.Kind == (int)SaleKind.Sale);
             StatusMessage = "POS pronto.";
             _ = InitializeAsync();
         }
@@ -336,7 +339,10 @@ namespace Win7POS.Wpf.Pos
                         SaleId = x.SaleId,
                         SaleCode = x.SaleCode,
                         TimeText = when.ToString("yyyy-MM-dd HH:mm:ss"),
-                        Total = x.TotalMinor
+                        Total = x.TotalMinor,
+                        Kind = x.Kind,
+                        KindText = x.Kind == (int)SaleKind.Refund ? "Refund" : "Sale",
+                        RelatedSaleId = x.RelatedSaleId
                     });
                 }
             }
@@ -601,6 +607,51 @@ namespace Win7POS.Wpf.Pos
             return Task.CompletedTask;
         }
 
+        private async Task OpenRefundAsync()
+        {
+            if (SelectedRecentSale == null)
+            {
+                StatusMessage = "Seleziona una vendita.";
+                return;
+            }
+
+            IsBusy = true;
+            try
+            {
+                var preview = await _service.BuildRefundPreviewAsync(SelectedRecentSale.SaleId).ConfigureAwait(true);
+                IsBusy = false;
+
+                var vm = new RefundViewModel(preview);
+                var dlg = new RefundDialog(vm)
+                {
+                    Owner = Application.Current?.MainWindow
+                };
+                var ok = dlg.ShowDialog() == true;
+                if (!ok)
+                {
+                    StatusMessage = "Reso annullato.";
+                    return;
+                }
+
+                IsBusy = true;
+                var req = vm.BuildRequest();
+                var result = await _service.CreateRefundAsync(req, UseReceipt42, _printerSettings.AutoPrint).ConfigureAwait(true);
+                ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
+                StatusMessage = "Reso completato: " + result.RefundSaleCode;
+                await LoadRecentSalesAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore reso/storno: " + ex.Message;
+                _logger.LogError(ex, "POS VM refund failed");
+            }
+            finally
+            {
+                IsBusy = false;
+                RequestFocusBarcode();
+            }
+        }
+
         private void ApplySnapshot(PosWorkflowSnapshot snapshot)
         {
             CartItems.Clear();
@@ -638,6 +689,7 @@ namespace Win7POS.Wpf.Pos
             (DailyReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (DbMaintenanceCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (AboutSupportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (RefundCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void RequestFocusBarcode()
@@ -664,6 +716,9 @@ namespace Win7POS.Wpf.Pos
             public string SaleCode { get; set; } = string.Empty;
             public string TimeText { get; set; } = string.Empty;
             public int Total { get; set; }
+            public int Kind { get; set; }
+            public string KindText { get; set; } = string.Empty;
+            public long? RelatedSaleId { get; set; }
         }
 
         private sealed class AsyncRelayCommand : ICommand
