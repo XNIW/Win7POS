@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:pos="clr-namespace:Win7POS.Wpf.Pos"
         xmlns:imp="clr-namespace:Win7POS.Wpf.Import"
+        xmlns:prod="clr-namespace:Win7POS.Wpf.Products"
         xmlns:core="clr-namespace:Win7POS.Core;assembly=Win7POS.Core"
         Title="Win7POS" Height="650" Width="900">
     <Grid Margin="12">
@@ -17,6 +18,9 @@
             </TabItem>
             <TabItem Header="Import">
                 <imp:ImportView/>
+            </TabItem>
+            <TabItem Header="Prodotti">
+                <prod:ProductsView/>
             </TabItem>
         </TabControl>
 
