@@ -95,7 +95,8 @@ namespace Win7POS.Core.Pos
                 LineTotal = x.LineTotal
             }).ToList();
 
-            await _salesStore.InsertSaleAsync(sale, saleLines);
+            var saleId = await _salesStore.InsertSaleAsync(sale, saleLines);
+            sale.Id = saleId;
             Clear();
 
             return new SaleCompleted(sale, saleLines);

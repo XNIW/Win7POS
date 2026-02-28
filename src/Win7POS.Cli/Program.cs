@@ -385,11 +385,14 @@ internal static class Program
         Console.WriteLine("Vendita salvata");
         PrintReceiptPreview(completed);
 
+        var originalSaleId = completed.Sale.Id;
+        await LogSaleDiagnosticsAsync(factory, originalSaleId);
+        Assert(originalSaleId > 0, "Sale Id must be > 0 after save.");
+
         var last = await new DataSalesStore(sales).LastSalesAsync(5);
         Console.WriteLine("Ultime vendite:");
         foreach (var s in last) Console.WriteLine($"- {s.Id} {s.Code} total={s.Total} at={s.CreatedAt}");
 
-        var originalSaleId = completed.Sale.Id;
         var soldLines = await sales.GetLinesBySaleIdAsync(originalSaleId);
         Assert(soldLines != null && soldLines.Count >= 1, "Sale has 0 lines; cannot run refund selftest.");
         var line0 = soldLines[0];
@@ -1304,6 +1307,25 @@ SELECT last_insert_rowid();";
     private static void Assert(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);
+    }
+
+    private static async Task<long> ScalarLongAsync(SqliteConnection conn, SqliteTransaction? tx, string sql)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = sql;
+        var obj = await cmd.ExecuteScalarAsync().ConfigureAwait(false);
+        if (obj == null || obj == DBNull.Value) return 0;
+        return Convert.ToInt64(obj, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task LogSaleDiagnosticsAsync(SqliteConnectionFactory factory, long saleId)
+    {
+        using var conn = factory.Open();
+        var totalSales = await ScalarLongAsync(conn, null, "SELECT COUNT(*) FROM sales").ConfigureAwait(false);
+        var totalLines = await ScalarLongAsync(conn, null, "SELECT COUNT(*) FROM sale_lines").ConfigureAwait(false);
+        var linesForSale = await ScalarLongAsync(conn, null, $"SELECT COUNT(*) FROM sale_lines WHERE saleId = {saleId}").ConfigureAwait(false);
+        Console.WriteLine($"DB CHECK: sales={totalSales}, sale_lines={totalLines}, linesForSale={linesForSale}");
     }
 
     private sealed class FailAfterUpserter : IProductUpserter
