@@ -81,15 +81,22 @@ namespace Win7POS.Wpf.Import
 
                 var opt = ResolveDbOptions(dbPath);
                 DbInitializer.EnsureCreated(opt);
+                string backupPath = string.Empty;
+                if (!options.DryRun)
+                    backupPath = await CreateBackupBeforeApplyAsync(opt.DbPath).ConfigureAwait(false);
 
                 var apply = await ApplyWithTransactionAsync(new SqliteConnectionFactory(opt), rows, options).ConfigureAwait(false);
                 if (apply.ErrorsCount > 0)
                     throw new InvalidOperationException("Apply failed with row errors.");
 
+                var summary = BuildApplySummary(opt.DbPath, options, diff, apply);
+                if (!string.IsNullOrWhiteSpace(backupPath))
+                    summary = "Backup creato: " + backupPath + Environment.NewLine + summary;
+
                 var result = new ImportApplyUiResult
                 {
                     Success = true,
-                    Summary = BuildApplySummary(opt.DbPath, options, diff, apply)
+                    Summary = summary
                 };
                 _logger.LogInfo("Apply end: success, changed=" + apply.ChangedBarcodes.Count);
                 return result;
@@ -163,6 +170,23 @@ namespace Win7POS.Wpf.Import
                     throw;
                 }
             }
+        }
+
+        private async Task<string> CreateBackupBeforeApplyAsync(string sourceDbPath)
+        {
+            if (string.IsNullOrWhiteSpace(sourceDbPath))
+                return string.Empty;
+
+            AppPaths.EnsureCreated();
+            var fileName = "import_preapply_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".db";
+            var backupPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
+            var dir = Path.GetDirectoryName(backupPath);
+            if (!string.IsNullOrWhiteSpace(dir))
+                Directory.CreateDirectory(dir);
+
+            await Task.Run(() => File.Copy(sourceDbPath, backupPath, true)).ConfigureAwait(false);
+            _logger.LogInfo("Import pre-apply backup created: " + backupPath);
+            return backupPath;
         }
 
         private static string BuildAnalyzeSummary(string csvPath, string dbPath, CsvParseResult parse, ImportAnalysis analysis, ImportDiffResult diff)

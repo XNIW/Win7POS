@@ -109,6 +109,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand PrinterSettingsCommand { get; }
         public ICommand PrintLastReceiptCommand { get; }
         public ICommand DailyReportCommand { get; }
+        public ICommand DbMaintenanceCommand { get; }
 
         public PosViewModel()
         {
@@ -124,6 +125,7 @@ namespace Win7POS.Wpf.Pos
             PrinterSettingsCommand = new AsyncRelayCommand(OpenPrinterSettingsAsync, _ => !IsBusy);
             PrintLastReceiptCommand = new AsyncRelayCommand(PrintLastReceiptAsync, _ => !IsBusy);
             DailyReportCommand = new AsyncRelayCommand(OpenDailyReportAsync, _ => !IsBusy);
+            DbMaintenanceCommand = new AsyncRelayCommand(OpenDbMaintenanceAsync, _ => !IsBusy);
             StatusMessage = "POS pronto.";
             _ = InitializeAsync();
         }
@@ -573,6 +575,18 @@ namespace Win7POS.Wpf.Pos
             return Task.CompletedTask;
         }
 
+        private Task OpenDbMaintenanceAsync()
+        {
+            var vm = new DbMaintenanceViewModel(_service);
+            var dlg = new DbMaintenanceDialog(vm)
+            {
+                Owner = Application.Current?.MainWindow
+            };
+            dlg.ShowDialog();
+            RequestFocusBarcode();
+            return Task.CompletedTask;
+        }
+
         private void ApplySnapshot(PosWorkflowSnapshot snapshot)
         {
             CartItems.Clear();
@@ -608,6 +622,7 @@ namespace Win7POS.Wpf.Pos
             (PrinterSettingsCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintLastReceiptCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (DailyReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (DbMaintenanceCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void RequestFocusBarcode()

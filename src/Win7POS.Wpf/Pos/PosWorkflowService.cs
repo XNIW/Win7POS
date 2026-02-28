@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Globalization;
+using Microsoft.Data.Sqlite;
 using Win7POS.Core;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
@@ -32,6 +33,7 @@ namespace Win7POS.Wpf.Pos
         private readonly ProductRepository _products;
         private readonly SaleRepository _sales;
         private readonly SettingsRepository _settings;
+        private readonly DbMaintenanceRepository _dbMaintenance;
         private readonly PosSession _session;
         private readonly PosDbOptions _options;
 
@@ -46,8 +48,11 @@ namespace Win7POS.Wpf.Pos
             _products = new ProductRepository(factory);
             _sales = new SaleRepository(factory);
             _settings = new SettingsRepository(factory);
+            _dbMaintenance = new DbMaintenanceRepository(factory);
             _session = new PosSession(new DataProductLookup(_products), new DataSalesStore(_sales));
         }
+
+        public string DbPath => _options.DbPath;
 
         public async Task<bool?> GetUseReceipt42Async()
         {
@@ -139,6 +144,70 @@ namespace Win7POS.Wpf.Pos
             var settings = await GetPrinterSettingsAsync().ConfigureAwait(false);
             settings.AutoPrint = value;
             await SetPrinterSettingsAsync(settings).ConfigureAwait(false);
+        }
+
+        public async Task RestoreDbAsync(string backupDbPath)
+        {
+            if (string.IsNullOrWhiteSpace(backupDbPath))
+                throw new ArgumentException("backup path is empty");
+            if (!File.Exists(backupDbPath))
+                throw new FileNotFoundException("Backup file not found.", backupDbPath);
+
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                SqliteConnection.ClearAllPools();
+                File.Copy(backupDbPath, _options.DbPath, true);
+                _logger.LogInfo("POS DB restored from: " + backupDbPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "POS DB restore failed");
+                throw;
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<string> IntegrityCheckAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                return await _dbMaintenance.IntegrityCheckAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task VacuumAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await _dbMaintenance.VacuumAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task WalCheckpointAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await _dbMaintenance.WalCheckpointAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
         }
 
         public async Task<DailySalesSummary> GetDailySummaryAsync(DateTime date)
