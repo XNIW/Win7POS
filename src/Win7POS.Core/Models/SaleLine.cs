@@ -12,5 +12,6 @@ namespace Win7POS.Core.Models
         public int Quantity { get; set; }
         public int UnitPrice { get; set; }
         public int LineTotal { get; set; }
+        public long? RelatedOriginalLineId { get; set; }
     }
 }
