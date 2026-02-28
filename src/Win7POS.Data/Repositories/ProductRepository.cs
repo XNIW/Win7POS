@@ -21,6 +21,14 @@ namespace Win7POS.Data.Repositories
             );
         }
 
+        public async Task<Product> GetByIdAsync(long id)
+        {
+            using var conn = _factory.Open();
+            return await conn.QuerySingleOrDefaultAsync<Product>(
+                "SELECT id, barcode, name, unitPrice FROM products WHERE id = @id",
+                new { id });
+        }
+
         public async Task<long> UpsertAsync(Product p)
         {
             using var conn = _factory.Open();

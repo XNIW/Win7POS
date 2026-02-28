@@ -56,8 +56,16 @@ CREATE TABLE IF NOT EXISTS app_settings (
   value TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS audit_log (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts      INTEGER NOT NULL,
+  action  TEXT NOT NULL,
+  details TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sale_lines_saleId ON sale_lines(saleId);
 CREATE INDEX IF NOT EXISTS idx_sale_lines_barcode ON sale_lines(barcode);
+CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
 ");
 
             EnsureMigrations(conn);
