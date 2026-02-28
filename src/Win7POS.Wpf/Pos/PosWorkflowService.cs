@@ -19,6 +19,12 @@ namespace Win7POS.Wpf.Pos
 {
     public sealed class PosWorkflowService
     {
+        private const string KeyPrinterName = "printer.name";
+        private const string KeyPrinterCopies = "printer.copies";
+        private const string KeyAutoPrint = "pos.autoPrint";
+        private const string KeySaveReceiptCopy = "printer.saveReceiptCopy";
+        private const string KeyReceiptOutputDirectory = "printer.outputDirectory";
+
         private readonly FileLogger _logger = new FileLogger();
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
 
@@ -66,6 +72,72 @@ namespace Win7POS.Wpf.Pos
             {
                 _gate.Release();
             }
+        }
+
+        public async Task<PosPrinterSettings> GetPrinterSettingsAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var printerName = await _settings.GetStringAsync(KeyPrinterName).ConfigureAwait(false) ?? string.Empty;
+                var copies = await _settings.GetIntAsync(KeyPrinterCopies).ConfigureAwait(false) ?? 1;
+                if (copies < 1) copies = 1;
+                var autoPrint = await _settings.GetBoolAsync(KeyAutoPrint).ConfigureAwait(false);
+                var saveCopy = await _settings.GetBoolAsync(KeySaveReceiptCopy).ConfigureAwait(false);
+                var outputDir = await _settings.GetStringAsync(KeyReceiptOutputDirectory).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(outputDir))
+                    outputDir = Path.Combine(AppPaths.DataDirectory, "receipts");
+
+                return new PosPrinterSettings
+                {
+                    PrinterName = printerName,
+                    Copies = copies,
+                    AutoPrint = autoPrint ?? true,
+                    SaveCopyToFile = saveCopy ?? false,
+                    OutputDirectory = outputDir
+                };
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task SetPrinterSettingsAsync(PosPrinterSettings settings)
+        {
+            if (settings == null) throw new ArgumentNullException(nameof(settings));
+
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var copies = settings.Copies < 1 ? 1 : settings.Copies;
+                var outputDir = string.IsNullOrWhiteSpace(settings.OutputDirectory)
+                    ? Path.Combine(AppPaths.DataDirectory, "receipts")
+                    : settings.OutputDirectory;
+
+                await _settings.SetStringAsync(KeyPrinterName, settings.PrinterName ?? string.Empty).ConfigureAwait(false);
+                await _settings.SetIntAsync(KeyPrinterCopies, copies).ConfigureAwait(false);
+                await _settings.SetBoolAsync(KeyAutoPrint, settings.AutoPrint).ConfigureAwait(false);
+                await _settings.SetBoolAsync(KeySaveReceiptCopy, settings.SaveCopyToFile).ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyReceiptOutputDirectory, outputDir).ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<bool> GetAutoPrintAsync()
+        {
+            var settings = await GetPrinterSettingsAsync().ConfigureAwait(false);
+            return settings.AutoPrint;
+        }
+
+        public async Task SetAutoPrintAsync(bool value)
+        {
+            var settings = await GetPrinterSettingsAsync().ConfigureAwait(false);
+            settings.AutoPrint = value;
+            await SetPrinterSettingsAsync(settings).ConfigureAwait(false);
         }
 
         public async Task<string> BackupDbAsync()
@@ -171,7 +243,7 @@ namespace Win7POS.Wpf.Pos
                 var completed = await _session.PayCashAsync().ConfigureAwait(false);
                 _lastCompletedSale = completed;
 
-                var preview = BuildReceiptPreview(completed);
+                var preview = BuildReceiptPreview(completed, true);
                 var snapshot = BuildSnapshot("Pagamento completato.");
                 _logger.LogInfo("POS pay done: " + completed.Sale.Code);
                 return new PosPayResult
@@ -493,5 +565,14 @@ namespace Win7POS.Wpf.Pos
         public int Quantity { get; set; }
         public int UnitPrice { get; set; }
         public int LineTotal { get; set; }
+    }
+
+    public sealed class PosPrinterSettings
+    {
+        public string PrinterName { get; set; } = string.Empty;
+        public int Copies { get; set; } = 1;
+        public bool AutoPrint { get; set; } = true;
+        public bool SaveCopyToFile { get; set; }
+        public string OutputDirectory { get; set; } = string.Empty;
     }
 }

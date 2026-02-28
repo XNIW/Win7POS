@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Threading.Tasks;
 using Dapper;
 
@@ -53,6 +54,20 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
         public Task SetBoolAsync(string key, bool value)
         {
             return SetStringAsync(key, value ? "1" : "0");
+        }
+
+        public async Task<int?> GetIntAsync(string key)
+        {
+            var raw = await GetStringAsync(key);
+            if (string.IsNullOrWhiteSpace(raw)) return null;
+            if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+                return null;
+            return value;
+        }
+
+        public Task SetIntAsync(string key, int value)
+        {
+            return SetStringAsync(key, value.ToString(CultureInfo.InvariantCulture));
         }
     }
 }

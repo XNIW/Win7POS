@@ -22,6 +22,8 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <TextBox x:Name="BarcodeBox"
@@ -42,6 +44,10 @@
                       Content="Use 42 cols" IsChecked="{Binding UseReceipt42}"/>
             <Button Grid.Column="5" Margin="8,0,0,0" MinWidth="110" Content="Backup DB"
                     Command="{Binding BackupDbCommand}"/>
+            <Button Grid.Column="6" Margin="8,0,0,0" MinWidth="130" Content="Printer settings"
+                    Command="{Binding PrinterSettingsCommand}"/>
+            <Button Grid.Column="7" Margin="8,0,0,0" MinWidth="130" Content="Stampa ultima"
+                    Command="{Binding PrintLastReceiptCommand}"/>
         </Grid>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">

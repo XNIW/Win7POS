@@ -1,10 +1,12 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using Win7POS.Wpf.Printing;
 using Win7POS.Core.Pos;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos.Dialogs;
@@ -15,6 +17,7 @@ namespace Win7POS.Wpf.Pos
     {
         private readonly PosWorkflowService _service = new PosWorkflowService();
         private readonly FileLogger _logger = new FileLogger();
+        private readonly IReceiptPrinter _printer = new WindowsSpoolerReceiptPrinter();
 
         private string _barcodeInput = string.Empty;
         private int _subtotal;
@@ -24,6 +27,7 @@ namespace Win7POS.Wpf.Pos
         private string _receiptPreview = string.Empty;
         private bool _useReceipt42 = true;
         private bool _isLoadingSettings;
+        private PosPrinterSettings _printerSettings = new PosPrinterSettings();
 
         private PosCartLineRow _selectedCartItem;
         private RecentSaleRow _selectedRecentSale;
@@ -102,6 +106,8 @@ namespace Win7POS.Wpf.Pos
         public ICommand DecreaseQtyCommand { get; }
         public ICommand RemoveLineCommand { get; }
         public ICommand BackupDbCommand { get; }
+        public ICommand PrinterSettingsCommand { get; }
+        public ICommand PrintLastReceiptCommand { get; }
 
         public PosViewModel()
         {
@@ -114,6 +120,8 @@ namespace Win7POS.Wpf.Pos
             DecreaseQtyCommand = new AsyncRelayCommand(DecreaseQtyAsync, _ => !IsBusy && SelectedCartItem != null);
             RemoveLineCommand = new AsyncRelayCommand(RemoveLineAsync, _ => !IsBusy && SelectedCartItem != null);
             BackupDbCommand = new AsyncRelayCommand(BackupDbAsync, _ => !IsBusy);
+            PrinterSettingsCommand = new AsyncRelayCommand(OpenPrinterSettingsAsync, _ => !IsBusy);
+            PrintLastReceiptCommand = new AsyncRelayCommand(PrintLastReceiptAsync, _ => !IsBusy);
             StatusMessage = "POS pronto.";
             _ = InitializeAsync();
         }
@@ -136,6 +144,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     _isLoadingSettings = false;
                 }
+                _printerSettings = await _service.GetPrinterSettingsAsync().ConfigureAwait(true);
                 var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
                 ApplySnapshot(snapshot);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
@@ -257,6 +266,10 @@ namespace Win7POS.Wpf.Pos
                 ApplySnapshot(result.Snapshot);
                 ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
                 StatusMessage = "Pagamento OK: " + result.SaleCode;
+                if (_printerSettings.AutoPrint)
+                {
+                    await PrintReceiptAsync(ReceiptPreview, result.SaleCode).ConfigureAwait(true);
+                }
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }
             catch (PosException ex)
@@ -440,6 +453,112 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        private async Task OpenPrinterSettingsAsync()
+        {
+            var vm = new PrinterSettingsViewModel
+            {
+                PrinterName = _printerSettings.PrinterName,
+                Copies = _printerSettings.Copies.ToString(),
+                AutoPrint = _printerSettings.AutoPrint,
+                SaveCopyToFile = _printerSettings.SaveCopyToFile,
+                OutputDirectory = _printerSettings.OutputDirectory
+            };
+
+            var dlg = new PrinterSettingsDialog(vm)
+            {
+                Owner = Application.Current?.MainWindow
+            };
+            var ok = dlg.ShowDialog() == true;
+            if (!ok)
+            {
+                StatusMessage = "Impostazioni stampante annullate.";
+                RequestFocusBarcode();
+                return;
+            }
+
+            _printerSettings = new PosPrinterSettings
+            {
+                PrinterName = vm.PrinterName,
+                Copies = vm.ParsedCopies < 1 ? 1 : vm.ParsedCopies,
+                AutoPrint = vm.AutoPrint,
+                SaveCopyToFile = vm.SaveCopyToFile,
+                OutputDirectory = string.IsNullOrWhiteSpace(vm.OutputDirectory)
+                    ? Path.Combine(Win7POS.Core.AppPaths.DataDirectory, "receipts")
+                    : vm.OutputDirectory
+            };
+
+            try
+            {
+                await _service.SetPrinterSettingsAsync(_printerSettings).ConfigureAwait(true);
+                StatusMessage = "Impostazioni stampante salvate.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore salvataggio impostazioni stampante: " + ex.Message;
+                _logger.LogError(ex, "POS VM save printer settings failed");
+            }
+            finally
+            {
+                RequestFocusBarcode();
+            }
+        }
+
+        private async Task PrintLastReceiptAsync()
+        {
+            IsBusy = true;
+            try
+            {
+                var text = await _service.GetLastReceiptPreviewAsync(UseReceipt42).ConfigureAwait(true);
+                if (string.IsNullOrWhiteSpace(text))
+                {
+                    StatusMessage = "Nessuna ricevuta da stampare.";
+                    return;
+                }
+
+                await PrintReceiptAsync(text, "LAST").ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore stampa ricevuta: " + ex.Message;
+                _logger.LogError(ex, "POS VM print last receipt failed");
+            }
+            finally
+            {
+                IsBusy = false;
+                RequestFocusBarcode();
+            }
+        }
+
+        private async Task PrintReceiptAsync(string receiptText, string saleCode)
+        {
+            var outputDirectory = string.IsNullOrWhiteSpace(_printerSettings.OutputDirectory)
+                ? Path.Combine(Win7POS.Core.AppPaths.DataDirectory, "receipts")
+                : _printerSettings.OutputDirectory;
+            var outputPath = Path.Combine(outputDirectory, "SALE_" + saleCode + ".txt");
+
+            var printOptions = new ReceiptPrintOptions
+            {
+                PrinterName = _printerSettings.PrinterName,
+                Copies = _printerSettings.Copies < 1 ? 1 : _printerSettings.Copies,
+                CharactersPerLine = UseReceipt42 ? 42 : 32,
+                SaveCopyToFile = _printerSettings.SaveCopyToFile,
+                OutputPath = outputPath
+            };
+
+            try
+            {
+                await _printer.PrintAsync(receiptText, printOptions).ConfigureAwait(true);
+                StatusMessage = _printerSettings.SaveCopyToFile
+                    ? "Ricevuta stampata. Copia salvata: " + outputPath
+                    : "Ricevuta stampata.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Stampa fallita: " + ex.Message;
+                _logger.LogError(ex, "POS VM print failed");
+            }
+        }
+
         private void ApplySnapshot(PosWorkflowSnapshot snapshot)
         {
             CartItems.Clear();
@@ -472,6 +591,8 @@ namespace Win7POS.Wpf.Pos
             (DecreaseQtyCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (RemoveLineCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (BackupDbCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (PrinterSettingsCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (PrintLastReceiptCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void RequestFocusBarcode()
