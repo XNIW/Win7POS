@@ -28,7 +28,9 @@
             <TextBlock Text="DB: "/>
             <TextBlock Text="{x:Static core:AppPaths.DbPath}"/>
             <Separator/>
-            <CheckBox Content="Modalita cassa" Margin="8,0,0,0"
+            <CheckBox x:Name="CashierModeCheckBox"
+                      Content="Modalita cassa"
+                      Margin="8,0,0,0"
                       Checked="OnCashierModeChecked"
                       Unchecked="OnCashierModeUnchecked"/>
         </StatusBar>
