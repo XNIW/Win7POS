@@ -4,6 +4,8 @@
         Title="Payment"
         Width="420"
         Height="270"
+        Loaded="OnLoaded"
+        KeyDown="OnKeyDown"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize">
     <Grid Margin="12">
@@ -24,7 +26,7 @@
         <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" IsReadOnly="True" Text="{Binding TotalDueText}"/>
 
         <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Cash received:"/>
-        <TextBox Grid.Row="1" Grid.Column="1" Margin="8,8,0,0" Text="{Binding CashReceived, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox x:Name="CashBox" Grid.Row="1" Grid.Column="1" Margin="8,8,0,0" Text="{Binding CashReceived, UpdateSourceTrigger=PropertyChanged}"/>
 
         <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Card amount:"/>
         <TextBox Grid.Row="2" Grid.Column="1" Margin="8,8,0,0" Text="{Binding CardAmount, UpdateSourceTrigger=PropertyChanged}"/>
@@ -34,10 +36,12 @@
 
         <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="DimGray"
                    Text="Valid when Cash + Card >= Total and both are non-negative."/>
+        <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Margin="0,28,0,0" Foreground="DarkRed" FontWeight="SemiBold"
+                   Text="{Binding MissingAmountText}"/>
 
         <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button MinWidth="90" Margin="0,0,8,0" Content="OK" Command="{Binding ConfirmCommand}"/>
-            <Button MinWidth="90" Content="Cancel" Command="{Binding CancelCommand}"/>
+            <Button MinWidth="120" Height="38" Margin="0,0,8,0" Content="OK" Command="{Binding ConfirmCommand}"/>
+            <Button MinWidth="120" Height="38" Content="Cancel" Command="{Binding CancelCommand}"/>
         </StackPanel>
     </Grid>
 </Window>

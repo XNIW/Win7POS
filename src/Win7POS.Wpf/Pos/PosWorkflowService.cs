@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Win7POS.Core;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Receipt;
@@ -22,6 +24,7 @@ namespace Win7POS.Wpf.Pos
 
         private readonly ProductRepository _products;
         private readonly SaleRepository _sales;
+        private readonly SettingsRepository _settings;
         private readonly PosSession _session;
         private readonly PosDbOptions _options;
 
@@ -35,7 +38,63 @@ namespace Win7POS.Wpf.Pos
             var factory = new SqliteConnectionFactory(_options);
             _products = new ProductRepository(factory);
             _sales = new SaleRepository(factory);
+            _settings = new SettingsRepository(factory);
             _session = new PosSession(new DataProductLookup(_products), new DataSalesStore(_sales));
+        }
+
+        public async Task<bool?> GetUseReceipt42Async()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                return await _settings.GetBoolAsync("pos.useReceipt42").ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task SetUseReceipt42Async(bool value)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await _settings.SetBoolAsync("pos.useReceipt42", value).ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<string> BackupDbAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                DbInitializer.EnsureCreated(_options);
+                AppPaths.EnsureCreated();
+
+                var fileName = "pos_backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".db";
+                var outputPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
+                var outputDir = Path.GetDirectoryName(outputPath);
+                if (!string.IsNullOrWhiteSpace(outputDir))
+                    Directory.CreateDirectory(outputDir);
+
+                File.Copy(_options.DbPath, outputPath, true);
+                _logger.LogInfo("POS DB backup created: " + outputPath);
+                return outputPath;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "POS DB backup failed");
+                throw;
+            }
+            finally
+            {
+                _gate.Release();
+            }
         }
 
         public async Task InitializeAsync()
@@ -72,6 +131,30 @@ namespace Win7POS.Wpf.Pos
             {
                 _logger.LogError(ex, "POS add barcode failed");
                 throw;
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task CreateProductAsync(string barcode, string name, int unitPriceMinor)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var code = (barcode ?? string.Empty).Trim();
+                var productName = (name ?? string.Empty).Trim();
+                if (code.Length == 0) throw new ArgumentException("barcode is empty");
+                if (productName.Length == 0) throw new ArgumentException("name is empty");
+                if (unitPriceMinor < 0) throw new ArgumentException("price is invalid");
+
+                await _products.UpsertAsync(new Product
+                {
+                    Barcode = code,
+                    Name = productName,
+                    UnitPrice = unitPriceMinor
+                }).ConfigureAwait(false);
             }
             finally
             {

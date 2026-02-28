@@ -44,6 +44,11 @@ CREATE TABLE IF NOT EXISTS sale_lines (
   FOREIGN KEY(saleId) REFERENCES sales(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS app_settings (
+  key   TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_sale_lines_saleId ON sale_lines(saleId);
 CREATE INDEX IF NOT EXISTS idx_sale_lines_barcode ON sale_lines(barcode);
 ");

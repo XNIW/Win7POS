@@ -6,98 +6,54 @@ using System.Windows.Input;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public sealed class PaymentViewModel : INotifyPropertyChanged
+    public sealed class AddProductViewModel : INotifyPropertyChanged
     {
-        private readonly int _totalDueMinor;
-
         private readonly CultureInfo _it = CultureInfo.GetCultureInfo("it-IT");
+        private string _productName = string.Empty;
+        private string _priceText = "0";
 
-        private string _cashReceived;
-        private string _cardAmount = "0";
-
-        public PaymentViewModel(int totalDueMinor)
+        public AddProductViewModel(string barcode)
         {
-            _totalDueMinor = totalDueMinor;
-            _cashReceived = FormatMoney(_totalDueMinor);
+            Barcode = (barcode ?? string.Empty).Trim();
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
         }
 
-        public string TotalDueText => FormatMoney(_totalDueMinor);
+        public string Barcode { get; }
 
-        public string CashReceived
+        public string ProductName
         {
-            get => _cashReceived;
+            get => _productName;
             set
             {
-                _cashReceived = value ?? string.Empty;
+                _productName = value ?? string.Empty;
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(ChangeDueText));
-                OnPropertyChanged(nameof(MissingAmountText));
                 OnPropertyChanged(nameof(IsValid));
                 RaiseCanExecuteChanged();
             }
         }
 
-        public string CardAmount
+        public string PriceText
         {
-            get => _cardAmount;
+            get => _priceText;
             set
             {
-                _cardAmount = value ?? string.Empty;
+                _priceText = value ?? string.Empty;
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(ChangeDueText));
-                OnPropertyChanged(nameof(MissingAmountText));
                 OnPropertyChanged(nameof(IsValid));
                 RaiseCanExecuteChanged();
             }
         }
 
-        public string ChangeDueText => FormatMoney(ChangeDueMinor);
-        public string MissingAmountText => IsValid ? string.Empty : "Manca: " + FormatMoney(MissingAmountMinor);
+        public int PriceMinor => ParseMoneyToMinor(PriceText);
 
-        public bool IsValid => CashAmountMinor >= 0 && CardAmountMinor >= 0 && CashAmountMinor + CardAmountMinor >= _totalDueMinor;
-
-        public int CashAmountMinor => ParseMoneyToMinor(CashReceived);
-        public int CardAmountMinor => ParseMoneyToMinor(CardAmount);
-
-        public int ChangeDueMinor
-        {
-            get
-            {
-                if (!IsValid) return 0;
-                return CashAmountMinor + CardAmountMinor - _totalDueMinor;
-            }
-        }
-
-        public int MissingAmountMinor
-        {
-            get
-            {
-                var paid = CashAmountMinor + CardAmountMinor;
-                if (CashAmountMinor < 0 || CardAmountMinor < 0) return _totalDueMinor;
-                var missing = _totalDueMinor - paid;
-                return missing > 0 ? missing : 0;
-            }
-        }
+        public bool IsValid => Barcode.Length > 0 && ProductName.Trim().Length > 0 && PriceMinor >= 0;
 
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }
 
         public event Action<bool> RequestClose;
         public event PropertyChangedEventHandler PropertyChanged;
-
-        public bool TryConfirm()
-        {
-            if (!IsValid) return false;
-            RequestClose?.Invoke(true);
-            return true;
-        }
-
-        public void Cancel()
-        {
-            RequestClose?.Invoke(false);
-        }
 
         private void RaiseCanExecuteChanged()
         {
@@ -108,15 +64,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void OnPropertyChanged([CallerMemberName] string name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
-        private string FormatMoney(int valueMinor)
-        {
-            var value = valueMinor / 100.0m;
-            return value.ToString("N2", _it);
-        }
-
         private int ParseMoneyToMinor(string text)
         {
-            if (string.IsNullOrWhiteSpace(text)) return 0;
+            if (string.IsNullOrWhiteSpace(text)) return -1;
             var raw = text.Trim();
 
             decimal value;
@@ -126,6 +76,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (!decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out value))
                     return -1;
             }
+
             if (value < 0) return -1;
             return (int)Math.Round(value * 100m, MidpointRounding.AwayFromZero);
         }

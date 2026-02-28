@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             PreviewKeyDown="OnViewPreviewKeyDown"
              mc:Ignorable="d"
              d:DesignHeight="720" d:DesignWidth="1100">
     <Grid Margin="12">
@@ -16,6 +17,7 @@
         <Grid Grid.Row="0" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -38,6 +40,8 @@
                     Command="{Binding ReceiptPreviewCommand}"/>
             <CheckBox Grid.Column="4" Margin="12,0,0,0" VerticalAlignment="Center"
                       Content="Use 42 cols" IsChecked="{Binding UseReceipt42}"/>
+            <Button Grid.Column="5" Margin="8,0,0,0" MinWidth="110" Content="Backup DB"
+                    Command="{Binding BackupDbCommand}"/>
         </Grid>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">

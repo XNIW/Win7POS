@@ -23,12 +23,14 @@ namespace Win7POS.Wpf.Pos
         private string _statusMessage = string.Empty;
         private string _receiptPreview = string.Empty;
         private bool _useReceipt42 = true;
+        private bool _isLoadingSettings;
 
         private PosCartLineRow _selectedCartItem;
         private RecentSaleRow _selectedRecentSale;
 
         public ObservableCollection<PosCartLineRow> CartItems { get; } = new ObservableCollection<PosCartLineRow>();
         public ObservableCollection<RecentSaleRow> RecentSales { get; } = new ObservableCollection<RecentSaleRow>();
+        public event Action FocusBarcodeRequested;
 
         public string BarcodeInput
         {
@@ -69,7 +71,14 @@ namespace Win7POS.Wpf.Pos
         public bool UseReceipt42
         {
             get => _useReceipt42;
-            set { _useReceipt42 = value; OnPropertyChanged(); }
+            set
+            {
+                if (_useReceipt42 == value) return;
+                _useReceipt42 = value;
+                OnPropertyChanged();
+                if (!_isLoadingSettings)
+                    _ = SaveUseReceipt42Async(value);
+            }
         }
 
         public PosCartLineRow SelectedCartItem
@@ -92,6 +101,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand IncreaseQtyCommand { get; }
         public ICommand DecreaseQtyCommand { get; }
         public ICommand RemoveLineCommand { get; }
+        public ICommand BackupDbCommand { get; }
 
         public PosViewModel()
         {
@@ -103,6 +113,7 @@ namespace Win7POS.Wpf.Pos
             IncreaseQtyCommand = new AsyncRelayCommand(IncreaseQtyAsync, _ => !IsBusy && SelectedCartItem != null);
             DecreaseQtyCommand = new AsyncRelayCommand(DecreaseQtyAsync, _ => !IsBusy && SelectedCartItem != null);
             RemoveLineCommand = new AsyncRelayCommand(RemoveLineAsync, _ => !IsBusy && SelectedCartItem != null);
+            BackupDbCommand = new AsyncRelayCommand(BackupDbAsync, _ => !IsBusy);
             StatusMessage = "POS pronto.";
             _ = InitializeAsync();
         }
@@ -113,6 +124,18 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 await _service.InitializeAsync().ConfigureAwait(true);
+                _isLoadingSettings = true;
+                try
+                {
+                    var savedUse42 = await _service.GetUseReceipt42Async().ConfigureAwait(true);
+                    if (savedUse42.HasValue)
+                        _useReceipt42 = savedUse42.Value;
+                    OnPropertyChanged(nameof(UseReceipt42));
+                }
+                finally
+                {
+                    _isLoadingSettings = false;
+                }
                 var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
                 ApplySnapshot(snapshot);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
@@ -126,6 +149,18 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 IsBusy = false;
+            }
+        }
+
+        private async Task SaveUseReceipt42Async(bool value)
+        {
+            try
+            {
+                await _service.SetUseReceipt42Async(value).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "POS VM save UseReceipt42 failed");
             }
         }
 
@@ -145,6 +180,33 @@ namespace Win7POS.Wpf.Pos
             catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
             {
                 StatusMessage = "Prodotto non trovato: " + code;
+                var askCreate = MessageBox.Show(
+                    "Prodotto non trovato: " + code + "\nVuoi creare prodotto?",
+                    "Prodotto non trovato",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+                if (askCreate == MessageBoxResult.Yes)
+                {
+                    var dlg = new AddProductDialog(code)
+                    {
+                        Owner = Application.Current?.MainWindow
+                    };
+                    if (dlg.ShowDialog() == true)
+                    {
+                        try
+                        {
+                            await _service.CreateProductAsync(code, dlg.ViewModel.ProductName, dlg.ViewModel.PriceMinor).ConfigureAwait(true);
+                            var snapshot = await _service.AddByBarcodeAsync(code).ConfigureAwait(true);
+                            ApplySnapshot(snapshot);
+                            StatusMessage = "Prodotto creato e aggiunto: " + code;
+                        }
+                        catch (Exception createEx)
+                        {
+                            StatusMessage = "Errore creazione prodotto: " + createEx.Message;
+                            _logger.LogError(createEx, "POS VM create product failed");
+                        }
+                    }
+                }
             }
             catch (PosException ex)
             {
@@ -159,6 +221,7 @@ namespace Win7POS.Wpf.Pos
             {
                 BarcodeInput = string.Empty;
                 IsBusy = false;
+                RequestFocusBarcode();
             }
         }
 
@@ -178,6 +241,7 @@ namespace Win7POS.Wpf.Pos
             if (!ok)
             {
                 StatusMessage = "Pagamento annullato.";
+                RequestFocusBarcode();
                 return;
             }
 
@@ -207,6 +271,7 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 IsBusy = false;
+                RequestFocusBarcode();
             }
         }
 
@@ -233,6 +298,7 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 IsBusy = false;
+                RequestFocusBarcode();
             }
         }
 
@@ -354,6 +420,26 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        private async Task BackupDbAsync()
+        {
+            IsBusy = true;
+            try
+            {
+                var outputPath = await _service.BackupDbAsync().ConfigureAwait(true);
+                StatusMessage = "Backup DB creato: " + outputPath;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore backup DB: " + ex.Message;
+                _logger.LogError(ex, "POS VM backup db failed");
+            }
+            finally
+            {
+                IsBusy = false;
+                RequestFocusBarcode();
+            }
+        }
+
         private void ApplySnapshot(PosWorkflowSnapshot snapshot)
         {
             CartItems.Clear();
@@ -385,6 +471,12 @@ namespace Win7POS.Wpf.Pos
             (IncreaseQtyCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (DecreaseQtyCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (RemoveLineCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (BackupDbCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private void RequestFocusBarcode()
+        {
+            FocusBarcodeRequested?.Invoke();
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
