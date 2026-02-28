@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using Win7POS.Core;
+using Win7POS.Core.Audit;
 using Win7POS.Core.Models;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
@@ -14,12 +15,14 @@ namespace Win7POS.Wpf.Products
     {
         private readonly FileLogger _logger = new FileLogger();
         private readonly ProductRepository _products;
+        private readonly AuditLogRepository _audit = new AuditLogRepository();
+        private readonly PosDbOptions _options;
 
         public ProductsWorkflowService()
         {
-            var opt = PosDbOptions.Default();
-            DbInitializer.EnsureCreated(opt);
-            var factory = new SqliteConnectionFactory(opt);
+            _options = PosDbOptions.Default();
+            DbInitializer.EnsureCreated(_options);
+            var factory = new SqliteConnectionFactory(_options);
             _products = new ProductRepository(factory);
         }
 
@@ -34,8 +37,18 @@ namespace Win7POS.Wpf.Products
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("name is empty");
             if (priceMinor < 0) throw new ArgumentException("price is invalid");
 
+            var before = await _products.GetByIdAsync(productId).ConfigureAwait(false);
             var ok = await _products.UpdateAsync(productId, name.Trim(), priceMinor).ConfigureAwait(false);
             if (!ok) throw new InvalidOperationException("Product not found.");
+
+            var details = AuditDetails.Kv(
+                ("productId", productId.ToString()),
+                ("barcode", before == null ? string.Empty : before.Barcode),
+                ("oldName", before == null ? string.Empty : before.Name),
+                ("newName", name.Trim()),
+                ("oldPrice", before == null ? string.Empty : before.UnitPrice.ToString()),
+                ("newPrice", priceMinor.ToString()));
+            await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductUpdate, details).ConfigureAwait(false);
         }
 
         public async Task<string> ExportCsvAsync()

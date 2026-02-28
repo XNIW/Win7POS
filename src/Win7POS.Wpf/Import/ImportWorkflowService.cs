@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using Win7POS.Core;
+using Win7POS.Core.Audit;
 using Win7POS.Core.Import;
 using Win7POS.Data;
 using Win7POS.Data.Adapters;
@@ -15,6 +16,7 @@ namespace Win7POS.Wpf.Import
     public sealed class ImportWorkflowService
     {
         private readonly FileLogger _logger = new FileLogger();
+        private readonly AuditLogRepository _audit = new AuditLogRepository();
 
         public async Task<ImportAnalyzeUiResult> AnalyzeAsync(string csvPath, string dbPath = "", int maxItems = 200)
         {
@@ -88,6 +90,20 @@ namespace Win7POS.Wpf.Import
                 var apply = await ApplyWithTransactionAsync(new SqliteConnectionFactory(opt), rows, options).ConfigureAwait(false);
                 if (apply.ErrorsCount > 0)
                     throw new InvalidOperationException("Apply failed with row errors.");
+
+                var ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var details = AuditDetails.Kv(
+                    ("csvPath", string.Empty),
+                    ("backupPath", backupPath ?? string.Empty),
+                    ("insertNew", options.InsertNew.ToString()),
+                    ("updatePrice", options.UpdatePrice.ToString()),
+                    ("updateName", options.UpdateName.ToString()),
+                    ("dryRun", options.DryRun.ToString()),
+                    ("appliedInserted", apply.AppliedInserted.ToString()),
+                    ("appliedUpdated", apply.AppliedUpdated.ToString()),
+                    ("noChange", apply.NoChange.ToString()),
+                    ("errors", apply.ErrorsCount.ToString()));
+                await _audit.AppendAsync(opt, ts, AuditActions.ImportApply, details).ConfigureAwait(false);
 
                 var summary = BuildApplySummary(opt.DbPath, options, diff, apply);
                 if (!string.IsNullOrWhiteSpace(backupPath))

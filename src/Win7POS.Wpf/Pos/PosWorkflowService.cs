@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Globalization;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core;
+using Win7POS.Core.Audit;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Receipt;
@@ -35,6 +36,7 @@ namespace Win7POS.Wpf.Pos
         private readonly SaleRepository _sales;
         private readonly SettingsRepository _settings;
         private readonly DbMaintenanceRepository _dbMaintenance;
+        private readonly AuditLogRepository _audit = new AuditLogRepository();
         private readonly PosSession _session;
         private readonly PosDbOptions _options;
         private readonly SqliteConnectionFactory _factory;
@@ -145,6 +147,10 @@ namespace Win7POS.Wpf.Pos
             {
                 SqliteConnection.ClearAllPools();
                 File.Copy(backupDbPath, _options.DbPath, true);
+                var details = AuditDetails.Kv(
+                    ("backupPath", backupDbPath),
+                    ("dbPath", _options.DbPath));
+                await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.DbRestore, details).ConfigureAwait(false);
                 _logger.LogInfo("POS DB restored from: " + backupDbPath);
             }
             catch (Exception ex)
@@ -586,6 +592,16 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
                             line.SaleId = refundSaleId;
 
                         await _sales.InsertSaleLinesAsync(conn, tx, refundLines).ConfigureAwait(false);
+
+                        var voided = req.IsFullVoid ? "true" : "false";
+                        var details = AuditDetails.Kv(
+                            ("originalSaleId", original.Id.ToString()),
+                            ("refundSaleId", refundSaleId.ToString()),
+                            ("isFullVoid", req.IsFullVoid.ToString()),
+                            ("voided", voided),
+                            ("totalMinor", refundSale.Total.ToString()),
+                            ("lines", refundLines.Count.ToString()));
+                        await _audit.AppendAsync(conn, tx, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.RefundCreate, details).ConfigureAwait(false);
 
                         if (req.IsFullVoid)
                             await _sales.MarkSaleVoidedAsync(conn, tx, original.Id, refundSaleId, UnixTime.NowMs()).ConfigureAwait(false);

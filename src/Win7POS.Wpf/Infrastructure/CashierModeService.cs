@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Threading;
 using System.Threading.Tasks;
+using Win7POS.Core.Audit;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 
@@ -18,12 +19,14 @@ namespace Win7POS.Wpf.Infrastructure
         private static readonly SemaphoreSlim Gate = new SemaphoreSlim(1, 1);
 
         private readonly SettingsRepository _settings;
+        private readonly AuditLogRepository _audit = new AuditLogRepository();
+        private readonly PosDbOptions _options;
 
         public CashierModeService()
         {
-            var opt = PosDbOptions.Default();
-            DbInitializer.EnsureCreated(opt);
-            _settings = new SettingsRepository(new SqliteConnectionFactory(opt));
+            _options = PosDbOptions.Default();
+            DbInitializer.EnsureCreated(_options);
+            _settings = new SettingsRepository(new SqliteConnectionFactory(_options));
         }
 
         public async Task<bool> GetCashierModeAsync()
@@ -45,6 +48,9 @@ namespace Win7POS.Wpf.Infrastructure
             try
             {
                 await _settings.SetBoolAsync(AppSettingKeys.CashierMode, enabled).ConfigureAwait(false);
+                var action = enabled ? AuditActions.CashierModeOn : AuditActions.CashierModeOff;
+                var details = AuditDetails.Kv(("enabled", enabled ? "true" : "false"));
+                await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), action, details).ConfigureAwait(false);
             }
             finally
             {
@@ -111,6 +117,11 @@ namespace Win7POS.Wpf.Infrastructure
                 var payload = "v1|" + Iterations + "|" + Convert.ToBase64String(salt) + "|" + Convert.ToBase64String(hash);
                 await _settings.SetStringAsync(AppSettingKeys.CashierPin, payload).ConfigureAwait(false);
                 await ResetPinFailuresNoLockAsync().ConfigureAwait(false);
+                await _audit.AppendAsync(
+                    _options,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    AuditActions.PinSet,
+                    AuditDetails.Kv(("pinEnabled", "true"))).ConfigureAwait(false);
             }
             finally
             {
@@ -181,6 +192,7 @@ namespace Win7POS.Wpf.Infrastructure
                 var lockUntil = await ReadLockUntilUtcNoLockAsync().ConfigureAwait(false);
                 if (lockUntil.HasValue && DateTime.UtcNow < lockUntil.Value)
                 {
+                    await AppendPinFailedAttemptNoLockAsync(await ReadFailedCountNoLockAsync().ConfigureAwait(false), true, lockUntil).ConfigureAwait(false);
                     return (false, true, lockUntil, BuildLockedMessage(lockUntil.Value));
                 }
 
@@ -203,12 +215,14 @@ namespace Win7POS.Wpf.Infrastructure
                     var nextLockUntil = DateTime.UtcNow.Add(LockDuration);
                     await _settings.SetIntAsync(AppSettingKeys.CashierPinFailedCount, failedCount).ConfigureAwait(false);
                     await _settings.SetStringAsync(AppSettingKeys.CashierPinLockUntilUtc, nextLockUntil.ToString("o", CultureInfo.InvariantCulture)).ConfigureAwait(false);
+                    await AppendPinFailedAttemptNoLockAsync(failedCount, true, nextLockUntil).ConfigureAwait(false);
                     return (false, true, nextLockUntil, BuildLockedMessage(nextLockUntil));
                 }
 
                 await _settings.SetIntAsync(AppSettingKeys.CashierPinFailedCount, failedCount).ConfigureAwait(false);
                 await _settings.SetStringAsync(AppSettingKeys.CashierPinLockUntilUtc, string.Empty).ConfigureAwait(false);
                 var remaining = MaxFailedAttempts - failedCount;
+                await AppendPinFailedAttemptNoLockAsync(failedCount, false, null).ConfigureAwait(false);
                 return (false, false, null, "PIN errato. Tentativi rimasti: " + remaining);
             }
             finally
@@ -225,6 +239,11 @@ namespace Win7POS.Wpf.Infrastructure
                 await _settings.SetStringAsync(AppSettingKeys.CashierPin, string.Empty).ConfigureAwait(false);
                 await _settings.SetBoolAsync(AppSettingKeys.CashierPinEnabled, false).ConfigureAwait(false);
                 await ResetPinFailuresNoLockAsync().ConfigureAwait(false);
+                await _audit.AppendAsync(
+                    _options,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    AuditActions.PinRemove,
+                    AuditDetails.Kv(("pinEnabled", "false"))).ConfigureAwait(false);
             }
             finally
             {
@@ -282,6 +301,15 @@ namespace Win7POS.Wpf.Infrastructure
         {
             await _settings.SetIntAsync(AppSettingKeys.CashierPinFailedCount, 0).ConfigureAwait(false);
             await _settings.SetStringAsync(AppSettingKeys.CashierPinLockUntilUtc, string.Empty).ConfigureAwait(false);
+        }
+
+        private async Task AppendPinFailedAttemptNoLockAsync(int failedCount, bool lockedNow, DateTime? lockUntilUtc)
+        {
+            var details = AuditDetails.Kv(
+                ("failedCount", failedCount.ToString(CultureInfo.InvariantCulture)),
+                ("lockedNow", lockedNow ? "true" : "false"),
+                ("lockUntilUtc", lockUntilUtc.HasValue ? lockUntilUtc.Value.ToString("o", CultureInfo.InvariantCulture) : string.Empty));
+            await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.PinFailedAttempt, details).ConfigureAwait(false);
         }
 
         private static string BuildLockedMessage(DateTime lockUntilUtc)
