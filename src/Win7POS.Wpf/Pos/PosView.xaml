@@ -115,6 +115,7 @@
                     <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
                         <Button MinWidth="110" Margin="0,0,8,0" Content="Reload" Command="{Binding LoadRecentSalesCommand}"/>
                         <Button MinWidth="120" Margin="0,0,8,0" Content="Reso / Storno" Command="{Binding RefundCommand}"/>
+                        <Button MinWidth="130" Margin="0,0,8,0" Content="Stampa selezionato" Command="{Binding PrintSelectedReceiptCommand}"/>
                         <Button MinWidth="140" Content="Ristampa (preview)" Command="{Binding ReprintPreviewCommand}"/>
                     </StackPanel>
                 </Grid>

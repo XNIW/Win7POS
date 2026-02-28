@@ -6,7 +6,6 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
-using Win7POS.Wpf.Printing;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
 using Win7POS.Wpf.Infrastructure;
@@ -18,7 +17,6 @@ namespace Win7POS.Wpf.Pos
     {
         private readonly PosWorkflowService _service = new PosWorkflowService();
         private readonly FileLogger _logger = new FileLogger();
-        private readonly IReceiptPrinter _printer = new WindowsSpoolerReceiptPrinter();
 
         private string _barcodeInput = string.Empty;
         private int _subtotal;
@@ -113,6 +111,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand DbMaintenanceCommand { get; }
         public ICommand AboutSupportCommand { get; }
         public ICommand RefundCommand { get; }
+        public ICommand PrintSelectedReceiptCommand { get; }
 
         public PosViewModel()
         {
@@ -131,6 +130,7 @@ namespace Win7POS.Wpf.Pos
             DbMaintenanceCommand = new AsyncRelayCommand(OpenDbMaintenanceAsync, _ => !IsBusy);
             AboutSupportCommand = new AsyncRelayCommand(OpenAboutSupportAsync, _ => !IsBusy);
             RefundCommand = new AsyncRelayCommand(OpenRefundAsync, _ => !IsBusy && SelectedRecentSale != null && SelectedRecentSale.Kind == (int)SaleKind.Sale);
+            PrintSelectedReceiptCommand = new AsyncRelayCommand(PrintSelectedReceiptAsync, _ => !IsBusy && SelectedRecentSale != null);
             StatusMessage = "POS pronto.";
             _ = InitializeAsync();
         }
@@ -387,6 +387,39 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        private async Task PrintSelectedReceiptAsync()
+        {
+            if (SelectedRecentSale == null)
+            {
+                StatusMessage = "Seleziona una vendita.";
+                return;
+            }
+
+            IsBusy = true;
+            try
+            {
+                var preview = await _service.GetReceiptPreviewBySaleIdAsync(SelectedRecentSale.SaleId, UseReceipt42).ConfigureAwait(true);
+                if (string.IsNullOrWhiteSpace(preview))
+                {
+                    StatusMessage = "Ricevuta non disponibile.";
+                    return;
+                }
+
+                ReceiptPreview = preview;
+                await PrintReceiptAsync(preview, "SALE_" + SelectedRecentSale.SaleCode).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore stampa selezionato: " + ex.Message;
+                _logger.LogError(ex, "POS VM print selected receipt failed");
+            }
+            finally
+            {
+                IsBusy = false;
+                RequestFocusBarcode();
+            }
+        }
+
         private async Task IncreaseQtyAsync()
         {
             if (SelectedCartItem == null) return;
@@ -545,25 +578,11 @@ namespace Win7POS.Wpf.Pos
 
         private async Task PrintReceiptAsync(string receiptText, string saleCode)
         {
-            var outputDirectory = string.IsNullOrWhiteSpace(_printerSettings.OutputDirectory)
-                ? Path.Combine(Win7POS.Core.AppPaths.DataDirectory, "receipts")
-                : _printerSettings.OutputDirectory;
-            var outputPath = Path.Combine(outputDirectory, "SALE_" + saleCode + ".txt");
-
-            var printOptions = new ReceiptPrintOptions
-            {
-                PrinterName = _printerSettings.PrinterName,
-                Copies = _printerSettings.Copies < 1 ? 1 : _printerSettings.Copies,
-                CharactersPerLine = UseReceipt42 ? 42 : 32,
-                SaveCopyToFile = _printerSettings.SaveCopyToFile,
-                OutputPath = outputPath
-            };
-
             try
             {
-                await _printer.PrintAsync(receiptText, printOptions).ConfigureAwait(true);
-                StatusMessage = _printerSettings.SaveCopyToFile
-                    ? "Ricevuta stampata. Copia salvata: " + outputPath
+                var result = await _service.PrintReceiptTextAsync(receiptText, UseReceipt42, saleCode).ConfigureAwait(true);
+                StatusMessage = result.SavedCopy
+                    ? "Ricevuta stampata. Copia salvata: " + result.OutputPath
                     : "Ricevuta stampata.";
             }
             catch (Exception ex)
@@ -692,6 +711,7 @@ namespace Win7POS.Wpf.Pos
             (DbMaintenanceCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (AboutSupportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (RefundCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (PrintSelectedReceiptCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void RequestFocusBarcode()

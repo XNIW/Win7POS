@@ -607,21 +607,8 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
                 {
                     try
                     {
-                        var printer = await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
                         var receiptText = useReceipt42 ? receipt42 : receipt32;
-                        var outputDirectory = string.IsNullOrWhiteSpace(printer.OutputDirectory)
-                            ? Path.Combine(AppPaths.DataDirectory, "receipts")
-                            : printer.OutputDirectory;
-                        var outputPath = Path.Combine(outputDirectory, "REFUND_" + refundSale.Code + ".txt");
-
-                        await _receiptPrinter.PrintAsync(receiptText, new ReceiptPrintOptions
-                        {
-                            PrinterName = printer.PrinterName,
-                            Copies = printer.Copies < 1 ? 1 : printer.Copies,
-                            CharactersPerLine = useReceipt42 ? 42 : 32,
-                            SaveCopyToFile = printer.SaveCopyToFile,
-                            OutputPath = outputPath
-                        }).ConfigureAwait(false);
+                        await PrintReceiptTextNoLockAsync(receiptText, useReceipt42, "REFUND_" + refundSale.Code).ConfigureAwait(false);
                     }
                     catch (Exception printEx)
                     {
@@ -754,6 +741,19 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
             }
         }
 
+        public async Task<PosPrintResult> PrintReceiptTextAsync(string receiptText, bool use42, string fileTag)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                return await PrintReceiptTextNoLockAsync(receiptText, use42, fileTag).ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         public async Task<PosWorkflowSnapshot> GetSnapshotAsync()
         {
             await _gate.WaitAsync().ConfigureAwait(false);
@@ -858,6 +858,42 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
             };
         }
 
+        private async Task<PosPrintResult> PrintReceiptTextNoLockAsync(string receiptText, bool use42, string fileTag)
+        {
+            var text = receiptText ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(text))
+                throw new InvalidOperationException("Receipt text is empty.");
+
+            var printer = await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
+            var outputDirectory = string.IsNullOrWhiteSpace(printer.OutputDirectory)
+                ? Path.Combine(AppPaths.DataDirectory, "receipts")
+                : printer.OutputDirectory;
+            var outputPath = Path.Combine(outputDirectory, NormalizeFileTag(fileTag) + ".txt");
+
+            await _receiptPrinter.PrintAsync(text, new ReceiptPrintOptions
+            {
+                PrinterName = printer.PrinterName,
+                Copies = printer.Copies < 1 ? 1 : printer.Copies,
+                CharactersPerLine = use42 ? 42 : 32,
+                SaveCopyToFile = printer.SaveCopyToFile,
+                OutputPath = outputPath
+            }).ConfigureAwait(false);
+
+            return new PosPrintResult
+            {
+                SavedCopy = printer.SaveCopyToFile,
+                OutputPath = outputPath
+            };
+        }
+
+        private static string NormalizeFileTag(string value)
+        {
+            var tag = string.IsNullOrWhiteSpace(value) ? "RECEIPT" : value.Trim();
+            foreach (var ch in Path.GetInvalidFileNameChars())
+                tag = tag.Replace(ch, '_');
+            return tag;
+        }
+
         private static string EscapeCsv(string value)
         {
             return (value ?? string.Empty).Replace(";", ",");
@@ -911,6 +947,12 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
         public string Receipt42 { get; set; } = string.Empty;
         public string Receipt32 { get; set; } = string.Empty;
         public PosWorkflowSnapshot Snapshot { get; set; } = new PosWorkflowSnapshot();
+    }
+
+    public sealed class PosPrintResult
+    {
+        public bool SavedCopy { get; set; }
+        public string OutputPath { get; set; } = string.Empty;
     }
 
     public sealed class PosPaymentInfo
