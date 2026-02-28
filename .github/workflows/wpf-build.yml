@@ -20,7 +20,8 @@ jobs:
       - run: dotnet --info
       - run: dotnet restore src/Win7POS.Wpf/Win7POS.Wpf.csproj
       - run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
-      - run: dir src\Win7POS.Wpf\bin /s
+      - name: List WPF bin output
+        run: Get-ChildItem -Path "src/Win7POS.Wpf/bin" -Recurse | Select-Object FullName
       - name: Upload WPF artifact
         uses: actions/upload-artifact@v4
         with:
