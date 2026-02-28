@@ -1,0 +1,56 @@
+<Window x:Class="Win7POS.Wpf.Pos.Dialogs.AboutSupportDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="About / Support"
+        Width="700"
+        Height="360"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="170"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="Version:"/>
+        <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" IsReadOnly="True" Text="{Binding VersionText}"/>
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,6,0,0" Text="DB Path:"/>
+        <TextBox Grid.Row="1" Grid.Column="1" Margin="8,6,0,0" IsReadOnly="True" Text="{Binding DbPath}"/>
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,6,0,0" Text="Logs Directory:"/>
+        <TextBox Grid.Row="2" Grid.Column="1" Margin="8,6,0,0" IsReadOnly="True" Text="{Binding LogsDirectory}"/>
+
+        <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,6,0,0" Text="Backups Directory:"/>
+        <TextBox Grid.Row="3" Grid.Column="1" Margin="8,6,0,0" IsReadOnly="True" Text="{Binding BackupsDirectory}"/>
+
+        <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,6,0,0" Text="Exports Directory:"/>
+        <TextBox Grid.Row="4" Grid.Column="1" Margin="8,6,0,0" IsReadOnly="True" Text="{Binding ExportsDirectory}"/>
+
+        <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,6,0,0" Text="Printer:"/>
+        <TextBox Grid.Row="5" Grid.Column="1" Margin="8,6,0,0" IsReadOnly="True" Text="{Binding PrinterName}"/>
+
+        <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,6,0,0" Text="AutoPrint:"/>
+        <TextBox Grid.Row="6" Grid.Column="1" Margin="8,6,0,0" IsReadOnly="True" Text="{Binding AutoPrintText}"/>
+
+        <TextBlock Grid.Row="7" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="DimGray" Text="{Binding Status}" TextWrapping="Wrap"/>
+
+        <StackPanel Grid.Row="8" Grid.ColumnSpan="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button MinWidth="130" Margin="0,0,8,0" Content="Apri cartella dati" Command="{Binding OpenDataFolderCommand}"/>
+            <Button MinWidth="120" Margin="0,0,8,0" Content="Apri cartella log" Command="{Binding OpenLogFolderCommand}"/>
+            <Button MinWidth="90" Margin="0,0,8,0" Content="Copia info" Command="{Binding CopyInfoCommand}"/>
+            <Button MinWidth="90" Content="Chiudi" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

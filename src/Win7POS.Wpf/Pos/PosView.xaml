@@ -26,6 +26,7 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <TextBox x:Name="BarcodeBox"
@@ -54,6 +55,8 @@
                     Command="{Binding DailyReportCommand}"/>
             <Button Grid.Column="9" Margin="8,0,0,0" MinWidth="120" Content="Gestione DB"
                     Command="{Binding DbMaintenanceCommand}"/>
+            <Button Grid.Column="10" Margin="8,0,0,0" MinWidth="130" Content="About / Support"
+                    Command="{Binding AboutSupportCommand}"/>
         </Grid>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">
