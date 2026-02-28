@@ -16,10 +16,10 @@
             <TabItem Header="POS">
                 <pos:PosView/>
             </TabItem>
-            <TabItem Header="Import">
+            <TabItem x:Name="ImportTab" Header="Import">
                 <imp:ImportView/>
             </TabItem>
-            <TabItem Header="Prodotti">
+            <TabItem x:Name="ProductsTab" Header="Prodotti">
                 <prod:ProductsView/>
             </TabItem>
         </TabControl>
@@ -27,6 +27,10 @@
         <StatusBar Grid.Row="1">
             <TextBlock Text="DB: "/>
             <TextBlock Text="{x:Static core:AppPaths.DbPath}"/>
+            <Separator/>
+            <CheckBox Content="Modalita cassa" Margin="8,0,0,0"
+                      Checked="OnCashierModeChecked"
+                      Unchecked="OnCashierModeUnchecked"/>
         </StatusBar>
     </Grid>
 </Window>
