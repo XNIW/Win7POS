@@ -51,3 +51,56 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Esegui Win7POS"; Flags: nowait 
 ; Intentionally empty for ProgramData safety.
 ; Do NOT add entries for %ProgramData%\Win7POS here.
 
+[Code]
+function IsDotNet48OrLaterInstalled(): Boolean;
+var
+  ReleaseValue: Cardinal;
+begin
+  ReleaseValue := 0;
+  Result :=
+    RegQueryDWordValue(HKLM, 'SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full', 'Release', ReleaseValue) or
+    RegQueryDWordValue(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\NET Framework Setup\NDP\v4\Full', 'Release', ReleaseValue);
+
+  if Result then
+    Result := (ReleaseValue >= 528040);
+end;
+
+function IsVcRuntimeX86Installed(): Boolean;
+var
+  Installed: Cardinal;
+begin
+  Installed := 0;
+  Result :=
+    RegQueryDWordValue(HKLM, 'SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x86', 'Installed', Installed) or
+    RegQueryDWordValue(HKLM, 'SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x86', 'Installed', Installed);
+
+  if Result then
+    Result := (Installed = 1);
+end;
+
+function InitializeSetup(): Boolean;
+begin
+  if not IsDotNet48OrLaterInstalled() then
+  begin
+    MsgBox(
+      '.NET Framework 4.8 (o superiore) non trovato.' + #13#10#13#10 +
+      'Installa .NET Framework 4.8 e riesegui il setup.',
+      mbCriticalError,
+      MB_OK);
+    Result := False;
+    Exit;
+  end;
+
+  if not IsVcRuntimeX86Installed() then
+  begin
+    MsgBox(
+      'Avviso: Microsoft Visual C++ Runtime x86 non rilevato.' + #13#10 +
+      'Alcune dipendenze native (es. SQLite) potrebbero richiederlo.' + #13#10#13#10 +
+      'Il setup continua comunque.',
+      mbInformation,
+      MB_OK);
+  end;
+
+  Result := True;
+end;
+

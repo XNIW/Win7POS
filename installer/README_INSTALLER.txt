@@ -13,6 +13,11 @@ Prerequisites on Windows build machine:
    ..\dist\Win7POS
    containing Win7POS.Wpf.exe and required DLLs
 
+Prerequisiti runtime per il PC destinazione:
+- .NET Framework 4.8 (obbligatorio, il setup verifica e blocca se manca)
+- Microsoft Visual C++ Runtime x86 (consigliato se richiesto da dipendenze native, es. SQLite;
+  il setup mostra solo un avviso e non scarica/installa automaticamente)
+
 How to build installer:
 1) Open installer\Win7POS.iss in Inno Setup Compiler GUI
    OR run from terminal:
