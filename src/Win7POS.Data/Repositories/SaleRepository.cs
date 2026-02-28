@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using System;
 using Dapper;
 using Win7POS.Core.Models;
 
@@ -67,6 +68,31 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal);
             return rows.ToList();
         }
 
+        public async Task<DailySalesSummary> GetDailySummaryAsync(DateTime date)
+        {
+            var from = new DateTimeOffset(date.Date).ToUnixTimeMilliseconds();
+            var to = new DateTimeOffset(date.Date.AddDays(1)).ToUnixTimeMilliseconds();
+            using var conn = _factory.Open();
+            var row = await conn.QuerySingleAsync<DailySalesSummary>(@"
+SELECT
+  COUNT(1) AS SalesCount,
+  COALESCE(SUM(total), 0) AS TotalAmount,
+  COALESCE(SUM(paidCash), 0) AS CashAmount,
+  COALESCE(SUM(paidCard), 0) AS CardAmount
+FROM sales
+WHERE createdAt >= @from AND createdAt < @to",
+                new { from, to });
+            row.Date = date.Date;
+            return row;
+        }
+
+        public Task<IReadOnlyList<Sale>> GetSalesForDateAsync(DateTime date)
+        {
+            var from = new DateTimeOffset(date.Date).ToUnixTimeMilliseconds();
+            var to = new DateTimeOffset(date.Date.AddDays(1)).ToUnixTimeMilliseconds();
+            return GetSalesBetweenAsync(from, to);
+        }
+
         public async Task<Sale> GetByIdAsync(long saleId)
         {
             using var conn = _factory.Open();
@@ -86,5 +112,14 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal);
                 new { saleId });
             return rows.ToList();
         }
+    }
+
+    public sealed class DailySalesSummary
+    {
+        public DateTime Date { get; set; }
+        public int SalesCount { get; set; }
+        public int TotalAmount { get; set; }
+        public int CashAmount { get; set; }
+        public int CardAmount { get; set; }
     }
 }

@@ -1,0 +1,53 @@
+<Window x:Class="Win7POS.Wpf.Pos.Dialogs.DailyReportDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Chiusura cassa / Daily report"
+        Width="560"
+        Height="320"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="170"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Data (yyyy-MM-dd):"/>
+        <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" Width="150" HorizontalAlignment="Left"
+                 Text="{Binding DateText, UpdateSourceTrigger=PropertyChanged}"/>
+
+        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,10,0,0" Orientation="Horizontal">
+            <Button MinWidth="110" Margin="0,0,8,0" Content="Carica" Command="{Binding LoadCommand}"/>
+            <Button MinWidth="110" Content="Export CSV" Command="{Binding ExportCsvCommand}"/>
+        </StackPanel>
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,14,0,0" Text="Numero vendite:"/>
+        <TextBlock Grid.Row="2" Grid.Column="1" Margin="8,14,0,0" Text="{Binding SalesCount}"/>
+
+        <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,8,0,0" Text="Totale:"/>
+        <TextBlock Grid.Row="3" Grid.Column="1" Margin="8,8,0,0" Text="{Binding TotalAmount}"/>
+
+        <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,8,0,0" Text="Contanti / Carta:"/>
+        <TextBlock Grid.Row="4" Grid.Column="1" Margin="8,8,0,0">
+            <Run Text="{Binding CashAmount}"/>
+            <Run Text=" / "/>
+            <Run Text="{Binding CardAmount}"/>
+        </TextBlock>
+
+        <TextBlock Grid.Row="5" Grid.ColumnSpan="2" Margin="0,14,0,0" Foreground="DimGray" TextWrapping="Wrap"
+                   Text="{Binding Status}"/>
+
+        <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button MinWidth="110" Height="34" Content="Chiudi" IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>

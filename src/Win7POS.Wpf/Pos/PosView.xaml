@@ -24,6 +24,7 @@
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
             <TextBox x:Name="BarcodeBox"
@@ -48,6 +49,8 @@
                     Command="{Binding PrinterSettingsCommand}"/>
             <Button Grid.Column="7" Margin="8,0,0,0" MinWidth="130" Content="Stampa ultima"
                     Command="{Binding PrintLastReceiptCommand}"/>
+            <Button Grid.Column="8" Margin="8,0,0,0" MinWidth="130" Content="Chiusura cassa"
+                    Command="{Binding DailyReportCommand}"/>
         </Grid>
 
         <Grid Grid.Row="1" Margin="0,0,0,8">

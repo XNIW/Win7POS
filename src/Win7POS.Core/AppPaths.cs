@@ -15,6 +15,8 @@ namespace Win7POS.Core
 
         public static string BackupsDirectory => Path.Combine(DataDirectory, "backups");
 
+        public static string ExportsDirectory => Path.Combine(DataDirectory, "exports");
+
         public static string LogPath => Path.Combine(LogsDirectory, "app.log");
 
         public static void EnsureCreated()
@@ -22,6 +24,7 @@ namespace Win7POS.Core
             Directory.CreateDirectory(DataDirectory);
             Directory.CreateDirectory(LogsDirectory);
             Directory.CreateDirectory(BackupsDirectory);
+            Directory.CreateDirectory(ExportsDirectory);
         }
 
         // Backward-compatible alias used by existing callers.

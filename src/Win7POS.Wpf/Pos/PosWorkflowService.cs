@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Globalization;
 using Win7POS.Core;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
@@ -138,6 +139,51 @@ namespace Win7POS.Wpf.Pos
             var settings = await GetPrinterSettingsAsync().ConfigureAwait(false);
             settings.AutoPrint = value;
             await SetPrinterSettingsAsync(settings).ConfigureAwait(false);
+        }
+
+        public async Task<DailySalesSummary> GetDailySummaryAsync(DateTime date)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                return await _sales.GetDailySummaryAsync(date).ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<string> ExportDailyCsvAsync(DateTime date)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                AppPaths.EnsureCreated();
+                var rows = await _sales.GetSalesForDateAsync(date).ConfigureAwait(false);
+                var fileName = "daily_" + date.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + ".csv";
+                var path = Path.Combine(AppPaths.ExportsDirectory, fileName);
+                using (var sw = new StreamWriter(path, false, Encoding.UTF8))
+                {
+                    await sw.WriteLineAsync("saleId;code;createdAt;total;paidCash;paidCard;change").ConfigureAwait(false);
+                    foreach (var s in rows)
+                    {
+                        await sw.WriteLineAsync(
+                            s.Id + ";" +
+                            EscapeCsv(s.Code) + ";" +
+                            s.CreatedAt + ";" +
+                            s.Total + ";" +
+                            s.PaidCash + ";" +
+                            s.PaidCard + ";" +
+                            s.Change).ConfigureAwait(false);
+                    }
+                }
+                return path;
+            }
+            finally
+            {
+                _gate.Release();
+            }
         }
 
         public async Task<string> BackupDbAsync()
@@ -503,6 +549,11 @@ namespace Win7POS.Wpf.Pos
                     Footer = "Powered by Win7POS"
                 });
             return string.Join(Environment.NewLine, lines);
+        }
+
+        private static string EscapeCsv(string value)
+        {
+            return (value ?? string.Empty).Replace(";", ",");
         }
     }
 
