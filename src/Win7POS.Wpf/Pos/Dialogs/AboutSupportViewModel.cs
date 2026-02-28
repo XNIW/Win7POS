@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -28,6 +29,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         public string VersionText => (Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly()).GetName().Version?.ToString() ?? "unknown";
+        public string BuildText => ReadBuildInfoOrFallback();
         public string DbPath => AppPaths.DbPath;
         public string LogsDirectory => AppPaths.LogsDirectory;
         public string BackupsDirectory => AppPaths.BackupsDirectory;
@@ -91,6 +93,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var sb = new StringBuilder();
                 sb.AppendLine("Win7POS About/Support");
                 sb.AppendLine("Version: " + VersionText);
+                sb.AppendLine("Build: " + BuildText);
                 sb.AppendLine("DB: " + DbPath);
                 sb.AppendLine("Logs: " + LogsDirectory);
                 sb.AppendLine("Backups: " + BackupsDirectory);
@@ -103,6 +106,26 @@ namespace Win7POS.Wpf.Pos.Dialogs
             catch (Exception ex)
             {
                 Status = "Copy failed: " + ex.Message;
+            }
+        }
+
+        private string ReadBuildInfoOrFallback()
+        {
+            try
+            {
+                var versionFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "VERSION.txt");
+                if (!File.Exists(versionFile))
+                    return VersionText;
+
+                var raw = File.ReadAllText(versionFile, Encoding.UTF8).Trim();
+                if (string.IsNullOrWhiteSpace(raw))
+                    return VersionText;
+
+                return raw.Replace("\r\n", " | ").Replace("\n", " | ");
+            }
+            catch
+            {
+                return VersionText;
             }
         }
 

@@ -107,6 +107,15 @@ jobs:
           "@
           Set-Content -Path "dist/Win7POS/RELEASE_CHECKLIST.txt" -Value $checklist -Encoding UTF8
 
+          $buildTimestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+          $versionInfo = @"
+          commit_sha=$env:GITHUB_SHA
+          branch=$env:GITHUB_REF_NAME
+          run_number=$env:GITHUB_RUN_NUMBER
+          timestamp_utc=$buildTimestamp
+          "@
+          Set-Content -Path "dist/Win7POS/VERSION.txt" -Value $versionInfo -Encoding UTF8
+
           $stamp = Get-Date -Format "yyyyMMdd_HHmm"
           $zip = "dist/Win7POS_$stamp.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
