@@ -9,14 +9,17 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using Win7POS.Core;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public sealed class AboutSupportViewModel : INotifyPropertyChanged
     {
         private readonly Pos.PosWorkflowService _service;
+        private readonly CashierModeService _cashierMode = new CashierModeService();
         private string _printerName = "(default)";
         private string _autoPrintText = "true";
+        private string _cashierPinStatusText = "Disattivo";
         private string _status = string.Empty;
 
         public AboutSupportViewModel(Pos.PosWorkflowService service)
@@ -25,7 +28,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
             OpenDataFolderCommand = new RelayCommand(_ => OpenFolder(AppPaths.DataDirectory));
             OpenLogFolderCommand = new RelayCommand(_ => OpenFolder(AppPaths.LogsDirectory));
             CopyInfoCommand = new RelayCommand(_ => CopyInfo());
+            SetOrChangePinCommand = new RelayCommand(_ => _ = SetOrChangePinAsync());
+            RemovePinCommand = new RelayCommand(_ => _ = RemovePinAsync());
             _ = LoadPrinterSettingsAsync();
+            _ = LoadCashierPinStatusAsync();
         }
 
         public string VersionText => (Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly()).GetName().Version?.ToString() ?? "unknown";
@@ -53,9 +59,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _status = value ?? string.Empty; OnPropertyChanged(); }
         }
 
+        public string CashierPinStatusText
+        {
+            get => _cashierPinStatusText;
+            set { _cashierPinStatusText = value ?? string.Empty; OnPropertyChanged(); }
+        }
+
         public ICommand OpenDataFolderCommand { get; }
         public ICommand OpenLogFolderCommand { get; }
         public ICommand CopyInfoCommand { get; }
+        public ICommand SetOrChangePinCommand { get; }
+        public ICommand RemovePinCommand { get; }
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -100,6 +114,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 sb.AppendLine("Exports: " + ExportsDirectory);
                 sb.AppendLine("Printer: " + PrinterName);
                 sb.AppendLine("AutoPrint: " + AutoPrintText);
+                sb.AppendLine("CashierPin: " + CashierPinStatusText);
                 Clipboard.SetText(sb.ToString());
                 Status = "Info copied to clipboard.";
             }
@@ -107,6 +122,99 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 Status = "Copy failed: " + ex.Message;
             }
+        }
+
+        private async Task LoadCashierPinStatusAsync()
+        {
+            try
+            {
+                var enabled = await _cashierMode.IsPinEnabledAsync().ConfigureAwait(true);
+                var hasPin = await _cashierMode.HasPinAsync().ConfigureAwait(true);
+                CashierPinStatusText = enabled && hasPin ? "Attivo" : "Disattivo";
+            }
+            catch (Exception ex)
+            {
+                Status = "Load PIN status failed: " + ex.Message;
+            }
+        }
+
+        private async Task SetOrChangePinAsync()
+        {
+            try
+            {
+                var hasPin = await _cashierMode.HasPinAsync().ConfigureAwait(true);
+                if (hasPin)
+                {
+                    var current = PromptPin("Inserisci PIN attuale");
+                    if (current == null) return;
+                    var ok = await _cashierMode.VerifyPinAsync(current).ConfigureAwait(true);
+                    if (!ok)
+                    {
+                        Status = "PIN attuale non valido.";
+                        return;
+                    }
+                }
+
+                var pin1 = PromptPin("Nuovo PIN (4 cifre)");
+                if (pin1 == null) return;
+                var pin2 = PromptPin("Conferma nuovo PIN");
+                if (pin2 == null) return;
+                if (!string.Equals(pin1, pin2, StringComparison.Ordinal))
+                {
+                    Status = "PIN non coincidono.";
+                    return;
+                }
+
+                await _cashierMode.SetPinAsync(pin1).ConfigureAwait(true);
+                await _cashierMode.SetPinEnabledAsync(true).ConfigureAwait(true);
+                await LoadCashierPinStatusAsync().ConfigureAwait(true);
+                Status = hasPin ? "PIN aggiornato." : "PIN impostato.";
+            }
+            catch (Exception ex)
+            {
+                Status = "Set PIN failed: " + ex.Message;
+            }
+        }
+
+        private async Task RemovePinAsync()
+        {
+            try
+            {
+                var hasPin = await _cashierMode.HasPinAsync().ConfigureAwait(true);
+                if (!hasPin)
+                {
+                    Status = "PIN non impostato.";
+                    return;
+                }
+
+                var current = PromptPin("Inserisci PIN attuale");
+                if (current == null) return;
+                var ok = await _cashierMode.VerifyPinAsync(current).ConfigureAwait(true);
+                if (!ok)
+                {
+                    Status = "PIN attuale non valido.";
+                    return;
+                }
+
+                await _cashierMode.ClearPinAsync().ConfigureAwait(true);
+                await LoadCashierPinStatusAsync().ConfigureAwait(true);
+                Status = "PIN rimosso.";
+            }
+            catch (Exception ex)
+            {
+                Status = "Remove PIN failed: " + ex.Message;
+            }
+        }
+
+        private static string PromptPin(string prompt)
+        {
+            var dlg = new PinPromptDialog(prompt)
+            {
+                Owner = Application.Current?.MainWindow
+            };
+            var ok = dlg.ShowDialog() == true;
+            if (!ok) return null;
+            return dlg.Pin;
         }
 
         private string ReadBuildInfoOrFallback()
