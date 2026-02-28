@@ -710,7 +710,8 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
                     CreatedAtMs = x.CreatedAt,
                     TotalMinor = x.Total,
                     Kind = x.Kind,
-                    RelatedSaleId = x.RelatedSaleId
+                    RelatedSaleId = x.RelatedSaleId,
+                    VoidedBySaleId = x.VoidedBySaleId
                 }).ToList();
             }
             finally
@@ -938,6 +939,7 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
         public int TotalMinor { get; set; }
         public int Kind { get; set; }
         public long? RelatedSaleId { get; set; }
+        public long? VoidedBySaleId { get; set; }
     }
 
     public sealed class PosCartLine

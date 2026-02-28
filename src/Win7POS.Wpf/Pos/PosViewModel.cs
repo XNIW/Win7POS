@@ -342,7 +342,9 @@ namespace Win7POS.Wpf.Pos
                         Total = x.TotalMinor,
                         Kind = x.Kind,
                         KindText = x.Kind == (int)SaleKind.Refund ? "Refund" : "Sale",
-                        RelatedSaleId = x.RelatedSaleId
+                        RelatedSaleId = x.RelatedSaleId,
+                        VoidedBySaleId = x.VoidedBySaleId,
+                        StatusText = x.VoidedBySaleId.HasValue ? "VOIDED" : string.Empty
                     });
                 }
             }
@@ -719,6 +721,8 @@ namespace Win7POS.Wpf.Pos
             public int Kind { get; set; }
             public string KindText { get; set; } = string.Empty;
             public long? RelatedSaleId { get; set; }
+            public long? VoidedBySaleId { get; set; }
+            public string StatusText { get; set; } = string.Empty;
         }
 
         private sealed class AsyncRelayCommand : ICommand

@@ -39,6 +39,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
 
             _cashRefund = FormatMoney(RefundTotalMinor);
+            if (Preview.IsAlreadyVoided)
+                _isFullVoid = false;
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
         }
@@ -55,6 +57,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             get => _isFullVoid;
             set
             {
+                if (value && !IsFullVoidEnabled) return;
                 if (_isFullVoid == value) return;
                 _isFullVoid = value;
                 if (_isFullVoid)
@@ -73,6 +76,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             get => !_isFullVoid;
             set => IsFullVoid = !value;
         }
+
+        public bool IsFullVoidEnabled => !Preview.IsAlreadyVoided;
 
         public string CashRefund
         {
@@ -113,6 +118,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         public string RefundTotalText => FormatMoney(RefundTotalMinor);
+        public int RemainingRefundableMinor => Preview.MaxRefundableMinor;
+        public string RemainingRefundableText => FormatMoney(RemainingRefundableMinor);
         public int CashMinor => ParseMoneyToMinor(CashRefund);
         public int CardMinor => ParseMoneyToMinor(CardRefund);
         public bool IsValid => RefundTotalMinor > 0 && CashMinor >= 0 && CardMinor >= 0 && CashMinor + CardMinor == RefundTotalMinor;

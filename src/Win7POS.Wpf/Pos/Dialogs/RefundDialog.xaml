@@ -30,7 +30,10 @@
         </TextBlock>
 
         <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,10,0,8">
-            <RadioButton Content="Storno totale" Margin="0,0,16,0" IsChecked="{Binding IsFullVoid}"/>
+            <RadioButton Content="Storno totale"
+                         Margin="0,0,16,0"
+                         IsChecked="{Binding IsFullVoid}"
+                         IsEnabled="{Binding IsFullVoidEnabled}"/>
             <RadioButton Content="Reso parziale" IsChecked="{Binding IsPartialReturn}"/>
         </StackPanel>
 
@@ -56,12 +59,16 @@
                 <ColumnDefinition Width="180"/>
                 <ColumnDefinition Width="170"/>
                 <ColumnDefinition Width="180"/>
+                <ColumnDefinition Width="170"/>
+                <ColumnDefinition Width="180"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Refund total:"/>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Rimborso totale:"/>
             <TextBox Grid.Column="1" IsReadOnly="True" Text="{Binding RefundTotalText}"/>
             <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center" Text="Reason:"/>
             <TextBox Grid.Column="3" Margin="8,0,0,0" Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBlock Grid.Column="4" Margin="12,0,0,0" VerticalAlignment="Center" Text="Rimanente rimborsabile:"/>
+            <TextBox Grid.Column="5" Margin="8,0,0,0" IsReadOnly="True" Text="{Binding RemainingRefundableText}"/>
         </Grid>
 
         <Grid Grid.Row="4" Grid.ColumnSpan="2" Margin="0,10,0,0">

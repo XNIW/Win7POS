@@ -109,6 +109,7 @@
                             <DataGridTextColumn Header="Kind" Binding="{Binding KindText}" Width="80"/>
                             <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" Width="*"/>
                             <DataGridTextColumn Header="Total" Binding="{Binding Total}" Width="80"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="90"/>
                         </DataGrid.Columns>
                     </DataGrid>
                     <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
