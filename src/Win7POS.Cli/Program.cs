@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -388,6 +389,106 @@ internal static class Program
         Console.WriteLine("Ultime vendite:");
         foreach (var s in last) Console.WriteLine($"- {s.Id} {s.Code} total={s.Total} at={s.CreatedAt}");
 
+        var originalSaleId = completed.Sale.Id;
+        var returnableBefore = await sales.GetReturnableLinesAsync(originalSaleId);
+        Assert(returnableBefore.Count >= 2, "Expected at least 2 lines for refund selftest.");
+        var partialTarget = returnableBefore.FirstOrDefault(x => x.RemainingQty >= 1);
+        Assert(partialTarget != null, "Expected one returnable line for partial refund.");
+
+        var partialReq = new RefundCreateRequest
+        {
+            OriginalSaleId = originalSaleId,
+            IsFullVoid = false,
+            Payment = new RefundPaymentInfo
+            {
+                CashMinor = partialTarget.UnitPrice,
+                CardMinor = 0
+            },
+            Reason = "SELFTEST_PARTIAL"
+        };
+        partialReq.Lines.Add(new RefundLineRequest
+        {
+            OriginalLineId = partialTarget.OriginalLineId,
+            Barcode = partialTarget.Barcode,
+            Name = partialTarget.Name,
+            UnitPriceMinor = partialTarget.UnitPrice,
+            QtyToRefund = 1
+        });
+        var partialRefund = await CreateRefundForSelfTestAsync(factory, sales, partialReq);
+        Assert(partialRefund.TotalMinor < 0, "Partial refund total should be negative.");
+        var refundedQtyAfterPartial = await sales.GetRefundedQtyAsync(originalSaleId, partialTarget.OriginalLineId);
+        Assert(refundedQtyAfterPartial == 1, "Expected refunded qty == 1 after partial refund.");
+        Console.WriteLine("Refund partial: PASS");
+
+        try
+        {
+            var overReq = new RefundCreateRequest
+            {
+                OriginalSaleId = originalSaleId,
+                IsFullVoid = false,
+                Payment = new RefundPaymentInfo
+                {
+                    CashMinor = partialTarget.UnitPrice * (partialTarget.RemainingQty + 1),
+                    CardMinor = 0
+                },
+                Reason = "SELFTEST_OVER"
+            };
+            overReq.Lines.Add(new RefundLineRequest
+            {
+                OriginalLineId = partialTarget.OriginalLineId,
+                Barcode = partialTarget.Barcode,
+                Name = partialTarget.Name,
+                UnitPriceMinor = partialTarget.UnitPrice,
+                QtyToRefund = partialTarget.RemainingQty + 1
+            });
+            await CreateRefundForSelfTestAsync(factory, sales, overReq);
+            Assert(false, "Expected over-remaining refund to fail.");
+        }
+        catch (InvalidOperationException)
+        {
+            Console.WriteLine("Refund over-remaining check: PASS");
+        }
+
+        var returnableForVoid = await sales.GetReturnableLinesAsync(originalSaleId);
+        var remainingTotal = returnableForVoid.Sum(x => x.RemainingQty * x.UnitPrice);
+        Assert(remainingTotal > 0, "Expected remaining refundable amount > 0 before full void.");
+        var fullVoidReq = new RefundCreateRequest
+        {
+            OriginalSaleId = originalSaleId,
+            IsFullVoid = true,
+            Payment = new RefundPaymentInfo
+            {
+                CashMinor = remainingTotal,
+                CardMinor = 0
+            },
+            Reason = "SELFTEST_FULL_VOID"
+        };
+        var fullVoid = await CreateRefundForSelfTestAsync(factory, sales, fullVoidReq);
+        Assert(fullVoid.TotalMinor < 0, "Full void total should be negative.");
+        Assert(await sales.IsVoidedAsync(originalSaleId), "Original sale should be marked as voided.");
+        Console.WriteLine("Refund full-void: PASS");
+
+        try
+        {
+            await CreateRefundForSelfTestAsync(factory, sales, fullVoidReq);
+            Assert(false, "Expected double-void to fail.");
+        }
+        catch (InvalidOperationException)
+        {
+            Console.WriteLine("Refund double-void check: PASS");
+        }
+
+        var dailyDate = DateTimeOffset.FromUnixTimeMilliseconds(completed.Sale.CreatedAt).LocalDateTime.Date;
+        var dailySummary = await sales.GetDailySummaryAsync(dailyDate);
+        var dailyRows = await sales.GetSalesForDateAsync(dailyDate);
+        var signedRefundTotal = dailyRows.Where(x => x.Kind == (int)SaleKind.Refund).Sum(x => x.Total);
+        Assert(dailySummary.GrossSalesAmount > 0, "Daily gross should be > 0.");
+        Assert(signedRefundTotal < 0, "Daily signed refunds should be negative.");
+        Assert(Math.Abs(signedRefundTotal) > 0, "Daily refunds abs should be > 0.");
+        Assert(dailySummary.NetAmount == dailySummary.GrossSalesAmount + signedRefundTotal,
+            "Daily net should equal gross + signed refunds.");
+        Console.WriteLine("Daily summary refund net: PASS");
+
         var csvPath = Path.Combine(tempRoot, $"import_selftest_{Guid.NewGuid():N}.csv");
         var csvContent = string.Join("\n", new[]
         {
@@ -609,6 +710,158 @@ internal static class Program
                 throw;
             }
         }
+    }
+
+    private static async Task<RefundCreateResult> CreateRefundForSelfTestAsync(
+        SqliteConnectionFactory factory,
+        SaleRepository sales,
+        RefundCreateRequest req)
+    {
+        if (factory == null) throw new ArgumentNullException(nameof(factory));
+        if (sales == null) throw new ArgumentNullException(nameof(sales));
+        if (req == null) throw new ArgumentNullException(nameof(req));
+        if (req.OriginalSaleId <= 0) throw new InvalidOperationException("Invalid original sale id.");
+
+        var originalSale = await sales.GetByIdAsync(req.OriginalSaleId);
+        if (originalSale == null) throw new InvalidOperationException("Original sale not found.");
+        if (originalSale.Kind != (int)SaleKind.Sale) throw new InvalidOperationException("Only normal sale can be refunded.");
+
+        var returnable = await sales.GetReturnableLinesAsync(req.OriginalSaleId);
+        if (returnable.Count == 0) throw new InvalidOperationException("No returnable lines.");
+
+        if (req.IsFullVoid && await sales.IsVoidedAsync(req.OriginalSaleId))
+            throw new InvalidOperationException("Sale already voided.");
+
+        var map = returnable.ToDictionary(x => x.OriginalLineId, x => x);
+        var selected = new List<RefundLineRequest>();
+
+        if (req.IsFullVoid)
+        {
+            foreach (var x in returnable)
+            {
+                if (x.RemainingQty <= 0) continue;
+                selected.Add(new RefundLineRequest
+                {
+                    OriginalLineId = x.OriginalLineId,
+                    Barcode = x.Barcode ?? string.Empty,
+                    Name = x.Name ?? string.Empty,
+                    UnitPriceMinor = x.UnitPrice,
+                    QtyToRefund = x.RemainingQty
+                });
+            }
+        }
+        else
+        {
+            foreach (var line in req.Lines ?? new List<RefundLineRequest>())
+            {
+                if (line == null || line.QtyToRefund <= 0) continue;
+                if (!map.TryGetValue(line.OriginalLineId, out var source))
+                    throw new InvalidOperationException("Refund line not found in original sale.");
+                if (line.QtyToRefund > source.RemainingQty)
+                    throw new InvalidOperationException("Refund quantity exceeds remaining quantity.");
+
+                selected.Add(new RefundLineRequest
+                {
+                    OriginalLineId = source.OriginalLineId,
+                    Barcode = source.Barcode ?? string.Empty,
+                    Name = source.Name ?? string.Empty,
+                    UnitPriceMinor = source.UnitPrice,
+                    QtyToRefund = line.QtyToRefund
+                });
+            }
+        }
+
+        if (selected.Count == 0) throw new InvalidOperationException("No lines selected for refund.");
+
+        var refundPositiveTotal = selected.Sum(x => x.QtyToRefund * x.UnitPriceMinor);
+        if (refundPositiveTotal <= 0) throw new InvalidOperationException("Refund total is invalid.");
+
+        var pay = req.Payment ?? new RefundPaymentInfo();
+        if (pay.CashMinor < 0 || pay.CardMinor < 0)
+            throw new InvalidOperationException("Refund payment cannot be negative.");
+        if (pay.CashMinor + pay.CardMinor != refundPositiveTotal)
+            throw new InvalidOperationException("Refund payment mismatch.");
+
+        var refundSale = new Sale
+        {
+            Code = SaleCodeGenerator.NewCode("R"),
+            CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+            Kind = (int)SaleKind.Refund,
+            RelatedSaleId = req.OriginalSaleId,
+            Reason = (req.Reason ?? string.Empty).Trim(),
+            Total = -Math.Abs(refundPositiveTotal),
+            PaidCash = -Math.Abs(pay.CashMinor),
+            PaidCard = -Math.Abs(pay.CardMinor),
+            Change = 0
+        };
+
+        var refundLines = selected.Select(x => new SaleLine
+        {
+            ProductId = null,
+            Barcode = x.Barcode ?? string.Empty,
+            Name = x.Name ?? string.Empty,
+            Quantity = x.QtyToRefund,
+            UnitPrice = x.UnitPriceMinor,
+            LineTotal = -Math.Abs(x.QtyToRefund * x.UnitPriceMinor),
+            RelatedOriginalLineId = x.OriginalLineId
+        }).ToList();
+
+        using (var conn = factory.Open())
+        using (var tx = conn.BeginTransaction())
+        {
+            try
+            {
+                var refundSaleId = await conn.ExecuteScalarAsync<long>(@"
+INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change)
+VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change);
+SELECT last_insert_rowid();", refundSale, tx);
+                refundSale.Id = refundSaleId;
+
+                foreach (var line in refundLines)
+                    line.SaleId = refundSaleId;
+
+                await sales.InsertSaleLinesAsync(conn, tx, refundLines);
+
+                if (req.IsFullVoid)
+                {
+                    var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    await sales.MarkSaleVoidedAsync(conn, tx, req.OriginalSaleId, refundSaleId, now);
+                }
+
+                tx.Commit();
+            }
+            catch
+            {
+                try { tx.Rollback(); } catch { }
+                throw;
+            }
+        }
+
+        var savedSale = await sales.GetByIdAsync(refundSale.Id);
+        var savedLines = await sales.GetLinesBySaleIdAsync(refundSale.Id);
+        var receipt42 = string.Join(Environment.NewLine,
+            ReceiptFormatter.Format(savedSale, savedLines, ReceiptOptions.Default42(), new ReceiptShopInfo
+            {
+                Name = "Win7 POS Demo",
+                Address = "Via Roma 1, Torino",
+                Footer = "RESO/STORNO SELFTEST"
+            }));
+        var receipt32 = string.Join(Environment.NewLine,
+            ReceiptFormatter.Format(savedSale, savedLines, ReceiptOptions.Default32(), new ReceiptShopInfo
+            {
+                Name = "Win7 POS Demo",
+                Address = "Via Roma 1, Torino",
+                Footer = "RESO/STORNO SELFTEST"
+            }));
+
+        return new RefundCreateResult
+        {
+            RefundSaleId = refundSale.Id,
+            RefundSaleCode = refundSale.Code,
+            Receipt42 = receipt42,
+            Receipt32 = receipt32,
+            TotalMinor = refundSale.Total
+        };
     }
 
     private static async Task<CsvParseResult> LoadCsvAsync(string csvPath)
