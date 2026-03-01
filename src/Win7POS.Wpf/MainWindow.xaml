@@ -6,15 +6,47 @@
         xmlns:prod="clr-namespace:Win7POS.Wpf.Products"
         xmlns:core="clr-namespace:Win7POS.Core;assembly=Win7POS.Core"
         Title="Win7POS" Height="650" Width="900">
-    <Grid Margin="12">
+    <Grid Margin="0">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TabControl Grid.Row="0">
+        <!-- Header con hamburger -->
+        <Border Grid.Row="0" Background="#5C3D7A" Padding="10,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Button x:Name="HamburgerButton" Grid.Column="0" Width="36" Height="36" Margin="0,0,12,0"
+                        Click="OnHamburgerClick"
+                        ToolTip="Menu">
+                    <Button.Content>
+                        <Path Stroke="White" StrokeThickness="2" Data="M 4,6 L 28,6 M 4,12 L 28,12 M 4,18 L 28,18"/>
+                    </Button.Content>
+                </Button>
+                <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="White" FontSize="16" FontWeight="SemiBold" Text="Win7POS"/>
+            </Grid>
+        </Border>
+
+        <!-- Contenuto principale: TabControl (tab headers nascosti) -->
+        <TabControl x:Name="MainTabControl" Grid.Row="1" Padding="0" BorderThickness="0">
+            <TabControl.Template>
+                <ControlTemplate TargetType="{x:Type TabControl}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="0"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        <TabPanel Grid.Row="0" IsItemsHost="True" Visibility="Collapsed"/>
+                        <ContentPresenter Grid.Row="1" x:Name="ContentSite" ContentSource="SelectedContent" Margin="0"/>
+                    </Grid>
+                </ControlTemplate>
+            </TabControl.Template>
             <TabItem Header="POS">
-                <pos:PosView/>
+                <pos:PosView x:Name="PosViewControl"/>
             </TabItem>
             <TabItem x:Name="ImportTab" Header="Import">
                 <imp:ImportView/>
@@ -24,7 +56,26 @@
             </TabItem>
         </TabControl>
 
-        <StatusBar Grid.Row="1">
+        <!-- Overlay menu laterale -->
+        <Grid x:Name="SideMenuOverlay" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed" Background="#80000000" MouseLeftButtonDown="OnOverlayClick">
+            <Border x:Name="SideMenuPanel" Width="260" HorizontalAlignment="Left" Background="White" BorderBrush="#CCC" BorderThickness="0,0,1,0" MouseLeftButtonDown="OnPanelClick">
+                <StackPanel Margin="12,24,12,12">
+                    <TextBlock Text="Menu" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16"/>
+                    <Button Content="POS" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuPosClick"/>
+                    <Button Content="Import" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuImportClick"/>
+                    <Button Content="Prodotti" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuProdottiClick"/>
+                    <Separator Margin="0,12,0,12"/>
+                    <TextBlock Text="Azioni" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
+                    <Button Content="Chiusura cassa (Incasso)" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuDailyReportClick"/>
+                    <Button Content="Gestione DB" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuDbClick"/>
+                    <Button Content="Impostazioni stampante" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuPrinterClick"/>
+                    <Button Content="Backup DB" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuBackupClick"/>
+                    <Button Content="About / Support" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuAboutClick"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <StatusBar Grid.Row="2">
             <TextBlock Text="DB: "/>
             <TextBlock Text="{x:Static core:AppPaths.DbPath}"/>
             <Separator/>

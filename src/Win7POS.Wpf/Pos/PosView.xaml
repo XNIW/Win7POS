@@ -6,92 +6,48 @@
              PreviewKeyDown="OnViewPreviewKeyDown"
              mc:Ignorable="d"
              d:DesignHeight="720" d:DesignWidth="1100">
-    <Grid Margin="12">
+    <Grid Margin="8">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="180"/>
         </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="320"/>
+        </Grid.ColumnDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
+        <!-- Sinistra (grande): carrello + ultime vendite -->
+        <Grid Grid.Row="0" Grid.Column="0" Margin="0,0,8,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="200"/>
+            </Grid.RowDefinitions>
 
-            <TextBox x:Name="BarcodeBox"
-                     Grid.Column="0"
-                     MinHeight="30"
-                     Text="{Binding BarcodeInput, UpdateSourceTrigger=PropertyChanged}">
-                <TextBox.InputBindings>
-                    <KeyBinding Key="Enter" Command="{Binding AddBarcodeCommand}"/>
-                </TextBox.InputBindings>
-            </TextBox>
-            <Button Grid.Column="1" Margin="8,0,0,0" MinWidth="90" Content="Add"
-                    Command="{Binding AddBarcodeCommand}"/>
-            <Button Grid.Column="2" Margin="8,0,0,0" MinWidth="90" Content="Pay"
-                    Command="{Binding PayCommand}"/>
-            <Button Grid.Column="3" Margin="8,0,0,0" MinWidth="130" Content="Receipt preview"
-                    Command="{Binding ReceiptPreviewCommand}"/>
-            <CheckBox Grid.Column="4" Margin="12,0,0,0" VerticalAlignment="Center"
-                      Content="Use 42 cols" IsChecked="{Binding UseReceipt42}"/>
-            <Button Grid.Column="5" Margin="8,0,0,0" MinWidth="110" Content="Backup DB"
-                    Command="{Binding BackupDbCommand}"/>
-            <Button Grid.Column="6" Margin="8,0,0,0" MinWidth="130" Content="Printer settings"
-                    Command="{Binding PrinterSettingsCommand}"/>
-            <Button Grid.Column="7" Margin="8,0,0,0" MinWidth="130" Content="Stampa ultima"
-                    Command="{Binding PrintLastReceiptCommand}"/>
-            <Button Grid.Column="8" Margin="8,0,0,0" MinWidth="130" Content="Chiusura cassa"
-                    Command="{Binding DailyReportCommand}"/>
-            <Button Grid.Column="9" Margin="8,0,0,0" MinWidth="120" Content="Gestione DB"
-                    Command="{Binding DbMaintenanceCommand}"/>
-            <Button Grid.Column="10" Margin="8,0,0,0" MinWidth="130" Content="About / Support"
-                    Command="{Binding AboutSupportCommand}"/>
-        </Grid>
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+                <Button MinWidth="70" Margin="0,0,8,0" Content="Qty +" Command="{Binding IncreaseQtyCommand}"/>
+                <Button MinWidth="70" Margin="0,0,8,0" Content="Qty -" Command="{Binding DecreaseQtyCommand}"/>
+                <Button MinWidth="90" Content="Remove line" Command="{Binding RemoveLineCommand}"/>
+            </StackPanel>
+            <DataGrid Grid.Row="1"
+                      ItemsSource="{Binding CartItems}"
+                      SelectedItem="{Binding SelectedCartItem}"
+                      AutoGenerateColumns="False"
+                      IsReadOnly="True"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*"/>
+                    <DataGridTextColumn Header="Qty" Binding="{Binding Quantity}" Width="80"/>
+                    <DataGridTextColumn Header="Price" Binding="{Binding UnitPrice}" Width="100"/>
+                    <DataGridTextColumn Header="Total" Binding="{Binding LineTotal}" Width="120"/>
+                </DataGrid.Columns>
+            </DataGrid>
 
-        <Grid Grid.Row="1" Margin="0,0,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="3*"/>
-                <ColumnDefinition Width="12"/>
-                <ColumnDefinition Width="2*"/>
-            </Grid.ColumnDefinitions>
-            <Grid Grid.Column="0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
-                    <Button MinWidth="70" Margin="0,0,8,0" Content="Qty +" Command="{Binding IncreaseQtyCommand}"/>
-                    <Button MinWidth="70" Margin="0,0,8,0" Content="Qty -" Command="{Binding DecreaseQtyCommand}"/>
-                    <Button MinWidth="90" Content="Remove line" Command="{Binding RemoveLineCommand}"/>
-                </StackPanel>
-                <DataGrid Grid.Row="1"
-                          ItemsSource="{Binding CartItems}"
-                          SelectedItem="{Binding SelectedCartItem}"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="True"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*"/>
-                        <DataGridTextColumn Header="Qty" Binding="{Binding Quantity}" Width="80"/>
-                        <DataGridTextColumn Header="Price" Binding="{Binding UnitPrice}" Width="100"/>
-                        <DataGridTextColumn Header="Total" Binding="{Binding LineTotal}" Width="120"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </Grid>
+            <TextBlock Grid.Row="2" Margin="0,6,0,4" Foreground="DimGray" Text="{Binding StatusMessage}"/>
 
-            <GroupBox Grid.Column="2" Header="Ultime vendite">
+            <GroupBox Grid.Row="3" Header="Ultime vendite" Margin="0,4,0,0">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
@@ -106,45 +62,79 @@
                               CanUserDeleteRows="False">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="SaleNo" Binding="{Binding SaleCode}" Width="*"/>
-                            <DataGridTextColumn Header="Kind" Binding="{Binding KindText}" Width="80"/>
+                            <DataGridTextColumn Header="Kind" Binding="{Binding KindText}" Width="60"/>
                             <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" Width="*"/>
-                            <DataGridTextColumn Header="Total" Binding="{Binding Total}" Width="80"/>
-                            <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="90"/>
+                            <DataGridTextColumn Header="Total" Binding="{Binding Total}" Width="60"/>
+                            <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="70"/>
                         </DataGrid.Columns>
                     </DataGrid>
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6,0,0">
-                        <Button MinWidth="110" Margin="0,0,8,0" Content="Reload" Command="{Binding LoadRecentSalesCommand}"/>
-                        <Button MinWidth="120" Margin="0,0,8,0" Content="Reso / Storno" Command="{Binding RefundCommand}"/>
-                        <Button MinWidth="130" Margin="0,0,8,0" Content="Stampa selezionato" Command="{Binding PrintSelectedReceiptCommand}"/>
-                        <Button MinWidth="140" Content="Ristampa (preview)" Command="{Binding ReprintPreviewCommand}"/>
+                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
+                        <Button MinWidth="80" Margin="0,0,6,0" Content="Reload" Command="{Binding LoadRecentSalesCommand}"/>
+                        <Button MinWidth="90" Margin="0,0,6,0" Content="Reso" Command="{Binding RefundCommand}"/>
+                        <Button MinWidth="100" Margin="0,0,6,0" Content="Stampa" Command="{Binding PrintSelectedReceiptCommand}"/>
+                        <Button MinWidth="100" Content="Preview" Command="{Binding ReprintPreviewCommand}"/>
                     </StackPanel>
                 </Grid>
             </GroupBox>
         </Grid>
 
-        <StackPanel Grid.Row="2" Margin="0,0,0,8">
+        <!-- Destra: BarcodeBox + bottoni rapidi -->
+        <Border Grid.Row="0" Grid.Column="1" BorderBrush="#CCC" BorderThickness="1" Padding="8" Background="#F8F8F8">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="1" Margin="0,0,16,0" VerticalAlignment="Center"
-                           Text="{Binding Subtotal, StringFormat=Subtotal: {0}}"/>
-                <TextBlock Grid.Column="2" FontSize="18" FontWeight="Bold" VerticalAlignment="Center"
-                           Text="{Binding Total, StringFormat=Total: {0}}"/>
-            </Grid>
-            <TextBlock Margin="0,4,0,0" VerticalAlignment="Center" Foreground="DimGray"
-                       Text="{Binding StatusMessage}"/>
-        </StackPanel>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-        <GroupBox Grid.Row="3" Header="Receipt Preview">
-            <TextBox Text="{Binding ReceiptPreview}"
-                     IsReadOnly="True"
-                     TextWrapping="NoWrap"
-                     VerticalScrollBarVisibility="Auto"
-                     HorizontalScrollBarVisibility="Auto"
-                     FontFamily="Consolas"/>
-        </GroupBox>
+                <TextBlock Grid.Row="0" Text="Inserimento / Scanner" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                <TextBox x:Name="BarcodeBox"
+                         Grid.Row="1"
+                         MinHeight="32"
+                         Margin="0,0,0,8"
+                         Text="{Binding BarcodeInput, UpdateSourceTrigger=PropertyChanged}">
+                    <TextBox.InputBindings>
+                        <KeyBinding Key="Enter" Command="{Binding AddBarcodeCommand}"/>
+                    </TextBox.InputBindings>
+                </TextBox>
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button MinWidth="80" Margin="0,0,8,0" Content="Add" Command="{Binding AddBarcodeCommand}"/>
+                    <Button MinWidth="80" Content="Receipt preview" Command="{Binding ReceiptPreviewCommand}"/>
+                </StackPanel>
+                <StackPanel Grid.Row="3" VerticalAlignment="Top">
+                    <CheckBox Margin="0,8,0,4" Content="Use 42 cols" IsChecked="{Binding UseReceipt42}"/>
+                    <Button Margin="0,4,0,4" MinWidth="120" Content="Backup DB" Command="{Binding BackupDbCommand}"/>
+                    <Button Margin="0,4,0,4" MinWidth="120" Content="Printer settings" Command="{Binding PrinterSettingsCommand}"/>
+                    <Button Margin="0,4,0,4" MinWidth="120" Content="Stampa ultima" Command="{Binding PrintLastReceiptCommand}"/>
+                    <GroupBox Header="Receipt Preview" Margin="0,12,0,0">
+                        <TextBox Text="{Binding ReceiptPreview}"
+                                 IsReadOnly="True"
+                                 TextWrapping="NoWrap"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 FontFamily="Consolas"
+                                 Height="120"/>
+                    </GroupBox>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Basso (full width): Totale grande + bottone Paga -->
+        <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Background="#E8E8E8" Padding="12,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Foreground="DimGray"
+                       Text="{Binding Subtotal, StringFormat=Subtotal: {0}}"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,24,0">
+                <TextBlock VerticalAlignment="Center" FontSize="20" FontWeight="Bold"
+                           Text="{Binding Total, StringFormat=Total: {0}}"/>
+            </StackPanel>
+            <Button Grid.Column="2" MinWidth="140" Height="44" FontSize="14" FontWeight="SemiBold"
+                    Content="Pay" Command="{Binding PayCommand}"/>
+        </Grid>
     </Grid>
 </UserControl>

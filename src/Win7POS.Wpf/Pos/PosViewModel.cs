@@ -251,11 +251,41 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
-            var dlg = new PaymentDialog(Total)
+            PaymentDialog dlg;
+            try
             {
-                Owner = Application.Current?.MainWindow
-            };
-            var ok = dlg.ShowDialog() == true;
+                dlg = new PaymentDialog(Total) { Owner = Application.Current?.MainWindow };
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Payment dialog init failed (XAML/binding).");
+                MessageBox.Show(
+                    "Errore apertura finestra pagamento.\n" +
+                    "Controlla: C:\\ProgramData\\Win7POS\\logs\\app.log\n\n" +
+                    ex.Message,
+                    "Pay error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                StatusMessage = "Errore apertura finestra pagamento (binding).";
+                RequestFocusBarcode();
+                return;
+            }
+
+            bool ok;
+            try
+            {
+                ok = dlg.ShowDialog() == true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Payment dialog ShowDialog failed.");
+                MessageBox.Show("Errore Pay.\n\n" + ex.Message, "Pay error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+                StatusMessage = "Errore Pay (dialog).";
+                RequestFocusBarcode();
+                return;
+            }
+
             if (!ok)
             {
                 StatusMessage = "Pagamento annullato.";

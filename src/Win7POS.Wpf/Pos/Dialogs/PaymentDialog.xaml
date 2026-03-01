@@ -23,7 +23,7 @@
         </Grid.ColumnDefinitions>
 
         <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Total due:"/>
-        <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" IsReadOnly="True" Text="{Binding TotalDueText}"/>
+        <TextBlock Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding TotalDueText}"/>
 
         <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Cash received:"/>
         <TextBox x:Name="CashBox" Grid.Row="1" Grid.Column="1" Margin="8,8,0,0" Text="{Binding CashReceived, UpdateSourceTrigger=PropertyChanged}"/>
@@ -32,7 +32,7 @@
         <TextBox Grid.Row="2" Grid.Column="1" Margin="8,8,0,0" Text="{Binding CardAmount, UpdateSourceTrigger=PropertyChanged}"/>
 
         <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Change due:"/>
-        <TextBox Grid.Row="3" Grid.Column="1" Margin="8,8,0,0" IsReadOnly="True" Text="{Binding ChangeDueText}"/>
+        <TextBlock Grid.Row="3" Grid.Column="1" Margin="8,8,0,0" VerticalAlignment="Center" Text="{Binding ChangeDueText}"/>
 
         <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="DimGray"
                    Text="Valid when Cash + Card >= Total and both are non-negative."/>

@@ -1,5 +1,7 @@
 using System.Windows;
+using System.Windows.Input;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.Dialogs;
 
 namespace Win7POS.Wpf
@@ -13,6 +15,81 @@ namespace Win7POS.Wpf
         {
             InitializeComponent();
             Loaded += OnLoadedAsync;
+        }
+
+        private void OnHamburgerClick(object sender, RoutedEventArgs e)
+        {
+            SideMenuOverlay.Visibility = SideMenuOverlay.Visibility == System.Windows.Visibility.Visible
+                ? System.Windows.Visibility.Collapsed
+                : System.Windows.Visibility.Visible;
+        }
+
+        private void OnOverlayClick(object sender, MouseButtonEventArgs e)
+        {
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private void OnPanelClick(object sender, MouseButtonEventArgs e)
+        {
+            e.Handled = true;
+        }
+
+        private void OnMenuPosClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 0;
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private void OnMenuImportClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 1;
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private void OnMenuProdottiClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 2;
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private PosViewModel GetPosViewModel()
+        {
+            return PosViewControl?.DataContext as PosViewModel;
+        }
+
+        private void OnMenuDailyReportClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 0;
+            GetPosViewModel()?.DailyReportCommand?.Execute(null);
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private void OnMenuDbClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 0;
+            GetPosViewModel()?.DbMaintenanceCommand?.Execute(null);
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private void OnMenuPrinterClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 0;
+            GetPosViewModel()?.PrinterSettingsCommand?.Execute(null);
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private void OnMenuBackupClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 0;
+            GetPosViewModel()?.BackupDbCommand?.Execute(null);
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private void OnMenuAboutClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 0;
+            GetPosViewModel()?.AboutSupportCommand?.Execute(null);
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
         private async void OnLoadedAsync(object sender, RoutedEventArgs e)
