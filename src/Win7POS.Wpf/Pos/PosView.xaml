@@ -121,20 +121,42 @@
         </Border>
 
         <!-- Basso (full width): Totale grande + bottone Paga -->
-        <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Background="#E8E8E8" Padding="12,10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" VerticalAlignment="Center" Foreground="DimGray"
-                       Text="{Binding Subtotal, StringFormat=Subtotal: {0}}"/>
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,24,0">
-                <TextBlock VerticalAlignment="Center" FontSize="20" FontWeight="Bold"
-                           Text="{Binding Total, StringFormat=Total: {0}}"/>
-            </StackPanel>
-            <Button Grid.Column="2" MinWidth="140" Height="44" FontSize="14" FontWeight="SemiBold"
-                    Content="Pay" Command="{Binding PayCommand}"/>
-        </Grid>
+        <Border Grid.Row="1"
+                Grid.Column="0"
+                Grid.ColumnSpan="2"
+                Margin="0,8,0,0"
+                Background="#E8E8E8"
+                Padding="12,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                        VerticalAlignment="Center"
+                        Foreground="DimGray"
+                        Text="{Binding Subtotal, StringFormat=Subtotal: {0}}"/>
+
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center"
+                            Margin="0,0,24,0">
+                    <TextBlock VerticalAlignment="Center"
+                            FontSize="20"
+                            FontWeight="Bold"
+                            Text="{Binding Total, StringFormat=Total: {0}}"/>
+                </StackPanel>
+
+                <Button Grid.Column="2"
+                        MinWidth="140"
+                        Height="44"
+                        FontSize="14"
+                        FontWeight="SemiBold"
+                        Content="Pay"
+                        Command="{Binding PayCommand}"/>
+            </Grid>
+        </Border>
     </Grid>
 </UserControl>
