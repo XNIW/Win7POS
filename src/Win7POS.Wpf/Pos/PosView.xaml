@@ -6,6 +6,17 @@
              PreviewKeyDown="OnViewPreviewKeyDown"
              mc:Ignorable="d"
              d:DesignHeight="720" d:DesignWidth="1100">
+    <UserControl.Resources>
+        <Style x:Key="CartRowStyle" TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#F0F0F0"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
     <Grid Margin="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -13,149 +24,116 @@
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="320"/>
+            <ColumnDefinition Width="280"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Sinistra (grande): carrello + ultime vendite -->
+        <!-- Sinistra: carrello lista a righe -->
         <Grid Grid.Row="0" Grid.Column="0" Margin="0,0,8,0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="200"/>
             </Grid.RowDefinitions>
-
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
-                <Button MinWidth="70" Margin="0,0,8,0" Content="Qty +" Command="{Binding IncreaseQtyCommand}"/>
-                <Button MinWidth="70" Margin="0,0,8,0" Content="Qty -" Command="{Binding DecreaseQtyCommand}"/>
-                <Button MinWidth="90" Content="Remove line" Command="{Binding RemoveLineCommand}"/>
-            </StackPanel>
-            <DataGrid Grid.Row="1"
-                      ItemsSource="{Binding CartItems}"
-                      SelectedItem="{Binding SelectedCartItem}"
-                      AutoGenerateColumns="False"
-                      IsReadOnly="True"
-                      CanUserAddRows="False"
-                      CanUserDeleteRows="False">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="2*"/>
-                    <DataGridTextColumn Header="Qty" Binding="{Binding Quantity}" Width="80"/>
-                    <DataGridTextColumn Header="Price" Binding="{Binding UnitPrice}" Width="100"/>
-                    <DataGridTextColumn Header="Total" Binding="{Binding LineTotal}" Width="120"/>
-                </DataGrid.Columns>
-            </DataGrid>
-
-            <TextBlock Grid.Row="2" Margin="0,6,0,4" Foreground="DimGray" Text="{Binding StatusMessage}"/>
-
-            <GroupBox Grid.Row="3" Header="Ultime vendite" Margin="0,4,0,0">
+            <Border Grid.Row="0" Background="#EEE" Padding="8,6" Margin="0,0,0,4">
                 <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <DataGrid Grid.Row="0"
-                              ItemsSource="{Binding RecentSales}"
-                              SelectedItem="{Binding SelectedRecentSale}"
-                              AutoGenerateColumns="False"
-                              IsReadOnly="True"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="SaleNo" Binding="{Binding SaleCode}" Width="*"/>
-                            <DataGridTextColumn Header="Kind" Binding="{Binding KindText}" Width="60"/>
-                            <DataGridTextColumn Header="Time" Binding="{Binding TimeText}" Width="*"/>
-                            <DataGridTextColumn Header="Total" Binding="{Binding Total}" Width="60"/>
-                            <DataGridTextColumn Header="Status" Binding="{Binding StatusText}" Width="70"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
-                        <Button MinWidth="80" Margin="0,0,6,0" Content="Reload" Command="{Binding LoadRecentSalesCommand}"/>
-                        <Button MinWidth="90" Margin="0,0,6,0" Content="Reso" Command="{Binding RefundCommand}"/>
-                        <Button MinWidth="100" Margin="0,0,6,0" Content="Stampa" Command="{Binding PrintSelectedReceiptCommand}"/>
-                        <Button MinWidth="100" Content="Preview" Command="{Binding ReprintPreviewCommand}"/>
-                    </StackPanel>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Prodotto" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="Q.tà" FontWeight="SemiBold" VerticalAlignment="Center" Width="80" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" Text="Prezzo" FontWeight="SemiBold" VerticalAlignment="Center" Width="90" HorizontalAlignment="Right"/>
+                    <TextBlock Grid.Column="3" Text="Totale" FontWeight="SemiBold" VerticalAlignment="Center" Width="90" HorizontalAlignment="Right"/>
+                    <TextBlock Grid.Column="4" Width="32"/>
                 </Grid>
-            </GroupBox>
+            </Border>
+            <ListBox Grid.Row="1" ItemsSource="{Binding CartItems}" SelectedItem="{Binding SelectedCartItem}"
+                     AlternationCount="2" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource CartRowStyle}">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding (ItemsControl.AlternationIndex), RelativeSource={RelativeSource Self}}" Value="1">
+                                <Setter Property="Background" Value="#F5F0F8"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="2*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0">
+                                <TextBlock Text="{Binding Name}" FontWeight="Bold" TextWrapping="Wrap"/>
+                                <TextBlock Text="{Binding Barcode}" FontSize="11" Foreground="Gray"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Width="80" HorizontalAlignment="Center">
+                                <Button Width="28" Height="28" Content="−" FontSize="14" Padding="0"
+                                        Command="{Binding DataContext.DecreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"/>
+                                <TextBlock Text="{Binding Quantity}" VerticalAlignment="Center" Margin="8,0" MinWidth="24" TextAlignment="Center"/>
+                                <Button Width="28" Height="28" Content="+" FontSize="14" Padding="0"
+                                        Command="{Binding DataContext.IncreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                        CommandParameter="{Binding}"/>
+                            </StackPanel>
+                            <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay}" VerticalAlignment="Center" Width="90" HorizontalAlignment="Right" Margin="0,0,8,0"/>
+                            <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" VerticalAlignment="Center" Width="90" HorizontalAlignment="Right" Margin="0,0,8,0"/>
+                            <Button Grid.Column="4" Width="28" Height="28" Content="✕" FontSize="12" Padding="0" Foreground="DarkRed"
+                                    Command="{Binding DataContext.RemoveLineForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Grid>
 
-        <!-- Destra: BarcodeBox + bottoni rapidi -->
-        <Border Grid.Row="0" Grid.Column="1" BorderBrush="#CCC" BorderThickness="1" Padding="8" Background="#F8F8F8">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-
-                <TextBlock Grid.Row="0" Text="Inserimento / Scanner" FontWeight="SemiBold" Margin="0,0,0,6"/>
+        <!-- Destra: Inserimento / Scanner (solo BarcodeBox + Sconto + Add) -->
+        <Border Grid.Row="0" Grid.Column="1" BorderBrush="#CCC" BorderThickness="1" Padding="10" Background="#F8F8F8">
+            <StackPanel>
+                <TextBlock Text="Inserimento / Scanner" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="Codice a barre" FontSize="11" Foreground="Gray" Margin="0,0,0,4"/>
                 <TextBox x:Name="BarcodeBox"
-                         Grid.Row="1"
-                         MinHeight="32"
-                         Margin="0,0,0,8"
+                         MinHeight="36"
+                         Margin="0,0,0,12"
                          Text="{Binding BarcodeInput, UpdateSourceTrigger=PropertyChanged}">
                     <TextBox.InputBindings>
                         <KeyBinding Key="Enter" Command="{Binding AddBarcodeCommand}"/>
                     </TextBox.InputBindings>
                 </TextBox>
-                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8">
-                    <Button MinWidth="80" Margin="0,0,8,0" Content="Add" Command="{Binding AddBarcodeCommand}"/>
-                    <Button MinWidth="80" Content="Receipt preview" Command="{Binding ReceiptPreviewCommand}"/>
-                </StackPanel>
-                <StackPanel Grid.Row="3" VerticalAlignment="Top">
-                    <CheckBox Margin="0,8,0,4" Content="Use 42 cols" IsChecked="{Binding UseReceipt42}"/>
-                    <Button Margin="0,4,0,4" MinWidth="120" Content="Backup DB" Command="{Binding BackupDbCommand}"/>
-                    <Button Margin="0,4,0,4" MinWidth="120" Content="Printer settings" Command="{Binding PrinterSettingsCommand}"/>
-                    <Button Margin="0,4,0,4" MinWidth="120" Content="Stampa ultima" Command="{Binding PrintLastReceiptCommand}"/>
-                    <GroupBox Header="Receipt Preview" Margin="0,12,0,0">
-                        <TextBox Text="{Binding ReceiptPreview}"
-                                 IsReadOnly="True"
-                                 TextWrapping="NoWrap"
-                                 VerticalScrollBarVisibility="Auto"
-                                 HorizontalScrollBarVisibility="Auto"
-                                 FontFamily="Consolas"
-                                 Height="120"/>
-                    </GroupBox>
-                </StackPanel>
-            </Grid>
+                <Button MinWidth="100" Margin="0,0,0,8" Content="Add" Command="{Binding AddBarcodeCommand}"/>
+                <Button MinWidth="100" Content="Sconto" IsEnabled="False" Opacity="0.7" ToolTip="Placeholder"/>
+            </StackPanel>
         </Border>
 
-        <!-- Basso (full width): Totale grande + bottone Paga -->
-        <Border Grid.Row="1"
-                Grid.Column="0"
-                Grid.ColumnSpan="2"
-                Margin="0,8,0,0"
-                Background="#E8E8E8"
-                Padding="12,10">
+        <!-- Basso: Svuota + Articoli: N + Totale grande + Paga -->
+        <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Background="#5C3D7A" Padding="12,10">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-
-                <TextBlock Grid.Column="0"
-                        VerticalAlignment="Center"
-                        Foreground="DimGray"
-                        Text="{Binding Subtotal, StringFormat=Subtotal: {0}}"/>
-
-                <StackPanel Grid.Column="1"
-                            Orientation="Horizontal"
-                            VerticalAlignment="Center"
-                            Margin="0,0,24,0">
-                    <TextBlock VerticalAlignment="Center"
-                            FontSize="20"
-                            FontWeight="Bold"
-                            Text="{Binding Total, StringFormat=Total: {0}}"/>
+                <Button Grid.Column="0" Content="Svuota" Command="{Binding ClearCartCommand}"
+                        MinWidth="80" Height="40" Foreground="White" Background="#7B5A8E" BorderThickness="0"/>
+                <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="White" Margin="16,0,0,0"
+                           Text="{Binding ItemsCount, StringFormat=Articoli: {0}}"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,16,0">
+                    <TextBlock VerticalAlignment="Center" Foreground="White" FontSize="14" Margin="0,0,8,0" Text="Totale spesa"/>
+                    <TextBlock VerticalAlignment="Center" Foreground="White" FontSize="22" FontWeight="Bold"
+                               Text="{Binding TotalDisplay}"/>
                 </StackPanel>
-
-                <Button Grid.Column="2"
-                        MinWidth="140"
-                        Height="44"
-                        FontSize="14"
-                        FontWeight="SemiBold"
-                        Content="Pay"
-                        Command="{Binding PayCommand}"/>
+                <Button Grid.Column="3" Grid.ColumnSpan="2" MinWidth="160" Height="44" FontSize="15" FontWeight="SemiBold"
+                        Content="Paga" Command="{Binding PayCommand}"
+                        Background="#9B7BAD" Foreground="White" BorderThickness="0"/>
             </Grid>
         </Border>
     </Grid>

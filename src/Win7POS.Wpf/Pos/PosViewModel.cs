@@ -2,10 +2,12 @@ using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Globalization;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
 using Win7POS.Wpf.Infrastructure;
@@ -52,6 +54,10 @@ namespace Win7POS.Wpf.Pos
             get => _total;
             set { _total = value; OnPropertyChanged(); }
         }
+
+        public int ItemsCount => CartItems.Sum(x => x.Quantity);
+
+        public string TotalDisplay => (Total / 100.0m).ToString("N2", CultureInfo.GetCultureInfo("it-IT"));
 
         public bool IsBusy
         {
@@ -112,6 +118,10 @@ namespace Win7POS.Wpf.Pos
         public ICommand AboutSupportCommand { get; }
         public ICommand RefundCommand { get; }
         public ICommand PrintSelectedReceiptCommand { get; }
+        public ICommand ClearCartCommand { get; }
+        public ICommand IncreaseQtyForLineCommand { get; }
+        public ICommand DecreaseQtyForLineCommand { get; }
+        public ICommand RemoveLineForLineCommand { get; }
 
         public PosViewModel()
         {
@@ -131,6 +141,10 @@ namespace Win7POS.Wpf.Pos
             AboutSupportCommand = new AsyncRelayCommand(OpenAboutSupportAsync, _ => !IsBusy);
             RefundCommand = new AsyncRelayCommand(OpenRefundAsync, _ => !IsBusy && SelectedRecentSale != null && SelectedRecentSale.Kind == (int)SaleKind.Sale);
             PrintSelectedReceiptCommand = new AsyncRelayCommand(PrintSelectedReceiptAsync, _ => !IsBusy && SelectedRecentSale != null);
+            ClearCartCommand = new AsyncRelayCommand(ClearCartAsync, _ => !IsBusy && CartItems.Count > 0);
+            IncreaseQtyForLineCommand = new AsyncRelayCommandParam(IncreaseQtyForLineAsync, _ => !IsBusy);
+            DecreaseQtyForLineCommand = new AsyncRelayCommandParam(DecreaseQtyForLineAsync, _ => !IsBusy);
+            RemoveLineForLineCommand = new AsyncRelayCommandParam(RemoveLineForLineAsync, _ => !IsBusy);
             StatusMessage = "POS pronto.";
             _ = InitializeAsync();
         }
@@ -251,10 +265,11 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
+            var cartReceiptPreview = BuildCartReceiptPreview();
             PaymentDialog dlg;
             try
             {
-                dlg = new PaymentDialog(Total) { Owner = Application.Current?.MainWindow };
+                dlg = new PaymentDialog(Total, cartReceiptPreview) { Owner = Application.Current?.MainWindow };
             }
             catch (Exception ex)
             {
@@ -510,6 +525,90 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        private async Task ClearCartAsync()
+        {
+            IsBusy = true;
+            try
+            {
+                var snapshot = await _service.ClearCartAsync().ConfigureAwait(true);
+                ApplySnapshot(snapshot);
+                StatusMessage = "Carrello svuotato.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore svuota carrello: " + ex.Message;
+                _logger.LogError(ex, "POS VM clear cart failed");
+            }
+            finally
+            {
+                IsBusy = false;
+                RequestFocusBarcode();
+            }
+        }
+
+        private async Task IncreaseQtyForLineAsync(object parameter)
+        {
+            var row = parameter as PosCartLineRow;
+            if (row == null) return;
+            IsBusy = true;
+            try
+            {
+                var snapshot = await _service.IncreaseQtyAsync(row.Barcode).ConfigureAwait(true);
+                ApplySnapshot(snapshot);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore Qty+: " + ex.Message;
+                _logger.LogError(ex, "POS VM increase qty failed");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task DecreaseQtyForLineAsync(object parameter)
+        {
+            var row = parameter as PosCartLineRow;
+            if (row == null) return;
+            IsBusy = true;
+            try
+            {
+                var snapshot = await _service.DecreaseQtyAsync(row.Barcode).ConfigureAwait(true);
+                ApplySnapshot(snapshot);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore Qty-: " + ex.Message;
+                _logger.LogError(ex, "POS VM decrease qty failed");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task RemoveLineForLineAsync(object parameter)
+        {
+            var row = parameter as PosCartLineRow;
+            if (row == null) return;
+            IsBusy = true;
+            try
+            {
+                var snapshot = await _service.RemoveLineAsync(row.Barcode).ConfigureAwait(true);
+                ApplySnapshot(snapshot);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore remove line: " + ex.Message;
+                _logger.LogError(ex, "POS VM remove line failed");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
         private async Task BackupDbAsync()
         {
             IsBusy = true;
@@ -722,6 +821,25 @@ namespace Win7POS.Wpf.Pos
             Total = snapshot.Total;
             if (!string.IsNullOrWhiteSpace(snapshot.Status))
                 StatusMessage = snapshot.Status;
+            OnPropertyChanged(nameof(ItemsCount));
+            (ClearCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        public string BuildCartReceiptPreview()
+        {
+            var culture = CultureInfo.GetCultureInfo("it-IT");
+            var lines = new System.Collections.Generic.List<string>();
+            lines.Add("--- Carrello ---");
+            foreach (var item in CartItems)
+            {
+                var unit = (item.UnitPrice / 100.0m).ToString("N2", culture);
+                var total = (item.LineTotal / 100.0m).ToString("N2", culture);
+                lines.Add($"{item.Name}");
+                lines.Add($"  {item.Quantity} x {unit} = {total}");
+            }
+            lines.Add("---");
+            lines.Add($"Totale: {(Total / 100.0m).ToString("N2", culture)}");
+            return string.Join(Environment.NewLine, lines);
         }
 
         private void RaiseCanExecuteChanged()
@@ -742,6 +860,10 @@ namespace Win7POS.Wpf.Pos
             (AboutSupportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (RefundCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintSelectedReceiptCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ClearCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (IncreaseQtyForLineCommand as AsyncRelayCommandParam)?.RaiseCanExecuteChanged();
+            (DecreaseQtyForLineCommand as AsyncRelayCommandParam)?.RaiseCanExecuteChanged();
+            (RemoveLineForLineCommand as AsyncRelayCommandParam)?.RaiseCanExecuteChanged();
         }
 
         private void RequestFocusBarcode()
@@ -755,19 +877,26 @@ namespace Win7POS.Wpf.Pos
 
         public sealed class PosCartLineRow
         {
+            private static readonly CultureInfo _it = CultureInfo.GetCultureInfo("it-IT");
+
             public string Barcode { get; set; } = string.Empty;
             public string Name { get; set; } = string.Empty;
             public int Quantity { get; set; }
             public int UnitPrice { get; set; }
             public int LineTotal { get; set; }
+            public string UnitPriceDisplay => (UnitPrice / 100.0m).ToString("N2", _it);
+            public string LineTotalDisplay => (LineTotal / 100.0m).ToString("N2", _it);
         }
 
         public sealed class RecentSaleRow
         {
+            private static readonly CultureInfo _it = CultureInfo.GetCultureInfo("it-IT");
+
             public long SaleId { get; set; }
             public string SaleCode { get; set; } = string.Empty;
             public string TimeText { get; set; } = string.Empty;
             public int Total { get; set; }
+            public string TotalDisplay => (Total / 100.0m).ToString("N2", _it);
             public int Kind { get; set; }
             public string KindText { get; set; } = string.Empty;
             public long? RelatedSaleId { get; set; }
@@ -791,6 +920,28 @@ namespace Win7POS.Wpf.Pos
             public async void Execute(object parameter)
             {
                 await _executeAsync().ConfigureAwait(true);
+            }
+
+            public event EventHandler CanExecuteChanged;
+            public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private sealed class AsyncRelayCommandParam : ICommand
+        {
+            private readonly Func<object, Task> _executeAsync;
+            private readonly Func<object, bool> _canExecute;
+
+            public AsyncRelayCommandParam(Func<object, Task> executeAsync, Func<object, bool> canExecute = null)
+            {
+                _executeAsync = executeAsync ?? throw new ArgumentNullException(nameof(executeAsync));
+                _canExecute = canExecute;
+            }
+
+            public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
+
+            public async void Execute(object parameter)
+            {
+                await _executeAsync(parameter).ConfigureAwait(true);
             }
 
             public event EventHandler CanExecuteChanged;

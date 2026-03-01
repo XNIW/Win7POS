@@ -58,20 +58,34 @@
 
         <!-- Overlay menu laterale -->
         <Grid x:Name="SideMenuOverlay" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed" Background="#80000000" MouseLeftButtonDown="OnOverlayClick">
-            <Border x:Name="SideMenuPanel" Width="260" HorizontalAlignment="Left" Background="White" BorderBrush="#CCC" BorderThickness="0,0,1,0" MouseLeftButtonDown="OnPanelClick">
-                <StackPanel Margin="12,24,12,12">
-                    <TextBlock Text="Menu" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16"/>
-                    <Button Content="POS" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuPosClick"/>
-                    <Button Content="Import" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuImportClick"/>
-                    <Button Content="Prodotti" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuProdottiClick"/>
-                    <Separator Margin="0,12,0,12"/>
-                    <TextBlock Text="Azioni" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
-                    <Button Content="Chiusura cassa (Incasso)" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuDailyReportClick"/>
-                    <Button Content="Gestione DB" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuDbClick"/>
-                    <Button Content="Impostazioni stampante" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuPrinterClick"/>
-                    <Button Content="Backup DB" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuBackupClick"/>
-                    <Button Content="About / Support" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuAboutClick"/>
-                </StackPanel>
+            <Border x:Name="SideMenuPanel" Width="280" HorizontalAlignment="Left" Background="White" BorderBrush="#CCC" BorderThickness="0,0,1,0" MouseLeftButtonDown="OnPanelClick">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12,24,12,12">
+                        <TextBlock Text="Menu" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16"/>
+
+                        <TextBlock Text="Navigazione" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
+                        <Button Content="POS" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuPosClick"/>
+                        <Button Content="Import" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuImportClick"/>
+                        <Button Content="Prodotti" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuProdottiClick"/>
+
+                        <Separator Margin="0,12,0,12"/>
+                        <TextBlock Text="Gestione" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
+                        <Button Content="Registro vendite" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuSalesRegisterClick"/>
+                        <Button Content="Incasso giornaliero" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuDailyReportClick"/>
+                        <Button Content="Resi / Storni" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuRefundClick"/>
+
+                        <Separator Margin="0,12,0,12"/>
+                        <TextBlock Text="Stampa &amp; Backup" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
+                        <Button Content="Impostazioni stampante" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuPrinterClick"/>
+                        <Button Content="Backup DB" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuBackupClick"/>
+                        <Button Content="Stampa ultima" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuPrintLastClick"/>
+                        <Button Content="Receipt preview" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuReceiptPreviewClick"/>
+
+                        <Separator Margin="0,12,0,12"/>
+                        <TextBlock Text="Supporto" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
+                        <Button Content="About / Support" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuAboutClick"/>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
 

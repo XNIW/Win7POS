@@ -780,6 +780,20 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        public async Task<PosWorkflowSnapshot> ClearCartAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _session.Clear();
+                return BuildSnapshot("Carrello svuotato.");
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         private async Task EnsureDemoProductsAsync()
         {
             if (!_options.IsDemo)

@@ -7,10 +7,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         public PaymentViewModel ViewModel { get; }
 
-        public PaymentDialog(int totalDueMinor)
+        public PaymentDialog(int totalDueMinor, string cartReceiptPreview = null)
         {
             InitializeComponent();
-            ViewModel = new PaymentViewModel(totalDueMinor);
+            ViewModel = new PaymentViewModel(totalDueMinor, cartReceiptPreview);
             ViewModel.RequestClose += OnRequestClose;
             DataContext = ViewModel;
         }
@@ -20,6 +20,20 @@ namespace Win7POS.Wpf.Pos.Dialogs
             Keyboard.Focus(CashBox);
             CashBox.SelectAll();
         }
+
+        private void CashBox_GotFocus(object sender, RoutedEventArgs e)
+        {
+            ViewModel.ActiveField = PaymentActiveField.Cash;
+        }
+
+        private void CashBox_LostFocus(object sender, RoutedEventArgs e) { }
+
+        private void CardBox_GotFocus(object sender, RoutedEventArgs e)
+        {
+            ViewModel.ActiveField = PaymentActiveField.Card;
+        }
+
+        private void CardBox_LostFocus(object sender, RoutedEventArgs e) { }
 
         private void OnKeyDown(object sender, KeyEventArgs e)
         {

@@ -92,6 +92,44 @@ namespace Win7POS.Wpf
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
+        private void OnMenuSalesRegisterClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 0;
+            var vm = GetPosViewModel();
+            if (vm != null)
+            {
+                var dlg = new SalesRegisterDialog(vm) { Owner = this };
+                dlg.ShowDialog();
+            }
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private void OnMenuRefundClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 0;
+            var vm = GetPosViewModel();
+            if (vm != null)
+            {
+                var dlg = new SalesRegisterDialog(vm) { Owner = this };
+                dlg.ShowDialog();
+            }
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private void OnMenuPrintLastClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 0;
+            GetPosViewModel()?.PrintLastReceiptCommand?.Execute(null);
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private void OnMenuReceiptPreviewClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 0;
+            GetPosViewModel()?.ReceiptPreviewCommand?.Execute(null);
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
         private async void OnLoadedAsync(object sender, RoutedEventArgs e)
         {
             _loading = true;
