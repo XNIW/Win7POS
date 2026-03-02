@@ -85,6 +85,13 @@ namespace Win7POS.Wpf
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
+        private void OnMenuShopSettingsClick(object sender, RoutedEventArgs e)
+        {
+            MainTabControl.SelectedIndex = 0;
+            GetPosViewModel()?.OpenShopSettingsCommand?.Execute(null);
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
         private void OnMenuAboutClick(object sender, RoutedEventArgs e)
         {
             MainTabControl.SelectedIndex = 0;

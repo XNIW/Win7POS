@@ -22,6 +22,8 @@ namespace Win7POS.Core.Receipt
             var result = new List<string>();
             AddCentered(result, width, shop.Name);
             if (!string.IsNullOrWhiteSpace(shop.Address)) AddLine(result, width, shop.Address);
+            if (!string.IsNullOrWhiteSpace(shop.City)) AddLine(result, width, shop.City.Trim());
+            if (!string.IsNullOrWhiteSpace(shop.Rut)) AddLine(result, width, "RUT: " + shop.Rut.Trim());
             if (!string.IsNullOrWhiteSpace(shop.Phone)) AddLine(result, width, $"Tel: {shop.Phone}");
             AddLine(result, width, new string('-', width));
             AddLine(result, width, $"Sale: {sale.Code}");

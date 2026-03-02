@@ -11,8 +11,8 @@ using System.Globalization;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Util;
+using Win7POS.Wpf.Fiscal;
 using Win7POS.Wpf.Infrastructure;
-using Win7POS.Wpf.Pos.Dialogs;
 using Win7POS.Wpf.Pos.Dialogs;
 
 namespace Win7POS.Wpf.Pos
@@ -125,6 +125,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand DecreaseQtyForLineCommand { get; }
         public ICommand RemoveLineForLineCommand { get; }
         public ICommand OpenSalesRegisterCommand { get; }
+        public ICommand OpenShopSettingsCommand { get; }
 
         public PosViewModel()
         {
@@ -149,6 +150,7 @@ namespace Win7POS.Wpf.Pos
             DecreaseQtyForLineCommand = new AsyncRelayCommandParam(DecreaseQtyForLineAsync, _ => !IsBusy);
             RemoveLineForLineCommand = new AsyncRelayCommandParam(RemoveLineForLineAsync, _ => !IsBusy);
             OpenSalesRegisterCommand = new AsyncRelayCommand(OpenSalesRegisterAsync, _ => !IsBusy);
+            OpenShopSettingsCommand = new AsyncRelayCommand(OpenShopSettingsAsync, _ => !IsBusy);
             StatusMessage = "POS pronto.";
             _ = InitializeAsync();
         }
@@ -269,6 +271,8 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
+            var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
+            var nextBoleta = await _service.GetFiscalBoletaNumberAsync().ConfigureAwait(true) + 1;
             var draft = new PaymentReceiptDraft
             {
                 SaleCode = SaleCodeGenerator.NewCode("V"),
@@ -282,13 +286,16 @@ namespace Win7POS.Wpf.Pos
                     LineTotal = x.LineTotal
                 }).ToList(),
                 UseReceipt42 = UseReceipt42,
-                DefaultPrint = true
+                DefaultPrint = true,
+                ShopInfo = shop,
+                NextBoletaNumber = nextBoleta
             };
 
+            var fiscalPdf = new FiscalPdfService();
             PaymentDialog dlg;
             try
             {
-                dlg = new PaymentDialog(Total, draft) { Owner = Application.Current?.MainWindow };
+                dlg = new PaymentDialog(Total, draft, (text, code) => fiscalPdf.GenerateFiscalHtmlAsync(text, code)) { Owner = Application.Current?.MainWindow };
             }
             catch (Exception ex)
             {
@@ -882,6 +889,27 @@ namespace Win7POS.Wpf.Pos
             return Task.CompletedTask;
         }
 
+        private Task OpenShopSettingsAsync()
+        {
+            try
+            {
+                var vm = new Dialogs.ShopSettingsViewModel(_service);
+                var dlg = new Dialogs.ShopSettingsDialog(vm)
+                {
+                    Owner = Application.Current?.MainWindow
+                };
+                dlg.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Shop settings dialog failed (XAML/binding).");
+                StatusMessage = "Errore apertura Impostazioni negozio.";
+                MessageBox.Show("Errore apertura Impostazioni negozio.\n\n" + ex.Message, "Impostazioni negozio", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            RequestFocusBarcode();
+            return Task.CompletedTask;
+        }
+
         private void ApplySnapshot(PosWorkflowSnapshot snapshot)
         {
             CartItems.Clear();
@@ -948,6 +976,7 @@ namespace Win7POS.Wpf.Pos
             (DecreaseQtyForLineCommand as AsyncRelayCommandParam)?.RaiseCanExecuteChanged();
             (RemoveLineForLineCommand as AsyncRelayCommandParam)?.RaiseCanExecuteChanged();
             (OpenSalesRegisterCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (OpenShopSettingsCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void RequestFocusBarcode()

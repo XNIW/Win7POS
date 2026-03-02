@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using System.Windows.Input;
 using Win7POS.Core.Models;
 using Win7POS.Core.Receipt;
@@ -16,18 +18,24 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         private readonly int _totalDueMinor;
         private readonly PaymentReceiptDraft _draft;
+        private readonly Func<string, string, Task<string>> _generateFiscalPdf;
 
         private string _cashReceived = "";
         private string _cardAmount = "0";
         private PaymentActiveField _activeField = PaymentActiveField.Cash;
         private bool _shouldPrint;
         private string _receiptPreviewText = "";
+        private bool _showSiiWeb = true;
+        private string _fiscalPreviewText = "";
+        private string _fiscalStatus = "";
 
-        public PaymentViewModel(int totalDueMinor, PaymentReceiptDraft draft = null)
+        public PaymentViewModel(int totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null)
         {
             _totalDueMinor = totalDueMinor;
             _draft = draft;
+            _generateFiscalPdf = generateFiscalPdf;
             _shouldPrint = draft?.DefaultPrint ?? false;
+            NextBoletaNumber = draft?.NextBoletaNumber ?? 0;
 
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
@@ -38,12 +46,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
             SetExactTotalCommand = new RelayCommand(_ => SetExactTotal(), _ => true);
             SetRoundedTotalCommand = new RelayCommand(_ => SetRoundedTotal(), _ => true);
             PayAllCardCommand = new RelayCommand(_ => PayAllCard(), _ => true);
+            GeneratePdfCommand = new RelayCommand(_ => _ = GeneratePdfAsync(), _ => _generateFiscalPdf != null);
+            OpenSiiCommand = new RelayCommand(_ => OpenSii(), _ => true);
 
             UpdateReceiptPreviewText();
+            UpdateFiscalPreviewText();
         }
 
         public string SaleCode => _draft?.SaleCode ?? "";
         public long CreatedAtMs => _draft?.CreatedAtMs ?? 0;
+        public int NextBoletaNumber { get; }
 
         public bool ShouldPrint
         {
@@ -128,6 +140,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand SetExactTotalCommand { get; }
         public ICommand SetRoundedTotalCommand { get; }
         public ICommand PayAllCardCommand { get; }
+        public ICommand GeneratePdfCommand { get; }
+        public ICommand OpenSiiCommand { get; }
+
+        public bool ShowSiiWeb { get => _showSiiWeb; set { _showSiiWeb = value; OnPropertyChanged(); } }
+        public string FiscalPreviewText { get => _fiscalPreviewText; private set { _fiscalPreviewText = value ?? ""; OnPropertyChanged(); } }
+        public string FiscalStatus { get => _fiscalStatus; private set { _fiscalStatus = value ?? ""; OnPropertyChanged(); } }
 
         public event Action<bool> RequestClose;
         public event PropertyChangedEventHandler PropertyChanged;
@@ -152,7 +170,53 @@ namespace Win7POS.Wpf.Pos.Dialogs
             OnPropertyChanged(nameof(IsValid));
             OnPropertyChanged(nameof(TotalPaidText));
             UpdateReceiptPreviewText();
+            UpdateFiscalPreviewText();
             RaiseCanExecuteChanged();
+        }
+
+        private void UpdateFiscalPreviewText()
+        {
+            var shop = _draft?.ShopInfo;
+            var name = shop?.Name ?? "Negozio";
+            var rut = shop?.Rut ?? "";
+            var addr = shop?.Address ?? "";
+            var paidCash = CashAmountMinor >= 0 ? CashAmountMinor : 0;
+            var paidCard = CardAmountMinor >= 0 ? CardAmountMinor : 0;
+            var lines = new List<string>
+            {
+                name,
+                !string.IsNullOrWhiteSpace(rut) ? "RUT: " + rut.Trim() : "",
+                !string.IsNullOrWhiteSpace(addr) ? addr : "",
+                "---",
+                "Boleta N°: " + NextBoletaNumber,
+                "Vendita: " + SaleCode,
+                "Totale: " + MoneyClp.Format(_totalDueMinor),
+                "Contanti: " + MoneyClp.Format(paidCash),
+                "Carta: " + MoneyClp.Format(paidCard),
+                "Resto: " + (IsValid ? MoneyClp.Format(ChangeDueMinor) : "-")
+            };
+            FiscalPreviewText = string.Join(Environment.NewLine, lines.Where(s => s != ""));
+        }
+
+        private async Task GeneratePdfAsync()
+        {
+            if (_generateFiscalPdf == null) return;
+            FiscalStatus = "Generazione...";
+            try
+            {
+                var path = await _generateFiscalPdf(FiscalPreviewText, SaleCode).ConfigureAwait(true);
+                FiscalStatus = "Aperto: " + path;
+                try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch { }
+            }
+            catch (Exception ex)
+            {
+                FiscalStatus = "Errore: " + ex.Message;
+            }
+        }
+
+        private void OpenSii()
+        {
+            try { Process.Start(new ProcessStartInfo("https://www.sii.cl") { UseShellExecute = true }); } catch { }
         }
 
         private void UpdateReceiptPreviewText()
@@ -187,7 +251,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }).ToList();
 
             var options = _draft.UseReceipt42 ? ReceiptOptions.Default42Clp() : ReceiptOptions.Default32Clp();
-            var shop = new ReceiptShopInfo { Name = "Win7POS", Address = "", Footer = "Grazie" };
+            var shop = _draft?.ShopInfo ?? new ReceiptShopInfo { Name = "Win7POS", Address = "", Footer = "Grazie" };
 
             var lines = ReceiptFormatter.Format(sale, saleLines, options, shop);
             ReceiptPreviewText = string.Join(Environment.NewLine, lines);
@@ -253,8 +317,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void SetRoundedTotal()
         {
-            int rounded = ((_totalDueMinor + 2500) / 5000) * 5000;
-            if (rounded < _totalDueMinor) rounded += 5000;
+            int rounded = ((_totalDueMinor + 500) / 1000) * 1000;
+            if (rounded < _totalDueMinor) rounded += 1000;
             SetActiveFieldMinor(rounded);
         }
 
@@ -268,6 +332,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             (ConfirmCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (GeneratePdfCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)

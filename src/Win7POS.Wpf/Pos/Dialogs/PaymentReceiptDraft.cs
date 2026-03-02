@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Win7POS.Core.Receipt;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -10,6 +11,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public IReadOnlyList<PaymentReceiptDraftLine> CartLines { get; set; }
         public bool UseReceipt42 { get; set; }
         public bool DefaultPrint { get; set; }
+        public ReceiptShopInfo ShopInfo { get; set; }
+        public int NextBoletaNumber { get; set; }
     }
 
     public sealed class PaymentReceiptDraftLine

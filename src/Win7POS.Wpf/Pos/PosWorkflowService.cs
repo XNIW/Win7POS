@@ -28,6 +28,13 @@ namespace Win7POS.Wpf.Pos
         private const string KeyAutoPrint = "pos.autoPrint";
         private const string KeySaveReceiptCopy = "printer.saveReceiptCopy";
         private const string KeyReceiptOutputDirectory = "printer.outputDirectory";
+        private const string KeyShopName = "shop.name";
+        private const string KeyShopAddress = "shop.address";
+        private const string KeyShopCity = "shop.city";
+        private const string KeyShopRut = "shop.rut";
+        private const string KeyShopPhone = "shop.phone";
+        private const string KeyShopFooter = "shop.footer";
+        private const string KeyFiscalBoletaNumber = "fiscal.boletaNumber";
 
         private readonly FileLogger _logger = new FileLogger();
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
@@ -808,9 +815,10 @@ namespace Win7POS.Wpf.Pos
                 if (sale == null) return string.Empty;
                 var lines = await _sales.GetLinesBySaleIdAsync(saleId).ConfigureAwait(false);
                 var completed = new SaleCompleted(sale, lines);
+                var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
                 if (sale.Kind == (int)SaleKind.Refund)
-                    return BuildRefundReceiptPreview(completed, use42);
-                return BuildReceiptPreview(completed, use42);
+                    return BuildRefundReceiptPreview(completed, use42, shop);
+                return BuildReceiptPreview(completed, use42, shop);
             }
             finally
             {
@@ -825,7 +833,86 @@ namespace Win7POS.Wpf.Pos
             {
                 if (_lastCompletedSale == null)
                     return string.Empty;
-                return BuildReceiptPreview(_lastCompletedSale, use42);
+                var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
+                return BuildReceiptPreview(_lastCompletedSale, use42, shop);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<ReceiptShopInfo> GetShopInfoAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                return await GetShopInfoNoLockAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        private async Task<ReceiptShopInfo> GetShopInfoNoLockAsync()
+        {
+            var name = await _settings.GetStringAsync(KeyShopName).ConfigureAwait(false);
+            var address = await _settings.GetStringAsync(KeyShopAddress).ConfigureAwait(false);
+            var city = await _settings.GetStringAsync(KeyShopCity).ConfigureAwait(false);
+            var rut = await _settings.GetStringAsync(KeyShopRut).ConfigureAwait(false);
+            var phone = await _settings.GetStringAsync(KeyShopPhone).ConfigureAwait(false);
+            var footer = await _settings.GetStringAsync(KeyShopFooter).ConfigureAwait(false);
+            return new ReceiptShopInfo
+            {
+                Name = string.IsNullOrWhiteSpace(name) ? "Win7 POS Store" : name.Trim(),
+                Address = address?.Trim() ?? "",
+                City = city?.Trim() ?? "",
+                Rut = rut?.Trim() ?? "",
+                Phone = phone?.Trim() ?? "",
+                Footer = string.IsNullOrWhiteSpace(footer) ? "Grazie e arrivederci" : footer.Trim()
+            };
+        }
+
+        public async Task SaveShopInfoAsync(ReceiptShopInfo shop)
+        {
+            if (shop == null) return;
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await _settings.SetStringAsync(KeyShopName, shop.Name ?? "").ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyShopAddress, shop.Address ?? "").ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyShopCity, shop.City ?? "").ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyShopRut, shop.Rut ?? "").ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyShopPhone, shop.Phone ?? "").ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyShopFooter, shop.Footer ?? "").ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<int> GetFiscalBoletaNumberAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var v = await _settings.GetIntAsync(KeyFiscalBoletaNumber).ConfigureAwait(false);
+                return v ?? 0;
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task SetFiscalBoletaNumberAsync(int number)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                await _settings.SetIntAsync(KeyFiscalBoletaNumber, number).ConfigureAwait(false);
             }
             finally
             {
@@ -922,24 +1009,20 @@ namespace Win7POS.Wpf.Pos
             };
         }
 
-        private static string BuildReceiptPreview(SaleCompleted completed, bool use42)
+        private static string BuildReceiptPreview(SaleCompleted completed, bool use42, ReceiptShopInfo shop = null)
         {
+            shop = shop ?? new ReceiptShopInfo();
             var lines = ReceiptFormatter.Format(
                 completed.Sale,
                 completed.Lines,
                 use42 ? ReceiptOptions.Default42Clp() : ReceiptOptions.Default32Clp(),
-                new ReceiptShopInfo
-                {
-                    Name = "Win7POS",
-                    Address = "",
-                    Footer = "Grazie"
-                });
+                shop);
             return string.Join(Environment.NewLine, lines);
         }
 
-        private static string BuildRefundReceiptPreview(SaleCompleted completed, bool use42)
+        private static string BuildRefundReceiptPreview(SaleCompleted completed, bool use42, ReceiptShopInfo shop = null)
         {
-            var baseText = BuildReceiptPreview(completed, use42);
+            var baseText = BuildReceiptPreview(completed, use42, shop);
             return "RESO/STORNO" + Environment.NewLine + baseText;
         }
 

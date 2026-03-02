@@ -83,6 +83,7 @@
 
                         <Separator Margin="0,12,0,12"/>
                         <TextBlock Text="Supporto" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
+                        <Button Content="Impostazioni negozio" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuShopSettingsClick"/>
                         <Button Content="About / Support" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuAboutClick"/>
                     </StackPanel>
                 </ScrollViewer>

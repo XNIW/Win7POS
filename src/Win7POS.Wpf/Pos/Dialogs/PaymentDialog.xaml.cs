@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
@@ -9,10 +10,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         public PaymentViewModel ViewModel { get; }
 
-        public PaymentDialog(int totalDueMinor, PaymentReceiptDraft draft = null)
+        public PaymentDialog(int totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null)
         {
             InitializeComponent();
-            ViewModel = new PaymentViewModel(totalDueMinor, draft);
+            ViewModel = new PaymentViewModel(totalDueMinor, draft, generateFiscalPdf);
             ViewModel.RequestClose += OnRequestClose;
             DataContext = ViewModel;
         }
