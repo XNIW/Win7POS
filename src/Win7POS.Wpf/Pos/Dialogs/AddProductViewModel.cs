@@ -1,14 +1,13 @@
 using System;
 using System.ComponentModel;
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using Win7POS.Core.Util;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public sealed class AddProductViewModel : INotifyPropertyChanged
     {
-        private readonly CultureInfo _it = CultureInfo.GetCultureInfo("it-IT");
         private string _productName = string.Empty;
         private string _priceText = "0";
 
@@ -45,7 +44,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        public int PriceMinor => ParseMoneyToMinor(PriceText);
+        public int PriceMinor => MoneyClp.Parse(PriceText);
 
         public bool IsValid => Barcode.Length > 0 && ProductName.Trim().Length > 0 && PriceMinor >= 0;
 
@@ -63,23 +62,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-
-        private int ParseMoneyToMinor(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text)) return -1;
-            var raw = text.Trim();
-
-            decimal value;
-            if (!decimal.TryParse(raw, NumberStyles.Number, _it, out value))
-            {
-                var normalized = raw.Replace(',', '.');
-                if (!decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out value))
-                    return -1;
-            }
-
-            if (value < 0) return -1;
-            return (int)Math.Round(value * 100m, MidpointRounding.AwayFromZero);
-        }
 
         private sealed class RelayCommand : ICommand
         {

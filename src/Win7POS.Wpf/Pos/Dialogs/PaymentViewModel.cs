@@ -1,8 +1,8 @@
 using System;
 using System.ComponentModel;
-using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using Win7POS.Core.Util;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -13,9 +13,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private readonly int _totalDueMinor;
         private readonly string _cartReceiptPreview;
 
-        private readonly CultureInfo _it = CultureInfo.GetCultureInfo("it-IT");
-
-        private string _cashReceived;
+        private string _cashReceived = "";
         private string _cardAmount = "0";
         private PaymentActiveField _activeField = PaymentActiveField.Cash;
 
@@ -23,7 +21,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             _totalDueMinor = totalDueMinor;
             _cartReceiptPreview = cartReceiptPreview ?? string.Empty;
-            _cashReceived = FormatMoney(_totalDueMinor);
 
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
@@ -37,8 +34,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         public string CartReceiptPreview => _cartReceiptPreview;
-        public string TotalDueText => FormatMoney(_totalDueMinor);
-        public string TotalPaidText => FormatMoney(CashAmountMinor + CardAmountMinor);
+        public string TotalDueText => MoneyClp.Format(_totalDueMinor);
+        public string TotalPaidText => MoneyClp.Format(CashAmountMinor + CardAmountMinor);
 
         public PaymentActiveField ActiveField
         {
@@ -68,14 +65,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        public string ChangeDueText => FormatMoney(ChangeDueMinor);
-        public string MissingAmountText => IsValid ? string.Empty : "Manca: " + FormatMoney(MissingAmountMinor);
+        public string ChangeDueText => MoneyClp.Format(ChangeDueMinor);
+        public string MissingAmountText => IsValid ? string.Empty : "Manca: " + MoneyClp.Format(MissingAmountMinor);
         public string RestoOrMissingDisplay => IsValid ? "Resto: " + ChangeDueText : MissingAmountText;
 
         public bool IsValid => CashAmountMinor >= 0 && CardAmountMinor >= 0 && CashAmountMinor + CardAmountMinor >= _totalDueMinor;
 
-        public int CashAmountMinor => ParseMoneyToMinor(CashReceived);
-        public int CardAmountMinor => ParseMoneyToMinor(CardAmount);
+        public int CashAmountMinor => MoneyClp.Parse(CashReceived);
+        public int CardAmountMinor => MoneyClp.Parse(CardAmount);
 
         public int ChangeDueMinor
         {
@@ -166,7 +163,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void SetActiveFieldMinor(int minor)
         {
             if (minor < 0) minor = 0;
-            var text = FormatMoney(minor);
+            var text = MoneyClp.Format(minor);
             if (_activeField == PaymentActiveField.Cash)
                 CashReceived = text;
             else
@@ -178,7 +175,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             int amountMinor = 0;
             if (parameter is int i)
                 amountMinor = i;
-            else if (parameter is string str && int.TryParse(str, out var parsed))
+            else if (parameter is string str && int.TryParse(str, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
                 amountMinor = parsed;
             if (amountMinor <= 0) return;
             int current = GetActiveFieldMinor();
@@ -199,7 +196,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void PayAllCard()
         {
-            CardAmount = FormatMoney(_totalDueMinor);
+            CardAmount = MoneyClp.Format(_totalDueMinor);
             CashReceived = "0";
         }
 
@@ -211,28 +208,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-
-        private string FormatMoney(int valueMinor)
-        {
-            var value = valueMinor / 100.0m;
-            return value.ToString("N2", _it);
-        }
-
-        private int ParseMoneyToMinor(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text)) return 0;
-            var raw = text.Trim();
-
-            decimal value;
-            if (!decimal.TryParse(raw, NumberStyles.Number, _it, out value))
-            {
-                var normalized = raw.Replace(',', '.');
-                if (!decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out value))
-                    return -1;
-            }
-            if (value < 0) return -1;
-            return (int)Math.Round(value * 100m, MidpointRounding.AwayFromZero);
-        }
 
         private sealed class RelayCommand : ICommand
         {

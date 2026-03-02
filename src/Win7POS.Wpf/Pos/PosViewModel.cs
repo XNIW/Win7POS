@@ -10,6 +10,7 @@ using System.Windows.Input;
 using System.Globalization;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
+using Win7POS.Core.Util;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos.Dialogs;
 
@@ -57,7 +58,7 @@ namespace Win7POS.Wpf.Pos
 
         public int ItemsCount => CartItems.Sum(x => x.Quantity);
 
-        public string TotalDisplay => (Total / 100.0m).ToString("N2", CultureInfo.GetCultureInfo("it-IT"));
+        public string TotalDisplay => MoneyClp.Format(Total);
 
         public bool IsBusy
         {
@@ -827,18 +828,20 @@ namespace Win7POS.Wpf.Pos
 
         public string BuildCartReceiptPreview()
         {
-            var culture = CultureInfo.GetCultureInfo("it-IT");
             var lines = new System.Collections.Generic.List<string>();
-            lines.Add("--- Carrello ---");
+            lines.Add("Win7POS");
+            lines.Add(DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture));
+            lines.Add("----------------------------------------");
             foreach (var item in CartItems)
             {
-                var unit = (item.UnitPrice / 100.0m).ToString("N2", culture);
-                var total = (item.LineTotal / 100.0m).ToString("N2", culture);
-                lines.Add($"{item.Name}");
-                lines.Add($"  {item.Quantity} x {unit} = {total}");
+                lines.Add(item.Name);
+                lines.Add($"  {item.Quantity} x {MoneyClp.Format(item.UnitPrice)} = {MoneyClp.Format(item.LineTotal)}");
             }
-            lines.Add("---");
-            lines.Add($"Totale: {(Total / 100.0m).ToString("N2", culture)}");
+            lines.Add("----------------------------------------");
+            var totalPaid = 0;
+            lines.Add("Totale: " + MoneyClp.Format(Total));
+            lines.Add("Pagato: " + MoneyClp.Format(totalPaid));
+            lines.Add("Resto: " + MoneyClp.Format(0));
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -877,26 +880,22 @@ namespace Win7POS.Wpf.Pos
 
         public sealed class PosCartLineRow
         {
-            private static readonly CultureInfo _it = CultureInfo.GetCultureInfo("it-IT");
-
             public string Barcode { get; set; } = string.Empty;
             public string Name { get; set; } = string.Empty;
             public int Quantity { get; set; }
             public int UnitPrice { get; set; }
             public int LineTotal { get; set; }
-            public string UnitPriceDisplay => (UnitPrice / 100.0m).ToString("N2", _it);
-            public string LineTotalDisplay => (LineTotal / 100.0m).ToString("N2", _it);
+            public string UnitPriceDisplay => MoneyClp.Format(UnitPrice);
+            public string LineTotalDisplay => MoneyClp.Format(LineTotal);
         }
 
         public sealed class RecentSaleRow
         {
-            private static readonly CultureInfo _it = CultureInfo.GetCultureInfo("it-IT");
-
             public long SaleId { get; set; }
             public string SaleCode { get; set; } = string.Empty;
             public string TimeText { get; set; } = string.Empty;
             public int Total { get; set; }
-            public string TotalDisplay => (Total / 100.0m).ToString("N2", _it);
+            public string TotalDisplay => MoneyClp.Format(Total);
             public int Kind { get; set; }
             public string KindText { get; set; } = string.Empty;
             public long? RelatedSaleId { get; set; }

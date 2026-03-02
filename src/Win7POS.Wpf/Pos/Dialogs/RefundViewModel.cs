@@ -1,21 +1,20 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
-using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using Win7POS.Core.Models;
+using Win7POS.Core.Util;
 using Win7POS.Wpf.Pos;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public sealed class RefundViewModel : INotifyPropertyChanged
     {
-        private readonly CultureInfo _it = CultureInfo.GetCultureInfo("it-IT");
         private bool _isFullVoid = true;
-        private string _cashRefund = "0,00";
-        private string _cardRefund = "0,00";
+        private string _cashRefund = "0";
+        private string _cardRefund = "0";
         private string _reason = string.Empty;
 
         public RefundViewModel(RefundPreviewModel preview)
@@ -38,7 +37,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Lines.Add(row);
             }
 
-            _cashRefund = FormatMoney(RefundTotalMinor);
+            _cashRefund = MoneyClp.Format(RefundTotalMinor);
             if (Preview.IsAlreadyVoided)
                 _isFullVoid = false;
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
@@ -50,7 +49,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public string SaleCodeText => Preview.OriginalSaleCode;
         public string TimeText => DateTimeOffset.FromUnixTimeMilliseconds(Preview.OriginalCreatedAtMs).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss");
-        public string OriginalTotalText => FormatMoney(Preview.OriginalTotalMinor);
+        public string OriginalTotalText => MoneyClp.Format(Preview.OriginalTotalMinor);
 
         public bool IsFullVoid
         {
@@ -117,11 +116,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        public string RefundTotalText => FormatMoney(RefundTotalMinor);
+        public string RefundTotalText => MoneyClp.Format(RefundTotalMinor);
         public int RemainingRefundableMinor => Preview.MaxRefundableMinor;
-        public string RemainingRefundableText => FormatMoney(RemainingRefundableMinor);
-        public int CashMinor => ParseMoneyToMinor(CashRefund);
-        public int CardMinor => ParseMoneyToMinor(CardRefund);
+        public string RemainingRefundableText => MoneyClp.Format(RemainingRefundableMinor);
+        public int CashMinor => MoneyClp.Parse(CashRefund);
+        public int CardMinor => MoneyClp.Parse(CardRefund);
         public bool IsValid => RefundTotalMinor > 0 && CashMinor >= 0 && CardMinor >= 0 && CashMinor + CardMinor == RefundTotalMinor;
         public int MissingMinor
         {
@@ -132,7 +131,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return delta > 0 ? delta : 0;
             }
         }
-        public string MissingText => IsValid ? string.Empty : "Manca: " + FormatMoney(MissingMinor);
+        public string MissingText => IsValid ? string.Empty : "Manca: " + MoneyClp.Format(MissingMinor);
 
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }
@@ -204,28 +203,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
             OnPropertyChanged(nameof(MissingMinor));
             OnPropertyChanged(nameof(MissingText));
             (ConfirmCommand as RelayCommand)?.RaiseCanExecuteChanged();
-        }
-
-        private string FormatMoney(int valueMinor)
-        {
-            var value = valueMinor / 100.0m;
-            return value.ToString("N2", _it);
-        }
-
-        private int ParseMoneyToMinor(string text)
-        {
-            if (string.IsNullOrWhiteSpace(text)) return 0;
-            var raw = text.Trim();
-
-            decimal value;
-            if (!decimal.TryParse(raw, NumberStyles.Number, _it, out value))
-            {
-                var normalized = raw.Replace(',', '.');
-                if (!decimal.TryParse(normalized, NumberStyles.Number, CultureInfo.InvariantCulture, out value))
-                    return -1;
-            }
-            if (value < 0) return -1;
-            return (int)Math.Round(value * 100m, MidpointRounding.AwayFromZero);
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)

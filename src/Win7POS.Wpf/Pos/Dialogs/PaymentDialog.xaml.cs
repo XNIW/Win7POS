@@ -1,5 +1,7 @@
+using System;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -53,7 +55,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void OnRequestClose(bool ok)
         {
-            DialogResult = ok;
+            void SetResult()
+            {
+                if (!IsLoaded)
+                {
+                    try { Close(); } catch { }
+                    return;
+                }
+                try
+                {
+                    DialogResult = ok;
+                }
+                catch (InvalidOperationException)
+                {
+                    try { Close(); } catch { }
+                }
+            }
+
+            if (!Dispatcher.CheckAccess())
+            {
+                Dispatcher.Invoke(DispatcherPriority.Normal, (Action)(() => SetResult()));
+                return;
+            }
+            SetResult();
         }
     }
 }

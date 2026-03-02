@@ -80,7 +80,7 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <TextBlock Grid.Row="0" FontWeight="SemiBold" Margin="0,0,0,8">
-                    <Run Text="Total pesos "/><Run Text="{Binding TotalDueText}"/>
+                    <Run Text="Total pesos "/><Run Text="{Binding TotalDueText, Mode=OneWay}"/>
                 </TextBlock>
                 <Grid Grid.Row="1" Margin="0,0,0,6">
                     <Grid.ColumnDefinitions>
@@ -101,10 +101,10 @@
                              GotFocus="CardBox_GotFocus" LostFocus="CardBox_LostFocus"/>
                 </Grid>
                 <TextBlock Grid.Row="3" Margin="0,0,0,8">
-                    <Run Text="Totale pagato "/><Run Text="{Binding TotalPaidText}"/>
+                    <Run Text="Totale pagato "/><Run Text="{Binding TotalPaidText, Mode=OneWay}"/>
                 </TextBlock>
                 <TextBlock Grid.Row="4" Margin="0,0,0,8" FontWeight="SemiBold"
-                           Text="{Binding RestoOrMissingDisplay}"/>
+                           Text="{Binding RestoOrMissingDisplay, Mode=OneWay}"/>
                 <!-- Keypad -->
                 <UniformGrid Grid.Row="5" Rows="4" Columns="3" Margin="0,8,0,0">
                     <Button Content="7" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="7"/>
