@@ -49,14 +49,14 @@
         <Border Grid.Row="0" Grid.Column="2" BorderBrush="#CCC" BorderThickness="1" Margin="0,0,6,0" Padding="8">
             <StackPanel>
                 <TextBlock Text="Rapidi" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                <TextBlock Text="Somma" FontSize="11" Foreground="Gray" Margin="0,0,0,4"/>
-                <Button Content="+ 200" Margin="0,0,0,6" Padding="8,6"
+                <TextBlock Text="Somma (CLP)" FontSize="11" Foreground="Gray" Margin="0,0,0,4"/>
+                <Button Content="+ 20000" Margin="0,0,0,6" Padding="8,6"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="20000"/>
-                <Button Content="+ 100" Margin="0,0,0,6" Padding="8,6"
+                <Button Content="+ 10000" Margin="0,0,0,6" Padding="8,6"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="10000"/>
-                <Button Content="+ 50" Margin="0,0,0,6" Padding="8,6"
+                <Button Content="+ 5000" Margin="0,0,0,6" Padding="8,6"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="5000"/>
-                <Button Content="+ 20" Margin="0,0,0,6" Padding="8,6"
+                <Button Content="+ 2000" Margin="0,0,0,6" Padding="8,6"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="2000"/>
                 <TextBlock Text="Importo" FontSize="11" Foreground="Gray" Margin="0,12,0,4"/>
                 <Button Content="≈ Totale arrot." Margin="0,0,0,6" Padding="8,6"

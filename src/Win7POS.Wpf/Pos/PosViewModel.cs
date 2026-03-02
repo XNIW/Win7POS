@@ -53,7 +53,7 @@ namespace Win7POS.Wpf.Pos
         public int Total
         {
             get => _total;
-            set { _total = value; OnPropertyChanged(); }
+            set { _total = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalDisplay)); }
         }
 
         public int ItemsCount => CartItems.Sum(x => x.Quantity);
@@ -323,7 +323,15 @@ namespace Win7POS.Wpf.Pos
                 StatusMessage = "Pagamento OK: " + result.SaleCode;
                 if (_printerSettings.AutoPrint)
                 {
-                    await PrintReceiptAsync(ReceiptPreview, result.SaleCode).ConfigureAwait(true);
+                    var printed = await PrintReceiptAsync(ReceiptPreview, result.SaleCode).ConfigureAwait(true);
+                    if (!printed)
+                    {
+                        MessageBox.Show(
+                            "Ricevuta non stampata.\nControlla impostazioni stampante e log.",
+                            "Stampa fallita",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                    }
                 }
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }
@@ -706,7 +714,7 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        private async Task PrintReceiptAsync(string receiptText, string saleCode)
+        private async Task<bool> PrintReceiptAsync(string receiptText, string saleCode)
         {
             try
             {
@@ -714,11 +722,13 @@ namespace Win7POS.Wpf.Pos
                 StatusMessage = result.SavedCopy
                     ? "Ricevuta stampata. Copia salvata: " + result.OutputPath
                     : "Ricevuta stampata.";
+                return true;
             }
             catch (Exception ex)
             {
                 StatusMessage = "Stampa fallita: " + ex.Message;
                 _logger.LogError(ex, "POS VM print failed");
+                return false;
             }
         }
 
@@ -820,6 +830,7 @@ namespace Win7POS.Wpf.Pos
 
             Subtotal = snapshot.Subtotal;
             Total = snapshot.Total;
+            OnPropertyChanged(nameof(TotalDisplay));
             if (!string.IsNullOrWhiteSpace(snapshot.Status))
                 StatusMessage = snapshot.Status;
             OnPropertyChanged(nameof(ItemsCount));
