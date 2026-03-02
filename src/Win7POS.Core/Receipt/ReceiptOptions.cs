@@ -8,5 +8,7 @@ namespace Win7POS.Core.Receipt
 
         public static ReceiptOptions Default42() => new ReceiptOptions { Width = 42 };
         public static ReceiptOptions Default32() => new ReceiptOptions { Width = 32 };
+        public static ReceiptOptions Default42Clp() => new ReceiptOptions { Width = 42, Currency = "CLP" };
+        public static ReceiptOptions Default32Clp() => new ReceiptOptions { Width = 32, Currency = "CLP" };
     }
 }

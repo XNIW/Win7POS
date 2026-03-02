@@ -1,7 +1,11 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using Win7POS.Core.Models;
+using Win7POS.Core.Receipt;
 using Win7POS.Core.Util;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -11,16 +15,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
     public sealed class PaymentViewModel : INotifyPropertyChanged
     {
         private readonly int _totalDueMinor;
-        private readonly string _cartReceiptPreview;
+        private readonly PaymentReceiptDraft _draft;
 
         private string _cashReceived = "";
         private string _cardAmount = "0";
         private PaymentActiveField _activeField = PaymentActiveField.Cash;
+        private bool _shouldPrint;
+        private string _receiptPreviewText = "";
 
-        public PaymentViewModel(int totalDueMinor, string cartReceiptPreview = null)
+        public PaymentViewModel(int totalDueMinor, PaymentReceiptDraft draft = null)
         {
             _totalDueMinor = totalDueMinor;
-            _cartReceiptPreview = cartReceiptPreview ?? string.Empty;
+            _draft = draft;
+            _shouldPrint = draft?.DefaultPrint ?? false;
 
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
@@ -31,9 +38,27 @@ namespace Win7POS.Wpf.Pos.Dialogs
             SetExactTotalCommand = new RelayCommand(_ => SetExactTotal(), _ => true);
             SetRoundedTotalCommand = new RelayCommand(_ => SetRoundedTotal(), _ => true);
             PayAllCardCommand = new RelayCommand(_ => PayAllCard(), _ => true);
+
+            UpdateReceiptPreviewText();
         }
 
-        public string CartReceiptPreview => _cartReceiptPreview;
+        public string SaleCode => _draft?.SaleCode ?? "";
+        public long CreatedAtMs => _draft?.CreatedAtMs ?? 0;
+
+        public bool ShouldPrint
+        {
+            get => _shouldPrint;
+            set { _shouldPrint = value; OnPropertyChanged(); }
+        }
+
+        public string ReceiptPreviewText
+        {
+            get => _receiptPreviewText;
+            private set { _receiptPreviewText = value ?? ""; OnPropertyChanged(); }
+        }
+
+        [Obsolete("Use ReceiptPreviewText")]
+        public string CartReceiptPreview => ReceiptPreviewText;
         public string TotalDueText => MoneyClp.Format(_totalDueMinor);
         public string TotalPaidText => MoneyClp.Format(CashAmountMinor + CardAmountMinor);
 
@@ -126,7 +151,46 @@ namespace Win7POS.Wpf.Pos.Dialogs
             OnPropertyChanged(nameof(RestoOrMissingDisplay));
             OnPropertyChanged(nameof(IsValid));
             OnPropertyChanged(nameof(TotalPaidText));
+            UpdateReceiptPreviewText();
             RaiseCanExecuteChanged();
+        }
+
+        private void UpdateReceiptPreviewText()
+        {
+            if (_draft?.CartLines == null || _draft.CartLines.Count == 0)
+            {
+                ReceiptPreviewText = "Carrello vuoto.";
+                return;
+            }
+
+            var change = IsValid ? ChangeDueMinor : 0;
+            var paidCash = CashAmountMinor >= 0 ? CashAmountMinor : 0;
+            var paidCard = CardAmountMinor >= 0 ? CardAmountMinor : 0;
+
+            var sale = new Sale
+            {
+                Code = _draft.SaleCode,
+                CreatedAt = _draft.CreatedAtMs,
+                Total = _totalDueMinor,
+                PaidCash = paidCash,
+                PaidCard = paidCard,
+                Change = change
+            };
+
+            var saleLines = _draft.CartLines.Select(x => new SaleLine
+            {
+                Barcode = x.Barcode,
+                Name = x.Name ?? "-",
+                Quantity = x.Quantity,
+                UnitPrice = x.UnitPrice,
+                LineTotal = x.LineTotal
+            }).ToList();
+
+            var options = _draft.UseReceipt42 ? ReceiptOptions.Default42Clp() : ReceiptOptions.Default32Clp();
+            var shop = new ReceiptShopInfo { Name = "Win7POS", Address = "", Footer = "Grazie" };
+
+            var lines = ReceiptFormatter.Format(sale, saleLines, options, shop);
+            ReceiptPreviewText = string.Join(Environment.NewLine, lines);
         }
 
         private void AppendDigit(object parameter)

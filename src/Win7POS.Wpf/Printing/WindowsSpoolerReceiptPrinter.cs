@@ -52,30 +52,49 @@ namespace Win7POS.Wpf.Printing
 
             using (var doc = new PrintDocument())
             {
-                // default printer: do NOT set PrinterName if empty
                 if (!string.IsNullOrWhiteSpace(opt.PrinterName))
                     doc.PrinterSettings.PrinterName = opt.PrinterName;
 
                 doc.PrinterSettings.Copies = (short)Math.Max(1, opt.Copies);
 
+                // Margini a zero; offset reale da HardMargin (area non stampabile driver)
+                doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
+
+                // Carta 80mm se disponibile (larghezza ~315 centesimi di pollice)
+                try
+                {
+                    foreach (PaperSize ps in doc.PrinterSettings.PaperSizes)
+                    {
+                        if (ps.Width >= 300 && ps.Width <= 330 ||
+                            (ps.PaperName != null && ps.PaperName.IndexOf("80", StringComparison.OrdinalIgnoreCase) >= 0))
+                        {
+                            doc.DefaultPageSettings.PaperSize = ps;
+                            break;
+                        }
+                    }
+                }
+                catch { /* fallback default paper */ }
+
                 Font font = null;
                 try
                 {
-                    // prefer monospace
-                    try { font = new Font("Consolas", 10f); }
-                    catch { font = new Font("Courier New", 10f); }
+                    // Font più piccolo per termica 80mm (~42 caratteri)
+                    try { font = new Font("Consolas", 9f); }
+                    catch { font = new Font("Courier New", 9f); }
 
                     doc.PrintPage += (s, e) =>
                     {
-                        float y = e.MarginBounds.Top;
+                        float x = e.PageSettings.HardMarginX;
+                        float y = e.PageSettings.HardMarginY;
                         float lineHeight = font.GetHeight(e.Graphics);
+                        float bottom = e.PageBounds.Bottom - e.PageSettings.HardMarginY;
 
                         while (lineIndex < lines.Length)
                         {
-                            if (y + lineHeight > e.MarginBounds.Bottom)
+                            if (y + lineHeight > bottom)
                                 break;
 
-                            e.Graphics.DrawString(lines[lineIndex], font, Brushes.Black, e.MarginBounds.Left, y);
+                            e.Graphics.DrawString(lines[lineIndex], font, Brushes.Black, x, y);
                             y += lineHeight;
                             lineIndex++;
                         }

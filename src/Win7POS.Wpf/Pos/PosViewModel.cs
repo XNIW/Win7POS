@@ -13,6 +13,7 @@ using Win7POS.Core.Pos;
 using Win7POS.Core.Util;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos.Dialogs;
+using Win7POS.Wpf.Pos.Dialogs;
 
 namespace Win7POS.Wpf.Pos
 {
@@ -266,11 +267,26 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
-            var cartReceiptPreview = BuildCartReceiptPreview();
+            var draft = new PaymentReceiptDraft
+            {
+                SaleCode = SaleCodeGenerator.NewCode("V"),
+                CreatedAtMs = UnixTime.NowMs(),
+                CartLines = CartItems.Select(x => new PaymentReceiptDraftLine
+                {
+                    Barcode = x.Barcode,
+                    Name = x.Name,
+                    Quantity = x.Quantity,
+                    UnitPrice = x.UnitPrice,
+                    LineTotal = x.LineTotal
+                }).ToList(),
+                UseReceipt42 = UseReceipt42,
+                DefaultPrint = _printerSettings.AutoPrint
+            };
+
             PaymentDialog dlg;
             try
             {
-                dlg = new PaymentDialog(Total, cartReceiptPreview) { Owner = Application.Current?.MainWindow };
+                dlg = new PaymentDialog(Total, draft) { Owner = Application.Current?.MainWindow };
             }
             catch (Exception ex)
             {
@@ -317,11 +333,14 @@ namespace Win7POS.Wpf.Pos
                     CashAmountMinor = dlg.ViewModel.CashAmountMinor,
                     CardAmountMinor = dlg.ViewModel.CardAmountMinor
                 };
-                var result = await _service.CompleteSaleAsync(payment).ConfigureAwait(true);
+                var result = await _service.CompleteSaleAsync(
+                    payment,
+                    dlg.ViewModel.SaleCode,
+                    dlg.ViewModel.CreatedAtMs).ConfigureAwait(true);
                 ApplySnapshot(result.Snapshot);
                 ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
                 StatusMessage = "Pagamento OK: " + result.SaleCode;
-                if (_printerSettings.AutoPrint)
+                if (dlg.ViewModel.ShouldPrint)
                 {
                     var printed = await PrintReceiptAsync(ReceiptPreview, result.SaleCode).ConfigureAwait(true);
                     if (!printed)

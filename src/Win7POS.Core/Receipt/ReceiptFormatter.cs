@@ -25,7 +25,7 @@ namespace Win7POS.Core.Receipt
             if (!string.IsNullOrWhiteSpace(shop.Phone)) AddLine(result, width, $"Tel: {shop.Phone}");
             AddLine(result, width, new string('-', width));
             AddLine(result, width, $"Sale: {sale.Code}");
-            var when = DateTimeOffset.FromUnixTimeMilliseconds(sale.CreatedAt).ToString("yyyy-MM-dd HH:mm:ss");
+            var when = DateTimeOffset.FromUnixTimeMilliseconds(sale.CreatedAt).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             AddLine(result, width, $"Time: {when}");
             AddLine(result, width, new string('-', width));
 
@@ -53,6 +53,8 @@ namespace Win7POS.Core.Receipt
 
         private static string FormatAmount(int amountMinor, string currency, CultureInfo culture)
         {
+            if (string.Equals(currency, "CLP", StringComparison.OrdinalIgnoreCase))
+                return amountMinor.ToString(System.Globalization.CultureInfo.InvariantCulture);
             var value = amountMinor / 100.0m;
             return $"{value.ToString("N2", culture)} {currency}";
         }

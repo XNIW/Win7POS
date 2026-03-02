@@ -374,7 +374,10 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<PosSaleResult> CompleteSaleAsync(PosPaymentInfo payment)
+        public async Task<PosSaleResult> CompleteSaleAsync(
+            PosPaymentInfo payment,
+            string saleCode = null,
+            long? createdAtMs = null)
         {
             if (payment == null) throw new ArgumentNullException(nameof(payment));
 
@@ -388,10 +391,11 @@ namespace Win7POS.Wpf.Pos
                 if (!payment.IsValid(total))
                     throw new InvalidOperationException("Pagamento non valido.");
 
+                var effectiveCreated = (createdAtMs.HasValue && createdAtMs.Value != 0) ? createdAtMs.Value : (long?)null;
                 var sale = new Sale
                 {
-                    Code = SaleCodeGenerator.NewCode("V"),
-                    CreatedAt = UnixTime.NowMs(),
+                    Code = !string.IsNullOrWhiteSpace(saleCode) ? saleCode : SaleCodeGenerator.NewCode("V"),
+                    CreatedAt = effectiveCreated ?? UnixTime.NowMs(),
                     Total = total,
                     PaidCash = payment.CashAmountMinor,
                     PaidCard = payment.CardAmountMinor,
@@ -848,12 +852,12 @@ namespace Win7POS.Wpf.Pos
             var lines = ReceiptFormatter.Format(
                 completed.Sale,
                 completed.Lines,
-                use42 ? ReceiptOptions.Default42() : ReceiptOptions.Default32(),
+                use42 ? ReceiptOptions.Default42Clp() : ReceiptOptions.Default32Clp(),
                 new ReceiptShopInfo
                 {
-                    Name = "Win7 POS Demo",
-                    Address = "Via Roma 1, Torino",
-                    Footer = "Powered by Win7POS"
+                    Name = "Win7POS",
+                    Address = "",
+                    Footer = "Grazie"
                 });
             return string.Join(Environment.NewLine, lines);
         }

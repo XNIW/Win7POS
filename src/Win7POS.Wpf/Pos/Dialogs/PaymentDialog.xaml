@@ -26,8 +26,15 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="Scontrino" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                <TextBox Grid.Row="1" Text="{Binding CartReceiptPreview, Mode=OneWay}"
+                <Grid Grid.Row="0" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Scontrino" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <CheckBox Grid.Column="1" Content="Stampa" IsChecked="{Binding ShouldPrint}" VerticalAlignment="Center"/>
+                </Grid>
+                <TextBox Grid.Row="1" Text="{Binding ReceiptPreviewText, Mode=OneWay}"
                          IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
                          FontFamily="Consolas" FontSize="11" VerticalContentAlignment="Top"/>
             </Grid>

@@ -9,10 +9,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         public PaymentViewModel ViewModel { get; }
 
-        public PaymentDialog(int totalDueMinor, string cartReceiptPreview = null)
+        public PaymentDialog(int totalDueMinor, PaymentReceiptDraft draft = null)
         {
             InitializeComponent();
-            ViewModel = new PaymentViewModel(totalDueMinor, cartReceiptPreview);
+            ViewModel = new PaymentViewModel(totalDueMinor, draft);
             ViewModel.RequestClose += OnRequestClose;
             DataContext = ViewModel;
         }
