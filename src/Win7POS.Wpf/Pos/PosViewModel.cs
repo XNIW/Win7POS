@@ -282,7 +282,7 @@ namespace Win7POS.Wpf.Pos
                     LineTotal = x.LineTotal
                 }).ToList(),
                 UseReceipt42 = UseReceipt42,
-                DefaultPrint = _printerSettings.AutoPrint
+                DefaultPrint = true
             };
 
             PaymentDialog dlg;

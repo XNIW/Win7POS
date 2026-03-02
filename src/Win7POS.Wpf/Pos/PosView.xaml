@@ -37,16 +37,16 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="2*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="100"/>
+                        <ColumnDefinition Width="90"/>
+                        <ColumnDefinition Width="90"/>
+                        <ColumnDefinition Width="36"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="Prodotto" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1" Text="Q.tà" FontWeight="SemiBold" VerticalAlignment="Center" Width="80" HorizontalAlignment="Center"/>
-                    <TextBlock Grid.Column="2" Text="Prezzo" FontWeight="SemiBold" VerticalAlignment="Center" Width="90" HorizontalAlignment="Right"/>
-                    <TextBlock Grid.Column="3" Text="Totale" FontWeight="SemiBold" VerticalAlignment="Center" Width="90" HorizontalAlignment="Right"/>
-                    <TextBlock Grid.Column="4" Width="32"/>
+                    <TextBlock Grid.Column="1" Text="Q.tà" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" Text="Prezzo" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                    <TextBlock Grid.Column="3" Text="Totale" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                    <TextBlock Grid.Column="4" Width="36"/>
                 </Grid>
             </Border>
             <ListBox Grid.Row="1" ItemsSource="{Binding CartItems}" SelectedItem="{Binding SelectedCartItem}"
@@ -65,27 +65,27 @@
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="2*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="100"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="36"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0">
                                 <TextBlock Text="{Binding Name}" FontWeight="Bold" TextWrapping="Wrap"/>
                                 <TextBlock Text="{Binding Barcode}" FontSize="11" Foreground="Gray"/>
                             </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Width="80" HorizontalAlignment="Center">
-                                <Button Width="28" Height="28" Content="−" FontSize="14" Padding="0"
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                <Button Width="32" Height="32" Content="−" FontSize="14" Padding="0"
                                         Command="{Binding DataContext.DecreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}"/>
                                 <TextBlock Text="{Binding Quantity}" VerticalAlignment="Center" Margin="8,0" MinWidth="24" TextAlignment="Center"/>
-                                <Button Width="28" Height="28" Content="+" FontSize="14" Padding="0"
+                                <Button Width="32" Height="32" Content="+" FontSize="14" Padding="0"
                                         Command="{Binding DataContext.IncreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}"/>
                             </StackPanel>
-                            <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay}" VerticalAlignment="Center" Width="90" HorizontalAlignment="Right" Margin="0,0,8,0"/>
-                            <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" VerticalAlignment="Center" Width="90" HorizontalAlignment="Right" Margin="0,0,8,0"/>
-                            <Button Grid.Column="4" Width="28" Height="28" Content="✕" FontSize="12" Padding="0" Foreground="DarkRed"
+                            <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
+                            <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
+                            <Button Grid.Column="4" Width="32" Height="32" Content="✕" FontSize="12" Padding="0" Foreground="DarkRed"
                                     Command="{Binding DataContext.RemoveLineForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                     CommandParameter="{Binding}"/>
                         </Grid>

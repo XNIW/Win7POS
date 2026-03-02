@@ -51,13 +51,13 @@
                                 <StackPanel Grid.Column="0">
                                     <TextBlock Text="{Binding SaleCode}" FontWeight="SemiBold"/>
                                     <TextBlock FontSize="11" Foreground="Gray">
-                                        <Run Text="{Binding TimeText}"/>
+                                        <Run Text="{Binding TimeText, Mode=OneWay}"/>
                                         <Run Text=" · "/>
-                                        <Run Text="{Binding KindText}"/>
-                                        <Run Text="{Binding VoidedText, StringFormat=' · {0}'}"/>
+                                        <Run Text="{Binding KindText, Mode=OneWay}"/>
+                                        <Run Text="{Binding VoidedText, StringFormat=' · {0}', Mode=OneWay}"/>
                                     </TextBlock>
                                 </StackPanel>
-                                <TextBlock Grid.Column="1" Text="{Binding TotalDisplay}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <TextBlock Grid.Column="1" Text="{Binding TotalDisplay, Mode=OneWay}" VerticalAlignment="Center" FontWeight="SemiBold"/>
                             </Grid>
                         </Border>
                     </DataTemplate>
@@ -65,7 +65,7 @@
             </ListBox>
             <StackPanel Grid.Row="4" Orientation="Horizontal">
                 <Button Content="Ricarica" MinWidth="90" Command="{Binding LoadCommand}" Margin="0,0,8,0"/>
-                <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Foreground="Gray" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="Gray" TextTrimming="CharacterEllipsis"/>
             </StackPanel>
         </Grid>
 
@@ -82,7 +82,7 @@
 
                 <TextBlock Grid.Row="0" Text="Dettaglio vendita" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,10"/>
 
-                <TextBlock Grid.Row="1" Text="{Binding DetailSummary}" TextWrapping="Wrap" Margin="0,0,0,10"
+                <TextBlock Grid.Row="1" Text="{Binding DetailSummary, Mode=OneWay}" TextWrapping="Wrap" Margin="0,0,0,10"
                            FontSize="12" Foreground="#333"/>
 
                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10">
@@ -96,8 +96,8 @@
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="{Binding Name}" TextWrapping="Wrap"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding UnitPriceDisplay}" Margin="8,0" MinWidth="70" HorizontalAlignment="Right"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" MinWidth="70" HorizontalAlignment="Right"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding UnitPriceDisplay, Mode=OneWay}" Margin="8,0" MinWidth="70" HorizontalAlignment="Right"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding LineTotalDisplay, Mode=OneWay}" FontWeight="SemiBold" MinWidth="70" HorizontalAlignment="Right"/>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
@@ -106,7 +106,7 @@
 
                 <Border Grid.Row="3" Background="#EEE" Padding="8" Margin="0,0,0,10" CornerRadius="2">
                     <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
-                        <TextBlock Text="{Binding DetailReceiptPreview}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
+                        <TextBlock Text="{Binding DetailReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
                     </ScrollViewer>
                 </Border>
 
