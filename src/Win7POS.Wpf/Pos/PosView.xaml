@@ -108,7 +108,8 @@
                     </TextBox.InputBindings>
                 </TextBox>
                 <Button MinWidth="100" Margin="0,0,0,8" Content="Add" Command="{Binding AddBarcodeCommand}"/>
-                <Button MinWidth="100" Content="Sconto" IsEnabled="False" Opacity="0.7" ToolTip="Placeholder"/>
+                <Button MinWidth="100" Margin="0,0,0,8" Content="Sconto" IsEnabled="False" Opacity="0.7" ToolTip="Placeholder"/>
+                <Button MinWidth="100" Content="Registro vendite" Command="{Binding OpenSalesRegisterCommand}"/>
             </StackPanel>
         </Border>
 

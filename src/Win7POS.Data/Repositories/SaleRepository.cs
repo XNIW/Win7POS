@@ -111,6 +111,22 @@ WHERE createdAt >= @from AND createdAt < @to",
                 new { saleId });
         }
 
+        public async Task<IReadOnlyList<Sale>> GetByCodeLikeAsync(string codeFilter)
+        {
+            if (string.IsNullOrWhiteSpace(codeFilter))
+                return new List<Sale>();
+            using var conn = _factory.Open();
+            var pattern = "%" + codeFilter.Trim() + "%";
+            var rows = await conn.QueryAsync<Sale>(
+                @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change
+                  FROM sales
+                  WHERE code LIKE @pattern
+                  ORDER BY createdAt DESC, id DESC
+                  LIMIT 200",
+                new { pattern });
+            return rows.ToList();
+        }
+
         public async Task<IReadOnlyList<SaleLine>> GetLinesBySaleIdAsync(long saleId)
         {
             using var conn = _factory.Open();

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Win7POS.Core.Util;
 using Win7POS.Data.Repositories;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -51,19 +52,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public int TotalAmount
         {
             get => _totalAmount;
-            set { _totalAmount = value; OnPropertyChanged(); }
+            set { _totalAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalAmountDisplay)); }
         }
 
         public int CashAmount
         {
             get => _cashAmount;
-            set { _cashAmount = value; OnPropertyChanged(); }
+            set { _cashAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(CashAmountDisplay)); }
         }
 
         public int CardAmount
         {
             get => _cardAmount;
-            set { _cardAmount = value; OnPropertyChanged(); }
+            set { _cardAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(CardAmountDisplay)); }
         }
 
         public bool IsBusy
@@ -75,20 +76,27 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public int GrossSalesAmount
         {
             get => _grossSalesAmount;
-            set { _grossSalesAmount = value; OnPropertyChanged(); }
+            set { _grossSalesAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(GrossSalesAmountDisplay)); }
         }
 
         public int RefundsAmount
         {
             get => _refundsAmount;
-            set { _refundsAmount = value; OnPropertyChanged(); }
+            set { _refundsAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(RefundsAmountDisplay)); }
         }
 
         public int NetAmount
         {
             get => _netAmount;
-            set { _netAmount = value; OnPropertyChanged(); }
+            set { _netAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(NetAmountDisplay)); }
         }
+
+        public string TotalAmountDisplay => MoneyClp.Format(TotalAmount);
+        public string CashAmountDisplay => MoneyClp.Format(CashAmount);
+        public string CardAmountDisplay => MoneyClp.Format(CardAmount);
+        public string GrossSalesAmountDisplay => MoneyClp.Format(GrossSalesAmount);
+        public string RefundsAmountDisplay => MoneyClp.Format(RefundsAmount);
+        public string NetAmountDisplay => MoneyClp.Format(NetAmount);
 
         public ICommand LoadCommand { get; }
         public ICommand ExportCsvCommand { get; }

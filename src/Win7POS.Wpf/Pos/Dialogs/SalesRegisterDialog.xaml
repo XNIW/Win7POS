@@ -1,31 +1,120 @@
 <Window x:Class="Win7POS.Wpf.Pos.Dialogs.SalesRegisterDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Registro vendite" Width="720" Height="480"
-        WindowStartupLocation="CenterOwner" ResizeMode="CanResize">
-    <Grid Margin="12">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-        <DataGrid Grid.Row="0" ItemsSource="{Binding RecentSales}"
-                  SelectedItem="{Binding SelectedRecentSale}"
-                  AutoGenerateColumns="False" IsReadOnly="True"
-                  CanUserAddRows="False" CanUserDeleteRows="False"
-                  Margin="0,0,0,12">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="Vendita" Binding="{Binding SaleCode}" Width="*"/>
-                <DataGridTextColumn Header="Tipo" Binding="{Binding KindText}" Width="70"/>
-                <DataGridTextColumn Header="Data/ora" Binding="{Binding TimeText}" Width="140"/>
-                <DataGridTextColumn Header="Totale" Binding="{Binding TotalDisplay}" Width="90"/>
-                <DataGridTextColumn Header="Stato" Binding="{Binding StatusText}" Width="80"/>
-            </DataGrid.Columns>
-        </DataGrid>
-        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Ricarica" MinWidth="90" Margin="0,0,8,0" Command="{Binding LoadRecentSalesCommand}"/>
-            <Button Content="Preview / Ristampa" MinWidth="120" Margin="0,0,8,0" Command="{Binding ReprintPreviewCommand}"/>
-            <Button Content="Stampa selezionato" MinWidth="120" Margin="0,0,8,0" Command="{Binding PrintSelectedReceiptCommand}"/>
-            <Button Content="Reso / Storno" MinWidth="110" Command="{Binding RefundCommand}"/>
-        </StackPanel>
+        Title="Registro vendite" Width="920" Height="580"
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
+        MinWidth="780" MinHeight="480">
+    <Grid Margin="14">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" MinWidth="320"/>
+            <ColumnDefinition Width="12"/>
+            <ColumnDefinition Width="340" MinWidth="280"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Colonna sinistra: filtri + lista vendite -->
+        <Grid Grid.Column="0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.Row="0" Text="Filtri" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8"/>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+                <RadioButton Content="Oggi" IsChecked="{Binding FilterOggi}" Margin="0,0,16,0" GroupName="Filter"/>
+                <RadioButton Content="Ieri" IsChecked="{Binding FilterIeri}" Margin="0,0,16,0" GroupName="Filter"/>
+                <RadioButton Content="Mese" IsChecked="{Binding FilterMese}" GroupName="Filter"/>
+            </StackPanel>
+            <Grid Grid.Row="2" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Codice:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBox Grid.Column="1" Text="{Binding CodeSearch, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
+                         ToolTip="Cerca per codice vendita (lascia vuoto per usare il periodo)"/>
+            </Grid>
+            <ListBox Grid.Row="3" ItemsSource="{Binding SalesList}" SelectedItem="{Binding SelectedSale}"
+                     BorderThickness="1" BorderBrush="#CCC" Background="White" Padding="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     Margin="0,0,0,8">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Border Padding="10,8" Margin="0,0,0,2" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="{Binding SaleCode}" FontWeight="SemiBold"/>
+                                    <TextBlock FontSize="11" Foreground="Gray">
+                                        <Run Text="{Binding TimeText}"/>
+                                        <Run Text=" · "/>
+                                        <Run Text="{Binding KindText}"/>
+                                        <Run Text="{Binding VoidedText, StringFormat=' · {0}'}"/>
+                                    </TextBlock>
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="{Binding TotalDisplay}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <StackPanel Grid.Row="4" Orientation="Horizontal">
+                <Button Content="Ricarica" MinWidth="90" Command="{Binding LoadCommand}" Margin="0,0,8,0"/>
+                <TextBlock Text="{Binding Status}" VerticalAlignment="Center" Foreground="Gray" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Colonna destra: dettagli + azioni -->
+        <Border Grid.Column="2" BorderBrush="#CCC" BorderThickness="1" Padding="12" Background="#FAFAFA">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Text="Dettaglio vendita" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,10"/>
+
+                <TextBlock Grid.Row="1" Text="{Binding DetailSummary}" TextWrapping="Wrap" Margin="0,0,0,10"
+                           FontSize="12" Foreground="#333"/>
+
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10">
+                    <ItemsControl ItemsSource="{Binding DetailLines}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" TextWrapping="Wrap"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding UnitPriceDisplay}" Margin="8,0" MinWidth="70" HorizontalAlignment="Right"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" MinWidth="70" HorizontalAlignment="Right"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <Border Grid.Row="3" Background="#EEE" Padding="8" Margin="0,0,0,10" CornerRadius="2">
+                    <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
+                        <TextBlock Text="{Binding DetailReceiptPreview}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
+                    </ScrollViewer>
+                </Border>
+
+                <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Stampa" MinWidth="90" Margin="0,0,8,0" Command="{Binding PrintCommand}"/>
+                    <Button Content="Reso / Storno" MinWidth="110" Command="{Binding RefundCommand}"/>
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

@@ -37,23 +37,23 @@
         <TextBlock Grid.Row="2" Grid.Column="1" Margin="8,14,0,0" Text="{Binding SalesCount}"/>
 
         <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,8,0,0" Text="Totale:"/>
-        <TextBlock Grid.Row="3" Grid.Column="1" Margin="8,8,0,0" Text="{Binding TotalAmount}"/>
+        <TextBlock Grid.Row="3" Grid.Column="1" Margin="8,8,0,0" Text="{Binding TotalAmountDisplay}"/>
 
         <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,8,0,0" Text="Contanti / Carta:"/>
         <TextBlock Grid.Row="4" Grid.Column="1" Margin="8,8,0,0">
-            <Run Text="{Binding CashAmount}"/>
+            <Run Text="{Binding CashAmountDisplay}"/>
             <Run Text=" / "/>
-            <Run Text="{Binding CardAmount}"/>
+            <Run Text="{Binding CardAmountDisplay}"/>
         </TextBlock>
 
         <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,8,0,0" Text="Gross sales:"/>
-        <TextBlock Grid.Row="5" Grid.Column="1" Margin="8,8,0,0" Text="{Binding GrossSalesAmount}"/>
+        <TextBlock Grid.Row="5" Grid.Column="1" Margin="8,8,0,0" Foreground="#2E7D32" Text="{Binding GrossSalesAmountDisplay}"/>
 
         <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,8,0,0" Text="Refunds:"/>
-        <TextBlock Grid.Row="6" Grid.Column="1" Margin="8,8,0,0" Text="{Binding RefundsAmount}"/>
+        <TextBlock Grid.Row="6" Grid.Column="1" Margin="8,8,0,0" Foreground="#C62828" Text="{Binding RefundsAmountDisplay}"/>
 
         <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,8,0,0" FontWeight="Bold" Text="Net:"/>
-        <TextBlock Grid.Row="7" Grid.Column="1" Margin="8,8,0,0" FontWeight="Bold" Text="{Binding NetAmount}"/>
+        <TextBlock Grid.Row="7" Grid.Column="1" Margin="8,8,0,0" FontWeight="Bold" Foreground="#1565C0" Text="{Binding NetAmountDisplay}"/>
 
         <TextBlock Grid.Row="8" Grid.ColumnSpan="2" Margin="0,14,0,0" Foreground="DimGray" TextWrapping="Wrap"
                    Text="{Binding Status}"/>

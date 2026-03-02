@@ -124,6 +124,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand IncreaseQtyForLineCommand { get; }
         public ICommand DecreaseQtyForLineCommand { get; }
         public ICommand RemoveLineForLineCommand { get; }
+        public ICommand OpenSalesRegisterCommand { get; }
 
         public PosViewModel()
         {
@@ -147,6 +148,7 @@ namespace Win7POS.Wpf.Pos
             IncreaseQtyForLineCommand = new AsyncRelayCommandParam(IncreaseQtyForLineAsync, _ => !IsBusy);
             DecreaseQtyForLineCommand = new AsyncRelayCommandParam(DecreaseQtyForLineAsync, _ => !IsBusy);
             RemoveLineForLineCommand = new AsyncRelayCommandParam(RemoveLineForLineAsync, _ => !IsBusy);
+            OpenSalesRegisterCommand = new AsyncRelayCommand(OpenSalesRegisterAsync, _ => !IsBusy);
             StatusMessage = "POS pronto.";
             _ = InitializeAsync();
         }
@@ -794,11 +796,15 @@ namespace Win7POS.Wpf.Pos
                 StatusMessage = "Seleziona una vendita.";
                 return;
             }
+            await OpenRefundForSaleIdThenRefreshAsync(SelectedRecentSale.SaleId, null).ConfigureAwait(true);
+        }
 
+        private async Task OpenRefundForSaleIdThenRefreshAsync(long saleId, Dialogs.SalesRegisterViewModel registerVm)
+        {
             IsBusy = true;
             try
             {
-                var preview = await _service.BuildRefundPreviewAsync(SelectedRecentSale.SaleId).ConfigureAwait(true);
+                var preview = await _service.BuildRefundPreviewAsync(saleId).ConfigureAwait(true);
                 IsBusy = false;
 
                 var vm = new RefundViewModel(preview);
@@ -819,6 +825,8 @@ namespace Win7POS.Wpf.Pos
                 ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
                 StatusMessage = "Reso completato: " + result.RefundSaleCode;
                 await LoadRecentSalesAsync().ConfigureAwait(true);
+                if (registerVm != null && registerVm.LoadCommand.CanExecute(null))
+                    registerVm.LoadCommand.Execute(null);
             }
             catch (Exception ex)
             {
@@ -830,6 +838,20 @@ namespace Win7POS.Wpf.Pos
                 IsBusy = false;
                 RequestFocusBarcode();
             }
+        }
+
+        private async Task OpenSalesRegisterAsync()
+        {
+            var registerVm = new Dialogs.SalesRegisterViewModel(_service, UseReceipt42, (saleId, regVm) =>
+            {
+                _ = OpenRefundForSaleIdThenRefreshAsync(saleId, regVm);
+            });
+            var dlg = new Dialogs.SalesRegisterDialog(registerVm)
+            {
+                Owner = Application.Current?.MainWindow
+            };
+            dlg.ShowDialog();
+            await Task.CompletedTask;
         }
 
         private void ApplySnapshot(PosWorkflowSnapshot snapshot)
@@ -897,6 +919,7 @@ namespace Win7POS.Wpf.Pos
             (IncreaseQtyForLineCommand as AsyncRelayCommandParam)?.RaiseCanExecuteChanged();
             (DecreaseQtyForLineCommand as AsyncRelayCommandParam)?.RaiseCanExecuteChanged();
             (RemoveLineForLineCommand as AsyncRelayCommandParam)?.RaiseCanExecuteChanged();
+            (OpenSalesRegisterCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void RequestFocusBarcode()

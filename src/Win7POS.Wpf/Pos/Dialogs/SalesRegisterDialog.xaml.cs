@@ -1,22 +1,21 @@
 using System.Windows;
-using Win7POS.Wpf.Pos;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public partial class SalesRegisterDialog : Window
     {
-        public SalesRegisterDialog(PosViewModel viewModel)
+        public SalesRegisterDialog(SalesRegisterViewModel viewModel)
         {
             InitializeComponent();
             DataContext = viewModel;
             Loaded += OnLoaded;
         }
 
-        private async void OnLoaded(object sender, RoutedEventArgs e)
+        private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            var vm = DataContext as PosViewModel;
-            if (vm != null && vm.LoadRecentSalesCommand.CanExecute(null))
-                vm.LoadRecentSalesCommand.Execute(null);
+            var vm = DataContext as SalesRegisterViewModel;
+            if (vm != null && vm.LoadCommand.CanExecute(null))
+                vm.LoadCommand.Execute(null);
         }
     }
 }

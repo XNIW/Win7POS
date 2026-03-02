@@ -724,6 +724,81 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesBetweenAsync(long fromMs, long toMs)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var rows = await _sales.GetSalesBetweenAsync(fromMs, toMs).ConfigureAwait(false);
+                return rows.Select(x => new RecentSaleItem
+                {
+                    SaleId = x.Id,
+                    SaleCode = x.Code ?? string.Empty,
+                    CreatedAtMs = x.CreatedAt,
+                    TotalMinor = x.Total,
+                    Kind = x.Kind,
+                    RelatedSaleId = x.RelatedSaleId,
+                    VoidedBySaleId = x.VoidedBySaleId
+                }).ToList();
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesByCodeFilterAsync(string codeFilter)
+        {
+            if (string.IsNullOrWhiteSpace(codeFilter))
+                return Array.Empty<RecentSaleItem>();
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var rows = await _sales.GetByCodeLikeAsync(codeFilter).ConfigureAwait(false);
+                return rows.Select(x => new RecentSaleItem
+                {
+                    SaleId = x.Id,
+                    SaleCode = x.Code ?? string.Empty,
+                    CreatedAtMs = x.CreatedAt,
+                    TotalMinor = x.Total,
+                    Kind = x.Kind,
+                    RelatedSaleId = x.RelatedSaleId,
+                    VoidedBySaleId = x.VoidedBySaleId
+                }).ToList();
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<SaleDetailResult> GetSaleDetailsAsync(long saleId)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var sale = await _sales.GetByIdAsync(saleId).ConfigureAwait(false);
+                if (sale == null)
+                    return null;
+                var lines = await _sales.GetLinesBySaleIdAsync(saleId).ConfigureAwait(false);
+                return new SaleDetailResult { Sale = sale, Lines = lines };
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<PosPrintResult> PrintReceiptBySaleIdAsync(long saleId, bool use42)
+        {
+            var preview = await GetReceiptPreviewBySaleIdAsync(saleId, use42).ConfigureAwait(true);
+            if (string.IsNullOrWhiteSpace(preview))
+                return new PosPrintResult { SavedCopy = false };
+            var settings = await GetPrinterSettingsAsync().ConfigureAwait(true);
+            var fileTag = "SALE_" + saleId;
+            return await PrintReceiptTextAsync(preview, use42, fileTag).ConfigureAwait(true);
+        }
+
         public async Task<string> GetReceiptPreviewBySaleIdAsync(long saleId, bool use42)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
@@ -1010,6 +1085,12 @@ SELECT last_insert_rowid();";
     {
         public bool SavedCopy { get; set; }
         public string OutputPath { get; set; } = string.Empty;
+    }
+
+    public sealed class SaleDetailResult
+    {
+        public Sale Sale { get; set; }
+        public IReadOnlyList<SaleLine> Lines { get; set; }
     }
 
     public sealed class PosPaymentInfo

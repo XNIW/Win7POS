@@ -95,24 +95,14 @@ namespace Win7POS.Wpf
         private void OnMenuSalesRegisterClick(object sender, RoutedEventArgs e)
         {
             MainTabControl.SelectedIndex = 0;
-            var vm = GetPosViewModel();
-            if (vm != null)
-            {
-                var dlg = new SalesRegisterDialog(vm) { Owner = this };
-                dlg.ShowDialog();
-            }
+            GetPosViewModel()?.OpenSalesRegisterCommand?.Execute(null);
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
         private void OnMenuRefundClick(object sender, RoutedEventArgs e)
         {
             MainTabControl.SelectedIndex = 0;
-            var vm = GetPosViewModel();
-            if (vm != null)
-            {
-                var dlg = new SalesRegisterDialog(vm) { Owner = this };
-                dlg.ShowDialog();
-            }
+            GetPosViewModel()?.OpenSalesRegisterCommand?.Execute(null);
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
