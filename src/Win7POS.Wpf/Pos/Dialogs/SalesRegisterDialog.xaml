@@ -23,9 +23,9 @@
 
             <TextBlock Grid.Row="0" Text="Filtri" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8"/>
             <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
-                <RadioButton Content="Oggi" IsChecked="{Binding FilterOggi}" Margin="0,0,16,0" GroupName="Filter"/>
-                <RadioButton Content="Ieri" IsChecked="{Binding FilterIeri}" Margin="0,0,16,0" GroupName="Filter"/>
-                <RadioButton Content="Mese" IsChecked="{Binding FilterMese}" GroupName="Filter"/>
+                <RadioButton Content="Oggi" IsChecked="{Binding FilterOggi, Mode=TwoWay}" Margin="0,0,16,0" GroupName="Filter"/>
+                <RadioButton Content="Ieri" IsChecked="{Binding FilterIeri, Mode=TwoWay}" Margin="0,0,16,0" GroupName="Filter"/>
+                <RadioButton Content="Mese" IsChecked="{Binding FilterMese, Mode=TwoWay}" GroupName="Filter"/>
             </StackPanel>
             <Grid Grid.Row="2" Margin="0,0,0,8">
                 <Grid.ColumnDefinitions>

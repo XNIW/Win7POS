@@ -755,12 +755,21 @@ namespace Win7POS.Wpf.Pos
 
         private Task OpenDailyReportAsync()
         {
-            var vm = new DailyReportViewModel(_service);
-            var dlg = new DailyReportDialog(vm)
+            try
             {
-                Owner = Application.Current?.MainWindow
-            };
-            dlg.ShowDialog();
+                var vm = new DailyReportViewModel(_service);
+                var dlg = new DailyReportDialog(vm)
+                {
+                    Owner = Application.Current?.MainWindow
+                };
+                dlg.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Daily report dialog failed (XAML/binding).");
+                StatusMessage = "Errore apertura Incasso giornaliero.";
+                MessageBox.Show("Errore apertura Incasso giornaliero.\n\n" + ex.Message, "Daily report", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
             RequestFocusBarcode();
             return Task.CompletedTask;
         }
@@ -779,12 +788,21 @@ namespace Win7POS.Wpf.Pos
 
         private Task OpenAboutSupportAsync()
         {
-            var vm = new AboutSupportViewModel(_service);
-            var dlg = new AboutSupportDialog(vm)
+            try
             {
-                Owner = Application.Current?.MainWindow
-            };
-            dlg.ShowDialog();
+                var vm = new AboutSupportViewModel(_service);
+                var dlg = new AboutSupportDialog(vm)
+                {
+                    Owner = Application.Current?.MainWindow
+                };
+                dlg.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "About/Support dialog failed (XAML/binding).");
+                StatusMessage = "Errore apertura About/Support.";
+                MessageBox.Show("Errore apertura About/Support.\n\n" + ex.Message, "About", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
             RequestFocusBarcode();
             return Task.CompletedTask;
         }
@@ -840,18 +858,28 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        private async Task OpenSalesRegisterAsync()
+        private Task OpenSalesRegisterAsync()
         {
-            var registerVm = new Dialogs.SalesRegisterViewModel(_service, UseReceipt42, (saleId, regVm) =>
+            try
             {
-                _ = OpenRefundForSaleIdThenRefreshAsync(saleId, regVm);
-            });
-            var dlg = new Dialogs.SalesRegisterDialog(registerVm)
+                var registerVm = new Dialogs.SalesRegisterViewModel(_service, UseReceipt42, (saleId, regVm) =>
+                {
+                    _ = OpenRefundForSaleIdThenRefreshAsync(saleId, regVm);
+                });
+                var dlg = new Dialogs.SalesRegisterDialog(registerVm)
+                {
+                    Owner = Application.Current?.MainWindow
+                };
+                dlg.ShowDialog();
+            }
+            catch (Exception ex)
             {
-                Owner = Application.Current?.MainWindow
-            };
-            dlg.ShowDialog();
-            await Task.CompletedTask;
+                _logger.LogError(ex, "Sales register dialog failed (XAML/binding).");
+                StatusMessage = "Errore apertura Registro vendite.";
+                MessageBox.Show("Errore apertura Registro vendite.\n\n" + ex.Message, "Registro vendite", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            RequestFocusBarcode();
+            return Task.CompletedTask;
         }
 
         private void ApplySnapshot(PosWorkflowSnapshot snapshot)

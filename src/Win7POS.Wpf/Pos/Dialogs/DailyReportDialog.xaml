@@ -26,7 +26,7 @@
 
         <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Data (yyyy-MM-dd):"/>
         <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" Width="150" HorizontalAlignment="Left"
-                 Text="{Binding DateText, UpdateSourceTrigger=PropertyChanged}"/>
+                 Text="{Binding DateText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
         <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,10,0,0" Orientation="Horizontal">
             <Button MinWidth="110" Margin="0,0,8,0" Content="Carica" Command="{Binding LoadCommand}"/>
