@@ -25,12 +25,16 @@ namespace Win7POS.Wpf.Import
             var first = files[0];
             if (!File.Exists(first))
                 return;
-            if (!string.Equals(Path.GetExtension(first), ".csv", StringComparison.OrdinalIgnoreCase))
-                return;
 
             var vm = DataContext as ImportViewModel;
-            if (vm != null)
+            if (vm == null) return;
+
+            var ext = Path.GetExtension(first);
+            if (string.Equals(ext, ".csv", StringComparison.OrdinalIgnoreCase))
                 vm.CsvPath = first;
+            else if (string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase))
+                vm.ExcelVm.XlsxPath = first;
+
             e.Handled = true;
         }
     }

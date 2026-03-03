@@ -8,17 +8,19 @@
              mc:Ignorable="d"
              d:DesignHeight="720" d:DesignWidth="1100">
 
-    <Grid Margin="12">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="120"/>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
+    <TabControl Margin="12">
+        <TabItem Header="CSV">
+            <Grid Margin="0,8,0,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="120"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-        <!-- File picker -->
+                <!-- File picker -->
         <Grid Grid.Row="0" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
@@ -99,11 +101,76 @@
             </Grid>
         </GroupBox>
 
-        <!-- Hint -->
-        <StackPanel Grid.Row="5" Margin="0,8,0,0">
-            <TextBlock Foreground="Gray" Text="{Binding DbPath, StringFormat=DB: {0}}"/>
-            <TextBlock Foreground="Gray"
-                       Text="Analyze/Apply usa la stessa pipeline del CLI (Core + Data adapter), senza passare dalla CLI."/>
-        </StackPanel>
-    </Grid>
+                <!-- Hint -->
+                <StackPanel Grid.Row="5" Margin="0,8,0,0">
+                    <TextBlock Foreground="Gray" Text="{Binding DbPath, StringFormat=DB: {0}}"/>
+                    <TextBlock Foreground="Gray"
+                               Text="Analyze/Apply usa la stessa pipeline del CLI (Core + Data adapter), senza passare dalla CLI."/>
+                </StackPanel>
+            </Grid>
+        </TabItem>
+
+        <TabItem Header="Database Excel">
+            <Grid Margin="0,8,0,0" DataContext="{Binding ExcelVm}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="150"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Text="Excel (.xlsx):" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox Grid.Column="1" Text="{Binding XlsxPath, UpdateSourceTrigger=PropertyChanged}" MinHeight="28"/>
+                    <Button Grid.Column="2" Content="Browse..." Margin="8,0,0,0" MinWidth="90" Command="{Binding BrowseCommand}"/>
+                </Grid>
+
+                <WrapPanel Grid.Row="1" Margin="0,0,0,8">
+                    <CheckBox Content="DryRun" IsChecked="{Binding DryRun}" Margin="0,0,16,0"/>
+                    <TextBlock VerticalAlignment="Center" Foreground="DimGray" Text="{Binding ApplyModeText}"/>
+                </WrapPanel>
+
+                <Grid Grid.Row="2" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="200"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Button Content="Analizza" MinWidth="110" MinHeight="30" Command="{Binding AnalyzeCommand}"/>
+                    <Button Grid.Column="1" Content="Apply" Margin="8,0,0,0" MinWidth="110" MinHeight="30" Command="{Binding ApplyCommand}"/>
+                    <ProgressBar Grid.Column="3" Height="16" VerticalAlignment="Center" IsIndeterminate="True">
+                        <ProgressBar.Style>
+                            <Style TargetType="ProgressBar">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ProgressBar.Style>
+                    </ProgressBar>
+                    <TextBlock Grid.Column="4" VerticalAlignment="Center" Text="{Binding Status}" TextTrimming="CharacterEllipsis"/>
+                </Grid>
+
+                <GroupBox Grid.Row="3" Header="Summary">
+                    <TextBox Text="{Binding Summary}" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
+                </GroupBox>
+
+                <StackPanel Grid.Row="4" Margin="0,8,0,0">
+                    <TextBlock Foreground="Gray" Text="{Binding DbPath, StringFormat=DB: {0}}"/>
+                    <TextBlock Foreground="Gray" TextWrapping="Wrap"
+                               Text="Import Database prodotti: 4 fogli (Products, Suppliers, Categories, PriceHistory). Barcode come stringhe (zeri conservati)."/>
+                </StackPanel>
+            </Grid>
+        </TabItem>
+    </TabControl>
 </UserControl>

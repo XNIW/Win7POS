@@ -944,7 +944,7 @@ namespace Win7POS.Wpf.Pos
             bool allDigits = s.All(char.IsDigit);
             if (allDigits)
             {
-                if (s.Length >= 6) return false;
+                if (s.Length > 6) return false;
                 return int.TryParse(s, out price) && price > 0;
             }
 

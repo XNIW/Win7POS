@@ -66,6 +66,43 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_sale_lines_saleId ON sale_lines(saleId);
 CREATE INDEX IF NOT EXISTS idx_sale_lines_barcode ON sale_lines(barcode);
 CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
+
+CREATE TABLE IF NOT EXISTS suppliers (
+  id   INTEGER PRIMARY KEY,
+  name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id   INTEGER PRIMARY KEY,
+  name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS product_meta (
+  barcode       TEXT PRIMARY KEY,
+  article_code  TEXT NULL,
+  name2         TEXT NULL,
+  purchase_price INTEGER NOT NULL DEFAULT 0,
+  purchase_old   INTEGER NOT NULL DEFAULT 0,
+  retail_old     INTEGER NOT NULL DEFAULT 0,
+  supplier_id    INTEGER NULL,
+  supplier_name  TEXT NULL,
+  category_id    INTEGER NULL,
+  category_name  TEXT NULL,
+  stock_qty      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS product_price_history (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  barcode   TEXT NOT NULL,
+  timestamp TEXT NOT NULL,
+  type      TEXT NOT NULL,
+  old_price INTEGER NULL,
+  new_price INTEGER NOT NULL,
+  source    TEXT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_unique
+ON product_price_history(barcode, timestamp, type, new_price, coalesce(source,''));
 ");
 
             EnsureMigrations(conn);

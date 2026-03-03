@@ -1,5 +1,4 @@
 using System;
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -8,40 +7,39 @@ using System.Windows;
 using System.Windows.Input;
 using Microsoft.Win32;
 using Win7POS.Core;
+using Win7POS.Core.ImportDb;
+using Win7POS.Data;
+using Win7POS.Data.ImportDb;
 
 namespace Win7POS.Wpf.Import
 {
-    public sealed class ImportViewModel : INotifyPropertyChanged
+    public sealed class ProductDbImportViewModel : INotifyPropertyChanged
     {
-        private string _csvPath;
+        private string _xlsxPath;
         private string _summary;
         private string _status;
         private bool _isBusy;
-
-        private bool _insertNew = true;
-        private bool _updatePrice = true;
-        private bool _updateName = false;
         private bool _dryRun = true;
 
-        // Preview items (kept as object to avoid hard coupling if core types change)
-        public ObservableCollection<object> DiffItems { get; } = new ObservableCollection<object>();
+        private ProductDbWorkbook _lastWorkbook;
+        private ProductDbAnalysis _lastAnalysis;
 
-        public string CsvPath
+        public string XlsxPath
         {
-            get => _csvPath;
-            set { _csvPath = value; OnPropertyChanged(); }
+            get => _xlsxPath;
+            set { _xlsxPath = value ?? string.Empty; OnPropertyChanged(); }
         }
 
         public string Summary
         {
             get => _summary;
-            set { _summary = value; OnPropertyChanged(); }
+            set { _summary = value ?? string.Empty; OnPropertyChanged(); }
         }
 
         public string Status
         {
             get => _status;
-            set { _status = value; OnPropertyChanged(); }
+            set { _status = value ?? string.Empty; OnPropertyChanged(); }
         }
 
         public bool IsBusy
@@ -50,33 +48,10 @@ namespace Win7POS.Wpf.Import
             set { _isBusy = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
-        public bool InsertNew
-        {
-            get => _insertNew;
-            set { _insertNew = value; OnPropertyChanged(); }
-        }
-
-        public bool UpdatePrice
-        {
-            get => _updatePrice;
-            set { _updatePrice = value; OnPropertyChanged(); }
-        }
-
-        public bool UpdateName
-        {
-            get => _updateName;
-            set { _updateName = value; OnPropertyChanged(); }
-        }
-
         public bool DryRun
         {
             get => _dryRun;
-            set
-            {
-                _dryRun = value;
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(ApplyModeText));
-            }
+            set { _dryRun = value; OnPropertyChanged(); OnPropertyChanged(nameof(ApplyModeText)); }
         }
 
         public string DbPath => AppPaths.DbPath;
@@ -87,20 +62,12 @@ namespace Win7POS.Wpf.Import
         public ICommand AnalyzeCommand { get; }
         public ICommand ApplyCommand { get; }
 
-        public ProductDbImportViewModel ExcelVm { get; } = new ProductDbImportViewModel();
-
-        private readonly ImportWorkflowService _service = new ImportWorkflowService();
-
-        // Cache last analyze result for Apply
-        private object _lastDiffResult;
-        private object _lastParsedRows;
-
-        public ImportViewModel()
+        public ProductDbImportViewModel()
         {
             BrowseCommand = new RelayCommand(_ => Browse(), _ => !IsBusy);
             AnalyzeCommand = new AsyncRelayCommand(AnalyzeAsync, _ => !IsBusy);
             ApplyCommand = new AsyncRelayCommand(ApplyAsync, _ => !IsBusy);
-            Summary = "Seleziona un CSV e premi Analyze.";
+            Summary = "Seleziona un file .xlsx (Database prodotti) e premi Analizza.";
             Status = "";
         }
 
@@ -108,76 +75,70 @@ namespace Win7POS.Wpf.Import
         {
             var dlg = new OpenFileDialog
             {
-                Title = "Seleziona file CSV",
-                Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+                Title = "Seleziona file Excel Database prodotti",
+                Filter = "Excel (*.xlsx)|*.xlsx|All files (*.*)|*.*",
                 CheckFileExists = true,
                 Multiselect = false
             };
 
             if (dlg.ShowDialog() == true)
             {
-                CsvPath = dlg.FileName;
+                XlsxPath = dlg.FileName;
                 Status = "";
             }
         }
 
         private async Task AnalyzeAsync()
         {
-            if (string.IsNullOrWhiteSpace(CsvPath) || !File.Exists(CsvPath))
+            if (string.IsNullOrWhiteSpace(XlsxPath) || !File.Exists(XlsxPath))
             {
-                Status = "CSV non valido: seleziona un file esistente.";
+                Status = "Excel non valido: seleziona un file .xlsx esistente.";
                 return;
             }
 
             IsBusy = true;
             Status = "Analisi in corso...";
             Summary = "";
-            DiffItems.Clear();
-            _lastDiffResult = null;
-            _lastParsedRows = null;
 
             try
             {
-                var result = await _service.AnalyzeAsync(CsvPath).ConfigureAwait(true);
-                _lastParsedRows = result.RowsModel;
-                _lastDiffResult = result.DiffModel;
+                _lastWorkbook = ProductDbExcelReader.Read(XlsxPath);
+                _lastAnalysis = ProductDbAnalysis.Analyze(_lastWorkbook);
 
-                Summary = result.Summary;
-                DiffItems.Clear();
-                foreach (var item in result.Items)
-                    DiffItems.Add(item);
-                Status = "OK N/U/NC/E: " + result.NewCount + "/" + result.UpdateCount + "/" + result.UnchangedCount + "/" + result.ErrorCount;
+                Summary = _lastAnalysis.ToSummaryString();
+                Status = "OK. Products: " + _lastAnalysis.ProductsCount +
+                    ", Suppliers: " + _lastAnalysis.SuppliersCount +
+                    ", Categories: " + _lastAnalysis.CategoriesCount +
+                    ", PriceHistory: " + _lastAnalysis.PriceHistoryCount;
             }
             catch (Exception ex)
             {
-                Status = "Errore Analyze: " + ex.Message;
-                Summary = "";
+                Status = "Errore Analisi: " + ex.Message;
+                Summary = ex.ToString();
+                _lastWorkbook = null;
+                _lastAnalysis = null;
             }
             finally
             {
                 IsBusy = false;
             }
+
+            await Task.CompletedTask.ConfigureAwait(true);
         }
 
         private async Task ApplyAsync()
         {
-            if (IsBusy)
+            if (_lastWorkbook == null)
             {
-                Status = "Operazione in corso...";
-                return;
-            }
-
-            if (_lastDiffResult == null || _lastParsedRows == null)
-            {
-                Status = "Prima esegui Analyze.";
+                Status = "Prima esegui Analizza.";
                 return;
             }
 
             if (!DryRun)
             {
                 var confirm = MessageBox.Show(
-                    "Confermi Apply? Verranno scritti dati nel DB.",
-                    "Conferma Apply",
+                    "Confermi Apply? Verranno scritti prodotti, supplier, categories e storico prezzi nel DB.",
+                    "Conferma Apply Database",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Warning);
                 if (confirm != MessageBoxResult.Yes)
@@ -188,26 +149,32 @@ namespace Win7POS.Wpf.Import
             }
 
             IsBusy = true;
-            Status = DryRun ? "DryRun: simulazione Apply..." : "Apply in corso...";
+            Status = DryRun ? "DryRun: simulazione..." : "Apply in corso...";
 
             try
             {
-                var result = await _service.ApplyAsync(
-                    _lastParsedRows,
-                    _lastDiffResult,
-                    InsertNew,
-                    UpdatePrice,
-                    UpdateName,
-                    DryRun).ConfigureAwait(true);
+                var opt = PosDbOptions.ForPath(AppPaths.DbPath);
+                DbInitializer.EnsureCreated(opt);
+                var factory = new SqliteConnectionFactory(opt);
+                var importer = new ProductDbImporter(factory);
+                var result = await importer.ImportAsync(_lastWorkbook, DryRun).ConfigureAwait(true);
 
-                Summary = result.Summary;
-                Status = result.Success
-                    ? (DryRun ? "DryRun OK (nessuna scrittura DB)." : "Apply OK.")
-                    : "Apply completato con errori.";
+                if (result.Errors.Count > 0)
+                {
+                    Summary = string.Join("\n", result.Errors);
+                    Status = "Apply fallito.";
+                }
+                else
+                {
+                    Summary = "Products upserted: " + result.ProductsUpserted +
+                        "\nPriceHistory inserted: " + result.PriceHistoryInserted;
+                    Status = DryRun ? "DryRun OK (nessuna scrittura DB)." : "Apply OK.";
+                }
             }
             catch (Exception ex)
             {
                 Status = "Errore Apply: " + ex.Message;
+                Summary = ex.ToString();
             }
             finally
             {
@@ -239,7 +206,6 @@ namespace Win7POS.Wpf.Import
 
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
             public void Execute(object parameter) => _execute(parameter);
-
             public event EventHandler CanExecuteChanged;
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
@@ -256,12 +222,7 @@ namespace Win7POS.Wpf.Import
             }
 
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
-
-            public async void Execute(object parameter)
-            {
-                await _executeAsync().ConfigureAwait(true);
-            }
-
+            public async void Execute(object parameter) => await _executeAsync().ConfigureAwait(true);
             public event EventHandler CanExecuteChanged;
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
