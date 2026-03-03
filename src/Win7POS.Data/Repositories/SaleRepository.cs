@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using System;
@@ -95,18 +96,73 @@ WHERE createdAt >= @from AND createdAt < @to",
             return row;
         }
 
-        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate)
+        public Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate)
         {
-            var result = new List<DailySalesSummary>();
-            var current = fromDate.Date;
-            var to = toDate.Date;
-            if (current > to) return result;
+            return GetDailySummariesRangeAsync(fromDate, toDate);
+        }
 
-            while (current <= to)
+        /// <summary>Report range veloce: una sola query aggregata + riempimento giorni mancanti.</summary>
+        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesRangeAsync(DateTime fromDate, DateTime toDate)
+        {
+            var start = fromDate.Date;
+            var end = toDate.Date;
+            if (start > end) return new List<DailySalesSummary>();
+
+            var fromMs = new DateTimeOffset(start).ToUnixTimeMilliseconds();
+            var toMs = new DateTimeOffset(end.AddDays(1)).ToUnixTimeMilliseconds();
+
+            using var conn = _factory.Open();
+            var rows = (await conn.QueryAsync<DailySummaryRow>(@"
+SELECT
+  date(createdAt/1000, 'unixepoch', 'localtime') AS DayStr,
+  COUNT(CASE WHEN kind = 0 THEN 1 END) AS SalesCount,
+  COALESCE(SUM(total), 0) AS TotalAmount,
+  COALESCE(SUM(paidCash), 0) AS CashAmount,
+  COALESCE(SUM(paidCard), 0) AS CardAmount,
+  COALESCE(SUM(CASE WHEN kind = 0 THEN total ELSE 0 END), 0) AS GrossSalesAmount,
+  COALESCE(SUM(CASE WHEN kind = 1 THEN ABS(total) ELSE 0 END), 0) AS RefundsAmount
+FROM sales
+WHERE createdAt >= @fromMs AND createdAt < @toMs
+GROUP BY DayStr",
+                new { fromMs, toMs }).ConfigureAwait(false)).ToList();
+
+            var byDay = new Dictionary<string, DailySummaryRow>(StringComparer.Ordinal);
+            foreach (var r in rows)
+                if (!string.IsNullOrEmpty(r.DayStr))
+                    byDay[r.DayStr] = r;
+
+            var result = new List<DailySalesSummary>();
+            for (var d = start; d <= end; d = d.AddDays(1))
             {
-                var day = await GetDailySummaryAsync(current).ConfigureAwait(false);
-                result.Add(day);
-                current = current.AddDays(1);
+                var key = d.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                if (byDay.TryGetValue(key, out var row))
+                {
+                    result.Add(new DailySalesSummary
+                    {
+                        Date = d,
+                        SalesCount = row.SalesCount,
+                        TotalAmount = row.TotalAmount,
+                        CashAmount = row.CashAmount,
+                        CardAmount = row.CardAmount,
+                        GrossSalesAmount = row.GrossSalesAmount,
+                        RefundsAmount = row.RefundsAmount,
+                        NetAmount = row.TotalAmount
+                    });
+                }
+                else
+                {
+                    result.Add(new DailySalesSummary
+                    {
+                        Date = d,
+                        SalesCount = 0,
+                        TotalAmount = 0,
+                        CashAmount = 0,
+                        CardAmount = 0,
+                        GrossSalesAmount = 0,
+                        RefundsAmount = 0,
+                        NetAmount = 0
+                    });
+                }
             }
             return result;
         }
@@ -292,6 +348,17 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
                   WHERE id = @originalSaleId",
                 new { originalSaleId, refundSaleId, nowMs }, tx).ConfigureAwait(false);
         }
+    }
+
+    internal sealed class DailySummaryRow
+    {
+        public string DayStr { get; set; }
+        public int SalesCount { get; set; }
+        public long TotalAmount { get; set; }
+        public long CashAmount { get; set; }
+        public long CardAmount { get; set; }
+        public long GrossSalesAmount { get; set; }
+        public long RefundsAmount { get; set; }
     }
 
     public sealed class DailySalesSummary

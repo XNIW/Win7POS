@@ -21,7 +21,9 @@ namespace Win7POS.Data.Repositories
             ).ConfigureAwait(false);
         }
 
-        /// <summary>Batch lookup per ridurre query N+1.</summary>
+        private const int GetByBarcodesChunkSize = 900;
+
+        /// <summary>Batch lookup per ridurre query N+1. Chunking per evitare limite parametri SQLite.</summary>
         public async Task<IReadOnlyDictionary<string, Product>> GetByBarcodesAsync(IEnumerable<string> barcodes)
         {
             var list = new List<string>();
@@ -32,14 +34,20 @@ namespace Win7POS.Data.Repositories
             }
             if (list.Count == 0) return new Dictionary<string, Product>();
 
-            using var conn = _factory.Open();
-            var rows = await conn.QueryAsync<Product>(
-                "SELECT id, barcode, name, unitPrice FROM products WHERE barcode IN @barcodes",
-                new { barcodes = list }
-            ).ConfigureAwait(false);
             var dict = new Dictionary<string, Product>(list.Count);
-            foreach (var p in rows ?? System.Array.Empty<Product>())
-                if (p?.Barcode != null) dict[p.Barcode] = p;
+            using var conn = _factory.Open();
+            for (var i = 0; i < list.Count; i += GetByBarcodesChunkSize)
+            {
+                var chunk = list.Skip(i).Take(GetByBarcodesChunkSize).ToList();
+                if (chunk.Count == 0) break;
+                var rows = await conn.QueryAsync<Product>(
+                    "SELECT id, barcode, name, unitPrice FROM products WHERE barcode IN @barcodes",
+                    new { barcodes = chunk }
+                ).ConfigureAwait(false);
+                foreach (var p in rows ?? System.Array.Empty<Product>())
+                    if (p?.Barcode != null && !dict.ContainsKey(p.Barcode))
+                        dict[p.Barcode] = p;
+            }
             return dict;
         }
 

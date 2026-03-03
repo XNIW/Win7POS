@@ -1140,7 +1140,7 @@ namespace Win7POS.Wpf.Pos
         }
 
         private static bool IsDiscountLine(string barcode)
-            => (barcode ?? "").StartsWith("DISC:", StringComparison.Ordinal);
+            => DiscountKeys.IsDiscount(barcode ?? "");
 
         public event PropertyChangedEventHandler PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string name = null)
@@ -1155,7 +1155,7 @@ namespace Win7POS.Wpf.Pos
             public long LineTotal { get; set; }
             public string UnitPriceDisplay => MoneyClp.Format(UnitPrice);
             public string LineTotalDisplay => MoneyClp.Format(LineTotal);
-            public bool IsDiscountLine => (Barcode ?? "").StartsWith("DISC:", StringComparison.Ordinal);
+            public bool IsDiscountLine => DiscountKeys.IsDiscount(Barcode ?? "");
         }
 
         public sealed class RecentSaleRow
