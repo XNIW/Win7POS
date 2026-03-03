@@ -223,6 +223,19 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                return await _sales.GetDailySummariesAsync(fromDate, toDate).ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         public async Task<string> ExportDailyCsvAsync(DateTime date)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
@@ -319,6 +332,26 @@ namespace Win7POS.Wpf.Pos
             catch (Exception ex)
             {
                 _logger.LogError(ex, "POS add barcode failed");
+                throw;
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<PosWorkflowSnapshot> AddManualPriceAsync(int unitPriceMinor)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _logger.LogInfo("POS add manual price: " + unitPriceMinor);
+                await _session.AddManualPriceAsync(unitPriceMinor).ConfigureAwait(false);
+                return BuildSnapshot("Aggiunto (senza codice).");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "POS add manual price failed");
                 throw;
             }
             finally

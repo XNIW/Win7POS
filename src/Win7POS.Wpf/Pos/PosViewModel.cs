@@ -204,28 +204,51 @@ namespace Win7POS.Wpf.Pos
 
         private async Task AddBarcodeAsync()
         {
-            var code = (BarcodeInput ?? string.Empty).Trim();
-            if (code.Length == 0)
+            var input = (BarcodeInput ?? string.Empty).Trim();
+            if (input.Length == 0)
                 return;
+
+            if (TryParseManualPriceClp(input, out var priceMinor))
+            {
+                IsBusy = true;
+                try
+                {
+                    var snapshot = await _service.AddManualPriceAsync(priceMinor).ConfigureAwait(true);
+                    ApplySnapshot(snapshot);
+                    StatusMessage = "Aggiunto (senza codice): " + MoneyClp.Format(priceMinor);
+                    return;
+                }
+                catch (PosException ex) when (ex.Code == PosErrorCode.InvalidPrice)
+                {
+                    StatusMessage = ex.Message;
+                    return;
+                }
+                finally
+                {
+                    BarcodeInput = string.Empty;
+                    IsBusy = false;
+                    RequestFocusBarcode();
+                }
+            }
 
             IsBusy = true;
             try
             {
-                var snapshot = await _service.AddByBarcodeAsync(code).ConfigureAwait(true);
+                var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
                 ApplySnapshot(snapshot);
-                StatusMessage = "Prodotto aggiunto: " + code;
+                StatusMessage = "Prodotto aggiunto: " + input;
             }
             catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
             {
-                StatusMessage = "Prodotto non trovato: " + code;
+                StatusMessage = "Prodotto non trovato: " + input;
                 var askCreate = MessageBox.Show(
-                    "Prodotto non trovato: " + code + "\nVuoi creare prodotto?",
+                    "Prodotto non trovato: " + input + "\nVuoi creare prodotto?",
                     "Prodotto non trovato",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Question);
                 if (askCreate == MessageBoxResult.Yes)
                 {
-                    var dlg = new AddProductDialog(code)
+                    var dlg = new AddProductDialog(input)
                     {
                         Owner = Application.Current?.MainWindow
                     };
@@ -233,10 +256,10 @@ namespace Win7POS.Wpf.Pos
                     {
                         try
                         {
-                            await _service.CreateProductAsync(code, dlg.ViewModel.ProductName, dlg.ViewModel.PriceMinor).ConfigureAwait(true);
-                            var snapshot = await _service.AddByBarcodeAsync(code).ConfigureAwait(true);
+                            await _service.CreateProductAsync(input, dlg.ViewModel.ProductName, dlg.ViewModel.PriceMinor).ConfigureAwait(true);
+                            var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
                             ApplySnapshot(snapshot);
-                            StatusMessage = "Prodotto creato e aggiunto: " + code;
+                            StatusMessage = "Prodotto creato e aggiunto: " + input;
                         }
                         catch (Exception createEx)
                         {
@@ -909,6 +932,37 @@ namespace Win7POS.Wpf.Pos
             }
             RequestFocusBarcode();
             return Task.CompletedTask;
+        }
+
+        private static bool TryParseManualPriceClp(string raw, out int price)
+        {
+            price = 0;
+            if (string.IsNullOrWhiteSpace(raw)) return false;
+
+            var s = raw.Trim();
+
+            bool allDigits = s.All(char.IsDigit);
+            if (allDigits)
+            {
+                if (s.Length >= 6) return false;
+                return int.TryParse(s, out price) && price > 0;
+            }
+
+            if (s.Contains(".") || s.Contains(","))
+            {
+                int lastDot = s.LastIndexOf('.');
+                int lastComma = s.LastIndexOf(',');
+                int lastSep = Math.Max(lastDot, lastComma);
+
+                var before = lastSep >= 0 ? s.Substring(0, lastSep) : s;
+                before = before.Replace(".", "").Replace(",", "").Replace(" ", "");
+
+                if (!before.All(char.IsDigit)) return false;
+                if (!int.TryParse(before, out price)) return false;
+                return price > 0;
+            }
+
+            return false;
         }
 
         private void ApplySnapshot(PosWorkflowSnapshot snapshot)

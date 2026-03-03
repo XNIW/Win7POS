@@ -27,6 +27,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _shouldPrint;
         private string _receiptPreviewText = "";
         private bool _showSiiWeb = true;
+        private int _nextBoletaNumber;
         private string _fiscalPreviewText = "";
         private string _fiscalStatus = "";
 
@@ -36,7 +37,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _draft = draft;
             _generateFiscalPdf = generateFiscalPdf;
             _shouldPrint = draft?.DefaultPrint ?? false;
-            NextBoletaNumber = draft?.NextBoletaNumber ?? 0;
+            _nextBoletaNumber = draft?.NextBoletaNumber ?? 0;
 
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
@@ -49,6 +50,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             PayAllCardCommand = new RelayCommand(_ => PayAllCard(), _ => true);
             GeneratePdfCommand = new RelayCommand(_ => _ = GeneratePdfAsync(), _ => _generateFiscalPdf != null);
             OpenSiiCommand = new RelayCommand(_ => OpenSii(), _ => true);
+            IncrementBoletaCommand = new RelayCommand(_ => NextBoletaNumber += 1, _ => true);
+            DecrementBoletaCommand = new RelayCommand(_ => { if (NextBoletaNumber > 0) NextBoletaNumber -= 1; }, _ => true);
 
             UpdateReceiptPreviewText();
             UpdateFiscalPreviewText();
@@ -56,7 +59,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public string SaleCode => _draft?.SaleCode ?? "";
         public long CreatedAtMs => _draft?.CreatedAtMs ?? 0;
-        public int NextBoletaNumber { get; }
+
+        public int NextBoletaNumber
+        {
+            get => _nextBoletaNumber;
+            set
+            {
+                if (value < 0) value = 0;
+                _nextBoletaNumber = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(NextBoletaNumberText));
+                UpdateFiscalPreviewText();
+            }
+        }
+
+        public string NextBoletaNumberText
+        {
+            get => _nextBoletaNumber.ToString(CultureInfo.InvariantCulture);
+            set
+            {
+                var parsed = MoneyClp.Parse(value ?? "");
+                if (parsed >= 0) NextBoletaNumber = parsed;
+            }
+        }
 
         public bool ShouldPrint
         {
@@ -143,11 +168,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand PayAllCardCommand { get; }
         public ICommand GeneratePdfCommand { get; }
         public ICommand OpenSiiCommand { get; }
+        public ICommand IncrementBoletaCommand { get; }
+        public ICommand DecrementBoletaCommand { get; }
 
         public bool ShowSiiWeb { get => _showSiiWeb; set { _showSiiWeb = value; OnPropertyChanged(); } }
         public string FiscalPreviewText { get => _fiscalPreviewText; private set { _fiscalPreviewText = value ?? ""; OnPropertyChanged(); } }
-        public string FiscalPreviewTopText { get; private set; }
-        public string FiscalPreviewBottomText { get; private set; }
+        public string FiscalHeaderText { get; private set; }
+        public string FiscalFooterText { get; private set; }
         public string FiscalStatus { get => _fiscalStatus; private set { _fiscalStatus = value ?? ""; OnPropertyChanged(); } }
 
         public event Action<bool> RequestClose;
@@ -224,11 +251,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var idx = lines.FindIndex(s => (s ?? "").Trim().Equals(marker, StringComparison.OrdinalIgnoreCase));
             if (idx < 0) idx = lines.Count;
 
-            FiscalPreviewTopText = string.Join(Environment.NewLine, lines.Take(idx));
-            FiscalPreviewBottomText = string.Join(Environment.NewLine, lines.Skip(idx));
+            FiscalHeaderText = string.Join(Environment.NewLine, lines.Take(idx));
+            FiscalFooterText = string.Join(Environment.NewLine, lines.Skip(idx));
 
-            OnPropertyChanged(nameof(FiscalPreviewTopText));
-            OnPropertyChanged(nameof(FiscalPreviewBottomText));
+            OnPropertyChanged(nameof(FiscalHeaderText));
+            OnPropertyChanged(nameof(FiscalFooterText));
             OnPropertyChanged(nameof(FiscalPreviewText));
         }
 

@@ -55,7 +55,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public SalesRegisterFilter Filter
         {
             get => _filter;
-            set { _filter = value; OnPropertyChanged(); OnPropertyChanged(nameof(FilterOggi)); OnPropertyChanged(nameof(FilterIeri)); OnPropertyChanged(nameof(FilterMese)); }
+            set
+            {
+                if (_filter == value) return;
+                _filter = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(FilterOggi));
+                OnPropertyChanged(nameof(FilterIeri));
+                OnPropertyChanged(nameof(FilterMese));
+                if (LoadCommand.CanExecute(null)) LoadCommand.Execute(null);
+            }
         }
 
         public bool FilterOggi { get => Filter == SalesRegisterFilter.Oggi; set { if (value) Filter = SalesRegisterFilter.Oggi; } }

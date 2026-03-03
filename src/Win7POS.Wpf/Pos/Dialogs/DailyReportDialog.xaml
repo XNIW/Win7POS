@@ -1,64 +1,116 @@
 <Window x:Class="Win7POS.Wpf.Pos.Dialogs.DailyReportDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Chiusura cassa / Daily report"
-        Width="560"
-        Height="390"
+        Title="Chiusura cassa / Incasso giornaliero"
+        Width="720"
+        Height="520"
         WindowStartupLocation="CenterOwner"
-        ResizeMode="NoResize">
+        ResizeMode="CanResize"
+        MinWidth="600"
+        MinHeight="420">
     <Grid Margin="12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="170"/>
-            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="260" MinWidth="200"/>
+            <ColumnDefinition Width="12"/>
+            <ColumnDefinition Width="*" MinWidth="200"/>
         </Grid.ColumnDefinitions>
 
-        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Data (yyyy-MM-dd):"/>
-        <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" Width="150" HorizontalAlignment="Left"
-                 Text="{Binding DateText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+        <!-- Colonna sinistra: Riepilogo giorno -->
+        <StackPanel Grid.Row="0" Grid.Column="0">
+            <TextBlock Text="Riepilogo giornata" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8"/>
+            <TextBlock Text="Data (yyyy-MM-dd):" VerticalAlignment="Center"/>
+            <TextBox Margin="0,4,0,8" Width="150" HorizontalAlignment="Left"
+                     Text="{Binding DateText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
-        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,10,0,0" Orientation="Horizontal">
-            <Button MinWidth="110" Margin="0,0,8,0" Content="Carica" Command="{Binding LoadCommand}"/>
-            <Button MinWidth="110" Content="Export CSV" Command="{Binding ExportCsvCommand}"/>
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                <Button MinWidth="90" Margin="0,0,8,0" Content="Carica" Command="{Binding LoadCommand}"/>
+                <Button MinWidth="90" Content="Export CSV" Command="{Binding ExportCsvCommand}"/>
+            </StackPanel>
+
+            <TextBlock Margin="0,0,0,4" Text="Numero vendite:"/>
+            <TextBlock Margin="0,0,0,8" Text="{Binding SalesCount, Mode=OneWay}"/>
+
+            <TextBlock Margin="0,0,0,4" Text="Totale:"/>
+            <TextBlock Margin="0,0,0,8" Text="{Binding TotalAmountDisplay, Mode=OneWay}"/>
+
+            <TextBlock Margin="0,0,0,4" Text="Contanti / Carta:"/>
+            <TextBlock Margin="0,0,0,8">
+                <Run Text="{Binding CashAmountDisplay, Mode=OneWay}"/>
+                <Run Text=" / "/>
+                <Run Text="{Binding CardAmountDisplay, Mode=OneWay}"/>
+            </TextBlock>
+
+            <TextBlock Margin="0,0,0,4" Text="Gross sales:"/>
+            <TextBlock Margin="0,0,0,8" Foreground="#2E7D32" Text="{Binding GrossSalesAmountDisplay, Mode=OneWay}"/>
+
+            <TextBlock Margin="0,0,0,4" Text="Refunds:"/>
+            <TextBlock Margin="0,0,0,8" Foreground="#C62828" Text="{Binding RefundsAmountDisplay, Mode=OneWay}"/>
+
+            <TextBlock Margin="0,0,0,4" FontWeight="Bold" Text="Net:"/>
+            <TextBlock Margin="0,0,0,12" FontWeight="Bold" Foreground="#1565C0" Text="{Binding NetAmountDisplay, Mode=OneWay}"/>
+
+            <TextBlock Foreground="DimGray" TextWrapping="Wrap" Text="{Binding Status}"/>
         </StackPanel>
 
-        <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,14,0,0" Text="Numero vendite:"/>
-        <TextBlock Grid.Row="2" Grid.Column="1" Margin="8,14,0,0" Text="{Binding SalesCount, Mode=OneWay}"/>
+        <!-- Colonna destra: Anteprima ricevuta + Stamp + Storico -->
+        <Grid Grid.Row="0" Grid.Column="2">
+            <TabControl Margin="0,0,0,0">
+                <TabItem Header="Anteprima ricevuta">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Scontrino chiusura cassa (stampabile)" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="220"
+                                      BorderBrush="#CCC" BorderThickness="1" Padding="8" Background="#FAFAFA">
+                            <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}"
+                                       FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
+                        </ScrollViewer>
+                        <Button Grid.Row="2" Content="Stampa scontrino" MinWidth="120" Margin="0,8,0,0"
+                                Command="{Binding PrintSummaryCommand}"/>
+                    </Grid>
+                </TabItem>
+                <TabItem Header="Storico">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="Periodo storico" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
+                            <TextBlock Text="Da:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <TextBox Text="{Binding HistoryFromText, UpdateSourceTrigger=PropertyChanged}" Width="100" Padding="4,2" Margin="0,0,12,0"/>
+                            <TextBlock Text="A:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <TextBox Text="{Binding HistoryToText, UpdateSourceTrigger=PropertyChanged}" Width="100" Padding="4,2" Margin="0,0,8,0"/>
+                            <Button Content="Carica storico" Command="{Binding LoadHistoryCommand}"/>
+                        </StackPanel>
+                        <DataGrid Grid.Row="2" ItemsSource="{Binding HistoryRows}" IsReadOnly="True" AutoGenerateColumns="False"
+                                  MinHeight="120" Margin="0,0,0,8"
+                                  CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Data" Binding="{Binding DateText}" Width="100"/>
+                                <DataGridTextColumn Header="Vendite" Binding="{Binding SalesCount}" Width="60"/>
+                                <DataGridTextColumn Header="Totale" Binding="{Binding TotalDisplay}" Width="80"/>
+                                <DataGridTextColumn Header="Contanti" Binding="{Binding CashDisplay}" Width="80"/>
+                                <DataGridTextColumn Header="Carta" Binding="{Binding CardDisplay}" Width="80"/>
+                                <DataGridTextColumn Header="Net" Binding="{Binding NetDisplay}" Width="80"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <TextBlock Grid.Row="3" Text="{Binding Status, Mode=OneWay}" Foreground="Gray" TextWrapping="Wrap"/>
+                    </Grid>
+                </TabItem>
+            </TabControl>
+        </Grid>
 
-        <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,8,0,0" Text="Totale:"/>
-        <TextBlock Grid.Row="3" Grid.Column="1" Margin="8,8,0,0" Text="{Binding TotalAmountDisplay, Mode=OneWay}"/>
-
-        <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,8,0,0" Text="Contanti / Carta:"/>
-        <TextBlock Grid.Row="4" Grid.Column="1" Margin="8,8,0,0">
-            <Run Text="{Binding CashAmountDisplay, Mode=OneWay}"/>
-            <Run Text=" / "/>
-            <Run Text="{Binding CardAmountDisplay, Mode=OneWay}"/>
-        </TextBlock>
-
-        <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,8,0,0" Text="Gross sales:"/>
-        <TextBlock Grid.Row="5" Grid.Column="1" Margin="8,8,0,0" Foreground="#2E7D32" Text="{Binding GrossSalesAmountDisplay, Mode=OneWay}"/>
-
-        <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,8,0,0" Text="Refunds:"/>
-        <TextBlock Grid.Row="6" Grid.Column="1" Margin="8,8,0,0" Foreground="#C62828" Text="{Binding RefundsAmountDisplay, Mode=OneWay}"/>
-
-        <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,8,0,0" FontWeight="Bold" Text="Net:"/>
-        <TextBlock Grid.Row="7" Grid.Column="1" Margin="8,8,0,0" FontWeight="Bold" Foreground="#1565C0" Text="{Binding NetAmountDisplay, Mode=OneWay}"/>
-
-        <TextBlock Grid.Row="8" Grid.ColumnSpan="2" Margin="0,14,0,0" Foreground="DimGray" TextWrapping="Wrap"
-                   Text="{Binding Status}"/>
-
-        <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button MinWidth="110" Height="34" Content="Chiudi" IsCancel="True"/>
         </StackPanel>
     </Grid>

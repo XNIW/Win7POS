@@ -68,6 +68,30 @@ namespace Win7POS.Core.Pos
 
         public void RemoveLine(string barcode) => SetQuantity(barcode, 0);
 
+        public Task AddManualPriceAsync(int unitPriceMinor, string name = null)
+        {
+            if (unitPriceMinor <= 0)
+                throw new PosException(PosErrorCode.InvalidPrice, unitPriceMinor.ToString());
+
+            var pseudo = $"MANUAL:{unitPriceMinor}";
+            var existing = _lines.FirstOrDefault(x => x.Barcode == pseudo);
+            if (existing != null)
+            {
+                existing.Quantity += 1;
+                return Task.CompletedTask;
+            }
+
+            _lines.Add(new PosLine
+            {
+                ProductId = null,
+                Barcode = pseudo,
+                Name = name ?? "Senza codice",
+                UnitPrice = unitPriceMinor,
+                Quantity = 1
+            });
+            return Task.CompletedTask;
+        }
+
         public void Clear() => _lines.Clear();
 
         public async Task<SaleCompleted> PayCashAsync()

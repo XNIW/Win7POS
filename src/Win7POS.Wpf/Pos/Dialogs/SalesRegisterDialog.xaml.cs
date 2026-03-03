@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Input;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -9,6 +10,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
             InitializeComponent();
             DataContext = viewModel;
             Loaded += OnLoaded;
+        }
+
+        private void CodeSearchBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter && DataContext is SalesRegisterViewModel vm && vm.LoadCommand.CanExecute(null))
+            {
+                vm.LoadCommand.Execute(null);
+                e.Handled = true;
+            }
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)

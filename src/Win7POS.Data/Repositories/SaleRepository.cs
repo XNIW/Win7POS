@@ -95,6 +95,22 @@ WHERE createdAt >= @from AND createdAt < @to",
             return row;
         }
 
+        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate)
+        {
+            var result = new List<DailySalesSummary>();
+            var current = fromDate.Date;
+            var to = toDate.Date;
+            if (current > to) return result;
+
+            while (current <= to)
+            {
+                var day = await GetDailySummaryAsync(current).ConfigureAwait(false);
+                result.Add(day);
+                current = current.AddDays(1);
+            }
+            return result;
+        }
+
         public Task<IReadOnlyList<Sale>> GetSalesForDateAsync(DateTime date)
         {
             var from = new DateTimeOffset(date.Date).ToUnixTimeMilliseconds();

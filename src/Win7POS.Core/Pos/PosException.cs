@@ -26,6 +26,8 @@ namespace Win7POS.Core.Pos
                     return contextValue == null ? "Invalid quantity." : $"Invalid quantity: {contextValue}";
                 case PosErrorCode.InvalidBarcode:
                     return "Invalid barcode.";
+                case PosErrorCode.InvalidPrice:
+                    return contextValue == null ? "Prezzo non valido." : $"Prezzo non valido: {contextValue}";
                 default:
                     return "POS error.";
             }

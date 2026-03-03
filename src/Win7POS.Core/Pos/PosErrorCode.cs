@@ -5,6 +5,7 @@ namespace Win7POS.Core.Pos
         ProductNotFound = 1,
         EmptyCart = 2,
         InvalidQuantity = 3,
-        InvalidBarcode = 4
+        InvalidBarcode = 4,
+        InvalidPrice = 5
     }
 }

@@ -1,9 +1,12 @@
 using System;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
+using Win7POS.Core.Receipt;
+using Win7POS.Core.Reports;
 using Win7POS.Core.Util;
 using Win7POS.Data.Repositories;
 
@@ -23,12 +26,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private int _refundsAmount;
         private int _netAmount;
         private bool _isBusy;
+        private string _summaryReceiptPreview = string.Empty;
+        private string _historyFromText = DateTime.Now.AddMonths(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        private string _historyToText = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
         public DailyReportViewModel(Pos.PosWorkflowService service)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
             ExportCsvCommand = new AsyncRelayCommand(ExportCsvAsync, _ => !IsBusy);
+            PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview));
+            LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync, _ => !IsBusy);
+            HistoryRows = new ObservableCollection<HistoryRow>();
         }
 
         public string DateText
@@ -98,8 +107,30 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string RefundsAmountDisplay => MoneyClp.Format(RefundsAmount);
         public string NetAmountDisplay => MoneyClp.Format(NetAmount);
 
+        public string SummaryReceiptPreview
+        {
+            get => _summaryReceiptPreview;
+            set { _summaryReceiptPreview = value ?? string.Empty; OnPropertyChanged(); RaiseCanExecuteChanged(); }
+        }
+
+        public string HistoryFromText
+        {
+            get => _historyFromText;
+            set { _historyFromText = value ?? string.Empty; OnPropertyChanged(); }
+        }
+
+        public string HistoryToText
+        {
+            get => _historyToText;
+            set { _historyToText = value ?? string.Empty; OnPropertyChanged(); }
+        }
+
+        public ObservableCollection<HistoryRow> HistoryRows { get; }
+
         public ICommand LoadCommand { get; }
         public ICommand ExportCsvCommand { get; }
+        public ICommand PrintSummaryCommand { get; }
+        public ICommand LoadHistoryCommand { get; }
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -122,6 +153,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 GrossSalesAmount = summary.GrossSalesAmount;
                 RefundsAmount = summary.RefundsAmount;
                 NetAmount = summary.NetAmount;
+                var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
+                UpdateSummaryReceiptPreview(date, summary, shop);
                 Status = "Report caricato.";
             }
             catch (Exception ex)
@@ -158,6 +191,92 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
+        private void UpdateSummaryReceiptPreview(DateTime date, DailySalesSummary summary, ReceiptShopInfo shop = null)
+        {
+            var model = new DailyTakingsReceiptModel
+            {
+                Date = date,
+                SalesCount = summary.SalesCount,
+                TotalAmount = summary.TotalAmount,
+                CashAmount = summary.CashAmount,
+                CardAmount = summary.CardAmount,
+                GrossSalesAmount = summary.GrossSalesAmount,
+                RefundsAmount = summary.RefundsAmount,
+                NetAmount = summary.NetAmount
+            };
+            var lines = DailyTakingsReceiptFormatter.Format(model, shop ?? new ReceiptShopInfo());
+            SummaryReceiptPreview = string.Join(Environment.NewLine, lines);
+        }
+
+        private async Task PrintSummaryAsync()
+        {
+            if (string.IsNullOrEmpty(SummaryReceiptPreview)) return;
+            IsBusy = true;
+            try
+            {
+                var result = await _service.PrintReceiptTextAsync(SummaryReceiptPreview, true, "DAILY_SUMMARY_" + DateTime.Now.ToString("yyyyMMdd_HHmm", CultureInfo.InvariantCulture)).ConfigureAwait(true);
+                Status = "Stampa avviata.";
+            }
+            catch (Exception ex)
+            {
+                Status = "Errore stampa: " + ex.Message;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task LoadHistoryAsync()
+        {
+            if (!TryParseHistoryDates(out var from, out var to))
+            {
+                Status = "Date storico non valide. Usa yyyy-MM-dd.";
+                return;
+            }
+            if (from > to)
+            {
+                Status = "Data da deve essere <= data a.";
+                return;
+            }
+
+            IsBusy = true;
+            try
+            {
+                var summaries = await _service.GetDailySummariesAsync(from, to).ConfigureAwait(true);
+                HistoryRows.Clear();
+                foreach (var s in summaries)
+                {
+                    HistoryRows.Add(new HistoryRow
+                    {
+                        DateText = s.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                        SalesCount = s.SalesCount,
+                        TotalDisplay = MoneyClp.Format(s.TotalAmount),
+                        CashDisplay = MoneyClp.Format(s.CashAmount),
+                        CardDisplay = MoneyClp.Format(s.CardAmount),
+                        NetDisplay = MoneyClp.Format(s.NetAmount)
+                    });
+                }
+                Status = summaries.Count + " giorni caricati nello storico.";
+            }
+            catch (Exception ex)
+            {
+                Status = "Errore caricamento storico: " + ex.Message;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private bool TryParseHistoryDates(out DateTime from, out DateTime to)
+        {
+            from = default;
+            to = default;
+            return DateTime.TryParseExact(HistoryFromText ?? "", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out from)
+                && DateTime.TryParseExact(HistoryToText ?? "", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out to);
+        }
+
         private bool TryParseDate(out DateTime date)
         {
             return DateTime.TryParseExact(
@@ -172,6 +291,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             (LoadCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ExportCsvCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (PrintSummaryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
@@ -197,6 +318,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             public event EventHandler CanExecuteChanged;
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        public sealed class HistoryRow
+        {
+            public string DateText { get; set; }
+            public int SalesCount { get; set; }
+            public string TotalDisplay { get; set; }
+            public string CashDisplay { get; set; }
+            public string CardDisplay { get; set; }
+            public string NetDisplay { get; set; }
         }
     }
 }
