@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using System.Windows.Input;
 using Win7POS.Core.Util;
 
@@ -12,22 +13,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         private string _valueText = "0";
         private DiscountMode _mode = DiscountMode.Percent;
+        private bool _isBusy;
 
         private readonly string _selectedLineBarcode;
         private readonly bool _hasCartItems;
-        private readonly Action<int, bool, string> _onApply; // value, isPercent, lineBarcodeOrNull
+        private readonly Func<int, bool, string, Task> _onApplyAsync; // value, isPercent, lineBarcodeOrNull
 
-        public DiscountViewModel(string selectedLineBarcode, bool hasCartItems, Action<int, bool, string> onApply)
+        public DiscountViewModel(string selectedLineBarcode, bool hasCartItems, Func<int, bool, string, Task> onApplyAsync)
         {
             _selectedLineBarcode = selectedLineBarcode?.Trim();
             _hasCartItems = hasCartItems;
-            _onApply = onApply ?? throw new ArgumentNullException(nameof(onApply));
+            _onApplyAsync = onApplyAsync ?? throw new ArgumentNullException(nameof(onApplyAsync));
 
             DigitCommand = new RelayCommandParam(Digit);
             BackspaceCommand = new RelayCommand(_ => Backspace(), _ => (ValueText ?? "").Length > 0);
-            ConfirmCommand = new RelayCommand(_ => Confirm(), _ => CanConfirm);
+            ConfirmCommand = new AsyncRelayCommand(ConfirmAsync, _ => CanConfirm && !IsBusy);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
-            ApplyCartCommand = new RelayCommand(_ => ApplyCart(), _ => CanApplyCart);
+            ApplyCartCommand = new AsyncRelayCommand(ApplyCartAsync, _ => CanApplyCart && !IsBusy);
+        }
+
+        public bool IsBusy
+        {
+            get => _isBusy;
+            private set { _isBusy = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
         public DiscountMode Mode
@@ -118,33 +126,39 @@ namespace Win7POS.Wpf.Pos.Dialogs
             else ValueText = t.Substring(0, t.Length - 1);
         }
 
-        private void Confirm()
+        private async Task ConfirmAsync()
         {
             if (!CanConfirm) return;
-            if (IsPercentMode && HasLineSelected)
+            IsBusy = true;
+            try
             {
-                _onApply(ValueInt, true, _selectedLineBarcode);
+                if (IsPercentMode && HasLineSelected)
+                    await _onApplyAsync(ValueInt, true, _selectedLineBarcode).ConfigureAwait(true);
+                else if (IsAmountMode && HasLineSelected)
+                    await _onApplyAsync(ValueInt, false, _selectedLineBarcode).ConfigureAwait(true);
+                else return;
                 RequestClose?.Invoke(true);
             }
-            else if (IsAmountMode && HasLineSelected)
-            {
-                _onApply(ValueInt, false, _selectedLineBarcode);
-                RequestClose?.Invoke(true);
-            }
+            finally { IsBusy = false; }
         }
 
-        private void ApplyCart()
+        private async Task ApplyCartAsync()
         {
             if (!CanApplyCart) return;
-            _onApply(ValueInt, true, null);
-            RequestClose?.Invoke(true);
+            IsBusy = true;
+            try
+            {
+                await _onApplyAsync(ValueInt, true, null).ConfigureAwait(true);
+                RequestClose?.Invoke(true);
+            }
+            finally { IsBusy = false; }
         }
 
         private void RaiseCanExecuteChanged()
         {
             (BackspaceCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (ConfirmCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (ApplyCartCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ConfirmCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ApplyCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
@@ -175,6 +189,25 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public bool CanExecute(object parameter) => true;
             public void Execute(object parameter) => _execute(parameter);
             public event EventHandler CanExecuteChanged;
+            public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private sealed class AsyncRelayCommand : ICommand
+        {
+            private readonly Func<Task> _execute;
+            private readonly Func<object, bool> _canExecute;
+
+            public AsyncRelayCommand(Func<Task> execute, Func<object, bool> canExecute = null)
+            {
+                _execute = execute ?? throw new ArgumentNullException(nameof(execute));
+                _canExecute = canExecute;
+            }
+
+            public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
+            public async void Execute(object parameter) => await _execute().ConfigureAwait(true);
+#pragma warning disable CS0067
+            public event EventHandler CanExecuteChanged;
+#pragma warning restore CS0067
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
     }

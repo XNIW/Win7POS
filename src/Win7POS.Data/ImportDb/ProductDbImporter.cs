@@ -48,8 +48,8 @@ namespace Win7POS.Data.ImportDb
             }
             catch (Exception ex)
             {
-                tx.Rollback();
-                result.Errors.Add("Import failed: " + ex.Message);
+                tx?.Rollback();
+                result.Errors.Add("Import failed: " + ex.ToString());
             }
 
             return result;

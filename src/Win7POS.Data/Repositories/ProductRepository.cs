@@ -18,7 +18,29 @@ namespace Win7POS.Data.Repositories
             return await conn.QuerySingleOrDefaultAsync<Product>(
                 "SELECT id, barcode, name, unitPrice FROM products WHERE barcode = @barcode",
                 new { barcode }
-            );
+            ).ConfigureAwait(false);
+        }
+
+        /// <summary>Batch lookup per ridurre query N+1.</summary>
+        public async Task<IReadOnlyDictionary<string, Product>> GetByBarcodesAsync(IEnumerable<string> barcodes)
+        {
+            var list = new List<string>();
+            foreach (var b in barcodes ?? System.Array.Empty<string>())
+            {
+                var t = (b ?? string.Empty).Trim();
+                if (t.Length > 0) list.Add(t);
+            }
+            if (list.Count == 0) return new Dictionary<string, Product>();
+
+            using var conn = _factory.Open();
+            var rows = await conn.QueryAsync<Product>(
+                "SELECT id, barcode, name, unitPrice FROM products WHERE barcode IN @barcodes",
+                new { barcodes = list }
+            ).ConfigureAwait(false);
+            var dict = new Dictionary<string, Product>(list.Count);
+            foreach (var p in rows ?? System.Array.Empty<Product>())
+                if (p?.Barcode != null) dict[p.Barcode] = p;
+            return dict;
         }
 
         public async Task<Product> GetByIdAsync(long id)
@@ -26,7 +48,7 @@ namespace Win7POS.Data.Repositories
             using var conn = _factory.Open();
             return await conn.QuerySingleOrDefaultAsync<Product>(
                 "SELECT id, barcode, name, unitPrice FROM products WHERE id = @id",
-                new { id });
+                new { id }).ConfigureAwait(false);
         }
 
         public async Task<long> UpsertAsync(Product p)
@@ -36,27 +58,27 @@ namespace Win7POS.Data.Repositories
             var updated = await conn.ExecuteAsync(@"
 UPDATE products
 SET name = @Name, unitPrice = @UnitPrice
-WHERE barcode = @Barcode", p);
+WHERE barcode = @Barcode", p).ConfigureAwait(false);
 
             if (updated == 0)
             {
                 return await conn.ExecuteScalarAsync<long>(@"
 INSERT INTO products(barcode, name, unitPrice)
 VALUES(@Barcode, @Name, @UnitPrice);
-SELECT last_insert_rowid();", p);
+SELECT last_insert_rowid();", p).ConfigureAwait(false);
             }
 
             return await conn.ExecuteScalarAsync<long>(
                 "SELECT id FROM products WHERE barcode = @Barcode",
                 new { p.Barcode }
-            );
+            ).ConfigureAwait(false);
         }
 
         public async Task<IReadOnlyList<Product>> ListAllAsync()
         {
             using var conn = _factory.Open();
             var rows = await conn.QueryAsync<Product>(
-                "SELECT id, barcode, name, unitPrice FROM products ORDER BY barcode ASC");
+                "SELECT id, barcode, name, unitPrice FROM products ORDER BY barcode ASC").ConfigureAwait(false);
             return rows.ToList();
         }
 
@@ -69,7 +91,7 @@ SELECT last_insert_rowid();", p);
             {
                 var all = await conn.QueryAsync<Product>(
                     "SELECT id, barcode, name, unitPrice FROM products ORDER BY barcode ASC LIMIT @limit",
-                    new { limit });
+                    new { limit }).ConfigureAwait(false);
                 return all.ToList();
             }
 
@@ -80,7 +102,7 @@ SELECT last_insert_rowid();", p);
                   WHERE barcode = @q OR name LIKE @like
                   ORDER BY CASE WHEN barcode = @q THEN 0 ELSE 1 END, barcode ASC
                   LIMIT @limit",
-                new { q, like, limit });
+                new { q, like, limit }).ConfigureAwait(false);
             return rows.ToList();
         }
 
@@ -110,7 +132,7 @@ LEFT JOIN product_meta m ON m.barcode = p.barcode";
             {
                 var all = await conn.QueryAsync<ProductDetailsRow>(
                     sql + " ORDER BY p.barcode ASC LIMIT @limit",
-                    new { limit });
+                    new { limit }).ConfigureAwait(false);
                 return all.ToList();
             }
 
@@ -119,7 +141,7 @@ LEFT JOIN product_meta m ON m.barcode = p.barcode";
 WHERE p.barcode = @q OR p.name LIKE @like
 ORDER BY CASE WHEN p.barcode = @q THEN 0 ELSE 1 END, p.barcode ASC
 LIMIT @limit",
-                new { q, like, limit });
+                new { q, like, limit }).ConfigureAwait(false);
             return rows.ToList();
         }
 
@@ -138,7 +160,7 @@ VALUES(@barcode, '', '', @purchasePrice, 0, 0, @supplierId, @supplierName, @cate
                     categoryId,
                     categoryName = categoryName ?? string.Empty,
                     stockQty
-                });
+                }).ConfigureAwait(false);
         }
 
         public async Task InsertPriceHistoryAsync(string barcode, string type, int newPrice, string source = "MANUAL")
@@ -148,7 +170,7 @@ VALUES(@barcode, '', '', @purchasePrice, 0, 0, @supplierId, @supplierName, @cate
             await conn.ExecuteAsync(@"
 INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
 VALUES(@barcode, @timestamp, @type, NULL, @newPrice, @source)",
-                new { barcode, timestamp, type, newPrice, source });
+                new { barcode, timestamp, type, newPrice, source }).ConfigureAwait(false);
         }
 
         public async Task<bool> UpdateAsync(long productId, string name, int unitPriceMinor)
@@ -161,7 +183,7 @@ VALUES(@barcode, @timestamp, @type, NULL, @newPrice, @source)",
                     productId,
                     name = name ?? string.Empty,
                     unitPriceMinor
-                });
+                }).ConfigureAwait(false);
             return rows > 0;
         }
     }

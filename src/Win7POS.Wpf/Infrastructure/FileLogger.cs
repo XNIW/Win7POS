@@ -7,6 +7,8 @@ namespace Win7POS.Wpf.Infrastructure
 {
     public sealed class FileLogger
     {
+        private static readonly object _writeLock = new object();
+
         public void LogInfo(string message)
         {
             WriteLine("INFO", message ?? string.Empty);
@@ -25,7 +27,10 @@ namespace Win7POS.Wpf.Infrastructure
                 AppPaths.EnsureDataDirectories();
                 var line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") +
                            " [" + level + "] " + message + Environment.NewLine;
-                File.AppendAllText(AppPaths.LogPath, line, Encoding.UTF8);
+                lock (_writeLock)
+                {
+                    File.AppendAllText(AppPaths.LogPath, line, Encoding.UTF8);
+                }
             }
             catch
             {

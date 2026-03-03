@@ -18,9 +18,22 @@ namespace Win7POS.Core.Import
             var result = new ImportDiffResult();
             if (rows == null) return result;
             if (previewTake < 0) previewTake = 0;
-            var all = new List<ImportDiffItem>();
 
+            var rowList = new List<ImportRow>();
+            var barcodesToLookup = new HashSet<string>(StringComparer.Ordinal);
             foreach (var row in rows)
+            {
+                if (row != null && !string.IsNullOrWhiteSpace(row.Barcode) && row.UnitPrice >= 0)
+                    barcodesToLookup.Add(row.Barcode.Trim());
+                rowList.Add(row);
+            }
+
+            var existingByBarcode = barcodesToLookup.Count > 0
+                ? await _lookup.GetByBarcodesAsync(barcodesToLookup)
+                : new Dictionary<string, ProductSnapshot>();
+
+            var all = new List<ImportDiffItem>();
+            foreach (var row in rowList)
             {
                 var item = new ImportDiffItem();
                 if (row != null)
@@ -40,7 +53,7 @@ namespace Win7POS.Core.Import
 
                 var barcode = row.Barcode.Trim();
                 item.Barcode = barcode;
-                var existing = await _lookup.GetByBarcodeAsync(barcode);
+                existingByBarcode.TryGetValue(barcode, out var existing);
                 if (existing == null)
                 {
                     item.Kind = ImportDiffKind.NewProduct;

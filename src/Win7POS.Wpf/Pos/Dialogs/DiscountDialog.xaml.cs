@@ -13,7 +13,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             InitializeComponent();
             WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.36, heightPercent: 0.6, minWidth: 360, minHeight: 420);
-            ViewModel = new DiscountViewModel(selectedLineBarcode, hasCartItems, OnApply);
+            ViewModel = new DiscountViewModel(selectedLineBarcode, hasCartItems, OnApplyAsync);
             ViewModel.RequestClose += ok => DialogResult = ok;
             DataContext = ViewModel;
             _service = service;
@@ -23,17 +23,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private readonly PosWorkflowService _service;
         private readonly PosViewModel _posViewModel;
 
-        private void OnApply(int value, bool isPercent, string lineBarcodeOrNull)
+        private async System.Threading.Tasks.Task OnApplyAsync(int value, bool isPercent, string lineBarcodeOrNull)
         {
             if (_service == null) return;
 
             PosWorkflowSnapshot snapshot = null;
             if (isPercent && string.IsNullOrEmpty(lineBarcodeOrNull))
-                snapshot = _service.ApplyCartDiscountPercentAsync(value).GetAwaiter().GetResult();
+                snapshot = await _service.ApplyCartDiscountPercentAsync(value).ConfigureAwait(true);
             else if (isPercent && !string.IsNullOrEmpty(lineBarcodeOrNull))
-                snapshot = _service.ApplyLineDiscountPercentAsync(lineBarcodeOrNull, value).GetAwaiter().GetResult();
+                snapshot = await _service.ApplyLineDiscountPercentAsync(lineBarcodeOrNull, value).ConfigureAwait(true);
             else if (!isPercent && !string.IsNullOrEmpty(lineBarcodeOrNull))
-                snapshot = _service.ApplyLineDiscountAmountAsync(lineBarcodeOrNull, value).GetAwaiter().GetResult();
+                snapshot = await _service.ApplyLineDiscountAmountAsync(lineBarcodeOrNull, value).ConfigureAwait(true);
 
             _posViewModel?.ApplyDiscountSnapshot(snapshot);
         }

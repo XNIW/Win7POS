@@ -1309,11 +1309,17 @@ SELECT last_insert_rowid();";
         if (!condition) throw new InvalidOperationException(message);
     }
 
-    private static async Task<long> ScalarLongAsync(SqliteConnection conn, SqliteTransaction? tx, string sql)
+    private static async Task<long> ScalarLongAsync(SqliteConnection conn, SqliteTransaction? tx, string sql, params object[] args)
     {
         using var cmd = conn.CreateCommand();
         cmd.Transaction = tx;
         cmd.CommandText = sql;
+        for (var i = 0; i < args.Length; i += 2)
+        {
+            var name = (string)args[i];
+            var value = args[i + 1];
+            cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        }
         var obj = await cmd.ExecuteScalarAsync().ConfigureAwait(false);
         if (obj == null || obj == DBNull.Value) return 0;
         return Convert.ToInt64(obj, CultureInfo.InvariantCulture);
@@ -1324,7 +1330,7 @@ SELECT last_insert_rowid();";
         using var conn = factory.Open();
         var totalSales = await ScalarLongAsync(conn, null, "SELECT COUNT(*) FROM sales").ConfigureAwait(false);
         var totalLines = await ScalarLongAsync(conn, null, "SELECT COUNT(*) FROM sale_lines").ConfigureAwait(false);
-        var linesForSale = await ScalarLongAsync(conn, null, $"SELECT COUNT(*) FROM sale_lines WHERE saleId = {saleId}").ConfigureAwait(false);
+        var linesForSale = await ScalarLongAsync(conn, null, "SELECT COUNT(*) FROM sale_lines WHERE saleId = @saleId", "@saleId", saleId).ConfigureAwait(false);
         Console.WriteLine($"DB CHECK: sales={totalSales}, sale_lines={totalLines}, linesForSale={linesForSale}");
     }
 

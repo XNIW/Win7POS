@@ -103,9 +103,10 @@ namespace Win7POS.Core.Import
                     result.AppliedUpdated += 1;
                     result.ChangedBarcodes.Add(barcode);
                 }
-                catch
+                catch (Exception ex)
                 {
                     result.ErrorsCount += 1;
+                    result.Errors.Add($"{barcode}: {ex.Message}");
                 }
             }
 

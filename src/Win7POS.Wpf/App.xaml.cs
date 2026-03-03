@@ -22,8 +22,8 @@ namespace Win7POS.Wpf
             {
                 _logger.LogError(ex, "App startup failed while ensuring app paths.");
                 MessageBox.Show(
-                    "初始化应用数据目录失败，程序将退出。\n" + ex.Message,
-                    "Win7POS 启动失败",
+                    "Impossibile creare le directory dati dell'applicazione. L'app verrà chiusa.\n\n" + ex.Message,
+                    "Errore avvio Win7POS",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
                 Shutdown(-1);

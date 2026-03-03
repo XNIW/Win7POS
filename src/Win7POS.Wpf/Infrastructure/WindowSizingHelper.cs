@@ -1,9 +1,11 @@
+using System;
 using System.Windows;
 
 namespace Win7POS.Wpf.Infrastructure
 {
     /// <summary>
-    /// Helper per dimensionare finestre e dialog in modo proporzionale allo schermo.
+    /// Helper per dimensionare finestre e dialog in modo proporzionale allo schermo
+    /// rispettando l'area di lavoro (es. senza essere tagliati dalla taskbar).
     /// </summary>
     public static class WindowSizingHelper
     {
@@ -18,7 +20,23 @@ namespace Win7POS.Wpf.Infrastructure
         }
 
         /// <summary>
-        /// Imposta dimensioni responsive per un dialog basate sullo schermo (o sulla finestra Owner).
+        /// Restituisce l'area di lavoro del monitor primario (schermo meno taskbar/dock).
+        /// </summary>
+        private static Rect GetWorkArea()
+        {
+            try
+            {
+                return SystemParameters.WorkArea;
+            }
+            catch
+            {
+                return new Rect(0, 0, SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight);
+            }
+        }
+
+        /// <summary>
+        /// Imposta dimensioni responsive per un dialog: non supera l'area di lavoro,
+        /// si centra e non viene tagliato dalla taskbar.
         /// </summary>
         /// <param name="window">La finestra dialog</param>
         /// <param name="widthPercent">Percentuale larghezza (0.0-1.0), es. 0.7 = 70%</param>
@@ -34,24 +52,26 @@ namespace Win7POS.Wpf.Infrastructure
         {
             window.Loaded += (s, e) =>
             {
+                var work = GetWorkArea();
+                // Usa l'area di lavoro così il dialog non viene mai tagliato dalla taskbar
+                double refWidth = work.Width;
+                double refHeight = work.Height;
+
                 var target = window.Owner ?? Application.Current?.MainWindow;
-                double refWidth, refHeight;
-
-                if (target != null && target.IsLoaded && target.ActualWidth > 0)
+                if (target != null && target.IsLoaded && target.ActualWidth > 0 && target.ActualHeight > 0)
                 {
-                    refWidth = target.ActualWidth;
-                    refHeight = target.ActualHeight;
-                }
-                else
-                {
-                    refWidth = SystemParameters.PrimaryScreenWidth;
-                    refHeight = SystemParameters.PrimaryScreenHeight;
+                    // Limita al minimo tra area di lavoro e dimensione owner
+                    refWidth = Math.Min(refWidth, target.ActualWidth);
+                    refHeight = Math.Min(refHeight, target.ActualHeight);
                 }
 
-                var w = System.Math.Max(minWidth, refWidth * widthPercent);
-                var h = System.Math.Max(minHeight, refHeight * heightPercent);
-                if (maxWidth > 0) w = System.Math.Min(maxWidth, w);
-                if (maxHeight > 0) h = System.Math.Min(maxHeight, h);
+                var w = Math.Max(minWidth, refWidth * widthPercent);
+                var h = Math.Max(minHeight, refHeight * heightPercent);
+                // Non superare mai l'area di lavoro
+                w = Math.Min(w, work.Width);
+                h = Math.Min(h, work.Height);
+                if (maxWidth > 0) w = Math.Min(maxWidth, w);
+                if (maxHeight > 0) h = Math.Min(maxHeight, h);
 
                 window.Width = w;
                 window.Height = h;
@@ -59,6 +79,12 @@ namespace Win7POS.Wpf.Infrastructure
                 window.MinHeight = minHeight;
                 if (maxWidth > 0) window.MaxWidth = maxWidth;
                 if (maxHeight > 0) window.MaxHeight = maxHeight;
+
+                // Centra nella area di lavoro e clampa così non esce mai dallo schermo
+                var left = work.Left + (work.Width - w) / 2;
+                var top = work.Top + (work.Height - h) / 2;
+                window.Left = Math.Max(work.Left, Math.Min(work.Right - w, left));
+                window.Top = Math.Max(work.Top, Math.Min(work.Bottom - h, top));
             };
         }
     }

@@ -25,23 +25,23 @@ namespace Win7POS.Wpf.Printing
             }
 
             // 2) Print via Windows spooler driver
-            await Task.Run(() =>
-            {
-                TryPrintWithRetry(receiptText, opt);
-            }).ConfigureAwait(false);
+            await TryPrintWithRetryAsync(receiptText, opt).ConfigureAwait(false);
         }
 
-        private static void TryPrintWithRetry(string receiptText, ReceiptPrintOptions opt)
+        private const int RetryDelayMs = 300;
+        private const int ThermalPaper80mmMin = 300;
+        private const int ThermalPaper80mmMax = 330;
+
+        private static async Task TryPrintWithRetryAsync(string receiptText, ReceiptPrintOptions opt)
         {
             try
             {
-                PrintOnce(receiptText, opt);
+                await Task.Run(() => PrintOnce(receiptText, opt)).ConfigureAwait(false);
             }
             catch
             {
-                // light retry once
-                Thread.Sleep(300);
-                PrintOnce(receiptText, opt);
+                await Task.Delay(RetryDelayMs).ConfigureAwait(false);
+                await Task.Run(() => PrintOnce(receiptText, opt)).ConfigureAwait(false);
             }
         }
 
@@ -65,7 +65,7 @@ namespace Win7POS.Wpf.Printing
                 {
                     foreach (PaperSize ps in doc.PrinterSettings.PaperSizes)
                     {
-                        if (ps.Width >= 300 && ps.Width <= 330 ||
+                        if (ps.Width >= ThermalPaper80mmMin && ps.Width <= ThermalPaper80mmMax ||
                             (ps.PaperName != null && ps.PaperName.IndexOf("80", StringComparison.OrdinalIgnoreCase) >= 0))
                         {
                             doc.DefaultPageSettings.PaperSize = ps;
