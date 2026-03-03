@@ -8,7 +8,7 @@
              mc:Ignorable="d"
              d:DesignHeight="720" d:DesignWidth="1100">
 
-    <Grid Margin="12">
+    <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -19,17 +19,19 @@
         </Grid.RowDefinitions>
 
         <!-- File picker (unified) -->
-        <Grid Grid.Row="0" Margin="0,0,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Text="File:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <TextBox Grid.Column="1" Text="{Binding SelectedPath, UpdateSourceTrigger=PropertyChanged}" MinHeight="28"/>
-            <Button Grid.Column="2" Content="Browse..." Margin="8,0,0,0" MinWidth="90"
-                    Command="{Binding BrowseCommand}"/>
-        </Grid>
+        <Border Grid.Row="0" Margin="0,0,0,12" Background="{StaticResource BackgroundLightBrush}" Padding="14" CornerRadius="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="File:" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="SemiBold"/>
+                <TextBox Grid.Column="1" Text="{Binding SelectedPath, UpdateSourceTrigger=PropertyChanged}" MinHeight="36" Style="{StaticResource ModernTextBoxStyle}"/>
+                <Button Grid.Column="2" Content="Browse..." Margin="12,0,0,0" MinWidth="100" Style="{StaticResource OutlineButtonStyle}"
+                        Command="{Binding BrowseCommand}"/>
+            </Grid>
+        </Border>
 
         <!-- Options -->
         <WrapPanel Grid.Row="1" Margin="0,0,0,8">
@@ -75,7 +77,7 @@
         </WrapPanel>
 
         <!-- Actions + progress -->
-        <Grid Grid.Row="2" Margin="0,0,0,8">
+        <Grid Grid.Row="2" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="Auto"/>
@@ -84,9 +86,9 @@
                 <ColumnDefinition Width="16"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <Button Content="Analizza" MinWidth="110" MinHeight="30"
+            <Button Content="Analizza" MinWidth="120" MinHeight="36" Style="{StaticResource PrimaryButtonStyle}"
                     Command="{Binding AnalyzeCommand}"/>
-            <Button Grid.Column="1" Content="Apply" Margin="8,0,0,0" MinWidth="110" MinHeight="30"
+            <Button Grid.Column="1" Content="Apply" Margin="10,0,0,0" MinWidth="120" MinHeight="36" Style="{StaticResource SecondaryButtonStyle}"
                     Command="{Binding ApplyCommand}"/>
             <ProgressBar Grid.Column="3" Height="16" VerticalAlignment="Center"
                          IsIndeterminate="True">
@@ -105,12 +107,20 @@
         </Grid>
 
         <!-- Summary -->
-        <GroupBox Grid.Row="3" Header="Summary" Margin="0,0,0,8">
-            <TextBox Text="{Binding Summary}" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-        </GroupBox>
+        <Border Grid.Row="3" Margin="0,0,0,12" Background="White" Padding="14" CornerRadius="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <TextBlock Text="Summary" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBox Grid.Row="1" Text="{Binding Summary}" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                         BorderThickness="0" Background="Transparent" Padding="0"/>
+            </Grid>
+        </Border>
 
         <!-- Preview -->
-        <GroupBox Grid.Row="4" Header="Preview">
+        <Border Grid.Row="4" Background="White" Padding="14" CornerRadius="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -126,7 +136,7 @@
                           CanUserDeleteRows="False"
                           GridLinesVisibility="All"/>
             </Grid>
-        </GroupBox>
+        </Border>
 
         <!-- Hint -->
         <StackPanel Grid.Row="5" Margin="0,8,0,0">

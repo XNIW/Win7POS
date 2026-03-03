@@ -5,18 +5,20 @@
         Width="480"
         Height="420"
         WindowStartupLocation="CenterOwner"
-        ResizeMode="NoResize">
-    <Grid Margin="12">
+        ResizeMode="NoResize"
+        Background="{StaticResource BackgroundLightBrush}">
+    <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Scontrini sospesi" FontWeight="SemiBold" FontSize="16" Margin="0,0,0,12"/>
+        <TextBlock Grid.Row="0" Text="Scontrini sospesi" FontWeight="SemiBold" FontSize="18" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,14"/>
 
-        <ListBox Grid.Row="1" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedHold}"
-                 Margin="0,0,0,8">
+        <Border Grid.Row="1" Background="White" CornerRadius="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Margin="0,0,0,14" Padding="4">
+        <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedHold}"
+                 BorderThickness="0" Background="Transparent">
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <Grid>
@@ -32,14 +34,15 @@
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
+        </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Recupera" MinWidth="100" Height="36" Margin="0,0,8,0"
-                    Command="{Binding RecoverCommand}" Background="#5C3D7A" Foreground="White" BorderThickness="0"/>
-            <Button Content="Elimina" MinWidth="80" Height="36" Margin="0,0,8,0"
-                    Command="{Binding DeleteCommand}" Background="#7B5A8E" Foreground="White" BorderThickness="0"/>
-            <Button Content="Chiudi" MinWidth="80" Height="36"
-                    Command="{Binding CloseCommand}"/>
+            <Button Content="Recupera" MinWidth="110" Height="40" Margin="0,0,10,0"
+                    Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RecoverCommand}"/>
+            <Button Content="Elimina" MinWidth="90" Height="40" Margin="0,0,10,0"
+                    Style="{StaticResource SecondaryButtonStyle}" Command="{Binding DeleteCommand}"/>
+            <Button Content="Chiudi" MinWidth="90" Height="40"
+                    Style="{StaticResource OutlineButtonStyle}" Command="{Binding CloseCommand}"/>
         </StackPanel>
     </Grid>
 </Window>

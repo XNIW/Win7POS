@@ -20,7 +20,7 @@
         </Grid.ColumnDefinitions>
 
         <!-- Col 0: Scontrino (receipt preview) -->
-        <Border Grid.Row="0" Grid.Column="0" BorderBrush="#CCC" BorderThickness="1" Margin="0,0,6,0" Padding="8">
+        <Border Grid.Row="0" Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,6,0" Padding="12">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -41,7 +41,7 @@
         </Border>
 
         <!-- Col 1: Fiscale (PDF / SII) -->
-        <Border Grid.Row="0" Grid.Column="1" BorderBrush="#CCC" BorderThickness="1" Margin="0,0,6,0" Padding="8" Background="#F8F8F8">
+        <Border Grid.Row="0" Grid.Column="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,6,0" Padding="12" Background="{StaticResource BackgroundLightBrush}">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -53,10 +53,11 @@
                 <CheckBox Grid.Row="0" Content="Mostra SII nel browser dopo PDF" IsChecked="{Binding ShowSiiWeb}" Margin="0,0,0,6"/>
                 <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,6">
                     <TextBlock Text="Boleta N° (prossimo):" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                    <Button Content="-" MinWidth="32" Padding="4,2" Command="{Binding DecrementBoletaCommand}" VerticalAlignment="Center"/>
-                    <TextBox Text="{Binding NextBoletaNumberText, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="4,0" Padding="4,2"
+                    <Button Content="-" MinWidth="36" MinHeight="32" Style="{StaticResource SmallRoundButtonStyle}" Command="{Binding DecrementBoletaCommand}" VerticalAlignment="Center"/>
+                    <TextBox Text="{Binding NextBoletaNumberText, UpdateSourceTrigger=PropertyChanged}" Width="80" Margin="6,0" Padding="6,4"
+                             Style="{StaticResource ModernTextBoxStyle}"
                              FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center" VerticalContentAlignment="Center"/>
-                    <Button Content="+" MinWidth="32" Padding="4,2" Command="{Binding IncrementBoletaCommand}" VerticalAlignment="Center"/>
+                    <Button Content="+" MinWidth="36" MinHeight="32" Style="{StaticResource SmallRoundButtonStyle}" Command="{Binding IncrementBoletaCommand}" VerticalAlignment="Center"/>
                 </StackPanel>
                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,0,0,6">
                     <StackPanel>
@@ -68,37 +69,37 @@
                 </ScrollViewer>
                 <TextBlock Grid.Row="3" Text="{Binding FiscalStatus, Mode=OneWay}" Foreground="Gray" FontSize="10" Margin="0,0,0,4"/>
                 <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,4,0,0">
-                    <Button Content="Genera PDF" MinWidth="90" Margin="0,0,6,0" Command="{Binding GeneratePdfCommand}"/>
-                    <Button Content="Apri SII" MinWidth="80" Command="{Binding OpenSiiCommand}"/>
+                    <Button Content="Genera PDF" MinWidth="100" MinHeight="36" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" Command="{Binding GeneratePdfCommand}"/>
+                    <Button Content="Apri SII" MinWidth="90" MinHeight="36" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenSiiCommand}"/>
                 </StackPanel>
             </Grid>
         </Border>
 
         <!-- Col 2: Rapidi (quick buttons) -->
-        <Border Grid.Row="0" Grid.Column="2" BorderBrush="#CCC" BorderThickness="1" Margin="0,0,6,0" Padding="8">
+        <Border Grid.Row="0" Grid.Column="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,6,0" Padding="12">
             <StackPanel>
                 <TextBlock Text="Rapidi" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <TextBlock Text="Somma (CLP)" FontSize="11" Foreground="Gray" Margin="0,0,0,4"/>
-                <Button Content="+ 20000" Margin="0,0,0,6" Padding="8,6"
+                <Button Content="+ 20000" Margin="0,0,0,8" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="20000"/>
-                <Button Content="+ 10000" Margin="0,0,0,6" Padding="8,6"
+                <Button Content="+ 10000" Margin="0,0,0,8" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="10000"/>
-                <Button Content="+ 5000" Margin="0,0,0,6" Padding="8,6"
+                <Button Content="+ 5000" Margin="0,0,0,8" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="5000"/>
-                <Button Content="+ 2000" Margin="0,0,0,6" Padding="8,6"
+                <Button Content="+ 2000" Margin="0,0,0,8" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="2000"/>
-                <TextBlock Text="Importo" FontSize="11" Foreground="Gray" Margin="0,12,0,4"/>
-                <Button Content="≈ Totale arrot." Margin="0,0,0,6" Padding="8,6"
+                <TextBlock Text="Importo" FontSize="11" Foreground="Gray" Margin="0,14,0,6"/>
+                <Button Content="≈ Totale arrot." Margin="0,0,0,8" Style="{StaticResource OutlineButtonStyle}" MinHeight="36"
                         Command="{Binding SetRoundedTotalCommand}"/>
-                <Button Content="= Totale esatto" Margin="0,0,0,6" Padding="8,6"
+                <Button Content="= Totale esatto" Margin="0,0,0,8" Style="{StaticResource OutlineButtonStyle}" MinHeight="36"
                         Command="{Binding SetExactTotalCommand}"/>
-                <Button Content="Carta (tutto)" Margin="0,0,0,6" Padding="8,6"
+                <Button Content="Carta (tutto)" Margin="0,0,0,8" Style="{StaticResource OutlineButtonStyle}" MinHeight="36"
                         Command="{Binding PayAllCardCommand}"/>
             </StackPanel>
         </Border>
 
         <!-- Col 3: Totale + Contanti/Carta + Pagato/Resto + Tastierino -->
-        <Border Grid.Row="0" Grid.Column="3" BorderBrush="#CCC" BorderThickness="1" Padding="8">
+        <Border Grid.Row="0" Grid.Column="3" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -117,7 +118,7 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="Contanti:" VerticalAlignment="Center" Width="70"/>
-                    <TextBox x:Name="CashBox" Grid.Column="1" Text="{Binding CashReceived, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBox x:Name="CashBox" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CashReceived, UpdateSourceTrigger=PropertyChanged}"
                              GotFocus="CashBox_GotFocus" LostFocus="CashBox_LostFocus"/>
                 </Grid>
                 <Grid Grid.Row="2" Margin="0,0,0,8">
@@ -126,7 +127,7 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="Carta:" VerticalAlignment="Center" Width="70"/>
-                    <TextBox Grid.Column="1" Text="{Binding CardAmount, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBox Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CardAmount, UpdateSourceTrigger=PropertyChanged}"
                              GotFocus="CardBox_GotFocus" LostFocus="CardBox_LostFocus"/>
                 </Grid>
                 <TextBlock Grid.Row="3" Margin="0,0,0,8">
@@ -135,29 +136,30 @@
                 <TextBlock Grid.Row="4" Margin="0,0,0,8" FontWeight="SemiBold"
                            Text="{Binding RestoOrMissingDisplay, Mode=OneWay}"/>
                 <!-- Keypad -->
-                <UniformGrid Grid.Row="5" Rows="4" Columns="3" Margin="0,8,0,0">
-                    <Button Content="7" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="7"/>
-                    <Button Content="8" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="8"/>
-                    <Button Content="9" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="9"/>
-                    <Button Content="4" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="4"/>
-                    <Button Content="5" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="5"/>
-                    <Button Content="6" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="6"/>
-                    <Button Content="1" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="1"/>
-                    <Button Content="2" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="2"/>
-                    <Button Content="3" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="3"/>
-                    <Button Content="0" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="0"/>
-                    <Button Content="00" Margin="2" Padding="8" Command="{Binding AppendDigitCommand}" CommandParameter="00"/>
-                    <Button Content="⌫" Margin="2" Padding="8" Command="{Binding BackspaceCommand}"/>
+                <UniformGrid Grid.Row="5" Rows="4" Columns="3" Margin="0,10,0,0">
+                    <Button Content="7" Margin="3" Padding="8" Style="{StaticResource OutlineButtonStyle}" Command="{Binding AppendDigitCommand}" CommandParameter="7"/>
+                    <Button Content="8" Margin="3" Padding="8" Style="{StaticResource OutlineButtonStyle}" Command="{Binding AppendDigitCommand}" CommandParameter="8"/>
+                    <Button Content="9" Margin="3" Padding="8" Style="{StaticResource OutlineButtonStyle}" Command="{Binding AppendDigitCommand}" CommandParameter="9"/>
+                    <Button Content="4" Margin="3" Padding="8" Style="{StaticResource OutlineButtonStyle}" Command="{Binding AppendDigitCommand}" CommandParameter="4"/>
+                    <Button Content="5" Margin="3" Padding="8" Style="{StaticResource OutlineButtonStyle}" Command="{Binding AppendDigitCommand}" CommandParameter="5"/>
+                    <Button Content="6" Margin="3" Padding="8" Style="{StaticResource OutlineButtonStyle}" Command="{Binding AppendDigitCommand}" CommandParameter="6"/>
+                    <Button Content="1" Margin="3" Padding="8" Style="{StaticResource OutlineButtonStyle}" Command="{Binding AppendDigitCommand}" CommandParameter="1"/>
+                    <Button Content="2" Margin="3" Padding="8" Style="{StaticResource OutlineButtonStyle}" Command="{Binding AppendDigitCommand}" CommandParameter="2"/>
+                    <Button Content="3" Margin="3" Padding="8" Style="{StaticResource OutlineButtonStyle}" Command="{Binding AppendDigitCommand}" CommandParameter="3"/>
+                    <Button Content="0" Margin="3" Padding="8" Style="{StaticResource OutlineButtonStyle}" Command="{Binding AppendDigitCommand}" CommandParameter="0"/>
+                    <Button Content="00" Margin="3" Padding="8" Style="{StaticResource OutlineButtonStyle}" Command="{Binding AppendDigitCommand}" CommandParameter="00"/>
+                    <Button Content="⌫" Margin="3" Padding="8" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding BackspaceCommand}"/>
                 </UniformGrid>
             </Grid>
         </Border>
 
-        <!-- Bottom: Sospendi + Annulla + Conferma pagamento -->
-        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="Sospendi" MinWidth="100" Height="38" Margin="0,0,8,0"
-                    Command="{Binding SuspendCommand}" Background="#E8A54B" Foreground="White" BorderThickness="0"/>
-            <Button Content="Annulla" MinWidth="120" Height="38" Margin="0,0,8,0" Command="{Binding CancelCommand}"/>
-            <Button Content="Conferma pagamento" MinWidth="160" Height="38"
+                <!-- Bottom: Sospendi + Annulla + Conferma pagamento -->
+        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Sospendi" MinWidth="110" Height="40" Margin="0,0,10,0"
+                    Style="{StaticResource AccentButtonStyle}" Command="{Binding SuspendCommand}"/>
+            <Button Content="Annulla" MinWidth="120" Height="40" Margin="0,0,10,0" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CancelCommand}"/>
+            <Button Content="Conferma pagamento" MinWidth="180" Height="42"
+                    Style="{StaticResource PrimaryButtonStyle}"
                     Command="{Binding ConfirmCommand}"
                     IsEnabled="{Binding IsValid}"/>
         </StackPanel>

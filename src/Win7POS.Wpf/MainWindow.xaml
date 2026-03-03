@@ -14,20 +14,21 @@
         </Grid.RowDefinitions>
 
         <!-- Header con hamburger -->
-        <Border Grid.Row="0" Background="#5C3D7A" Padding="10,8">
+        <Border Grid.Row="0" Background="{StaticResource PrimaryBrush}" Padding="14,10">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <Button x:Name="HamburgerButton" Grid.Column="0" Width="36" Height="36" Margin="0,0,12,0"
+                <Button x:Name="HamburgerButton" Grid.Column="0" Width="40" Height="40" Margin="0,0,16,0"
+                        Style="{StaticResource HamburgerButtonStyle}"
                         Click="OnHamburgerClick"
                         ToolTip="Menu">
                     <Button.Content>
-                        <Path Stroke="White" StrokeThickness="2" Data="M 4,6 L 28,6 M 4,12 L 28,12 M 4,18 L 28,18"/>
+                        <Path Stroke="White" StrokeThickness="2" Data="M 6,8 L 26,8 M 6,14 L 26,14 M 6,20 L 26,20"/>
                     </Button.Content>
                 </Button>
-                <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="White" FontSize="16" FontWeight="SemiBold" Text="Win7POS"/>
+                <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="White" FontSize="18" FontWeight="SemiBold" Text="Win7POS"/>
             </Grid>
         </Border>
 
@@ -58,48 +59,53 @@
 
         <!-- Overlay menu laterale -->
         <Grid x:Name="SideMenuOverlay" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed" Background="#80000000" MouseLeftButtonDown="OnOverlayClick">
-            <Border x:Name="SideMenuPanel" Width="280" HorizontalAlignment="Left" Background="White" BorderBrush="#CCC" BorderThickness="0,0,1,0" MouseLeftButtonDown="OnPanelClick">
+            <Border x:Name="SideMenuPanel" Width="280" HorizontalAlignment="Left" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0" CornerRadius="0,0,8,0" MouseLeftButtonDown="OnPanelClick">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="12,24,12,12">
-                        <TextBlock Text="Menu" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,16"/>
+                    <StackPanel Margin="16,24,16,20">
+                        <TextBlock Text="Menu" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,20"/>
 
-                        <TextBlock Text="Navigazione" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
-                        <Button Content="POS" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuPosClick"/>
-                        <Button Content="Import" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuImportClick"/>
-                        <Button Content="Prodotti" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuProdottiClick"/>
+                        <TextBlock Text="Navigazione" Foreground="#6B5B73" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Button Content="POS" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuPosClick"/>
+                        <Button Content="Import" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuImportClick"/>
+                        <Button Content="Prodotti" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuProdottiClick"/>
 
-                        <Separator Margin="0,12,0,12"/>
-                        <TextBlock Text="Gestione" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
-                        <Button Content="Registro vendite" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuSalesRegisterClick"/>
-                        <Button Content="Incasso giornaliero" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuDailyReportClick"/>
+                        <Separator Margin="0,16,0,16" Background="{StaticResource BorderBrush}"/>
+                        <TextBlock Text="Gestione" Foreground="#6B5B73" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Button Content="Registro vendite" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuSalesRegisterClick"/>
+                        <Button Content="Incasso giornaliero" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuDailyReportClick"/>
 
-                        <Separator Margin="0,12,0,12"/>
-                        <TextBlock Text="Impostazioni" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
-                        <Button Content="Impostazioni negozio" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuShopSettingsClick"/>
-                        <Button Content="Impostazioni stampante" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuPrinterClick"/>
+                        <Separator Margin="0,16,0,16" Background="{StaticResource BorderBrush}"/>
+                        <TextBlock Text="Impostazioni" Foreground="#6B5B73" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Button Content="Impostazioni negozio" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuShopSettingsClick"/>
+                        <Button Content="Impostazioni stampante" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuPrinterClick"/>
 
-                        <Separator Margin="0,12,0,12"/>
-                        <TextBlock Text="Stampa &amp; Backup" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
-                        <Button Content="Stampa ultima" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuPrintLastClick"/>
-                        <Button Content="Backup DB" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuBackupClick"/>
+                        <Separator Margin="0,16,0,16" Background="{StaticResource BorderBrush}"/>
+                        <TextBlock Text="Stampa &amp; Backup" Foreground="#6B5B73" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Button Content="Stampa ultima" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuPrintLastClick"/>
+                        <Button Content="Backup DB" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuBackupClick"/>
 
-                        <Separator Margin="0,12,0,12"/>
-                        <TextBlock Text="Supporto" Foreground="DimGray" FontSize="12" Margin="0,0,0,8"/>
-                        <Button Content="About / Support" HorizontalContentAlignment="Left" Padding="12,10" Margin="0,0,0,4" Click="OnMenuAboutClick"/>
+                        <Separator Margin="0,16,0,16" Background="{StaticResource BorderBrush}"/>
+                        <TextBlock Text="Supporto" Foreground="#6B5B73" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Button Content="About / Support" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuAboutClick"/>
                     </StackPanel>
                 </ScrollViewer>
             </Border>
         </Grid>
 
-        <StatusBar Grid.Row="2">
-            <TextBlock Text="DB: "/>
-            <TextBlock Text="{x:Static core:AppPaths.DbPath}"/>
-            <Separator/>
-            <CheckBox x:Name="CashierModeCheckBox"
-                      Content="Modalita cassa"
-                      Margin="8,0,0,0"
-                      Checked="OnCashierModeChecked"
-                      Unchecked="OnCashierModeUnchecked"/>
-        </StatusBar>
+        <Border Grid.Row="2" Background="{StaticResource BackgroundLightBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,8">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="DB: " VerticalAlignment="Center"/>
+                    <TextBlock Text="{x:Static core:AppPaths.DbPath}" VerticalAlignment="Center" Foreground="#555"/>
+                    <Border Width="1" Margin="12,0" Background="{StaticResource BorderBrush}" VerticalAlignment="Stretch"/>
+                    <CheckBox x:Name="CashierModeCheckBox"
+                              Content="Modalita cassa"
+                              Margin="8,0,0,0"
+                              VerticalAlignment="Center"
+                              Checked="OnCashierModeChecked"
+                              Unchecked="OnCashierModeUnchecked"/>
+                </StackPanel>
+            </Grid>
+        </Border>
     </Grid>
 </Window>

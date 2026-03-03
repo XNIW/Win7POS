@@ -5,32 +5,35 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              d:DesignHeight="720" d:DesignWidth="1100">
-    <Grid Margin="12">
+    <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
+        <Border Grid.Row="0" Margin="0,0,0,12" Background="{StaticResource BackgroundLightBrush}" Padding="14" CornerRadius="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-            <TextBox Grid.Column="0" MinHeight="30" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}">
-                <TextBox.InputBindings>
-                    <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
-                </TextBox.InputBindings>
-            </TextBox>
-            <Button Grid.Column="1" Margin="8,0,0,0" MinWidth="90" Content="Cerca" Command="{Binding SearchCommand}"/>
-            <Button Grid.Column="2" Margin="8,0,0,0" MinWidth="120" Content="Salva selezionato" Command="{Binding SaveSelectedCommand}"/>
-            <Button Grid.Column="3" Margin="8,0,0,0" MinWidth="110" Content="Export CSV" Command="{Binding ExportCsvCommand}"/>
-        </Grid>
+                <TextBox Grid.Column="0" MinHeight="36" Style="{StaticResource ModernTextBoxStyle}" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}">
+                    <TextBox.InputBindings>
+                        <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
+                    </TextBox.InputBindings>
+                </TextBox>
+                <Button Grid.Column="1" Margin="10,0,0,0" MinWidth="100" MinHeight="36" Content="Cerca" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SearchCommand}"/>
+                <Button Grid.Column="2" Margin="10,0,0,0" MinWidth="130" MinHeight="36" Content="Salva selezionato" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding SaveSelectedCommand}"/>
+                <Button Grid.Column="3" Margin="10,0,0,0" MinWidth="120" MinHeight="36" Content="Export CSV" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ExportCsvCommand}"/>
+            </Grid>
+        </Border>
 
-        <DataGrid Grid.Row="1"
+        <Border Grid.Row="1" Background="White" CornerRadius="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="0">
+        <DataGrid
                   ItemsSource="{Binding Items}"
                   SelectedItem="{Binding SelectedProduct}"
                   AutoGenerateColumns="False"
@@ -48,7 +51,8 @@
                 <DataGridTextColumn Header="Categoria" Binding="{Binding CategoryName}" IsReadOnly="True" Width="1*"/>
             </DataGrid.Columns>
         </DataGrid>
+        </Border>
 
-        <TextBlock Grid.Row="2" Margin="0,8,0,0" Foreground="DimGray" Text="{Binding StatusMessage}"/>
+        <TextBlock Grid.Row="2" Margin="0,12,0,0" Foreground="#6B5B73" Text="{Binding StatusMessage}"/>
     </Grid>
 </UserControl>

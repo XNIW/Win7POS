@@ -6,26 +6,31 @@
         Height="480"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
-        Background="#F5F0F8">
+        Background="{StaticResource BackgroundLightBrush}">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <ControlTemplate x:Key="RoundedToggleTemplate" TargetType="ToggleButton">
+            <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter TargetName="border" Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
         <Style x:Key="DiscountToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Template" Value="{StaticResource RoundedToggleTemplate}"/>
             <Setter Property="Background" Value="White"/>
             <Setter Property="Foreground" Value="Gray"/>
-            <Setter Property="BorderBrush" Value="#CCC"/>
-            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
             <Style.Triggers>
                 <Trigger Property="IsChecked" Value="True">
-                    <Setter Property="Background" Value="#5C3D7A"/>
                     <Setter Property="Foreground" Value="White"/>
                 </Trigger>
             </Style.Triggers>
         </Style>
-        <Style x:Key="KeypadBtn" TargetType="Button">
-            <Setter Property="Background" Value="#5C3D7A"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
-        </Style>
+        <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}"/>
     </Window.Resources>
     <Grid Margin="16">
         <Grid.RowDefinitions>
@@ -48,10 +53,10 @@
                          Style="{StaticResource DiscountToggleStyle}"/>
         </StackPanel>
 
-        <TextBox x:Name="ValueBox" Grid.Row="2" Height="48" FontSize="24" Margin="0,0,0,12"
+        <TextBox x:Name="ValueBox" Grid.Row="2" Height="52" FontSize="24" Margin="0,0,0,12"
+                 Style="{StaticResource ModernTextBoxStyle}"
                  Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
-                 IsReadOnly="True" HorizontalContentAlignment="Right" VerticalContentAlignment="Center"
-                 Background="White" BorderBrush="#CCC" BorderThickness="1"/>
+                 IsReadOnly="True" HorizontalContentAlignment="Right" VerticalContentAlignment="Center"/>
 
         <Grid Grid.Row="3" Margin="0,0,0,16">
             <Grid.RowDefinitions>
@@ -96,11 +101,10 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <Button Grid.Column="0" Content="Sconto intero carrello" MinHeight="40" Margin="0,0,8,0"
-                    Command="{Binding ApplyCartCommand}"
-                    Background="#E8A54B" Foreground="White" BorderThickness="0">
+            <Button Grid.Column="0" Content="Sconto intero carrello" MinHeight="42" Margin="0,0,10,0"
+                    Command="{Binding ApplyCartCommand}">
                 <Button.Style>
-                    <Style TargetType="Button">
+                    <Style TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
                         <Setter Property="Visibility" Value="Collapsed"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsPercentMode}" Value="True">
@@ -111,12 +115,12 @@
                 </Button.Style>
             </Button>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Annulla" MinWidth="100" Height="40" Margin="0,0,8,0"
-                        Command="{Binding CancelCommand}"
-                        Background="White" Foreground="Gray" BorderBrush="#CCC" BorderThickness="1"/>
-                <Button Content="Conferma" MinWidth="100" Height="40"
-                        Command="{Binding ConfirmCommand}"
-                        Background="#5C3D7A" Foreground="White" BorderThickness="0"/>
+                <Button Content="Annulla" MinWidth="110" Height="42" Margin="0,0,10,0"
+                        Style="{StaticResource OutlineButtonStyle}"
+                        Command="{Binding CancelCommand}"/>
+                <Button Content="Conferma" MinWidth="110" Height="42"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Command="{Binding ConfirmCommand}"/>
             </StackPanel>
         </Grid>
     </Grid>
