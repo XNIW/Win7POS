@@ -295,7 +295,7 @@ namespace Win7POS.Wpf.Pos
             PaymentDialog dlg;
             try
             {
-                dlg = new PaymentDialog(Total, draft, (text, code) => fiscalPdf.GenerateFiscalHtmlAsync(text, code)) { Owner = Application.Current?.MainWindow };
+                dlg = new PaymentDialog(Total, draft, (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code)) { Owner = Application.Current?.MainWindow };
             }
             catch (Exception ex)
             {
@@ -361,6 +361,7 @@ namespace Win7POS.Wpf.Pos
                             MessageBoxImage.Warning);
                     }
                 }
+                await _service.SetFiscalBoletaNumberAsync(dlg.ViewModel.NextBoletaNumber).ConfigureAwait(true);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }
             catch (PosException ex)

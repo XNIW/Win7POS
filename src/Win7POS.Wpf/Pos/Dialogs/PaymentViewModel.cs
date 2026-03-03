@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -174,28 +175,47 @@ namespace Win7POS.Wpf.Pos.Dialogs
             RaiseCanExecuteChanged();
         }
 
+        private static readonly CultureInfo EsCl = CultureInfo.GetCultureInfo("es-CL");
+
+        private static string Fmt(long v) => v.ToString("#,0", EsCl);
+
         private void UpdateFiscalPreviewText()
         {
-            var shop = _draft?.ShopInfo;
-            var name = shop?.Name ?? "Negozio";
-            var rut = shop?.Rut ?? "";
-            var addr = shop?.Address ?? "";
-            var paidCash = CashAmountMinor >= 0 ? CashAmountMinor : 0;
-            var paidCard = CardAmountMinor >= 0 ? CardAmountMinor : 0;
+            var shop = _draft?.ShopInfo ?? new ReceiptShopInfo();
+            var currentDate = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            long venta = _totalDueMinor;
+            long iva = (long)Math.Round(venta * 15.9657 / 100.0, MidpointRounding.AwayFromZero);
+            var formattedAmount = Fmt(venta);
+            var formattedIVA = Fmt(iva);
+            var formattedNum = Fmt(NextBoletaNumber);
+
             var lines = new List<string>
             {
-                name,
-                !string.IsNullOrWhiteSpace(rut) ? "RUT: " + rut.Trim() : "",
-                !string.IsNullOrWhiteSpace(addr) ? addr : "",
-                "---",
-                "Boleta N°: " + NextBoletaNumber,
-                "Vendita: " + SaleCode,
-                "Totale: " + MoneyClp.Format(_totalDueMinor),
-                "Contanti: " + MoneyClp.Format(paidCash),
-                "Carta: " + MoneyClp.Format(paidCard),
-                "Resto: " + (IsValid ? MoneyClp.Format(ChangeDueMinor) : "-")
+                "",
+                shop.Name ?? "",
+                shop.Rut ?? "",
+                "Giro: VENTA PRENDAS DE",
+                "VESTIR,CALZADO,FERRETERIA,MENAJE,AR",
+                "T.EN GENERAL",
+                shop.Address ?? "",
+                shop.City ?? "",
+                $"BOLETA ELECTRÓNICA NUMERO: {formattedNum}",
+                "REF. VENDEDOR: 24231788-2",
+                $"Fecha: {currentDate}",
+                "",
+                "Dirección: Santiago",
+                "",
+                "Venta",
+                $"                           $ {formattedAmount}",
+                "",
+                "El IVA incluido en esta boleta es",
+                $"de: $ {formattedIVA}",
+                "",
+                "Timbre Electrónico SII",
+                "Res. 99 de 2014",
+                "Verifique documento en sii.cl"
             };
-            FiscalPreviewText = string.Join(Environment.NewLine, lines.Where(s => s != ""));
+            FiscalPreviewText = string.Join(Environment.NewLine, lines);
         }
 
         private async Task GeneratePdfAsync()

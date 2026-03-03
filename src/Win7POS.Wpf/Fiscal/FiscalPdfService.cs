@@ -1,31 +1,87 @@
 using System;
+using System.Globalization;
 using System.IO;
-using System.Text;
+using System.Linq;
 using System.Threading.Tasks;
+using PdfSharp.Drawing;
+using PdfSharp.Pdf;
 using Win7POS.Core;
 
 namespace Win7POS.Wpf.Fiscal
 {
     public sealed class FiscalPdfService
     {
-        public async Task<string> GenerateFiscalHtmlAsync(string fiscalText, string saleCode)
+        private const double PageW = 226.77;
+        private const double PageH = 479.28;
+
+        public Task<string> GenerateFiscalPdfAsync(string fiscalText, string saleCode)
         {
             var dir = AppPaths.ExportsDirectory;
             Directory.CreateDirectory(dir);
             var safeCode = string.IsNullOrWhiteSpace(saleCode) ? "sale" : saleCode.Replace("/", "-").Replace("\\", "-");
-            var fileName = $"Boleta_{safeCode}_{DateTime.Now:yyyyMMdd_HHmmss}.html";
+            var fileName = $"Boleta_{safeCode}_{DateTime.Now:yyyyMMdd_HHmmss}.pdf";
             var path = Path.Combine(dir, fileName);
 
-            var html = new StringBuilder();
-            html.Append("<!DOCTYPE html><html><head><meta charset=\"utf-8\"/>");
-            html.Append("<title>Boleta ").Append(System.Net.WebUtility.HtmlEncode(saleCode ?? "")).Append("</title>");
-            html.Append("<style>body{font-family:Consolas,'Courier New',monospace;font-size:12px;margin:24px;white-space:pre-wrap;}</style>");
-            html.Append("</head><body>");
-            html.Append(System.Net.WebUtility.HtmlEncode(fiscalText ?? ""));
-            html.Append("</body></html>");
+            var doc = new PdfDocument();
+            var page = doc.AddPage();
+            page.Width = PageW;
+            page.Height = PageH;
 
-            File.WriteAllText(path, html.ToString(), Encoding.UTF8);
-            return await Task.FromResult(path).ConfigureAwait(false);
+            var gfx = XGraphics.FromPdfPage(page);
+            var font = new XFont("Courier New", 10, XFontStyle.Regular);
+
+            double marginLeft = 12;
+            double y = 18;
+            double lineSpacing = 14;
+
+            var lines = (fiscalText ?? "")
+                .Replace("\r\n", "\n").Replace("\r", "\n")
+                .Split('\n');
+
+            var footerIdx = Array.FindIndex(lines, s => (s ?? "").Trim().Equals("Timbre Electrónico SII", StringComparison.OrdinalIgnoreCase));
+            if (footerIdx < 0) footerIdx = lines.Length;
+
+            for (int i = 0; i < footerIdx; i++)
+            {
+                gfx.DrawString(lines[i] ?? "", font, XBrushes.Black, new XPoint(marginLeft, y));
+                y += lineSpacing;
+            }
+
+            TryDrawSiiImage(gfx, page, ref y);
+
+            for (int i = footerIdx; i < lines.Length; i++)
+            {
+                gfx.DrawString(lines[i] ?? "", font, XBrushes.Black, new XPoint(marginLeft, y));
+                y += lineSpacing;
+            }
+
+            doc.Save(path);
+            doc.Close();
+            return Task.FromResult(path);
+        }
+
+        private static void TryDrawSiiImage(XGraphics gfx, PdfPage page, ref double y)
+        {
+            try
+            {
+                var imgPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "sii_qrcode.png");
+                if (!File.Exists(imgPath)) return;
+
+                using (var img = XImage.FromFile(imgPath))
+                {
+                    double maxW = page.Width - 40;
+                    double scale = Math.Min(1.0, maxW / img.PixelWidth);
+                    double w = img.PixelWidth * scale;
+                    double h = img.PixelHeight * scale;
+                    double x = (page.Width - w) / 2.0;
+                    y += 8;
+                    gfx.DrawImage(img, x, y, w, h);
+                    y += h + 10;
+                }
+            }
+            catch
+            {
+            }
         }
     }
 }

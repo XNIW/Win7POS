@@ -8,6 +8,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             InitializeComponent();
             DataContext = vm;
+            vm.RequestClose += ok =>
+            {
+                if (!Dispatcher.CheckAccess())
+                {
+                    Dispatcher.Invoke(() => CloseWithResult(ok));
+                    return;
+                }
+                CloseWithResult(ok);
+            };
+        }
+
+        private void CloseWithResult(bool ok)
+        {
+            try { DialogResult = ok; }
+            catch { Close(); }
         }
     }
 }

@@ -1,7 +1,9 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -22,6 +24,20 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             Keyboard.Focus(CashBox);
             CashBox.SelectAll();
+            LoadSiiQrCode();
+        }
+
+        private void LoadSiiQrCode()
+        {
+            try
+            {
+                var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "sii_qrcode.png");
+                if (File.Exists(path) && SiiQrImage != null)
+                {
+                    SiiQrImage.Source = new BitmapImage(new Uri(path, UriKind.Absolute));
+                }
+            }
+            catch { }
         }
 
         private void CashBox_GotFocus(object sender, RoutedEventArgs e)

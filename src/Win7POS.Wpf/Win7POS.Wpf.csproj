@@ -9,7 +9,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="PDFsharp-gdi" Version="1.50.5147" />
     <ProjectReference Include="..\Win7POS.Core\Win7POS.Core.csproj" />
     <ProjectReference Include="..\Win7POS.Data\Win7POS.Data.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\sii_qrcode.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>

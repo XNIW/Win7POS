@@ -359,8 +359,8 @@ namespace Win7POS.Wpf.Pos
                 _logger.LogInfo("POS pay start");
                 var completed = await _session.PayCashAsync().ConfigureAwait(false);
                 _lastCompletedSale = completed;
-
-                var preview = BuildReceiptPreview(completed, true);
+                var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
+                var preview = BuildReceiptPreview(completed, true, shop);
                 var snapshot = BuildSnapshot("Pagamento completato.");
                 _logger.LogInfo("POS pay done: " + completed.Sale.Code);
                 return new PosPayResult
@@ -426,6 +426,7 @@ namespace Win7POS.Wpf.Pos
                 _lastCompletedSale = completed;
                 _session.Clear();
                 var snapshot = BuildSnapshot("Vendita completata.");
+                var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
 
                 return new PosSaleResult
                 {
@@ -433,8 +434,8 @@ namespace Win7POS.Wpf.Pos
                     SaleCode = sale.Code,
                     TotalMinor = sale.Total,
                     CreatedAtMs = sale.CreatedAt,
-                    Receipt42 = BuildReceiptPreview(completed, true),
-                    Receipt32 = BuildReceiptPreview(completed, false),
+                    Receipt42 = BuildReceiptPreview(completed, true, shop),
+                    Receipt32 = BuildReceiptPreview(completed, false, shop),
                     Snapshot = snapshot
                 };
             }
@@ -624,8 +625,9 @@ namespace Win7POS.Wpf.Pos
                 }
 
                 var completed = new SaleCompleted(refundSale, refundLines);
-                var receipt42 = BuildRefundReceiptPreview(completed, true);
-                var receipt32 = BuildRefundReceiptPreview(completed, false);
+                var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
+                var receipt42 = BuildRefundReceiptPreview(completed, true, shop);
+                var receipt32 = BuildRefundReceiptPreview(completed, false, shop);
 
                 if (autoPrint)
                 {

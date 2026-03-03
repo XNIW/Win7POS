@@ -106,24 +106,10 @@ namespace Win7POS.Wpf
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
-        private void OnMenuRefundClick(object sender, RoutedEventArgs e)
-        {
-            MainTabControl.SelectedIndex = 0;
-            GetPosViewModel()?.OpenSalesRegisterCommand?.Execute(null);
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
-        }
-
         private void OnMenuPrintLastClick(object sender, RoutedEventArgs e)
         {
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.PrintLastReceiptCommand?.Execute(null);
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
-        }
-
-        private void OnMenuReceiptPreviewClick(object sender, RoutedEventArgs e)
-        {
-            MainTabControl.SelectedIndex = 0;
-            GetPosViewModel()?.ReceiptPreviewCommand?.Execute(null);
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 

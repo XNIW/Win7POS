@@ -41,6 +41,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool IsBusy { get => _isBusy; set { _isBusy = value; OnPropertyChanged(); } }
 
         public ICommand SaveCommand { get; }
+        public event Action<bool> RequestClose;
         public event PropertyChangedEventHandler PropertyChanged;
 
         private async Task LoadAsync()
@@ -85,6 +86,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var boleta = int.TryParse(FiscalBoletaNumberText?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : 0;
                 await _service.SetFiscalBoletaNumberAsync(boleta).ConfigureAwait(true);
                 Status = "Salvato.";
+                RequestClose?.Invoke(true);
             }
             catch (Exception ex)
             {
