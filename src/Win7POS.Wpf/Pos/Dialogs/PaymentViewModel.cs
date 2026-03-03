@@ -41,6 +41,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
+            SuspendCommand = new RelayCommand(_ => { WasSuspended = true; RequestClose?.Invoke(false); }, _ => true);
             AppendDigitCommand = new RelayCommand(AppendDigit, _ => true);
             BackspaceCommand = new RelayCommand(_ => Backspace(), _ => true);
             ClearFieldCommand = new RelayCommand(_ => ClearActiveField(), _ => true);
@@ -157,8 +158,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
+        public bool WasSuspended { get; private set; }
+
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }
+        public ICommand SuspendCommand { get; }
         public ICommand AppendDigitCommand { get; }
         public ICommand BackspaceCommand { get; }
         public ICommand ClearFieldCommand { get; }

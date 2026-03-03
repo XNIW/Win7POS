@@ -7,12 +7,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         public AddProductViewModel ViewModel { get; }
 
-        public AddProductDialog(string barcode, PosWorkflowService service = null)
+        public AddProductDialog(string barcode, PosWorkflowService service = null, bool focusRetailPrice = false)
         {
             InitializeComponent();
             ViewModel = new AddProductViewModel(barcode);
             ViewModel.RequestClose += ok => DialogResult = ok;
             DataContext = ViewModel;
+            _focusRetailPrice = focusRetailPrice;
 
             Loaded += async (_, __) =>
             {
@@ -36,9 +37,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     ViewModel.SetSuppliers(System.Array.Empty<Win7POS.Data.Repositories.SupplierListItem>());
                     ViewModel.SetCategories(System.Array.Empty<Win7POS.Data.Repositories.CategoryListItem>());
                 }
-                Keyboard.Focus(NameBox);
-                NameBox.SelectAll();
+
+                if (_focusRetailPrice)
+                {
+                    Keyboard.Focus(RetailPriceBox);
+                    RetailPriceBox.SelectAll();
+                }
+                else
+                {
+                    Keyboard.Focus(NameBox);
+                    NameBox.SelectAll();
+                }
             };
+        }
+
+        private readonly bool _focusRetailPrice;
+
+        private void RetailPriceBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter && ViewModel.IsValid)
+            {
+                ViewModel.ConfirmCommand.Execute(null);
+                e.Handled = true;
+            }
         }
     }
 }

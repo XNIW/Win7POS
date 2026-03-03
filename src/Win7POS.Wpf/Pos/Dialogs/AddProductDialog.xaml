@@ -29,7 +29,9 @@
         <TextBox x:Name="NameBox" Grid.Row="1" Grid.Column="1" Margin="8,8,0,0" Text="{Binding ProductName, UpdateSourceTrigger=PropertyChanged}"/>
 
         <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Prezzo vendita:"/>
-        <TextBox Grid.Row="2" Grid.Column="1" Margin="8,8,0,0" Text="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox x:Name="RetailPriceBox" Grid.Row="2" Grid.Column="1" Margin="8,8,0,0"
+                 Text="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}"
+                 KeyDown="RetailPriceBox_KeyDown"/>
 
         <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Prezzo acquisto:"/>
         <TextBox Grid.Row="3" Grid.Column="1" Margin="8,8,0,0" Text="{Binding PurchasePriceText, UpdateSourceTrigger=PropertyChanged}"/>

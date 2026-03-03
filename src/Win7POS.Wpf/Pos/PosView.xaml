@@ -77,11 +77,33 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
                                 <Button Width="32" Height="32" Content="−" FontSize="14" Padding="0"
                                         Command="{Binding DataContext.DecreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}"/>
+                                        CommandParameter="{Binding}">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
                                 <TextBlock Text="{Binding Quantity}" VerticalAlignment="Center" Margin="8,0" MinWidth="24" TextAlignment="Center"/>
                                 <Button Width="32" Height="32" Content="+" FontSize="14" Padding="0"
                                         Command="{Binding DataContext.IncreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}"/>
+                                        CommandParameter="{Binding}">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
                             </StackPanel>
                             <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
                             <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
@@ -102,37 +124,40 @@
                 <TextBox x:Name="BarcodeBox"
                          MinHeight="36"
                          Margin="0,0,0,12"
-                         Text="{Binding BarcodeInput, UpdateSourceTrigger=PropertyChanged}">
-                    <TextBox.InputBindings>
-                        <KeyBinding Key="Enter" Command="{Binding AddBarcodeCommand}"/>
-                    </TextBox.InputBindings>
-                </TextBox>
+                         Text="{Binding BarcodeInput, UpdateSourceTrigger=PropertyChanged}"
+                         KeyDown="BarcodeBox_KeyDown"/>
                 <Button MinWidth="100" Margin="0,0,0,8" Content="Add" Command="{Binding AddBarcodeCommand}"/>
-                <Button MinWidth="100" Margin="0,0,0,8" Content="Sconto" IsEnabled="False" Opacity="0.7" ToolTip="Placeholder"/>
+                <Button MinWidth="100" Margin="0,0,0,8" Content="Sconto" Command="{Binding OpenDiscountCommand}"/>
                 <Button MinWidth="100" Content="Registro vendite" Command="{Binding OpenSalesRegisterCommand}"/>
             </StackPanel>
         </Border>
 
-        <!-- Basso: Svuota + Articoli: N + Totale grande + Paga -->
+        <!-- Basso: Sospendi + Recupera + Svuota + Articoli: N + Totale grande + Paga -->
         <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Background="#5C3D7A" Padding="12,10">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" Content="Svuota" Command="{Binding ClearCartCommand}"
+                <Button Grid.Column="0" Content="Sospendi" Command="{Binding SuspendCartCommand}"
                         MinWidth="80" Height="40" Foreground="White" Background="#7B5A8E" BorderThickness="0"/>
-                <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="White" Margin="16,0,0,0"
+                <Button Grid.Column="1" Content="Recupera" Command="{Binding RecoverCartCommand}"
+                        MinWidth="80" Height="40" Foreground="White" Background="#7B5A8E" BorderThickness="0" Margin="8,0,0,0"/>
+                <Button Grid.Column="2" Content="Svuota" Command="{Binding ClearCartCommand}"
+                        MinWidth="80" Height="40" Foreground="White" Background="#7B5A8E" BorderThickness="0" Margin="8,0,0,0"/>
+                <TextBlock Grid.Column="3" VerticalAlignment="Center" Foreground="White" Margin="16,0,0,0"
                            Text="{Binding ItemsCount, StringFormat=Articoli: {0}}"/>
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,16,0">
+                <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,16,0">
                     <TextBlock VerticalAlignment="Center" Foreground="White" FontSize="14" Margin="0,0,8,0" Text="Totale spesa"/>
                     <TextBlock VerticalAlignment="Center" Foreground="White" FontSize="22" FontWeight="Bold"
                                Text="{Binding TotalDisplay}"/>
                 </StackPanel>
-                <Button Grid.Column="3" Grid.ColumnSpan="2" MinWidth="160" Height="44" FontSize="15" FontWeight="SemiBold"
+                <Button Grid.Column="5" Grid.ColumnSpan="2" MinWidth="160" Height="44" FontSize="15" FontWeight="SemiBold"
                         Content="Paga" Command="{Binding PayCommand}"
                         Background="#9B7BAD" Foreground="White" BorderThickness="0"/>
             </Grid>

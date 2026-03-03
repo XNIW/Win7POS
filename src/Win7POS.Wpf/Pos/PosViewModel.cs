@@ -126,6 +126,9 @@ namespace Win7POS.Wpf.Pos
         public ICommand RemoveLineForLineCommand { get; }
         public ICommand OpenSalesRegisterCommand { get; }
         public ICommand OpenShopSettingsCommand { get; }
+        public ICommand OpenDiscountCommand { get; }
+        public ICommand SuspendCartCommand { get; }
+        public ICommand RecoverCartCommand { get; }
 
         public PosViewModel()
         {
@@ -151,6 +154,9 @@ namespace Win7POS.Wpf.Pos
             RemoveLineForLineCommand = new AsyncRelayCommandParam(RemoveLineForLineAsync, _ => !IsBusy);
             OpenSalesRegisterCommand = new AsyncRelayCommand(OpenSalesRegisterAsync, _ => !IsBusy);
             OpenShopSettingsCommand = new AsyncRelayCommand(OpenShopSettingsAsync, _ => !IsBusy);
+            OpenDiscountCommand = new RelayCommand(_ => OpenDiscount(), _ => !IsBusy && (SelectedCartItem != null || CartItems.Count > 0));
+            SuspendCartCommand = new AsyncRelayCommand(SuspendCartAsync, _ => !IsBusy && CartItems.Count > 0);
+            RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy);
             StatusMessage = "POS pronto.";
             _ = InitializeAsync();
         }
@@ -240,43 +246,34 @@ namespace Win7POS.Wpf.Pos
             }
             catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
             {
-                StatusMessage = "Prodotto non trovato: " + input;
-                var askCreate = MessageBox.Show(
-                    "Prodotto non trovato: " + input + "\nVuoi creare prodotto?",
-                    "Prodotto non trovato",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
-                if (askCreate == MessageBoxResult.Yes)
+                StatusMessage = "Prodotto non trovato: " + input + " (creazione rapida)";
+
+                var dlg = new AddProductDialog(input, _service, focusRetailPrice: true)
                 {
-                    var dlg = new AddProductDialog(input, _service)
+                    Owner = Application.Current?.MainWindow
+                };
+
+                if (dlg.ShowDialog() == true)
+                {
+                    try
                     {
-                        Owner = Application.Current?.MainWindow
-                    };
-                    if (dlg.ShowDialog() == true)
+                        var vm = dlg.ViewModel;
+                        await _service.CreateProductFullAsync(
+                            vm.Barcode,
+                            vm.ProductName,
+                            vm.PriceMinor,
+                            vm.PurchasePriceMinor,
+                            vm.SelectedSupplier?.Id == 0 ? null : vm.SelectedSupplier?.Name,
+                            vm.SelectedCategory?.Id == 0 ? null : vm.SelectedCategory?.Name,
+                            vm.StockQty).ConfigureAwait(true);
+                        var snapshot = await _service.AddByBarcodeAsync(vm.Barcode).ConfigureAwait(true);
+                        ApplySnapshot(snapshot);
+                        StatusMessage = "Prodotto creato e aggiunto: " + vm.Barcode;
+                    }
+                    catch (Exception createEx)
                     {
-                        try
-                        {
-                            var vm = dlg.ViewModel;
-                            var barcode = vm.Barcode;
-                            var sid = vm.SelectedSupplier?.Id ?? 0;
-                            var cid = vm.SelectedCategory?.Id ?? 0;
-                            await _service.CreateProductFullAsync(
-                                barcode, vm.ProductName, vm.PriceMinor,
-                                vm.PurchasePriceMinor,
-                                sid == 0 ? null : (int?)sid,
-                                sid == 0 ? null : vm.SelectedSupplier?.Name,
-                                cid == 0 ? null : (int?)cid,
-                                cid == 0 ? null : vm.SelectedCategory?.Name,
-                                vm.StockQty).ConfigureAwait(true);
-                            var snapshot = await _service.AddByBarcodeAsync(barcode).ConfigureAwait(true);
-                            ApplySnapshot(snapshot);
-                            StatusMessage = "Prodotto creato e aggiunto: " + barcode;
-                        }
-                        catch (Exception createEx)
-                        {
-                            StatusMessage = "Errore creazione prodotto: " + createEx.Message;
-                            _logger.LogError(createEx, "POS VM create product failed");
-                        }
+                        StatusMessage = "Errore creazione prodotto: " + createEx.Message;
+                        _logger.LogError(createEx, "POS VM create product failed");
                     }
                 }
             }
@@ -358,6 +355,12 @@ namespace Win7POS.Wpf.Pos
                     MessageBoxButton.OK, MessageBoxImage.Error);
                 StatusMessage = "Errore Pay (dialog).";
                 RequestFocusBarcode();
+                return;
+            }
+
+            if (dlg.ViewModel.WasSuspended)
+            {
+                await SuspendCartAsync().ConfigureAwait(true);
                 return;
             }
 
@@ -622,6 +625,7 @@ namespace Win7POS.Wpf.Pos
         {
             var row = parameter as PosCartLineRow;
             if (row == null) return;
+            if (IsDiscountLine(row.Barcode)) return;
             IsBusy = true;
             try
             {
@@ -643,6 +647,7 @@ namespace Win7POS.Wpf.Pos
         {
             var row = parameter as PosCartLineRow;
             if (row == null) return;
+            if (IsDiscountLine(row.Barcode)) return;
             IsBusy = true;
             try
             {
@@ -945,6 +950,73 @@ namespace Win7POS.Wpf.Pos
             return Task.CompletedTask;
         }
 
+        private async Task SuspendCartAsync()
+        {
+            IsBusy = true;
+            try
+            {
+                var result = await _service.SuspendCartAsync().ConfigureAwait(true);
+                if (result.Success)
+                {
+                    var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
+                    ApplySnapshot(snapshot);
+                    StatusMessage = result.Message;
+                }
+                else
+                {
+                    StatusMessage = result.Message;
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore sospensione: " + ex.Message;
+                _logger.LogError(ex, "Suspend cart failed");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task RecoverCartAsync()
+        {
+            try
+            {
+                var vm = new Dialogs.HeldCartsViewModel(_service, snapshot =>
+                {
+                    ApplySnapshot(snapshot);
+                    StatusMessage = snapshot?.Status ?? "Carrello recuperato.";
+                });
+                var dlg = new Dialogs.HeldCartsDialog(vm) { Owner = Application.Current?.MainWindow };
+                await vm.LoadAsync().ConfigureAwait(true);
+                dlg.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore recupero: " + ex.Message;
+                _logger.LogError(ex, "Recover cart failed");
+            }
+        }
+
+        private void OpenDiscount()
+        {
+            try
+            {
+                var selectedBarcode = SelectedCartItem?.Barcode;
+                var hasCart = CartItems.Count > 0;
+                var dlg = new Dialogs.DiscountDialog(selectedBarcode ?? string.Empty, hasCart, _service, this)
+                {
+                    Owner = Application.Current?.MainWindow
+                };
+                dlg.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Discount dialog failed.");
+                StatusMessage = "Errore apertura Sconto.";
+            }
+        }
+
         private static bool TryParseManualPriceClp(string raw, out int price)
         {
             price = 0;
@@ -976,6 +1048,11 @@ namespace Win7POS.Wpf.Pos
             return false;
         }
 
+        public void ApplyDiscountSnapshot(PosWorkflowSnapshot snapshot)
+        {
+            if (snapshot != null) ApplySnapshot(snapshot);
+        }
+
         private void ApplySnapshot(PosWorkflowSnapshot snapshot)
         {
             CartItems.Clear();
@@ -998,6 +1075,8 @@ namespace Win7POS.Wpf.Pos
                 StatusMessage = snapshot.Status;
             OnPropertyChanged(nameof(ItemsCount));
             (ClearCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (OpenDiscountCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (SuspendCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         public string BuildCartReceiptPreview()
@@ -1043,12 +1122,16 @@ namespace Win7POS.Wpf.Pos
             (RemoveLineForLineCommand as AsyncRelayCommandParam)?.RaiseCanExecuteChanged();
             (OpenSalesRegisterCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (OpenShopSettingsCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (OpenDiscountCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void RequestFocusBarcode()
         {
             FocusBarcodeRequested?.Invoke();
         }
+
+        private static bool IsDiscountLine(string barcode)
+            => (barcode ?? "").StartsWith("DISC:", StringComparison.Ordinal);
 
         public event PropertyChangedEventHandler PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string name = null)
@@ -1063,6 +1146,7 @@ namespace Win7POS.Wpf.Pos
             public int LineTotal { get; set; }
             public string UnitPriceDisplay => MoneyClp.Format(UnitPrice);
             public string LineTotalDisplay => MoneyClp.Format(LineTotal);
+            public bool IsDiscountLine => (Barcode ?? "").StartsWith("DISC:", StringComparison.Ordinal);
         }
 
         public sealed class RecentSaleRow
@@ -1077,6 +1161,23 @@ namespace Win7POS.Wpf.Pos
             public long? RelatedSaleId { get; set; }
             public long? VoidedBySaleId { get; set; }
             public string StatusText { get; set; } = string.Empty;
+        }
+
+        private sealed class RelayCommand : ICommand
+        {
+            private readonly Action<object> _execute;
+            private readonly Func<object, bool> _canExecute;
+
+            public RelayCommand(Action<object> execute, Func<object, bool> canExecute = null)
+            {
+                _execute = execute ?? throw new ArgumentNullException(nameof(execute));
+                _canExecute = canExecute;
+            }
+
+            public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
+            public void Execute(object parameter) => _execute(parameter);
+            public event EventHandler CanExecuteChanged;
+            public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private sealed class AsyncRelayCommand : ICommand

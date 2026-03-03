@@ -45,6 +45,7 @@ namespace Win7POS.Wpf.Pos
         private readonly DbMaintenanceRepository _dbMaintenance;
         private readonly SupplierRepository _suppliers;
         private readonly CategoryRepository _categories;
+        private readonly HeldCartRepository _heldCarts;
         private readonly AuditLogRepository _audit = new AuditLogRepository();
         private readonly PosSession _session;
         private readonly PosDbOptions _options;
@@ -65,6 +66,7 @@ namespace Win7POS.Wpf.Pos
             _dbMaintenance = new DbMaintenanceRepository(_factory);
             _suppliers = new SupplierRepository(_factory);
             _categories = new CategoryRepository(_factory);
+            _heldCarts = new HeldCartRepository(_factory);
             _session = new PosSession(new DataProductLookup(_products), new DataSalesStore(_sales));
         }
 
@@ -366,7 +368,22 @@ namespace Win7POS.Wpf.Pos
 
         public async Task CreateProductAsync(string barcode, string name, int unitPriceMinor)
         {
-            await CreateProductFullAsync(barcode, name, unitPriceMinor, 0, null, null, null, null, 0).ConfigureAwait(false);
+            await CreateProductFullAsync(barcode, name, unitPriceMinor, 0, null, null, 0).ConfigureAwait(false);
+        }
+
+        /// <summary>Overload con supplier/category by name (no IDs). Nome può essere vuoto: usa "Prodotto senza codice".</summary>
+        public async Task CreateProductFullAsync(
+            string barcode,
+            string name,
+            int unitPriceMinor,
+            int purchasePriceMinor,
+            string supplierName,
+            string categoryName,
+            int stockQty)
+        {
+            var productName = (name ?? string.Empty).Trim();
+            if (productName.Length == 0) productName = "Prodotto senza codice";
+            await CreateProductFullAsync(barcode, productName, unitPriceMinor, purchasePriceMinor, null, supplierName ?? string.Empty, null, categoryName ?? string.Empty, stockQty).ConfigureAwait(false);
         }
 
         public async Task CreateProductFullAsync(
@@ -779,6 +796,62 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        public async Task<PosWorkflowSnapshot> ApplyCartDiscountPercentAsync(int percent)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _session.ApplyCartDiscountPercent(percent);
+                return BuildSnapshot("Sconto carrello applicato.");
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<PosWorkflowSnapshot> ApplyLineDiscountPercentAsync(string barcode, int percent)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _session.ApplyLineDiscountPercent(barcode, percent);
+                return BuildSnapshot("Sconto riga applicato.");
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<PosWorkflowSnapshot> ApplyLineDiscountAmountAsync(string barcode, int amountMinor)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _session.ApplyLineDiscountAmount(barcode, amountMinor);
+                return BuildSnapshot("Sconto importo applicato.");
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<PosWorkflowSnapshot> ClearCartDiscountAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _session.ClearCartDiscount();
+                return BuildSnapshot("Sconto carrello rimosso.");
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         public async Task<IReadOnlyList<RecentSaleItem>> GetRecentSalesAsync(int limit = 20)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
@@ -1031,6 +1104,89 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        public async Task<SuspendCartResult> SuspendCartAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (_session.Lines.Count == 0)
+                    return new SuspendCartResult { Success = false, Message = "Carrello vuoto." };
+
+                var lines = _session.Lines.Select(x => new Data.Repositories.HeldCartLineRow
+                {
+                    Barcode = x.Barcode ?? string.Empty,
+                    Name = x.Name ?? string.Empty,
+                    UnitPrice = x.UnitPrice,
+                    Qty = x.Quantity
+                }).ToList();
+
+                var createdAtMs = UnixTime.NowMs();
+                var holdId = "H-" + DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss");
+                var total = _session.Total;
+
+                await _heldCarts.CreateHoldAsync(holdId, createdAtMs, total, lines).ConfigureAwait(false);
+                _session.Clear();
+
+                return new SuspendCartResult { Success = true, HoldId = holdId, Message = "Carrello sospeso." };
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<IReadOnlyList<HeldCartItem>> GetHeldCartsAsync()
+        {
+            var rows = await _heldCarts.ListHoldsAsync().ConfigureAwait(false);
+            return rows.Select(x => new HeldCartItem
+            {
+                HoldId = x.HoldId,
+                CreatedAtMs = x.CreatedAtMs,
+                TotalMinor = x.TotalMinor,
+                TimeText = FormatHoldTime(x.CreatedAtMs)
+            }).ToList();
+        }
+
+        public async Task DeleteHeldCartAsync(string holdId)
+        {
+            await _heldCarts.DeleteHoldAsync(holdId).ConfigureAwait(false);
+        }
+
+        public async Task<PosWorkflowSnapshot> RecoverHeldCartAsync(string holdId)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var lines = await _heldCarts.LoadHoldLinesAsync(holdId).ConfigureAwait(false);
+                if (lines.Count == 0)
+                    return BuildSnapshot("Nessuna riga nel carrello sospeso.");
+
+                var restored = lines.Select(x => new RestoredLine
+                {
+                    ProductId = null,
+                    Barcode = x.Barcode,
+                    Name = x.Name,
+                    UnitPrice = x.UnitPrice,
+                    Quantity = x.Qty
+                }).ToList();
+
+                _session.ReplaceWithLines(restored);
+                await _heldCarts.DeleteHoldAsync(holdId).ConfigureAwait(false);
+
+                return BuildSnapshot("Carrello recuperato.");
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        private static string FormatHoldTime(long ms)
+        {
+            var dt = DateTimeOffset.FromUnixTimeMilliseconds(ms);
+            return dt.LocalDateTime.ToString("yyyy-MM-dd HH:mm");
+        }
+
         private async Task EnsureDemoProductsAsync()
         {
             if (!_options.IsDemo)
@@ -1263,6 +1419,21 @@ SELECT last_insert_rowid();";
             if (!IsValid(totalMinor)) return 0;
             return CashAmountMinor + CardAmountMinor - totalMinor;
         }
+    }
+
+    public sealed class SuspendCartResult
+    {
+        public bool Success { get; set; }
+        public string HoldId { get; set; } = string.Empty;
+        public string Message { get; set; } = string.Empty;
+    }
+
+    public sealed class HeldCartItem
+    {
+        public string HoldId { get; set; } = string.Empty;
+        public long CreatedAtMs { get; set; }
+        public int TotalMinor { get; set; }
+        public string TimeText { get; set; } = string.Empty;
     }
 
     public sealed class RecentSaleItem

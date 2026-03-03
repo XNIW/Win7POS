@@ -22,6 +22,30 @@ namespace Win7POS.Wpf.Pos
             FocusBarcode();
         }
 
+        private void BarcodeBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+
+            var vm = DataContext as PosViewModel;
+            if (vm == null) return;
+
+            if (string.IsNullOrWhiteSpace(vm.BarcodeInput))
+            {
+                if (vm.PayCommand?.CanExecute(null) == true && vm.CartItems.Count > 0)
+                {
+                    vm.PayCommand.Execute(null);
+                    e.Handled = true;
+                }
+                return;
+            }
+
+            if (vm.AddBarcodeCommand?.CanExecute(null) == true)
+            {
+                vm.AddBarcodeCommand.Execute(null);
+                e.Handled = true;
+            }
+        }
+
         private void OnViewPreviewKeyDown(object sender, KeyEventArgs e)
         {
             var vm = DataContext as PosViewModel;

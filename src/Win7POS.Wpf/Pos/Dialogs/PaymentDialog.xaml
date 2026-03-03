@@ -152,8 +152,10 @@
             </Grid>
         </Border>
 
-        <!-- Bottom: Annulla + Conferma pagamento -->
+        <!-- Bottom: Sospendi + Annulla + Conferma pagamento -->
         <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <Button Content="Sospendi" MinWidth="100" Height="38" Margin="0,0,8,0"
+                    Command="{Binding SuspendCommand}" Background="#E8A54B" Foreground="White" BorderThickness="0"/>
             <Button Content="Annulla" MinWidth="120" Height="38" Margin="0,0,8,0" Command="{Binding CancelCommand}"/>
             <Button Content="Conferma pagamento" MinWidth="160" Height="38"
                     Command="{Binding ConfirmCommand}"

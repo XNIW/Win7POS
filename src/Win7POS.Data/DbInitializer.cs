@@ -103,6 +103,24 @@ CREATE TABLE IF NOT EXISTS product_price_history (
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_unique
 ON product_price_history(barcode, timestamp, type, new_price, coalesce(source,''));
+
+CREATE TABLE IF NOT EXISTS held_carts (
+  holdId     TEXT PRIMARY KEY NOT NULL,
+  createdAtMs INTEGER NOT NULL,
+  totalMinor INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS held_cart_lines (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  holdId    TEXT NOT NULL,
+  barcode   TEXT NOT NULL,
+  name      TEXT NOT NULL,
+  unitPrice INTEGER NOT NULL,
+  qty       INTEGER NOT NULL,
+  FOREIGN KEY(holdId) REFERENCES held_carts(holdId) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_held_cart_lines_holdId ON held_cart_lines(holdId);
 ");
 
             EnsureMigrations(conn);

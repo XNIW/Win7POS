@@ -25,8 +25,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public AddProductViewModel(string barcode)
         {
             Barcode = (barcode ?? string.Empty).Trim();
-            ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
+            ConfirmCommand = new RelayCommand(_ => Confirm(), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
+        }
+
+        private void Confirm()
+        {
+            if (string.IsNullOrWhiteSpace(ProductName))
+            {
+                ProductName = "Prodotto senza codice";
+            }
+            RequestClose?.Invoke(true);
         }
 
         public void SetSuppliers(System.Collections.Generic.IReadOnlyList<SupplierListItem> items)
@@ -118,7 +127,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        public bool IsValid => Barcode.Length > 0 && ProductName.Trim().Length > 0 && PriceMinor >= 0;
+        public bool IsValid => Barcode.Length > 0 && PriceMinor > 0;
 
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }
