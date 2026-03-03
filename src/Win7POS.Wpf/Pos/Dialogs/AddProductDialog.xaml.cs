@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -10,6 +11,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public AddProductDialog(string barcode, PosWorkflowService service = null, bool focusRetailPrice = false)
         {
             InitializeComponent();
+            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.45, heightPercent: 0.65, minWidth: 420, minHeight: 420);
             ViewModel = new AddProductViewModel(barcode);
             ViewModel.RequestClose += ok => DialogResult = ok;
             DataContext = ViewModel;

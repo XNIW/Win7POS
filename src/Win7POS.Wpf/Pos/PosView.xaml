@@ -25,7 +25,7 @@
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="280" MinWidth="240" MaxWidth="360"/>
         </Grid.ColumnDefinitions>
 
         <!-- Sinistra: carrello lista a righe -->

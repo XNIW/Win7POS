@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -8,6 +9,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public SalesRegisterDialog(SalesRegisterViewModel viewModel)
         {
             InitializeComponent();
+            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.85, heightPercent: 0.8, minWidth: 900, minHeight: 600);
             DataContext = viewModel;
             Loaded += OnLoaded;
         }

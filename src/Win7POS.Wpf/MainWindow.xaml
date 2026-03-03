@@ -5,7 +5,7 @@
         xmlns:imp="clr-namespace:Win7POS.Wpf.Import"
         xmlns:prod="clr-namespace:Win7POS.Wpf.Products"
         xmlns:core="clr-namespace:Win7POS.Core;assembly=Win7POS.Core"
-        Title="Win7POS" Height="650" Width="900">
+        Title="Win7POS" MinWidth="1024" MinHeight="600" WindowState="Maximized">
     <Grid Margin="0">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>

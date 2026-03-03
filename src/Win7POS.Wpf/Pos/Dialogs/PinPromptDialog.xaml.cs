@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -10,6 +11,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public PinPromptDialog(string prompt)
         {
             InitializeComponent();
+            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.3, heightPercent: 0.25, minWidth: 380, minHeight: 180);
             ViewModel = new PinPromptViewModel(prompt);
             DataContext = ViewModel;
             Loaded += OnLoaded;

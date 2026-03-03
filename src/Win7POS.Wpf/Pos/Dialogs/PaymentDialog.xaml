@@ -6,7 +6,7 @@
         mc:Ignorable="d"
         Title="Pagamento" Width="1000" Height="580"
         Loaded="OnLoaded" KeyDown="OnKeyDown"
-        WindowStartupLocation="CenterOwner" ResizeMode="NoResize">
+        WindowStartupLocation="CenterOwner" ResizeMode="CanResize">
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
