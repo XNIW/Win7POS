@@ -144,7 +144,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public RelayCommand(Action<object> execute) => _execute = execute ?? throw new ArgumentNullException(nameof(execute));
             public bool CanExecute(object parameter) => true;
             public void Execute(object parameter) => _execute(parameter);
+#pragma warning disable CS0067
             public event EventHandler CanExecuteChanged;
+#pragma warning restore CS0067
         }
 
         private sealed class AsyncRelayCommand : ICommand
@@ -160,7 +162,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
             public async void Execute(object parameter) => await _execute().ConfigureAwait(true);
+#pragma warning disable CS0067
             public event EventHandler CanExecuteChanged;
+#pragma warning restore CS0067
         }
     }
 }

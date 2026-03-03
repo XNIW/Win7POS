@@ -980,22 +980,24 @@ namespace Win7POS.Wpf.Pos
 
         private async Task RecoverCartAsync()
         {
+            var vm = new Dialogs.HeldCartsViewModel(_service, snapshot =>
+            {
+                ApplySnapshot(snapshot);
+                StatusMessage = snapshot?.Status ?? "Carrello recuperato.";
+            });
+            var dlg = new Dialogs.HeldCartsDialog(vm) { Owner = Application.Current?.MainWindow };
+
             try
             {
-                var vm = new Dialogs.HeldCartsViewModel(_service, snapshot =>
-                {
-                    ApplySnapshot(snapshot);
-                    StatusMessage = snapshot?.Status ?? "Carrello recuperato.";
-                });
-                var dlg = new Dialogs.HeldCartsDialog(vm) { Owner = Application.Current?.MainWindow };
                 await vm.LoadAsync().ConfigureAwait(true);
-                dlg.ShowDialog();
             }
             catch (Exception ex)
             {
-                StatusMessage = "Errore recupero: " + ex.Message;
-                _logger.LogError(ex, "Recover cart failed");
+                _logger.LogError(ex, "Recover cart LoadAsync failed");
+                StatusMessage = "Errore caricamento sospesi: " + ex.Message;
             }
+
+            dlg.ShowDialog();
         }
 
         private void OpenDiscount()
@@ -1123,6 +1125,9 @@ namespace Win7POS.Wpf.Pos
             (OpenSalesRegisterCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (OpenShopSettingsCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (OpenDiscountCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (SuspendCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (RecoverCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
         }
 
         private void RequestFocusBarcode()
