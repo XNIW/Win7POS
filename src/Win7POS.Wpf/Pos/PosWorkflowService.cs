@@ -43,6 +43,8 @@ namespace Win7POS.Wpf.Pos
         private readonly SaleRepository _sales;
         private readonly SettingsRepository _settings;
         private readonly DbMaintenanceRepository _dbMaintenance;
+        private readonly SupplierRepository _suppliers;
+        private readonly CategoryRepository _categories;
         private readonly AuditLogRepository _audit = new AuditLogRepository();
         private readonly PosSession _session;
         private readonly PosDbOptions _options;
@@ -61,6 +63,8 @@ namespace Win7POS.Wpf.Pos
             _sales = new SaleRepository(_factory);
             _settings = new SettingsRepository(_factory);
             _dbMaintenance = new DbMaintenanceRepository(_factory);
+            _suppliers = new SupplierRepository(_factory);
+            _categories = new CategoryRepository(_factory);
             _session = new PosSession(new DataProductLookup(_products), new DataSalesStore(_sales));
         }
 
@@ -362,6 +366,20 @@ namespace Win7POS.Wpf.Pos
 
         public async Task CreateProductAsync(string barcode, string name, int unitPriceMinor)
         {
+            await CreateProductFullAsync(barcode, name, unitPriceMinor, 0, null, null, null, null, 0).ConfigureAwait(false);
+        }
+
+        public async Task CreateProductFullAsync(
+            string barcode,
+            string name,
+            int unitPriceMinor,
+            int purchasePriceMinor,
+            int? supplierId,
+            string supplierName,
+            int? categoryId,
+            string categoryName,
+            int stockQty)
+        {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
@@ -370,6 +388,8 @@ namespace Win7POS.Wpf.Pos
                 if (code.Length == 0) throw new ArgumentException("barcode is empty");
                 if (productName.Length == 0) throw new ArgumentException("name is empty");
                 if (unitPriceMinor < 0) throw new ArgumentException("price is invalid");
+                if (purchasePriceMinor < 0) purchasePriceMinor = 0;
+                if (stockQty < 0) stockQty = 0;
 
                 await _products.UpsertAsync(new Product
                 {
@@ -377,11 +397,27 @@ namespace Win7POS.Wpf.Pos
                     Name = productName,
                     UnitPrice = unitPriceMinor
                 }).ConfigureAwait(false);
+
+                await _products.UpsertMetaAsync(code, purchasePriceMinor, supplierId, supplierName ?? string.Empty, categoryId, categoryName ?? string.Empty, stockQty).ConfigureAwait(false);
+
+                await _products.InsertPriceHistoryAsync(code, "retail", unitPriceMinor, "MANUAL").ConfigureAwait(false);
+                if (purchasePriceMinor > 0)
+                    await _products.InsertPriceHistoryAsync(code, "purchase", purchasePriceMinor, "MANUAL").ConfigureAwait(false);
             }
             finally
             {
                 _gate.Release();
             }
+        }
+
+        public async Task<IReadOnlyList<Data.Repositories.SupplierListItem>> GetSuppliersAsync()
+        {
+            return await _suppliers.ListAllAsync().ConfigureAwait(false);
+        }
+
+        public async Task<IReadOnlyList<Data.Repositories.CategoryListItem>> GetCategoriesAsync()
+        {
+            return await _categories.ListAllAsync().ConfigureAwait(false);
         }
 
         public async Task<PosPayResult> PayAsync()

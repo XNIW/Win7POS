@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -26,9 +27,14 @@ namespace Win7POS.Wpf.Products
             _products = new ProductRepository(factory);
         }
 
-        public Task<System.Collections.Generic.IReadOnlyList<Product>> SearchAsync(string query, int limit = 200)
+        public Task<IReadOnlyList<Product>> SearchAsync(string query, int limit = 200)
         {
             return _products.SearchAsync(query, limit);
+        }
+
+        public Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsAsync(string query, int limit = 200)
+        {
+            return _products.SearchDetailsAsync(query, limit);
         }
 
         public async Task UpdateAsync(long productId, string name, int priceMinor)

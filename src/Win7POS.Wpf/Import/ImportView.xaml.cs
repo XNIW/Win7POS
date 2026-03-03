@@ -30,10 +30,9 @@ namespace Win7POS.Wpf.Import
             if (vm == null) return;
 
             var ext = Path.GetExtension(first);
-            if (string.Equals(ext, ".csv", StringComparison.OrdinalIgnoreCase))
-                vm.CsvPath = first;
-            else if (string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase))
-                vm.ExcelVm.XlsxPath = first;
+            if (string.Equals(ext, ".csv", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase))
+                vm.SelectedPath = first;
 
             e.Handled = true;
         }

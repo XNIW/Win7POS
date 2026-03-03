@@ -8,12 +8,17 @@ using System.Windows;
 using System.Windows.Input;
 using Microsoft.Win32;
 using Win7POS.Core;
+using Win7POS.Core.ImportDb;
+using Win7POS.Data;
+using Win7POS.Data.ImportDb;
 
 namespace Win7POS.Wpf.Import
 {
+    public enum ImportKind { None, Csv, Xlsx }
+
     public sealed class ImportViewModel : INotifyPropertyChanged
     {
-        private string _csvPath;
+        private string _selectedPath;
         private string _summary;
         private string _status;
         private bool _isBusy;
@@ -26,11 +31,33 @@ namespace Win7POS.Wpf.Import
         // Preview items (kept as object to avoid hard coupling if core types change)
         public ObservableCollection<object> DiffItems { get; } = new ObservableCollection<object>();
 
-        public string CsvPath
+        public string SelectedPath
         {
-            get => _csvPath;
-            set { _csvPath = value; OnPropertyChanged(); }
+            get => _selectedPath ?? string.Empty;
+            set
+            {
+                _selectedPath = value ?? string.Empty;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(Kind));
+                OnPropertyChanged(nameof(IsCsv));
+                OnPropertyChanged(nameof(IsXlsx));
+            }
         }
+
+        public ImportKind Kind
+        {
+            get
+            {
+                var p = (SelectedPath ?? "").Trim();
+                var ext = Path.GetExtension(p).ToLowerInvariant();
+                if (ext == ".csv") return ImportKind.Csv;
+                if (ext == ".xlsx") return ImportKind.Xlsx;
+                return ImportKind.None;
+            }
+        }
+
+        public bool IsCsv => Kind == ImportKind.Csv;
+        public bool IsXlsx => Kind == ImportKind.Xlsx;
 
         public string Summary
         {
@@ -87,20 +114,22 @@ namespace Win7POS.Wpf.Import
         public ICommand AnalyzeCommand { get; }
         public ICommand ApplyCommand { get; }
 
-        public ProductDbImportViewModel ExcelVm { get; } = new ProductDbImportViewModel();
-
         private readonly ImportWorkflowService _service = new ImportWorkflowService();
 
-        // Cache last analyze result for Apply
+        // Cache last analyze result for Apply - CSV
         private object _lastDiffResult;
         private object _lastParsedRows;
+
+        // Cache last analyze result for Apply - XLSX
+        private ProductDbWorkbook _lastWorkbook;
+        private ProductDbAnalysis _lastAnalysis;
 
         public ImportViewModel()
         {
             BrowseCommand = new RelayCommand(_ => Browse(), _ => !IsBusy);
             AnalyzeCommand = new AsyncRelayCommand(AnalyzeAsync, _ => !IsBusy);
             ApplyCommand = new AsyncRelayCommand(ApplyAsync, _ => !IsBusy);
-            Summary = "Seleziona un CSV e premi Analyze.";
+            Summary = "Seleziona un file .csv o .xlsx e premi Analizza.";
             Status = "";
         }
 
@@ -108,24 +137,26 @@ namespace Win7POS.Wpf.Import
         {
             var dlg = new OpenFileDialog
             {
-                Title = "Seleziona file CSV",
-                Filter = "CSV files (*.csv)|*.csv|All files (*.*)|*.*",
+                Title = "Seleziona file da importare",
+                Filter = "CSV (*.csv)|*.csv|Excel (*.xlsx)|*.xlsx|Tutti (*.*)|*.*",
+                FilterIndex = 1,
                 CheckFileExists = true,
                 Multiselect = false
             };
 
             if (dlg.ShowDialog() == true)
             {
-                CsvPath = dlg.FileName;
+                SelectedPath = dlg.FileName;
                 Status = "";
             }
         }
 
         private async Task AnalyzeAsync()
         {
-            if (string.IsNullOrWhiteSpace(CsvPath) || !File.Exists(CsvPath))
+            var path = (SelectedPath ?? "").Trim();
+            if (path.Length == 0 || !File.Exists(path))
             {
-                Status = "CSV non valido: seleziona un file esistente.";
+                Status = "Seleziona un file esistente.";
                 return;
             }
 
@@ -135,23 +166,45 @@ namespace Win7POS.Wpf.Import
             DiffItems.Clear();
             _lastDiffResult = null;
             _lastParsedRows = null;
+            _lastWorkbook = null;
+            _lastAnalysis = null;
 
             try
             {
-                var result = await _service.AnalyzeAsync(CsvPath).ConfigureAwait(true);
-                _lastParsedRows = result.RowsModel;
-                _lastDiffResult = result.DiffModel;
+                if (Kind == ImportKind.Csv)
+                {
+                    var result = await _service.AnalyzeAsync(path).ConfigureAwait(true);
+                    _lastParsedRows = result.RowsModel;
+                    _lastDiffResult = result.DiffModel;
 
-                Summary = result.Summary;
-                DiffItems.Clear();
-                foreach (var item in result.Items)
-                    DiffItems.Add(item);
-                Status = "OK N/U/NC/E: " + result.NewCount + "/" + result.UpdateCount + "/" + result.UnchangedCount + "/" + result.ErrorCount;
+                    Summary = result.Summary;
+                    DiffItems.Clear();
+                    foreach (var item in result.Items)
+                        DiffItems.Add(item);
+                    Status = "OK N/U/NC/E: " + result.NewCount + "/" + result.UpdateCount + "/" + result.UnchangedCount + "/" + result.ErrorCount;
+                }
+                else if (Kind == ImportKind.Xlsx)
+                {
+                    _lastWorkbook = ProductDbExcelReader.Read(path);
+                    _lastAnalysis = ProductDbAnalysis.Analyze(_lastWorkbook);
+
+                    Summary = _lastAnalysis.ToSummaryString();
+                    Status = "OK. Products: " + _lastAnalysis.ProductsCount +
+                        ", Suppliers: " + _lastAnalysis.SuppliersCount +
+                        ", Categories: " + _lastAnalysis.CategoriesCount +
+                        ", PriceHistory: " + _lastAnalysis.PriceHistoryCount;
+                }
+                else
+                {
+                    Status = "Estensione non supportata. Usa .csv o .xlsx.";
+                }
             }
             catch (Exception ex)
             {
-                Status = "Errore Analyze: " + ex.Message;
-                Summary = "";
+                Status = "Errore: " + ex.Message;
+                Summary = ex.ToString();
+                _lastWorkbook = null;
+                _lastAnalysis = null;
             }
             finally
             {
@@ -167,9 +220,25 @@ namespace Win7POS.Wpf.Import
                 return;
             }
 
+            if (Kind == ImportKind.Csv)
+            {
+                await ApplyCsvAsync().ConfigureAwait(true);
+            }
+            else if (Kind == ImportKind.Xlsx)
+            {
+                await ApplyXlsxAsync().ConfigureAwait(true);
+            }
+            else
+            {
+                Status = "Seleziona un file .csv o .xlsx.";
+            }
+        }
+
+        private async Task ApplyCsvAsync()
+        {
             if (_lastDiffResult == null || _lastParsedRows == null)
             {
-                Status = "Prima esegui Analyze.";
+                Status = "Prima esegui Analizza.";
                 return;
             }
 
@@ -208,6 +277,62 @@ namespace Win7POS.Wpf.Import
             catch (Exception ex)
             {
                 Status = "Errore Apply: " + ex.Message;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task ApplyXlsxAsync()
+        {
+            if (_lastWorkbook == null)
+            {
+                Status = "Prima esegui Analizza.";
+                return;
+            }
+
+            if (!DryRun)
+            {
+                var confirm = MessageBox.Show(
+                    "Confermi Apply? Verranno scritti prodotti, supplier, categories e storico prezzi nel DB.",
+                    "Conferma Apply Database",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Warning);
+                if (confirm != MessageBoxResult.Yes)
+                {
+                    Status = "Apply annullato.";
+                    return;
+                }
+            }
+
+            IsBusy = true;
+            Status = DryRun ? "DryRun: simulazione..." : "Apply in corso...";
+
+            try
+            {
+                var opt = PosDbOptions.ForPath(AppPaths.DbPath);
+                DbInitializer.EnsureCreated(opt);
+                var factory = new SqliteConnectionFactory(opt);
+                var importer = new ProductDbImporter(factory);
+                var result = await importer.ImportAsync(_lastWorkbook, DryRun).ConfigureAwait(true);
+
+                if (result.Errors.Count > 0)
+                {
+                    Summary = string.Join("\n", result.Errors);
+                    Status = "Apply fallito.";
+                }
+                else
+                {
+                    Summary = "Products upserted: " + result.ProductsUpserted +
+                        "\nPriceHistory inserted: " + result.PriceHistoryInserted;
+                    Status = DryRun ? "DryRun OK (nessuna scrittura DB)." : "Apply OK.";
+                }
+            }
+            catch (Exception ex)
+            {
+                Status = "Errore Apply: " + ex.Message;
+                Summary = ex.ToString();
             }
             finally
             {

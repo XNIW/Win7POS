@@ -37,9 +37,15 @@
                   CanUserAddRows="False"
                   CanUserDeleteRows="False">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" IsReadOnly="True" Width="2*"/>
-                <DataGridTextColumn Header="Name" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="3*"/>
-                <DataGridTextColumn Header="Price" Binding="{Binding UnitPrice, UpdateSourceTrigger=PropertyChanged}" Width="120"/>
+                <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" IsReadOnly="True" Width="120"/>
+                <DataGridTextColumn Header="Nome" Binding="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Width="2*"/>
+                <DataGridTextColumn Header="Vendita" Binding="{Binding UnitPrice, UpdateSourceTrigger=PropertyChanged}" Width="80"/>
+                <DataGridTextColumn Header="Cod. articolo" Binding="{Binding ArticleCode}" IsReadOnly="True" Width="100"/>
+                <DataGridTextColumn Header="Nome2" Binding="{Binding Name2}" IsReadOnly="True" Width="1*"/>
+                <DataGridTextColumn Header="Acquisto" Binding="{Binding PurchasePrice}" IsReadOnly="True" Width="80"/>
+                <DataGridTextColumn Header="Stock" Binding="{Binding StockQty}" IsReadOnly="True" Width="60"/>
+                <DataGridTextColumn Header="Fornitore" Binding="{Binding SupplierName}" IsReadOnly="True" Width="1*"/>
+                <DataGridTextColumn Header="Categoria" Binding="{Binding CategoryName}" IsReadOnly="True" Width="1*"/>
             </DataGrid.Columns>
         </DataGrid>
 

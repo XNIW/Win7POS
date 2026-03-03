@@ -8,37 +8,67 @@
              mc:Ignorable="d"
              d:DesignHeight="720" d:DesignWidth="1100">
 
-    <TabControl Margin="12">
-        <TabItem Header="CSV">
-            <Grid Margin="0,8,0,0">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="120"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+    <Grid Margin="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="120"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-                <!-- File picker -->
+        <!-- File picker (unified) -->
         <Grid Grid.Row="0" Margin="0,0,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-
-            <TextBlock Text="CSV:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <TextBox Grid.Column="1" Text="{Binding CsvPath, UpdateSourceTrigger=PropertyChanged}" MinHeight="28"/>
+            <TextBlock Text="File:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox Grid.Column="1" Text="{Binding SelectedPath, UpdateSourceTrigger=PropertyChanged}" MinHeight="28"/>
             <Button Grid.Column="2" Content="Browse..." Margin="8,0,0,0" MinWidth="90"
                     Command="{Binding BrowseCommand}"/>
         </Grid>
 
         <!-- Options -->
         <WrapPanel Grid.Row="1" Margin="0,0,0,8">
-            <CheckBox Content="InsertNew" IsChecked="{Binding InsertNew}" Margin="0,0,16,0"/>
-            <CheckBox Content="UpdatePrice" IsChecked="{Binding UpdatePrice}" Margin="0,0,16,0"/>
-            <CheckBox Content="UpdateName" IsChecked="{Binding UpdateName}" Margin="0,0,16,0"/>
+            <CheckBox Content="InsertNew" IsChecked="{Binding InsertNew}" Margin="0,0,16,0">
+                <CheckBox.Style>
+                    <Style TargetType="CheckBox">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsCsv}" Value="False">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </CheckBox.Style>
+            </CheckBox>
+            <CheckBox Content="UpdatePrice" IsChecked="{Binding UpdatePrice}" Margin="0,0,16,0">
+                <CheckBox.Style>
+                    <Style TargetType="CheckBox">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsCsv}" Value="False">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </CheckBox.Style>
+            </CheckBox>
+            <CheckBox Content="UpdateName" IsChecked="{Binding UpdateName}" Margin="0,0,16,0">
+                <CheckBox.Style>
+                    <Style TargetType="CheckBox">
+                        <Setter Property="Visibility" Value="Visible"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsCsv}" Value="False">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </CheckBox.Style>
+            </CheckBox>
             <CheckBox Content="DryRun" IsChecked="{Binding DryRun}" Margin="0,0,16,0"/>
             <TextBlock VerticalAlignment="Center" Foreground="DimGray"
                        Text="{Binding ApplyModeText}"/>
@@ -54,12 +84,10 @@
                 <ColumnDefinition Width="16"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-
-            <Button Content="Analyze" MinWidth="110" MinHeight="30"
+            <Button Content="Analizza" MinWidth="110" MinHeight="30"
                     Command="{Binding AnalyzeCommand}"/>
             <Button Grid.Column="1" Content="Apply" Margin="8,0,0,0" MinWidth="110" MinHeight="30"
                     Command="{Binding ApplyCommand}"/>
-
             <ProgressBar Grid.Column="3" Height="16" VerticalAlignment="Center"
                          IsIndeterminate="True">
                 <ProgressBar.Style>
@@ -73,7 +101,6 @@
                     </Style>
                 </ProgressBar.Style>
             </ProgressBar>
-
             <TextBlock Grid.Column="5" VerticalAlignment="Center" Text="{Binding Status}" TextTrimming="CharacterEllipsis"/>
         </Grid>
 
@@ -101,76 +128,11 @@
             </Grid>
         </GroupBox>
 
-                <!-- Hint -->
-                <StackPanel Grid.Row="5" Margin="0,8,0,0">
-                    <TextBlock Foreground="Gray" Text="{Binding DbPath, StringFormat=DB: {0}}"/>
-                    <TextBlock Foreground="Gray"
-                               Text="Analyze/Apply usa la stessa pipeline del CLI (Core + Data adapter), senza passare dalla CLI."/>
-                </StackPanel>
-            </Grid>
-        </TabItem>
-
-        <TabItem Header="Database Excel">
-            <Grid Margin="0,8,0,0" DataContext="{Binding ExcelVm}">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="150"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-
-                <Grid Grid.Row="0" Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="Excel (.xlsx):" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBox Grid.Column="1" Text="{Binding XlsxPath, UpdateSourceTrigger=PropertyChanged}" MinHeight="28"/>
-                    <Button Grid.Column="2" Content="Browse..." Margin="8,0,0,0" MinWidth="90" Command="{Binding BrowseCommand}"/>
-                </Grid>
-
-                <WrapPanel Grid.Row="1" Margin="0,0,0,8">
-                    <CheckBox Content="DryRun" IsChecked="{Binding DryRun}" Margin="0,0,16,0"/>
-                    <TextBlock VerticalAlignment="Center" Foreground="DimGray" Text="{Binding ApplyModeText}"/>
-                </WrapPanel>
-
-                <Grid Grid.Row="2" Margin="0,0,0,8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="16"/>
-                        <ColumnDefinition Width="200"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <Button Content="Analizza" MinWidth="110" MinHeight="30" Command="{Binding AnalyzeCommand}"/>
-                    <Button Grid.Column="1" Content="Apply" Margin="8,0,0,0" MinWidth="110" MinHeight="30" Command="{Binding ApplyCommand}"/>
-                    <ProgressBar Grid.Column="3" Height="16" VerticalAlignment="Center" IsIndeterminate="True">
-                        <ProgressBar.Style>
-                            <Style TargetType="ProgressBar">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsBusy}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ProgressBar.Style>
-                    </ProgressBar>
-                    <TextBlock Grid.Column="4" VerticalAlignment="Center" Text="{Binding Status}" TextTrimming="CharacterEllipsis"/>
-                </Grid>
-
-                <GroupBox Grid.Row="3" Header="Summary">
-                    <TextBox Text="{Binding Summary}" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-                </GroupBox>
-
-                <StackPanel Grid.Row="4" Margin="0,8,0,0">
-                    <TextBlock Foreground="Gray" Text="{Binding DbPath, StringFormat=DB: {0}}"/>
-                    <TextBlock Foreground="Gray" TextWrapping="Wrap"
-                               Text="Import Database prodotti: 4 fogli (Products, Suppliers, Categories, PriceHistory). Barcode come stringhe (zeri conservati)."/>
-                </StackPanel>
-            </Grid>
-        </TabItem>
-    </TabControl>
+        <!-- Hint -->
+        <StackPanel Grid.Row="5" Margin="0,8,0,0">
+            <TextBlock Foreground="Gray" Text="{Binding DbPath, StringFormat=DB: {0}}"/>
+            <TextBlock Foreground="Gray"
+                       Text="Seleziona .csv o .xlsx: l'app rileva automaticamente il tipo. Analizza/Apply usa la pipeline appropriata (CSV o Excel Database)."/>
+        </StackPanel>
+    </Grid>
 </UserControl>

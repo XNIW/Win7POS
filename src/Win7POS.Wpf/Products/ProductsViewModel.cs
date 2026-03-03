@@ -17,9 +17,9 @@ namespace Win7POS.Wpf.Products
         private string _searchText = string.Empty;
         private string _statusMessage = "Pronto.";
         private bool _isBusy;
-        private ProductRow _selectedProduct;
+        private ProductDetailsRow _selectedProduct;
 
-        public ObservableCollection<ProductRow> Items { get; } = new ObservableCollection<ProductRow>();
+        public ObservableCollection<ProductDetailsRow> Items { get; } = new ObservableCollection<ProductDetailsRow>();
 
         public string SearchText
         {
@@ -39,7 +39,7 @@ namespace Win7POS.Wpf.Products
             set { _isBusy = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
-        public ProductRow SelectedProduct
+        public ProductDetailsRow SelectedProduct
         {
             get => _selectedProduct;
             set { _selectedProduct = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
@@ -62,16 +62,22 @@ namespace Win7POS.Wpf.Products
             IsBusy = true;
             try
             {
-                var rows = await _service.SearchAsync(SearchText, 200).ConfigureAwait(true);
+                var rows = await _service.SearchDetailsAsync(SearchText, 200).ConfigureAwait(true);
                 Items.Clear();
                 foreach (var p in rows)
                 {
-                    Items.Add(new ProductRow
+                    Items.Add(new ProductDetailsRow
                     {
                         Id = p.Id,
                         Barcode = p.Barcode ?? string.Empty,
                         Name = p.Name ?? string.Empty,
-                        UnitPrice = p.UnitPrice
+                        UnitPrice = p.UnitPrice,
+                        ArticleCode = p.ArticleCode ?? string.Empty,
+                        Name2 = p.Name2 ?? string.Empty,
+                        PurchasePrice = p.PurchasePrice,
+                        StockQty = p.StockQty,
+                        SupplierName = p.SupplierName ?? string.Empty,
+                        CategoryName = p.CategoryName ?? string.Empty
                     });
                 }
                 StatusMessage = "Trovati: " + Items.Count;
@@ -93,7 +99,7 @@ namespace Win7POS.Wpf.Products
             IsBusy = true;
             try
             {
-                await _service.UpdateAsync(SelectedProduct.Id, SelectedProduct.Name, SelectedProduct.UnitPrice).ConfigureAwait(true);
+                await _service.UpdateAsync(SelectedProduct.Id, SelectedProduct.Name?.Trim() ?? string.Empty, SelectedProduct.UnitPrice).ConfigureAwait(true);
                 StatusMessage = "Prodotto aggiornato: " + SelectedProduct.Barcode;
             }
             catch (Exception ex)
@@ -136,14 +142,6 @@ namespace Win7POS.Wpf.Products
         public event PropertyChangedEventHandler PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
-
-        public sealed class ProductRow
-        {
-            public long Id { get; set; }
-            public string Barcode { get; set; } = string.Empty;
-            public string Name { get; set; } = string.Empty;
-            public int UnitPrice { get; set; }
-        }
 
         private sealed class AsyncRelayCommand : ICommand
         {

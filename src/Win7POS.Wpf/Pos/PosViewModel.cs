@@ -248,7 +248,7 @@ namespace Win7POS.Wpf.Pos
                     MessageBoxImage.Question);
                 if (askCreate == MessageBoxResult.Yes)
                 {
-                    var dlg = new AddProductDialog(input)
+                    var dlg = new AddProductDialog(input, _service)
                     {
                         Owner = Application.Current?.MainWindow
                     };
@@ -256,10 +256,21 @@ namespace Win7POS.Wpf.Pos
                     {
                         try
                         {
-                            await _service.CreateProductAsync(input, dlg.ViewModel.ProductName, dlg.ViewModel.PriceMinor).ConfigureAwait(true);
-                            var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
+                            var vm = dlg.ViewModel;
+                            var barcode = vm.Barcode;
+                            var sid = vm.SelectedSupplier?.Id ?? 0;
+                            var cid = vm.SelectedCategory?.Id ?? 0;
+                            await _service.CreateProductFullAsync(
+                                barcode, vm.ProductName, vm.PriceMinor,
+                                vm.PurchasePriceMinor,
+                                sid == 0 ? null : (int?)sid,
+                                sid == 0 ? null : vm.SelectedSupplier?.Name,
+                                cid == 0 ? null : (int?)cid,
+                                cid == 0 ? null : vm.SelectedCategory?.Name,
+                                vm.StockQty).ConfigureAwait(true);
+                            var snapshot = await _service.AddByBarcodeAsync(barcode).ConfigureAwait(true);
                             ApplySnapshot(snapshot);
-                            StatusMessage = "Prodotto creato e aggiunto: " + input;
+                            StatusMessage = "Prodotto creato e aggiunto: " + barcode;
                         }
                         catch (Exception createEx)
                         {

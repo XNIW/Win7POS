@@ -1,6 +1,6 @@
-using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using Dapper;
 using Win7POS.Core.Models;
 
@@ -82,6 +82,73 @@ SELECT last_insert_rowid();", p);
                   LIMIT @limit",
                 new { q, like, limit });
             return rows.ToList();
+        }
+
+        public async Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsAsync(string query, int limit)
+        {
+            if (limit <= 0) limit = 50;
+            using var conn = _factory.Open();
+            var q = (query ?? string.Empty).Trim();
+            var like = q.Length == 0 ? "%" : "%" + q.Replace("%", "[%]").Replace("_", "[_]") + "%";
+
+            const string sql = @"
+SELECT
+  p.id AS Id,
+  p.barcode AS Barcode,
+  p.name AS Name,
+  p.unitPrice AS UnitPrice,
+  COALESCE(m.article_code, '') AS ArticleCode,
+  COALESCE(m.name2, '') AS Name2,
+  COALESCE(m.purchase_price, 0) AS PurchasePrice,
+  COALESCE(m.stock_qty, 0) AS StockQty,
+  COALESCE(m.supplier_name, '') AS SupplierName,
+  COALESCE(m.category_name, '') AS CategoryName
+FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode";
+
+            if (q.Length == 0)
+            {
+                var all = await conn.QueryAsync<ProductDetailsRow>(
+                    sql + " ORDER BY p.barcode ASC LIMIT @limit",
+                    new { limit });
+                return all.ToList();
+            }
+
+            var rows = await conn.QueryAsync<ProductDetailsRow>(
+                sql + @"
+WHERE p.barcode = @q OR p.name LIKE @like
+ORDER BY CASE WHEN p.barcode = @q THEN 0 ELSE 1 END, p.barcode ASC
+LIMIT @limit",
+                new { q, like, limit });
+            return rows.ToList();
+        }
+
+        public async Task UpsertMetaAsync(string barcode, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty)
+        {
+            using var conn = _factory.Open();
+            await conn.ExecuteAsync(@"
+INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
+VALUES(@barcode, '', '', @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
+                new
+                {
+                    barcode,
+                    purchasePrice,
+                    supplierId,
+                    supplierName = supplierName ?? string.Empty,
+                    categoryId,
+                    categoryName = categoryName ?? string.Empty,
+                    stockQty
+                });
+        }
+
+        public async Task InsertPriceHistoryAsync(string barcode, string type, int newPrice, string source = "MANUAL")
+        {
+            var timestamp = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            using var conn = _factory.Open();
+            await conn.ExecuteAsync(@"
+INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
+VALUES(@barcode, @timestamp, @type, NULL, @newPrice, @source)",
+                new { barcode, timestamp, type, newPrice, source });
         }
 
         public async Task<bool> UpdateAsync(long productId, string name, int unitPriceMinor)
