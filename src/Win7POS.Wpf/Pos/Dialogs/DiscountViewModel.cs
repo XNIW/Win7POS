@@ -204,7 +204,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
 
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
-            public async void Execute(object parameter) => await _execute().ConfigureAwait(true);
+            public async void Execute(object parameter)
+            {
+                try
+                {
+                    await _execute().ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    Win7POS.Wpf.Infrastructure.UiErrorHandler.Handle(ex, null, "Discount AsyncRelayCommand failed");
+                }
+            }
 #pragma warning disable CS0067
             public event EventHandler CanExecuteChanged;
 #pragma warning restore CS0067

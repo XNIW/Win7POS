@@ -384,7 +384,14 @@ namespace Win7POS.Wpf.Import
 
             public async void Execute(object parameter)
             {
-                await _executeAsync().ConfigureAwait(true);
+                try
+                {
+                    await _executeAsync().ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    Win7POS.Wpf.Infrastructure.UiErrorHandler.Handle(ex, null, "Import AsyncRelayCommand failed");
+                }
             }
 
             public event EventHandler CanExecuteChanged;

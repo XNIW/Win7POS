@@ -188,7 +188,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
 
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
-            public async void Execute(object parameter) => await _executeAsync().ConfigureAwait(true);
+
+            public async void Execute(object parameter)
+            {
+                try
+                {
+                    await _executeAsync().ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    Win7POS.Wpf.Infrastructure.UiErrorHandler.Handle(ex, null, "DbMaintenance AsyncRelayCommand failed");
+                }
+            }
             public event EventHandler CanExecuteChanged;
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }

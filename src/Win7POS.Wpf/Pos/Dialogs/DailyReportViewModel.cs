@@ -313,7 +313,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             public async void Execute(object parameter)
             {
-                await _executeAsync().ConfigureAwait(true);
+                try
+                {
+                    await _executeAsync().ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    Win7POS.Wpf.Infrastructure.UiErrorHandler.Handle(ex, null, "DailyReport AsyncRelayCommand failed");
+                }
             }
 
             public event EventHandler CanExecuteChanged;

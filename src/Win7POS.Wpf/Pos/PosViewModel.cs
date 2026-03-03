@@ -136,31 +136,31 @@ namespace Win7POS.Wpf.Pos
             _service = service ?? new PosWorkflowService();
             _logger = logger ?? new FileLogger();
 
-            AddBarcodeCommand = new AsyncRelayCommand(AddBarcodeAsync, _ => !IsBusy);
-            PayCommand = new AsyncRelayCommand(PayAsync, _ => !IsBusy);
-            ReceiptPreviewCommand = new AsyncRelayCommand(ShowReceiptPreviewAsync, _ => !IsBusy);
-            LoadRecentSalesCommand = new AsyncRelayCommand(LoadRecentSalesAsync, _ => !IsBusy);
-            ReprintPreviewCommand = new AsyncRelayCommand(ReprintPreviewAsync, _ => !IsBusy && SelectedRecentSale != null);
-            IncreaseQtyCommand = new AsyncRelayCommand(IncreaseQtyAsync, _ => !IsBusy && SelectedCartItem != null);
-            DecreaseQtyCommand = new AsyncRelayCommand(DecreaseQtyAsync, _ => !IsBusy && SelectedCartItem != null);
-            RemoveLineCommand = new AsyncRelayCommand(RemoveLineAsync, _ => !IsBusy && SelectedCartItem != null);
-            BackupDbCommand = new AsyncRelayCommand(BackupDbAsync, _ => !IsBusy);
-            PrinterSettingsCommand = new AsyncRelayCommand(OpenPrinterSettingsAsync, _ => !IsBusy);
-            PrintLastReceiptCommand = new AsyncRelayCommand(PrintLastReceiptAsync, _ => !IsBusy);
-            DailyReportCommand = new AsyncRelayCommand(OpenDailyReportAsync, _ => !IsBusy);
-            DbMaintenanceCommand = new AsyncRelayCommand(OpenDbMaintenanceAsync, _ => !IsBusy);
-            AboutSupportCommand = new AsyncRelayCommand(OpenAboutSupportAsync, _ => !IsBusy);
-            RefundCommand = new AsyncRelayCommand(OpenRefundAsync, _ => !IsBusy && SelectedRecentSale != null && SelectedRecentSale.Kind == (int)SaleKind.Sale);
-            PrintSelectedReceiptCommand = new AsyncRelayCommand(PrintSelectedReceiptAsync, _ => !IsBusy && SelectedRecentSale != null);
-            ClearCartCommand = new AsyncRelayCommand(ClearCartAsync, _ => !IsBusy && CartItems.Count > 0);
-            IncreaseQtyForLineCommand = new AsyncRelayCommandParam(IncreaseQtyForLineAsync, _ => !IsBusy);
-            DecreaseQtyForLineCommand = new AsyncRelayCommandParam(DecreaseQtyForLineAsync, _ => !IsBusy);
-            RemoveLineForLineCommand = new AsyncRelayCommandParam(RemoveLineForLineAsync, _ => !IsBusy);
-            OpenSalesRegisterCommand = new AsyncRelayCommand(OpenSalesRegisterAsync, _ => !IsBusy);
-            OpenShopSettingsCommand = new AsyncRelayCommand(OpenShopSettingsAsync, _ => !IsBusy);
+            AddBarcodeCommand = new AsyncRelayCommand(AddBarcodeAsync, _ => !IsBusy, _logger);
+            PayCommand = new AsyncRelayCommand(PayAsync, _ => !IsBusy, _logger);
+            ReceiptPreviewCommand = new AsyncRelayCommand(ShowReceiptPreviewAsync, _ => !IsBusy, _logger);
+            LoadRecentSalesCommand = new AsyncRelayCommand(LoadRecentSalesAsync, _ => !IsBusy, _logger);
+            ReprintPreviewCommand = new AsyncRelayCommand(ReprintPreviewAsync, _ => !IsBusy && SelectedRecentSale != null, _logger);
+            IncreaseQtyCommand = new AsyncRelayCommand(IncreaseQtyAsync, _ => !IsBusy && SelectedCartItem != null, _logger);
+            DecreaseQtyCommand = new AsyncRelayCommand(DecreaseQtyAsync, _ => !IsBusy && SelectedCartItem != null, _logger);
+            RemoveLineCommand = new AsyncRelayCommand(RemoveLineAsync, _ => !IsBusy && SelectedCartItem != null, _logger);
+            BackupDbCommand = new AsyncRelayCommand(BackupDbAsync, _ => !IsBusy, _logger);
+            PrinterSettingsCommand = new AsyncRelayCommand(OpenPrinterSettingsAsync, _ => !IsBusy, _logger);
+            PrintLastReceiptCommand = new AsyncRelayCommand(PrintLastReceiptAsync, _ => !IsBusy, _logger);
+            DailyReportCommand = new AsyncRelayCommand(OpenDailyReportAsync, _ => !IsBusy, _logger);
+            DbMaintenanceCommand = new AsyncRelayCommand(OpenDbMaintenanceAsync, _ => !IsBusy, _logger);
+            AboutSupportCommand = new AsyncRelayCommand(OpenAboutSupportAsync, _ => !IsBusy, _logger);
+            RefundCommand = new AsyncRelayCommand(OpenRefundAsync, _ => !IsBusy && SelectedRecentSale != null && SelectedRecentSale.Kind == (int)SaleKind.Sale, _logger);
+            PrintSelectedReceiptCommand = new AsyncRelayCommand(PrintSelectedReceiptAsync, _ => !IsBusy && SelectedRecentSale != null, _logger);
+            ClearCartCommand = new AsyncRelayCommand(ClearCartAsync, _ => !IsBusy && CartItems.Count > 0, _logger);
+            IncreaseQtyForLineCommand = new AsyncRelayCommandParam(IncreaseQtyForLineAsync, _ => !IsBusy, _logger);
+            DecreaseQtyForLineCommand = new AsyncRelayCommandParam(DecreaseQtyForLineAsync, _ => !IsBusy, _logger);
+            RemoveLineForLineCommand = new AsyncRelayCommandParam(RemoveLineForLineAsync, _ => !IsBusy, _logger);
+            OpenSalesRegisterCommand = new AsyncRelayCommand(OpenSalesRegisterAsync, _ => !IsBusy, _logger);
+            OpenShopSettingsCommand = new AsyncRelayCommand(OpenShopSettingsAsync, _ => !IsBusy, _logger);
             OpenDiscountCommand = new RelayCommand(_ => OpenDiscount(), _ => !IsBusy && (SelectedCartItem != null || CartItems.Count > 0));
-            SuspendCartCommand = new AsyncRelayCommand(SuspendCartAsync, _ => !IsBusy && CartItems.Count > 0);
-            RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy);
+            SuspendCartCommand = new AsyncRelayCommand(SuspendCartAsync, _ => !IsBusy && CartItems.Count > 0, _logger);
+            RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy, _logger);
             StatusMessage = "POS pronto.";
             _ = InitializeAsync();
         }
@@ -1193,18 +1193,27 @@ namespace Win7POS.Wpf.Pos
         {
             private readonly Func<Task> _executeAsync;
             private readonly Func<object, bool> _canExecute;
+            private readonly FileLogger _logger;
 
-            public AsyncRelayCommand(Func<Task> executeAsync, Func<object, bool> canExecute = null)
+            public AsyncRelayCommand(Func<Task> executeAsync, Func<object, bool> canExecute = null, FileLogger logger = null)
             {
                 _executeAsync = executeAsync ?? throw new ArgumentNullException(nameof(executeAsync));
                 _canExecute = canExecute;
+                _logger = logger ?? new FileLogger();
             }
 
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
 
             public async void Execute(object parameter)
             {
-                await _executeAsync().ConfigureAwait(true);
+                try
+                {
+                    await _executeAsync().ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    UiErrorHandler.Handle(ex, _logger, "AsyncRelayCommand failed");
+                }
             }
 
             public event EventHandler CanExecuteChanged;
@@ -1215,18 +1224,27 @@ namespace Win7POS.Wpf.Pos
         {
             private readonly Func<object, Task> _executeAsync;
             private readonly Func<object, bool> _canExecute;
+            private readonly FileLogger _logger;
 
-            public AsyncRelayCommandParam(Func<object, Task> executeAsync, Func<object, bool> canExecute = null)
+            public AsyncRelayCommandParam(Func<object, Task> executeAsync, Func<object, bool> canExecute = null, FileLogger logger = null)
             {
                 _executeAsync = executeAsync ?? throw new ArgumentNullException(nameof(executeAsync));
                 _canExecute = canExecute;
+                _logger = logger ?? new FileLogger();
             }
 
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
 
             public async void Execute(object parameter)
             {
-                await _executeAsync(parameter).ConfigureAwait(true);
+                try
+                {
+                    await _executeAsync(parameter).ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    UiErrorHandler.Handle(ex, _logger, "AsyncRelayCommandParam failed");
+                }
             }
 
             public event EventHandler CanExecuteChanged;
