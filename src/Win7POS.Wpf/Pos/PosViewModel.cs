@@ -127,6 +127,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand OpenSalesRegisterCommand { get; }
         public ICommand OpenShopSettingsCommand { get; }
         public ICommand OpenDiscountCommand { get; }
+        public ICommand OpenEditProductCommand { get; }
         public ICommand SuspendCartCommand { get; }
         public ICommand RecoverCartCommand { get; }
 
@@ -159,6 +160,7 @@ namespace Win7POS.Wpf.Pos
             OpenSalesRegisterCommand = new AsyncRelayCommand(OpenSalesRegisterAsync, _ => !IsBusy, _logger);
             OpenShopSettingsCommand = new AsyncRelayCommand(OpenShopSettingsAsync, _ => !IsBusy, _logger);
             OpenDiscountCommand = new RelayCommand(_ => OpenDiscount(), _ => !IsBusy && (SelectedCartItem != null || CartItems.Count > 0));
+            OpenEditProductCommand = new RelayCommand(OpenEditProductExecute, OpenEditProductCanExecute);
             SuspendCartCommand = new AsyncRelayCommand(SuspendCartAsync, _ => !IsBusy && CartItems.Count > 0, _logger);
             RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy, _logger);
             StatusMessage = "POS pronto.";
@@ -561,6 +563,7 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 IsBusy = false;
+                RequestFocusBarcode();
             }
         }
 
@@ -581,6 +584,7 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 IsBusy = false;
+                RequestFocusBarcode();
             }
         }
 
@@ -601,6 +605,7 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 IsBusy = false;
+                RequestFocusBarcode();
             }
         }
 
@@ -644,6 +649,7 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 IsBusy = false;
+                RequestFocusBarcode();
             }
         }
 
@@ -666,6 +672,7 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 IsBusy = false;
+                RequestFocusBarcode();
             }
         }
 
@@ -687,6 +694,7 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 IsBusy = false;
+                RequestFocusBarcode();
             }
         }
 
@@ -1004,6 +1012,65 @@ namespace Win7POS.Wpf.Pos
             dlg.ShowDialog();
         }
 
+        private static bool CanEditCartLine(PosCartLineRow line)
+        {
+            if (line == null) return false;
+            if (line.IsDiscountLine) return false;
+            if (!string.IsNullOrEmpty(line.Barcode) && line.Barcode.StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase))
+                return false;
+            return true;
+        }
+
+        private void OpenEditProductExecute(object parameter)
+        {
+            var line = parameter as PosCartLineRow ?? SelectedCartItem;
+            if (line == null || !CanEditCartLine(line)) return;
+            try
+            {
+                var dlg = new Dialogs.EditProductDialog(line.Barcode, line.Name, line.UnitPrice)
+                {
+                    Owner = Application.Current?.MainWindow
+                };
+                if (dlg.ShowDialog() == true)
+                {
+                    _ = ApplyEditProductAsync(dlg.ViewModel);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Edit product dialog failed.");
+                StatusMessage = "Errore modifica prodotto.";
+            }
+        }
+
+        private bool OpenEditProductCanExecute(object parameter)
+        {
+            var line = parameter as PosCartLineRow ?? SelectedCartItem;
+            return !IsBusy && line != null && CanEditCartLine(line);
+        }
+
+        private async Task ApplyEditProductAsync(Dialogs.EditProductViewModel vm)
+        {
+            if (vm == null) return;
+            IsBusy = true;
+            try
+            {
+                var snapshot = await _service.UpdateProductAsync(vm.Barcode, vm.ProductName, vm.PriceMinor).ConfigureAwait(true);
+                ApplySnapshot(snapshot);
+                StatusMessage = "Prezzo aggiornato: " + vm.Barcode;
+                RequestFocusBarcode();
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore aggiornamento: " + ex.Message;
+                _logger.LogError(ex, "POS VM update product failed");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
         private void OpenDiscount()
         {
             try
@@ -1082,6 +1149,7 @@ namespace Win7POS.Wpf.Pos
             OnPropertyChanged(nameof(ItemsCount));
             (ClearCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (OpenDiscountCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenEditProductCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SuspendCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 

@@ -38,9 +38,9 @@
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="2*"/>
-                        <ColumnDefinition Width="100"/>
-                        <ColumnDefinition Width="90"/>
-                        <ColumnDefinition Width="90"/>
+                        <ColumnDefinition Width="120"/>
+                        <ColumnDefinition Width="110"/>
+                        <ColumnDefinition Width="120"/>
                         <ColumnDefinition Width="36"/>
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Text="Prodotto" FontWeight="SemiBold" VerticalAlignment="Center"/>
@@ -50,8 +50,9 @@
                     <TextBlock Grid.Column="4" Width="36"/>
                 </Grid>
             </Border>
-            <ListBox Grid.Row="1" ItemsSource="{Binding CartItems}" SelectedItem="{Binding SelectedCartItem}"
-                     AlternationCount="2" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox x:Name="CartListBox" Grid.Row="1" ItemsSource="{Binding CartItems}" SelectedItem="{Binding SelectedCartItem}"
+                     AlternationCount="2" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     MouseDoubleClick="CartListBox_MouseDoubleClick">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource CartRowStyle}">
                         <Style.Triggers>
@@ -66,9 +67,9 @@
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="2*"/>
-                                <ColumnDefinition Width="100"/>
-                                <ColumnDefinition Width="90"/>
-                                <ColumnDefinition Width="90"/>
+                                <ColumnDefinition Width="120"/>
+                                <ColumnDefinition Width="110"/>
+                                <ColumnDefinition Width="120"/>
                                 <ColumnDefinition Width="36"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,0">
@@ -76,7 +77,7 @@
                                 <TextBlock Text="{Binding Barcode}" FontSize="11" Foreground="Gray"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
-                                <Button Content="−" FontSize="14" Padding="0"
+                                <Button Content="−" FontSize="14" Padding="0" Focusable="False"
                                         Command="{Binding DataContext.DecreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}">
                                     <Button.Style>
@@ -91,7 +92,7 @@
                                     </Button.Style>
                                 </Button>
                                 <TextBlock Text="{Binding Quantity}" VerticalAlignment="Center" Margin="10,0" MinWidth="28" TextAlignment="Center" FontWeight="SemiBold"/>
-                                <Button Content="+" FontSize="14" Padding="0"
+                                <Button Content="+" FontSize="14" Padding="0" Focusable="False"
                                         Command="{Binding DataContext.IncreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}">
                                     <Button.Style>
@@ -108,7 +109,7 @@
                             </StackPanel>
                             <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
                             <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
-                            <Button Grid.Column="4" Content="✕" FontSize="12" Padding="0"
+                            <Button Grid.Column="4" Content="✕" FontSize="12" Padding="0" Focusable="False"
                                     Style="{StaticResource SmallRoundButtonStyle}"
                                     Foreground="White" Background="#C45C5C"
                                     Command="{Binding DataContext.RemoveLineForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -132,6 +133,7 @@
                          KeyDown="BarcodeBox_KeyDown"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Add" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding AddBarcodeCommand}"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Sconto" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenDiscountCommand}"/>
+                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Modifica" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenEditProductCommand}"/>
                 <Button MinWidth="120" MinHeight="38" Content="Registro vendite" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenSalesRegisterCommand}"/>
             </StackPanel>
         </Border>

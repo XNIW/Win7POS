@@ -129,6 +129,19 @@ namespace Win7POS.Core.Pos
             RecalcDiscounts();
         }
 
+        /// <summary>Imposta il prezzo unitario di una riga (es. dopo modifica prodotto). Ricalcola sconti.</summary>
+        public void SetLineUnitPrice(string barcode, long unitPriceMinor)
+        {
+            var code = (barcode ?? "").Trim();
+            if (code.Length == 0) return;
+            if (DiscountKeys.IsDiscount(code)) return;
+
+            var line = _lines.FirstOrDefault(x => x.Barcode == code);
+            if (line == null) return;
+            line.UnitPrice = unitPriceMinor;
+            RecalcDiscounts();
+        }
+
         public void RemoveLine(string barcode)
         {
             var code = (barcode ?? "").Trim();

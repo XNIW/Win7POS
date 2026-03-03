@@ -22,8 +22,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public HoldRow SelectedHold
         {
             get => _selectedHold;
-            set { _selectedHold = value; OnPropertyChanged(); }
+            set
+            {
+                _selectedHold = value;
+                OnPropertyChanged();
+                CommandManager.InvalidateRequerySuggested();
+                _ = LoadPreviewAsync();
+            }
         }
+
+        public ObservableCollection<HoldLineRow> SelectedLines { get; } = new ObservableCollection<HoldLineRow>();
 
         public bool IsBusy
         {
@@ -83,6 +91,36 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
+        private async Task LoadPreviewAsync()
+        {
+            if (_selectedHold == null)
+            {
+                SelectedLines.Clear();
+                return;
+            }
+            try
+            {
+                var list = await _service.PeekHeldCartLinesAsync(_selectedHold.HoldId).ConfigureAwait(true);
+                SelectedLines.Clear();
+                foreach (var x in list)
+                {
+                    var lineTotal = x.UnitPrice * x.Qty;
+                    SelectedLines.Add(new HoldLineRow
+                    {
+                        Barcode = x.Barcode,
+                        Name = x.Name,
+                        UnitPriceDisplay = MoneyClp.Format(x.UnitPrice),
+                        Qty = x.Qty,
+                        LineTotalDisplay = MoneyClp.Format(lineTotal)
+                    });
+                }
+            }
+            catch
+            {
+                SelectedLines.Clear();
+            }
+        }
+
         private async Task RecoverAsync()
         {
             if (SelectedHold == null) return;
@@ -136,6 +174,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public long TotalMinor { get; set; }
             public string TimeText { get; set; } = string.Empty;
             public string TotalDisplay { get; set; } = string.Empty;
+        }
+
+        public sealed class HoldLineRow
+        {
+            public string Barcode { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public string UnitPriceDisplay { get; set; } = string.Empty;
+            public int Qty { get; set; }
+            public string LineTotalDisplay { get; set; } = string.Empty;
+            public string DetailLine => $"{Qty} × {UnitPriceDisplay} = {LineTotalDisplay}";
         }
 
         private sealed class RelayCommand : ICommand

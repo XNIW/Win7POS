@@ -1,0 +1,39 @@
+<Window x:Class="Win7POS.Wpf.Pos.Dialogs.EditProductDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Modifica prodotto"
+        Width="400"
+        Height="280"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="100"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Barcode:"/>
+        <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" IsReadOnly="True" Text="{Binding Barcode, Mode=OneWay}" Background="#F0F0F0"/>
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Nome:"/>
+        <TextBox Grid.Row="1" Grid.Column="1" x:Name="NameBox" Margin="8,10,0,0" Text="{Binding ProductName, UpdateSourceTrigger=PropertyChanged}"/>
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Prezzo vendita:"/>
+        <TextBox Grid.Row="2" Grid.Column="1" x:Name="PriceBox" Margin="8,10,0,0"
+                 Text="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}"
+                 KeyDown="PriceBox_KeyDown"/>
+
+        <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Salva" MinWidth="100" Height="36" Margin="0,0,8,0" IsDefault="True"
+                    Command="{Binding ConfirmCommand}"/>
+            <Button Content="Annulla" MinWidth="100" Height="36" IsCancel="True" Command="{Binding CancelCommand}"/>
+        </StackPanel>
+    </Grid>
+</Window>

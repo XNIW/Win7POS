@@ -13,10 +13,10 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="220"/>
+            <ColumnDefinition Width="320"/>
+            <ColumnDefinition Width="360"/>
             <ColumnDefinition Width="280"/>
+            <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
         <!-- Col 0: Scontrino (receipt preview) -->
@@ -80,20 +80,20 @@
             <StackPanel>
                 <TextBlock Text="Rapidi" FontWeight="SemiBold" Margin="0,0,0,8"/>
                 <TextBlock Text="Somma (CLP)" FontSize="11" Foreground="Gray" Margin="0,0,0,4"/>
-                <Button Content="+ 20000" Margin="0,0,0,8" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36"
+                <Button Content="+ 20000" Margin="0,0,0,10" Style="{StaticResource SecondaryButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="20000"/>
-                <Button Content="+ 10000" Margin="0,0,0,8" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36"
+                <Button Content="+ 10000" Margin="0,0,0,10" Style="{StaticResource SecondaryButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="10000"/>
-                <Button Content="+ 5000" Margin="0,0,0,8" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36"
+                <Button Content="+ 5000" Margin="0,0,0,10" Style="{StaticResource SecondaryButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="5000"/>
-                <Button Content="+ 2000" Margin="0,0,0,8" Style="{StaticResource SecondaryButtonStyle}" MinHeight="36"
+                <Button Content="+ 2000" Margin="0,0,0,10" Style="{StaticResource SecondaryButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="2000"/>
                 <TextBlock Text="Importo" FontSize="11" Foreground="Gray" Margin="0,14,0,6"/>
-                <Button Content="≈ Totale arrot." Margin="0,0,0,8" Style="{StaticResource OutlineButtonStyle}" MinHeight="36"
+                <Button Content="≈ Totale arrot." Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
                         Command="{Binding SetRoundedTotalCommand}"/>
-                <Button Content="= Totale esatto" Margin="0,0,0,8" Style="{StaticResource OutlineButtonStyle}" MinHeight="36"
+                <Button Content="= Totale esatto" Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
                         Command="{Binding SetExactTotalCommand}"/>
-                <Button Content="Carta (tutto)" Margin="0,0,0,8" Style="{StaticResource OutlineButtonStyle}" MinHeight="36"
+                <Button Content="Carta (tutto)" Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
                         Command="{Binding PayAllCardCommand}"/>
             </StackPanel>
         </Border>

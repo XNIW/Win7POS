@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -23,30 +24,30 @@ namespace Win7POS.Data.Repositories
 
         private const int GetByBarcodesChunkSize = 900;
 
-        /// <summary>Batch lookup per ridurre query N+1. Chunking per evitare limite parametri SQLite.</summary>
+        /// <summary>Batch lookup per ridurre query N+1. Dedup + chunking per evitare limite parametri SQLite.</summary>
         public async Task<IReadOnlyDictionary<string, Product>> GetByBarcodesAsync(IEnumerable<string> barcodes)
         {
-            var list = new List<string>();
-            foreach (var b in barcodes ?? System.Array.Empty<string>())
+            var set = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var b in barcodes ?? Array.Empty<string>())
             {
                 var t = (b ?? string.Empty).Trim();
-                if (t.Length > 0) list.Add(t);
+                if (t.Length > 0) set.Add(t);
             }
-            if (list.Count == 0) return new Dictionary<string, Product>();
+            if (set.Count == 0) return new Dictionary<string, Product>();
 
-            var dict = new Dictionary<string, Product>(list.Count);
+            var list = set.ToList();
+            var dict = new Dictionary<string, Product>(list.Count, StringComparer.Ordinal);
             using var conn = _factory.Open();
             for (var i = 0; i < list.Count; i += GetByBarcodesChunkSize)
             {
-                var chunk = list.Skip(i).Take(GetByBarcodesChunkSize).ToList();
-                if (chunk.Count == 0) break;
+                var batch = list.Skip(i).Take(GetByBarcodesChunkSize).ToArray();
+                if (batch.Length == 0) break;
                 var rows = await conn.QueryAsync<Product>(
                     "SELECT id, barcode, name, unitPrice FROM products WHERE barcode IN @barcodes",
-                    new { barcodes = chunk }
+                    new { barcodes = batch }
                 ).ConfigureAwait(false);
-                foreach (var p in rows ?? System.Array.Empty<Product>())
-                    if (p?.Barcode != null && !dict.ContainsKey(p.Barcode))
-                        dict[p.Barcode] = p;
+                foreach (var p in rows ?? Array.Empty<Product>())
+                    if (!string.IsNullOrEmpty(p?.Barcode)) dict[p.Barcode] = p;
             }
             return dict;
         }
@@ -59,8 +60,19 @@ namespace Win7POS.Data.Repositories
                 new { id }).ConfigureAwait(false);
         }
 
+        private static bool IsReservedBarcode(string barcode)
+        {
+            if (string.IsNullOrEmpty(barcode)) return false;
+            return barcode.StartsWith("DISC:", StringComparison.Ordinal)
+                || barcode.StartsWith("MANUAL:", StringComparison.Ordinal);
+        }
+
         public async Task<long> UpsertAsync(Product p)
         {
+            if (p == null) throw new ArgumentNullException(nameof(p));
+            if (IsReservedBarcode(p.Barcode))
+                throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
+
             using var conn = _factory.Open();
 
             var updated = await conn.ExecuteAsync(@"

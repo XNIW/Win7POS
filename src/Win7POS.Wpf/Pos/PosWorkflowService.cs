@@ -427,6 +427,29 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        /// <summary>Aggiorna nome e prezzo prodotto in DB e aggiorna la riga in carrello. Ritorna snapshot aggiornato.</summary>
+        public async Task<PosWorkflowSnapshot> UpdateProductAsync(string barcode, string name, long unitPriceMinor)
+        {
+            var code = (barcode ?? string.Empty).Trim();
+            if (code.Length == 0) return await GetSnapshotAsync().ConfigureAwait(true);
+
+            var product = await _products.GetByBarcodeAsync(code).ConfigureAwait(false);
+            if (product == null) return await GetSnapshotAsync().ConfigureAwait(true);
+
+            await _products.UpdateAsync(product.Id, name ?? string.Empty, unitPriceMinor).ConfigureAwait(false);
+
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _session.SetLineUnitPrice(code, unitPriceMinor);
+                return BuildSnapshot("Prezzo aggiornato.");
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         public async Task<IReadOnlyList<Data.Repositories.SupplierListItem>> GetSuppliersAsync()
         {
             return await _suppliers.ListAllAsync().ConfigureAwait(false);
@@ -1147,6 +1170,20 @@ namespace Win7POS.Wpf.Pos
             }).ToList();
         }
 
+        /// <summary>Read-only preview of held cart lines (does not recover or delete).</summary>
+        public async Task<IReadOnlyList<HoldLineDisplay>> PeekHeldCartLinesAsync(string holdId)
+        {
+            if (string.IsNullOrEmpty(holdId)) return Array.Empty<HoldLineDisplay>();
+            var lines = await _heldCarts.LoadHoldLinesAsync(holdId).ConfigureAwait(false);
+            return lines.Select(x => new HoldLineDisplay
+            {
+                Barcode = x.Barcode ?? string.Empty,
+                Name = x.Name ?? string.Empty,
+                UnitPrice = x.UnitPrice,
+                Qty = x.Qty
+            }).ToList();
+        }
+
         public async Task DeleteHeldCartAsync(string holdId)
         {
             await _heldCarts.DeleteHoldAsync(holdId).ConfigureAwait(false);
@@ -1434,6 +1471,14 @@ SELECT last_insert_rowid();";
         public long CreatedAtMs { get; set; }
         public long TotalMinor { get; set; }
         public string TimeText { get; set; } = string.Empty;
+    }
+
+    public sealed class HoldLineDisplay
+    {
+        public string Barcode { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public long UnitPrice { get; set; }
+        public int Qty { get; set; }
     }
 
     public sealed class RecentSaleItem
