@@ -395,7 +395,7 @@ internal static class Program
 
         var soldLines = await sales.GetLinesBySaleIdAsync(originalSaleId);
         Assert(soldLines != null && soldLines.Count >= 1, "Sale has 0 lines; cannot run refund selftest.");
-        var line0 = soldLines[0];
+        var line0 = soldLines![0];
         var qtyPartial = Math.Min(1, line0.Quantity);
         Assert(qtyPartial >= 1, "No remaining qty to refund.");
 
@@ -908,7 +908,7 @@ SELECT last_insert_rowid();";
         return Guid.NewGuid().ToString("N").Substring(0, 12).ToUpperInvariant();
     }
 
-    private static long ToInt64(object value)
+    private static long ToInt64(object? value)
     {
         if (value == null || value == DBNull.Value) return 0;
         return Convert.ToInt64(value, CultureInfo.InvariantCulture);
