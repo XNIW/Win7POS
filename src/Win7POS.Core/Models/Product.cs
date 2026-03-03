@@ -5,6 +5,6 @@ namespace Win7POS.Core.Models
         public long Id { get; set; }
         public string Barcode { get; set; }   // UNIQUE
         public string Name { get; set; }
-        public int UnitPrice { get; set; }    // intero (centesimi / pesos)
+        public long UnitPrice { get; set; }    // intero (centesimi / pesos), long per evitare overflow CLP
     }
 }

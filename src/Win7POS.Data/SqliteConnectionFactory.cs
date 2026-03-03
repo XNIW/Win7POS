@@ -1,3 +1,5 @@
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
 
 namespace Win7POS.Data
@@ -8,16 +10,37 @@ namespace Win7POS.Data
 
         public SqliteConnectionFactory(PosDbOptions opt) => _opt = opt;
 
-        public SqliteConnection Open()
+        private static string BuildConnectionString(string dbPath)
         {
             var cs = new SqliteConnectionStringBuilder
             {
-                DataSource = _opt.DbPath,
+                DataSource = dbPath,
                 ForeignKeys = true
             }.ToString();
+            return cs + ";Default Timeout=5";
+        }
 
-            var conn = new SqliteConnection(cs);
+        public SqliteConnection Open()
+        {
+            var conn = new SqliteConnection(BuildConnectionString(_opt.DbPath));
             conn.Open();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA busy_timeout=5000;";
+                cmd.ExecuteNonQuery();
+            }
+            return conn;
+        }
+
+        public async Task<SqliteConnection> OpenAsync(CancellationToken ct = default)
+        {
+            var conn = new SqliteConnection(BuildConnectionString(_opt.DbPath));
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "PRAGMA busy_timeout=5000;";
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
             return conn;
         }
     }

@@ -55,6 +55,11 @@ namespace Win7POS.Core.Receipt
 
         private static string FormatAmount(int amountMinor, string currency, CultureInfo culture)
         {
+            return FormatAmount((long)amountMinor, currency, culture);
+        }
+
+        private static string FormatAmount(long amountMinor, string currency, CultureInfo culture)
+        {
             if (string.Equals(currency, "CLP", StringComparison.OrdinalIgnoreCase))
                 return amountMinor.ToString(System.Globalization.CultureInfo.InvariantCulture);
             var value = amountMinor / 100.0m;

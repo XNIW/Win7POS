@@ -13,7 +13,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         public PaymentViewModel ViewModel { get; }
 
-        public PaymentDialog(int totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null)
+        public PaymentDialog(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null)
         {
             InitializeComponent();
             WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.85, heightPercent: 0.8, minWidth: 900, minHeight: 550);

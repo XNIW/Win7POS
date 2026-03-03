@@ -8,7 +8,7 @@ namespace Win7POS.Core.Models
         public long Id { get; set; }
         public string Barcode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
-        public int UnitPrice { get; set; }
+        public long UnitPrice { get; set; }
 
         // from product_meta (nullable when no meta)
         public string ArticleCode { get; set; } = string.Empty;

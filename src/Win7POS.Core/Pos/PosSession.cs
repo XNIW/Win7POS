@@ -21,7 +21,7 @@ namespace Win7POS.Core.Pos
         }
 
         public IReadOnlyList<PosLine> Lines => _lines;
-        public int Total => _lines.Sum(x => x.LineTotal);
+        public long Total => _lines.Sum(x => x.LineTotal);
 
         public async Task AddByBarcodeAsync(string barcode)
         {
@@ -95,7 +95,7 @@ namespace Win7POS.Core.Pos
             return barcode.StartsWith("DISC:", StringComparison.Ordinal);
         }
 
-        private void SetOrReplaceLine(string pseudo, string name, int unitPrice, int qty)
+        private void SetOrReplaceLine(string pseudo, string name, long unitPrice, int qty)
         {
             var existing = _lines.FirstOrDefault(x => x.Barcode == pseudo);
             if (existing != null)
@@ -128,7 +128,7 @@ namespace Win7POS.Core.Pos
             if (percent <= 0 || percent > 100) return;
             var baseTotal = _lines.Where(l => !IsDiscount(l.Barcode)).Sum(l => l.LineTotal);
             if (baseTotal <= 0) return;
-            var disc = (int)Math.Round(baseTotal * (percent / 100.0), MidpointRounding.AwayFromZero);
+            var disc = (long)Math.Round(baseTotal * (percent / 100.0), MidpointRounding.AwayFromZero);
             if (disc <= 0) return;
             SetOrReplaceLine("DISC:CART:PCT:" + percent, "Sconto carrello " + percent + "%", -disc, 1);
         }
@@ -139,12 +139,12 @@ namespace Win7POS.Core.Pos
             var line = _lines.FirstOrDefault(l => l.Barcode == lineKey && !IsDiscount(l.Barcode));
             if (line == null) return;
             var lineTotal = line.LineTotal;
-            var disc = (int)Math.Round(lineTotal * (percent / 100.0), MidpointRounding.AwayFromZero);
+            var disc = (long)Math.Round(lineTotal * (percent / 100.0), MidpointRounding.AwayFromZero);
             if (disc <= 0) return;
             SetOrReplaceLine("DISC:LINE:" + lineKey + ":PCT:" + percent, "Sconto " + percent + "%", -disc, 1);
         }
 
-        public void ApplyLineDiscountAmount(string lineKey, int amountMinor)
+        public void ApplyLineDiscountAmount(string lineKey, long amountMinor)
         {
             if (amountMinor <= 0) return;
             var line = _lines.FirstOrDefault(l => l.Barcode == lineKey && !IsDiscount(l.Barcode));
@@ -177,8 +177,8 @@ namespace Win7POS.Core.Pos
                 if (parts.Length >= 4 && int.TryParse(parts[3], out var pct))
                 {
                     var baseTotal = _lines.Where(l => !IsDiscount(l.Barcode)).Sum(l => l.LineTotal);
-                    var disc = (int)Math.Round(baseTotal * (pct / 100.0), MidpointRounding.AwayFromZero);
-                    cartDisc.UnitPrice = disc > 0 ? -disc : 0;
+                    var disc = (long)Math.Round(baseTotal * (pct / 100.0), MidpointRounding.AwayFromZero);
+                    cartDisc.UnitPrice = disc > 0 ? -disc : 0L;
                 }
             }
 
@@ -194,12 +194,12 @@ namespace Win7POS.Core.Pos
                 var line = _lines.FirstOrDefault(l => l.Barcode == key && !IsDiscount(l.Barcode));
                 if (line == null) continue;
                 var lineTotal = line.LineTotal;
-                var disc = (int)Math.Round(lineTotal * (pct / 100.0), MidpointRounding.AwayFromZero);
-                discLine.UnitPrice = disc > 0 ? -disc : 0;
+                var disc = (long)Math.Round(lineTotal * (pct / 100.0), MidpointRounding.AwayFromZero);
+                discLine.UnitPrice = disc > 0 ? -disc : 0L;
             }
         }
 
-        public Task AddManualPriceAsync(int unitPriceMinor, string name = null)
+        public Task AddManualPriceAsync(long unitPriceMinor, string name = null)
         {
             if (unitPriceMinor <= 0)
                 throw new PosException(PosErrorCode.InvalidPrice, unitPriceMinor.ToString());
@@ -282,7 +282,7 @@ namespace Win7POS.Core.Pos
         public long? ProductId { get; set; }
         public string Barcode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
-        public int UnitPrice { get; set; }
+        public long UnitPrice { get; set; }
         public int Quantity { get; set; }
     }
 }

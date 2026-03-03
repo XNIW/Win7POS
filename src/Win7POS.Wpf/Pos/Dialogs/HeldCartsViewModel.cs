@@ -133,7 +133,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             public string HoldId { get; set; } = string.Empty;
             public long CreatedAtMs { get; set; }
-            public int TotalMinor { get; set; }
+            public long TotalMinor { get; set; }
             public string TimeText { get; set; } = string.Empty;
             public string TotalDisplay { get; set; } = string.Empty;
         }

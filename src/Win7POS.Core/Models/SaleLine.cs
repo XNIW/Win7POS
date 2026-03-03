@@ -10,8 +10,8 @@ namespace Win7POS.Core.Models
         public string Name { get; set; }
 
         public int Quantity { get; set; }
-        public int UnitPrice { get; set; }
-        public int LineTotal { get; set; }
+        public long UnitPrice { get; set; }
+        public long LineTotal { get; set; }
         public long? RelatedOriginalLineId { get; set; }
     }
 }

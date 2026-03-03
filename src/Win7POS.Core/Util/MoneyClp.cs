@@ -15,6 +15,12 @@ namespace Win7POS.Core.Util
             return pesos.ToString(CultureInfo.InvariantCulture);
         }
 
+        /// <summary>Formatta importo in pesos (long, per evitare overflow CLP).</summary>
+        public static string Format(long pesos)
+        {
+            return pesos.ToString(CultureInfo.InvariantCulture);
+        }
+
         /// <summary>
         /// Parsing di stringa in pesos interi.
         /// Accetta "1200", "1.200", "1,200" (punti/virgole e spazi vengono rimossi).

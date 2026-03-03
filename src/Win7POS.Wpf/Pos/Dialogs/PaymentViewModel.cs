@@ -17,7 +17,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
     public sealed class PaymentViewModel : INotifyPropertyChanged
     {
-        private readonly int _totalDueMinor;
+        private readonly long _totalDueMinor;
         private readonly PaymentReceiptDraft _draft;
         private readonly Func<string, string, Task<string>> _generateFiscalPdf;
 
@@ -31,7 +31,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _fiscalPreviewText = "";
         private string _fiscalStatus = "";
 
-        public PaymentViewModel(int totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null)
+        public PaymentViewModel(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null)
         {
             _totalDueMinor = totalDueMinor;
             _draft = draft;
@@ -133,25 +133,25 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string MissingAmountText => IsValid ? string.Empty : "Manca: " + MoneyClp.Format(MissingAmountMinor);
         public string RestoOrMissingDisplay => IsValid ? "Resto: " + ChangeDueText : MissingAmountText;
 
-        public bool IsValid => CashAmountMinor >= 0 && CardAmountMinor >= 0 && CashAmountMinor + CardAmountMinor >= _totalDueMinor;
+        public bool IsValid => CashAmountMinor >= 0 && CardAmountMinor >= 0 && (long)CashAmountMinor + (long)CardAmountMinor >= _totalDueMinor;
 
         public int CashAmountMinor => MoneyClp.Parse(CashReceived);
         public int CardAmountMinor => MoneyClp.Parse(CardAmount);
 
-        public int ChangeDueMinor
+        public long ChangeDueMinor
         {
             get
             {
                 if (!IsValid) return 0;
-                return CashAmountMinor + CardAmountMinor - _totalDueMinor;
+                return (long)CashAmountMinor + (long)CardAmountMinor - _totalDueMinor;
             }
         }
 
-        public int MissingAmountMinor
+        public long MissingAmountMinor
         {
             get
             {
-                var paid = CashAmountMinor + CardAmountMinor;
+                var paid = (long)CashAmountMinor + (long)CardAmountMinor;
                 if (CashAmountMinor < 0 || CardAmountMinor < 0) return _totalDueMinor;
                 var missing = _totalDueMinor - paid;
                 return missing > 0 ? missing : 0;
@@ -292,9 +292,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
-            var change = IsValid ? ChangeDueMinor : 0;
-            var paidCash = CashAmountMinor >= 0 ? CashAmountMinor : 0;
-            var paidCard = CardAmountMinor >= 0 ? CardAmountMinor : 0;
+            var change = IsValid ? ChangeDueMinor : 0L;
+            var paidCash = CashAmountMinor >= 0 ? (long)CashAmountMinor : 0L;
+            var paidCard = CardAmountMinor >= 0 ? (long)CardAmountMinor : 0L;
 
             var sale = new Sale
             {
@@ -353,7 +353,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             return _activeField == PaymentActiveField.Cash ? CashAmountMinor : CardAmountMinor;
         }
 
-        private void SetActiveFieldMinor(int minor)
+        private void SetActiveFieldMinor(long minor)
         {
             if (minor < 0) minor = 0;
             var text = MoneyClp.Format(minor);
@@ -382,9 +382,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void SetRoundedTotal()
         {
-            int rounded = ((_totalDueMinor + 500) / 1000) * 1000;
+            long rounded = ((_totalDueMinor + 500) / 1000) * 1000;
             if (rounded < _totalDueMinor) rounded += 1000;
-            SetActiveFieldMinor(rounded);
+            SetActiveFieldMinor(rounded > int.MaxValue ? int.MaxValue : (int)rounded);
         }
 
         private void PayAllCard()

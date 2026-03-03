@@ -6,7 +6,7 @@ namespace Win7POS.Core.Pos
         public string Barcode { get; set; }
         public string Name { get; set; }
         public int Quantity { get; set; }
-        public int UnitPrice { get; set; }
-        public int LineTotal => Quantity * UnitPrice;
+        public long UnitPrice { get; set; }
+        public long LineTotal => Quantity * UnitPrice;
     }
 }

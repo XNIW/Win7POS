@@ -44,6 +44,11 @@ namespace Win7POS.Core.Reports
             return pesos.ToString(CultureInfo.InvariantCulture);
         }
 
+        private static string FormatClp(long pesos)
+        {
+            return pesos.ToString(CultureInfo.InvariantCulture);
+        }
+
         private static void AddCentered(List<string> lines, int width, string text)
         {
             if (string.IsNullOrWhiteSpace(text))
@@ -84,11 +89,11 @@ namespace Win7POS.Core.Reports
     {
         public DateTime Date { get; set; }
         public int SalesCount { get; set; }
-        public int TotalAmount { get; set; }
-        public int CashAmount { get; set; }
-        public int CardAmount { get; set; }
-        public int GrossSalesAmount { get; set; }
-        public int RefundsAmount { get; set; }
-        public int NetAmount { get; set; }
+        public long TotalAmount { get; set; }
+        public long CashAmount { get; set; }
+        public long CardAmount { get; set; }
+        public long GrossSalesAmount { get; set; }
+        public long RefundsAmount { get; set; }
+        public long NetAmount { get; set; }
     }
 }

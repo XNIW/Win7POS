@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Input;
 using Win7POS.Wpf.Infrastructure;
@@ -9,6 +10,7 @@ namespace Win7POS.Wpf
     public partial class MainWindow : Window
     {
         private readonly CashierModeService _cashierService = new CashierModeService();
+        private readonly FileLogger _logger = new FileLogger();
         private bool _loading;
 
         public MainWindow()
@@ -115,12 +117,17 @@ namespace Win7POS.Wpf
 
         private async void OnLoadedAsync(object sender, RoutedEventArgs e)
         {
-            _loading = true;
             try
             {
+                _loading = true;
                 var enabled = await _cashierService.GetCashierModeAsync().ConfigureAwait(true);
                 CashierModeCheckBox.IsChecked = enabled;
                 ApplyCashierMode(enabled);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "MainWindow OnLoaded failed");
+                MessageBox.Show(this, "Si è verificato un errore durante il caricamento. Controlla i log in C:\\ProgramData\\Win7POS\\logs\\app.log.", "Win7POS", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             finally
             {
@@ -131,12 +138,16 @@ namespace Win7POS.Wpf
         private async void OnCashierModeChecked(object sender, RoutedEventArgs e)
         {
             if (_loading) return;
-
-            _loading = true;
             try
             {
+                _loading = true;
                 ApplyCashierMode(true);
                 await _cashierService.SetCashierModeAsync(true).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "MainWindow OnCashierModeChecked failed");
+                MessageBox.Show(this, "Si è verificato un errore. Controlla i log in C:\\ProgramData\\Win7POS\\logs\\app.log.", "Win7POS", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             finally
             {
@@ -147,40 +158,47 @@ namespace Win7POS.Wpf
         private async void OnCashierModeUnchecked(object sender, RoutedEventArgs e)
         {
             if (_loading) return;
-
-            var pinEnabled = await _cashierService.IsPinEnabledAsync().ConfigureAwait(true);
-            if (pinEnabled)
-            {
-                var prompt = new PinPromptDialog("Inserisci PIN (4 cifre)")
-                {
-                    Owner = this
-                };
-                var ok = prompt.ShowDialog() == true;
-                if (!ok)
-                {
-                    RevertCashierModeCheck();
-                    return;
-                }
-
-                var result = await _cashierService.VerifyPinWithLockoutAsync(prompt.Pin).ConfigureAwait(true);
-                if (!result.Ok)
-                {
-                    var message = string.IsNullOrWhiteSpace(result.ErrorMessage) ? "PIN errato." : result.ErrorMessage;
-                    MessageBox.Show(this, message, "PIN", MessageBoxButton.OK, MessageBoxImage.Warning);
-                    RevertCashierModeCheck();
-                    return;
-                }
-            }
-
-            _loading = true;
             try
             {
-                ApplyCashierMode(false);
-                await _cashierService.SetCashierModeAsync(false).ConfigureAwait(true);
+                var pinEnabled = await _cashierService.IsPinEnabledAsync().ConfigureAwait(true);
+                if (pinEnabled)
+                {
+                    var prompt = new PinPromptDialog("Inserisci PIN (4 cifre)")
+                    {
+                        Owner = this
+                    };
+                    var ok = prompt.ShowDialog() == true;
+                    if (!ok)
+                    {
+                        RevertCashierModeCheck();
+                        return;
+                    }
+
+                    var result = await _cashierService.VerifyPinWithLockoutAsync(prompt.Pin).ConfigureAwait(true);
+                    if (!result.Ok)
+                    {
+                        var message = string.IsNullOrWhiteSpace(result.ErrorMessage) ? "PIN errato." : result.ErrorMessage;
+                        MessageBox.Show(this, message, "PIN", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        RevertCashierModeCheck();
+                        return;
+                    }
+                }
+
+                _loading = true;
+                try
+                {
+                    ApplyCashierMode(false);
+                    await _cashierService.SetCashierModeAsync(false).ConfigureAwait(true);
+                }
+                finally
+                {
+                    _loading = false;
+                }
             }
-            finally
+            catch (Exception ex)
             {
-                _loading = false;
+                _logger.LogError(ex, "MainWindow OnCashierModeUnchecked failed");
+                MessageBox.Show(this, "Si è verificato un errore. Controlla i log in C:\\ProgramData\\Win7POS\\logs\\app.log.", "Win7POS", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 

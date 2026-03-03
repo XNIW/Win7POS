@@ -106,28 +106,28 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _reason = value ?? string.Empty; OnPropertyChanged(); }
         }
 
-        public int RefundTotalMinor
+        public long RefundTotalMinor
         {
             get
             {
                 if (IsFullVoid)
-                    return Lines.Sum(x => x.RemainingQty * x.UnitPriceMinor);
-                return Lines.Where(x => x.QtyToRefund > 0).Sum(x => x.QtyToRefund * x.UnitPriceMinor);
+                    return Lines.Sum(x => (long)x.RemainingQty * x.UnitPriceMinor);
+                return Lines.Where(x => x.QtyToRefund > 0).Sum(x => (long)x.QtyToRefund * x.UnitPriceMinor);
             }
         }
 
         public string RefundTotalText => MoneyClp.Format(RefundTotalMinor);
-        public int RemainingRefundableMinor => Preview.MaxRefundableMinor;
+        public long RemainingRefundableMinor => Preview.MaxRefundableMinor;
         public string RemainingRefundableText => MoneyClp.Format(RemainingRefundableMinor);
         public int CashMinor => MoneyClp.Parse(CashRefund);
         public int CardMinor => MoneyClp.Parse(CardRefund);
-        public bool IsValid => RefundTotalMinor > 0 && CashMinor >= 0 && CardMinor >= 0 && CashMinor + CardMinor == RefundTotalMinor;
-        public int MissingMinor
+        public bool IsValid => RefundTotalMinor > 0 && CashMinor >= 0 && CardMinor >= 0 && (long)CashMinor + (long)CardMinor == RefundTotalMinor;
+        public long MissingMinor
         {
             get
             {
                 if (CashMinor < 0 || CardMinor < 0) return RefundTotalMinor;
-                var delta = RefundTotalMinor - (CashMinor + CardMinor);
+                var delta = RefundTotalMinor - ((long)CashMinor + (long)CardMinor);
                 return delta > 0 ? delta : 0;
             }
         }
@@ -159,8 +159,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 IsFullVoid = IsFullVoid,
                 Payment = new RefundPaymentInfo
                 {
-                    CashMinor = CashMinor,
-                    CardMinor = CardMinor
+                    CashMinor = (long)CashMinor,
+                    CardMinor = (long)CardMinor
                 },
                 Reason = (Reason ?? string.Empty).Trim()
             };
@@ -215,7 +215,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public long OriginalLineId { get; set; }
             public string Barcode { get; set; } = string.Empty;
             public string Name { get; set; } = string.Empty;
-            public int UnitPriceMinor { get; set; }
+            public long UnitPriceMinor { get; set; }
             public int SoldQty { get; set; }
             public int RefundedQty { get; set; }
             public int RemainingQty { get; set; }

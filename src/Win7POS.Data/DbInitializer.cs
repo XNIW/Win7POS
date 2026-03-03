@@ -65,6 +65,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
 
 CREATE INDEX IF NOT EXISTS idx_sale_lines_saleId ON sale_lines(saleId);
 CREATE INDEX IF NOT EXISTS idx_sale_lines_barcode ON sale_lines(barcode);
+CREATE INDEX IF NOT EXISTS idx_sales_createdAt ON sales(createdAt);
 CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
 
 CREATE TABLE IF NOT EXISTS suppliers (

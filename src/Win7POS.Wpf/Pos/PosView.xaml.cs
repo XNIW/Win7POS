@@ -11,7 +11,7 @@ namespace Win7POS.Wpf.Pos
         public PosView()
         {
             InitializeComponent();
-            var vm = new PosViewModel();
+            var vm = PosViewComposition.CreateViewModel();
             vm.FocusBarcodeRequested += FocusBarcode;
             DataContext = vm;
             Loaded += OnLoaded;
@@ -100,6 +100,17 @@ namespace Win7POS.Wpf.Pos
                 Keyboard.Focus(BarcodeBox);
                 BarcodeBox.SelectAll();
             }), DispatcherPriority.Input);
+        }
+    }
+
+    /// <summary>Mini Composition Root: assembla le dipendenze per PosViewModel.</summary>
+    internal static class PosViewComposition
+    {
+        public static PosViewModel CreateViewModel()
+        {
+            var logger = new Infrastructure.FileLogger();
+            var service = new PosWorkflowService();
+            return new PosViewModel(service, logger);
         }
     }
 }

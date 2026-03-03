@@ -272,7 +272,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public string SaleCode { get; set; }
             public int Kind { get; set; }
             public string KindText { get; set; }
-            public int Total { get; set; }
+            public long Total { get; set; }
             public string TotalDisplay => MoneyClp.Format(Total);
             public string TimeText { get; set; }
             public bool IsVoided { get; set; }
@@ -283,8 +283,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             public string Name { get; set; }
             public int Quantity { get; set; }
-            public int UnitPrice { get; set; }
-            public int LineTotal { get; set; }
+            public long UnitPrice { get; set; }
+            public long LineTotal { get; set; }
             public string UnitPriceDisplay => MoneyClp.Format(UnitPrice);
             public string LineTotalDisplay => MoneyClp.Format(LineTotal);
         }

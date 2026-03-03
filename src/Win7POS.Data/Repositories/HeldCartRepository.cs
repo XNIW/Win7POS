@@ -13,7 +13,7 @@ namespace Win7POS.Data.Repositories
 
         public HeldCartRepository(SqliteConnectionFactory factory) => _factory = factory;
 
-        public async Task CreateHoldAsync(string holdId, long createdAtMs, int totalMinor, IReadOnlyList<HeldCartLineRow> lines)
+        public async Task CreateHoldAsync(string holdId, long createdAtMs, long totalMinor, IReadOnlyList<HeldCartLineRow> lines)
         {
             if (string.IsNullOrWhiteSpace(holdId)) throw new ArgumentException("holdId is empty");
             if (lines == null || lines.Count == 0) throw new ArgumentException("lines is empty");
@@ -76,14 +76,14 @@ namespace Win7POS.Data.Repositories
     {
         public string HoldId { get; set; } = string.Empty;
         public long CreatedAtMs { get; set; }
-        public int TotalMinor { get; set; }
+        public long TotalMinor { get; set; }
     }
 
     public sealed class HeldCartLineRow
     {
         public string Barcode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
-        public int UnitPrice { get; set; }
+        public long UnitPrice { get; set; }
         public int Qty { get; set; }
     }
 }

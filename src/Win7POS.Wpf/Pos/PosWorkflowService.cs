@@ -1347,9 +1347,9 @@ SELECT last_insert_rowid();";
         public long OriginalSaleId { get; set; }
         public string OriginalSaleCode { get; set; } = string.Empty;
         public long OriginalCreatedAtMs { get; set; }
-        public int OriginalTotalMinor { get; set; }
+        public long OriginalTotalMinor { get; set; }
         public bool IsAlreadyVoided { get; set; }
-        public int MaxRefundableMinor { get; set; }
+        public long MaxRefundableMinor { get; set; }
         public List<RefundPreviewLine> Lines { get; set; } = new List<RefundPreviewLine>();
     }
 
@@ -1358,7 +1358,7 @@ SELECT last_insert_rowid();";
         public long OriginalLineId { get; set; }
         public string Barcode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
-        public int UnitPriceMinor { get; set; }
+        public long UnitPriceMinor { get; set; }
         public int SoldQty { get; set; }
         public int RefundedQty { get; set; }
         public int RemainingQty { get; set; }
@@ -1368,8 +1368,8 @@ SELECT last_insert_rowid();";
     public sealed class PosWorkflowSnapshot
     {
         public List<PosCartLine> Lines { get; set; } = new List<PosCartLine>();
-        public int Subtotal { get; set; }
-        public int Total { get; set; }
+        public long Subtotal { get; set; }
+        public long Total { get; set; }
         public string Status { get; set; } = string.Empty;
     }
 
@@ -1384,7 +1384,7 @@ SELECT last_insert_rowid();";
     {
         public long SaleId { get; set; }
         public string SaleCode { get; set; } = string.Empty;
-        public int TotalMinor { get; set; }
+        public long TotalMinor { get; set; }
         public long CreatedAtMs { get; set; }
         public string Receipt42 { get; set; } = string.Empty;
         public string Receipt32 { get; set; } = string.Empty;
@@ -1405,16 +1405,16 @@ SELECT last_insert_rowid();";
 
     public sealed class PosPaymentInfo
     {
-        public int CashAmountMinor { get; set; }
-        public int CardAmountMinor { get; set; }
+        public long CashAmountMinor { get; set; }
+        public long CardAmountMinor { get; set; }
 
-        public bool IsValid(int totalMinor)
+        public bool IsValid(long totalMinor)
         {
             if (CashAmountMinor < 0 || CardAmountMinor < 0) return false;
             return CashAmountMinor + CardAmountMinor >= totalMinor;
         }
 
-        public int GetChangeMinor(int totalMinor)
+        public long GetChangeMinor(long totalMinor)
         {
             if (!IsValid(totalMinor)) return 0;
             return CashAmountMinor + CardAmountMinor - totalMinor;
@@ -1432,7 +1432,7 @@ SELECT last_insert_rowid();";
     {
         public string HoldId { get; set; } = string.Empty;
         public long CreatedAtMs { get; set; }
-        public int TotalMinor { get; set; }
+        public long TotalMinor { get; set; }
         public string TimeText { get; set; } = string.Empty;
     }
 
@@ -1441,7 +1441,7 @@ SELECT last_insert_rowid();";
         public long SaleId { get; set; }
         public string SaleCode { get; set; } = string.Empty;
         public long CreatedAtMs { get; set; }
-        public int TotalMinor { get; set; }
+        public long TotalMinor { get; set; }
         public int Kind { get; set; }
         public long? RelatedSaleId { get; set; }
         public long? VoidedBySaleId { get; set; }
@@ -1452,8 +1452,8 @@ SELECT last_insert_rowid();";
         public string Barcode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public int Quantity { get; set; }
-        public int UnitPrice { get; set; }
-        public int LineTotal { get; set; }
+        public long UnitPrice { get; set; }
+        public long LineTotal { get; set; }
     }
 
     public sealed class PosPrinterSettings

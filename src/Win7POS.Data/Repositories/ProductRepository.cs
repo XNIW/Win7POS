@@ -173,7 +173,7 @@ VALUES(@barcode, @timestamp, @type, NULL, @newPrice, @source)",
                 new { barcode, timestamp, type, newPrice, source }).ConfigureAwait(false);
         }
 
-        public async Task<bool> UpdateAsync(long productId, string name, int unitPriceMinor)
+        public async Task<bool> UpdateAsync(long productId, string name, long unitPriceMinor)
         {
             using var conn = _factory.Open();
             var rows = await conn.ExecuteAsync(

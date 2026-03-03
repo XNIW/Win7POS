@@ -20,7 +20,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string Barcode { get; set; }
         public string Name { get; set; }
         public int Quantity { get; set; }
-        public int UnitPrice { get; set; }
-        public int LineTotal { get; set; }
+        public long UnitPrice { get; set; }
+        public long LineTotal { get; set; }
     }
 }

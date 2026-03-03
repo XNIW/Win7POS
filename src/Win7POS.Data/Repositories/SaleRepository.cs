@@ -16,7 +16,7 @@ namespace Win7POS.Data.Repositories
 
         public async Task<long> InsertSaleAsync(Sale sale, IReadOnlyList<SaleLine> lines)
         {
-            using var conn = _factory.Open();
+            using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
 
             try
@@ -225,10 +225,10 @@ ORDER BY l.id ASC",
 
         public async Task<long> InsertRefundSaleAsync(
             RefundCreateRequest req,
-            int totalMinor,
-            int paidCashMinor,
-            int paidCardMinor,
-            int changeMinor)
+            long totalMinor,
+            long paidCashMinor,
+            long paidCardMinor,
+            long changeMinor)
         {
             using var conn = _factory.Open();
             using var tx = conn.BeginTransaction();
@@ -249,10 +249,10 @@ ORDER BY l.id ASC",
             SqliteConnection conn,
             SqliteTransaction tx,
             RefundCreateRequest req,
-            int totalMinor,
-            int paidCashMinor,
-            int paidCardMinor,
-            int changeMinor)
+            long totalMinor,
+            long paidCashMinor,
+            long paidCardMinor,
+            long changeMinor)
         {
             var sale = new Sale
             {
@@ -298,12 +298,12 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
     {
         public DateTime Date { get; set; }
         public int SalesCount { get; set; }
-        public int TotalAmount { get; set; }
-        public int CashAmount { get; set; }
-        public int CardAmount { get; set; }
-        public int GrossSalesAmount { get; set; }
-        public int RefundsAmount { get; set; }
-        public int NetAmount { get; set; }
+        public long TotalAmount { get; set; }
+        public long CashAmount { get; set; }
+        public long CardAmount { get; set; }
+        public long GrossSalesAmount { get; set; }
+        public long RefundsAmount { get; set; }
+        public long NetAmount { get; set; }
     }
 
     public sealed class SaleLineReturnableDto
@@ -313,7 +313,7 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
         public long? ProductId { get; set; }
         public string Barcode { get; set; }
         public string Name { get; set; }
-        public int UnitPrice { get; set; }
+        public long UnitPrice { get; set; }
         public int SoldQty { get; set; }
         public int RefundedQty { get; set; }
         public int RemainingQty { get; set; }

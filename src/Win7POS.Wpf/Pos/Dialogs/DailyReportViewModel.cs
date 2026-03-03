@@ -19,12 +19,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _dateText = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         private string _status = string.Empty;
         private int _salesCount;
-        private int _totalAmount;
-        private int _cashAmount;
-        private int _cardAmount;
-        private int _grossSalesAmount;
-        private int _refundsAmount;
-        private int _netAmount;
+        private long _totalAmount;
+        private long _cashAmount;
+        private long _cardAmount;
+        private long _grossSalesAmount;
+        private long _refundsAmount;
+        private long _netAmount;
         private bool _isBusy;
         private string _summaryReceiptPreview = string.Empty;
         private string _historyFromText = DateTime.Now.AddMonths(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -58,19 +58,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _salesCount = value; OnPropertyChanged(); }
         }
 
-        public int TotalAmount
+        public long TotalAmount
         {
             get => _totalAmount;
             set { _totalAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalAmountDisplay)); }
         }
 
-        public int CashAmount
+        public long CashAmount
         {
             get => _cashAmount;
             set { _cashAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(CashAmountDisplay)); }
         }
 
-        public int CardAmount
+        public long CardAmount
         {
             get => _cardAmount;
             set { _cardAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(CardAmountDisplay)); }
@@ -82,19 +82,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _isBusy = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
-        public int GrossSalesAmount
+        public long GrossSalesAmount
         {
             get => _grossSalesAmount;
             set { _grossSalesAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(GrossSalesAmountDisplay)); }
         }
 
-        public int RefundsAmount
+        public long RefundsAmount
         {
             get => _refundsAmount;
             set { _refundsAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(RefundsAmountDisplay)); }
         }
 
-        public int NetAmount
+        public long NetAmount
         {
             get => _netAmount;
             set { _netAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(NetAmountDisplay)); }

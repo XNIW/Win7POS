@@ -19,12 +19,12 @@ namespace Win7POS.Wpf.Pos
 {
     public sealed class PosViewModel : INotifyPropertyChanged
     {
-        private readonly PosWorkflowService _service = new PosWorkflowService();
-        private readonly FileLogger _logger = new FileLogger();
+        private readonly PosWorkflowService _service;
+        private readonly FileLogger _logger;
 
         private string _barcodeInput = string.Empty;
-        private int _subtotal;
-        private int _total;
+        private long _subtotal;
+        private long _total;
         private bool _isBusy;
         private string _statusMessage = string.Empty;
         private string _receiptPreview = string.Empty;
@@ -45,13 +45,13 @@ namespace Win7POS.Wpf.Pos
             set { _barcodeInput = value; OnPropertyChanged(); }
         }
 
-        public int Subtotal
+        public long Subtotal
         {
             get => _subtotal;
             set { _subtotal = value; OnPropertyChanged(); }
         }
 
-        public int Total
+        public long Total
         {
             get => _total;
             set { _total = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalDisplay)); }
@@ -130,8 +130,12 @@ namespace Win7POS.Wpf.Pos
         public ICommand SuspendCartCommand { get; }
         public ICommand RecoverCartCommand { get; }
 
-        public PosViewModel()
+        /// <summary>Costruttore con dipendenze iniettate. Se null, usa istanze di default (compatibilità designer XAML).</summary>
+        public PosViewModel(PosWorkflowService service = null, FileLogger logger = null)
         {
+            _service = service ?? new PosWorkflowService();
+            _logger = logger ?? new FileLogger();
+
             AddBarcodeCommand = new AsyncRelayCommand(AddBarcodeAsync, _ => !IsBusy);
             PayCommand = new AsyncRelayCommand(PayAsync, _ => !IsBusy);
             ReceiptPreviewCommand = new AsyncRelayCommand(ShowReceiptPreviewAsync, _ => !IsBusy);
@@ -1147,8 +1151,8 @@ namespace Win7POS.Wpf.Pos
             public string Barcode { get; set; } = string.Empty;
             public string Name { get; set; } = string.Empty;
             public int Quantity { get; set; }
-            public int UnitPrice { get; set; }
-            public int LineTotal { get; set; }
+            public long UnitPrice { get; set; }
+            public long LineTotal { get; set; }
             public string UnitPriceDisplay => MoneyClp.Format(UnitPrice);
             public string LineTotalDisplay => MoneyClp.Format(LineTotal);
             public bool IsDiscountLine => (Barcode ?? "").StartsWith("DISC:", StringComparison.Ordinal);
@@ -1159,7 +1163,7 @@ namespace Win7POS.Wpf.Pos
             public long SaleId { get; set; }
             public string SaleCode { get; set; } = string.Empty;
             public string TimeText { get; set; } = string.Empty;
-            public int Total { get; set; }
+            public long Total { get; set; }
             public string TotalDisplay => MoneyClp.Format(Total);
             public int Kind { get; set; }
             public string KindText { get; set; } = string.Empty;

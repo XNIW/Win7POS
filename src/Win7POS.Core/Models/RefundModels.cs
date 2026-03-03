@@ -7,14 +7,14 @@ namespace Win7POS.Core.Models
         public long OriginalLineId { get; set; }
         public string Barcode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
-        public int UnitPriceMinor { get; set; }
+        public long UnitPriceMinor { get; set; }
         public int QtyToRefund { get; set; }
     }
 
     public sealed class RefundPaymentInfo
     {
-        public int CashMinor { get; set; }
-        public int CardMinor { get; set; }
+        public long CashMinor { get; set; }
+        public long CardMinor { get; set; }
     }
 
     public sealed class RefundCreateRequest
@@ -32,6 +32,6 @@ namespace Win7POS.Core.Models
         public string RefundSaleCode { get; set; } = string.Empty;
         public string Receipt42 { get; set; } = string.Empty;
         public string Receipt32 { get; set; } = string.Empty;
-        public int TotalMinor { get; set; }
+        public long TotalMinor { get; set; }
     }
 }

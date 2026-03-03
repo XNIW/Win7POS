@@ -10,9 +10,9 @@ namespace Win7POS.Core.Models
         public long? VoidedBySaleId { get; set; }
         public long? VoidedAt { get; set; }
         public string Reason { get; set; }
-        public int Total { get; set; }
-        public int PaidCash { get; set; }
-        public int PaidCard { get; set; }
-        public int Change { get; set; }
+        public long Total { get; set; }
+        public long PaidCash { get; set; }
+        public long PaidCard { get; set; }
+        public long Change { get; set; }
     }
 }

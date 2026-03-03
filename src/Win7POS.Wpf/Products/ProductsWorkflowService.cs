@@ -37,7 +37,7 @@ namespace Win7POS.Wpf.Products
             return _products.SearchDetailsAsync(query, limit);
         }
 
-        public async Task UpdateAsync(long productId, string name, int priceMinor)
+        public async Task UpdateAsync(long productId, string name, long priceMinor)
         {
             if (productId <= 0) throw new ArgumentException("invalid product id");
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("name is empty");
