@@ -46,22 +46,28 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <CheckBox Grid.Row="0" Content="Mostra SII nel browser dopo PDF" IsChecked="{Binding ShowSiiWeb}" Margin="0,0,0,6"/>
-                <TextBlock Grid.Row="1" Text="Timbre Electrónico SII" FontSize="10" Foreground="Gray" Margin="0,0,0,4"/>
-                <Image x:Name="SiiQrImage" Grid.Row="2" Width="80" Height="80" Margin="0,0,0,6" Stretch="Uniform"/>
-                <TextBlock Grid.Row="3" Text="Boleta N° (prossimo):" FontSize="11" Foreground="Gray" Margin="0,0,0,2"/>
-                <TextBlock Grid.Row="4" Text="{Binding NextBoletaNumber, Mode=OneWay}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,6"/>
-                <TextBox Grid.Row="5" Text="{Binding FiscalPreviewText, Mode=OneWay}" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
-                         FontFamily="Consolas" FontSize="10" MinHeight="80" Margin="0,0,0,6"/>
-                <TextBlock Grid.Row="6" Text="{Binding FiscalStatus, Mode=OneWay}" Foreground="Gray" FontSize="10" Margin="0,0,0,4"/>
-                <StackPanel Grid.Row="7" Orientation="Horizontal" Margin="0,4,0,0">
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,6">
+                    <TextBlock Text="Boleta N° (prossimo):" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                    <TextBlock Text="{Binding NextBoletaNumber, Mode=OneWay}" FontWeight="SemiBold" FontSize="14" VerticalAlignment="Center"/>
+                </StackPanel>
+                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,0,0,6">
+                    <StackPanel>
+                        <TextBox Text="{Binding FiscalPreviewTopText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                                 FontFamily="Courier New" FontSize="10" BorderThickness="0" Background="Transparent"
+                                 VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" Padding="0"/>
+                        <Image x:Name="SiiQrImage" Margin="0,10,0,10" Height="90" Stretch="Uniform" HorizontalAlignment="Center"/>
+                        <TextBox Text="{Binding FiscalPreviewBottomText, Mode=OneWay}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="NoWrap"
+                                 FontFamily="Courier New" FontSize="10" BorderThickness="0" Background="Transparent"
+                                 VerticalScrollBarVisibility="Disabled" HorizontalScrollBarVisibility="Auto" Padding="0"/>
+                    </StackPanel>
+                </ScrollViewer>
+                <TextBlock Grid.Row="3" Text="{Binding FiscalStatus, Mode=OneWay}" Foreground="Gray" FontSize="10" Margin="0,0,0,4"/>
+                <StackPanel Grid.Row="4" Orientation="Horizontal" Margin="0,4,0,0">
                     <Button Content="Genera PDF" MinWidth="90" Margin="0,0,6,0" Command="{Binding GeneratePdfCommand}"/>
                     <Button Content="Apri SII" MinWidth="80" Command="{Binding OpenSiiCommand}"/>
                 </StackPanel>

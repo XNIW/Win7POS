@@ -32,12 +32,28 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 var path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "sii_qrcode.png");
-                if (File.Exists(path) && SiiQrImage != null)
+                if (SiiQrImage == null) return;
+                if (!File.Exists(path))
                 {
-                    SiiQrImage.Source = new BitmapImage(new Uri(path, UriKind.Absolute));
+                    SiiQrImage.Visibility = Visibility.Collapsed;
+                    return;
                 }
+
+                var bmp = new BitmapImage();
+                bmp.BeginInit();
+                bmp.CacheOption = BitmapCacheOption.OnLoad;
+                bmp.UriSource = new Uri(path, UriKind.Absolute);
+                bmp.EndInit();
+                bmp.Freeze();
+
+                SiiQrImage.Source = bmp;
+                SiiQrImage.Visibility = Visibility.Visible;
             }
-            catch { }
+            catch
+            {
+                if (SiiQrImage != null)
+                    SiiQrImage.Visibility = Visibility.Collapsed;
+            }
         }
 
         private void CashBox_GotFocus(object sender, RoutedEventArgs e)

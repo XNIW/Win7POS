@@ -146,6 +146,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public bool ShowSiiWeb { get => _showSiiWeb; set { _showSiiWeb = value; OnPropertyChanged(); } }
         public string FiscalPreviewText { get => _fiscalPreviewText; private set { _fiscalPreviewText = value ?? ""; OnPropertyChanged(); } }
+        public string FiscalPreviewTopText { get; private set; }
+        public string FiscalPreviewBottomText { get; private set; }
         public string FiscalStatus { get => _fiscalStatus; private set { _fiscalStatus = value ?? ""; OnPropertyChanged(); } }
 
         public event Action<bool> RequestClose;
@@ -215,7 +217,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 "Res. 99 de 2014",
                 "Verifique documento en sii.cl"
             };
-            FiscalPreviewText = string.Join(Environment.NewLine, lines);
+            var full = string.Join(Environment.NewLine, lines);
+            FiscalPreviewText = full;
+
+            const string marker = "Timbre Electrónico SII";
+            var idx = lines.FindIndex(s => (s ?? "").Trim().Equals(marker, StringComparison.OrdinalIgnoreCase));
+            if (idx < 0) idx = lines.Count;
+
+            FiscalPreviewTopText = string.Join(Environment.NewLine, lines.Take(idx));
+            FiscalPreviewBottomText = string.Join(Environment.NewLine, lines.Skip(idx));
+
+            OnPropertyChanged(nameof(FiscalPreviewTopText));
+            OnPropertyChanged(nameof(FiscalPreviewBottomText));
+            OnPropertyChanged(nameof(FiscalPreviewText));
         }
 
         private async Task GeneratePdfAsync()
