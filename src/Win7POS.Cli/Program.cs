@@ -453,13 +453,13 @@ internal static class Program
             Console.WriteLine("Refund over-remaining check: PASS");
         }
 
-        var remainingTotal = 0;
+        long remainingTotal = 0;
         foreach (var line in soldLines)
         {
             var refunded = await sales.GetRefundedQtyAsync(originalSaleId, line.Id);
             var remaining = line.Quantity - refunded;
             if (remaining > 0)
-                remainingTotal += remaining * line.UnitPrice;
+                remainingTotal += (long)remaining * line.UnitPrice;
         }
         Assert(remainingTotal > 0, "Expected remaining refundable amount > 0 before full void.");
         var fullVoidReq = new RefundCreateRequest
