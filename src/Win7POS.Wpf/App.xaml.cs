@@ -1,6 +1,8 @@
 using System;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using Win7POS.Core;
 using Win7POS.Wpf.Infrastructure;
 
@@ -10,8 +12,24 @@ namespace Win7POS.Wpf
     {
         private static readonly FileLogger _logger = new FileLogger();
 
+        private static void EnsureIe11WebBrowser()
+        {
+            try
+            {
+                var exe = Process.GetCurrentProcess().MainModule.ModuleName;
+                using (var k = Registry.CurrentUser.CreateSubKey(
+                    @"Software\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BROWSER_EMULATION"))
+                {
+                    // IE11 Edge mode
+                    k?.SetValue(exe, 11001, RegistryValueKind.DWord);
+                }
+            }
+            catch { }
+        }
+
         protected override void OnStartup(StartupEventArgs e)
         {
+            EnsureIe11WebBrowser();
             DispatcherUnhandledException += OnDispatcherUnhandledException;
             try
             {

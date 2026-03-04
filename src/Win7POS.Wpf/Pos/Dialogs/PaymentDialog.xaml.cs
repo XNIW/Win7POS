@@ -22,11 +22,20 @@ namespace Win7POS.Wpf.Pos.Dialogs
             DataContext = ViewModel;
         }
 
+        private const string SiiLoginUrl =
+            "https://clave.w.sii.cl/oauthsii-v1/?response_type=code&client_id=e0378e96-4014-4a47-b852-9d9246797f5c&redirect_uri=https://eboleta.sii.cl/emitir/&scope=user_info&state=730b12d3-0586-42cb-8d8e-57c15125a8a9";
+
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
             Keyboard.Focus(CashBox);
             CashBox.SelectAll();
             LoadSiiQrCode();
+            try
+            {
+                if (SiiWeb != null)
+                    SiiWeb.Navigate(SiiLoginUrl);
+            }
+            catch { }
         }
 
         private void LoadSiiQrCode()

@@ -69,19 +69,20 @@ namespace Win7POS.Wpf.Fiscal
 
                 using (var img = XImage.FromFile(imgPath))
                 {
-                    // ~60mm su carta 80mm: 60/25.4*72 = 170.08pt
-                    const double targetW = 170.0;
+                    // target: ~58mm (più vicino all'originale e meno "ingombrante")
+                    const double targetW = 58.0 / 25.4 * 72.0; // mm -> pt
+                    const double leftRightMargin = 12.0;       // coerente col testo (marginLeft=12)
+                    const double xOffsetPt = -6.0;             // ~ -2.1mm: compensa stampa che tende "a destra"
 
-                    // clamp solo per sicurezza (margini)
-                    var maxW = page.Width - 24;
+                    var maxW = page.Width - (leftRightMargin * 2.0);
                     var w = Math.Min(targetW, maxW);
                     var h = w * img.PixelHeight / (double)img.PixelWidth;
 
-                    var x = (page.Width - w) / 2.0;
+                    var x = leftRightMargin + (maxW - w) / 2.0 + xOffsetPt;
 
-                    y += 8;
+                    y += 18; // più spazio bianco sopra al barcode
                     gfx.DrawImage(img, x, y, w, h);
-                    y += h + 10;
+                    y += h + 14;
                 }
             }
             catch
