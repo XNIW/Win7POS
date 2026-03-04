@@ -12,7 +12,7 @@ namespace Win7POS.Wpf.Printing
         private const string SiiMarker = "Timbre Electrónico SII";
 
         // regolazioni richieste: spazio bianco sopra QR + QR più stretto su carta
-        private const float QrWidthMm = 52f;
+        private const float QrWidthMm = 50f;
         private const float QrTopGapMm = 6f;
         private const float QrBottomGapMm = 3f;
 
@@ -102,9 +102,9 @@ namespace Win7POS.Wpf.Printing
 
                 try
                 {
-                    // Font più piccolo per termica 80mm (~42 caratteri)
-                    try { font = new Font("Consolas", 9f); }
-                    catch { font = new Font("Courier New", 9f); }
+                    // Courier New prima (coerente col preview fiscale), poi fallback Consolas
+                    try { font = new Font("Courier New", 9f); }
+                    catch { font = new Font("Consolas", 9f); }
 
                     doc.PrintPage += (s, e) =>
                     {
@@ -118,29 +118,33 @@ namespace Win7POS.Wpf.Printing
                         {
                             var line = lines[lineIndex] ?? "";
 
-                            // Se riga marker -> stampa marker + spazio bianco + immagine (se disponibile)
+                            // Se riga marker -> stampa PRIMA il QR, POI la riga "Timbre..." (come nel PDF)
                             if (IsSiiMarker(line) && siiImg != null)
                             {
                                 float w = MmToHundredthsInch(QrWidthMm);
                                 if (w > printableW) w = printableW;
-                                float h = w * siiImg.Height / (float)siiImg.Width;
 
+                                float h = w * siiImg.Height / (float)siiImg.Width;
                                 float gapTop = MmToHundredthsInch(QrTopGapMm);
                                 float gapBottom = MmToHundredthsInch(QrBottomGapMm);
 
-                                if (y + lineHeight + gapTop + h + gapBottom > bottom)
+                                // serve spazio per: gap + img + gap + 1 riga testo
+                                if (y + gapTop + h + gapBottom + lineHeight > bottom)
                                     break;
 
-                                e.Graphics.DrawString(line, font, Brushes.Black, x, y);
-                                y += lineHeight;
-                                lineIndex++;
-
+                                // gap sopra
                                 y += gapTop;
 
+                                // QR centrato
                                 float imgX = e.PageSettings.HardMarginX + (printableW - w) / 2f;
                                 e.Graphics.DrawImage(siiImg, imgX, y, w, h);
                                 y += h + gapBottom;
 
+                                // ORA stampa "Timbre..."
+                                e.Graphics.DrawString(line, font, Brushes.Black, x, y);
+                                y += lineHeight;
+
+                                lineIndex++;
                                 continue;
                             }
 
