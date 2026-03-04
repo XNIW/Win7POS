@@ -13,11 +13,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         public PaymentViewModel ViewModel { get; }
 
-        public PaymentDialog(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null)
+        public PaymentDialog(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null, Func<string, string, Task> printFiscalToThermal = null)
         {
             InitializeComponent();
             WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.85, heightPercent: 0.8, minWidth: 900, minHeight: 550);
-            ViewModel = new PaymentViewModel(totalDueMinor, draft, generateFiscalPdf);
+            ViewModel = new PaymentViewModel(totalDueMinor, draft, generateFiscalPdf, printFiscalToThermal);
             ViewModel.RequestClose += OnRequestClose;
             DataContext = ViewModel;
         }

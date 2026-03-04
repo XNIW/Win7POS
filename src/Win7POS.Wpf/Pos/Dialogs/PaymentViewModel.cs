@@ -20,6 +20,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private readonly long _totalDueMinor;
         private readonly PaymentReceiptDraft _draft;
         private readonly Func<string, string, Task<string>> _generateFiscalPdf;
+        private readonly Func<string, string, Task> _printFiscalToThermal;
 
         private string _cashReceived = "";
         private string _cardAmount = "0";
@@ -31,11 +32,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _fiscalPreviewText = "";
         private string _fiscalStatus = "";
 
-        public PaymentViewModel(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null)
+        public PaymentViewModel(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null, Func<string, string, Task> printFiscalToThermal = null)
         {
             _totalDueMinor = totalDueMinor;
             _draft = draft;
             _generateFiscalPdf = generateFiscalPdf;
+            _printFiscalToThermal = printFiscalToThermal;
             _shouldPrint = draft?.DefaultPrint ?? false;
             _nextBoletaNumber = draft?.NextBoletaNumber ?? 0;
 
@@ -50,6 +52,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             SetRoundedTotalCommand = new RelayCommand(_ => SetRoundedTotal(), _ => true);
             PayAllCardCommand = new RelayCommand(_ => PayAllCard(), _ => true);
             GeneratePdfCommand = new RelayCommand(_ => _ = GeneratePdfAsync(), _ => _generateFiscalPdf != null);
+            PrintPdfCommand = new RelayCommand(_ => _ = StampaPdfAsync(), _ => _generateFiscalPdf != null);
             OpenSiiCommand = new RelayCommand(_ => OpenSii(), _ => true);
             IncrementBoletaCommand = new RelayCommand(_ => NextBoletaNumber += 1, _ => true);
             DecrementBoletaCommand = new RelayCommand(_ => { if (NextBoletaNumber > 0) NextBoletaNumber -= 1; }, _ => true);
@@ -171,6 +174,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand SetRoundedTotalCommand { get; }
         public ICommand PayAllCardCommand { get; }
         public ICommand GeneratePdfCommand { get; }
+        public ICommand PrintPdfCommand { get; }
         public ICommand OpenSiiCommand { get; }
         public ICommand IncrementBoletaCommand { get; }
         public ICommand DecrementBoletaCommand { get; }
@@ -272,6 +276,28 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var path = await _generateFiscalPdf(FiscalPreviewText, SaleCode).ConfigureAwait(true);
                 FiscalStatus = "Aperto: " + path;
                 try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch { }
+            }
+            catch (Exception ex)
+            {
+                FiscalStatus = "Errore: " + ex.Message;
+            }
+        }
+
+        /// <summary>Genera PDF e invia il testo fiscale alla stampante termica (stessa dello scontrino).</summary>
+        private async Task StampaPdfAsync()
+        {
+            if (_generateFiscalPdf == null) return;
+            FiscalStatus = "Generazione PDF...";
+            try
+            {
+                var path = await _generateFiscalPdf(FiscalPreviewText, SaleCode).ConfigureAwait(true);
+                FiscalStatus = "PDF salvato: " + path;
+                if (_printFiscalToThermal != null)
+                {
+                    FiscalStatus = "Invio a stampante...";
+                    await _printFiscalToThermal(FiscalPreviewText, SaleCode).ConfigureAwait(true);
+                    FiscalStatus = "PDF salvato e stampato.";
+                }
             }
             catch (Exception ex)
             {
@@ -398,6 +424,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (ConfirmCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (GeneratePdfCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (PrintPdfCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)

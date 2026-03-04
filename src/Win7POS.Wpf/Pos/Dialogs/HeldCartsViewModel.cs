@@ -36,7 +36,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool IsBusy
         {
             get => _isBusy;
-            set { _isBusy = value; OnPropertyChanged(); }
+            set { _isBusy = value; OnPropertyChanged(); CommandManager.InvalidateRequerySuggested(); }
         }
 
         public string Status
@@ -192,9 +192,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public RelayCommand(Action<object> execute) => _execute = execute ?? throw new ArgumentNullException(nameof(execute));
             public bool CanExecute(object parameter) => true;
             public void Execute(object parameter) => _execute(parameter);
-#pragma warning disable CS0067
-            public event EventHandler CanExecuteChanged;
-#pragma warning restore CS0067
+            public event EventHandler CanExecuteChanged
+            {
+                add { CommandManager.RequerySuggested += value; }
+                remove { CommandManager.RequerySuggested -= value; }
+            }
         }
 
         private sealed class AsyncRelayCommand : ICommand
@@ -220,9 +222,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     Win7POS.Wpf.Infrastructure.UiErrorHandler.Handle(ex, null, "HeldCarts AsyncRelayCommand failed");
                 }
             }
-#pragma warning disable CS0067
-            public event EventHandler CanExecuteChanged;
-#pragma warning restore CS0067
+            public event EventHandler CanExecuteChanged
+            {
+                add { CommandManager.RequerySuggested += value; }
+                remove { CommandManager.RequerySuggested -= value; }
+            }
         }
     }
 }

@@ -332,7 +332,10 @@ namespace Win7POS.Wpf.Pos
             PaymentDialog dlg;
             try
             {
-                dlg = new PaymentDialog(Total, draft, (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code)) { Owner = Application.Current?.MainWindow };
+                dlg = new PaymentDialog(Total, draft,
+                    (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code),
+                    async (text, code) => await _service.PrintReceiptTextAsync(text, UseReceipt42, "FISCAL_" + code).ConfigureAwait(true))
+                { Owner = Application.Current?.MainWindow };
             }
             catch (Exception ex)
             {
