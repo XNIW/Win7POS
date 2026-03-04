@@ -164,9 +164,12 @@ namespace Win7POS.Wpf.Pos
             SuspendCartCommand = new AsyncRelayCommand(SuspendCartAsync, _ => !IsBusy && CartItems.Count > 0, _logger);
             RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy, _logger);
             StatusMessage = "POS pronto.";
-            Application.Current.Dispatcher.BeginInvoke(
-                new Action(() => _ = InitializeAsync()),
-                System.Windows.Threading.DispatcherPriority.ContextIdle);
+        }
+
+        /// <summary>Avvia l'inizializzazione (chiamato da PosView.Loaded per evitare schermata bianca al primo render).</summary>
+        public void StartInitialize()
+        {
+            _ = InitializeAsync();
         }
 
         private async Task InitializeAsync()

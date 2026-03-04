@@ -20,6 +20,7 @@ namespace Win7POS.Wpf.Pos
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
             FocusBarcode();
+            (DataContext as PosViewModel)?.StartInitialize();
         }
 
         private void CartListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)

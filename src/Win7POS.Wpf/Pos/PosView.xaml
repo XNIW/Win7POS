@@ -82,11 +82,11 @@
                                     <TextBlock Text="{Binding Name}" FontWeight="Bold" TextWrapping="Wrap"/>
                                     <TextBlock Text="{Binding Barcode}" FontSize="11" Foreground="Gray"/>
                                 </StackPanel>
-                                <Button Grid.Column="1" Content="✎" FontSize="12" Padding="0" Focusable="False" IsTabStop="False"
+                                <Button Grid.Column="1" Content="✎" FontSize="13" Padding="0" Focusable="False" IsTabStop="False"
                                         ToolTip="Modifica prezzo"
-                                        Command="{Binding DataContext.OpenEditProductCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                        Command="{Binding DataContext.OpenEditProductCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}"
-                                        VerticalAlignment="Center" Margin="6,0,0,0">
+                                        VerticalAlignment="Center" Margin="8,0,0,0" MinWidth="36" MinHeight="36">
                                     <Button.Style>
                                         <Style TargetType="Button" BasedOn="{StaticResource SmallRoundButtonStyle}">
                                             <Setter Property="Visibility" Value="Visible"/>
@@ -101,7 +101,7 @@
                             </Grid>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
                                 <Button Content="−" FontSize="14" Padding="0" Focusable="False" IsTabStop="False"
-                                        Command="{Binding DataContext.DecreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                        Command="{Binding DataContext.DecreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}">
                                     <Button.Style>
                                         <Style TargetType="Button" BasedOn="{StaticResource SmallRoundButtonStyle}">
@@ -116,7 +116,7 @@
                                 </Button>
                                 <TextBlock Text="{Binding Quantity}" VerticalAlignment="Center" Margin="10,0" MinWidth="28" TextAlignment="Center" FontWeight="SemiBold"/>
                                 <Button Content="+" FontSize="14" Padding="0" Focusable="False" IsTabStop="False"
-                                        Command="{Binding DataContext.IncreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                        Command="{Binding DataContext.IncreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}">
                                     <Button.Style>
                                         <Style TargetType="Button" BasedOn="{StaticResource SmallRoundButtonStyle}">
@@ -131,11 +131,11 @@
                                 </Button>
                             </StackPanel>
                             <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
-                            <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
+                            <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,18,0"/>
                             <Button Grid.Column="4" Content="✕" FontSize="12" Padding="0" Focusable="False" IsTabStop="False"
                                     Style="{StaticResource SmallRoundButtonStyle}"
                                     Foreground="White" Background="#C45C5C"
-                                    Command="{Binding DataContext.RemoveLineForLineCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    Command="{Binding DataContext.RemoveLineForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                     CommandParameter="{Binding}"/>
                         </Grid>
                     </DataTemplate>
