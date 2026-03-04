@@ -69,8 +69,8 @@ namespace Win7POS.Wpf.Fiscal
 
                 using (var img = XImage.FromFile(imgPath))
                 {
-                    // target: ~58mm (più vicino all'originale e meno "ingombrante")
-                    const double targetW = 58.0 / 25.4 * 72.0; // mm -> pt
+                    // target: 54mm (un filo più stretto per coerenza con stampa termica)
+                    const double targetW = 54.0 / 25.4 * 72.0; // mm -> pt
                     const double leftRightMargin = 12.0;       // coerente col testo (marginLeft=12)
                     const double xOffsetPt = -6.0;             // ~ -2.1mm: compensa stampa che tende "a destra"
 

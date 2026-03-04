@@ -11,6 +11,11 @@ namespace Win7POS.Wpf.Printing
     {
         private const string SiiMarker = "Timbre Electrónico SII";
 
+        // regolazioni richieste: spazio bianco sopra QR + QR più stretto su carta
+        private const float QrWidthMm = 52f;
+        private const float QrTopGapMm = 6f;
+        private const float QrBottomGapMm = 3f;
+
         private static bool IsSiiMarker(string line)
             => string.Equals((line ?? "").Trim(), SiiMarker, StringComparison.OrdinalIgnoreCase);
 
@@ -113,24 +118,28 @@ namespace Win7POS.Wpf.Printing
                         {
                             var line = lines[lineIndex] ?? "";
 
-                            // Se riga marker -> stampa marker + immagine (se disponibile)
+                            // Se riga marker -> stampa marker + spazio bianco + immagine (se disponibile)
                             if (IsSiiMarker(line) && siiImg != null)
                             {
-                                float w = MmToHundredthsInch(60f);
+                                float w = MmToHundredthsInch(QrWidthMm);
                                 if (w > printableW) w = printableW;
                                 float h = w * siiImg.Height / (float)siiImg.Width;
 
-                                if (y + lineHeight + 4 + h + lineHeight > bottom)
+                                float gapTop = MmToHundredthsInch(QrTopGapMm);
+                                float gapBottom = MmToHundredthsInch(QrBottomGapMm);
+
+                                if (y + lineHeight + gapTop + h + gapBottom > bottom)
                                     break;
 
                                 e.Graphics.DrawString(line, font, Brushes.Black, x, y);
                                 y += lineHeight;
                                 lineIndex++;
 
+                                y += gapTop;
+
                                 float imgX = e.PageSettings.HardMarginX + (printableW - w) / 2f;
-                                y += 4;
                                 e.Graphics.DrawImage(siiImg, imgX, y, w, h);
-                                y += h + 6;
+                                y += h + gapBottom;
 
                                 continue;
                             }
