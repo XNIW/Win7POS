@@ -59,7 +59,13 @@
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,6">
                     <StackPanel>
                         <TextBlock Text="{Binding FiscalHeaderText, Mode=OneWay}" FontFamily="Courier New" FontSize="9" TextWrapping="NoWrap" Margin="0,0,0,2"/>
-                        <Image x:Name="SiiQrImage" Margin="0,6,0,6" Height="70" Stretch="Uniform" HorizontalAlignment="Center"/>
+                        <Image x:Name="SiiQrImage"
+                       Margin="0,6,0,6"
+                       Width="220"
+                       Height="70"
+                       Stretch="Uniform"
+                       HorizontalAlignment="Center"
+                       SnapsToDevicePixels="True"/>
                         <TextBlock Text="{Binding FiscalFooterText, Mode=OneWay}" FontFamily="Courier New" FontSize="9" TextWrapping="NoWrap"/>
                     </StackPanel>
                 </ScrollViewer>

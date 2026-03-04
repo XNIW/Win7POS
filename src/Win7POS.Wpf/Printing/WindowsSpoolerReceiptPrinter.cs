@@ -9,6 +9,13 @@ namespace Win7POS.Wpf.Printing
 {
     public sealed class WindowsSpoolerReceiptPrinter : IReceiptPrinter
     {
+        private const string SiiMarker = "Timbre Electrónico SII";
+
+        private static bool IsSiiMarker(string line)
+            => string.Equals((line ?? "").Trim(), SiiMarker, StringComparison.OrdinalIgnoreCase);
+
+        private static float MmToHundredthsInch(float mm) => (mm / 25.4f) * 100f;
+
         public async Task PrintAsync(string receiptText, ReceiptPrintOptions opt)
         {
             if (receiptText == null) throw new ArgumentNullException(nameof(receiptText));
@@ -76,6 +83,18 @@ namespace Win7POS.Wpf.Printing
                 catch { /* fallback default paper */ }
 
                 Font font = null;
+                Image siiImg = null;
+                try
+                {
+                    var siiPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "sii_qrcode.png");
+                    if (File.Exists(siiPath))
+                    {
+                        try { siiImg = Image.FromFile(siiPath); }
+                        catch { siiImg = null; }
+                    }
+                }
+                catch { siiImg = null; }
+
                 try
                 {
                     // Font più piccolo per termica 80mm (~42 caratteri)
@@ -88,13 +107,38 @@ namespace Win7POS.Wpf.Printing
                         float y = e.PageSettings.HardMarginY;
                         float lineHeight = font.GetHeight(e.Graphics);
                         float bottom = e.PageBounds.Bottom - e.PageSettings.HardMarginY;
+                        float printableW = e.PageBounds.Width - e.PageSettings.HardMarginX * 2f;
 
                         while (lineIndex < lines.Length)
                         {
+                            var line = lines[lineIndex] ?? "";
+
+                            // Se riga marker -> stampa marker + immagine (se disponibile)
+                            if (IsSiiMarker(line) && siiImg != null)
+                            {
+                                float w = MmToHundredthsInch(60f);
+                                if (w > printableW) w = printableW;
+                                float h = w * siiImg.Height / (float)siiImg.Width;
+
+                                if (y + lineHeight + 4 + h + lineHeight > bottom)
+                                    break;
+
+                                e.Graphics.DrawString(line, font, Brushes.Black, x, y);
+                                y += lineHeight;
+                                lineIndex++;
+
+                                float imgX = e.PageSettings.HardMarginX + (printableW - w) / 2f;
+                                y += 4;
+                                e.Graphics.DrawImage(siiImg, imgX, y, w, h);
+                                y += h + 6;
+
+                                continue;
+                            }
+
                             if (y + lineHeight > bottom)
                                 break;
 
-                            e.Graphics.DrawString(lines[lineIndex], font, Brushes.Black, x, y);
+                            e.Graphics.DrawString(line, font, Brushes.Black, x, y);
                             y += lineHeight;
                             lineIndex++;
                         }
@@ -106,6 +150,9 @@ namespace Win7POS.Wpf.Printing
                     {
                         if (font != null) font.Dispose();
                         font = null;
+
+                        if (siiImg != null) siiImg.Dispose();
+                        siiImg = null;
                     };
 
                     doc.Print();
@@ -113,6 +160,7 @@ namespace Win7POS.Wpf.Printing
                 finally
                 {
                     if (font != null) font.Dispose();
+                    if (siiImg != null) siiImg.Dispose();
                 }
             }
         }

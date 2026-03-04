@@ -69,11 +69,16 @@ namespace Win7POS.Wpf.Fiscal
 
                 using (var img = XImage.FromFile(imgPath))
                 {
-                    double maxW = page.Width - 40;
-                    double scale = Math.Min(1.0, maxW / img.PixelWidth);
-                    double w = img.PixelWidth * scale;
-                    double h = img.PixelHeight * scale;
-                    double x = (page.Width - w) / 2.0;
+                    // ~60mm su carta 80mm: 60/25.4*72 = 170.08pt
+                    const double targetW = 170.0;
+
+                    // clamp solo per sicurezza (margini)
+                    var maxW = page.Width - 24;
+                    var w = Math.Min(targetW, maxW);
+                    var h = w * img.PixelHeight / (double)img.PixelWidth;
+
+                    var x = (page.Width - w) / 2.0;
+
                     y += 8;
                     gfx.DrawImage(img, x, y, w, h);
                     y += h + 10;
@@ -81,6 +86,7 @@ namespace Win7POS.Wpf.Fiscal
             }
             catch
             {
+                // ignore
             }
         }
     }
