@@ -57,7 +57,7 @@ namespace Win7POS.Wpf.Pos
         public PosWorkflowService()
         {
             _options = PosDbOptions.Default();
-            DbInitializer.EnsureCreated(_options);
+            // EnsureCreated spostato in InitializeAsync() per non bloccare il thread UI al primo render
 
             _factory = new SqliteConnectionFactory(_options);
             _products = new ProductRepository(_factory);
@@ -307,6 +307,8 @@ namespace Win7POS.Wpf.Pos
 
         public async Task InitializeAsync()
         {
+            await Task.Run(() => DbInitializer.EnsureCreated(_options)).ConfigureAwait(false);
+
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {

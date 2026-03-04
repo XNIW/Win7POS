@@ -104,7 +104,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" FontWeight="SemiBold" Margin="0,0,0,6">
+                <TextBlock Grid.Row="0" FontWeight="Bold" FontSize="18" Margin="0,0,0,8">
                     <Run Text="Total pesos "/><Run Text="{Binding TotalDueText, Mode=OneWay}"/>
                 </TextBlock>
                 <Grid Grid.Row="1" Margin="0,0,0,6">
@@ -112,8 +112,9 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Contanti:" VerticalAlignment="Center" Width="70"/>
-                    <TextBox x:Name="CashBox" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CashReceived, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBlock Grid.Column="0" Text="Contanti:" VerticalAlignment="Center" Width="70" FontSize="14"/>
+                    <TextBox x:Name="CashBox" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" FontSize="16"
+                             Text="{Binding CashReceived, UpdateSourceTrigger=PropertyChanged}"
                              GotFocus="CashBox_GotFocus" LostFocus="CashBox_LostFocus"/>
                 </Grid>
                 <Grid Grid.Row="2" Margin="0,0,0,6">
@@ -121,31 +122,32 @@
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Carta:" VerticalAlignment="Center" Width="70"/>
-                    <TextBox Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" Text="{Binding CardAmount, UpdateSourceTrigger=PropertyChanged}"
+                    <TextBlock Grid.Column="0" Text="Carta:" VerticalAlignment="Center" Width="70" FontSize="14"/>
+                    <TextBox Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" FontSize="16"
+                             Text="{Binding CardAmount, UpdateSourceTrigger=PropertyChanged}"
                              GotFocus="CardBox_GotFocus" LostFocus="CardBox_LostFocus"/>
                 </Grid>
-                <TextBlock Grid.Row="3" Margin="0,0,0,4" FontSize="12" Foreground="Gray">
+                <TextBlock Grid.Row="3" Margin="0,0,0,6" FontSize="15" Foreground="Gray">
                     <Run Text="Pagato "/><Run Text="{Binding TotalPaidText, Mode=OneWay}"/>
                 </TextBlock>
-                <Border Grid.Row="4" Margin="0,0,0,10" Padding="12,10" Background="#E8F5E9" CornerRadius="6" BorderBrush="#4CAF50" BorderThickness="1">
-                    <TextBlock FontSize="18" FontWeight="Bold" Foreground="#2E7D32"
+                <Border Grid.Row="4" Margin="0,0,0,12" Padding="14,12" Background="#E8F5E9" CornerRadius="6" BorderBrush="#4CAF50" BorderThickness="1">
+                    <TextBlock FontSize="24" FontWeight="Bold" Foreground="#2E7D32"
                                Text="{Binding RestoOrMissingDisplay, Mode=OneWay}"/>
                 </Border>
-                <!-- Keypad: occupa ~metà colonna, bottoni più grandi -->
-                <UniformGrid Grid.Row="5" Rows="4" Columns="3" Margin="0,4,0,0">
-                    <Button Content="7" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="7"/>
-                    <Button Content="8" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="8"/>
-                    <Button Content="9" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="9"/>
-                    <Button Content="4" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="4"/>
-                    <Button Content="5" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="5"/>
-                    <Button Content="6" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="6"/>
-                    <Button Content="1" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="1"/>
-                    <Button Content="2" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="2"/>
-                    <Button Content="3" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="3"/>
-                    <Button Content="0" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="0"/>
-                    <Button Content="00" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="00"/>
-                    <Button Content="⌫" Margin="4" Padding="10" MinHeight="44" FontSize="16" Style="{StaticResource SecondaryButtonStyle}" Focusable="False" Command="{Binding BackspaceCommand}"/>
+                <!-- Keypad: bilanciato MinHeight 80, font 24 -->
+                <UniformGrid Grid.Row="5" Rows="4" Columns="3" Margin="0,6,0,0">
+                    <Button Content="7" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="7"/>
+                    <Button Content="8" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="8"/>
+                    <Button Content="9" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="9"/>
+                    <Button Content="4" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="4"/>
+                    <Button Content="5" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="5"/>
+                    <Button Content="6" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="6"/>
+                    <Button Content="1" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="1"/>
+                    <Button Content="2" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="2"/>
+                    <Button Content="3" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="3"/>
+                    <Button Content="0" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="0"/>
+                    <Button Content="00" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="00"/>
+                    <Button Content="⌫" Margin="4" Padding="12" MinHeight="80" FontSize="24" Style="{StaticResource SecondaryButtonStyle}" Focusable="False" Command="{Binding BackspaceCommand}"/>
                 </UniformGrid>
             </Grid>
         </Border>

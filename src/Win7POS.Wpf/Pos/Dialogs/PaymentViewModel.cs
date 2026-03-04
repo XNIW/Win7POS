@@ -283,20 +283,33 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        /// <summary>Genera PDF e invia il testo fiscale alla stampante termica (stessa dello scontrino).</summary>
+        /// <summary>Genera PDF e invia il testo fiscale alla stampante termica (stessa dello scontrino). File PDF eliminato dopo 15s.</summary>
         private async Task StampaPdfAsync()
         {
             if (_generateFiscalPdf == null) return;
             FiscalStatus = "Generazione PDF...";
+            string path = null;
             try
             {
-                var path = await _generateFiscalPdf(FiscalPreviewText, SaleCode).ConfigureAwait(true);
-                FiscalStatus = "PDF salvato: " + path;
+                path = await _generateFiscalPdf(FiscalPreviewText, SaleCode).ConfigureAwait(true);
                 if (_printFiscalToThermal != null)
                 {
                     FiscalStatus = "Invio a stampante...";
                     await _printFiscalToThermal(FiscalPreviewText, SaleCode).ConfigureAwait(true);
-                    FiscalStatus = "PDF salvato e stampato.";
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        var pathToDelete = path;
+                        _ = Task.Run(async () =>
+                        {
+                            await Task.Delay(15000).ConfigureAwait(false);
+                            try { if (System.IO.File.Exists(pathToDelete)) System.IO.File.Delete(pathToDelete); } catch { }
+                        });
+                    }
+                    FiscalStatus = "Stampato.";
+                }
+                else
+                {
+                    FiscalStatus = "PDF salvato: " + path;
                 }
             }
             catch (Exception ex)

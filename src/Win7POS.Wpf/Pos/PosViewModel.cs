@@ -164,7 +164,9 @@ namespace Win7POS.Wpf.Pos
             SuspendCartCommand = new AsyncRelayCommand(SuspendCartAsync, _ => !IsBusy && CartItems.Count > 0, _logger);
             RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy, _logger);
             StatusMessage = "POS pronto.";
-            _ = InitializeAsync();
+            Application.Current.Dispatcher.BeginInvoke(
+                new Action(() => _ = InitializeAsync()),
+                System.Windows.Threading.DispatcherPriority.ContextIdle);
         }
 
         private async Task InitializeAsync()
@@ -1227,6 +1229,8 @@ namespace Win7POS.Wpf.Pos
             public string UnitPriceDisplay => MoneyClp.Format(UnitPrice);
             public string LineTotalDisplay => MoneyClp.Format(LineTotal);
             public bool IsDiscountLine => DiscountKeys.IsDiscount(Barcode ?? "");
+            /// <summary>True se la riga è modificabile (no sconto, no manual).</summary>
+            public bool IsEditable => !IsDiscountLine && (string.IsNullOrEmpty(Barcode) || !Barcode.StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase));
         }
 
         public sealed class RecentSaleRow
