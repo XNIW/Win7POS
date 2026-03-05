@@ -126,6 +126,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand DecreaseQtyForLineCommand { get; }
         public ICommand RemoveLineForLineCommand { get; }
         public ICommand OpenSalesRegisterCommand { get; }
+        public ICommand OpenResoScanCommand { get; }
         public ICommand OpenShopSettingsCommand { get; }
         public ICommand OpenDiscountCommand { get; }
         public ICommand OpenEditProductCommand { get; }
@@ -159,6 +160,7 @@ namespace Win7POS.Wpf.Pos
             DecreaseQtyForLineCommand = new AsyncRelayCommandParam(DecreaseQtyForLineAsync, _ => !IsBusy, _logger);
             RemoveLineForLineCommand = new AsyncRelayCommandParam(RemoveLineForLineAsync, _ => !IsBusy, _logger);
             OpenSalesRegisterCommand = new AsyncRelayCommand(OpenSalesRegisterAsync, _ => !IsBusy, _logger);
+            OpenResoScanCommand = new AsyncRelayCommand(OpenResoScanAsync, _ => !IsBusy, _logger);
             OpenShopSettingsCommand = new AsyncRelayCommand(OpenShopSettingsAsync, _ => !IsBusy, _logger);
             OpenDiscountCommand = new RelayCommand(_ => OpenDiscount(), _ => !IsBusy && (SelectedCartItem != null || CartItems.Count > 0));
             OpenEditProductCommand = new RelayCommand(OpenEditProductExecute, OpenEditProductCanExecute);
@@ -337,7 +339,7 @@ namespace Win7POS.Wpf.Pos
             var fiscalPdf = new FiscalPdfService();
             var vm = new PaymentViewModel(Total, draft,
                 (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code),
-                async (text, code) => await _service.PrintReceiptTextAsync(text, UseReceipt42, "FISCAL_" + code).ConfigureAwait(true));
+                async (text, code) => await _service.PrintReceiptTextAsync(text + "\nScontrino: " + code, UseReceipt42, "FISCAL_" + code).ConfigureAwait(true));
 
             bool ok;
             try
@@ -917,12 +919,22 @@ namespace Win7POS.Wpf.Pos
 
         private Task OpenSalesRegisterAsync()
         {
+            return OpenSalesRegisterInternalAsync(isRefundScanMode: false);
+        }
+
+        private Task OpenResoScanAsync()
+        {
+            return OpenSalesRegisterInternalAsync(isRefundScanMode: true);
+        }
+
+        private Task OpenSalesRegisterInternalAsync(bool isRefundScanMode)
+        {
             try
             {
                 var registerVm = new Dialogs.SalesRegisterViewModel(_service, UseReceipt42, (saleId, regVm) =>
                 {
                     _ = OpenRefundForSaleIdThenRefreshAsync(saleId, regVm);
-                });
+                }, isRefundScanMode);
                 var dlg = new Dialogs.SalesRegisterDialog(registerVm)
                 {
                     Owner = Application.Current?.MainWindow
@@ -932,8 +944,8 @@ namespace Win7POS.Wpf.Pos
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Sales register dialog failed (XAML/binding).");
-                StatusMessage = "Errore apertura Registro vendite.";
-                MessageBox.Show("Errore apertura Registro vendite.\n\n" + ex.Message, "Registro vendite", MessageBoxButton.OK, MessageBoxImage.Warning);
+                StatusMessage = isRefundScanMode ? "Errore apertura Reso." : "Errore apertura Registro vendite.";
+                MessageBox.Show("Errore apertura " + (isRefundScanMode ? "Reso" : "Registro vendite") + ".\n\n" + ex.Message, isRefundScanMode ? "Reso" : "Registro vendite", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             RequestFocusBarcode();
             return Task.CompletedTask;

@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Input;
 using Win7POS.Wpf.Infrastructure;
@@ -11,6 +12,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             InitializeComponent();
             WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.85, heightPercent: 0.8, minWidth: 900, minHeight: 600);
             DataContext = viewModel;
+            viewModel.RequestCloseDialog += () => Dispatcher.BeginInvoke(new Action(() => { try { Close(); } catch { } }));
             Loaded += OnLoaded;
         }
 

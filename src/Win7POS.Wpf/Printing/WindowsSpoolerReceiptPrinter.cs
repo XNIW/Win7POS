@@ -10,14 +10,26 @@ namespace Win7POS.Wpf.Printing
     public sealed class WindowsSpoolerReceiptPrinter : IReceiptPrinter
     {
         private const string SiiMarker = "Timbre Electrónico SII";
+        private const string ScontrinoPrefix = "Scontrino:";
 
         // regolazioni richieste: spazio bianco sopra QR + QR più stretto su carta
         private const float QrWidthMm = 50f;
         private const float QrTopGapMm = 6f;
         private const float QrBottomGapMm = 3f;
+        private const float SaleCodeBarcodeWidthMm = 55f;
+        private const float SaleCodeBarcodeGapMm = 2f;
 
         private static bool IsSiiMarker(string line)
             => string.Equals((line ?? "").Trim(), SiiMarker, StringComparison.OrdinalIgnoreCase);
+
+        private static bool TryGetScontrinoSaleCode(string line, out string saleCode)
+        {
+            saleCode = null;
+            var t = (line ?? "").Trim();
+            if (!t.StartsWith(ScontrinoPrefix, StringComparison.OrdinalIgnoreCase)) return false;
+            saleCode = t.Substring(ScontrinoPrefix.Length).Trim();
+            return saleCode.Length > 0;
+        }
 
         private static float MmToHundredthsInch(float mm) => (mm / 25.4f) * 100f;
 
@@ -144,6 +156,34 @@ namespace Win7POS.Wpf.Printing
                                 e.Graphics.DrawString(line, font, Brushes.Black, x, y);
                                 y += lineHeight;
 
+                                lineIndex++;
+                                continue;
+                            }
+
+                            // Riga "Scontrino: <code>" → testo + barcode Code128 per reso scan-first
+                            if (TryGetScontrinoSaleCode(line, out var saleCode))
+                            {
+                                using (var barcodeBmp = Code128Renderer.Render(saleCode))
+                                {
+                                    float barW = MmToHundredthsInch(SaleCodeBarcodeWidthMm);
+                                    if (barW > printableW) barW = printableW;
+                                    float gap = MmToHundredthsInch(SaleCodeBarcodeGapMm);
+
+                                    float needH = lineHeight + gap + (barcodeBmp != null ? barW * barcodeBmp.Height / (float)barcodeBmp.Width : 0f);
+                                    if (y + needH > bottom)
+                                        break;
+
+                                    e.Graphics.DrawString(line, font, Brushes.Black, x, y);
+                                    y += lineHeight + gap;
+
+                                    if (barcodeBmp != null)
+                                    {
+                                        float barH = barW * barcodeBmp.Height / (float)barcodeBmp.Width;
+                                        float barX = e.PageSettings.HardMarginX + (printableW - barW) / 2f;
+                                        e.Graphics.DrawImage(barcodeBmp, barX, y, barW, barH);
+                                        y += barH;
+                                    }
+                                }
                                 lineIndex++;
                                 continue;
                             }

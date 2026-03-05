@@ -28,10 +28,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _detailSummary = "";
         private string _detailReceiptPreview = "";
 
-        public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, Action<long, SalesRegisterViewModel> onRequestRefund = null)
+        public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, Action<long, SalesRegisterViewModel> onRequestRefund = null, bool isRefundScanMode = false)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _useReceipt42 = useReceipt42;
+            _isRefundScanMode = isRefundScanMode;
 
             SalesList = new ObservableCollection<SaleRow>();
             DetailLines = new ObservableCollection<DetailLineRow>();
@@ -50,6 +51,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         private readonly Action<long, SalesRegisterViewModel> _onRequestRefund;
+        private readonly bool _isRefundScanMode;
+
+        public bool IsRefundScanMode => _isRefundScanMode;
+        public event Action RequestCloseDialog;
 
         public ObservableCollection<SaleRow> SalesList { get; }
         public ObservableCollection<DetailLineRow> DetailLines { get; }
@@ -225,6 +230,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         TimeText = when.ToString("yyyy-MM-dd HH:mm"),
                         IsVoided = x.VoidedBySaleId.HasValue
                     });
+                }
+
+                if (_isRefundScanMode && SalesList.Count == 1)
+                {
+                    var single = SalesList[0];
+                    if (single.Kind == (int)SaleKind.Sale && !single.IsVoided)
+                    {
+                        _onRequestRefund?.Invoke(single.SaleId, this);
+                        RequestCloseDialog?.Invoke();
+                    }
                 }
             }
             catch (Exception ex)
