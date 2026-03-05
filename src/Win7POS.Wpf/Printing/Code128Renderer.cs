@@ -8,8 +8,8 @@ namespace Win7POS.Wpf.Printing
     /// <summary>Genera un'immagine Code128 dal codice scontrino (SaleCode) per stampa termica e scan reso.</summary>
     public static class Code128Renderer
     {
-        private const int DefaultWidth = 280;
-        private const int DefaultHeight = 56;
+        private const int DefaultWidth = 340;
+        private const int DefaultHeight = 72;
 
         /// <summary>Genera un Bitmap Code128 per il testo dato. Restituisce null se fallisce.</summary>
         public static Bitmap Render(string content)
@@ -20,7 +20,7 @@ namespace Win7POS.Wpf.Printing
                 var writer = new ZXing.Windows.Compatibility.BarcodeWriter
                 {
                     Format = BarcodeFormat.CODE_128,
-                    Options = new ZXing.Common.EncodingOptions { Width = DefaultWidth, Height = DefaultHeight, Margin = 2 },
+                    Options = new ZXing.Common.EncodingOptions { Width = DefaultWidth, Height = DefaultHeight, Margin = 6 },
                     Renderer = new BitmapRenderer()
                 };
                 return writer.Write(content);

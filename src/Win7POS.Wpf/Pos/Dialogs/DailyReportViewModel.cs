@@ -37,6 +37,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             ExportCsvCommand = new AsyncRelayCommand(ExportCsvAsync, _ => !IsBusy);
             PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview));
             LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync, _ => !IsBusy);
+            FilterOggiCommand = new AsyncRelayCommand(ApplyFilterOggiAsync, _ => !IsBusy);
+            FilterIeriCommand = new AsyncRelayCommand(ApplyFilterIeriAsync, _ => !IsBusy);
+            FilterQuestaSettimanaCommand = new AsyncRelayCommand(ApplyFilterQuestaSettimanaAsync, _ => !IsBusy);
+            FilterQuestoMeseCommand = new AsyncRelayCommand(ApplyFilterQuestoMeseAsync, _ => !IsBusy);
+            FilterMeseScorsoCommand = new AsyncRelayCommand(ApplyFilterMeseScorsoAsync, _ => !IsBusy);
+            FilterAnnoCorrenteCommand = new AsyncRelayCommand(ApplyFilterAnnoCorrenteAsync, _ => !IsBusy);
             HistoryRows = new ObservableCollection<HistoryRow>();
         }
 
@@ -55,7 +61,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public int SalesCount
         {
             get => _salesCount;
-            set { _salesCount = value; OnPropertyChanged(); }
+            set { _salesCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TicketMedioDisplay)); }
         }
 
         public long TotalAmount
@@ -97,7 +103,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public long NetAmount
         {
             get => _netAmount;
-            set { _netAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(NetAmountDisplay)); }
+            set { _netAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(NetAmountDisplay)); OnPropertyChanged(nameof(TicketMedioDisplay)); }
         }
 
         public string TotalAmountDisplay => MoneyClp.Format(TotalAmount);
@@ -106,6 +112,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string GrossSalesAmountDisplay => MoneyClp.Format(GrossSalesAmount);
         public string RefundsAmountDisplay => MoneyClp.Format(RefundsAmount);
         public string NetAmountDisplay => MoneyClp.Format(NetAmount);
+        public string TicketMedioDisplay => SalesCount > 0 ? MoneyClp.Format(NetAmount / SalesCount) : "0";
 
         public string SummaryReceiptPreview
         {
@@ -127,7 +134,20 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public ObservableCollection<HistoryRow> HistoryRows { get; }
 
+        private HistoryRow _selectedHistoryRow;
+        public HistoryRow SelectedHistoryRow
+        {
+            get => _selectedHistoryRow;
+            set { _selectedHistoryRow = value; OnPropertyChanged(); _ = LoadPreviewForSelectedHistoryAsync(); }
+        }
+
         public ICommand LoadCommand { get; }
+        public ICommand FilterOggiCommand { get; }
+        public ICommand FilterIeriCommand { get; }
+        public ICommand FilterQuestaSettimanaCommand { get; }
+        public ICommand FilterQuestoMeseCommand { get; }
+        public ICommand FilterMeseScorsoCommand { get; }
+        public ICommand FilterAnnoCorrenteCommand { get; }
         public ICommand ExportCsvCommand { get; }
         public ICommand PrintSummaryCommand { get; }
         public ICommand LoadHistoryCommand { get; }
@@ -249,11 +269,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 {
                     HistoryRows.Add(new HistoryRow
                     {
+                        Date = s.Date,
                         DateText = s.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                         SalesCount = s.SalesCount,
                         TotalDisplay = MoneyClp.Format(s.TotalAmount),
                         CashDisplay = MoneyClp.Format(s.CashAmount),
                         CardDisplay = MoneyClp.Format(s.CardAmount),
+                        RefundsDisplay = MoneyClp.Format(s.RefundsAmount),
                         NetDisplay = MoneyClp.Format(s.NetAmount)
                     });
                 }
@@ -287,12 +309,92 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 out date);
         }
 
+        private async Task LoadPreviewForSelectedHistoryAsync()
+        {
+            if (SelectedHistoryRow == null) return;
+            try
+            {
+                var summary = await _service.GetDailySummaryAsync(SelectedHistoryRow.Date).ConfigureAwait(true);
+                SalesCount = summary.SalesCount;
+                TotalAmount = summary.TotalAmount;
+                CashAmount = summary.CashAmount;
+                CardAmount = summary.CardAmount;
+                GrossSalesAmount = summary.GrossSalesAmount;
+                RefundsAmount = summary.RefundsAmount;
+                NetAmount = summary.NetAmount;
+                var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
+                UpdateSummaryReceiptPreview(SelectedHistoryRow.Date, summary, shop);
+            }
+            catch { SummaryReceiptPreview = ""; }
+        }
+
+        private static DateTime StartOfWeek(DateTime d)
+        {
+            var diff = (7 + (d.DayOfWeek - DayOfWeek.Monday)) % 7;
+            return d.Date.AddDays(-diff);
+        }
+
+        private async Task ApplyFilterOggiAsync()
+        {
+            DateText = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            await LoadAsync().ConfigureAwait(true);
+        }
+
+        private async Task ApplyFilterIeriAsync()
+        {
+            DateText = DateTime.Now.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            await LoadAsync().ConfigureAwait(true);
+        }
+
+        private async Task ApplyFilterQuestaSettimanaAsync()
+        {
+            var today = DateTime.Now.Date;
+            var from = StartOfWeek(today);
+            HistoryFromText = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            HistoryToText = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            await LoadHistoryAsync().ConfigureAwait(true);
+        }
+
+        private async Task ApplyFilterQuestoMeseAsync()
+        {
+            var now = DateTime.Now;
+            var from = new DateTime(now.Year, now.Month, 1);
+            HistoryFromText = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            HistoryToText = now.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            await LoadHistoryAsync().ConfigureAwait(true);
+        }
+
+        private async Task ApplyFilterMeseScorsoAsync()
+        {
+            var now = DateTime.Now;
+            var from = new DateTime(now.Year, now.Month, 1).AddMonths(-1);
+            var to = from.AddMonths(1).AddDays(-1);
+            HistoryFromText = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            HistoryToText = to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            await LoadHistoryAsync().ConfigureAwait(true);
+        }
+
+        private async Task ApplyFilterAnnoCorrenteAsync()
+        {
+            var now = DateTime.Now;
+            var from = new DateTime(now.Year, 1, 1);
+            HistoryFromText = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            HistoryToText = now.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            await LoadHistoryAsync().ConfigureAwait(true);
+        }
+
         private void RaiseCanExecuteChanged()
         {
             (LoadCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ExportCsvCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintSummaryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (FilterOggiCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (FilterIeriCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (FilterQuestaSettimanaCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (FilterQuestoMeseCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (FilterMeseScorsoCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (FilterAnnoCorrenteCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
@@ -329,11 +431,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public sealed class HistoryRow
         {
+            public DateTime Date { get; set; }
             public string DateText { get; set; }
             public int SalesCount { get; set; }
             public string TotalDisplay { get; set; }
             public string CashDisplay { get; set; }
             public string CardDisplay { get; set; }
+            public string RefundsDisplay { get; set; }
             public string NetDisplay { get; set; }
         }
     }

@@ -16,8 +16,8 @@ namespace Win7POS.Wpf.Printing
         private const float QrWidthMm = 50f;
         private const float QrTopGapMm = 6f;
         private const float QrBottomGapMm = 3f;
-        private const float SaleCodeBarcodeWidthMm = 55f;
-        private const float SaleCodeBarcodeGapMm = 2f;
+        private const float SaleCodeBarcodeWidthMm = 68f;
+        private const float SaleCodeBarcodeGapMm = 4f;
 
         private static bool IsSiiMarker(string line)
             => string.Equals((line ?? "").Trim(), SiiMarker, StringComparison.OrdinalIgnoreCase);
@@ -160,7 +160,8 @@ namespace Win7POS.Wpf.Printing
                                 continue;
                             }
 
-                            // Riga "Scontrino: <code>" → testo + barcode Code128 per reso scan-first
+                            // Riga "Scontrino: <code>" → testo leggibile + barcode Code128 del SOLO SaleCode (es. VMME1AFL6EOC)
+                            // così lo scanner restituisce solo il codice, senza "Scontrino: ", e il match nel registro funziona
                             if (TryGetScontrinoSaleCode(line, out var saleCode))
                             {
                                 using (var barcodeBmp = Code128Renderer.Render(saleCode))
