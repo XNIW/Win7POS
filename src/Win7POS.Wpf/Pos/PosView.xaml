@@ -157,7 +157,9 @@
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Add" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding AddBarcodeCommand}"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Sconto" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenDiscountCommand}"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Modifica" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenEditProductCommand}"/>
-                <Button MinWidth="120" MinHeight="38" Content="Registro vendite" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenSalesRegisterCommand}"/>
+                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Registro vendite" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenSalesRegisterCommand}"/>
+                <Button MinWidth="120" MinHeight="38" Content="Reso (Scan scontrino)" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenSalesRegisterCommand}"
+                        ToolTip="Apri registro e scansiona il codice scontrino per avviare il reso"/>
             </StackPanel>
         </Border>
 

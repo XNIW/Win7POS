@@ -122,7 +122,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public SaleRow SelectedSale
         {
             get => _selectedSale;
-            set { _selectedSale = value; OnPropertyChanged(); }
+            set
+            {
+                if (ReferenceEquals(_selectedSale, value)) return;
+                _selectedSale = value;
+                OnPropertyChanged();
+                RaiseCanExecuteChanged();
+            }
         }
 
         public string DetailSummary

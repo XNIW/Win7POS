@@ -28,6 +28,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var vm = DataContext as SalesRegisterViewModel;
             if (vm != null && vm.LoadCommand.CanExecute(null))
                 vm.LoadCommand.Execute(null);
+            CodeSearchBox.Focus();
+            CodeSearchBox.SelectAll();
         }
     }
 }

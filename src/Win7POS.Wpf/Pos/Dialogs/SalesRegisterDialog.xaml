@@ -54,7 +54,7 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Codice:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBox Grid.Column="1" Text="{Binding CodeSearch, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
+                <TextBox x:Name="CodeSearchBox" Grid.Column="1" Text="{Binding CodeSearch, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
                          KeyDown="CodeSearchBox_KeyDown"
                          ToolTip="Cerca per codice vendita (Invio per cercare, lascia vuoto per usare il periodo)"/>
             </Grid>
@@ -62,10 +62,31 @@
                      BorderThickness="1" BorderBrush="#CCC" Background="White" Padding="0"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      Margin="0,0,0,8">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Background" Value="#F8F8F8"/>
+                        <Setter Property="Foreground" Value="#222"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="BorderThickness" Value="0"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#EEEEEE"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </ListBox.ItemContainerStyle>
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <Border Padding="10,8" Margin="0,0,0,2" Background="#F8F8F8" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1">
-                            <Grid>
+                        <Border
+                            Background="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=Background}"
+                            BorderBrush="#E0E0E0" BorderThickness="0,0,0,1"
+                            Padding="10,8" Margin="0,0,0,2">
+                            <Grid TextElement.Foreground="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=Foreground}">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
@@ -78,7 +99,7 @@
                                         <TextBlock Text="{Binding SaleCode}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                                         <TextBlock Text="{Binding VoidedText, Mode=OneWay}" Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="DarkRed"/>
                                     </WrapPanel>
-                                    <TextBlock FontSize="11" Foreground="Gray" Text="{Binding TimeText, Mode=OneWay}"/>
+                                    <TextBlock FontSize="11" Opacity="0.75" Text="{Binding TimeText, Mode=OneWay}"/>
                                 </StackPanel>
                                 <TextBlock Grid.Column="1" Text="{Binding TotalDisplay, Mode=OneWay}" VerticalAlignment="Center" FontWeight="SemiBold"/>
                             </Grid>
