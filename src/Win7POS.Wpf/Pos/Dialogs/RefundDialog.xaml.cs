@@ -29,10 +29,25 @@ namespace Win7POS.Wpf.Pos.Dialogs
             DialogResult = ok;
         }
 
+        private void BarcodeScanBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            e.Handled = true;
+            var text = (sender as System.Windows.Controls.TextBox)?.Text;
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                ViewModel.ApplyBarcodeScan(text);
+                if (sender is System.Windows.Controls.TextBox box)
+                    box.Clear();
+            }
+        }
+
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter)
             {
+                if (e.OriginalSource is System.Windows.Controls.TextBox tb && tb.Name == "BarcodeScanBox")
+                    return;
                 if (ViewModel.TryConfirm())
                     e.Handled = true;
                 return;

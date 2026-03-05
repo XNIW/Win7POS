@@ -4,6 +4,9 @@
         Title="Registro vendite" Width="920" Height="580"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
         MinWidth="780" MinHeight="480">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
     <Grid Margin="14">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" MinWidth="320"/>
@@ -22,11 +25,28 @@
             </Grid.RowDefinitions>
 
             <TextBlock Grid.Row="0" Text="Filtri" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8"/>
-            <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
-                <RadioButton Content="Oggi" IsChecked="{Binding FilterOggi, Mode=TwoWay}" Margin="0,0,16,0" GroupName="Filter"/>
-                <RadioButton Content="Ieri" IsChecked="{Binding FilterIeri, Mode=TwoWay}" Margin="0,0,16,0" GroupName="Filter"/>
-                <RadioButton Content="Mese" IsChecked="{Binding FilterMese, Mode=TwoWay}" Margin="0,0,16,0" GroupName="Filter"/>
-                <Button Content="Ricarica" MinWidth="80" Command="{Binding LoadCommand}" Margin="8,0,0,0"/>
+            <StackPanel Grid.Row="1" Margin="0,0,0,8">
+                <WrapPanel>
+                    <RadioButton Content="Oggi" IsChecked="{Binding FilterOggi, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
+                    <RadioButton Content="Ieri" IsChecked="{Binding FilterIeri, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
+                    <RadioButton Content="7 giorni" IsChecked="{Binding Filter7G, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
+                    <RadioButton Content="Mese" IsChecked="{Binding FilterMese, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
+                    <RadioButton Content="Periodo" IsChecked="{Binding FilterPeriodo, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
+                    <Button Content="Ricarica" MinWidth="80" Command="{Binding LoadCommand}" Margin="8,0,0,0"/>
+                </WrapPanel>
+                <Grid Margin="0,6,0,0"
+                      Visibility="{Binding IsRangeFilter, Converter={StaticResource BoolToVis}}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="160"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="160"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Da:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <DatePicker Grid.Column="1" SelectedDate="{Binding RangeFrom}"/>
+                    <TextBlock Grid.Column="2" Text="A:" VerticalAlignment="Center" Margin="12,0,6,0"/>
+                    <DatePicker Grid.Column="3" SelectedDate="{Binding RangeTo}"/>
+                </Grid>
             </StackPanel>
             <Grid Grid.Row="2" Margin="0,0,0,8">
                 <Grid.ColumnDefinitions>
@@ -51,13 +71,14 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0">
-                                    <TextBlock Text="{Binding SaleCode}" FontWeight="SemiBold"/>
-                                    <TextBlock FontSize="11" Foreground="Gray">
-                                        <Run Text="{Binding TimeText, Mode=OneWay}"/>
-                                        <Run Text=" · "/>
-                                        <Run Text="{Binding KindText, Mode=OneWay}"/>
-                                        <Run Text="{Binding VoidedText, StringFormat=' · {0}', Mode=OneWay}"/>
-                                    </TextBlock>
+                                    <WrapPanel>
+                                        <Border Background="{Binding BadgeBrush}" CornerRadius="3" Padding="6,2" Margin="0,0,6,4" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding KindText, Mode=OneWay}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
+                                        </Border>
+                                        <TextBlock Text="{Binding SaleCode}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding VoidedText, Mode=OneWay}" Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="DarkRed"/>
+                                    </WrapPanel>
+                                    <TextBlock FontSize="11" Foreground="Gray" Text="{Binding TimeText, Mode=OneWay}"/>
                                 </StackPanel>
                                 <TextBlock Grid.Column="1" Text="{Binding TotalDisplay, Mode=OneWay}" VerticalAlignment="Center" FontWeight="SemiBold"/>
                             </Grid>
@@ -95,10 +116,12 @@
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="{Binding Name}" TextWrapping="Wrap"/>
-                                    <TextBlock Grid.Column="1" Text="{Binding UnitPriceDisplay, Mode=OneWay}" Margin="8,0" MinWidth="70" HorizontalAlignment="Right"/>
-                                    <TextBlock Grid.Column="2" Text="{Binding LineTotalDisplay, Mode=OneWay}" FontWeight="SemiBold" MinWidth="70" HorizontalAlignment="Right"/>
+                                    <TextBlock Grid.Column="1" Text="{Binding Quantity, StringFormat='x{0}'}" Margin="10,0" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay, Mode=OneWay}" Margin="8,0" MinWidth="70" HorizontalAlignment="Right"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay, Mode=OneWay}" FontWeight="SemiBold" MinWidth="70" HorizontalAlignment="Right"/>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>

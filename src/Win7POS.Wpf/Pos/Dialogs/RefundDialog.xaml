@@ -37,21 +37,37 @@
             <RadioButton Content="Reso parziale" IsChecked="{Binding IsPartialReturn}"/>
         </StackPanel>
 
-        <DataGrid Grid.Row="2" Grid.ColumnSpan="2"
-                  ItemsSource="{Binding Lines}"
-                  AutoGenerateColumns="False"
-                  CanUserAddRows="False"
-                  CanUserDeleteRows="False"
-                  IsReadOnly="{Binding IsFullVoid}">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" IsReadOnly="True" Width="2*"/>
-                <DataGridTextColumn Header="Name" Binding="{Binding Name}" IsReadOnly="True" Width="3*"/>
-                <DataGridTextColumn Header="SoldQty" Binding="{Binding SoldQty}" IsReadOnly="True" Width="90"/>
-                <DataGridTextColumn Header="RefundedQty" Binding="{Binding RefundedQty}" IsReadOnly="True" Width="110"/>
-                <DataGridTextColumn Header="RemainingQty" Binding="{Binding RemainingQty}" IsReadOnly="True" Width="110"/>
-                <DataGridTextColumn Header="QtyToRefund" Binding="{Binding QtyToRefund, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
-            </DataGrid.Columns>
-        </DataGrid>
+        <Grid Grid.Row="2" Grid.ColumnSpan="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0" Margin="0,0,0,6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Scansiona barcode articolo:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBox x:Name="BarcodeScanBox" Grid.Column="1" Padding="6,4"
+                         KeyDown="BarcodeScanBox_KeyDown"
+                         ToolTip="Inserisci barcode e premi Invio per aggiungere 1 alla quantità da rendere"/>
+            </Grid>
+            <DataGrid Grid.Row="1"
+                      ItemsSource="{Binding Lines}"
+                      AutoGenerateColumns="False"
+                      CanUserAddRows="False"
+                      CanUserDeleteRows="False"
+                      IsReadOnly="{Binding IsFullVoid}">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" IsReadOnly="True" Width="2*"/>
+                    <DataGridTextColumn Header="Nome" Binding="{Binding Name}" IsReadOnly="True" Width="3*"/>
+                    <DataGridTextColumn Header="Venduti" Binding="{Binding SoldQty}" IsReadOnly="True" Width="70"/>
+                    <DataGridTextColumn Header="Già resi" Binding="{Binding RefundedQty}" IsReadOnly="True" Width="70"/>
+                    <DataGridTextColumn Header="Disponibili" Binding="{Binding RemainingQty}" IsReadOnly="True" Width="80"/>
+                    <DataGridTextColumn Header="Da rendere" Binding="{Binding QtyToRefund, UpdateSourceTrigger=PropertyChanged}" Width="80"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
 
         <Grid Grid.Row="3" Grid.ColumnSpan="2" Margin="0,10,0,0">
             <Grid.ColumnDefinitions>
@@ -65,7 +81,7 @@
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Rimborso totale:"/>
             <TextBox Grid.Column="1" IsReadOnly="True" Text="{Binding RefundTotalText}"/>
-            <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center" Text="Reason:"/>
+            <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center" Text="Motivo:"/>
             <TextBox Grid.Column="3" Margin="8,0,0,0" Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}"/>
             <TextBlock Grid.Column="4" Margin="12,0,0,0" VerticalAlignment="Center" Text="Rimanente rimborsabile:"/>
             <TextBox Grid.Column="5" Margin="8,0,0,0" IsReadOnly="True" Text="{Binding RemainingRefundableText}"/>
@@ -73,22 +89,28 @@
 
         <Grid Grid.Row="4" Grid.ColumnSpan="2" Margin="0,10,0,0">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="170"/>
-                <ColumnDefinition Width="160"/>
-                <ColumnDefinition Width="170"/>
-                <ColumnDefinition Width="160"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="120"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="120"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Cash refund:"/>
-            <TextBox x:Name="CashRefundBox" Grid.Column="1" Text="{Binding CashRefund, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center" Text="Card refund:"/>
-            <TextBox Grid.Column="3" Margin="8,0,0,0" Text="{Binding CardRefund, UpdateSourceTrigger=PropertyChanged}"/>
-            <TextBlock Grid.Column="4" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="DarkRed" Text="{Binding MissingText}"/>
+            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Contanti:"/>
+            <TextBox x:Name="CashRefundBox" Grid.Column="1" Margin="0,0,8,0" Text="{Binding CashRefund, UpdateSourceTrigger=PropertyChanged}"/>
+            <Button Grid.Column="2" Content="Tutto contanti" Margin="0,0,12,0" Command="{Binding AllCashCommand}" Padding="8,4"/>
+            <TextBlock Grid.Column="3" VerticalAlignment="Center" Text="Carta:"/>
+            <TextBox Grid.Column="4" Margin="0,0,8,0" Text="{Binding CardRefund, UpdateSourceTrigger=PropertyChanged}"/>
+            <Button Grid.Column="5" Content="Tutto carta" Margin="0,0,8,0" Command="{Binding AllCardCommand}" Padding="8,4"/>
+            <Button Grid.Column="6" Content="Azzera" Command="{Binding ZeroRefundCommand}" Padding="8,4"/>
+            <TextBlock Grid.Column="7" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="DarkRed" Text="{Binding MissingText}"/>
         </Grid>
 
         <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-            <Button MinWidth="110" Height="34" Margin="0,0,8,0" Content="OK" Command="{Binding ConfirmCommand}"/>
-            <Button MinWidth="110" Height="34" Content="Cancel" Command="{Binding CancelCommand}"/>
+            <Button MinWidth="110" Height="34" Margin="0,0,8,0" Content="Conferma" Command="{Binding ConfirmCommand}"/>
+            <Button MinWidth="110" Height="34" Content="Annulla" Command="{Binding CancelCommand}"/>
         </StackPanel>
     </Grid>
 </Window>

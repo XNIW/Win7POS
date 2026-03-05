@@ -11,7 +11,7 @@ using Win7POS.Wpf.Pos;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public enum SalesRegisterFilter { Oggi, Ieri, Mese }
+    public enum SalesRegisterFilter { Oggi, Ieri, Ultimi7Giorni, Mese, Periodo }
 
     public sealed class SalesRegisterViewModel : INotifyPropertyChanged
     {
@@ -19,6 +19,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private readonly bool _useReceipt42;
 
         private SalesRegisterFilter _filter = SalesRegisterFilter.Oggi;
+        private DateTime? _rangeFrom = null;
+        private DateTime? _rangeTo = null;
         private string _codeSearch = "";
         private string _status = "";
         private bool _isBusy;
@@ -62,14 +64,42 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(FilterOggi));
                 OnPropertyChanged(nameof(FilterIeri));
+                OnPropertyChanged(nameof(Filter7G));
                 OnPropertyChanged(nameof(FilterMese));
+                OnPropertyChanged(nameof(FilterPeriodo));
+                OnPropertyChanged(nameof(IsRangeFilter));
                 if (LoadCommand.CanExecute(null)) LoadCommand.Execute(null);
             }
         }
 
         public bool FilterOggi { get => Filter == SalesRegisterFilter.Oggi; set { if (value) Filter = SalesRegisterFilter.Oggi; } }
         public bool FilterIeri { get => Filter == SalesRegisterFilter.Ieri; set { if (value) Filter = SalesRegisterFilter.Ieri; } }
+        public bool Filter7G { get => Filter == SalesRegisterFilter.Ultimi7Giorni; set { if (value) Filter = SalesRegisterFilter.Ultimi7Giorni; } }
         public bool FilterMese { get => Filter == SalesRegisterFilter.Mese; set { if (value) Filter = SalesRegisterFilter.Mese; } }
+        public bool FilterPeriodo { get => Filter == SalesRegisterFilter.Periodo; set { if (value) Filter = SalesRegisterFilter.Periodo; } }
+        public bool IsRangeFilter => Filter == SalesRegisterFilter.Periodo;
+
+        public DateTime? RangeFrom
+        {
+            get => _rangeFrom ?? DateTime.Now.Date;
+            set
+            {
+                _rangeFrom = value;
+                OnPropertyChanged();
+                if (IsRangeFilter && LoadCommand.CanExecute(null)) LoadCommand.Execute(null);
+            }
+        }
+
+        public DateTime? RangeTo
+        {
+            get => _rangeTo ?? DateTime.Now.Date;
+            set
+            {
+                _rangeTo = value;
+                OnPropertyChanged();
+                if (IsRangeFilter && LoadCommand.CanExecute(null)) LoadCommand.Execute(null);
+            }
+        }
 
         public string CodeSearch
         {
@@ -113,11 +143,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public event PropertyChangedEventHandler PropertyChanged;
 
-        private static void GetDateRange(SalesRegisterFilter filter, out long fromMs, out long toMs)
+        private void GetCurrentRange(out long fromMs, out long toMs)
         {
             var now = DateTime.Now;
             DateTime from, to;
-            switch (filter)
+            switch (Filter)
             {
                 case SalesRegisterFilter.Ieri:
                     from = now.Date.AddDays(-1);
@@ -126,6 +156,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 case SalesRegisterFilter.Mese:
                     from = new DateTime(now.Year, now.Month, 1);
                     to = from.AddMonths(1);
+                    break;
+                case SalesRegisterFilter.Ultimi7Giorni:
+                    from = now.Date.AddDays(-6);
+                    to = now.Date.AddDays(1);
+                    break;
+                case SalesRegisterFilter.Periodo:
+                    from = (RangeFrom ?? now.Date).Date;
+                    var end = (RangeTo ?? from).Date;
+                    if (end < from) { var tmp = from; from = end; end = tmp; }
+                    to = end.AddDays(1);
                     break;
                 default:
                     from = now.Date;
@@ -155,9 +195,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 }
                 else
                 {
-                    GetDateRange(Filter, out var fromMs, out var toMs);
+                    GetCurrentRange(out var fromMs, out var toMs);
                     items = await _service.GetSalesBetweenAsync(fromMs, toMs).ConfigureAwait(true);
-                    Status = items.Count + " vendite nel periodo.";
+
+                    var countVendite = items.Count(i => i.Kind == (int)SaleKind.Sale && !i.VoidedBySaleId.HasValue);
+                    var countResi = items.Count(i => i.Kind == (int)SaleKind.Refund);
+                    var totalVendite = items.Where(i => i.Kind == (int)SaleKind.Sale && !i.VoidedBySaleId.HasValue).Sum(i => i.TotalMinor);
+                    var totalResi = items.Where(i => i.Kind == (int)SaleKind.Refund).Sum(i => Math.Abs(i.TotalMinor));
+                    var netto = totalVendite - totalResi;
+                    Status = $"{items.Count} operazioni  ·  Vendite: {countVendite} ({MoneyClp.Format(totalVendite)})  ·  Resi: {countResi} ({MoneyClp.Format(totalResi)})  ·  Netto: {MoneyClp.Format(netto)}";
                 }
 
                 foreach (var x in items)
@@ -277,6 +323,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public string TimeText { get; set; }
             public bool IsVoided { get; set; }
             public string VoidedText => IsVoided ? "Annullata" : "";
+            public string BadgeBrush => Kind == (int)SaleKind.Refund ? "#FF9800" : "#4CAF50";
         }
 
         public sealed class DetailLineRow

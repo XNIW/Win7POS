@@ -31,17 +31,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     SoldQty = x.SoldQty,
                     RefundedQty = x.RefundedQty,
                     RemainingQty = x.RemainingQty,
-                    QtyToRefund = x.RemainingQty
+                    QtyToRefund = 0
                 };
                 row.PropertyChanged += (_, __) => OnAmountsChanged();
                 Lines.Add(row);
             }
 
-            _cashRefund = MoneyClp.Format(RefundTotalMinor);
+            _isFullVoid = false;
             if (Preview.IsAlreadyVoided)
                 _isFullVoid = false;
+            _cashRefund = "0";
+            _cardRefund = "0";
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
+            AllCashCommand = new RelayCommand(_ => { CashRefund = MoneyClp.Format(RefundTotalMinor); CardRefund = "0"; }, _ => RefundTotalMinor > 0);
+            AllCardCommand = new RelayCommand(_ => { CardRefund = MoneyClp.Format(RefundTotalMinor); CashRefund = "0"; }, _ => RefundTotalMinor > 0);
+            ZeroRefundCommand = new RelayCommand(_ => { CashRefund = "0"; CardRefund = "0"; }, _ => true);
         }
 
         public RefundPreviewModel Preview { get; }
@@ -135,8 +140,26 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }
+        public ICommand AllCashCommand { get; }
+        public ICommand AllCardCommand { get; }
+        public ICommand ZeroRefundCommand { get; }
 
         public event Action<bool> RequestClose;
+
+        public void ApplyBarcodeScan(string barcode)
+        {
+            if (string.IsNullOrWhiteSpace(barcode)) return;
+            var trimmed = barcode.Trim();
+            foreach (var line in Lines)
+            {
+                if (string.Equals(line.Barcode?.Trim(), trimmed, StringComparison.OrdinalIgnoreCase) && line.RemainingQty > 0)
+                {
+                    if (line.QtyToRefund < line.RemainingQty)
+                        line.QtyToRefund = line.QtyToRefund + 1;
+                    return;
+                }
+            }
+        }
         public event PropertyChangedEventHandler PropertyChanged;
 
         public bool TryConfirm()
@@ -203,6 +226,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             OnPropertyChanged(nameof(MissingMinor));
             OnPropertyChanged(nameof(MissingText));
             (ConfirmCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (AllCashCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (AllCardCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
