@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Input;
+using System.Threading.Tasks;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.Dialogs;
@@ -220,6 +221,41 @@ namespace Win7POS.Wpf
         {
             ImportTab.IsEnabled = !enabled;
             ProductsTab.IsEnabled = !enabled;
+        }
+
+        /// <summary>Mostra la schermata Pagamento e attende la chiusura (RequestClose).</summary>
+        public Task<bool> ShowPaymentScreenAsync(PaymentViewModel vm)
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            var prevIndex = MainTabControl.SelectedIndex;
+
+            void Cleanup(bool ok)
+            {
+                vm.RequestClose -= OnClose;
+                PaymentViewControl.DataContext = null;
+
+                MainTabControl.SelectedIndex = prevIndex;
+                HamburgerButton.IsEnabled = true;
+                tcs.TrySetResult(ok);
+            }
+
+            void OnClose(bool ok)
+            {
+                Dispatcher.BeginInvoke(new Action(() => Cleanup(ok)));
+            }
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                HamburgerButton.IsEnabled = false;
+                SideMenuOverlay.Visibility = Visibility.Collapsed;
+
+                PaymentViewControl.DataContext = vm;
+                vm.RequestClose += OnClose;
+
+                MainTabControl.SelectedIndex = 3; // 0 POS, 1 Import, 2 Prodotti, 3 Pagamento
+            }));
+
+            return tcs.Task;
         }
     }
 }

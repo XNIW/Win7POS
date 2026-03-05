@@ -55,6 +55,9 @@
             <TabItem x:Name="ProductsTab" Header="Prodotti">
                 <prod:ProductsView/>
             </TabItem>
+            <TabItem x:Name="PaymentTab" Header="Pagamento">
+                <pos:PaymentView x:Name="PaymentViewControl"/>
+            </TabItem>
         </TabControl>
 
         <!-- Overlay menu laterale -->

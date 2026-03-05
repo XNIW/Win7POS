@@ -14,6 +14,7 @@ using Win7POS.Core.Util;
 using Win7POS.Wpf.Fiscal;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos.Dialogs;
+using Win7POS.Wpf;
 
 namespace Win7POS.Wpf.Pos
 {
@@ -334,45 +335,34 @@ namespace Win7POS.Wpf.Pos
             };
 
             var fiscalPdf = new FiscalPdfService();
-            PaymentDialog dlg;
-            try
-            {
-                dlg = new PaymentDialog(Total, draft,
-                    (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code),
-                    async (text, code) => await _service.PrintReceiptTextAsync(text, UseReceipt42, "FISCAL_" + code).ConfigureAwait(true))
-                { Owner = Application.Current?.MainWindow };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Payment dialog init failed (XAML/binding).");
-                MessageBox.Show(
-                    "Errore apertura finestra pagamento.\n" +
-                    "Controlla: C:\\ProgramData\\Win7POS\\logs\\app.log\n\n" +
-                    ex.Message,
-                    "Pay error",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
-                StatusMessage = "Errore apertura finestra pagamento (binding).";
-                RequestFocusBarcode();
-                return;
-            }
+            var vm = new PaymentViewModel(Total, draft,
+                (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code),
+                async (text, code) => await _service.PrintReceiptTextAsync(text, UseReceipt42, "FISCAL_" + code).ConfigureAwait(true));
 
             bool ok;
             try
             {
-                ok = dlg.ShowDialog() == true;
+                var mainWindow = Application.Current?.MainWindow as MainWindow;
+                if (mainWindow == null)
+                {
+                    _logger.LogError(null, "MainWindow not available for payment screen.");
+                    StatusMessage = "Errore: finestra principale non disponibile.";
+                    RequestFocusBarcode();
+                    return;
+                }
+                ok = await mainWindow.ShowPaymentScreenAsync(vm).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Payment dialog ShowDialog failed.");
+                _logger.LogError(ex, "Payment screen failed.");
                 MessageBox.Show("Errore Pay.\n\n" + ex.Message, "Pay error",
                     MessageBoxButton.OK, MessageBoxImage.Error);
-                StatusMessage = "Errore Pay (dialog).";
+                StatusMessage = "Errore Pay.";
                 RequestFocusBarcode();
                 return;
             }
 
-            if (dlg.ViewModel.WasSuspended)
+            if (vm.WasSuspended)
             {
                 await SuspendCartAsync().ConfigureAwait(true);
                 return;
@@ -390,17 +380,17 @@ namespace Win7POS.Wpf.Pos
             {
                 var payment = new PosPaymentInfo
                 {
-                    CashAmountMinor = dlg.ViewModel.CashAmountMinor,
-                    CardAmountMinor = dlg.ViewModel.CardAmountMinor
+                    CashAmountMinor = vm.CashAmountMinor,
+                    CardAmountMinor = vm.CardAmountMinor
                 };
                 var result = await _service.CompleteSaleAsync(
                     payment,
-                    dlg.ViewModel.SaleCode,
-                    dlg.ViewModel.CreatedAtMs).ConfigureAwait(true);
+                    vm.SaleCode,
+                    vm.CreatedAtMs).ConfigureAwait(true);
                 ApplySnapshot(result.Snapshot);
                 ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
                 StatusMessage = "Pagamento OK: " + result.SaleCode;
-                if (dlg.ViewModel.ShouldPrint)
+                if (vm.ShouldPrint)
                 {
                     var printed = await PrintReceiptAsync(ReceiptPreview, result.SaleCode).ConfigureAwait(true);
                     if (!printed)
@@ -412,7 +402,7 @@ namespace Win7POS.Wpf.Pos
                             MessageBoxImage.Warning);
                     }
                 }
-                await _service.SetFiscalBoletaNumberAsync(dlg.ViewModel.NextBoletaNumber).ConfigureAwait(true);
+                await _service.SetFiscalBoletaNumberAsync(vm.NextBoletaNumber).ConfigureAwait(true);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }
             catch (PosException ex)
