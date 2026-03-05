@@ -22,11 +22,11 @@
 
         <TextBlock Grid.Row="0" Grid.Column="0" Text="Vendita:" VerticalAlignment="Center"/>
         <TextBlock Grid.Row="0" Grid.Column="1">
-            <Run Text="{Binding SaleCodeText}"/>
+            <Run Text="{Binding SaleCodeText, Mode=OneWay}"/>
             <Run Text="  "/>
-            <Run Text="{Binding TimeText}"/>
+            <Run Text="{Binding TimeText, Mode=OneWay}"/>
             <Run Text="  Totale: "/>
-            <Run Text="{Binding OriginalTotalText}"/>
+            <Run Text="{Binding OriginalTotalText, Mode=OneWay}"/>
         </TextBlock>
 
         <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,10,0,8">

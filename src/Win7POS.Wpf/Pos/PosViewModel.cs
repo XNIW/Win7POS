@@ -339,7 +339,7 @@ namespace Win7POS.Wpf.Pos
             var fiscalPdf = new FiscalPdfService();
             var vm = new PaymentViewModel(Total, draft,
                 (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code),
-                async (text, code) => await _service.PrintReceiptTextAsync(text + "\nScontrino: " + code, UseReceipt42, "FISCAL_" + code).ConfigureAwait(true));
+                async (text, code) => await _service.PrintReceiptTextAsync(text, UseReceipt42, "FISCAL_" + code).ConfigureAwait(true));
 
             bool ok;
             try
@@ -394,7 +394,8 @@ namespace Win7POS.Wpf.Pos
                 StatusMessage = "Pagamento OK: " + result.SaleCode;
                 if (vm.ShouldPrint)
                 {
-                    var printed = await PrintReceiptAsync(ReceiptPreview, result.SaleCode).ConfigureAwait(true);
+                    var receiptWithBarcode = ReceiptPreview + "\nScontrino: " + result.SaleCode;
+                    var printed = await PrintReceiptAsync(receiptWithBarcode, result.SaleCode).ConfigureAwait(true);
                     if (!printed)
                     {
                         MessageBox.Show(

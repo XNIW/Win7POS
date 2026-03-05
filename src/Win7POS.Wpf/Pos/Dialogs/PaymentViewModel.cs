@@ -235,7 +235,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 "VESTIR,CALZADO,FERRETERIA,MENAJE,AR",
                 "T.EN GENERAL",
                 shop.Address ?? "",
-                shop.City ?? "",
+                string.IsNullOrWhiteSpace(shop.City) ? "" : System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(shop.City.Trim().ToLowerInvariant()),
                 $"BOLETA ELECTRÓNICA NUMERO: {formattedNum}",
                 "REF. VENDEDOR: 24231788-2",
                 $"Fecha: {currentDate}",
