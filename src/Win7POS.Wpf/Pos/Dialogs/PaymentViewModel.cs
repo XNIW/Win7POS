@@ -27,6 +27,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private PaymentActiveField _activeField = PaymentActiveField.Cash;
         private bool _shouldPrint;
         private string _receiptPreviewText = "";
+        private string _receiptPreviewFirstLine = "";
+        private string _receiptPreviewRest = "";
         private bool _showSiiWeb = true;
         private int _nextBoletaNumber;
         private string _fiscalPreviewText = "";
@@ -97,6 +99,20 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             get => _receiptPreviewText;
             private set { _receiptPreviewText = value ?? ""; OnPropertyChanged(); }
+        }
+
+        /// <summary>Prima riga (nome negozio) per anteprima = stampa: grassetto e più grande.</summary>
+        public string ReceiptPreviewFirstLine
+        {
+            get => _receiptPreviewFirstLine;
+            private set { _receiptPreviewFirstLine = value ?? ""; OnPropertyChanged(); }
+        }
+
+        /// <summary>Resto righe per anteprima = stampa.</summary>
+        public string ReceiptPreviewRest
+        {
+            get => _receiptPreviewRest;
+            private set { _receiptPreviewRest = value ?? ""; OnPropertyChanged(); }
         }
 
         [Obsolete("Use ReceiptPreviewText")]
@@ -358,14 +374,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var shop = _draft?.ShopInfo ?? new ReceiptShopInfo { Name = "Win7POS", Address = "", Footer = "Grazie" };
 
             var lines = new List<string>(ReceiptFormatter.Format(sale, saleLines, options, shop));
-            // Stessa riga che la stampante usa per disegnare il barcode Code128: così in anteprima si vede cosa apparirà
+            // Stessa struttura della stampante: riga "Scontrino: XXX" in fondo (sotto la stampante viene disegnato il barcode Code128)
             if (!string.IsNullOrEmpty(sale.Code))
             {
                 lines.Add("");
                 lines.Add("Scontrino: " + sale.Code);
-                lines.Add("[Codice a barre Code128 stampato sotto]");
             }
             ReceiptPreviewText = string.Join(Environment.NewLine, lines);
+            // Anteprima = stampa: prima riga (nome negozio) in grassetto e più grande, resto uguale
+            ReceiptPreviewFirstLine = lines.Count > 0 ? (lines[0] ?? "") : "";
+            ReceiptPreviewRest = lines.Count > 1 ? string.Join(Environment.NewLine, lines.Skip(1)) : "";
         }
 
         private void AppendDigit(object parameter)

@@ -16,11 +16,14 @@ namespace Win7POS.Wpf.Printing
         private const float QrWidthMm = 50f;
         private const float QrTopGapMm = 6f;
         private const float QrBottomGapMm = 3f;
-        private const float SaleCodeBarcodeWidthMm = 68f;
         private const float SaleCodeBarcodeGapMm = 4f;
 
         private static bool IsSiiMarker(string line)
             => string.Equals((line ?? "").Trim(), SiiMarker, StringComparison.OrdinalIgnoreCase);
+
+        private const string Code128Placeholder = "[Codice a barre Code128 stampato sotto]";
+        private static bool IsCode128Placeholder(string line)
+            => string.Equals((line ?? "").Trim(), Code128Placeholder, StringComparison.OrdinalIgnoreCase);
 
         private static bool TryGetScontrinoSaleCode(string line, out string saleCode)
         {
@@ -124,10 +127,11 @@ namespace Win7POS.Wpf.Printing
                     // Courier New prima (coerente col preview fiscale), poi fallback Consolas
                     try { font = new Font("Courier New", 9f); }
                     catch { font = new Font("Consolas", 9f); }
-                    try { headerFont = new Font(font.FontFamily, 12f, FontStyle.Bold); }
-                    catch { headerFont = new Font(font.FontFamily, 11f, FontStyle.Bold); }
+                    try { headerFont = new Font(font.FontFamily, 10f, FontStyle.Bold); }
+                    catch { headerFont = new Font(font.FontFamily, 9f, FontStyle.Bold); }
 
                     bool headerDone = false;
+                    bool useReceiptHeader = opt.UseReceiptHeaderStyle;
 
                     doc.PrintPage += (s, e) =>
                     {
@@ -142,8 +146,8 @@ namespace Win7POS.Wpf.Printing
                         {
                             var line = lines[lineIndex] ?? "";
 
-                            // Prima riga non vuota = nome negozio: più grande e in grassetto, centrata
-                            if (!headerDone && !string.IsNullOrWhiteSpace(line))
+                            // Solo per scontrino: prima riga non vuota = nome negozio (grassetto e più grande, centrata)
+                            if (useReceiptHeader && !headerDone && !string.IsNullOrWhiteSpace(line))
                             {
                                 var text = line.Trim();
                                 var size = e.Graphics.MeasureString(text, headerFont);
@@ -189,15 +193,14 @@ namespace Win7POS.Wpf.Printing
                                 continue;
                             }
 
-                            // Ultima riga "Scontrino: <code>" → testo + barcode Code128 (solo in fondo allo scontrino)
+                            // Ultima riga "Scontrino: <code>" → testo + barcode Code128 (larghezza = foglio per lettura scanner)
                             if (TryGetScontrinoSaleCode(line, out var saleCode))
                             {
                                 if (lineIndex == lastScontrinoIndex)
                                 {
                                     using (var barcodeBmp = Code128Renderer.Render(saleCode))
                                     {
-                                        float barW = MmToHundredthsInch(SaleCodeBarcodeWidthMm);
-                                        if (barW > printableW) barW = printableW;
+                                        float barW = printableW;
                                         float gap = MmToHundredthsInch(SaleCodeBarcodeGapMm);
 
                                         float needH = bodyLineHeight + gap + (barcodeBmp != null ? barW * barcodeBmp.Height / (float)barcodeBmp.Width : 0f);
@@ -228,6 +231,13 @@ namespace Win7POS.Wpf.Printing
 
                             if (y + bodyLineHeight > bottom)
                                 break;
+
+                            // Non stampare la riga placeholder (rimossa dalla generazione; ignora se presente in testi vecchi)
+                            if (IsCode128Placeholder(line))
+                            {
+                                lineIndex++;
+                                continue;
+                            }
 
                             e.Graphics.DrawString(line, font, Brushes.Black, x, y);
                             y += bodyLineHeight;

@@ -1089,12 +1089,12 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<PosPrintResult> PrintReceiptTextAsync(string receiptText, bool use42, string fileTag)
+        public async Task<PosPrintResult> PrintReceiptTextAsync(string receiptText, bool use42, string fileTag, bool isFiscalPrint = false)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await PrintReceiptTextNoLockAsync(receiptText, use42, fileTag).ConfigureAwait(false);
+                return await PrintReceiptTextNoLockAsync(receiptText, use42, fileTag, isFiscalPrint).ConfigureAwait(false);
             }
             finally
             {
@@ -1283,12 +1283,11 @@ namespace Win7POS.Wpf.Pos
                 completed.Lines,
                 use42 ? ReceiptOptions.Default42Clp() : ReceiptOptions.Default32Clp(),
                 shop));
-            // Come in anteprima pagamento: riga usata dalla stampante per il barcode + placeholder
+            // Stessa struttura della stampante: "Scontrino: XXX" in fondo (sotto la stampante disegna il barcode Code128)
             if (!string.IsNullOrEmpty(completed?.Sale?.Code))
             {
                 lines.Add("");
                 lines.Add("Scontrino: " + completed.Sale.Code);
-                lines.Add("[Codice a barre Code128 stampato sotto]");
             }
             return string.Join(Environment.NewLine, lines);
         }
@@ -1346,7 +1345,7 @@ SELECT last_insert_rowid();";
             };
         }
 
-        private async Task<PosPrintResult> PrintReceiptTextNoLockAsync(string receiptText, bool use42, string fileTag)
+        private async Task<PosPrintResult> PrintReceiptTextNoLockAsync(string receiptText, bool use42, string fileTag, bool isFiscalPrint = false)
         {
             var text = receiptText ?? string.Empty;
             if (string.IsNullOrWhiteSpace(text))
@@ -1364,7 +1363,8 @@ SELECT last_insert_rowid();";
                 Copies = printer.Copies < 1 ? 1 : printer.Copies,
                 CharactersPerLine = use42 ? 42 : 32,
                 SaveCopyToFile = printer.SaveCopyToFile,
-                OutputPath = outputPath
+                OutputPath = outputPath,
+                UseReceiptHeaderStyle = !isFiscalPrint
             }).ConfigureAwait(false);
 
             return new PosPrintResult

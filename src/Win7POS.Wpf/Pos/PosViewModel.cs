@@ -339,7 +339,7 @@ namespace Win7POS.Wpf.Pos
             var fiscalPdf = new FiscalPdfService();
             var vm = new PaymentViewModel(Total, draft,
                 (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code),
-                async (text, code) => await _service.PrintReceiptTextAsync(text, UseReceipt42, "FISCAL_" + code).ConfigureAwait(true));
+                async (text, code) => await _service.PrintReceiptTextAsync(text, UseReceipt42, "FISCAL_" + code, isFiscalPrint: true).ConfigureAwait(true));
 
             bool ok;
             try
