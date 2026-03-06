@@ -42,14 +42,14 @@ namespace Win7POS.Wpf.Products
             return _products.SearchDetailsAsync(query, limit, categoryId);
         }
 
-        public Task<int> CountDetailsAsync(string query, int? categoryId = null)
+        public Task<int> CountDetailsAsync(string query, int? categoryId = null, int? supplierId = null)
         {
-            return _products.CountDetailsAsync(query, categoryId);
+            return _products.CountDetailsAsync(query, categoryId, supplierId);
         }
 
-        public Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsPageAsync(string query, int limit, int offset, int? categoryId = null)
+        public Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsPageAsync(string query, int limit, int offset, int? categoryId = null, int? supplierId = null)
         {
-            return _products.SearchDetailsPageAsync(query, limit, offset, categoryId);
+            return _products.SearchDetailsPageAsync(query, limit, offset, categoryId, supplierId);
         }
 
         public Task<IReadOnlyList<CategoryListItem>> GetCategoriesAsync() => _categories.ListAllAsync();
@@ -110,6 +110,14 @@ namespace Win7POS.Wpf.Products
             await _products.UpsertProductAndMetaInTransactionAsync(p, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty).ConfigureAwait(false);
             await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductCreate, AuditDetails.Kv(("barcode", p.Barcode), ("name", p.Name))).ConfigureAwait(false);
         }
+
+        /// <summary>Alias per creazione prodotto con tutti i dettagli (barcode, nome, prezzi, fornitore, categoria, stock).</summary>
+        public Task CreateAsync(string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
+            => CreateProductAsync(barcode, name, unitPriceMinor, purchasePriceMinor, supplierId, supplierName, categoryId, categoryName, stockQty, articleCode, name2);
+
+        /// <summary>Alias per aggiornamento completo (nome, prezzi, fornitore, categoria, stock). Barcode non modificabile.</summary>
+        public Task UpdateDetailsAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
+            => UpdateProductFullAsync(productId, barcode, name, unitPriceMinor, purchasePriceMinor, supplierId, supplierName, categoryId, categoryName, stockQty, articleCode, name2);
 
         public async Task UpdateProductFullAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
         {

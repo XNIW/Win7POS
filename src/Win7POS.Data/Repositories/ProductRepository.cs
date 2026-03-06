@@ -174,7 +174,7 @@ LIMIT @limit",
             return rows.ToList();
         }
 
-        public async Task<int> CountDetailsAsync(string query, int? categoryId = null)
+        public async Task<int> CountDetailsAsync(string query, int? categoryId = null, int? supplierId = null)
         {
             using var conn = _factory.Open();
             var q = (query ?? string.Empty).Trim();
@@ -183,6 +183,8 @@ LIMIT @limit",
             var where = "WHERE ( @q = '' OR p.barcode = @q OR p.name LIKE @like )";
             if (categoryId.HasValue && categoryId.Value != 0)
                 where += " AND m.category_id = @categoryId";
+            if (supplierId.HasValue && supplierId.Value != 0)
+                where += " AND m.supplier_id = @supplierId";
 
             var sql = @"
 SELECT COUNT(1)
@@ -190,10 +192,10 @@ FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 " + where;
 
-            return await conn.ExecuteScalarAsync<int>(sql, new { q, like, categoryId = categoryId ?? 0 }).ConfigureAwait(false);
+            return await conn.ExecuteScalarAsync<int>(sql, new { q, like, categoryId = categoryId ?? 0, supplierId = supplierId ?? 0 }).ConfigureAwait(false);
         }
 
-        public async Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsPageAsync(string query, int limit, int offset, int? categoryId = null)
+        public async Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsPageAsync(string query, int limit, int offset, int? categoryId = null, int? supplierId = null)
         {
             if (limit <= 0) limit = 200;
             if (offset < 0) offset = 0;
@@ -205,6 +207,8 @@ LEFT JOIN product_meta m ON m.barcode = p.barcode
             var where = "WHERE ( @q = '' OR p.barcode = @q OR p.name LIKE @like )";
             if (categoryId.HasValue && categoryId.Value != 0)
                 where += " AND m.category_id = @categoryId";
+            if (supplierId.HasValue && supplierId.Value != 0)
+                where += " AND m.supplier_id = @supplierId";
 
             var sql = @"
 SELECT
@@ -226,7 +230,7 @@ LEFT JOIN product_meta m ON m.barcode = p.barcode
 ORDER BY p.barcode ASC
 LIMIT @limit OFFSET @offset";
 
-            var rows = await conn.QueryAsync<ProductDetailsRow>(sql, new { q, like, limit, offset, categoryId = categoryId ?? 0 }).ConfigureAwait(false);
+            var rows = await conn.QueryAsync<ProductDetailsRow>(sql, new { q, like, limit, offset, categoryId = categoryId ?? 0, supplierId = supplierId ?? 0 }).ConfigureAwait(false);
             return rows.ToList();
         }
 

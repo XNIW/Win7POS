@@ -14,8 +14,8 @@ namespace Win7POS.Wpf.Products
 
         private void ProductsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
-            if (DataContext is ProductsViewModel vm && vm.SelectedProduct != null && vm.EditCommand?.CanExecute(null) == true)
-                vm.EditCommand.Execute(null);
+            if (DataContext is ProductsViewModel vm && vm.SelectedProduct != null && vm.EditProductCommand?.CanExecute(null) == true)
+                vm.EditProductCommand.Execute(null);
         }
     }
 }

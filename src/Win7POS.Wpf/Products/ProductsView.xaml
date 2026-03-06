@@ -5,9 +5,20 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              d:DesignHeight="720" d:DesignWidth="1100">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <Style x:Key="RightAlignCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="HorizontalAlignment" Value="Right"/>
+            <Setter Property="Margin" Value="4,0"/>
+        </Style>
+        <Style x:Key="CenterAlignCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+            <Setter Property="HorizontalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="4,0"/>
+        </Style>
+    </UserControl.Resources>
     <UserControl.InputBindings>
-        <KeyBinding Key="N" Modifiers="Control" Command="{Binding NewCommand}"/>
-        <KeyBinding Key="M" Modifiers="Control" Command="{Binding EditCommand}"/>
+        <KeyBinding Key="N" Modifiers="Control" Command="{Binding NewProductCommand}"/>
+        <KeyBinding Key="M" Modifiers="Control" Command="{Binding EditProductCommand}"/>
         <KeyBinding Key="D" Modifiers="Control" Command="{Binding DeleteCommand}"/>
         <KeyBinding Key="R" Modifiers="Control" Command="{Binding CopyNewCommand}"/>
         <KeyBinding Key="F5" Command="{Binding RefreshCommand}"/>
@@ -19,7 +30,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Toolbar -->
+        <!-- Toolbar: azioni a sinistra, filtri a destra -->
         <Border Grid.Row="0" Margin="0,0,0,12"
                 Background="{StaticResource BackgroundLightBrush}"
                 Padding="12" CornerRadius="8"
@@ -27,57 +38,39 @@
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="340"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <Button Grid.Column="0" MinWidth="110" MinHeight="36"
-                        Content="Nuovo (Ctrl+N)"
-                        Style="{StaticResource PrimaryButtonStyle}"
-                        Command="{Binding NewCommand}"/>
+                <!-- Blocco azioni -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <Button MinWidth="100" MinHeight="36" Content="Nuovo" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding NewProductCommand}"/>
+                    <Button MinWidth="100" Margin="8,0,0,0" MinHeight="36" Content="Modifica" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding EditProductCommand}"/>
+                    <Button MinWidth="90" Margin="8,0,0,0" MinHeight="36" Content="Duplica" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CopyNewCommand}"/>
+                    <Button MinWidth="90" Margin="8,0,0,0" MinHeight="36" Content="Elimina" Style="{StaticResource OutlineButtonStyle}" Command="{Binding DeleteCommand}"/>
+                    <Button MinWidth="100" Margin="8,0,0,0" MinHeight="36" Content="Import dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ImportCommand}"/>
+                </StackPanel>
 
-                <Button Grid.Column="1" Margin="8,0,0,0" MinWidth="120" MinHeight="36"
-                        Content="Modifica (Ctrl+M)"
-                        Style="{StaticResource SecondaryButtonStyle}"
-                        Command="{Binding EditCommand}"/>
-
-                <Button Grid.Column="2" Margin="8,0,0,0" MinWidth="130" MinHeight="36"
-                        Content="Duplica (Ctrl+R)"
-                        Style="{StaticResource OutlineButtonStyle}"
-                        Command="{Binding CopyNewCommand}"/>
-
-                <Button Grid.Column="3" Margin="8,0,0,0" MinWidth="120" MinHeight="36"
-                        Content="Elimina (Ctrl+D)"
-                        Style="{StaticResource OutlineButtonStyle}"
-                        Command="{Binding DeleteCommand}"/>
-
-                <Button Grid.Column="4" Margin="8,0,0,0" MinWidth="130" MinHeight="36"
-                        Content="Import dati"
-                        Style="{StaticResource OutlineButtonStyle}"
-                        Command="{Binding ImportCommand}"/>
-
-                <!-- Search -->
-                <TextBox Grid.Column="6" MinHeight="36"
-                         Style="{StaticResource ModernTextBoxStyle}"
-                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}">
-                    <TextBox.InputBindings>
-                        <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
-                    </TextBox.InputBindings>
-                </TextBox>
-
-                <Button Grid.Column="7" Margin="8,0,0,0" MinWidth="90" MinHeight="36"
-                        Content="Cerca"
-                        Style="{StaticResource PrimaryButtonStyle}"
-                        Command="{Binding SearchCommand}"/>
+                <!-- Blocco filtri: fornitore + cerca (categoria solo a sinistra) -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <TextBlock Text="Fornitore:" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="Gray"/>
+                    <ComboBox MinWidth="140" MinHeight="34" Style="{StaticResource ModernComboBoxStyle}"
+                              ItemsSource="{Binding Suppliers}" DisplayMemberPath="Name"
+                              SelectedItem="{Binding SelectedSupplier, Mode=TwoWay}"/>
+                    <TextBlock Text="Cerca:" VerticalAlignment="Center" Margin="12,0,4,0" Foreground="Gray"/>
+                    <TextBox MinWidth="180" MinHeight="34" Style="{StaticResource ModernTextBoxStyle}"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}">
+                        <TextBox.InputBindings>
+                            <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
+                        </TextBox.InputBindings>
+                    </TextBox>
+                    <Button MinWidth="70" Margin="8,0,0,0" MinHeight="34" Content="Cerca" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SearchCommand}"/>
+                    <Button MinWidth="90" Margin="8,0,0,0" MinHeight="34" Content="Azzera filtri" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ClearFiltersCommand}"/>
+                </StackPanel>
             </Grid>
         </Border>
 
-        <!-- Content: Categories (left) + Grid (right) -->
+        <!-- Content: Categorie (sinistra) + Riga filtri attivi + Griglia (destra) -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="260"/>
@@ -85,46 +78,95 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
+            <!-- Pannello Categorie -->
             <Border Grid.Column="0" Background="White" CornerRadius="8"
                     BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Text="Categorie" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                    <ListBox Grid.Row="1"
+                    <TextBlock Grid.Row="0" Text="Categorie" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,6"/>
+                    <TextBlock Grid.Row="1" Foreground="Gray" FontSize="11" Margin="0,0,0,8">
+                        <Run Text="Seleziona per filtrare"/>
+                    </TextBlock>
+                    <ListBox Grid.Row="2"
                              ItemsSource="{Binding Categories}"
                              SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
-                             DisplayMemberPath="Name"/>
+                             DisplayMemberPath="Name"
+                             BorderThickness="0"
+                             Background="Transparent"/>
                 </Grid>
             </Border>
 
-            <Border Grid.Column="2" Background="White" CornerRadius="8"
-                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                <DataGrid ItemsSource="{Binding Items}"
-                          SelectedItem="{Binding SelectedProduct}"
-                          AutoGenerateColumns="False"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False"
-                          EnableRowVirtualization="True"
-                          VirtualizingPanel.IsVirtualizing="True"
-                          VirtualizingPanel.VirtualizationMode="Recycling"
-                          MouseDoubleClick="ProductsGrid_MouseDoubleClick">
-                    <DataGrid.Columns>
-                        <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" Width="120" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Nome" Binding="{Binding Name}" Width="2*" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Vendita" Binding="{Binding UnitPrice}" Width="90" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Acquisto" Binding="{Binding PurchasePrice}" Width="90" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Stock" Binding="{Binding StockQty}" Width="70" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Fornitore" Binding="{Binding SupplierName}" Width="1*" IsReadOnly="True"/>
-                        <DataGridTextColumn Header="Categoria" Binding="{Binding CategoryName}" Width="1*" IsReadOnly="True"/>
-                    </DataGrid.Columns>
-                </DataGrid>
-            </Border>
+            <!-- Riga filtri attivi + Griglia -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Riga filtri attivi -->
+                <Border Grid.Row="0" Background="#F5F5F5" Padding="8,6" Margin="0,0,0,4" CornerRadius="4"
+                        Visibility="{Binding HasActiveFilters, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="{Binding FilterSummary, Mode=OneWay}" FontSize="11" Foreground="#555" TextWrapping="Wrap"/>
+                </Border>
+
+                <!-- DataGrid -->
+                <Border Grid.Row="1" Background="White" CornerRadius="8"
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                    <DataGrid ItemsSource="{Binding Items}"
+                              SelectedItem="{Binding SelectedProduct}"
+                              AutoGenerateColumns="False"
+                              CanUserAddRows="False"
+                              CanUserDeleteRows="False"
+                              EnableRowVirtualization="True"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              RowBackground="White"
+                              AlternatingRowBackground="#FAFAFA"
+                              MouseDoubleClick="ProductsGrid_MouseDoubleClick"
+                              GridLinesVisibility="Horizontal"
+                              HorizontalGridLinesBrush="#EEE"
+                              HeadersVisibility="Column"
+                              BorderThickness="0">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" Width="110" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Nome" Binding="{Binding Name}" Width="2*" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Vendita" Binding="{Binding UnitPrice, StringFormat={}{0:N0}}" Width="85" IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                        <Setter Property="Margin" Value="4,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Acquisto" Binding="{Binding PurchasePrice, StringFormat={}{0:N0}}" Width="85" IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Right"/>
+                                        <Setter Property="Margin" Value="4,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Stock" Binding="{Binding StockQty}" Width="60" IsReadOnly="True">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                        <Setter Property="Margin" Value="4,0"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="Fornitore" Binding="{Binding SupplierName}" Width="1*" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Categoria" Binding="{Binding CategoryName}" Width="1*" IsReadOnly="True"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+            </Grid>
         </Grid>
 
-        <!-- Footer -->
+        <!-- Footer: paginazione + stato -->
         <DockPanel Grid.Row="2" Margin="0,12,0,0">
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
                 <TextBlock Foreground="#6B5B73" VerticalAlignment="Center" Text="{Binding PagingStatus}" Margin="0,0,16,0"/>

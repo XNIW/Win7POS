@@ -26,12 +26,16 @@ namespace Win7POS.Wpf.Products
 
         public ProductEditMode Mode { get; }
         public long? ProductId { get; }
-        public bool IsBarcodeReadOnly => Mode == ProductEditMode.Edit;
+        public bool IsEditMode => Mode == ProductEditMode.Edit;
+        public bool IsBarcodeReadOnly => IsEditMode;
 
         public ObservableCollection<CategoryListItem> Categories { get; } = new ObservableCollection<CategoryListItem>();
         public ObservableCollection<SupplierListItem> Suppliers { get; } = new ObservableCollection<SupplierListItem>();
 
         public string Title => Mode == ProductEditMode.Edit ? "Modifica prodotto" : Mode == ProductEditMode.Duplicate ? "Duplica prodotto" : "Nuovo prodotto";
+        public string DialogTitle => Title;
+        /// <summary>Nuovo/Duplica = Stock iniziale, Modifica = Stock.</summary>
+        public string StockLabel => IsEditMode ? "Stock" : "Stock iniziale";
 
         private readonly ProductsWorkflowService _service;
 
