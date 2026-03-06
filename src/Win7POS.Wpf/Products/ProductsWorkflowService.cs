@@ -52,6 +52,11 @@ namespace Win7POS.Wpf.Products
             return _products.SearchDetailsPageAsync(query, limit, offset, categoryId, supplierId);
         }
 
+        public Task<ProductDetailsRow> GetDetailsByIdAsync(long productId)
+        {
+            return _products.GetDetailsByIdAsync(productId);
+        }
+
         public Task<IReadOnlyList<CategoryListItem>> GetCategoriesAsync() => _categories.ListAllAsync();
         public Task<IReadOnlyList<SupplierListItem>> GetSuppliersAsync() => _suppliers.ListAllAsync();
 

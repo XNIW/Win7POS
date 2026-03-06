@@ -36,7 +36,10 @@ namespace Win7POS.Data.ImportDb
                 await UpsertSuppliersAsync(conn, tx, workbook.Suppliers ?? Array.Empty<SupplierRow>(), dryRun);
                 await UpsertCategoriesAsync(conn, tx, workbook.Categories ?? Array.Empty<CategoryRow>(), dryRun);
 
-                var productMap = await UpsertProductsAndMetaAsync(conn, tx, workbook.Products, dryRun);
+                var productMap = await UpsertProductsAndMetaAsync(conn, tx, workbook.Products,
+                    workbook.Suppliers ?? Array.Empty<SupplierRow>(),
+                    workbook.Categories ?? Array.Empty<CategoryRow>(),
+                    dryRun);
                 result.ProductsUpserted = productMap.Count;
 
                 result.PriceHistoryInserted = await InsertPriceHistoryAsync(conn, tx, workbook.PriceHistory ?? Array.Empty<PriceHistoryRow>(), productMap, dryRun);
@@ -79,8 +82,38 @@ namespace Win7POS.Data.ImportDb
             }
         }
 
-        private static async Task<Dictionary<string, long>> UpsertProductsAndMetaAsync(SqliteConnection conn, SqliteTransaction tx, IReadOnlyList<ProductRow> rows, bool dryRun)
+        private static Dictionary<string, int> BuildSupplierNameToId(IReadOnlyList<SupplierRow> suppliers)
         {
+            var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var s in suppliers ?? Array.Empty<SupplierRow>())
+            {
+                if (string.IsNullOrWhiteSpace(s.Name)) continue;
+                var key = s.Name.Trim();
+                if (!map.ContainsKey(key))
+                    map[key] = s.Id;
+            }
+            return map;
+        }
+
+        private static Dictionary<string, int> BuildCategoryNameToId(IReadOnlyList<CategoryRow> categories)
+        {
+            var map = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (var c in categories ?? Array.Empty<CategoryRow>())
+            {
+                if (string.IsNullOrWhiteSpace(c.Name)) continue;
+                var key = c.Name.Trim();
+                if (!map.ContainsKey(key))
+                    map[key] = c.Id;
+            }
+            return map;
+        }
+
+        private static async Task<Dictionary<string, long>> UpsertProductsAndMetaAsync(SqliteConnection conn, SqliteTransaction tx, IReadOnlyList<ProductRow> rows,
+            IReadOnlyList<SupplierRow> suppliers, IReadOnlyList<CategoryRow> categories, bool dryRun)
+        {
+            var supplierByName = BuildSupplierNameToId(suppliers);
+            var categoryByName = BuildCategoryNameToId(categories);
+
             var map = new Dictionary<string, long>(StringComparer.Ordinal);
             var seen = new HashSet<string>(StringComparer.Ordinal);
 
@@ -89,6 +122,20 @@ namespace Win7POS.Data.ImportDb
                 if (string.IsNullOrWhiteSpace(r.Barcode)) continue;
                 if (!seen.Add(r.Barcode)) continue;
                 if (r.RetailPrice < 0) continue;
+
+                var supplierId = r.SupplierId;
+                if (!supplierId.HasValue && !string.IsNullOrWhiteSpace(r.SupplierName))
+                {
+                    if (supplierByName.TryGetValue(r.SupplierName.Trim(), out var sid))
+                        supplierId = sid;
+                }
+
+                var categoryId = r.CategoryId;
+                if (!categoryId.HasValue && !string.IsNullOrWhiteSpace(r.CategoryName))
+                {
+                    if (categoryByName.TryGetValue(r.CategoryName.Trim(), out var cid))
+                        categoryId = cid;
+                }
 
                 var product = new Product
                 {
@@ -107,15 +154,15 @@ VALUES(@Barcode, @ArticleCode, @Name2, @PurchasePrice, @PurchaseOld, @RetailOld,
                         new
                         {
                             Barcode = r.Barcode,
-                            ArticleCode = r.ArticleCode,
-                            Name2 = r.Name2,
+                            ArticleCode = r.ArticleCode ?? string.Empty,
+                            Name2 = r.Name2 ?? string.Empty,
                             PurchasePrice = r.PurchasePrice,
                             PurchaseOld = r.PurchaseOld,
                             RetailOld = r.RetailOld,
-                            SupplierId = r.SupplierId,
-                            SupplierName = r.SupplierName,
-                            CategoryId = r.CategoryId,
-                            CategoryName = r.CategoryName,
+                            SupplierId = supplierId,
+                            SupplierName = r.SupplierName ?? string.Empty,
+                            CategoryId = categoryId,
+                            CategoryName = r.CategoryName ?? string.Empty,
                             StockQty = r.StockQty
                         }, tx);
                 }

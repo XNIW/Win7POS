@@ -346,7 +346,13 @@ namespace Win7POS.Wpf.Products
             if (SelectedProduct == null) return;
             try
             {
-                var ok = await ProductEditDialog.ShowAsync(ProductEditMode.Edit, SelectedProduct, _service).ConfigureAwait(true);
+                var full = await _service.GetDetailsByIdAsync(SelectedProduct.Id).ConfigureAwait(true);
+                if (full == null)
+                {
+                    StatusMessage = "Prodotto non trovato.";
+                    return;
+                }
+                var ok = await ProductEditDialog.ShowAsync(ProductEditMode.Edit, full, _service).ConfigureAwait(true);
                 if (ok) await RefreshAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
@@ -361,7 +367,13 @@ namespace Win7POS.Wpf.Products
             if (SelectedProduct == null) return;
             try
             {
-                var ok = await ProductEditDialog.ShowAsync(ProductEditMode.Duplicate, SelectedProduct, _service).ConfigureAwait(true);
+                var full = await _service.GetDetailsByIdAsync(SelectedProduct.Id).ConfigureAwait(true);
+                if (full == null)
+                {
+                    StatusMessage = "Prodotto non trovato.";
+                    return;
+                }
+                var ok = await ProductEditDialog.ShowAsync(ProductEditMode.Duplicate, full, _service).ConfigureAwait(true);
                 if (ok) await RefreshAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
