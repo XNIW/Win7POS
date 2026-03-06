@@ -48,7 +48,8 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Scansiona barcode articolo:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBox x:Name="BarcodeScanBox" Grid.Column="1" Padding="6,4"
+                <TextBox x:Name="BarcodeScanBox" Grid.Column="1"
+                         Style="{StaticResource ModernTextBoxStyle}"
                          KeyDown="BarcodeScanBox_KeyDown"
                          ToolTip="Inserisci barcode e premi Invio per aggiungere 1 alla quantità da rendere"/>
             </Grid>
@@ -82,7 +83,7 @@
             <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Rimborso totale:"/>
             <TextBlock Grid.Column="1" Text="{Binding RefundTotalText}" VerticalAlignment="Center"/>
             <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center" Text="Motivo:"/>
-            <TextBox Grid.Column="3" Margin="8,0,0,0" Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBox Grid.Column="3" Margin="8,0,0,0" Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
             <TextBlock Grid.Column="4" Margin="12,0,0,0" VerticalAlignment="Center" Text="Rimanente rimborsabile:"/>
             <TextBlock Grid.Column="5" Margin="8,0,0,0" Text="{Binding RemainingRefundableText}" VerticalAlignment="Center"/>
         </Grid>
@@ -99,18 +100,18 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Contanti:"/>
-            <TextBox x:Name="CashRefundBox" Grid.Column="1" Margin="0,0,8,0" Text="{Binding CashRefund, UpdateSourceTrigger=PropertyChanged}"/>
-            <Button Grid.Column="2" Content="Tutto contanti" Margin="0,0,12,0" Command="{Binding AllCashCommand}" Padding="8,4"/>
+            <TextBox x:Name="CashRefundBox" Grid.Column="1" Margin="0,0,8,0" Text="{Binding CashRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+            <Button Grid.Column="2" Content="Tutto contanti" Margin="0,0,12,0" Command="{Binding AllCashCommand}" Style="{StaticResource OutlineButtonStyle}"/>
             <TextBlock Grid.Column="3" VerticalAlignment="Center" Text="Carta:"/>
-            <TextBox Grid.Column="4" Margin="0,0,8,0" Text="{Binding CardRefund, UpdateSourceTrigger=PropertyChanged}"/>
-            <Button Grid.Column="5" Content="Tutto carta" Margin="0,0,8,0" Command="{Binding AllCardCommand}" Padding="8,4"/>
-            <Button Grid.Column="6" Content="Azzera" Command="{Binding ZeroRefundCommand}" Padding="8,4"/>
+            <TextBox Grid.Column="4" Margin="0,0,8,0" Text="{Binding CardRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+            <Button Grid.Column="5" Content="Tutto carta" Margin="0,0,8,0" Command="{Binding AllCardCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+            <Button Grid.Column="6" Content="Azzera" Command="{Binding ZeroRefundCommand}" Style="{StaticResource OutlineButtonStyle}"/>
             <TextBlock Grid.Column="7" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="DarkRed" Text="{Binding MissingText}"/>
         </Grid>
 
         <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-            <Button MinWidth="110" Height="34" Margin="0,0,8,0" Content="Conferma" Command="{Binding ConfirmCommand}"/>
-            <Button MinWidth="110" Height="34" Content="Annulla" Command="{Binding CancelCommand}"/>
+            <Button MinWidth="110" Height="36" Margin="0,0,8,0" Content="Conferma" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+            <Button MinWidth="110" Height="36" Content="Annulla" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
         </StackPanel>
     </Grid>
 </Window>

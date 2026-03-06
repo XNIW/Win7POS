@@ -32,7 +32,7 @@
                     <RadioButton Content="7 giorni" IsChecked="{Binding Filter7G, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
                     <RadioButton Content="Mese" IsChecked="{Binding FilterMese, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
                     <RadioButton Content="Periodo" IsChecked="{Binding FilterPeriodo, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
-                    <Button Content="Ricarica" MinWidth="80" Command="{Binding LoadCommand}" Margin="8,0,0,0"/>
+                    <Button Content="Ricarica" MinWidth="88" Command="{Binding LoadCommand}" Margin="8,0,0,0" Style="{StaticResource OutlineButtonStyle}"/>
                 </WrapPanel>
                 <Grid Margin="0,6,0,0"
                       Visibility="{Binding IsRangeFilter, Converter={StaticResource BoolToVis}}">
@@ -54,24 +54,25 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="Codice:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBox x:Name="CodeSearchBox" Grid.Column="1" Text="{Binding CodeSearch, UpdateSourceTrigger=PropertyChanged}" Padding="6,4"
+                <TextBox x:Name="CodeSearchBox" Grid.Column="1" Text="{Binding CodeSearch, UpdateSourceTrigger=PropertyChanged}"
+                         Style="{StaticResource ModernTextBoxStyle}"
                          KeyDown="CodeSearchBox_KeyDown"
                          ToolTip="Cerca per codice vendita (Invio per cercare, lascia vuoto per usare il periodo)"/>
             </Grid>
             <ListBox Grid.Row="3" ItemsSource="{Binding SalesList}" SelectedItem="{Binding SelectedSale, Mode=TwoWay}"
-                     BorderThickness="1" BorderBrush="#CCC" Background="White" Padding="0"
+                     BorderThickness="1" BorderBrush="{StaticResource BorderBrush}" Background="{StaticResource CardBgBrush}" Padding="0"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      Margin="0,0,0,8">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem">
-                        <Setter Property="Background" Value="#F8F8F8"/>
+                        <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
                         <Setter Property="Foreground" Value="#222"/>
                         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
                         <Setter Property="Padding" Value="0"/>
                         <Setter Property="BorderThickness" Value="0"/>
                         <Style.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter Property="Background" Value="#EEEEEE"/>
+                                <Setter Property="Background" Value="#EEE8F0"/>
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
                                 <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
@@ -84,7 +85,7 @@
                     <DataTemplate>
                         <Border
                             Background="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=Background}"
-                            BorderBrush="#E0E0E0" BorderThickness="0,0,0,1"
+                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1"
                             Padding="10,8" Margin="0,0,0,2">
                             <Grid TextElement.Foreground="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}, Path=Foreground}">
                                 <Grid.ColumnDefinitions>
@@ -113,7 +114,7 @@
         </Grid>
 
         <!-- Colonna destra: dettagli + azioni -->
-        <Border Grid.Column="2" BorderBrush="#CCC" BorderThickness="1" Padding="12" Background="#FAFAFA">
+        <Border Grid.Column="2" Style="{StaticResource DialogPanelStyle}">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -149,15 +150,15 @@
                     </ItemsControl>
                 </ScrollViewer>
 
-                <Border Grid.Row="3" Background="#EEE" Padding="8" Margin="0,0,0,10" CornerRadius="2">
+                <Border Grid.Row="3" Background="{StaticResource BackgroundLightBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Margin="0,0,0,10" CornerRadius="6">
                     <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
                         <TextBlock Text="{Binding DetailReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
                     </ScrollViewer>
                 </Border>
 
                 <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button Content="Stampa" MinWidth="90" Margin="0,0,8,0" Command="{Binding PrintCommand}"/>
-                    <Button Content="Reso / Storno" MinWidth="110" Command="{Binding RefundCommand}"/>
+                    <Button Content="Stampa" MinWidth="90" Height="36" Margin="0,0,8,0" Command="{Binding PrintCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                    <Button Content="Reso / Storno" MinWidth="120" Height="36" Command="{Binding RefundCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
                 </StackPanel>
             </Grid>
         </Border>

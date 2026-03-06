@@ -25,12 +25,12 @@
         <StackPanel Grid.Row="0" Grid.ColumnSpan="3" Margin="0,0,0,10">
             <TextBlock Text="Filtri rapidi" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,6"/>
             <WrapPanel>
-                <Button Content="Oggi" MinWidth="90" Margin="0,0,8,6" Command="{Binding FilterOggiCommand}"/>
-                <Button Content="Ieri" MinWidth="90" Margin="0,0,8,6" Command="{Binding FilterIeriCommand}"/>
-                <Button Content="Questa settimana" MinWidth="120" Margin="0,0,8,6" Command="{Binding FilterQuestaSettimanaCommand}"/>
-                <Button Content="Questo mese" MinWidth="100" Margin="0,0,8,6" Command="{Binding FilterQuestoMeseCommand}"/>
-                <Button Content="Mese scorso" MinWidth="100" Margin="0,0,8,6" Command="{Binding FilterMeseScorsoCommand}"/>
-                <Button Content="Anno corrente" MinWidth="110" Margin="0,0,8,6" Command="{Binding FilterAnnoCorrenteCommand}"/>
+                <Button Content="Oggi" MinWidth="90" Margin="0,0,8,6" Command="{Binding FilterOggiCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Ieri" MinWidth="90" Margin="0,0,8,6" Command="{Binding FilterIeriCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Questa settimana" MinWidth="120" Margin="0,0,8,6" Command="{Binding FilterQuestaSettimanaCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Questo mese" MinWidth="100" Margin="0,0,8,6" Command="{Binding FilterQuestoMeseCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Mese scorso" MinWidth="100" Margin="0,0,8,6" Command="{Binding FilterMeseScorsoCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Anno corrente" MinWidth="110" Margin="0,0,8,6" Command="{Binding FilterAnnoCorrenteCommand}" Style="{StaticResource OutlineButtonStyle}"/>
             </WrapPanel>
         </StackPanel>
 
@@ -72,12 +72,13 @@
         <StackPanel Grid.Row="2" Grid.Column="0">
             <TextBlock Text="Riepilogo giornata" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8"/>
             <TextBlock Text="Data (yyyy-MM-dd):" VerticalAlignment="Center"/>
-            <TextBox Margin="0,4,0,8" Width="150" HorizontalAlignment="Left"
-                     Text="{Binding DateText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBox Margin="0,4,0,8" Width="160" HorizontalAlignment="Left"
+                     Text="{Binding DateText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                     Style="{StaticResource ModernTextBoxStyle}"/>
 
             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                <Button MinWidth="90" Margin="0,0,8,0" Content="Carica" Command="{Binding LoadCommand}"/>
-                <Button MinWidth="90" Content="Export CSV" Command="{Binding ExportCsvCommand}"/>
+                <Button MinWidth="90" Height="36" Margin="0,0,8,0" Content="Carica" Command="{Binding LoadCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button MinWidth="100" Height="36" Content="Export CSV" Command="{Binding ExportCsvCommand}" Style="{StaticResource OutlineButtonStyle}"/>
             </StackPanel>
 
             <TextBlock Margin="0,0,0,4" Text="Contanti / Carta:"/>
@@ -105,12 +106,12 @@
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="Scontrino chiusura cassa (stampabile)" FontWeight="SemiBold" Margin="0,0,0,6"/>
                         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="240"
-                                      BorderBrush="#CCC" BorderThickness="1" Padding="8" Background="#FAFAFA">
+                                      BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Background="{StaticResource BackgroundLightBrush}">
                             <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}"
                                        FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
                         </ScrollViewer>
-                        <Button Grid.Row="2" Content="Stampa scontrino" MinWidth="120" Margin="0,8,0,0"
-                                Command="{Binding PrintSummaryCommand}"/>
+                        <Button Grid.Row="2" Content="Stampa scontrino" MinWidth="120" Height="36" Margin="0,8,0,0"
+                                Command="{Binding PrintSummaryCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
                     </Grid>
                 </TabItem>
                 <TabItem Header="Storico">
@@ -129,10 +130,10 @@
                         <TextBlock Grid.Row="0" Grid.ColumnSpan="3" Text="Periodo storico — clicca una riga per anteprima chiusura a destra" FontWeight="SemiBold" Margin="0,0,0,6"/>
                         <StackPanel Grid.Row="1" Grid.ColumnSpan="3" Orientation="Horizontal" Margin="0,0,0,8">
                             <TextBlock Text="Da:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                            <TextBox Text="{Binding HistoryFromText, UpdateSourceTrigger=PropertyChanged}" Width="100" Padding="4,2" Margin="0,0,12,0"/>
+                            <TextBox Text="{Binding HistoryFromText, UpdateSourceTrigger=PropertyChanged}" Width="100" Margin="0,0,12,0" Style="{StaticResource ModernTextBoxStyle}"/>
                             <TextBlock Text="A:" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                            <TextBox Text="{Binding HistoryToText, UpdateSourceTrigger=PropertyChanged}" Width="100" Padding="4,2" Margin="0,0,8,0"/>
-                            <Button Content="Carica storico" Command="{Binding LoadHistoryCommand}"/>
+                            <TextBox Text="{Binding HistoryToText, UpdateSourceTrigger=PropertyChanged}" Width="100" Margin="0,0,8,0" Style="{StaticResource ModernTextBoxStyle}"/>
+                            <Button Content="Carica storico" Command="{Binding LoadHistoryCommand}" Style="{StaticResource OutlineButtonStyle}"/>
                         </StackPanel>
                         <DataGrid Grid.Row="2" Grid.Column="0" ItemsSource="{Binding HistoryRows}" SelectedItem="{Binding SelectedHistoryRow, Mode=TwoWay}"
                                   IsReadOnly="True" AutoGenerateColumns="False" MinHeight="140" Margin="0,0,0,8"
@@ -146,7 +147,7 @@
                                 <DataGridTextColumn Header="Rimborsi" Binding="{Binding RefundsDisplay}" Width="70"/>
                             </DataGrid.Columns>
                         </DataGrid>
-                        <Border Grid.Row="2" Grid.Column="2" BorderBrush="#CCC" BorderThickness="1" Padding="8" Background="#FAFAFA">
+                        <Border Grid.Row="2" Grid.Column="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Background="{StaticResource BackgroundLightBrush}" CornerRadius="6">
                             <ScrollViewer VerticalScrollBarVisibility="Auto">
                                 <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="10" TextWrapping="NoWrap"/>
                             </ScrollViewer>
@@ -158,7 +159,7 @@
         </Grid>
 
         <StackPanel Grid.Row="3" Grid.ColumnSpan="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button MinWidth="110" Height="34" Content="Chiudi" IsCancel="True"/>
+            <Button MinWidth="110" Height="36" Content="Chiudi" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
         </StackPanel>
     </Grid>
 </Window>

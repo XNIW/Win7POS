@@ -20,20 +20,21 @@
         </Grid.ColumnDefinitions>
 
         <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Barcode:"/>
-        <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" IsReadOnly="True" Text="{Binding Barcode, Mode=OneWay}" Background="#F0F0F0"/>
+        <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" IsReadOnly="True" Text="{Binding Barcode, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}" Background="{StaticResource BackgroundLightBrush}"/>
 
         <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Nome:"/>
-        <TextBox Grid.Row="1" Grid.Column="1" x:Name="NameBox" Margin="8,10,0,0" Text="{Binding ProductName, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox Grid.Row="1" Grid.Column="1" x:Name="NameBox" Margin="8,10,0,0" Text="{Binding ProductName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Prezzo vendita:"/>
         <TextBox Grid.Row="2" Grid.Column="1" x:Name="PriceBox" Margin="8,10,0,0"
                  Text="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}"
+                 Style="{StaticResource ModernTextBoxStyle}"
                  KeyDown="PriceBox_KeyDown"/>
 
         <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button Content="Salva" MinWidth="100" Height="36" Margin="0,0,8,0" IsDefault="True"
-                    Command="{Binding ConfirmCommand}"/>
-            <Button Content="Annulla" MinWidth="100" Height="36" IsCancel="True" Command="{Binding CancelCommand}"/>
+                    Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+            <Button Content="Annulla" MinWidth="100" Height="36" IsCancel="True" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
         </StackPanel>
     </Grid>
 </Window>

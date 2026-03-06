@@ -22,31 +22,31 @@
         </Grid.ColumnDefinitions>
 
         <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Nome negozio:"/>
-        <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Indirizzo:"/>
-        <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Città:"/>
-        <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" Text="{Binding City, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" Text="{Binding City, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="RUT:"/>
-        <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Rut, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Rut, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Telefono:"/>
-        <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Phone, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Phone, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Footer scontrino:"/>
-        <TextBox Grid.Row="5" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Footer, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox Grid.Row="5" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Footer, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Boleta N° (fiscale):"/>
-        <TextBox Grid.Row="6" Grid.Column="1" Margin="0,0,0,8" Text="{Binding FiscalBoletaNumberText, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox Grid.Row="6" Grid.Column="1" Margin="0,0,0,8" Text="{Binding FiscalBoletaNumberText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <TextBlock Grid.Row="7" Grid.ColumnSpan="2" Margin="0,8,0,0" Foreground="Gray" Text="{Binding Status, Mode=OneWay}"/>
 
         <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-            <Button Content="Salva" MinWidth="90" Margin="0,0,8,0" Command="{Binding SaveCommand}"/>
-            <Button Content="Chiudi" MinWidth="90" IsCancel="True"/>
+            <Button Content="Salva" MinWidth="90" Height="36" Margin="0,0,8,0" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+            <Button Content="Chiudi" MinWidth="90" Height="36" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
         </StackPanel>
     </Grid>
 </Window>

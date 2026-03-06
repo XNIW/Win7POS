@@ -23,18 +23,19 @@
         </Grid.ColumnDefinitions>
 
         <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Barcode:"/>
-        <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" Text="{Binding Barcode, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" Text="{Binding Barcode, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Nome:"/>
-        <TextBox x:Name="NameBox" Grid.Row="1" Grid.Column="1" Margin="8,8,0,0" Text="{Binding ProductName, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox x:Name="NameBox" Grid.Row="1" Grid.Column="1" Margin="8,8,0,0" Text="{Binding ProductName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Prezzo vendita:"/>
         <TextBox x:Name="RetailPriceBox" Grid.Row="2" Grid.Column="1" Margin="8,8,0,0"
                  Text="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}"
+                 Style="{StaticResource ModernTextBoxStyle}"
                  KeyDown="RetailPriceBox_KeyDown"/>
 
         <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Prezzo acquisto:"/>
-        <TextBox Grid.Row="3" Grid.Column="1" Margin="8,8,0,0" Text="{Binding PurchasePriceText, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox Grid.Row="3" Grid.Column="1" Margin="8,8,0,0" Text="{Binding PurchasePriceText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Fornitore:"/>
         <ComboBox Grid.Row="4" Grid.Column="1" Margin="8,8,0,0" MinHeight="28"
@@ -49,13 +50,13 @@
                   SelectedItem="{Binding SelectedCategory}"/>
 
         <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Stock iniziale:"/>
-        <TextBox Grid.Row="6" Grid.Column="1" Margin="8,8,0,0" Text="{Binding StockText, UpdateSourceTrigger=PropertyChanged}"/>
+        <TextBox Grid.Row="6" Grid.Column="1" Margin="8,8,0,0" Text="{Binding StockText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
         <StackPanel Grid.Row="7" Grid.ColumnSpan="2" Margin="0,12,0,0">
             <TextBlock Foreground="DimGray" Text="Prezzi in formato decimale (es. 12,50 o 12.50)."/>
             <StackPanel Margin="0,8,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button MinWidth="120" Height="36" Margin="0,0,8,0" Content="Salva" Command="{Binding ConfirmCommand}"/>
-                <Button MinWidth="120" Height="36" Content="Annulla" Command="{Binding CancelCommand}"/>
+                <Button MinWidth="120" Height="36" Margin="0,0,8,0" Content="Salva" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                <Button MinWidth="120" Height="36" Content="Annulla" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
             </StackPanel>
         </StackPanel>
     </Grid>
