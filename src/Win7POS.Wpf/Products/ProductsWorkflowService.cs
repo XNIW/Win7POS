@@ -57,6 +57,11 @@ namespace Win7POS.Wpf.Products
             return _products.GetDetailsByIdAsync(productId);
         }
 
+        public Task<ProductDetailsRow> GetByBarcodeDetailsAsync(string barcode)
+        {
+            return _products.GetDetailsByBarcodeAsync(barcode ?? string.Empty);
+        }
+
         public Task<IReadOnlyList<CategoryListItem>> GetCategoriesAsync() => _categories.ListAllAsync();
         public Task<IReadOnlyList<SupplierListItem>> GetSuppliersAsync() => _suppliers.ListAllAsync();
 

@@ -63,12 +63,7 @@ namespace Win7POS.Core.Import
                             continue;
                         }
 
-                        var insertedOutcome = await _upserter.UpsertAsync(new Product
-                        {
-                            Barcode = barcode,
-                            Name = row.Name ?? string.Empty,
-                            UnitPrice = row.UnitPrice
-                        });
+                        var insertedOutcome = await _upserter.UpsertAsync(row).ConfigureAwait(false);
                         if (insertedOutcome == UpsertOutcome.Inserted) result.AppliedInserted += 1;
                         else result.AppliedUpdated += 1;
                         result.ChangedBarcodes.Add(barcode);
@@ -94,12 +89,19 @@ namespace Win7POS.Core.Import
                         continue;
                     }
 
-                    await _upserter.UpsertAsync(new Product
+                    var updateRow = new ImportRow
                     {
                         Barcode = barcode,
+                        ArticleCode = row.ArticleCode ?? string.Empty,
                         Name = nextName,
-                        UnitPrice = nextPrice
-                    });
+                        Name2 = row.Name2 ?? string.Empty,
+                        UnitPrice = nextPrice,
+                        Cost = row.Cost,
+                        Stock = row.Stock,
+                        SupplierName = row.SupplierName ?? string.Empty,
+                        CategoryName = row.CategoryName ?? string.Empty
+                    };
+                    await _upserter.UpsertAsync(updateRow).ConfigureAwait(false);
                     result.AppliedUpdated += 1;
                     result.ChangedBarcodes.Add(barcode);
                 }

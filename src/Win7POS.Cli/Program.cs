@@ -1352,5 +1352,12 @@ SELECT last_insert_rowid();";
             if (_count > _failAfter) throw new InvalidOperationException("Simulated apply failure.");
             return await _inner.UpsertAsync(product);
         }
+
+        public async Task<UpsertOutcome> UpsertAsync(ImportRow row)
+        {
+            _count += 1;
+            if (_count > _failAfter) throw new InvalidOperationException("Simulated apply failure.");
+            return await _inner.UpsertAsync(row);
+        }
     }
 }

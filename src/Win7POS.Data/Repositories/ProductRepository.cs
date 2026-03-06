@@ -259,6 +259,31 @@ LIMIT 1";
             return await conn.QueryFirstOrDefaultAsync<ProductDetailsRow>(sql, new { productId }).ConfigureAwait(false);
         }
 
+        public async Task<ProductDetailsRow> GetDetailsByBarcodeAsync(string barcode)
+        {
+            if (string.IsNullOrWhiteSpace(barcode)) return null;
+            using var conn = _factory.Open();
+            const string sql = @"
+SELECT
+  p.id AS Id,
+  p.barcode AS Barcode,
+  p.name AS Name,
+  p.unitPrice AS UnitPrice,
+  COALESCE(m.article_code, '') AS ArticleCode,
+  COALESCE(m.name2, '') AS Name2,
+  COALESCE(m.purchase_price, 0) AS PurchasePrice,
+  COALESCE(m.stock_qty, 0) AS StockQty,
+  m.supplier_id AS SupplierId,
+  COALESCE(m.supplier_name, '') AS SupplierName,
+  m.category_id AS CategoryId,
+  COALESCE(m.category_name, '') AS CategoryName
+FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode
+WHERE p.barcode = @barcode
+LIMIT 1";
+            return await conn.QueryFirstOrDefaultAsync<ProductDetailsRow>(sql, new { barcode = barcode.Trim() }).ConfigureAwait(false);
+        }
+
         public async Task UpsertMetaAsync(string barcode, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty)
         {
             using var conn = _factory.Open();

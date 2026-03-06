@@ -15,6 +15,7 @@ using Win7POS.Wpf.Fiscal;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos.Dialogs;
 using Win7POS.Wpf;
+using Win7POS.Wpf.Products;
 
 namespace Win7POS.Wpf.Pos
 {
@@ -1032,24 +1033,32 @@ namespace Win7POS.Wpf.Pos
             return true;
         }
 
-        private void OpenEditProductExecute(object parameter)
+        private async void OpenEditProductExecute(object parameter)
         {
             var line = parameter as PosCartLineRow ?? SelectedCartItem;
             if (line == null || !CanEditCartLine(line)) return;
             try
             {
-                var dlg = new Dialogs.EditProductDialog(line.Barcode, line.Name, line.UnitPrice)
+                var productsService = new ProductsWorkflowService();
+                var product = await productsService.GetByBarcodeDetailsAsync(line.Barcode).ConfigureAwait(true);
+                if (product == null)
                 {
-                    Owner = Application.Current?.MainWindow
-                };
-                if (dlg.ShowDialog() == true)
+                    StatusMessage = "Prodotto non trovato.";
+                    return;
+                }
+
+                var ok = await ProductEditDialog.ShowAsync(ProductEditMode.Edit, product, productsService).ConfigureAwait(true);
+                if (ok)
                 {
-                    _ = ApplyEditProductAsync(dlg.ViewModel);
+                    var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
+                    ApplySnapshot(snapshot);
+                    StatusMessage = "Prodotto aggiornato: " + line.Barcode;
+                    RequestFocusBarcode();
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Edit product dialog failed.");
+                _logger.LogError(ex, "POS full edit product dialog failed.");
                 StatusMessage = "Errore modifica prodotto.";
             }
         }
@@ -1058,28 +1067,6 @@ namespace Win7POS.Wpf.Pos
         {
             var line = parameter as PosCartLineRow ?? SelectedCartItem;
             return !IsBusy && line != null && CanEditCartLine(line);
-        }
-
-        private async Task ApplyEditProductAsync(Dialogs.EditProductViewModel vm)
-        {
-            if (vm == null) return;
-            IsBusy = true;
-            try
-            {
-                var snapshot = await _service.UpdateProductAsync(vm.Barcode, vm.ProductName, vm.PriceMinor).ConfigureAwait(true);
-                ApplySnapshot(snapshot);
-                StatusMessage = "Prezzo aggiornato: " + vm.Barcode;
-                RequestFocusBarcode();
-            }
-            catch (Exception ex)
-            {
-                StatusMessage = "Errore aggiornamento: " + ex.Message;
-                _logger.LogError(ex, "POS VM update product failed");
-            }
-            finally
-            {
-                IsBusy = false;
-            }
         }
 
         private void OpenDiscount()

@@ -54,5 +54,49 @@ SELECT last_insert_rowid();", product, _tx);
 
             return existing == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;
         }
+
+        public async Task<UpsertOutcome> UpsertAsync(ImportRow row)
+        {
+            if (row == null) return UpsertOutcome.Updated;
+            var barcode = (row.Barcode ?? string.Empty).Trim();
+            var name = row.Name ?? string.Empty;
+            var unitPrice = row.UnitPrice;
+            var articleCode = row.ArticleCode ?? string.Empty;
+            var name2 = row.Name2 ?? string.Empty;
+            var purchasePrice = row.Cost ?? 0;
+            var supplierName = row.SupplierName ?? string.Empty;
+            var categoryName = row.CategoryName ?? string.Empty;
+            var stockQty = row.Stock ?? 0;
+
+            if (_conn != null && _tx != null)
+            {
+                var existing = await _conn.QuerySingleOrDefaultAsync<Product>(
+                    "SELECT id, barcode, name, unitPrice FROM products WHERE barcode = @barcode",
+                    new { barcode },
+                    _tx).ConfigureAwait(false);
+
+                var updated = await _conn.ExecuteAsync(@"
+UPDATE products SET name = @name, unitPrice = @unitPrice WHERE barcode = @barcode",
+                    new { barcode, name, unitPrice }, _tx).ConfigureAwait(false);
+                if (updated == 0)
+                {
+                    await _conn.ExecuteAsync(@"
+INSERT INTO products(barcode, name, unitPrice) VALUES(@barcode, @name, @unitPrice)",
+                        new { barcode, name, unitPrice }, _tx).ConfigureAwait(false);
+                }
+
+                await _conn.ExecuteAsync(@"
+INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
+VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, NULL, @supplierName, NULL, @categoryName, @stockQty)",
+                    new { barcode, articleCode, name2, purchasePrice, supplierName, categoryName, stockQty }, _tx).ConfigureAwait(false);
+
+                return existing == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;
+            }
+
+            var p = new Product { Barcode = barcode, Name = name, UnitPrice = unitPrice };
+            var existingP = await _products.GetByBarcodeAsync(barcode).ConfigureAwait(false);
+            await _products.UpsertProductAndMetaInTransactionAsync(p, articleCode, name2, purchasePrice, null, supplierName, null, categoryName, stockQty).ConfigureAwait(false);
+            return existingP == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;
+        }
     }
 }

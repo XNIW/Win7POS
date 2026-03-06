@@ -40,9 +40,24 @@ namespace Win7POS.Core.Import
                     continue;
                 }
 
+                // New format (>=6 cols): A=0 barcode, B=1 article_code, C=2 name, D=3 name2, E=4 unitPrice, F=5 purchasePrice, I=8 supplier, J=9 category, K=10 stock
+                // Legacy (3-5 cols): 0=barcode, 1=name, 2=unitPrice, 3=cost, 4=stock
                 var barcode = cols[0].Trim();
-                var name = cols[1].Trim();
-                var unitPriceText = cols[2].Trim();
+                string articleCode, name, name2, unitPriceText;
+                if (cols.Length >= 6)
+                {
+                    articleCode = cols[1].Trim();
+                    name = cols[2].Trim();
+                    name2 = cols[3].Trim();
+                    unitPriceText = cols[4].Trim();
+                }
+                else
+                {
+                    articleCode = string.Empty;
+                    name = cols.Length > 1 ? cols[1].Trim() : string.Empty;
+                    name2 = string.Empty;
+                    unitPriceText = cols[2].Trim();
+                }
 
                 if (barcode.Length == 0)
                 {
@@ -50,7 +65,7 @@ namespace Win7POS.Core.Import
                     continue;
                 }
 
-                if (!int.TryParse(unitPriceText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unitPrice) || unitPrice < 0)
+                if (!long.TryParse(unitPriceText, NumberStyles.Integer, CultureInfo.InvariantCulture, out var unitPrice) || unitPrice < 0)
                 {
                     result.Errors.Add(new ImportParseError { LineNumber = lineNumber, Message = "InvalidPrice: unit price must be non-negative int minor." });
                     continue;
@@ -58,16 +73,25 @@ namespace Win7POS.Core.Import
 
                 int? cost = null;
                 int? stock = null;
-                if (cols.Length >= 4 && int.TryParse(cols[3].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var c)) cost = c;
-                if (cols.Length >= 5 && int.TryParse(cols[4].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var s)) stock = s;
+                var supplierName = cols.Length > 8 ? cols[8].Trim() : string.Empty;
+                var categoryName = cols.Length > 9 ? cols[9].Trim() : string.Empty;
+                if (cols.Length >= 6 && int.TryParse(cols[5].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var c)) cost = c;
+                else if (cols.Length >= 4 && int.TryParse(cols[3].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var c3)) cost = c3;
+                if (cols.Length > 10 && int.TryParse(cols[10].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var s)) stock = s;
+                else if (cols.Length == 5 && int.TryParse(cols[4].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var s4)) stock = s4; // legacy: 5th = stock
+                else if (cols.Length >= 4 && cols.Length < 6 && int.TryParse(cols[4].Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var s4b)) stock = s4b;
 
                 result.Rows.Add(new ImportRow
                 {
                     Barcode = barcode,
+                    ArticleCode = articleCode,
                     Name = name,
+                    Name2 = name2,
                     UnitPrice = unitPrice,
                     Cost = cost,
-                    Stock = stock
+                    Stock = stock,
+                    SupplierName = supplierName,
+                    CategoryName = categoryName
                 });
             }
 
