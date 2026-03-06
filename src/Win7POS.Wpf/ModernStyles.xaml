@@ -146,6 +146,14 @@
         <Setter Property="Padding" Value="10,8"/>
     </Style>
 
+    <Style x:Key="ModernComboBoxStyle" TargetType="ComboBox">
+        <Setter Property="MinHeight" Value="34"/>
+        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="Background" Value="White"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+    </Style>
+
     <!-- Dialog/panel: pannelli con bordo arrotondato (Incasso, Registro, ecc.) -->
     <Style x:Key="DialogPanelStyle" TargetType="Border">
         <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>

@@ -126,7 +126,15 @@
 
         <!-- Footer -->
         <DockPanel Grid.Row="2" Margin="0,12,0,0">
-            <TextBlock Foreground="#6B5B73" Text="{Binding StatusMessage}"/>
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                <TextBlock Foreground="#6B5B73" VerticalAlignment="Center" Text="{Binding PagingStatus}" Margin="0,0,16,0"/>
+                <Button Content="Prec" Style="{StaticResource OutlineButtonStyle}" Command="{Binding PrevPageCommand}" MinWidth="60" Margin="0,0,6,0"/>
+                <Button Content="Succ" Style="{StaticResource OutlineButtonStyle}" Command="{Binding NextPageCommand}" MinWidth="60" Margin="0,0,12,0"/>
+                <TextBox Text="{Binding GoPageText, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="0,0,4,0" VerticalContentAlignment="Center"
+                         Style="{StaticResource ModernTextBoxStyle}"/>
+                <Button Content="Vai" Style="{StaticResource OutlineButtonStyle}" Command="{Binding GoToPageCommand}" MinWidth="50"/>
+            </StackPanel>
+            <TextBlock Foreground="#6B5B73" DockPanel.Dock="Right" VerticalAlignment="Center" Text="{Binding StatusMessage}"/>
         </DockPanel>
     </Grid>
 </UserControl>

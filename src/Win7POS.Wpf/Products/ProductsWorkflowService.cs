@@ -42,6 +42,16 @@ namespace Win7POS.Wpf.Products
             return _products.SearchDetailsAsync(query, limit, categoryId);
         }
 
+        public Task<int> CountDetailsAsync(string query, int? categoryId = null)
+        {
+            return _products.CountDetailsAsync(query, categoryId);
+        }
+
+        public Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsPageAsync(string query, int limit, int offset, int? categoryId = null)
+        {
+            return _products.SearchDetailsPageAsync(query, limit, offset, categoryId);
+        }
+
         public Task<IReadOnlyList<CategoryListItem>> GetCategoriesAsync() => _categories.ListAllAsync();
         public Task<IReadOnlyList<SupplierListItem>> GetSuppliersAsync() => _suppliers.ListAllAsync();
 

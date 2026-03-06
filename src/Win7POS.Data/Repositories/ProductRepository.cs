@@ -174,6 +174,62 @@ LIMIT @limit",
             return rows.ToList();
         }
 
+        public async Task<int> CountDetailsAsync(string query, int? categoryId = null)
+        {
+            using var conn = _factory.Open();
+            var q = (query ?? string.Empty).Trim();
+            var like = q.Length == 0 ? "%" : "%" + q.Replace("%", "[%]").Replace("_", "[_]") + "%";
+
+            var where = "WHERE ( @q = '' OR p.barcode = @q OR p.name LIKE @like )";
+            if (categoryId.HasValue && categoryId.Value != 0)
+                where += " AND m.category_id = @categoryId";
+
+            var sql = @"
+SELECT COUNT(1)
+FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode
+" + where;
+
+            return await conn.ExecuteScalarAsync<int>(sql, new { q, like, categoryId = categoryId ?? 0 }).ConfigureAwait(false);
+        }
+
+        public async Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsPageAsync(string query, int limit, int offset, int? categoryId = null)
+        {
+            if (limit <= 0) limit = 200;
+            if (offset < 0) offset = 0;
+
+            using var conn = _factory.Open();
+            var q = (query ?? string.Empty).Trim();
+            var like = q.Length == 0 ? "%" : "%" + q.Replace("%", "[%]").Replace("_", "[_]") + "%";
+
+            var where = "WHERE ( @q = '' OR p.barcode = @q OR p.name LIKE @like )";
+            if (categoryId.HasValue && categoryId.Value != 0)
+                where += " AND m.category_id = @categoryId";
+
+            var sql = @"
+SELECT
+  p.id AS Id,
+  p.barcode AS Barcode,
+  p.name AS Name,
+  p.unitPrice AS UnitPrice,
+  COALESCE(m.article_code, '') AS ArticleCode,
+  COALESCE(m.name2, '') AS Name2,
+  COALESCE(m.purchase_price, 0) AS PurchasePrice,
+  COALESCE(m.stock_qty, 0) AS StockQty,
+  m.supplier_id AS SupplierId,
+  COALESCE(m.supplier_name, '') AS SupplierName,
+  m.category_id AS CategoryId,
+  COALESCE(m.category_name, '') AS CategoryName
+FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode
+" + where + @"
+ORDER BY p.barcode ASC
+LIMIT @limit OFFSET @offset";
+
+            var rows = await conn.QueryAsync<ProductDetailsRow>(sql, new { q, like, limit, offset, categoryId = categoryId ?? 0 }).ConfigureAwait(false);
+            return rows.ToList();
+        }
+
         public async Task UpsertMetaAsync(string barcode, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty)
         {
             using var conn = _factory.Open();
