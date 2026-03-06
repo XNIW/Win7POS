@@ -20,15 +20,37 @@ namespace Win7POS.Core.Receipt
 
             var width = options.Width < 16 ? 16 : options.Width;
             var result = new List<string>();
-            AddCentered(result, width, shop.Name);
-            if (!string.IsNullOrWhiteSpace(shop.Address)) AddLine(result, width, shop.Address);
-            if (!string.IsNullOrWhiteSpace(shop.City)) AddLine(result, width, culture.TextInfo.ToTitleCase(shop.City.Trim().ToLowerInvariant()));
+
+            // Nome negozio in evidenza (maiuscolo = effetto "bold" in testo)
+            var shopName = (shop.Name ?? string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(shopName))
+            {
+                AddCentered(result, width, shopName.ToUpperInvariant());
+                AddLine(result, width, new string('=', width));
+            }
+            else
+                AddLine(result, width, string.Empty);
+
+            // Indirizzo + città su una riga (se ci stanno), altrimenti wrapped
+            var addr = (shop.Address ?? string.Empty).Trim();
+            var cityRaw = (shop.City ?? string.Empty).Trim();
+            var city = string.IsNullOrWhiteSpace(cityRaw)
+                ? string.Empty
+                : culture.TextInfo.ToTitleCase(cityRaw.Trim().ToLowerInvariant());
+            if (!string.IsNullOrWhiteSpace(addr) && !string.IsNullOrWhiteSpace(city))
+                AddWrappedLine(result, width, $"{addr} - {city}");
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(addr)) AddLine(result, width, addr);
+                if (!string.IsNullOrWhiteSpace(city)) AddLine(result, width, city);
+            }
+
             if (!string.IsNullOrWhiteSpace(shop.Rut)) AddLine(result, width, "RUT: " + shop.Rut.Trim());
-            if (!string.IsNullOrWhiteSpace(shop.Phone)) AddLine(result, width, $"Tel: {shop.Phone}");
+            if (!string.IsNullOrWhiteSpace(shop.Phone)) AddLine(result, width, "Tel: " + (shop.Phone ?? "").Trim());
             AddLine(result, width, new string('-', width));
-            AddLine(result, width, $"Sale: {sale.Code}");
-            var when = DateTimeOffset.FromUnixTimeMilliseconds(sale.CreatedAt).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
-            AddLine(result, width, $"Time: {when}");
+            AddLine(result, width, $"Scontrino: {sale.Code}");
+            var when = DateTimeOffset.FromUnixTimeMilliseconds(sale.CreatedAt).ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+            AddLine(result, width, $"Data/Ora: {when}");
             AddLine(result, width, new string('-', width));
 
             if (lines != null)
@@ -44,12 +66,16 @@ namespace Win7POS.Core.Receipt
             }
 
             AddLine(result, width, new string('-', width));
+            var itemCount = lines?.Count ?? 0;
+            AddLine(result, width, TrimToWidth("Articoli: " + itemCount, width));
             AddLeftRight(result, width, "Totale", FormatAmount(sale.Total, options.Currency, culture));
-            AddLeftRight(result, width, "Cash", FormatAmount(sale.PaidCash, options.Currency, culture));
-            AddLeftRight(result, width, "Card", FormatAmount(sale.PaidCard, options.Currency, culture));
-            AddLeftRight(result, width, "Change", FormatAmount(sale.Change, options.Currency, culture));
+            if (sale.PaidCash > 0)
+                AddLeftRight(result, width, "Contanti", FormatAmount(sale.PaidCash, options.Currency, culture));
+            if (sale.PaidCard > 0)
+                AddLeftRight(result, width, "Carta", FormatAmount(sale.PaidCard, options.Currency, culture));
+            AddLeftRight(result, width, "Resto", FormatAmount(sale.Change, options.Currency, culture));
             AddLine(result, width, new string('-', width));
-            AddCentered(result, width, shop.Footer);
+            AddCentered(result, width, shop.Footer ?? "");
             return result;
         }
 
@@ -61,7 +87,7 @@ namespace Win7POS.Core.Receipt
         private static string FormatAmount(long amountMinor, string currency, CultureInfo culture)
         {
             if (string.Equals(currency, "CLP", StringComparison.OrdinalIgnoreCase))
-                return amountMinor.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return amountMinor.ToString("N0", culture); // es. 3.300
             var value = amountMinor / 100.0m;
             return $"{value.ToString("N2", culture)} {currency}";
         }

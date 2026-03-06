@@ -73,6 +73,12 @@ namespace Win7POS.Wpf.Printing
         {
             var lines = receiptText.Replace("\r\n", "\n").Split('\n');
             var lineIndex = 0;
+            // Barcode solo sull'ultima riga "Scontrino: XXX" (in fondo allo scontrino)
+            int lastScontrinoIndex = -1;
+            for (int i = lines.Length - 1; i >= 0; i--)
+            {
+                if (TryGetScontrinoSaleCode(lines[i] ?? "", out _)) { lastScontrinoIndex = i; break; }
+            }
 
             using (var doc = new PrintDocument())
             {
@@ -100,6 +106,7 @@ namespace Win7POS.Wpf.Printing
                 catch { /* fallback default paper */ }
 
                 Font font = null;
+                Font headerFont = null;
                 Image siiImg = null;
                 try
                 {
@@ -117,18 +124,40 @@ namespace Win7POS.Wpf.Printing
                     // Courier New prima (coerente col preview fiscale), poi fallback Consolas
                     try { font = new Font("Courier New", 9f); }
                     catch { font = new Font("Consolas", 9f); }
+                    try { headerFont = new Font(font.FontFamily, 12f, FontStyle.Bold); }
+                    catch { headerFont = new Font(font.FontFamily, 11f, FontStyle.Bold); }
+
+                    bool headerDone = false;
 
                     doc.PrintPage += (s, e) =>
                     {
                         float x = e.PageSettings.HardMarginX;
                         float y = e.PageSettings.HardMarginY;
-                        float lineHeight = font.GetHeight(e.Graphics);
+                        float bodyLineHeight = font.GetHeight(e.Graphics);
+                        float headerLineHeight = headerFont.GetHeight(e.Graphics);
                         float bottom = e.PageBounds.Bottom - e.PageSettings.HardMarginY;
                         float printableW = e.PageBounds.Width - e.PageSettings.HardMarginX * 2f;
 
                         while (lineIndex < lines.Length)
                         {
                             var line = lines[lineIndex] ?? "";
+
+                            // Prima riga non vuota = nome negozio: più grande e in grassetto, centrata
+                            if (!headerDone && !string.IsNullOrWhiteSpace(line))
+                            {
+                                var text = line.Trim();
+                                var size = e.Graphics.MeasureString(text, headerFont);
+                                float hx = x + (printableW - size.Width) / 2f;
+                                if (hx < x) hx = x;
+                                if (y + headerLineHeight > bottom)
+                                    break;
+                                e.Graphics.DrawString(text, headerFont, Brushes.Black, hx, y);
+                                e.Graphics.DrawString(text, headerFont, Brushes.Black, hx + 0.6f, y); // fake bold
+                                y += headerLineHeight;
+                                headerDone = true;
+                                lineIndex++;
+                                continue;
+                            }
 
                             // Se riga marker -> stampa PRIMA il QR, POI la riga "Timbre..." (come nel PDF)
                             if (IsSiiMarker(line) && siiImg != null)
@@ -141,7 +170,7 @@ namespace Win7POS.Wpf.Printing
                                 float gapBottom = MmToHundredthsInch(QrBottomGapMm);
 
                                 // serve spazio per: gap + img + gap + 1 riga testo
-                                if (y + gapTop + h + gapBottom + lineHeight > bottom)
+                                if (y + gapTop + h + gapBottom + bodyLineHeight > bottom)
                                     break;
 
                                 // gap sopra
@@ -154,46 +183,54 @@ namespace Win7POS.Wpf.Printing
 
                                 // ORA stampa "Timbre..."
                                 e.Graphics.DrawString(line, font, Brushes.Black, x, y);
-                                y += lineHeight;
+                                y += bodyLineHeight;
 
                                 lineIndex++;
                                 continue;
                             }
 
-                            // Riga "Scontrino: <code>" → testo leggibile + barcode Code128 del SOLO SaleCode (es. VMME1AFL6EOC)
-                            // così lo scanner restituisce solo il codice, senza "Scontrino: ", e il match nel registro funziona
+                            // Ultima riga "Scontrino: <code>" → testo + barcode Code128 (solo in fondo allo scontrino)
                             if (TryGetScontrinoSaleCode(line, out var saleCode))
                             {
-                                using (var barcodeBmp = Code128Renderer.Render(saleCode))
+                                if (lineIndex == lastScontrinoIndex)
                                 {
-                                    float barW = MmToHundredthsInch(SaleCodeBarcodeWidthMm);
-                                    if (barW > printableW) barW = printableW;
-                                    float gap = MmToHundredthsInch(SaleCodeBarcodeGapMm);
-
-                                    float needH = lineHeight + gap + (barcodeBmp != null ? barW * barcodeBmp.Height / (float)barcodeBmp.Width : 0f);
-                                    if (y + needH > bottom)
-                                        break;
-
-                                    e.Graphics.DrawString(line, font, Brushes.Black, x, y);
-                                    y += lineHeight + gap;
-
-                                    if (barcodeBmp != null)
+                                    using (var barcodeBmp = Code128Renderer.Render(saleCode))
                                     {
-                                        float barH = barW * barcodeBmp.Height / (float)barcodeBmp.Width;
-                                        float barX = e.PageSettings.HardMarginX + (printableW - barW) / 2f;
-                                        e.Graphics.DrawImage(barcodeBmp, barX, y, barW, barH);
-                                        y += barH;
+                                        float barW = MmToHundredthsInch(SaleCodeBarcodeWidthMm);
+                                        if (barW > printableW) barW = printableW;
+                                        float gap = MmToHundredthsInch(SaleCodeBarcodeGapMm);
+
+                                        float needH = bodyLineHeight + gap + (barcodeBmp != null ? barW * barcodeBmp.Height / (float)barcodeBmp.Width : 0f);
+                                        if (y + needH > bottom)
+                                            break;
+
+                                        e.Graphics.DrawString(line, font, Brushes.Black, x, y);
+                                        y += bodyLineHeight + gap;
+
+                                        if (barcodeBmp != null)
+                                        {
+                                            float barH = barW * barcodeBmp.Height / (float)barcodeBmp.Width;
+                                            float barX = e.PageSettings.HardMarginX + (printableW - barW) / 2f;
+                                            e.Graphics.DrawImage(barcodeBmp, barX, y, barW, barH);
+                                            y += barH;
+                                        }
                                     }
+                                }
+                                else
+                                {
+                                    if (y + bodyLineHeight > bottom) break;
+                                    e.Graphics.DrawString(line, font, Brushes.Black, x, y);
+                                    y += bodyLineHeight;
                                 }
                                 lineIndex++;
                                 continue;
                             }
 
-                            if (y + lineHeight > bottom)
+                            if (y + bodyLineHeight > bottom)
                                 break;
 
                             e.Graphics.DrawString(line, font, Brushes.Black, x, y);
-                            y += lineHeight;
+                            y += bodyLineHeight;
                             lineIndex++;
                         }
 
@@ -204,6 +241,8 @@ namespace Win7POS.Wpf.Printing
                     {
                         if (font != null) font.Dispose();
                         font = null;
+                        if (headerFont != null) headerFont.Dispose();
+                        headerFont = null;
 
                         if (siiImg != null) siiImg.Dispose();
                         siiImg = null;
@@ -214,6 +253,7 @@ namespace Win7POS.Wpf.Printing
                 finally
                 {
                     if (font != null) font.Dispose();
+                    if (headerFont != null) headerFont.Dispose();
                     if (siiImg != null) siiImg.Dispose();
                 }
             }

@@ -357,7 +357,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var options = _draft.UseReceipt42 ? ReceiptOptions.Default42Clp() : ReceiptOptions.Default32Clp();
             var shop = _draft?.ShopInfo ?? new ReceiptShopInfo { Name = "Win7POS", Address = "", Footer = "Grazie" };
 
-            var lines = ReceiptFormatter.Format(sale, saleLines, options, shop);
+            var lines = new List<string>(ReceiptFormatter.Format(sale, saleLines, options, shop));
+            // Stessa riga che la stampante usa per disegnare il barcode Code128: così in anteprima si vede cosa apparirà
+            if (!string.IsNullOrEmpty(sale.Code))
+            {
+                lines.Add("");
+                lines.Add("Scontrino: " + sale.Code);
+                lines.Add("[Codice a barre Code128 stampato sotto]");
+            }
             ReceiptPreviewText = string.Join(Environment.NewLine, lines);
         }
 

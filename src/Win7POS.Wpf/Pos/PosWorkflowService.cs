@@ -1278,11 +1278,18 @@ namespace Win7POS.Wpf.Pos
         private static string BuildReceiptPreview(SaleCompleted completed, bool use42, ReceiptShopInfo shop = null)
         {
             shop = shop ?? new ReceiptShopInfo();
-            var lines = ReceiptFormatter.Format(
+            var lines = new List<string>(ReceiptFormatter.Format(
                 completed.Sale,
                 completed.Lines,
                 use42 ? ReceiptOptions.Default42Clp() : ReceiptOptions.Default32Clp(),
-                shop);
+                shop));
+            // Come in anteprima pagamento: riga usata dalla stampante per il barcode + placeholder
+            if (!string.IsNullOrEmpty(completed?.Sale?.Code))
+            {
+                lines.Add("");
+                lines.Add("Scontrino: " + completed.Sale.Code);
+                lines.Add("[Codice a barre Code128 stampato sotto]");
+            }
             return string.Join(Environment.NewLine, lines);
         }
 

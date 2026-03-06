@@ -394,8 +394,8 @@ namespace Win7POS.Wpf.Pos
                 StatusMessage = "Pagamento OK: " + result.SaleCode;
                 if (vm.ShouldPrint)
                 {
-                    var receiptWithBarcode = ReceiptPreview + "\nScontrino: " + result.SaleCode;
-                    var printed = await PrintReceiptAsync(receiptWithBarcode, result.SaleCode).ConfigureAwait(true);
+                    // ReceiptPreview già include "Scontrino: XXX" e placeholder (da BuildReceiptPreview)
+                    var printed = await PrintReceiptAsync(ReceiptPreview, result.SaleCode).ConfigureAwait(true);
                     if (!printed)
                     {
                         MessageBox.Show(
