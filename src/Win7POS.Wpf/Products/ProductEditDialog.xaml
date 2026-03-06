@@ -74,10 +74,15 @@
 
         <!-- Cod. articolo / Nome2 (opzionale) -->
         <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Cod. articolo / Nome2:"/>
-        <StackPanel Grid.Row="7" Grid.Column="1" Margin="8,10,0,0" Orientation="Horizontal">
-            <TextBox Width="120" Margin="0,0,8,0" Text="{Binding ArticleCode, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" MaxHeight="34" VerticalContentAlignment="Center"/>
-            <TextBox Width="*" Text="{Binding Name2, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" MaxHeight="34" VerticalContentAlignment="Center"/>
-        </StackPanel>
+        <Grid Grid.Row="7" Grid.Column="1" Margin="8,10,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="120"/>
+                <ColumnDefinition Width="8"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <TextBox Grid.Column="0" Text="{Binding ArticleCode, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32" MaxHeight="34" VerticalContentAlignment="Center"/>
+            <TextBox Grid.Column="2" Text="{Binding Name2, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32" MaxHeight="34" VerticalContentAlignment="Center"/>
+        </Grid>
 
         <!-- Pulsanti -->
         <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">

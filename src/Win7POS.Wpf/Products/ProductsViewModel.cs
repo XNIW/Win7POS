@@ -78,7 +78,10 @@ namespace Win7POS.Wpf.Products
                 OnPropertyChanged(nameof(HasActiveFilters));
                 OnPropertyChanged(nameof(FilterSummary));
                 if (!_suppressCategoryRefresh)
-                    _ = RefreshAsync();
+                {
+                    PageIndex = 1;
+                    _ = SearchAsync();
+                }
             }
         }
 
@@ -93,7 +96,10 @@ namespace Win7POS.Wpf.Products
                 OnPropertyChanged(nameof(HasActiveFilters));
                 OnPropertyChanged(nameof(FilterSummary));
                 if (!_suppressSupplierRefresh)
-                    _ = RefreshAsync();
+                {
+                    PageIndex = 1;
+                    _ = SearchAsync();
+                }
             }
         }
 
