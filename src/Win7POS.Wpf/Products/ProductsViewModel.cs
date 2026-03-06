@@ -1,10 +1,14 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Input;
 using Win7POS.Core.Models;
+using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
@@ -18,8 +22,11 @@ namespace Win7POS.Wpf.Products
         private string _statusMessage = "Pronto.";
         private bool _isBusy;
         private ProductDetailsRow _selectedProduct;
+        private CategoryListItem _selectedCategory;
+        private bool _suppressCategoryRefresh;
 
         public ObservableCollection<ProductDetailsRow> Items { get; } = new ObservableCollection<ProductDetailsRow>();
+        public ObservableCollection<CategoryListItem> Categories { get; } = new ObservableCollection<CategoryListItem>();
 
         public string SearchText
         {
@@ -45,16 +52,84 @@ namespace Win7POS.Wpf.Products
             set { _selectedProduct = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
+        public CategoryListItem SelectedCategory
+        {
+            get => _selectedCategory;
+            set
+            {
+                if (_selectedCategory == value) return;
+                _selectedCategory = value;
+                OnPropertyChanged();
+                if (!_suppressCategoryRefresh)
+                    _ = RefreshAsync();
+            }
+        }
+
         public ICommand SearchCommand { get; }
-        public ICommand SaveSelectedCommand { get; }
+        public ICommand RefreshCommand { get; }
+        public ICommand NewCommand { get; }
+        public ICommand EditCommand { get; }
+        public ICommand CopyNewCommand { get; }
+        public ICommand DeleteCommand { get; }
+        public ICommand ImportCommand { get; }
         public ICommand ExportCsvCommand { get; }
 
         public ProductsViewModel()
         {
             SearchCommand = new AsyncRelayCommand(SearchAsync, _ => !IsBusy, _logger);
-            SaveSelectedCommand = new AsyncRelayCommand(SaveSelectedAsync, _ => !IsBusy && SelectedProduct != null, _logger);
+            RefreshCommand = new AsyncRelayCommand(RefreshAsync, _ => !IsBusy, _logger);
+            NewCommand = new AsyncRelayCommand(NewAsync, _ => !IsBusy, _logger);
+            EditCommand = new AsyncRelayCommand(EditAsync, _ => !IsBusy && SelectedProduct != null, _logger);
+            CopyNewCommand = new AsyncRelayCommand(CopyNewAsync, _ => !IsBusy && SelectedProduct != null, _logger);
+            DeleteCommand = new AsyncRelayCommand(DeleteAsync, _ => !IsBusy && SelectedProduct != null, _logger);
+            ImportCommand = new AsyncRelayCommand(ImportAsync, _ => !IsBusy, _logger);
             ExportCsvCommand = new AsyncRelayCommand(ExportCsvAsync, _ => !IsBusy, _logger);
-            _ = SearchAsync();
+            _ = LoadCategoriesAndSearchAsync();
+        }
+
+        private async Task LoadCategoriesAndSearchAsync()
+        {
+            IsBusy = true;
+            try
+            {
+                await LoadCategoriesAsync().ConfigureAwait(true);
+                await SearchAsync().ConfigureAwait(true);
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task LoadCategoriesAsync()
+        {
+            var currentId = SelectedCategory?.Id ?? 0;
+            var cats = await _service.GetCategoriesAsync().ConfigureAwait(true);
+            Categories.Clear();
+            Categories.Add(new CategoryListItem { Id = 0, Name = "(Tutte)" });
+            foreach (var c in cats ?? Enumerable.Empty<CategoryListItem>())
+                Categories.Add(c);
+            _suppressCategoryRefresh = true;
+            try
+            {
+                SelectedCategory = Categories.FirstOrDefault(c => c.Id == currentId) ?? Categories.FirstOrDefault();
+            }
+            finally
+            {
+                _suppressCategoryRefresh = false;
+            }
+        }
+
+        private async Task RefreshAsync()
+        {
+            await LoadCategoriesAsync().ConfigureAwait(true);
+            await SearchAsync().ConfigureAwait(true);
+        }
+
+        private int? GetCategoryIdForSearch()
+        {
+            if (SelectedCategory == null || SelectedCategory.Id == 0) return null;
+            return SelectedCategory.Id;
         }
 
         private async Task SearchAsync()
@@ -62,7 +137,8 @@ namespace Win7POS.Wpf.Products
             IsBusy = true;
             try
             {
-                var rows = await _service.SearchDetailsAsync(SearchText, 200).ConfigureAwait(true);
+                var categoryId = GetCategoryIdForSearch();
+                var rows = await _service.SearchDetailsAsync(SearchText, 500, categoryId).ConfigureAwait(true);
                 Items.Clear();
                 foreach (var p in rows)
                 {
@@ -76,7 +152,9 @@ namespace Win7POS.Wpf.Products
                         Name2 = p.Name2 ?? string.Empty,
                         PurchasePrice = p.PurchasePrice,
                         StockQty = p.StockQty,
+                        SupplierId = p.SupplierId,
                         SupplierName = p.SupplierName ?? string.Empty,
+                        CategoryId = p.CategoryId,
                         CategoryName = p.CategoryName ?? string.Empty
                     });
                 }
@@ -93,23 +171,88 @@ namespace Win7POS.Wpf.Products
             }
         }
 
-        private async Task SaveSelectedAsync()
+        private async Task NewAsync()
         {
-            if (SelectedProduct == null) return;
-            IsBusy = true;
             try
             {
-                await _service.UpdateAsync(SelectedProduct.Id, SelectedProduct.Name?.Trim() ?? string.Empty, SelectedProduct.UnitPrice).ConfigureAwait(true);
-                StatusMessage = "Prodotto aggiornato: " + SelectedProduct.Barcode;
+                var ok = await ProductEditDialog.ShowAsync(ProductEditMode.New, null, _service).ConfigureAwait(true);
+                if (ok) await RefreshAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                StatusMessage = "Errore salvataggio: " + ex.Message;
-                _logger.LogError(ex, "Products save failed");
+                StatusMessage = "Errore: " + ex.Message;
+                _logger.LogError(ex, "Products New failed");
             }
-            finally
+        }
+
+        private async Task EditAsync()
+        {
+            if (SelectedProduct == null) return;
+            try
             {
-                IsBusy = false;
+                var ok = await ProductEditDialog.ShowAsync(ProductEditMode.Edit, SelectedProduct, _service).ConfigureAwait(true);
+                if (ok) await RefreshAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore: " + ex.Message;
+                _logger.LogError(ex, "Products Edit failed");
+            }
+        }
+
+        private async Task CopyNewAsync()
+        {
+            if (SelectedProduct == null) return;
+            try
+            {
+                var ok = await ProductEditDialog.ShowAsync(ProductEditMode.Duplicate, SelectedProduct, _service).ConfigureAwait(true);
+                if (ok) await RefreshAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore: " + ex.Message;
+                _logger.LogError(ex, "Products Duplicate failed");
+            }
+        }
+
+        private async Task DeleteAsync()
+        {
+            if (SelectedProduct == null) return;
+            if (MessageBox.Show("Eliminare il prodotto \"" + SelectedProduct.Barcode + "\"?", "Conferma", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                return;
+            try
+            {
+                var ok = await _service.DeleteProductAsync(SelectedProduct.Barcode).ConfigureAwait(true);
+                StatusMessage = ok ? "Prodotto eliminato." : "Eliminazione fallita.";
+                if (ok) await RefreshAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore: " + ex.Message;
+                _logger.LogError(ex, "Products Delete failed");
+            }
+        }
+
+        private async Task ImportAsync()
+        {
+            try
+            {
+                var win = new Window
+                {
+                    Title = "Import dati",
+                    Width = 900,
+                    Height = 700,
+                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                    Owner = Application.Current?.MainWindow,
+                    Content = new ImportView()
+                };
+                win.ShowDialog();
+                await RefreshAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore: " + ex.Message;
+                _logger.LogError(ex, "Products Import failed");
             }
         }
 
@@ -135,7 +278,12 @@ namespace Win7POS.Wpf.Products
         private void RaiseCanExecuteChanged()
         {
             (SearchCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-            (SaveSelectedCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (RefreshCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (NewCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (EditCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (CopyNewCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (DeleteCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ImportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ExportCsvCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
@@ -147,7 +295,6 @@ namespace Win7POS.Wpf.Products
         {
             private readonly Func<Task> _executeAsync;
             private readonly Func<object, bool> _canExecute;
-
             private readonly FileLogger _logger;
 
             public AsyncRelayCommand(Func<Task> executeAsync, Func<object, bool> canExecute = null, FileLogger logger = null)
@@ -167,7 +314,7 @@ namespace Win7POS.Wpf.Products
                 }
                 catch (Exception ex)
                 {
-                    Win7POS.Wpf.Infrastructure.UiErrorHandler.Handle(ex, _logger, "Products AsyncRelayCommand failed");
+                    UiErrorHandler.Handle(ex, _logger, "Products AsyncRelayCommand failed");
                 }
             }
             public event EventHandler CanExecuteChanged;

@@ -1,4 +1,6 @@
+using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace Win7POS.Wpf.Products
 {
@@ -8,6 +10,12 @@ namespace Win7POS.Wpf.Products
         {
             InitializeComponent();
             DataContext = new ProductsViewModel();
+        }
+
+        private void ProductsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (DataContext is ProductsViewModel vm && vm.SelectedProduct != null && vm.EditCommand?.CanExecute(null) == true)
+                vm.EditCommand.Execute(null);
         }
     }
 }

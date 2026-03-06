@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
+using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
 
 namespace Win7POS.Data.Repositories
@@ -126,7 +127,7 @@ SELECT last_insert_rowid();", p).ConfigureAwait(false);
             return rows.ToList();
         }
 
-        public async Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsAsync(string query, int limit)
+        public async Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsAsync(string query, int limit, int? categoryId = null)
         {
             if (limit <= 0) limit = 50;
             using var conn = _factory.Open();
@@ -143,25 +144,33 @@ SELECT
   COALESCE(m.name2, '') AS Name2,
   COALESCE(m.purchase_price, 0) AS PurchasePrice,
   COALESCE(m.stock_qty, 0) AS StockQty,
+  m.supplier_id AS SupplierId,
   COALESCE(m.supplier_name, '') AS SupplierName,
+  m.category_id AS CategoryId,
   COALESCE(m.category_name, '') AS CategoryName
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode";
 
+            var whereCategory = categoryId.HasValue && categoryId.Value != 0
+                ? " AND (m.category_id = @categoryId)"
+                : "";
+            var prm = new { q, like, limit, categoryId = categoryId ?? 0 };
+
             if (q.Length == 0)
             {
-                var all = await conn.QueryAsync<ProductDetailsRow>(
-                    sql + " ORDER BY p.barcode ASC LIMIT @limit",
-                    new { limit }).ConfigureAwait(false);
+                var allSql = categoryId.HasValue && categoryId.Value != 0
+                    ? sql + " WHERE m.category_id = @categoryId ORDER BY p.barcode ASC LIMIT @limit"
+                    : sql + " ORDER BY p.barcode ASC LIMIT @limit";
+                var all = await conn.QueryAsync<ProductDetailsRow>(allSql, prm).ConfigureAwait(false);
                 return all.ToList();
             }
 
+            var whereQuery = "WHERE (p.barcode = @q OR p.name LIKE @like)" + whereCategory;
             var rows = await conn.QueryAsync<ProductDetailsRow>(
-                sql + @"
-WHERE p.barcode = @q OR p.name LIKE @like
+                sql + " " + whereQuery + @"
 ORDER BY CASE WHEN p.barcode = @q THEN 0 ELSE 1 END, p.barcode ASC
 LIMIT @limit",
-                new { q, like, limit }).ConfigureAwait(false);
+                prm).ConfigureAwait(false);
             return rows.ToList();
         }
 
@@ -181,6 +190,119 @@ VALUES(@barcode, '', '', @purchasePrice, 0, 0, @supplierId, @supplierName, @cate
                     categoryName = categoryName ?? string.Empty,
                     stockQty
                 }).ConfigureAwait(false);
+        }
+
+        public async Task UpsertMetaFullAsync(string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty)
+        {
+            using var conn = _factory.Open();
+            await conn.ExecuteAsync(@"
+INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
+VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
+                new
+                {
+                    barcode,
+                    articleCode = articleCode ?? string.Empty,
+                    name2 = name2 ?? string.Empty,
+                    purchasePrice,
+                    supplierId,
+                    supplierName = supplierName ?? string.Empty,
+                    categoryId,
+                    categoryName = categoryName ?? string.Empty,
+                    stockQty
+                }).ConfigureAwait(false);
+        }
+
+        public async Task<bool> DeleteByBarcodeAsync(string barcode)
+        {
+            if (string.IsNullOrWhiteSpace(barcode)) return false;
+            using var conn = _factory.Open();
+            await conn.ExecuteAsync("DELETE FROM product_meta WHERE barcode = @barcode", new { barcode }).ConfigureAwait(false);
+            var rows = await conn.ExecuteAsync("DELETE FROM products WHERE barcode = @barcode", new { barcode }).ConfigureAwait(false);
+            return rows > 0;
+        }
+
+        /// <summary>Upsert prodotto + meta in una transazione (robustezza negozio).</summary>
+        public async Task<long> UpsertProductAndMetaInTransactionAsync(Product p, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty)
+        {
+            if (p == null) throw new ArgumentNullException(nameof(p));
+            if (IsReservedBarcode(p.Barcode))
+                throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction();
+            try
+            {
+                var updated = await conn.ExecuteAsync(@"
+UPDATE products SET name = @Name, unitPrice = @UnitPrice WHERE barcode = @Barcode", p, tx).ConfigureAwait(false);
+                long id;
+                if (updated == 0)
+                {
+                    id = await conn.ExecuteScalarAsync<long>(@"
+INSERT INTO products(barcode, name, unitPrice) VALUES(@Barcode, @Name, @UnitPrice);
+SELECT last_insert_rowid();", p, tx).ConfigureAwait(false);
+                }
+                else
+                {
+                    id = await conn.ExecuteScalarAsync<long>("SELECT id FROM products WHERE barcode = @Barcode", new { p.Barcode }, tx).ConfigureAwait(false);
+                }
+                await conn.ExecuteAsync(@"
+INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
+VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
+                    new
+                    {
+                        barcode = p.Barcode,
+                        articleCode = articleCode ?? string.Empty,
+                        name2 = name2 ?? string.Empty,
+                        purchasePrice,
+                        supplierId,
+                        supplierName = supplierName ?? string.Empty,
+                        categoryId,
+                        categoryName = categoryName ?? string.Empty,
+                        stockQty
+                    }, tx).ConfigureAwait(false);
+                tx.Commit();
+                return id;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        /// <summary>Update prodotto + meta in una transazione.</summary>
+        public async Task UpdateProductAndMetaInTransactionAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty)
+        {
+            if (productId <= 0) throw new ArgumentException("invalid product id");
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction();
+            try
+            {
+                var rows = await conn.ExecuteAsync(
+                    "UPDATE products SET name = @name, unitPrice = @unitPriceMinor WHERE id = @productId",
+                    new { productId, name = name ?? string.Empty, unitPriceMinor }, tx).ConfigureAwait(false);
+                if (rows == 0) { tx.Rollback(); throw new InvalidOperationException("Product not found."); }
+                await conn.ExecuteAsync(@"
+INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
+VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
+                    new
+                    {
+                        barcode,
+                        articleCode = articleCode ?? string.Empty,
+                        name2 = name2 ?? string.Empty,
+                        purchasePrice,
+                        supplierId,
+                        supplierName = supplierName ?? string.Empty,
+                        categoryId,
+                        categoryName = categoryName ?? string.Empty,
+                        stockQty
+                    }, tx).ConfigureAwait(false);
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
         }
 
         public async Task InsertPriceHistoryAsync(string barcode, string type, int newPrice, string source = "MANUAL")

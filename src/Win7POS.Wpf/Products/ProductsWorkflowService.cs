@@ -8,6 +8,7 @@ using Win7POS.Core.Audit;
 using Win7POS.Core.Models;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
+using System.Linq;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
@@ -16,6 +17,8 @@ namespace Win7POS.Wpf.Products
     {
         private readonly FileLogger _logger = new FileLogger();
         private readonly ProductRepository _products;
+        private readonly CategoryRepository _categories;
+        private readonly SupplierRepository _suppliers;
         private readonly AuditLogRepository _audit = new AuditLogRepository();
         private readonly PosDbOptions _options;
 
@@ -25,6 +28,8 @@ namespace Win7POS.Wpf.Products
             DbInitializer.EnsureCreated(_options);
             var factory = new SqliteConnectionFactory(_options);
             _products = new ProductRepository(factory);
+            _categories = new CategoryRepository(factory);
+            _suppliers = new SupplierRepository(factory);
         }
 
         public Task<IReadOnlyList<Product>> SearchAsync(string query, int limit = 200)
@@ -32,10 +37,13 @@ namespace Win7POS.Wpf.Products
             return _products.SearchAsync(query, limit);
         }
 
-        public Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsAsync(string query, int limit = 200)
+        public Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsAsync(string query, int limit = 200, int? categoryId = null)
         {
-            return _products.SearchDetailsAsync(query, limit);
+            return _products.SearchDetailsAsync(query, limit, categoryId);
         }
+
+        public Task<IReadOnlyList<CategoryListItem>> GetCategoriesAsync() => _categories.ListAllAsync();
+        public Task<IReadOnlyList<SupplierListItem>> GetSuppliersAsync() => _suppliers.ListAllAsync();
 
         public async Task UpdateAsync(long productId, string name, long priceMinor)
         {
@@ -83,6 +91,32 @@ namespace Win7POS.Wpf.Products
         private static string Escape(string s)
         {
             return (s ?? string.Empty).Replace(";", ",");
+        }
+
+        public async Task CreateProductAsync(string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
+        {
+            if (string.IsNullOrWhiteSpace(barcode)) throw new ArgumentException("barcode is empty");
+            var p = new Product { Barcode = barcode.Trim(), Name = name?.Trim() ?? string.Empty, UnitPrice = unitPriceMinor };
+            await _products.UpsertProductAndMetaInTransactionAsync(p, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty).ConfigureAwait(false);
+            await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductCreate, AuditDetails.Kv(("barcode", p.Barcode), ("name", p.Name))).ConfigureAwait(false);
+        }
+
+        public async Task UpdateProductFullAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
+        {
+            if (productId <= 0) throw new ArgumentException("invalid product id");
+            var before = await _products.GetByIdAsync(productId).ConfigureAwait(false);
+            if (before == null) throw new InvalidOperationException("Product not found.");
+            await _products.UpdateProductAndMetaInTransactionAsync(productId, name?.Trim() ?? string.Empty, unitPriceMinor, before.Barcode, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty).ConfigureAwait(false);
+            await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductUpdate, AuditDetails.Kv(("productId", productId.ToString()), ("barcode", before.Barcode))).ConfigureAwait(false);
+        }
+
+        public async Task<bool> DeleteProductAsync(string barcode)
+        {
+            if (string.IsNullOrWhiteSpace(barcode)) return false;
+            var ok = await _products.DeleteByBarcodeAsync(barcode.Trim()).ConfigureAwait(false);
+            if (ok)
+                await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductDelete, AuditDetails.Kv(("barcode", barcode))).ConfigureAwait(false);
+            return ok;
         }
     }
 }

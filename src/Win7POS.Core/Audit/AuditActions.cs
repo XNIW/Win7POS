@@ -5,7 +5,9 @@ namespace Win7POS.Core.Audit
         public const string ImportApply = "ImportApply";
         public const string DbRestore = "DbRestore";
         public const string RefundCreate = "RefundCreate";
+        public const string ProductCreate = "ProductCreate";
         public const string ProductUpdate = "ProductUpdate";
+        public const string ProductDelete = "ProductDelete";
         public const string PinSet = "PinSet";
         public const string PinRemove = "PinRemove";
         public const string CashierModeOn = "CashierModeOn";
