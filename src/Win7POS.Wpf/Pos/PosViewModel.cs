@@ -557,9 +557,10 @@ namespace Win7POS.Wpf.Pos
                 ApplySnapshot(result.Snapshot);
                 ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
                 StatusMessage = "Pagamento OK: " + result.SaleCode;
+
+                var fiscalPrinted = false;
                 if (vm.ShouldPrint)
                 {
-                    // ReceiptPreview già include "Scontrino: XXX" e placeholder (da BuildReceiptPreview)
                     var printed = await PrintReceiptAsync(ReceiptPreview, result.SaleCode).ConfigureAwait(true);
                     if (!printed)
                     {
@@ -570,9 +571,16 @@ namespace Win7POS.Wpf.Pos
                             MessageBoxImage.Warning);
                     }
                 }
+
                 if (vm.AutoPrintPdfSii)
-                    await vm.TriggerAutoPrintPdfIfEnabledAsync().ConfigureAwait(true);
-                await _service.SetFiscalBoletaNumberAsync(vm.NextBoletaNumber).ConfigureAwait(true);
+                    fiscalPrinted = await vm.TriggerAutoPrintPdfIfEnabledAsync().ConfigureAwait(true);
+
+                if (fiscalPrinted)
+                    await _service.SetFiscalBoletaNumberAsync(vm.NextBoletaNumber).ConfigureAwait(true);
+
+                if (!fiscalPrinted && vm.AutoPrintPdfSii && vm.CardAmountMinor > 0 && vm.CashAmountMinor == 0)
+                    StatusMessage = "Pagamento OK: " + result.SaleCode + " (PDF SII non stampato: pagamento con carta)";
+
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }
             catch (PosException ex)

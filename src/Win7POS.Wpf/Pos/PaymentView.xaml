@@ -49,41 +49,35 @@
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <Grid Grid.Row="0" Margin="0,0,0,10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Boleta N°" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <Button Grid.Column="1" Content="-" MinWidth="32" MinHeight="28"
-                                    Style="{StaticResource SmallRoundButtonStyle}"
-                                    Command="{Binding DecrementBoletaCommand}" VerticalAlignment="Center" Focusable="False"/>
-                            <Button x:Name="BoletaNumberButton" Grid.Column="2" MinWidth="70" Margin="4,0" Padding="6,4"
-                                    Content="{Binding NextBoletaNumberText, UpdateSourceTrigger=PropertyChanged}"
-                                    FontWeight="SemiBold" FontSize="12" Cursor="Hand"
-                                    Click="BoletaNumberButton_Click" Focusable="False"/>
-                            <Button Grid.Column="3" Content="+" MinWidth="32" MinHeight="28"
-                                    Style="{StaticResource SmallRoundButtonStyle}"
-                                    Command="{Binding IncrementBoletaCommand}" VerticalAlignment="Center" Focusable="False"/>
-                        </Grid>
-                        <StackPanel Grid.Row="1">
-                            <TextBlock Text="{Binding FiscalStatus, Mode=OneWay}" Foreground="Gray" FontSize="10" Margin="0,0,0,4"/>
-                            <Image x:Name="SiiQrImage" Width="120" Height="40" Stretch="Uniform" HorizontalAlignment="Center" Visibility="Collapsed"/>
-                        </StackPanel>
-                        <Grid Grid.Row="2">
+                        <Button x:Name="BoletaNumberButton"
+                                Grid.Row="0"
+                                MinWidth="90"
+                                MinHeight="32"
+                                Padding="8,4"
+                                Margin="0,0,0,10"
+                                HorizontalAlignment="Left"
+                                Content="{Binding NextBoletaNumberText}"
+                                FontWeight="SemiBold"
+                                FontSize="12"
+                                Cursor="Hand"
+                                Click="BoletaNumberButton_Click"
+                                Focusable="False"/>
+                        <Grid Grid.Row="1">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <Button Content="Stampa PDF" MinWidth="120" MinHeight="40"
+                            <Button Content="Stampa PDF"
+                                    MinWidth="120"
+                                    MinHeight="40"
                                     Style="{StaticResource PrimaryButtonStyle}"
                                     Command="{Binding PrintPdfCommand}"/>
-                            <CheckBox Grid.Column="1" Content="Stampa automatica PDF SII" IsChecked="{Binding AutoPrintPdfSii, Mode=TwoWay}"
-                                      VerticalAlignment="Center" Margin="16,0,0,0"/>
+                            <CheckBox Grid.Column="1"
+                                      Content="Stampa automatica PDF SII"
+                                      IsChecked="{Binding AutoPrintPdfSii, Mode=TwoWay}"
+                                      VerticalAlignment="Center"
+                                      Margin="16,0,0,0"/>
                         </Grid>
                     </Grid>
                 </GroupBox>

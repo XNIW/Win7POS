@@ -42,6 +42,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _generateFiscalPdf = generateFiscalPdf;
             _printFiscalToThermal = printFiscalToThermal;
             _shouldPrint = draft?.DefaultPrint ?? false;
+            _autoPrintPdfSii = true;
             _nextBoletaNumber = draft?.NextBoletaNumber ?? 0;
 
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
@@ -160,6 +161,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string RestoOrMissingDisplay => IsValid ? "Resto: " + ChangeDueText : MissingAmountText;
 
         public bool IsValid => CashAmountMinor >= 0 && CardAmountMinor >= 0 && (long)CashAmountMinor + (long)CardAmountMinor >= _totalDueMinor;
+
+        /// <summary>True se il pagamento include contanti (solo in quel caso si stampa automaticamente il PDF SII).</summary>
+        public bool IsCashPayment => CashAmountMinor > 0;
 
         public int CashAmountMinor => MoneyClp.Parse(CashReceived);
         public int CardAmountMinor => MoneyClp.Parse(CardAmount);
@@ -306,26 +310,38 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        /// <summary>Se AutoPrintPdfSii è attivo, stampa il PDF SII (stessa logica di Stampa PDF). Da chiamare dopo conferma pagamento.</summary>
-        public async Task TriggerAutoPrintPdfIfEnabledAsync()
+        /// <summary>Se AutoPrintPdfSii è attivo e il pagamento include contanti, stampa il PDF SII. Ritorna true solo se il PDF è stato davvero stampato.</summary>
+        public async Task<bool> TriggerAutoPrintPdfIfEnabledAsync()
         {
-            if (!_autoPrintPdfSii) return;
-            await StampaPdfAsync().ConfigureAwait(true);
+            if (!_autoPrintPdfSii)
+                return false;
+
+            if (CashAmountMinor <= 0)
+            {
+                FiscalStatus = "PDF SII non stampato: pagamento con carta.";
+                return false;
+            }
+
+            return await StampaPdfAsync().ConfigureAwait(true);
         }
 
-        /// <summary>Genera PDF e invia il testo fiscale alla stampante termica (stessa dello scontrino). File PDF eliminato dopo 15s.</summary>
-        private async Task StampaPdfAsync()
+        /// <summary>Genera PDF e invia il testo fiscale alla stampante termica (stessa dello scontrino). File PDF eliminato dopo 15s. Ritorna true se stampato a stampante.</summary>
+        private async Task<bool> StampaPdfAsync()
         {
-            if (_generateFiscalPdf == null) return;
+            if (_generateFiscalPdf == null)
+                return false;
+
             FiscalStatus = "Generazione PDF...";
             string path = null;
             try
             {
                 path = await _generateFiscalPdf(FiscalPreviewText, SaleCode).ConfigureAwait(true);
+
                 if (_printFiscalToThermal != null)
                 {
                     FiscalStatus = "Invio a stampante...";
                     await _printFiscalToThermal(FiscalPreviewText, SaleCode).ConfigureAwait(true);
+
                     if (!string.IsNullOrEmpty(path))
                     {
                         var pathToDelete = path;
@@ -335,16 +351,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
                             try { if (System.IO.File.Exists(pathToDelete)) System.IO.File.Delete(pathToDelete); } catch { }
                         });
                     }
+
                     FiscalStatus = "Stampato.";
+                    return true;
                 }
-                else
-                {
-                    FiscalStatus = "PDF salvato: " + path;
-                }
+
+                FiscalStatus = "PDF salvato: " + path;
+                return false;
             }
             catch (Exception ex)
             {
                 FiscalStatus = "Errore: " + ex.Message;
+                return false;
             }
         }
 
