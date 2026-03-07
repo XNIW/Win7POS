@@ -46,7 +46,7 @@ namespace Win7POS.Wpf.Products
             _service = service ?? throw new ArgumentNullException(nameof(service));
             if (source != null)
             {
-                _barcode = Mode == ProductEditMode.Duplicate ? string.Empty : (source.Barcode ?? string.Empty);
+                _barcode = Mode == ProductEditMode.Duplicate ? string.Empty : (source?.Barcode ?? string.Empty);
                 _productName = source.Name ?? string.Empty;
                 _priceText = source.UnitPrice > 0 ? source.UnitPrice.ToString() : "0";
                 _purchasePriceText = source.PurchasePrice.ToString();

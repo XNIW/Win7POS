@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using System.Windows;
 using Win7POS.Core.Models;
@@ -29,6 +30,16 @@ namespace Win7POS.Wpf.Products
                 Owner = Application.Current?.MainWindow
             };
             return dlg.ShowDialog() == true;
+        }
+
+        private void Window_Loaded(object sender, RoutedEventArgs e)
+        {
+            if (Owner != null)
+            {
+                MaxHeight = Math.Max(520, Owner.ActualHeight - 60);
+                MaxWidth = Math.Max(700, Owner.ActualWidth - 60);
+            }
+            UpdateLayout();
         }
 
         private void OnRequestClose(bool success)

@@ -1,6 +1,5 @@
 using System;
 using System.Windows;
-using System.Windows.Input;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -12,7 +11,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public DiscountDialog(string selectedLineBarcode, bool hasCartItems, PosWorkflowService service, PosViewModel posViewModel)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.36, heightPercent: 0.6, minWidth: 360, minHeight: 420);
             ViewModel = new DiscountViewModel(selectedLineBarcode, hasCartItems, OnApplyAsync);
             ViewModel.RequestClose += ok => DialogResult = ok;
             DataContext = ViewModel;
@@ -36,12 +34,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 snapshot = await _service.ApplyLineDiscountAmountAsync(lineBarcodeOrNull, value).ConfigureAwait(true);
 
             _posViewModel?.ApplyDiscountSnapshot(snapshot);
-        }
-
-        private void Chiudi_Click(object sender, MouseButtonEventArgs e)
-        {
-            DialogResult = false;
-            Close();
         }
     }
 }

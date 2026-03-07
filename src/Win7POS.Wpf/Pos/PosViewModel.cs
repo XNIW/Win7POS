@@ -263,32 +263,22 @@ namespace Win7POS.Wpf.Pos
             {
                 StatusMessage = "Prodotto non trovato: " + input + " (creazione rapida)";
 
-                var dlg = new AddProductDialog(input, _service, focusRetailPrice: true)
-                {
-                    Owner = Application.Current?.MainWindow
-                };
+                var productsService = new ProductsWorkflowService();
+                var draft = new ProductDetailsRow { Barcode = input };
+                var ok = await ProductEditDialog.ShowAsync(ProductEditMode.New, draft, productsService).ConfigureAwait(true);
 
-                if (dlg.ShowDialog() == true)
+                if (ok)
                 {
                     try
                     {
-                        var vm = dlg.ViewModel;
-                        await _service.CreateProductFullAsync(
-                            vm.Barcode,
-                            vm.ProductName,
-                            vm.PriceMinor,
-                            vm.PurchasePriceMinor,
-                            vm.SelectedSupplier?.Id == 0 ? null : vm.SelectedSupplier?.Name,
-                            vm.SelectedCategory?.Id == 0 ? null : vm.SelectedCategory?.Name,
-                            vm.StockQty).ConfigureAwait(true);
-                        var snapshot = await _service.AddByBarcodeAsync(vm.Barcode).ConfigureAwait(true);
-                        ApplySnapshot(snapshot, vm.Barcode);
-                        StatusMessage = "Prodotto creato e aggiunto: " + vm.Barcode;
+                        var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
+                        ApplySnapshot(snapshot, input);
+                        StatusMessage = "Prodotto creato e aggiunto: " + input;
                     }
                     catch (Exception createEx)
                     {
-                        StatusMessage = "Errore creazione prodotto: " + createEx.Message;
-                        _logger.LogError(createEx, "POS VM create product failed");
+                        StatusMessage = "Errore aggiunta al carrello: " + createEx.Message;
+                        _logger.LogError(createEx, "POS VM add after create failed");
                     }
                 }
             }

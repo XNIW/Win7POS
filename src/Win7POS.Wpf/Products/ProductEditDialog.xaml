@@ -2,12 +2,14 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="{Binding DialogTitle}"
-        Width="660"
-        Height="540"
-        MinHeight="540"
+        Width="700"
+        SizeToContent="Height"
+        MinWidth="700"
+        MinHeight="520"
         WindowStartupLocation="CenterOwner"
-        ResizeMode="NoResize">
-    <Grid Margin="12">
+        ResizeMode="NoResize"
+        Loaded="Window_Loaded">
+    <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -18,11 +20,10 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="130"/>
+            <ColumnDefinition Width="150"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
@@ -67,7 +68,7 @@
                   DisplayMemberPath="Name"
                   SelectedItem="{Binding SelectedCategory}"/>
 
-        <!-- Stock: editabile, valorizzato da source -->
+        <!-- Stock -->
         <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{Binding StockLabel, Mode=OneWay}"/>
         <TextBox Grid.Row="6" Grid.Column="1" Margin="8,10,0,0" MinHeight="32"
                  VerticalAlignment="Center"
@@ -88,8 +89,8 @@
                  Text="{Binding Name2, UpdateSourceTrigger=PropertyChanged}"
                  Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
 
-        <!-- Pulsanti: riga fissa in fondo -->
-        <StackPanel Grid.Row="10" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+        <!-- Pulsanti: ultima riga sempre visibile -->
+        <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button Content="Annulla" MinWidth="100" Height="36" Margin="0,0,10,0" IsCancel="True"
                     Style="{StaticResource OutlineButtonStyle}" Command="{Binding CancelCommand}"/>
             <Button Content="Salva" MinWidth="100" Height="36" IsDefault="True"

@@ -14,6 +14,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _valueText = "0";
         private DiscountMode _mode = DiscountMode.Percent;
         private bool _isBusy;
+        private bool _applyToWholeCart;
 
         private readonly string _selectedLineBarcode;
         private readonly bool _hasCartItems;
@@ -29,7 +30,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
             BackspaceCommand = new RelayCommand(_ => Backspace(), _ => (ValueText ?? "").Length > 0);
             ConfirmCommand = new AsyncRelayCommand(ConfirmAsync, _ => CanConfirm && !IsBusy);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
-            ApplyCartCommand = new AsyncRelayCommand(ApplyCartAsync, _ => CanApplyCart && !IsBusy);
         }
 
         public bool IsBusy
@@ -41,8 +41,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public DiscountMode Mode
         {
             get => _mode;
-            set { _mode = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsPercentMode)); OnPropertyChanged(nameof(IsAmountMode)); OnPropertyChanged(nameof(ValueLabel)); RaiseCanExecuteChanged(); }
+            set { _mode = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsPercentMode)); OnPropertyChanged(nameof(IsAmountMode)); OnPropertyChanged(nameof(ValueLabel)); OnPropertyChanged(nameof(ScopeText)); OnPropertyChanged(nameof(CanConfirm)); RaiseCanExecuteChanged(); }
         }
+
+        public bool ApplyToWholeCart
+        {
+            get => _applyToWholeCart;
+            set { _applyToWholeCart = value; OnPropertyChanged(); OnPropertyChanged(nameof(ScopeText)); OnPropertyChanged(nameof(CanConfirm)); RaiseCanExecuteChanged(); }
+        }
+
+        public string ScopeText => ApplyToWholeCart
+            ? "Applicazione: intero carrello"
+            : "Applicazione: prodotto selezionato";
 
         public bool IsPercentMode
         {
@@ -66,7 +76,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(ValueInt));
                 OnPropertyChanged(nameof(CanConfirm));
-                OnPropertyChanged(nameof(CanApplyCart));
                 RaiseCanExecuteChanged();
             }
         }
@@ -86,16 +95,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         public bool HasLineSelected => !string.IsNullOrEmpty(_selectedLineBarcode);
-        public bool CanApplyCart => IsPercentMode && ValueInt >= 1 && ValueInt <= 100 && _hasCartItems;
+
         public bool CanConfirm =>
-            (IsPercentMode && ValueInt >= 1 && ValueInt <= 100 && HasLineSelected) ||
+            (IsPercentMode && ValueInt >= 1 && ValueInt <= 100 && (
+                (ApplyToWholeCart && _hasCartItems) ||
+                (!ApplyToWholeCart && HasLineSelected))) ||
             (IsAmountMode && ValueInt > 0 && HasLineSelected);
 
         public ICommand DigitCommand { get; }
         public ICommand BackspaceCommand { get; }
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }
-        public ICommand ApplyCartCommand { get; }
 
         public event Action<bool> RequestClose;
 
@@ -132,7 +142,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             IsBusy = true;
             try
             {
-                if (IsPercentMode && HasLineSelected)
+                if (IsPercentMode && ApplyToWholeCart)
+                    await _onApplyAsync(ValueInt, true, null).ConfigureAwait(true);
+                else if (IsPercentMode && HasLineSelected)
                     await _onApplyAsync(ValueInt, true, _selectedLineBarcode).ConfigureAwait(true);
                 else if (IsAmountMode && HasLineSelected)
                     await _onApplyAsync(ValueInt, false, _selectedLineBarcode).ConfigureAwait(true);
@@ -142,23 +154,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
             finally { IsBusy = false; }
         }
 
-        private async Task ApplyCartAsync()
-        {
-            if (!CanApplyCart) return;
-            IsBusy = true;
-            try
-            {
-                await _onApplyAsync(ValueInt, true, null).ConfigureAwait(true);
-                RequestClose?.Invoke(true);
-            }
-            finally { IsBusy = false; }
-        }
-
         private void RaiseCanExecuteChanged()
         {
             (BackspaceCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ConfirmCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-            (ApplyCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
