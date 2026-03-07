@@ -56,26 +56,27 @@
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource CartRowStyle}">
                         <Setter Property="Focusable" Value="False"/>
-                        <Setter Property="BorderThickness" Value="0"/>
                         <Setter Property="Padding" Value="0"/>
+                        <Setter Property="BorderThickness" Value="0"/>
+                        <Setter Property="Background" Value="White"/>
                         <EventSetter Event="PreviewMouseLeftButtonDown" Handler="CartRow_PreviewMouseLeftButtonDown"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding (ItemsControl.AlternationIndex), RelativeSource={RelativeSource Self}}" Value="1">
-                                <Setter Property="Background" Value="#F8F5FA"/>
+                                <Setter Property="Background" Value="#F7F7F7"/>
                             </DataTrigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#E9DDF4"/>
+                                <Setter Property="Background" Value="#F1E8F8"/>
                                 <Setter Property="BorderBrush" Value="#7B4FA3"/>
-                                <Setter Property="BorderThickness" Value="4,0,0,0"/>
+                                <Setter Property="BorderThickness" Value="5,1,0,1"/>
                             </Trigger>
                             <MultiDataTrigger>
                                 <MultiDataTrigger.Conditions>
                                     <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource Self}}" Value="True"/>
                                     <Condition Binding="{Binding (Selector.IsSelectionActive), RelativeSource={RelativeSource AncestorType=ListBox}}" Value="False"/>
                                 </MultiDataTrigger.Conditions>
-                                <Setter Property="Background" Value="#E9DDF4"/>
+                                <Setter Property="Background" Value="#F1E8F8"/>
                                 <Setter Property="BorderBrush" Value="#7B4FA3"/>
-                                <Setter Property="BorderThickness" Value="4,0,0,0"/>
+                                <Setter Property="BorderThickness" Value="5,1,0,1"/>
                             </MultiDataTrigger>
                         </Style.Triggers>
                     </Style>
@@ -97,7 +98,18 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" TextWrapping="Wrap"/>
+                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" TextWrapping="Wrap">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="#1F1F1F"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                                        <Setter Property="Foreground" Value="#2E1F3A"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                     <TextBlock Text="{Binding Barcode}" FontSize="11" Foreground="Gray"/>
                                     <TextBlock Text="{Binding StockDisplay}" FontSize="11" Foreground="#8A6F9B">
                                         <TextBlock.Style>
@@ -156,7 +168,31 @@
                                         </Style>
                                     </Button.Style>
                                 </Button>
-                                <TextBlock Text="{Binding Quantity}" VerticalAlignment="Center" Margin="10,0" MinWidth="28" TextAlignment="Center" FontWeight="SemiBold"/>
+                                <Button Content="{Binding Quantity}"
+                                        Command="{Binding DataContext.OpenChangeQuantityForLineCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                        CommandParameter="{Binding}"
+                                        MinWidth="28" Height="28" Margin="6,0"
+                                        Background="Transparent" BorderThickness="0"
+                                        FontWeight="SemiBold" Cursor="Hand"
+                                        Focusable="False" IsTabStop="False"
+                                        ToolTip="Modifica quantità">
+                                    <Button.Style>
+                                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="Button">
+                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
                                 <Button Content="+" FontSize="14" Padding="0" Focusable="False" IsTabStop="False"
                                         Command="{Binding DataContext.IncreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}">

@@ -142,6 +142,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand OpenDiscountCommand { get; }
         public ICommand OpenEditProductCommand { get; }
         public ICommand OpenChangeQuantityCommand { get; }
+        public ICommand OpenChangeQuantityForLineCommand { get; }
         public ICommand SuspendCartCommand { get; }
         public ICommand RecoverCartCommand { get; }
 
@@ -177,6 +178,7 @@ namespace Win7POS.Wpf.Pos
             OpenDiscountCommand = new RelayCommand(_ => OpenDiscount(), _ => !IsBusy && (SelectedCartItem != null || CartItems.Count > 0));
             OpenEditProductCommand = new RelayCommand(OpenEditProductExecute, OpenEditProductCanExecute);
             OpenChangeQuantityCommand = new RelayCommand(_ => OpenChangeQuantity(), _ => !IsBusy && SelectedCartItem != null && !SelectedCartItem.IsDiscountLine);
+            OpenChangeQuantityForLineCommand = new RelayCommand(p => OpenChangeQuantityForLine(p as PosCartLineRow), p => !IsBusy && p is PosCartLineRow row && !row.IsDiscountLine);
             SuspendCartCommand = new AsyncRelayCommand(SuspendCartAsync, _ => !IsBusy && CartItems.Count > 0, _logger);
             RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy, _logger);
             StatusMessage = "POS pronto.";
@@ -258,7 +260,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     await _service.AddByBarcodeAsync(barcodePart).ConfigureAwait(true);
                     var snapshot = await _service.SetQtyAsync(barcodePart, qty).ConfigureAwait(true);
-                    ApplySnapshot(snapshot, barcodePart);
+                    ApplySnapshot(snapshot);
                     StatusMessage = "Aggiunto: " + barcodePart + " x " + qty;
                     PendingInputQuantity = null;
                 }
@@ -309,7 +311,7 @@ namespace Win7POS.Wpf.Pos
                 var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
                 if (PendingInputQuantity.HasValue && inputQty > 1)
                     snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
-                ApplySnapshot(snapshot, input);
+                ApplySnapshot(snapshot);
                 StatusMessage = "Prodotto aggiunto: " + input;
             }
             catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
@@ -327,7 +329,7 @@ namespace Win7POS.Wpf.Pos
                         var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
                         if (PendingInputQuantity.HasValue && inputQty > 1)
                             snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
-                        ApplySnapshot(snapshot, input);
+                        ApplySnapshot(snapshot);
                         StatusMessage = "Prodotto creato e aggiunto: " + input;
                     }
                     catch (Exception createEx)
@@ -1238,6 +1240,13 @@ namespace Win7POS.Wpf.Pos
                 _ = SetSelectedLineQtyAsync(dlg.Quantity);
         }
 
+        private void OpenChangeQuantityForLine(PosCartLineRow row)
+        {
+            if (row == null || row.IsDiscountLine) return;
+            SelectedCartItem = row;
+            OpenChangeQuantity();
+        }
+
         private async Task SetSelectedLineQtyAsync(int qty)
         {
             if (SelectedCartItem == null) return;
@@ -1315,13 +1324,8 @@ namespace Win7POS.Wpf.Pos
             if (snapshot != null) ApplySnapshot(snapshot);
         }
 
+        /// <summary>Applica lo snapshot e seleziona sempre l'ultima riga del carrello (regola POS: ultimo prodotto aggiunto = selezionato).</summary>
         private void ApplySnapshot(PosWorkflowSnapshot snapshot)
-        {
-            ApplySnapshot(snapshot, barcodeToSelect: null);
-        }
-
-        /// <param name="barcodeToSelect">Se non null, dopo aver applicato lo snapshot seleziona l'ultima riga con questo barcode (per rendere subito cliccabile Modifica).</param>
-        private void ApplySnapshot(PosWorkflowSnapshot snapshot, string barcodeToSelect)
         {
             CartItems.Clear();
             foreach (var item in snapshot.Lines)
@@ -1345,21 +1349,16 @@ namespace Win7POS.Wpf.Pos
                 StatusMessage = snapshot.Status;
             OnPropertyChanged(nameof(ItemsCount));
 
-            if (!string.IsNullOrEmpty(barcodeToSelect))
-            {
-                var line = CartItems.LastOrDefault(x => x.Barcode == barcodeToSelect);
-                if (line != null)
-                {
-                    SelectedCartItem = line;
-                    (OpenEditProductCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                    System.Windows.Input.CommandManager.InvalidateRequerySuggested();
-                }
-            }
+            if (CartItems.Count > 0)
+                SelectedCartItem = CartItems[CartItems.Count - 1];
+            else
+                SelectedCartItem = null;
 
             (ClearCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (OpenDiscountCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenEditProductCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenChangeQuantityCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenChangeQuantityForLineCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SuspendCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
@@ -1409,6 +1408,7 @@ namespace Win7POS.Wpf.Pos
             (OpenDiscountCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenEditProductCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenChangeQuantityCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (OpenChangeQuantityForLineCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SuspendCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (RecoverCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             System.Windows.Input.CommandManager.InvalidateRequerySuggested();

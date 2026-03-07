@@ -145,9 +145,10 @@ namespace Win7POS.Wpf.Pos
 
             if (e.Key == Key.Subtract || e.Key == Key.OemMinus)
             {
-                ExecuteIfCan(vm.DecreaseQtyCommand);
+                ExecuteIfCan(vm.RemoveLineCommand);
                 FocusBarcode();
                 e.Handled = true;
+                return;
             }
         }
 
@@ -168,6 +169,8 @@ namespace Win7POS.Wpf.Pos
 
         private void CartListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            if (CartListBox?.SelectedItem != null)
+                CartListBox.ScrollIntoView(CartListBox.SelectedItem);
             FocusBarcode();
         }
 
