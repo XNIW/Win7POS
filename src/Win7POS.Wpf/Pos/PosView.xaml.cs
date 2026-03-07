@@ -74,16 +74,34 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
+            if (e.Key == Key.Up)
+            {
+                MoveSelection(-1);
+                FocusBarcode();
+                e.Handled = true;
+                return;
+            }
+
+            if (e.Key == Key.Down)
+            {
+                MoveSelection(1);
+                FocusBarcode();
+                e.Handled = true;
+                return;
+            }
+
             if (e.Key == Key.Delete)
             {
                 ExecuteIfCan(vm.RemoveLineCommand);
+                FocusBarcode();
                 e.Handled = true;
                 return;
             }
 
             if (e.Key == Key.Add || e.Key == Key.OemPlus)
             {
-                ExecuteIfCan(vm.IncreaseQtyCommand);
+                ExecuteIfCan(vm.OpenChangeQuantityCommand);
+                FocusBarcode();
                 e.Handled = true;
                 return;
             }
@@ -91,8 +109,25 @@ namespace Win7POS.Wpf.Pos
             if (e.Key == Key.Subtract || e.Key == Key.OemMinus)
             {
                 ExecuteIfCan(vm.DecreaseQtyCommand);
+                FocusBarcode();
                 e.Handled = true;
             }
+        }
+
+        private void MoveSelection(int delta)
+        {
+            if (CartListBox == null || CartListBox.Items.Count == 0) return;
+            var index = CartListBox.SelectedIndex;
+            if (index < 0) index = CartListBox.Items.Count - 1;
+            index += delta;
+            if (index < 0) index = 0;
+            if (index >= CartListBox.Items.Count) index = CartListBox.Items.Count - 1;
+            CartListBox.SelectedIndex = index;
+        }
+
+        private void CartListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            FocusBarcode();
         }
 
         private void ExecuteIfCan(ICommand command)

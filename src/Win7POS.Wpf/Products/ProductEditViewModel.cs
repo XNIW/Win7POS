@@ -61,6 +61,10 @@ namespace Win7POS.Wpf.Products
         private async void Confirm()
         {
             if (!IsValid) return;
+            var finalName = string.IsNullOrWhiteSpace(ProductName) ? "Prodotto senza nome" : ProductName.Trim();
+            var finalPurchasePrice = PurchasePriceMinor > 0 ? PurchasePriceMinor : (int)(UnitPriceMinor / 2);
+            if (Mode == ProductEditMode.Edit)
+                finalPurchasePrice = PurchasePriceMinor;
             try
             {
                 var catId = SelectedCategory?.Id == 0 ? (int?)null : SelectedCategory?.Id;
@@ -69,9 +73,9 @@ namespace Win7POS.Wpf.Products
                 var supName = SelectedSupplier?.Name ?? string.Empty;
 
                 if (Mode == ProductEditMode.New || Mode == ProductEditMode.Duplicate)
-                    await _service.CreateProductAsync(Barcode, ProductName, UnitPriceMinor, PurchasePriceMinor, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2);
+                    await _service.CreateProductAsync(Barcode, finalName, UnitPriceMinor, finalPurchasePrice, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2);
                 else
-                    await _service.UpdateProductFullAsync(ProductId.Value, Barcode, ProductName, UnitPriceMinor, PurchasePriceMinor, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2);
+                    await _service.UpdateProductFullAsync(ProductId.Value, Barcode, finalName, UnitPriceMinor, finalPurchasePrice, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2);
                 RequestClose?.Invoke(true);
             }
             catch (Exception ex)
@@ -164,7 +168,7 @@ namespace Win7POS.Wpf.Products
             get => int.TryParse(StockText?.Trim() ?? "0", out var n) && n >= 0 ? n : 0;
         }
 
-        public bool IsValid => (Mode == ProductEditMode.Edit || Barcode.Length > 0) && ProductName.Length > 0 && UnitPriceMinor >= 0;
+        public bool IsValid => (Mode == ProductEditMode.Edit || Barcode.Length > 0) && UnitPriceMinor >= 0;
 
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }

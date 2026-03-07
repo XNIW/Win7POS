@@ -52,9 +52,10 @@
             </Border>
             <ListBox x:Name="CartListBox" Grid.Row="1" ItemsSource="{Binding CartItems}" SelectedItem="{Binding SelectedCartItem, Mode=TwoWay}"
                      AlternationCount="2" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     MouseDoubleClick="CartListBox_MouseDoubleClick">
+                     MouseDoubleClick="CartListBox_MouseDoubleClick" SelectionChanged="CartListBox_SelectionChanged">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource CartRowStyle}">
+                        <Setter Property="Focusable" Value="False"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding (ItemsControl.AlternationIndex), RelativeSource={RelativeSource Self}}" Value="1">
                                 <Setter Property="Background" Value="#F8F5FA"/>
@@ -81,6 +82,30 @@
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
                                     <TextBlock Text="{Binding Name}" FontWeight="Bold" TextWrapping="Wrap"/>
                                     <TextBlock Text="{Binding Barcode}" FontSize="11" Foreground="Gray"/>
+                                    <TextBlock Text="{Binding StockDisplay}" FontSize="11" Foreground="#8A6F9B">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding StockQty}" Value="0">
+                                                        <Setter Property="Foreground" Value="#C45C5C"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding StockQty}" Value="1">
+                                                        <Setter Property="Foreground" Value="#B8860B"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding StockQty}" Value="2">
+                                                        <Setter Property="Foreground" Value="#B8860B"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding StockQty}" Value="3">
+                                                        <Setter Property="Foreground" Value="#B8860B"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </StackPanel>
                                 <Button Grid.Column="1" Content="✎" FontSize="13" Padding="0" Focusable="False" IsTabStop="False"
                                         ToolTip="Modifica prezzo"
@@ -157,6 +182,7 @@
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Add" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding AddBarcodeCommand}"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Sconto" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenDiscountCommand}"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Modifica" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenEditProductCommand}"/>
+                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Modifica quantità" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenChangeQuantityCommand}" ToolTip="Shortcut: +"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Registro vendite" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenSalesRegisterCommand}"/>
                 <Button MinWidth="120" MinHeight="38" Content="Reso (Scan scontrino)" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenResoScanCommand}"
                         ToolTip="Scansiona il codice scontrino: se trova 1 vendita apre il reso direttamente"/>

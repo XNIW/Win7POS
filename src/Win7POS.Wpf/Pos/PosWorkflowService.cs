@@ -335,7 +335,7 @@ namespace Win7POS.Wpf.Pos
                 var code = (barcode ?? string.Empty).Trim();
                 _logger.LogInfo("POS add barcode: " + code);
                 await _session.AddByBarcodeAsync(code).ConfigureAwait(false);
-                return BuildSnapshot("Item aggiunto.");
+                return await BuildSnapshotAsync("Item aggiunto.");
             }
             catch (Exception ex)
             {
@@ -355,7 +355,7 @@ namespace Win7POS.Wpf.Pos
             {
                 _logger.LogInfo("POS add manual price: " + unitPriceMinor);
                 await _session.AddManualPriceAsync(unitPriceMinor).ConfigureAwait(false);
-                return BuildSnapshot("Aggiunto (senza codice).");
+                return await BuildSnapshotAsync("Aggiunto (senza codice).");
             }
             catch (Exception ex)
             {
@@ -444,7 +444,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.SetLineUnitPrice(code, unitPriceMinor);
-                return BuildSnapshot("Prezzo aggiornato.");
+                return await BuildSnapshotAsync("Prezzo aggiornato.");
             }
             finally
             {
@@ -472,7 +472,7 @@ namespace Win7POS.Wpf.Pos
                 _lastCompletedSale = completed;
                 var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
                 var preview = BuildReceiptPreview(completed, true, shop);
-                var snapshot = BuildSnapshot("Pagamento completato.");
+                var snapshot = await BuildSnapshotAsync("Pagamento completato.");
                 _logger.LogInfo("POS pay done: " + completed.Sale.Code);
                 return new PosPayResult
                 {
@@ -536,7 +536,7 @@ namespace Win7POS.Wpf.Pos
                 var completed = new SaleCompleted(sale, saleLines);
                 _lastCompletedSale = completed;
                 _session.Clear();
-                var snapshot = BuildSnapshot("Vendita completata.");
+                var snapshot = await BuildSnapshotAsync("Vendita completata.");
                 var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
 
                 return new PosSaleResult
@@ -779,9 +779,9 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, barcode, StringComparison.Ordinal));
-                if (line == null) return BuildSnapshot(string.Empty);
+                if (line == null) return await BuildSnapshotAsync(string.Empty);
                 _session.SetQuantity(line.Barcode, line.Quantity + 1);
-                return BuildSnapshot("Quantita aumentata.");
+                return await BuildSnapshotAsync("Quantita aumentata.");
             }
             finally
             {
@@ -795,11 +795,35 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, barcode, StringComparison.Ordinal));
-                if (line == null) return BuildSnapshot(string.Empty);
+                if (line == null) return await BuildSnapshotAsync(string.Empty);
                 var next = line.Quantity - 1;
                 if (next < 1) next = 1;
                 _session.SetQuantity(line.Barcode, next);
-                return BuildSnapshot("Quantita diminuita.");
+                return await BuildSnapshotAsync("Quantita diminuita.");
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        /// <summary>Imposta la quantità della riga con il barcode dato (0 = rimuovi riga).</summary>
+        public async Task<PosWorkflowSnapshot> SetQtyAsync(string barcode, int qty)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var code = (barcode ?? string.Empty).Trim();
+                if (code.Length == 0) return await BuildSnapshotAsync(string.Empty);
+                var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, code, StringComparison.Ordinal));
+                if (line == null) return await BuildSnapshotAsync(string.Empty);
+                _session.SetQuantity(code, qty <= 0 ? 0 : qty);
+                return await BuildSnapshotAsync("Quantita aggiornata.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "POS SetQty failed");
+                throw;
             }
             finally
             {
@@ -813,7 +837,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.RemoveLine(barcode);
-                return BuildSnapshot("Riga rimossa.");
+                return await BuildSnapshotAsync("Riga rimossa.");
             }
             finally
             {
@@ -827,7 +851,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyCartDiscountPercent(percent);
-                return BuildSnapshot("Sconto carrello applicato.");
+                return await BuildSnapshotAsync("Sconto carrello applicato.");
             }
             finally
             {
@@ -841,7 +865,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountPercent(barcode, percent);
-                return BuildSnapshot("Sconto riga applicato.");
+                return await BuildSnapshotAsync("Sconto riga applicato.");
             }
             finally
             {
@@ -855,7 +879,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountAmount(barcode, amountMinor);
-                return BuildSnapshot("Sconto importo applicato.");
+                return await BuildSnapshotAsync("Sconto importo applicato.");
             }
             finally
             {
@@ -869,7 +893,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ClearCartDiscount();
-                return BuildSnapshot("Sconto carrello rimosso.");
+                return await BuildSnapshotAsync("Sconto carrello rimosso.");
             }
             finally
             {
@@ -1107,7 +1131,7 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                return BuildSnapshot(string.Empty);
+                return await BuildSnapshotAsync(string.Empty);
             }
             finally
             {
@@ -1121,7 +1145,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.Clear();
-                return BuildSnapshot("Carrello svuotato.");
+                return await BuildSnapshotAsync("Carrello svuotato.");
             }
             finally
             {
@@ -1198,7 +1222,7 @@ namespace Win7POS.Wpf.Pos
             {
                 var lines = await _heldCarts.LoadHoldLinesAsync(holdId).ConfigureAwait(false);
                 if (lines.Count == 0)
-                    return BuildSnapshot("Nessuna riga nel carrello sospeso.");
+                    return await BuildSnapshotAsync("Nessuna riga nel carrello sospeso.");
 
                 var restored = lines.Select(x => new RestoredLine
                 {
@@ -1212,7 +1236,7 @@ namespace Win7POS.Wpf.Pos
                 _session.ReplaceWithLines(restored);
                 await _heldCarts.DeleteHoldAsync(holdId).ConfigureAwait(false);
 
-                return BuildSnapshot("Carrello recuperato.");
+                return await BuildSnapshotAsync("Carrello recuperato.");
             }
             finally
             {
@@ -1253,18 +1277,27 @@ namespace Win7POS.Wpf.Pos
             _logger.LogInfo("POS demo seed inserted: " + demo.Length);
         }
 
-        private PosWorkflowSnapshot BuildSnapshot(string status)
+        private async Task<PosWorkflowSnapshot> BuildSnapshotAsync(string status)
         {
-            var lines = _session.Lines
-                .Select(x => new PosCartLine
+            var lines = new List<PosCartLine>();
+            foreach (var x in _session.Lines)
+            {
+                var stockQty = 0;
+                if (!DiscountKeys.IsDiscount(x.Barcode ?? "") && !(x.Barcode ?? "").StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase))
                 {
-                    Barcode = x.Barcode,
-                    Name = x.Name,
+                    var details = await _products.GetDetailsByBarcodeAsync(x.Barcode ?? "").ConfigureAwait(false);
+                    if (details != null) stockQty = details.StockQty;
+                }
+                lines.Add(new PosCartLine
+                {
+                    Barcode = x.Barcode ?? "",
+                    Name = x.Name ?? "",
                     Quantity = x.Quantity,
                     UnitPrice = x.UnitPrice,
-                    LineTotal = x.LineTotal
-                })
-                .ToList();
+                    LineTotal = x.LineTotal,
+                    StockQty = stockQty
+                });
+            }
 
             return new PosWorkflowSnapshot
             {
@@ -1508,6 +1541,7 @@ SELECT last_insert_rowid();";
         public int Quantity { get; set; }
         public long UnitPrice { get; set; }
         public long LineTotal { get; set; }
+        public int StockQty { get; set; }
     }
 
     public sealed class PosPrinterSettings

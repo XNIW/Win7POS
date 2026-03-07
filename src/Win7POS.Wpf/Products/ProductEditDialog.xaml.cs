@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Input;
 using Win7POS.Core.Models;
 
 namespace Win7POS.Wpf.Products
@@ -40,6 +41,18 @@ namespace Win7POS.Wpf.Products
                 MaxWidth = Math.Max(700, Owner.ActualWidth - 60);
             }
             UpdateLayout();
+            if (ViewModel?.Mode == ProductEditMode.New)
+                PriceBox?.Focus();
+        }
+
+        private void PriceBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            if (ViewModel?.ConfirmCommand?.CanExecute(null) == true)
+            {
+                ViewModel.ConfirmCommand.Execute(null);
+                e.Handled = true;
+            }
         }
 
         private void OnRequestClose(bool success)
