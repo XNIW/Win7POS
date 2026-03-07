@@ -388,18 +388,26 @@ namespace Win7POS.Wpf.Products
         private async Task DeleteAsync()
         {
             if (SelectedProduct == null) return;
-            if (MessageBox.Show("Eliminare il prodotto \"" + SelectedProduct.Barcode + "\"?", "Conferma", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+
+            var okToDelete = DeleteProductConfirmDialog.ShowDialog(
+                Application.Current?.MainWindow,
+                SelectedProduct.Barcode,
+                SelectedProduct.Name);
+
+            if (!okToDelete)
                 return;
+
             try
             {
                 var ok = await _service.DeleteProductAsync(SelectedProduct.Barcode).ConfigureAwait(true);
                 StatusMessage = ok ? "Prodotto eliminato." : "Eliminazione fallita.";
-                if (ok) await RefreshAsync().ConfigureAwait(true);
+                if (ok)
+                    await RefreshAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                StatusMessage = "Errore: " + ex.Message;
                 _logger.LogError(ex, "Products Delete failed");
+                StatusMessage = "Errore eliminazione: " + ex.Message;
             }
         }
 

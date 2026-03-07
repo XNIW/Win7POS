@@ -33,9 +33,11 @@
             </Style.Triggers>
         </Style>
         <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
-            <Setter Property="MinHeight" Value="44"/>
-            <Setter Property="FontSize" Value="16"/>
-            <Setter Property="Margin" Value="1"/>
+            <Setter Property="MinHeight" Value="56"/>
+            <Setter Property="MinWidth" Value="110"/>
+            <Setter Property="Margin" Value="0,0,10,10"/>
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
     </Window.Resources>
     <Grid Margin="16">
@@ -65,7 +67,7 @@
                  Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
                  IsReadOnly="True" HorizontalContentAlignment="Right" VerticalContentAlignment="Center"/>
 
-        <Grid Grid.Row="3" Margin="0,0,0,16">
+        <Grid Grid.Row="3" Margin="0,0,0,12">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>

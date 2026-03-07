@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -18,6 +19,33 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 QtyBox.Focus();
                 QtyBox.SelectAll();
             };
+        }
+
+        private void Digit_Click(object sender, RoutedEventArgs e)
+        {
+            var digit = (sender as Button)?.Content?.ToString();
+            if (string.IsNullOrWhiteSpace(digit)) return;
+
+            var old = QtyBox.Text ?? string.Empty;
+            if (old == "0")
+                old = string.Empty;
+
+            QtyBox.Text = old + digit;
+            QtyBox.CaretIndex = QtyBox.Text.Length;
+            QtyBox.Focus();
+        }
+
+        private void Backspace_Click(object sender, RoutedEventArgs e)
+        {
+            var text = QtyBox.Text ?? string.Empty;
+            if (text.Length > 0)
+                QtyBox.Text = text.Substring(0, text.Length - 1);
+
+            if (string.IsNullOrWhiteSpace(QtyBox.Text))
+                QtyBox.Text = "0";
+
+            QtyBox.CaretIndex = QtyBox.Text.Length;
+            QtyBox.Focus();
         }
 
         private void Ok_Click(object sender, RoutedEventArgs e)

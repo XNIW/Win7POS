@@ -2,13 +2,23 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Modifica quantità"
-        Width="360"
+        Width="380"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize"
         Background="{StaticResource BackgroundLightBrush}">
+    <Window.Resources>
+        <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+            <Setter Property="MinHeight" Value="56"/>
+            <Setter Property="MinWidth" Value="100"/>
+            <Setter Property="Margin" Value="0,0,10,10"/>
+            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+    </Window.Resources>
     <Grid Margin="20">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -16,10 +26,34 @@
         </Grid.RowDefinitions>
         <TextBlock x:Name="ProductNameText" Grid.Row="0" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12"/>
         <TextBlock Grid.Row="1" Text="Quantità" Margin="0,0,0,6"/>
-        <TextBox x:Name="QtyBox" Grid.Row="2" MinHeight="44" FontSize="20" Margin="0,0,0,20"
+        <TextBox x:Name="QtyBox" Grid.Row="2" MinHeight="52" FontSize="24" Margin="0,0,0,16"
                  Style="{StaticResource ModernTextBoxStyle}"
                  KeyDown="QtyBox_KeyDown"/>
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+        <Grid Grid.Row="3" Margin="0,0,0,16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Row="0" Grid.Column="0" Content="7" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
+            <Button Grid.Row="0" Grid.Column="1" Content="8" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
+            <Button Grid.Row="0" Grid.Column="2" Content="9" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
+            <Button Grid.Row="1" Grid.Column="0" Content="4" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
+            <Button Grid.Row="1" Grid.Column="1" Content="5" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
+            <Button Grid.Row="1" Grid.Column="2" Content="6" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
+            <Button Grid.Row="2" Grid.Column="0" Content="1" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
+            <Button Grid.Row="2" Grid.Column="1" Content="2" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
+            <Button Grid.Row="2" Grid.Column="2" Content="3" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
+            <Button Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Content="0" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
+            <Button Grid.Row="3" Grid.Column="2" Content="⌫ Back" Style="{StaticResource KeypadBtn}" Click="Backspace_Click"/>
+        </Grid>
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Annulla" MinWidth="90" Height="38" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click" Style="{StaticResource OutlineButtonStyle}"/>
             <Button Content="OK" MinWidth="90" Height="38" IsDefault="True" Click="Ok_Click" Style="{StaticResource PrimaryButtonStyle}"/>
         </StackPanel>

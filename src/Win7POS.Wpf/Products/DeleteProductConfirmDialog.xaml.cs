@@ -1,0 +1,35 @@
+using System.Windows;
+
+namespace Win7POS.Wpf.Products
+{
+    public partial class DeleteProductConfirmDialog : Window
+    {
+        public DeleteProductConfirmDialog(string barcode, string name)
+        {
+            InitializeComponent();
+            BarcodeText.Text = barcode ?? "";
+            NameText.Text = name ?? "";
+        }
+
+        public static bool ShowDialog(Window owner, string barcode, string name)
+        {
+            var dlg = new DeleteProductConfirmDialog(barcode ?? "", name ?? "")
+            {
+                Owner = owner
+            };
+            return dlg.ShowDialog() == true;
+        }
+
+        private void Cancel_Click(object sender, RoutedEventArgs e)
+        {
+            DialogResult = false;
+            Close();
+        }
+
+        private void Elimina_Click(object sender, RoutedEventArgs e)
+        {
+            DialogResult = true;
+            Close();
+        }
+    }
+}
