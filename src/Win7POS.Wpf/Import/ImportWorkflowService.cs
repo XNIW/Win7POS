@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Win7POS.Core;
 using Win7POS.Core.Audit;
 using Win7POS.Core.Import;
+using Win7POS.Core.ImportDb;
 using Win7POS.Data;
 using Win7POS.Data.Adapters;
 using Win7POS.Data.Repositories;
@@ -18,12 +20,12 @@ namespace Win7POS.Wpf.Import
         private readonly FileLogger _logger = new FileLogger();
         private readonly AuditLogRepository _audit = new AuditLogRepository();
 
-        public async Task<ImportAnalyzeUiResult> AnalyzeAsync(string csvPath, string dbPath = "", int maxItems = 200)
+        public async Task<ImportAnalyzeUiResult> AnalyzeAsync(string filePath, string dbPath = "", int maxItems = 200)
         {
-            _logger.LogInfo("Analyze start: " + csvPath);
+            _logger.LogInfo("Analyze start: " + filePath);
             try
             {
-                var parse = await LoadCsvAsync(csvPath).ConfigureAwait(false);
+                var parse = await LoadParseResultAsync(filePath).ConfigureAwait(false);
                 var analysis = ImportAnalyzer.Analyze(parse);
                 var rows = UniqueRows(parse.Rows);
 
@@ -38,7 +40,7 @@ namespace Win7POS.Wpf.Import
                     UpdateCount = diff.Summary.UpdatePrice + diff.Summary.UpdateName + diff.Summary.UpdateBoth,
                     UnchangedCount = diff.Summary.NoChange,
                     ErrorCount = analysis.ErrorRows + diff.Summary.InvalidRow,
-                    Summary = BuildAnalyzeSummary(csvPath, opt.DbPath, parse, analysis, diff),
+                    Summary = BuildAnalyzeSummary(filePath, opt.DbPath, parse, analysis, diff),
                     RowsModel = rows,
                     DiffModel = diff
                 };
@@ -122,6 +124,59 @@ namespace Win7POS.Wpf.Import
                 _logger.LogError(ex, "Apply failed");
                 throw;
             }
+        }
+
+        /// <summary>Carica CSV o XLSX e restituisce un CsvParseResult (stesso modello ImportRow per entrambi).</summary>
+        private static async Task<CsvParseResult> LoadParseResultAsync(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+                throw new InvalidOperationException("Missing file path.");
+            if (!File.Exists(filePath))
+                throw new FileNotFoundException("File not found.", filePath);
+
+            var ext = Path.GetExtension(filePath).ToLowerInvariant();
+            if (ext == ".csv")
+            {
+                var content = await ReadAllTextCompatAsync(filePath).ConfigureAwait(false);
+                return CsvImportParser.Parse(content);
+            }
+            if (ext == ".xlsx")
+            {
+                var workbook = ProductDbExcelReader.Read(filePath);
+                var rows = ConvertProductRowsToImportRows(workbook?.Products ?? Array.Empty<ProductRow>());
+                var parse = new CsvParseResult { TotalRows = rows.Count };
+                FillParseResultRows(parse, rows);
+                return parse;
+            }
+            throw new NotSupportedException("Formato non supportato. Usa .csv o .xlsx.");
+        }
+
+        private static void FillParseResultRows(CsvParseResult parse, List<ImportRow> rows)
+        {
+            parse.Rows.Clear();
+            foreach (var r in rows) parse.Rows.Add(r);
+        }
+
+        private static List<ImportRow> ConvertProductRowsToImportRows(IEnumerable<ProductRow> products)
+        {
+            var list = new List<ImportRow>();
+            foreach (var p in products ?? Enumerable.Empty<ProductRow>())
+            {
+                if (string.IsNullOrWhiteSpace(p?.Barcode)) continue;
+                list.Add(new ImportRow
+                {
+                    Barcode = p.Barcode,
+                    ArticleCode = p.ArticleCode ?? string.Empty,
+                    Name = p.Name ?? string.Empty,
+                    Name2 = p.Name2 ?? string.Empty,
+                    UnitPrice = p.RetailPrice >= 0 ? p.RetailPrice : 0,
+                    Cost = p.PurchasePrice,
+                    Stock = p.StockQty,
+                    SupplierName = p.SupplierName ?? string.Empty,
+                    CategoryName = p.CategoryName ?? string.Empty
+                });
+            }
+            return list;
         }
 
         private static async Task<CsvParseResult> LoadCsvAsync(string csvPath)
@@ -211,14 +266,14 @@ namespace Win7POS.Wpf.Import
             return backupPath;
         }
 
-        private static string BuildAnalyzeSummary(string csvPath, string dbPath, CsvParseResult parse, ImportAnalysis analysis, ImportDiffResult diff)
+        private static string BuildAnalyzeSummary(string filePath, string dbPath, CsvParseResult parse, ImportAnalysis analysis, ImportDiffResult diff)
         {
             var s = diff.Summary;
-            var fileName = Path.GetFileName(csvPath ?? string.Empty);
+            var fileName = Path.GetFileName(filePath ?? string.Empty);
             return
-                "CSV Analyze + Diff" + Environment.NewLine +
+                "Import Analyze + Diff (CSV/XLSX)" + Environment.NewLine +
                 "File: " + fileName + Environment.NewLine +
-                "Path: " + csvPath + Environment.NewLine +
+                "Path: " + filePath + Environment.NewLine +
                 "DB path: " + dbPath + Environment.NewLine +
                 "Rows(parsed/valid/errors/duplicates): " + parse.TotalRows + "/" + analysis.ValidRows + "/" + analysis.ErrorRows + "/" + analysis.Duplicates + Environment.NewLine +
                 "Errors(missingBarcode/invalidPrice): " + analysis.MissingBarcode + "/" + analysis.InvalidPrice + Environment.NewLine +

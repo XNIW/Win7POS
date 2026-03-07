@@ -50,7 +50,7 @@
                     <TextBlock Grid.Column="4" Width="36"/>
                 </Grid>
             </Border>
-            <ListBox x:Name="CartListBox" Grid.Row="1" ItemsSource="{Binding CartItems}" SelectedItem="{Binding SelectedCartItem}"
+            <ListBox x:Name="CartListBox" Grid.Row="1" ItemsSource="{Binding CartItems}" SelectedItem="{Binding SelectedCartItem, Mode=TwoWay}"
                      AlternationCount="2" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      MouseDoubleClick="CartListBox_MouseDoubleClick">
                 <ListBox.ItemContainerStyle>

@@ -55,6 +55,7 @@ SELECT last_insert_rowid();", product, _tx);
             return existing == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;
         }
 
+        /// <summary>Upsert prodotto + product_meta. Scrive: products (barcode, name, unitPrice); product_meta (article_code, name2, purchase_price, supplier_name, category_name, stock_qty). Usato da Import CSV e XLSX unificato.</summary>
         public async Task<UpsertOutcome> UpsertAsync(ImportRow row)
         {
             if (row == null) return UpsertOutcome.Updated;

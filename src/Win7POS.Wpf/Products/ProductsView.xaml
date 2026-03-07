@@ -134,6 +134,8 @@
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" Width="110" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Nome" Binding="{Binding Name}" Width="2*" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Cod. articolo" Binding="{Binding ArticleCode}" Width="90" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Secondo nome" Binding="{Binding Name2}" Width="1*" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Vendita" Binding="{Binding UnitPrice, StringFormat={}{0:N0}}" Width="85" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">

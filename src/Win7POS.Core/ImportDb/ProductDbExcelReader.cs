@@ -58,9 +58,9 @@ namespace Win7POS.Core.ImportDb
                 rows.Add(new ProductRow
                 {
                     Barcode = barcode,
-                    ArticleCode = ToString(GetCellValue(ws, r, headerMap, "Código del artículo", "B", 1)),
+                    ArticleCode = ToString(GetCellValueWithFallback(ws, r, headerMap, "B", 1, "货号", "Código del artículo", "Codice articolo")),
                     Name = ToString(GetCellValue(ws, r, headerMap, "Nombre del producto", "C", 2)),
-                    Name2 = ToString(GetCellValue(ws, r, headerMap, "Segundo nombre del producto", "D", 3)),
+                    Name2 = ToString(GetCellValueWithFallback(ws, r, headerMap, "D", 3, "Segundo nombre", "Segundo nombre del producto", "Nome 2", "Secondo nome")),
                     PurchasePrice = purchasePrice,
                     RetailPrice = retailPrice,
                     PurchaseOld = NormalizeMoneyClp(GetCellValue(ws, r, headerMap, "Compra (Antiguo)", "G", 6)),
@@ -147,6 +147,18 @@ namespace Win7POS.Core.ImportDb
             else
                 cell = ws.Cell(row, fallbackColIdx + 1);
             return CellText(cell);
+        }
+
+        /// <summary>Legge il valore della cella provando in ordine più nomi di intestazione, poi fallback colonna.</summary>
+        private static object GetCellValueWithFallback(IXLWorksheet ws, int row, IReadOnlyDictionary<string, int> headerMap, string fallbackCol, int fallbackColIdx, params string[] headerNames)
+        {
+            foreach (var name in headerNames ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                if (headerMap.TryGetValue(name, out var col))
+                    return CellText(ws.Cell(row, col + 1));
+            }
+            return CellText(ws.Cell(row, fallbackColIdx + 1));
         }
 
         private static IReadOnlyDictionary<string, int> GetHeaderMap(IXLWorksheet ws, int headerRow)

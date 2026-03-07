@@ -256,7 +256,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
-                ApplySnapshot(snapshot);
+                ApplySnapshot(snapshot, input);
                 StatusMessage = "Prodotto aggiunto: " + input;
             }
             catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
@@ -282,7 +282,7 @@ namespace Win7POS.Wpf.Pos
                             vm.SelectedCategory?.Id == 0 ? null : vm.SelectedCategory?.Name,
                             vm.StockQty).ConfigureAwait(true);
                         var snapshot = await _service.AddByBarcodeAsync(vm.Barcode).ConfigureAwait(true);
-                        ApplySnapshot(snapshot);
+                        ApplySnapshot(snapshot, vm.Barcode);
                         StatusMessage = "Prodotto creato e aggiunto: " + vm.Barcode;
                     }
                     catch (Exception createEx)
@@ -1126,6 +1126,12 @@ namespace Win7POS.Wpf.Pos
 
         private void ApplySnapshot(PosWorkflowSnapshot snapshot)
         {
+            ApplySnapshot(snapshot, barcodeToSelect: null);
+        }
+
+        /// <param name="barcodeToSelect">Se non null, dopo aver applicato lo snapshot seleziona l'ultima riga con questo barcode (per rendere subito cliccabile Modifica).</param>
+        private void ApplySnapshot(PosWorkflowSnapshot snapshot, string barcodeToSelect)
+        {
             CartItems.Clear();
             foreach (var item in snapshot.Lines)
             {
@@ -1145,6 +1151,18 @@ namespace Win7POS.Wpf.Pos
             if (!string.IsNullOrWhiteSpace(snapshot.Status))
                 StatusMessage = snapshot.Status;
             OnPropertyChanged(nameof(ItemsCount));
+
+            if (!string.IsNullOrEmpty(barcodeToSelect))
+            {
+                var line = CartItems.LastOrDefault(x => x.Barcode == barcodeToSelect);
+                if (line != null)
+                {
+                    SelectedCartItem = line;
+                    (OpenEditProductCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                    System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+                }
+            }
+
             (ClearCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (OpenDiscountCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenEditProductCommand as RelayCommand)?.RaiseCanExecuteChanged();

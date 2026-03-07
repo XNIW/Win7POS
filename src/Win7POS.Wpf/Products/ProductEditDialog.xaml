@@ -18,6 +18,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -74,20 +75,20 @@
                  Text="{Binding StockText, UpdateSourceTrigger=PropertyChanged}"
                  Style="{StaticResource ModernTextBoxStyle}"/>
 
-        <!-- Cod. articolo / Nome2 (opzionale) -->
-        <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Cod. articolo / Nome2:"/>
-        <Grid Grid.Row="7" Grid.Column="1" Margin="8,10,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="120"/>
-                <ColumnDefinition Width="8"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <TextBox Grid.Column="0" Text="{Binding ArticleCode, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32" MaxHeight="34" VerticalContentAlignment="Center"/>
-            <TextBox Grid.Column="2" Text="{Binding Name2, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32" MaxHeight="34" VerticalContentAlignment="Center"/>
-        </Grid>
+        <!-- Cod. articolo -->
+        <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Cod. articolo:"/>
+        <TextBox Grid.Row="7" Grid.Column="1" Margin="8,10,0,0"
+                 Text="{Binding ArticleCode, UpdateSourceTrigger=PropertyChanged}"
+                 Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
+
+        <!-- Secondo nome -->
+        <TextBlock Grid.Row="8" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Secondo nome:"/>
+        <TextBox Grid.Row="8" Grid.Column="1" Margin="8,10,0,0"
+                 Text="{Binding Name2, UpdateSourceTrigger=PropertyChanged}"
+                 Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
 
         <!-- Pulsanti -->
-        <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <StackPanel Grid.Row="10" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
             <Button Content="Annulla" MinWidth="100" Height="36" Margin="0,0,10,0" IsCancel="True"
                     Style="{StaticResource OutlineButtonStyle}" Command="{Binding CancelCommand}"/>
             <Button Content="Salva" MinWidth="100" Height="36" IsDefault="True"
