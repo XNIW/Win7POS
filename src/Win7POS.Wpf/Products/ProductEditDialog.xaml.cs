@@ -26,6 +26,12 @@ namespace Win7POS.Wpf.Products
             vm.SetSuppliers(suppliers);
             vm.SetSelectionFromSource(source);
 
+            if (mode == ProductEditMode.New)
+            {
+                vm.PriceText = string.Empty;
+                vm.PurchasePriceText = string.Empty;
+            }
+
             var dlg = new ProductEditDialog(vm)
             {
                 Owner = Application.Current?.MainWindow
@@ -41,8 +47,11 @@ namespace Win7POS.Wpf.Products
                 MaxWidth = Math.Max(700, Owner.ActualWidth - 60);
             }
             UpdateLayout();
-            if (ViewModel?.Mode == ProductEditMode.New)
-                PriceBox?.Focus();
+            if (PriceBox != null)
+            {
+                PriceBox.Focus();
+                PriceBox.SelectAll();
+            }
         }
 
         private void PriceBox_KeyDown(object sender, KeyEventArgs e)

@@ -260,7 +260,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     await _service.AddByBarcodeAsync(barcodePart).ConfigureAwait(true);
                     var snapshot = await _service.SetQtyAsync(barcodePart, qty).ConfigureAwait(true);
-                    ApplySnapshot(snapshot);
+                    ApplySnapshot(snapshot, barcodePart);
                     StatusMessage = "Aggiunto: " + barcodePart + " x " + qty;
                     PendingInputQuantity = null;
                 }
@@ -284,10 +284,11 @@ namespace Win7POS.Wpf.Pos
                 IsBusy = true;
                 try
                 {
+                    var manualKey = DiscountKeys.ManualPrefix + priceMinor;
                     var snapshot = await _service.AddManualPriceAsync(priceMinor).ConfigureAwait(true);
                     if (PendingInputQuantity.HasValue && inputQty > 1)
-                        snapshot = await _service.SetQtyAsync(DiscountKeys.ManualPrefix + priceMinor, inputQty).ConfigureAwait(true);
-                    ApplySnapshot(snapshot);
+                        snapshot = await _service.SetQtyAsync(manualKey, inputQty).ConfigureAwait(true);
+                    ApplySnapshot(snapshot, manualKey);
                     StatusMessage = "Aggiunto (senza codice): " + MoneyClp.Format(priceMinor);
                     return;
                 }
@@ -311,7 +312,7 @@ namespace Win7POS.Wpf.Pos
                 var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
                 if (PendingInputQuantity.HasValue && inputQty > 1)
                     snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
-                ApplySnapshot(snapshot);
+                ApplySnapshot(snapshot, input);
                 StatusMessage = "Prodotto aggiunto: " + input;
             }
             catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
@@ -329,7 +330,7 @@ namespace Win7POS.Wpf.Pos
                         var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
                         if (PendingInputQuantity.HasValue && inputQty > 1)
                             snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
-                        ApplySnapshot(snapshot);
+                        ApplySnapshot(snapshot, input);
                         StatusMessage = "Prodotto creato e aggiunto: " + input;
                     }
                     catch (Exception createEx)
@@ -396,7 +397,7 @@ namespace Win7POS.Wpf.Pos
                     try
                     {
                         var snapshot = await _service.RemoveLineAsync(SelectedCartItem.Barcode).ConfigureAwait(true);
-                        ApplySnapshot(snapshot);
+                        ApplySnapshot(snapshot); // nessun preferBarcode: fallback ultima riga
                         StatusMessage = "Riga rimossa.";
                     }
                     catch (Exception ex)
@@ -409,8 +410,9 @@ namespace Win7POS.Wpf.Pos
                 IsBusy = true;
                 try
                 {
-                    var snapshot = await _service.SetQtyAsync(SelectedCartItem.Barcode, qty).ConfigureAwait(true);
-                    ApplySnapshot(snapshot);
+                    var barcode = SelectedCartItem.Barcode;
+                    var snapshot = await _service.SetQtyAsync(barcode, qty).ConfigureAwait(true);
+                    ApplySnapshot(snapshot, barcode);
                     StatusMessage = "Quantità aggiornata: " + qty;
                 }
                 catch (Exception ex)
@@ -427,10 +429,11 @@ namespace Win7POS.Wpf.Pos
                 IsBusy = true;
                 try
                 {
+                    var barcodePlus = SelectedCartItem.Barcode;
                     for (var i = 0; i < deltaPlus; i++)
                     {
-                        var snapshot = await _service.IncreaseQtyAsync(SelectedCartItem.Barcode).ConfigureAwait(true);
-                        ApplySnapshot(snapshot);
+                        var snapshot = await _service.IncreaseQtyAsync(barcodePlus).ConfigureAwait(true);
+                        ApplySnapshot(snapshot, barcodePlus);
                     }
                     StatusMessage = "Quantità +" + deltaPlus;
                 }
@@ -448,11 +451,12 @@ namespace Win7POS.Wpf.Pos
                 IsBusy = true;
                 try
                 {
+                    var barcodeMinus = SelectedCartItem.Barcode;
                     var current = SelectedCartItem.Quantity;
                     for (var i = 0; i < deltaMinus && current > 1; i++)
                     {
-                        var snapshot = await _service.DecreaseQtyAsync(SelectedCartItem.Barcode).ConfigureAwait(true);
-                        ApplySnapshot(snapshot);
+                        var snapshot = await _service.DecreaseQtyAsync(barcodeMinus).ConfigureAwait(true);
+                        ApplySnapshot(snapshot, barcodeMinus);
                         current--;
                     }
                     StatusMessage = "Quantità -" + deltaMinus;
@@ -1324,8 +1328,8 @@ namespace Win7POS.Wpf.Pos
             if (snapshot != null) ApplySnapshot(snapshot);
         }
 
-        /// <summary>Applica lo snapshot e seleziona sempre l'ultima riga del carrello (regola POS: ultimo prodotto aggiunto = selezionato).</summary>
-        private void ApplySnapshot(PosWorkflowSnapshot snapshot)
+        /// <summary>Applica lo snapshot. Se preferBarcode è valorizzato, seleziona quella riga (per add/merge); altrimenti l'ultima.</summary>
+        private void ApplySnapshot(PosWorkflowSnapshot snapshot, string preferBarcode = null)
         {
             CartItems.Clear();
             foreach (var item in snapshot.Lines)
@@ -1349,10 +1353,12 @@ namespace Win7POS.Wpf.Pos
                 StatusMessage = snapshot.Status;
             OnPropertyChanged(nameof(ItemsCount));
 
-            if (CartItems.Count > 0)
-                SelectedCartItem = CartItems[CartItems.Count - 1];
-            else
-                SelectedCartItem = null;
+            PosCartLineRow selected = null;
+            if (!string.IsNullOrWhiteSpace(preferBarcode))
+                selected = CartItems.LastOrDefault(x => string.Equals(x.Barcode, preferBarcode, StringComparison.OrdinalIgnoreCase));
+            if (selected == null && CartItems.Count > 0)
+                selected = CartItems[CartItems.Count - 1];
+            SelectedCartItem = selected;
 
             (ClearCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (OpenDiscountCommand as RelayCommand)?.RaiseCanExecuteChanged();
