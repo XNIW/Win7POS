@@ -5,6 +5,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Win7POS.Core;
 using Win7POS.Core.Audit;
+using Win7POS.Core.ImportDb;
 using Win7POS.Core.Models;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
@@ -108,9 +109,114 @@ namespace Win7POS.Wpf.Products
             return outPath;
         }
 
+        /// <summary>Export completo in un file XLSX (Products, Suppliers, Categories, PriceHistory).</summary>
+        public async Task ExportWorkbookAsync(string xlsxPath)
+        {
+            if (string.IsNullOrWhiteSpace(xlsxPath)) throw new ArgumentException("Path is empty.");
+            var details = await _products.ListAllDetailsAsync().ConfigureAwait(false);
+            var categories = await _categories.ListAllAsync().ConfigureAwait(false);
+            var suppliers = await _suppliers.ListAllAsync().ConfigureAwait(false);
+            var history = await _products.ListAllPriceHistoryAsync().ConfigureAwait(false);
+
+            var products = details.Select(d => new ProductRow
+            {
+                Barcode = d.Barcode ?? "",
+                ArticleCode = d.ArticleCode ?? "",
+                Name = d.Name ?? "",
+                Name2 = d.Name2 ?? "",
+                PurchasePrice = d.PurchasePrice,
+                RetailPrice = (int)d.UnitPrice,
+                SupplierId = d.SupplierId,
+                SupplierName = d.SupplierName ?? "",
+                CategoryId = d.CategoryId,
+                CategoryName = d.CategoryName ?? "",
+                StockQty = d.StockQty
+            }).ToList();
+
+            var supplierRows = suppliers.Select(s => new SupplierRow { Id = s.Id, Name = s.Name ?? "" }).ToList();
+            var categoryRows = categories.Select(c => new CategoryRow { Id = c.Id, Name = c.Name ?? "" }).ToList();
+            var historyRows = history.Select(h => new PriceHistoryRow
+            {
+                ProductBarcode = h.ProductBarcode ?? "",
+                Timestamp = h.ChangedAt ?? "",
+                Type = h.PriceType ?? "retail",
+                OldPrice = h.OldPrice,
+                NewPrice = h.NewPrice,
+                Source = h.Source ?? ""
+            }).ToList();
+
+            var workbook = new ProductDbWorkbook
+            {
+                Products = products,
+                Suppliers = supplierRows,
+                Categories = categoryRows,
+                PriceHistory = historyRows
+            };
+            ProductDbExcelWriter.Write(xlsxPath, workbook);
+            _logger.LogInfo("Export XLSX completed: " + xlsxPath);
+        }
+
+        /// <summary>Export bundle CSV in una cartella: Products.csv, Suppliers.csv, Categories.csv, PriceHistory.csv.</summary>
+        public async Task ExportCsvBundleAsync(string folderPath)
+        {
+            if (string.IsNullOrWhiteSpace(folderPath) || !Directory.Exists(folderPath))
+                throw new ArgumentException("Cartella non valida.");
+            var details = await _products.ListAllDetailsAsync().ConfigureAwait(false);
+            var categories = await _categories.ListAllAsync().ConfigureAwait(false);
+            var suppliers = await _suppliers.ListAllAsync().ConfigureAwait(false);
+            var history = await _products.ListAllPriceHistoryAsync().ConfigureAwait(false);
+
+            var productsPath = Path.Combine(folderPath, "Products.csv");
+            using (var sw = new StreamWriter(productsPath, false, Encoding.UTF8))
+            {
+                await sw.WriteLineAsync("Barcode;ArticleCode;Name;Name2;PurchasePrice;RetailPrice;SupplierName;CategoryName;StockQty").ConfigureAwait(false);
+                foreach (var d in details)
+                {
+                    await sw.WriteLineAsync(
+                        Escape(d.Barcode) + ";" + Escape(d.ArticleCode) + ";" + Escape(d.Name) + ";" + Escape(d.Name2) + ";" +
+                        d.PurchasePrice + ";" + d.UnitPrice + ";" + Escape(d.SupplierName) + ";" + Escape(d.CategoryName) + ";" + d.StockQty).ConfigureAwait(false);
+                }
+            }
+            var suppliersPath = Path.Combine(folderPath, "Suppliers.csv");
+            using (var sw = new StreamWriter(suppliersPath, false, Encoding.UTF8))
+            {
+                await sw.WriteLineAsync("Id;Name").ConfigureAwait(false);
+                foreach (var s in suppliers)
+                    await sw.WriteLineAsync(s.Id + ";" + Escape(s.Name)).ConfigureAwait(false);
+            }
+            var categoriesPath = Path.Combine(folderPath, "Categories.csv");
+            using (var sw = new StreamWriter(categoriesPath, false, Encoding.UTF8))
+            {
+                await sw.WriteLineAsync("Id;Name").ConfigureAwait(false);
+                foreach (var c in categories)
+                    await sw.WriteLineAsync(c.Id + ";" + Escape(c.Name)).ConfigureAwait(false);
+            }
+            var historyPath = Path.Combine(folderPath, "PriceHistory.csv");
+            using (var sw = new StreamWriter(historyPath, false, Encoding.UTF8))
+            {
+                await sw.WriteLineAsync("ProductBarcode;Timestamp;Type;OldPrice;NewPrice;Source").ConfigureAwait(false);
+                foreach (var h in history)
+                    await sw.WriteLineAsync(Escape(h.ProductBarcode) + ";" + Escape(h.ChangedAt) + ";" + Escape(h.PriceType) + ";" + (h.OldPrice?.ToString() ?? "") + ";" + h.NewPrice + ";" + Escape(h.Source)).ConfigureAwait(false);
+            }
+            _logger.LogInfo("Export CSV bundle completed: " + folderPath);
+        }
+
+        /// <summary>Storico prezzi per prodotto (risolto da productId a barcode).</summary>
+        public async Task<IReadOnlyList<ProductPriceHistoryRow>> GetPriceHistoryAsync(long productId)
+        {
+            if (productId <= 0) return Array.Empty<ProductPriceHistoryRow>();
+            var product = await _products.GetByIdAsync(productId).ConfigureAwait(false);
+            if (product == null || string.IsNullOrEmpty(product.Barcode)) return Array.Empty<ProductPriceHistoryRow>();
+            return await _products.GetPriceHistoryByBarcodeAsync(product.Barcode).ConfigureAwait(false);
+        }
+
+        /// <summary>Aggiorna prezzi e scrive storico (stessa transazione). source es. MANUAL_EDIT, IMPORT.</summary>
+        public Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source)
+            => _products.UpdateProductPricesAsync(productId, newPurchasePrice, newRetailPrice, source ?? "MANUAL_EDIT");
+
         private static string Escape(string s)
         {
-            return (s ?? string.Empty).Replace(";", ",");
+            return (s ?? string.Empty).Replace(";", ",").Replace("\r", "").Replace("\n", " ");
         }
 
         public async Task CreateProductAsync(string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
@@ -134,8 +240,9 @@ namespace Win7POS.Wpf.Products
             if (productId <= 0) throw new ArgumentException("invalid product id");
             var before = await _products.GetByIdAsync(productId).ConfigureAwait(false);
             if (before == null) throw new InvalidOperationException("Product not found.");
-            await _products.UpdateProductAndMetaInTransactionAsync(productId, name?.Trim() ?? string.Empty, unitPriceMinor, before.Barcode, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty).ConfigureAwait(false);
-            await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductUpdate, AuditDetails.Kv(("productId", productId.ToString()), ("barcode", before.Barcode))).ConfigureAwait(false);
+            var b = before.Barcode ?? barcode ?? "";
+            await _products.UpdateProductAndMetaWithPriceHistoryAsync(productId, name?.Trim() ?? string.Empty, unitPriceMinor, b, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty, "MANUAL_EDIT").ConfigureAwait(false);
+            await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductUpdate, AuditDetails.Kv(("productId", productId.ToString()), ("barcode", b))).ConfigureAwait(false);
         }
 
         public async Task<bool> DeleteProductAsync(string barcode)

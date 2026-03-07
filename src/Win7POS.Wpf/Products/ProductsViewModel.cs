@@ -130,7 +130,8 @@ namespace Win7POS.Wpf.Products
         public ICommand CopyNewCommand { get; }
         public ICommand DeleteCommand { get; }
         public ICommand ImportCommand { get; }
-        public ICommand ExportCsvCommand { get; }
+        public ICommand ExportDataCommand { get; }
+        public ICommand OpenPriceHistoryCommand { get; }
         public ICommand PrevPageCommand { get; }
         public ICommand NextPageCommand { get; }
         public ICommand GoToPageCommand { get; }
@@ -145,7 +146,8 @@ namespace Win7POS.Wpf.Products
             CopyNewCommand = new AsyncRelayCommand(CopyNewAsync, _ => !IsBusy && SelectedProduct != null, _logger);
             DeleteCommand = new AsyncRelayCommand(DeleteAsync, _ => !IsBusy && SelectedProduct != null, _logger);
             ImportCommand = new AsyncRelayCommand(ImportAsync, _ => !IsBusy, _logger);
-            ExportCsvCommand = new AsyncRelayCommand(ExportCsvAsync, _ => !IsBusy, _logger);
+            ExportDataCommand = new AsyncRelayCommand(ExportDataAsync, _ => !IsBusy, _logger);
+            OpenPriceHistoryCommand = new AsyncRelayCommand(OpenPriceHistoryAsync, _ => !IsBusy && SelectedProduct != null, _logger);
             PrevPageCommand = new AsyncRelayCommand(PrevPageAsync, _ => !IsBusy && PageIndex > 1, _logger);
             NextPageCommand = new AsyncRelayCommand(NextPageAsync, _ => !IsBusy && PageIndex < TotalPages, _logger);
             GoToPageCommand = new AsyncRelayCommand(GoToPageAsync, _ => !IsBusy, _logger);
@@ -424,22 +426,55 @@ namespace Win7POS.Wpf.Products
             }
         }
 
-        private async Task ExportCsvAsync()
+        private async Task ExportDataAsync()
         {
             IsBusy = true;
             try
             {
-                var path = await _service.ExportCsvAsync().ConfigureAwait(true);
-                StatusMessage = "Export CSV: " + path;
+                var choice = ExportDataDialog.ShowDialogAndGetChoice(Application.Current?.MainWindow);
+                if (choice == null) return;
+
+                if (choice.Format == ExportDataFormat.Xlsx)
+                {
+                    var path = choice.TargetPath;
+                    await _service.ExportWorkbookAsync(path).ConfigureAwait(true);
+                    StatusMessage = "Export XLSX completato: " + path;
+                }
+                else
+                {
+                    var folder = choice.TargetFolder;
+                    await _service.ExportCsvBundleAsync(folder).ConfigureAwait(true);
+                    StatusMessage = "Export CSV completato: " + folder;
+                }
             }
             catch (Exception ex)
             {
-                StatusMessage = "Errore export CSV: " + ex.Message;
-                _logger.LogError(ex, "Products export failed");
+                StatusMessage = "Errore export dati: " + ex.Message;
+                _logger.LogError(ex, "Products export data failed");
             }
             finally
             {
                 IsBusy = false;
+            }
+        }
+
+        private async Task OpenPriceHistoryAsync()
+        {
+            if (SelectedProduct == null) return;
+            try
+            {
+                var full = await _service.GetDetailsByIdAsync(SelectedProduct.Id).ConfigureAwait(true);
+                if (full == null)
+                {
+                    StatusMessage = "Prodotto non trovato.";
+                    return;
+                }
+                ProductPriceHistoryDialog.ShowDialog(Application.Current?.MainWindow, full.Id, full.Barcode ?? "", full.Name ?? "", (int)full.UnitPrice, full.PurchasePrice);
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore apertura storico prezzi: " + ex.Message;
+                _logger.LogError(ex, "Open price history failed");
             }
         }
 
@@ -452,7 +487,8 @@ namespace Win7POS.Wpf.Products
             (CopyNewCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (DeleteCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ImportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-            (ExportCsvCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ExportDataCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (OpenPriceHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrevPageCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (NextPageCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (GoToPageCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();

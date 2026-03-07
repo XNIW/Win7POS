@@ -1,0 +1,101 @@
+<Window x:Class="Win7POS.Wpf.Products.ProductPriceHistoryDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Storico prezzi"
+        Width="820"
+        MinHeight="520"
+        Height="560"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
+        Background="{StaticResource BackgroundLightBrush}">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header: Barcode, Nome, Prezzi attuali -->
+        <Border Grid.Row="0" Padding="12" Margin="0,0,0,12" Background="White" CornerRadius="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="Barcode" FontSize="11" Foreground="Gray"/>
+                    <TextBlock Text="{Binding Barcode}" FontWeight="SemiBold" FontSize="14"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Margin="16,0">
+                    <TextBlock Text="Prodotto" FontSize="11" Foreground="Gray"/>
+                    <TextBlock Text="{Binding ProductName}" FontWeight="SemiBold" FontSize="14" TextWrapping="Wrap"/>
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <StackPanel Margin="0,0,24,0">
+                        <TextBlock Text="Prezzo vendita attuale" FontSize="11" Foreground="Gray"/>
+                        <TextBlock Text="{Binding CurrentRetailPrice}" FontWeight="SemiBold" FontSize="14"/>
+                    </StackPanel>
+                    <StackPanel>
+                        <TextBlock Text="Prezzo acquisto attuale" FontSize="11" Foreground="Gray"/>
+                        <TextBlock Text="{Binding CurrentPurchasePrice}" FontWeight="SemiBold" FontSize="14"/>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Azioni: Aggiorna + Nuovo prezzo vendita/acquisto -->
+        <Border Grid.Row="1" Padding="8" Margin="0,0,0,8" Background="#F5F5F5" CornerRadius="6">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Content="Aggiorna" MinWidth="100" Height="32" Command="{Binding RefreshCommand}" Style="{StaticResource SecondaryButtonStyle}"/>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0">
+                    <TextBlock Text="Nuovo prezzo vendita (CLP):" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBox Text="{Binding NewRetailText, UpdateSourceTrigger=PropertyChanged}" Width="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Text="Nuovo prezzo acquisto:" VerticalAlignment="Center" Margin="16,0,8,0"/>
+                    <TextBox Text="{Binding NewPurchaseText, UpdateSourceTrigger=PropertyChanged}" Width="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
+                </StackPanel>
+                <Button Grid.Column="2" Content="Applica prezzi" MinWidth="120" Height="32" Command="{Binding ApplyNewPricesCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+            </Grid>
+        </Border>
+
+        <!-- Storico vendita -->
+        <GroupBox Grid.Row="2" Header="Storico vendita" Margin="0,0,0,8" Padding="8">
+            <DataGrid ItemsSource="{Binding RetailHistory}" AutoGenerateColumns="False" IsReadOnly="True"
+                      HeadersVisibility="Column" GridLinesVisibility="Horizontal" MinHeight="120">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Data/Ora" Binding="{Binding ChangedAt}" Width="160"/>
+                    <DataGridTextColumn Header="Tipo" Binding="{Binding PriceType}" Width="70"/>
+                    <DataGridTextColumn Header="Prezzo precedente" Binding="{Binding OldPrice}" Width="120"/>
+                    <DataGridTextColumn Header="Prezzo nuovo" Binding="{Binding NewPrice}" Width="100"/>
+                    <DataGridTextColumn Header="Origine" Binding="{Binding Source}" Width="120"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </GroupBox>
+
+        <!-- Storico acquisto -->
+        <GroupBox Grid.Row="3" Header="Storico acquisto" Margin="0,0,0,8" Padding="8">
+            <DataGrid ItemsSource="{Binding PurchaseHistory}" AutoGenerateColumns="False" IsReadOnly="True"
+                      HeadersVisibility="Column" GridLinesVisibility="Horizontal" MinHeight="120">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Data/Ora" Binding="{Binding ChangedAt}" Width="160"/>
+                    <DataGridTextColumn Header="Tipo" Binding="{Binding PriceType}" Width="70"/>
+                    <DataGridTextColumn Header="Prezzo precedente" Binding="{Binding OldPrice}" Width="120"/>
+                    <DataGridTextColumn Header="Prezzo nuovo" Binding="{Binding NewPrice}" Width="100"/>
+                    <DataGridTextColumn Header="Origine" Binding="{Binding Source}" Width="120"/>
+                </DataGrid.Columns>
+            </DataGrid>
+        </GroupBox>
+
+        <DockPanel Grid.Row="4">
+            <Button Content="Chiudi" MinWidth="90" Height="36" HorizontalAlignment="Left" Click="Close_Click" Style="{StaticResource OutlineButtonStyle}"/>
+            <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="12,0" Foreground="Gray"/>
+        </DockPanel>
+    </Grid>
+</Window>

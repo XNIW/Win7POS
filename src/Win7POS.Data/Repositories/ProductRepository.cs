@@ -415,14 +415,167 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
             }
         }
 
+        /// <summary>Update prodotto + meta e scrive righe in price_history se prezzi cambiano. source es. MANUAL_EDIT.</summary>
+        public async Task UpdateProductAndMetaWithPriceHistoryAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string source)
+        {
+            if (productId <= 0) throw new ArgumentException("invalid product id");
+            using var conn = _factory.Open();
+            var current = await conn.QueryFirstOrDefaultAsync<(long UnitPrice, int PurchasePrice)>(@"
+SELECT p.unitPrice AS UnitPrice, COALESCE(m.purchase_price, 0) AS PurchasePrice
+FROM products p LEFT JOIN product_meta m ON m.barcode = p.barcode WHERE p.id = @productId", new { productId }).ConfigureAwait(false);
+
+            using (var tx = conn.BeginTransaction())
+            {
+                try
+                {
+                    var rows = await conn.ExecuteAsync(
+                        "UPDATE products SET name = @name, unitPrice = @unitPriceMinor WHERE id = @productId",
+                        new { productId, name = name ?? string.Empty, unitPriceMinor }, tx).ConfigureAwait(false);
+                    if (rows == 0) { tx.Rollback(); throw new InvalidOperationException("Product not found."); }
+                    await conn.ExecuteAsync(@"
+INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
+VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
+                        new
+                        {
+                            barcode,
+                            articleCode = articleCode ?? string.Empty,
+                            name2 = name2 ?? string.Empty,
+                            purchasePrice,
+                            supplierId,
+                            supplierName = supplierName ?? string.Empty,
+                            categoryId,
+                            categoryName = categoryName ?? string.Empty,
+                            stockQty
+                        }, tx).ConfigureAwait(false);
+                    tx.Commit();
+                }
+                catch
+                {
+                    tx.Rollback();
+                    throw;
+                }
+            }
+
+            var changedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            var src = source ?? "MANUAL_EDIT";
+            var newRetail = (int)unitPriceMinor;
+            if (current.UnitPrice != unitPriceMinor)
+            {
+                await conn.ExecuteAsync(@"
+INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
+VALUES(@barcode, @changedAt, 'retail', @oldPrice, @newPrice, @source)",
+                    new { barcode, changedAt, oldPrice = (int)current.UnitPrice, newPrice = newRetail, source = src }).ConfigureAwait(false);
+            }
+            if (current.PurchasePrice != purchasePrice)
+            {
+                await conn.ExecuteAsync(@"
+INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
+VALUES(@barcode, @changedAt, 'purchase', @oldPrice, @newPrice, @source)",
+                    new { barcode, changedAt, oldPrice = current.PurchasePrice, newPrice = purchasePrice, source = src }).ConfigureAwait(false);
+            }
+        }
+
         public async Task InsertPriceHistoryAsync(string barcode, string type, int newPrice, string source = "MANUAL")
         {
-            var timestamp = System.DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
             using var conn = _factory.Open();
             await conn.ExecuteAsync(@"
 INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
 VALUES(@barcode, @timestamp, @type, NULL, @newPrice, @source)",
                 new { barcode, timestamp, type, newPrice, source }).ConfigureAwait(false);
+        }
+
+        /// <summary>Storico prezzi per barcode, ordinato per data DESC.</summary>
+        public async Task<IReadOnlyList<ProductPriceHistoryRow>> GetPriceHistoryByBarcodeAsync(string barcode)
+        {
+            if (string.IsNullOrWhiteSpace(barcode)) return Array.Empty<ProductPriceHistoryRow>();
+            using var conn = _factory.Open();
+            const string sql = @"
+SELECT barcode AS ProductBarcode, timestamp AS ChangedAt, type AS PriceType, old_price AS OldPrice, new_price AS NewPrice, source AS Source
+FROM product_price_history
+WHERE barcode = @barcode
+ORDER BY timestamp DESC, id DESC";
+            var rows = await conn.QueryAsync<ProductPriceHistoryRow>(sql, new { barcode = barcode.Trim() }).ConfigureAwait(false);
+            return rows?.ToList() ?? new List<ProductPriceHistoryRow>();
+        }
+
+        /// <summary>Tutti i prodotti con dettagli per export (products + product_meta).</summary>
+        public async Task<IReadOnlyList<ProductDetailsRow>> ListAllDetailsAsync()
+        {
+            using var conn = _factory.Open();
+            const string sql = @"
+SELECT p.id AS Id, p.barcode AS Barcode, p.name AS Name, p.unitPrice AS UnitPrice,
+  COALESCE(m.article_code, '') AS ArticleCode, COALESCE(m.name2, '') AS Name2,
+  COALESCE(m.purchase_price, 0) AS PurchasePrice, COALESCE(m.stock_qty, 0) AS StockQty,
+  m.supplier_id AS SupplierId, COALESCE(m.supplier_name, '') AS SupplierName,
+  m.category_id AS CategoryId, COALESCE(m.category_name, '') AS CategoryName
+FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode
+ORDER BY p.barcode ASC";
+            var rows = await conn.QueryAsync<ProductDetailsRow>(sql).ConfigureAwait(false);
+            return rows?.ToList() ?? new List<ProductDetailsRow>();
+        }
+
+        /// <summary>Tutte le righe price_history per export.</summary>
+        public async Task<IReadOnlyList<ProductPriceHistoryRow>> ListAllPriceHistoryAsync()
+        {
+            using var conn = _factory.Open();
+            const string sql = @"
+SELECT barcode AS ProductBarcode, timestamp AS ChangedAt, type AS PriceType, old_price AS OldPrice, new_price AS NewPrice, source AS Source
+FROM product_price_history
+ORDER BY barcode, timestamp DESC";
+            var rows = await conn.QueryAsync<ProductPriceHistoryRow>(sql).ConfigureAwait(false);
+            return rows?.ToList() ?? new List<ProductPriceHistoryRow>();
+        }
+
+        /// <summary>Aggiorna prezzi prodotto e scrive storico nella stessa transazione. source es. MANUAL_EDIT, IMPORT.</summary>
+        public async Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source)
+        {
+            if (productId <= 0) throw new ArgumentException("Invalid product id.");
+            using var conn = _factory.Open();
+            var product = await conn.QueryFirstOrDefaultAsync<(string Barcode, long UnitPrice)>(@"
+SELECT p.barcode, p.unitPrice FROM products p WHERE p.id = @productId", new { productId }).ConfigureAwait(false);
+            if (product.Barcode == null) throw new InvalidOperationException("Prodotto non trovato.");
+
+            var purchaseCurrent = await conn.ExecuteScalarAsync<int?>(@"
+SELECT purchase_price FROM product_meta WHERE barcode = @barcode", new { barcode = product.Barcode }).ConfigureAwait(false);
+            var currentPurchase = purchaseCurrent ?? 0;
+            var currentRetail = (int)product.UnitPrice;
+
+            using var tx = conn.BeginTransaction();
+            try
+            {
+                var changedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+                if (currentPurchase != newPurchasePrice)
+                {
+                    await conn.ExecuteAsync(@"
+INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
+VALUES(@barcode, @changedAt, 'purchase', @oldPrice, @newPrice, @source)",
+                        new { barcode = product.Barcode, changedAt, oldPrice = currentPurchase, newPrice = newPurchasePrice, source }, tx).ConfigureAwait(false);
+                    var metaRows = await conn.ExecuteAsync(@"UPDATE product_meta SET purchase_price = @newPrice WHERE barcode = @barcode",
+                        new { barcode = product.Barcode, newPrice = newPurchasePrice }, tx).ConfigureAwait(false);
+                    if (metaRows == 0)
+                        await conn.ExecuteAsync(@"
+INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
+VALUES(@barcode, '', '', @newPrice, 0, 0, NULL, '', NULL, '', 0)",
+                            new { barcode = product.Barcode, newPrice = newPurchasePrice }, tx).ConfigureAwait(false);
+                }
+                if (currentRetail != newRetailPrice)
+                {
+                    await conn.ExecuteAsync(@"
+INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
+VALUES(@barcode, @changedAt, 'retail', @oldPrice, @newPrice, @source)",
+                        new { barcode = product.Barcode, changedAt, oldPrice = currentRetail, newPrice = newRetailPrice, source }, tx).ConfigureAwait(false);
+                    await conn.ExecuteAsync(@"UPDATE products SET unitPrice = @newPrice WHERE id = @productId",
+                        new { productId, newPrice = newRetailPrice }, tx).ConfigureAwait(false);
+                }
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
         }
 
         public async Task<bool> UpdateAsync(long productId, string name, long unitPriceMinor)

@@ -49,6 +49,8 @@
                     <Button MinWidth="90" Margin="8,0,0,0" MinHeight="36" Content="Duplica" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CopyNewCommand}"/>
                     <Button MinWidth="90" Margin="8,0,0,0" MinHeight="36" Content="Elimina" Style="{StaticResource OutlineButtonStyle}" Command="{Binding DeleteCommand}"/>
                     <Button MinWidth="100" Margin="8,0,0,0" MinHeight="36" Content="Import dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ImportCommand}"/>
+                    <Button MinWidth="100" Margin="8,0,0,0" MinHeight="36" Content="Esporta dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ExportDataCommand}"/>
+                    <Button MinWidth="110" Margin="8,0,0,0" MinHeight="36" Content="Storico prezzi" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenPriceHistoryCommand}"/>
                 </StackPanel>
 
                 <!-- Blocco filtri: fornitore + cerca (categoria solo a sinistra) -->
