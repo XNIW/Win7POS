@@ -35,6 +35,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
             QtyBox.Focus();
         }
 
+        private void DoubleZero_Click(object sender, RoutedEventArgs e)
+        {
+            var old = QtyBox.Text ?? string.Empty;
+            if (old == "0")
+                old = string.Empty;
+            QtyBox.Text = old + "00";
+            QtyBox.CaretIndex = QtyBox.Text.Length;
+            QtyBox.Focus();
+        }
+
         private void Backspace_Click(object sender, RoutedEventArgs e)
         {
             var text = QtyBox.Text ?? string.Empty;

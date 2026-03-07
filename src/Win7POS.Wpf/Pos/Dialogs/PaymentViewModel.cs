@@ -33,6 +33,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private int _nextBoletaNumber;
         private string _fiscalPreviewText = "";
         private string _fiscalStatus = "";
+        private bool _autoPrintPdfSii;
 
         public PaymentViewModel(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null, Func<string, string, Task> printFiscalToThermal = null)
         {
@@ -93,6 +94,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             get => _shouldPrint;
             set { _shouldPrint = value; OnPropertyChanged(); }
+        }
+
+        public bool AutoPrintPdfSii
+        {
+            get => _autoPrintPdfSii;
+            set { _autoPrintPdfSii = value; OnPropertyChanged(); }
         }
 
         public string ReceiptPreviewText
@@ -297,6 +304,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 FiscalStatus = "Errore: " + ex.Message;
             }
+        }
+
+        /// <summary>Se AutoPrintPdfSii è attivo, stampa il PDF SII (stessa logica di Stampa PDF). Da chiamare dopo conferma pagamento.</summary>
+        public async Task TriggerAutoPrintPdfIfEnabledAsync()
+        {
+            if (!_autoPrintPdfSii) return;
+            await StampaPdfAsync().ConfigureAwait(true);
         }
 
         /// <summary>Genera PDF e invia il testo fiscale alla stampante termica (stessa dello scontrino). File PDF eliminato dopo 15s.</summary>

@@ -114,7 +114,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void Digit(object digit)
         {
             var d = digit as string;
-            if (string.IsNullOrEmpty(d) || d.Length != 1) return;
+            if (string.IsNullOrEmpty(d)) return;
+            if (d == "00")
+            {
+                if (ValueText == "0") ValueText = "00";
+                else ValueText += "00";
+                return;
+            }
+            if (d.Length != 1) return;
             var c = d[0];
             if (c >= '0' && c <= '9')
             {

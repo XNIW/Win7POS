@@ -1,7 +1,7 @@
-<Window x:Class="Win7POS.Wpf.Pos.Dialogs.ChangeQuantityDialog"
+<Window x:Class="Win7POS.Wpf.Pos.Dialogs.BoletaNumberDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Modifica quantità"
+        Title="Numero Boleta"
         Width="380"
         SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
@@ -23,11 +23,11 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock x:Name="ProductNameText" Grid.Row="0" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12"/>
-        <TextBlock Grid.Row="1" Text="Quantità" Margin="0,0,0,6"/>
-        <TextBox x:Name="QtyBox" Grid.Row="2" MinHeight="52" FontSize="24" Margin="0,0,0,16"
+        <TextBlock Grid.Row="0" Text="Numero Boleta" FontWeight="SemiBold" Margin="0,0,0,12"/>
+        <TextBlock Grid.Row="1" Text="Boleta N°" Margin="0,0,0,6"/>
+        <TextBox x:Name="BoletaBox" Grid.Row="2" MinHeight="52" FontSize="24" Margin="0,0,0,16"
                  Style="{StaticResource ModernTextBoxStyle}"
-                 KeyDown="QtyBox_KeyDown"/>
+                 KeyDown="BoletaBox_KeyDown"/>
         <UniformGrid Grid.Row="3" Rows="4" Columns="3" Margin="0,0,0,16">
             <Button Content="7" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
             <Button Content="8" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>

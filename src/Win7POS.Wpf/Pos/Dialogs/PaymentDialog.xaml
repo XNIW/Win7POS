@@ -45,52 +45,50 @@
                                    TextWrapping="NoWrap" VerticalAlignment="Top"/>
                     </StackPanel>
                 </ScrollViewer>
-                <Border Grid.Row="2"
-                        BorderBrush="{StaticResource BorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="6"
-                        Margin="0,10,0,0"
-                        Padding="10"
-                        Background="{StaticResource BackgroundLightBrush}">
+                <GroupBox Grid.Row="2" Header="Sezione PDF" Margin="0,10,0,0" Padding="10"
+                          BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="180"/>
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
-                            <TextBlock Text="Stampa PDF" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                            <TextBlock Text="Boleta N°:" FontSize="11" Foreground="Gray" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                            <Button Content="-" MinWidth="32" MinHeight="28"
+                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Boleta N°" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <Button Grid.Column="1" Content="-" MinWidth="32" MinHeight="28"
                                     Style="{StaticResource SmallRoundButtonStyle}"
                                     Command="{Binding DecrementBoletaCommand}" VerticalAlignment="Center" Focusable="False"/>
-                            <TextBox Text="{Binding NextBoletaNumberText, UpdateSourceTrigger=PropertyChanged}"
-                                     Width="70" Margin="4,0" Padding="4,2"
-                                     Style="{StaticResource ModernTextBoxStyle}"
-                                     FontWeight="SemiBold" FontSize="12"
-                                     VerticalAlignment="Center" VerticalContentAlignment="Center"/>
-                            <Button Content="+" MinWidth="32" MinHeight="28"
+                            <Button x:Name="BoletaNumberButton" Grid.Column="2" MinWidth="70" Margin="4,0" Padding="6,4"
+                                    Content="{Binding NextBoletaNumberText, UpdateSourceTrigger=PropertyChanged}"
+                                    FontWeight="SemiBold" FontSize="12" Cursor="Hand"
+                                    Click="BoletaNumberButton_Click" Focusable="False"/>
+                            <Button Grid.Column="3" Content="+" MinWidth="32" MinHeight="28"
                                     Style="{StaticResource SmallRoundButtonStyle}"
                                     Command="{Binding IncrementBoletaCommand}" VerticalAlignment="Center" Focusable="False"/>
+                        </Grid>
+                        <StackPanel Grid.Row="1">
+                            <TextBlock Text="{Binding FiscalStatus, Mode=OneWay}" Foreground="Gray" FontSize="10" Margin="0,0,0,4"/>
+                            <Image x:Name="SiiQrImage" Width="120" Height="40" Stretch="Uniform" HorizontalAlignment="Center" Visibility="Collapsed"/>
                         </StackPanel>
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,6">
-                            <StackPanel>
-                                <TextBlock Text="{Binding FiscalHeaderText, Mode=OneWay}" FontFamily="Courier New" FontSize="9" TextWrapping="NoWrap" Margin="0,0,0,2"/>
-                                <Image x:Name="SiiQrImage"
-                                       Margin="0,12,0,6"
-                                       Width="220" Height="70"
-                                       Stretch="Uniform"
-                                       HorizontalAlignment="Center"/>
-                                <TextBlock Text="{Binding FiscalFooterText, Mode=OneWay}" FontFamily="Courier New" FontSize="9" TextWrapping="NoWrap"/>
-                            </StackPanel>
-                        </ScrollViewer>
-                        <TextBlock Grid.Row="2" Text="{Binding FiscalStatus, Mode=OneWay}" Foreground="Gray" FontSize="10" Margin="0,0,0,6"/>
-                        <Button Grid.Row="3" Content="Stampa PDF" MinWidth="120" MinHeight="40"
-                                Style="{StaticResource PrimaryButtonStyle}"
-                                Command="{Binding PrintPdfCommand}"/>
+                        <Grid Grid.Row="2">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Content="Stampa PDF" MinWidth="120" MinHeight="40"
+                                    Style="{StaticResource PrimaryButtonStyle}"
+                                    Command="{Binding PrintPdfCommand}"/>
+                            <CheckBox Grid.Column="1" Content="Stampa automatica PDF SII" IsChecked="{Binding AutoPrintPdfSii, Mode=TwoWay}"
+                                      VerticalAlignment="Center" Margin="16,0,0,0"/>
+                        </Grid>
                     </Grid>
-                </Border>
+                </GroupBox>
             </Grid>
         </Border>
 

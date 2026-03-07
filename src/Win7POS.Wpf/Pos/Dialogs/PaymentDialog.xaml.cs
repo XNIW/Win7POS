@@ -97,6 +97,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
+        private void BoletaNumberButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (ViewModel == null) return;
+            if (BoletaNumberDialog.ShowDialog(Owner ?? Application.Current?.MainWindow, ViewModel.NextBoletaNumber, out var result))
+                ViewModel.NextBoletaNumber = result;
+        }
+
         private void OnRequestClose(bool ok)
         {
             void SetResult()

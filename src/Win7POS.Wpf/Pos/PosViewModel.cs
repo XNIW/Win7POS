@@ -570,6 +570,8 @@ namespace Win7POS.Wpf.Pos
                             MessageBoxImage.Warning);
                     }
                 }
+                if (vm.AutoPrintPdfSii)
+                    await vm.TriggerAutoPrintPdfIfEnabledAsync().ConfigureAwait(true);
                 await _service.SetFiscalBoletaNumberAsync(vm.NextBoletaNumber).ConfigureAwait(true);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }

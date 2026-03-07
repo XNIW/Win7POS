@@ -33,10 +33,9 @@
             </Style.Triggers>
         </Style>
         <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
-            <Setter Property="MinHeight" Value="56"/>
-            <Setter Property="MinWidth" Value="110"/>
-            <Setter Property="Margin" Value="0,0,10,10"/>
-            <Setter Property="FontSize" Value="24"/>
+            <Setter Property="Height" Value="68"/>
+            <Setter Property="Margin" Value="6"/>
+            <Setter Property="FontSize" Value="22"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
     </Window.Resources>
@@ -71,39 +70,36 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <Button Grid.Row="0" Grid.Column="0" Content="7" Style="{StaticResource KeypadBtn}"
+            <UniformGrid Grid.Row="0" Rows="4" Columns="3">
+                <Button Content="7" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="7"/>
-            <Button Grid.Row="0" Grid.Column="1" Content="8" Style="{StaticResource KeypadBtn}"
+            <Button Content="8" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="8"/>
-            <Button Grid.Row="0" Grid.Column="2" Content="9" Style="{StaticResource KeypadBtn}"
+            <Button Content="9" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="9"/>
-            <Button Grid.Row="1" Grid.Column="0" Content="4" Style="{StaticResource KeypadBtn}"
+            <Button Content="4" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="4"/>
-            <Button Grid.Row="1" Grid.Column="1" Content="5" Style="{StaticResource KeypadBtn}"
+            <Button Content="5" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="5"/>
-            <Button Grid.Row="1" Grid.Column="2" Content="6" Style="{StaticResource KeypadBtn}"
+            <Button Content="6" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="6"/>
-            <Button Grid.Row="2" Grid.Column="0" Content="1" Style="{StaticResource KeypadBtn}"
+            <Button Content="1" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="1"/>
-            <Button Grid.Row="2" Grid.Column="1" Content="2" Style="{StaticResource KeypadBtn}"
+            <Button Content="2" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="2"/>
-            <Button Grid.Row="2" Grid.Column="2" Content="3" Style="{StaticResource KeypadBtn}"
+            <Button Content="3" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="3"/>
-            <Button Grid.Row="3" Grid.Column="0" Content="0" Style="{StaticResource KeypadBtn}"
+            <Button Content="0" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="0"/>
-            <Button Grid.Row="3" Grid.Column="1" Content="." Style="{StaticResource KeypadBtn}"
+            <Button Content="00" Style="{StaticResource KeypadBtn}"
+                    Command="{Binding DigitCommand}" CommandParameter="00"/>
+            <Button Content="⌫" Style="{StaticResource KeypadBtn}"
+                    Command="{Binding BackspaceCommand}"/>
+            </UniformGrid>
+            <Button Grid.Row="1" Content="." Style="{StaticResource KeypadBtn}" Margin="6,6,0,0" HorizontalAlignment="Left"
                     Command="{Binding DigitCommand}" CommandParameter=","
                     Visibility="{Binding IsAmountMode, Converter={StaticResource BoolToVis}}"/>
-            <Button Grid.Row="3" Grid.Column="2" Content="⌫ Back" Style="{StaticResource KeypadBtn}"
-                    Command="{Binding BackspaceCommand}"/>
         </Grid>
 
         <Grid Grid.Row="4">

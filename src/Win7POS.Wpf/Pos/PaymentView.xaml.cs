@@ -95,5 +95,14 @@ namespace Win7POS.Wpf.Pos
                 e.Handled = true;
             }
         }
+
+        private void BoletaNumberButton_Click(object sender, RoutedEventArgs e)
+        {
+            var vm = ViewModel;
+            if (vm == null) return;
+            var owner = Window.GetWindow(this) ?? Application.Current?.MainWindow;
+            if (BoletaNumberDialog.ShowDialog(owner, vm.NextBoletaNumber, out var result))
+                vm.NextBoletaNumber = result;
+        }
     }
 }
