@@ -56,10 +56,27 @@
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource CartRowStyle}">
                         <Setter Property="Focusable" Value="False"/>
+                        <Setter Property="BorderThickness" Value="0"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <EventSetter Event="PreviewMouseLeftButtonDown" Handler="CartRow_PreviewMouseLeftButtonDown"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding (ItemsControl.AlternationIndex), RelativeSource={RelativeSource Self}}" Value="1">
                                 <Setter Property="Background" Value="#F8F5FA"/>
                             </DataTrigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter Property="Background" Value="#E9DDF4"/>
+                                <Setter Property="BorderBrush" Value="#7B4FA3"/>
+                                <Setter Property="BorderThickness" Value="4,0,0,0"/>
+                            </Trigger>
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                    <Condition Binding="{Binding (Selector.IsSelectionActive), RelativeSource={RelativeSource AncestorType=ListBox}}" Value="False"/>
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Background" Value="#E9DDF4"/>
+                                <Setter Property="BorderBrush" Value="#7B4FA3"/>
+                                <Setter Property="BorderThickness" Value="4,0,0,0"/>
+                            </MultiDataTrigger>
                         </Style.Triggers>
                     </Style>
                 </ListBox.ItemContainerStyle>
@@ -175,10 +192,15 @@
                 <TextBlock Text="Codice a barre" FontSize="12" Foreground="#6B5B73" Margin="0,0,0,6"/>
                 <TextBox x:Name="BarcodeBox"
                          MinHeight="40"
-                         Margin="0,0,0,14"
+                         Margin="0,0,0,6"
                          Style="{StaticResource ModernTextBoxStyle}"
                          Text="{Binding BarcodeInput, UpdateSourceTrigger=PropertyChanged}"
                          KeyDown="BarcodeBox_KeyDown"/>
+                <TextBlock Text="{Binding PendingInputQuantityDisplay}"
+                           Margin="0,0,0,8"
+                           FontSize="11"
+                           Foreground="#7B4FA3"
+                           FontWeight="SemiBold"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Add" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding AddBarcodeCommand}"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Sconto" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenDiscountCommand}"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Modifica" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenEditProductCommand}"/>

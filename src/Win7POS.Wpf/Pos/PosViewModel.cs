@@ -36,6 +36,7 @@ namespace Win7POS.Wpf.Pos
 
         private PosCartLineRow _selectedCartItem;
         private RecentSaleRow _selectedRecentSale;
+        private int? _pendingInputQuantity;
 
         public ObservableCollection<PosCartLineRow> CartItems { get; } = new ObservableCollection<PosCartLineRow>();
         public ObservableCollection<RecentSaleRow> RecentSales { get; } = new ObservableCollection<RecentSaleRow>();
@@ -106,6 +107,15 @@ namespace Win7POS.Wpf.Pos
             set { _selectedRecentSale = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
+        public int? PendingInputQuantity
+        {
+            get => _pendingInputQuantity;
+            set { _pendingInputQuantity = value; OnPropertyChanged(); OnPropertyChanged(nameof(PendingInputQuantityDisplay)); }
+        }
+
+        public string PendingInputQuantityDisplay =>
+            PendingInputQuantity.HasValue ? "Q.tà pronta: " + PendingInputQuantity.Value : string.Empty;
+
         public ICommand AddBarcodeCommand { get; }
         public ICommand PayCommand { get; }
         public ICommand ReceiptPreviewCommand { get; }
@@ -166,7 +176,7 @@ namespace Win7POS.Wpf.Pos
             OpenShopSettingsCommand = new AsyncRelayCommand(OpenShopSettingsAsync, _ => !IsBusy, _logger);
             OpenDiscountCommand = new RelayCommand(_ => OpenDiscount(), _ => !IsBusy && (SelectedCartItem != null || CartItems.Count > 0));
             OpenEditProductCommand = new RelayCommand(OpenEditProductExecute, OpenEditProductCanExecute);
-            OpenChangeQuantityCommand = new RelayCommand(_ => OpenChangeQuantity(), _ => !IsBusy && SelectedCartItem != null && SelectedCartItem.IsEditable);
+            OpenChangeQuantityCommand = new RelayCommand(_ => OpenChangeQuantity(), _ => !IsBusy && SelectedCartItem != null && !SelectedCartItem.IsDiscountLine);
             SuspendCartCommand = new AsyncRelayCommand(SuspendCartAsync, _ => !IsBusy && CartItems.Count > 0, _logger);
             RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy, _logger);
             StatusMessage = "POS pronto.";
@@ -238,6 +248,8 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
+            var inputQty = PendingInputQuantity.GetValueOrDefault(1);
+
             if (TryParseQuantityPrefix(input, out var qty, out var barcodePart))
             {
                 IsBusy = true;
@@ -247,6 +259,7 @@ namespace Win7POS.Wpf.Pos
                     var snapshot = await _service.SetQtyAsync(barcodePart, qty).ConfigureAwait(true);
                     ApplySnapshot(snapshot, barcodePart);
                     StatusMessage = "Aggiunto: " + barcodePart + " x " + qty;
+                    PendingInputQuantity = null;
                 }
                 catch (Exception ex)
                 {
@@ -255,6 +268,7 @@ namespace Win7POS.Wpf.Pos
                 }
                 finally
                 {
+                    PendingInputQuantity = null;
                     BarcodeInput = string.Empty;
                     IsBusy = false;
                     RequestFocusBarcode();
@@ -268,8 +282,11 @@ namespace Win7POS.Wpf.Pos
                 try
                 {
                     var snapshot = await _service.AddManualPriceAsync(priceMinor).ConfigureAwait(true);
+                    if (PendingInputQuantity.HasValue && inputQty > 1)
+                        snapshot = await _service.SetLastAddedQtyAsync(inputQty).ConfigureAwait(true);
                     ApplySnapshot(snapshot);
                     StatusMessage = "Aggiunto (senza codice): " + MoneyClp.Format(priceMinor);
+                    PendingInputQuantity = null;
                     return;
                 }
                 catch (PosException ex) when (ex.Code == PosErrorCode.InvalidPrice)
@@ -289,8 +306,11 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
+                if (PendingInputQuantity.HasValue && inputQty > 1)
+                    snapshot = await _service.SetLastAddedQtyAsync(inputQty).ConfigureAwait(true);
                 ApplySnapshot(snapshot, input);
                 StatusMessage = "Prodotto aggiunto: " + input;
+                PendingInputQuantity = null;
             }
             catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
             {
@@ -305,6 +325,8 @@ namespace Win7POS.Wpf.Pos
                     try
                     {
                         var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
+                        if (PendingInputQuantity.HasValue && inputQty > 1)
+                            snapshot = await _service.SetLastAddedQtyAsync(inputQty).ConfigureAwait(true);
                         ApplySnapshot(snapshot, input);
                         StatusMessage = "Prodotto creato e aggiunto: " + input;
                     }
@@ -326,10 +348,23 @@ namespace Win7POS.Wpf.Pos
             }
             finally
             {
+                PendingInputQuantity = null;
                 BarcodeInput = string.Empty;
                 IsBusy = false;
                 RequestFocusBarcode();
             }
+        }
+
+        /// <summary>Se il campo barcode contiene solo un numero positivo, lo memorizza come quantità pronta e svuota il campo. Ritorna true se gestito.</summary>
+        public bool TryArmPendingQuantityFromBarcodeInput()
+        {
+            var input = (BarcodeInput ?? string.Empty).Trim();
+            if (!int.TryParse(input, out var qty) || qty <= 0)
+                return false;
+            PendingInputQuantity = qty;
+            BarcodeInput = string.Empty;
+            StatusMessage = "Quantità pronta: " + qty;
+            return true;
         }
 
         private static bool TryParseQuantityPrefix(string input, out int qty, out string barcodePart)
@@ -1194,7 +1229,7 @@ namespace Win7POS.Wpf.Pos
 
         private void OpenChangeQuantity()
         {
-            if (SelectedCartItem == null || !SelectedCartItem.IsEditable) return;
+            if (SelectedCartItem == null || SelectedCartItem.IsDiscountLine) return;
             var dlg = new Dialogs.ChangeQuantityDialog(SelectedCartItem.Name ?? "", SelectedCartItem.Quantity)
             {
                 Owner = Application.Current?.MainWindow
@@ -1209,18 +1244,9 @@ namespace Win7POS.Wpf.Pos
             IsBusy = true;
             try
             {
-                if (qty <= 0)
-                {
-                    var snapshot = await _service.RemoveLineAsync(SelectedCartItem.Barcode).ConfigureAwait(true);
-                    ApplySnapshot(snapshot);
-                    StatusMessage = "Riga rimossa.";
-                }
-                else
-                {
-                    var snapshot = await _service.SetQtyAsync(SelectedCartItem.Barcode, qty).ConfigureAwait(true);
-                    ApplySnapshot(snapshot);
-                    StatusMessage = "Quantità aggiornata: " + qty;
-                }
+                var snapshot = await _service.SetQtyByLineAsync(SelectedCartItem.LineKey, qty).ConfigureAwait(true);
+                ApplySnapshot(snapshot);
+                StatusMessage = qty <= 0 ? "Riga rimossa." : "Quantità aggiornata: " + qty;
                 RequestFocusBarcode();
             }
             catch (Exception ex)
@@ -1302,6 +1328,7 @@ namespace Win7POS.Wpf.Pos
             {
                 CartItems.Add(new PosCartLineRow
                 {
+                    LineKey = item.LineKey ?? string.Empty,
                     Barcode = item.Barcode,
                     Name = item.Name,
                     Quantity = item.Quantity,
@@ -1401,6 +1428,7 @@ namespace Win7POS.Wpf.Pos
 
         public sealed class PosCartLineRow
         {
+            public string LineKey { get; set; } = string.Empty;
             public string Barcode { get; set; } = string.Empty;
             public string Name { get; set; } = string.Empty;
             public int Quantity { get; set; }

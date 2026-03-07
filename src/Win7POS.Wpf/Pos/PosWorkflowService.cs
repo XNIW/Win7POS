@@ -831,6 +831,55 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        /// <summary>Imposta la quantità della riga identificata da LineKey (indice nella lista). Funziona anche per righe manuali.</summary>
+        public async Task<PosWorkflowSnapshot> SetQtyByLineAsync(string lineKey, int qty)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (string.IsNullOrEmpty(lineKey) || !int.TryParse(lineKey, out var index))
+                    return await BuildSnapshotAsync(string.Empty);
+                if (index < 0 || index >= _session.Lines.Count)
+                    return await BuildSnapshotAsync(string.Empty);
+                var line = _session.Lines[index];
+                if (DiscountKeys.IsDiscount(line.Barcode ?? ""))
+                    return await BuildSnapshotAsync(string.Empty);
+                _session.SetQuantity(line.Barcode ?? "", qty <= 0 ? 0 : qty);
+                return await BuildSnapshotAsync("Quantita aggiornata.");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "POS SetQtyByLine failed");
+                throw;
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        /// <summary>Imposta la quantità dell'ultima riga aggiunta (non sconto). Usare dopo AddByBarcodeAsync o AddManualPriceAsync.</summary>
+        public async Task<PosWorkflowSnapshot> SetLastAddedQtyAsync(int qty)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var last = _session.Lines.Where(x => !DiscountKeys.IsDiscount(x.Barcode ?? "")).LastOrDefault();
+                if (last == null) return await BuildSnapshotAsync(string.Empty);
+                _session.SetQuantity(last.Barcode ?? "", qty <= 0 ? 1 : qty);
+                return await BuildSnapshotAsync(string.Empty);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "POS SetLastAddedQty failed");
+                throw;
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         public async Task<PosWorkflowSnapshot> RemoveLineAsync(string barcode)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
@@ -1280,6 +1329,7 @@ namespace Win7POS.Wpf.Pos
         private async Task<PosWorkflowSnapshot> BuildSnapshotAsync(string status)
         {
             var lines = new List<PosCartLine>();
+            var index = 0;
             foreach (var x in _session.Lines)
             {
                 var stockQty = 0;
@@ -1290,6 +1340,7 @@ namespace Win7POS.Wpf.Pos
                 }
                 lines.Add(new PosCartLine
                 {
+                    LineKey = index.ToString(),
                     Barcode = x.Barcode ?? "",
                     Name = x.Name ?? "",
                     Quantity = x.Quantity,
@@ -1297,6 +1348,7 @@ namespace Win7POS.Wpf.Pos
                     LineTotal = x.LineTotal,
                     StockQty = stockQty
                 });
+                index++;
             }
 
             return new PosWorkflowSnapshot
@@ -1536,6 +1588,7 @@ SELECT last_insert_rowid();";
 
     public sealed class PosCartLine
     {
+        public string LineKey { get; set; } = string.Empty;
         public string Barcode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public int Quantity { get; set; }

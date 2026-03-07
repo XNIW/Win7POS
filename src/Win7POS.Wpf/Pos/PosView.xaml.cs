@@ -23,6 +23,20 @@ namespace Win7POS.Wpf.Pos
             (DataContext as PosViewModel)?.StartInitialize();
         }
 
+        private void CartRow_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            var item = sender as ListBoxItem;
+            if (item == null) return;
+
+            item.IsSelected = true;
+            item.Focusable = false;
+
+            Dispatcher.BeginInvoke((Action)(() =>
+            {
+                FocusBarcode();
+            }), DispatcherPriority.Input);
+        }
+
         private void CartListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             var vm = DataContext as PosViewModel;
@@ -100,6 +114,12 @@ namespace Win7POS.Wpf.Pos
 
             if (e.Key == Key.Add || e.Key == Key.OemPlus)
             {
+                if (!string.IsNullOrWhiteSpace(vm.BarcodeInput) && vm.TryArmPendingQuantityFromBarcodeInput())
+                {
+                    FocusBarcode();
+                    e.Handled = true;
+                    return;
+                }
                 ExecuteIfCan(vm.OpenChangeQuantityCommand);
                 FocusBarcode();
                 e.Handled = true;
@@ -117,12 +137,16 @@ namespace Win7POS.Wpf.Pos
         private void MoveSelection(int delta)
         {
             if (CartListBox == null || CartListBox.Items.Count == 0) return;
+
+            var count = CartListBox.Items.Count;
             var index = CartListBox.SelectedIndex;
-            if (index < 0) index = CartListBox.Items.Count - 1;
-            index += delta;
-            if (index < 0) index = 0;
-            if (index >= CartListBox.Items.Count) index = CartListBox.Items.Count - 1;
+
+            if (index < 0)
+                index = delta >= 0 ? -1 : 0;
+
+            index = (index + delta + count) % count;
             CartListBox.SelectedIndex = index;
+            CartListBox.ScrollIntoView(CartListBox.SelectedItem);
         }
 
         private void CartListBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
