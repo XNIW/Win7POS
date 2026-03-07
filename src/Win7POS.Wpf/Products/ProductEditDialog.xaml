@@ -2,13 +2,12 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="{Binding DialogTitle}"
-        Width="520"
-        Height="560"
-        MinHeight="560"
+        Width="660"
+        Height="540"
+        MinHeight="540"
         WindowStartupLocation="CenterOwner"
         ResizeMode="NoResize">
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <Grid Margin="16">
+    <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -68,11 +67,13 @@
                   DisplayMemberPath="Name"
                   SelectedItem="{Binding SelectedCategory}"/>
 
-        <!-- Stock: singola riga numerica compatta -->
+        <!-- Stock: editabile, valorizzato da source -->
         <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{Binding StockLabel, Mode=OneWay}"/>
-        <TextBox Grid.Row="6" Grid.Column="1" Margin="8,10,0,0" MinHeight="32" MaxHeight="32"
+        <TextBox Grid.Row="6" Grid.Column="1" Margin="8,10,0,0" MinHeight="32"
                  VerticalAlignment="Center"
                  Text="{Binding StockText, UpdateSourceTrigger=PropertyChanged}"
+                 IsReadOnly="False"
+                 IsEnabled="True"
                  Style="{StaticResource ModernTextBoxStyle}"/>
 
         <!-- Cod. articolo -->
@@ -87,13 +88,12 @@
                  Text="{Binding Name2, UpdateSourceTrigger=PropertyChanged}"
                  Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
 
-        <!-- Pulsanti -->
-        <StackPanel Grid.Row="10" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <!-- Pulsanti: riga fissa in fondo -->
+        <StackPanel Grid.Row="10" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button Content="Annulla" MinWidth="100" Height="36" Margin="0,0,10,0" IsCancel="True"
                     Style="{StaticResource OutlineButtonStyle}" Command="{Binding CancelCommand}"/>
             <Button Content="Salva" MinWidth="100" Height="36" IsDefault="True"
                     Style="{StaticResource PrimaryButtonStyle}" Command="{Binding ConfirmCommand}"/>
         </StackPanel>
     </Grid>
-    </ScrollViewer>
 </Window>

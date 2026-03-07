@@ -11,7 +11,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public RefundDialog(RefundViewModel vm)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.8, heightPercent: 0.75, minWidth: 780, minHeight: 550);
+            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.8, heightPercent: 0.8, minWidth: 800, minHeight: 580);
             ViewModel = vm;
             ViewModel.RequestClose += OnRequestClose;
             DataContext = vm;
@@ -20,13 +20,36 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            Keyboard.Focus(CashRefundBox);
-            CashRefundBox.SelectAll();
+            BarcodeScanBox.Focus();
+            BarcodeScanBox.SelectAll();
         }
 
         private void OnRequestClose(bool ok)
         {
             DialogResult = ok;
+        }
+
+        private void CardStorno_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            if (ViewModel.IsFullVoidEnabled)
+                ViewModel.IsFullVoid = true;
+        }
+
+        private void CardReso_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            ViewModel.IsPartialReturn = true;
+        }
+
+        private void OnConfirmClick(object sender, RoutedEventArgs e)
+        {
+            if (!ViewModel.IsValid) return;
+            if (ViewModel.IsFullVoid)
+            {
+                var msg = $"Confermi storno totale dello scontrino {ViewModel.SaleCodeText}?";
+                if (MessageBox.Show(this, msg, "Conferma storno", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                    return;
+            }
+            ViewModel.TryConfirm();
         }
 
         private void BarcodeScanBox_KeyDown(object sender, KeyEventArgs e)
@@ -46,9 +69,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (e.Key == Key.Enter)
             {
-                if (e.OriginalSource is System.Windows.Controls.TextBox tb && tb.Name == "BarcodeScanBox")
+                // Non confermare se il focus è nello scanner: lo scanner invia Enter finale e non deve confermare
+                var focused = Keyboard.FocusedElement as System.Windows.FrameworkElement;
+                if (focused != null && focused.Name == "BarcodeScanBox")
                     return;
-                if (ViewModel.TryConfirm())
+                if (ViewModel.IsValid && ViewModel.TryConfirm())
                     e.Handled = true;
                 return;
             }

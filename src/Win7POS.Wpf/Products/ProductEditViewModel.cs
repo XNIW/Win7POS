@@ -96,11 +96,12 @@ namespace Win7POS.Wpf.Products
                 Suppliers.Add(x);
         }
 
-        /// <summary>Imposta categoria/fornitore da source (Edit/Duplicate). Chiamare dopo SetCategories e SetSuppliers.</summary>
+        /// <summary>Imposta categoria/fornitore e campi da source (Edit/Duplicate). Chiamare dopo SetCategories e SetSuppliers.</summary>
         public void SetSelectionFromSource(ProductDetailsRow source)
         {
             if (source != null)
             {
+                StockText = source.StockQty.ToString();
                 SelectedCategory = Categories.FirstOrDefault(c => c.Id == (source.CategoryId ?? 0)) ?? Categories.FirstOrDefault(c => string.Equals(c.Name, source.CategoryName, StringComparison.OrdinalIgnoreCase)) ?? Categories.FirstOrDefault();
                 SelectedSupplier = Suppliers.FirstOrDefault(s => s.Id == (source.SupplierId ?? 0)) ?? Suppliers.FirstOrDefault(s => string.Equals(s.Name, source.SupplierName, StringComparison.OrdinalIgnoreCase)) ?? Suppliers.FirstOrDefault();
             }

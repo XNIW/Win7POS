@@ -2,43 +2,96 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Reso / Storno"
-        Width="860"
-        Height="620"
+        Width="880"
+        Height="640"
         WindowStartupLocation="CenterOwner"
         KeyDown="OnKeyDown">
-    <Grid Margin="12">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+    <Grid Margin="14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*" MinHeight="140"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="170"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
 
-        <TextBlock Grid.Row="0" Grid.Column="0" Text="Vendita:" VerticalAlignment="Center"/>
-        <TextBlock Grid.Row="0" Grid.Column="1">
-            <Run Text="{Binding SaleCodeText, Mode=OneWay}"/>
-            <Run Text="  "/>
-            <Run Text="{Binding TimeText, Mode=OneWay}"/>
-            <Run Text="  Totale: "/>
-            <Run Text="{Binding OriginalTotalText, Mode=OneWay}"/>
-        </TextBlock>
+        <!-- Header: fascia informativa -->
+        <Border Grid.Row="0" Background="{StaticResource BackgroundLightBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="12" CornerRadius="6" Margin="0,0,0,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Vendita:" FontWeight="SemiBold" Margin="0,0,6,4"/>
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SaleCodeText, Mode=OneWay}" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="Data/Ora:" FontWeight="SemiBold" Margin="12,0,6,4"/>
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding TimeText, Mode=OneWay}" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="0" Grid.Column="4" Text="Rimanente rimborsabile:" FontWeight="SemiBold" Margin="12,0,6,4"/>
+                <TextBlock Grid.Row="0" Grid.Column="5" Text="{Binding RemainingRefundableText, Mode=OneWay}" FontWeight="SemiBold" Foreground="#1565C0" Margin="0,0,0,4"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Totale originale:" FontWeight="SemiBold" Margin="0,0,6,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding OriginalTotalText, Mode=OneWay}" Margin="0,0,0,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="2" Text="Già rimborsato:" FontWeight="SemiBold" Margin="12,0,6,0"/>
+                <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding AlreadyRefundedText, Mode=OneWay}" Margin="0,0,0,0"/>
+            </Grid>
+        </Border>
 
-        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,10,0,8">
-            <RadioButton Content="Storno totale"
-                         Margin="0,0,16,0"
-                         IsChecked="{Binding IsFullVoid}"
-                         IsEnabled="{Binding IsFullVoidEnabled}"/>
-            <RadioButton Content="Reso parziale" IsChecked="{Binding IsPartialReturn}"/>
+        <!-- Selettore modalità: due card -->
+        <TextBlock Grid.Row="1" Text="Tipo operazione" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,6"/>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
+            <Border x:Name="CardStorno" Padding="14,10" Margin="0,0,10,0" CornerRadius="6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Cursor="Hand" MouseLeftButtonDown="CardStorno_Click">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsFullVoid}" Value="True">
+                                <Setter Property="Background" Value="#E8F5E9"/>
+                                <Setter Property="BorderBrush" Value="#4CAF50"/>
+                                <Setter Property="BorderThickness" Value="2"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <TextBlock Text="Storno totale" FontWeight="SemiBold" FontSize="12"/>
+                    <TextBlock Text="Annulla completamente la vendita" FontSize="11" Foreground="Gray" Margin="0,2,0,0"/>
+                </StackPanel>
+            </Border>
+            <Border x:Name="CardReso" Padding="14,10" Margin="0,0,0,0" CornerRadius="6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Cursor="Hand" MouseLeftButtonDown="CardReso_Click">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsPartialReturn}" Value="True">
+                                <Setter Property="Background" Value="#FFF3E0"/>
+                                <Setter Property="BorderBrush" Value="#FF9800"/>
+                                <Setter Property="BorderThickness" Value="2"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <TextBlock Text="Reso parziale" FontWeight="SemiBold" FontSize="12"/>
+                    <TextBlock Text="Restituisci solo alcuni articoli" FontSize="11" Foreground="Gray" Margin="0,2,0,0"/>
+                </StackPanel>
+            </Border>
         </StackPanel>
 
-        <Grid Grid.Row="2" Grid.ColumnSpan="2">
+        <!-- Scanner + messaggio -->
+        <Grid Grid.Row="3" Margin="0,0,0,8">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
@@ -47,71 +100,78 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Scansiona barcode articolo:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Grid.Column="0" Text="Scansiona barcode:" VerticalAlignment="Center" Margin="0,0,8,0"/>
                 <TextBox x:Name="BarcodeScanBox" Grid.Column="1"
                          Style="{StaticResource ModernTextBoxStyle}"
                          KeyDown="BarcodeScanBox_KeyDown"
                          ToolTip="Inserisci barcode e premi Invio per aggiungere 1 alla quantità da rendere"/>
             </Grid>
-            <DataGrid Grid.Row="1"
+            <TextBlock Grid.Row="1" Text="{Binding ScanMessage, Mode=OneWay}" Foreground="#C62828" FontSize="11" Margin="0,0,0,4"
+                       Visibility="{Binding HasScanMessage, Converter={StaticResource BoolToVis}}"/>
+            <DataGrid Grid.Row="2"
                       ItemsSource="{Binding Lines}"
                       AutoGenerateColumns="False"
                       CanUserAddRows="False"
                       CanUserDeleteRows="False"
-                      IsReadOnly="{Binding IsFullVoid}">
+                      IsReadOnly="{Binding IsFullVoid}"
+                      SelectionMode="Single"
+                      GridLinesVisibility="Horizontal"
+                      HorizontalGridLinesBrush="#EEE"
+                      RowBackground="White"
+                      AlternatingRowBackground="#FAFAFA">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" IsReadOnly="True" Width="2*"/>
-                    <DataGridTextColumn Header="Nome" Binding="{Binding Name}" IsReadOnly="True" Width="3*"/>
-                    <DataGridTextColumn Header="Venduti" Binding="{Binding SoldQty}" IsReadOnly="True" Width="70"/>
-                    <DataGridTextColumn Header="Già resi" Binding="{Binding RefundedQty}" IsReadOnly="True" Width="70"/>
-                    <DataGridTextColumn Header="Disponibili" Binding="{Binding RemainingQty}" IsReadOnly="True" Width="80"/>
-                    <DataGridTextColumn Header="Da rendere" Binding="{Binding QtyToRefund, UpdateSourceTrigger=PropertyChanged}" Width="80"/>
+                    <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" IsReadOnly="True" Width="110"/>
+                    <DataGridTextColumn Header="Nome" Binding="{Binding Name}" IsReadOnly="True" Width="*"/>
+                    <DataGridTextColumn Header="Venduti" Binding="{Binding SoldQty}" IsReadOnly="True" Width="60"/>
+                    <DataGridTextColumn Header="Già resi" Binding="{Binding RefundedQty}" IsReadOnly="True" Width="60"/>
+                    <DataGridTextColumn Header="Disp." Binding="{Binding RemainingQty}" IsReadOnly="True" Width="50"/>
+                    <DataGridTextColumn Header="Prezzo unit." Binding="{Binding UnitPriceDisplay}" IsReadOnly="True" Width="75"/>
+                    <DataGridTextColumn Header="Da rendere" Binding="{Binding QtyToRefund, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+                    <DataGridTextColumn Header="Totale reso" Binding="{Binding RefundLineTotalDisplay}" IsReadOnly="True" Width="80"/>
                 </DataGrid.Columns>
             </DataGrid>
         </Grid>
 
-        <Grid Grid.Row="3" Grid.ColumnSpan="2" Margin="0,10,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="170"/>
-                <ColumnDefinition Width="180"/>
-                <ColumnDefinition Width="170"/>
-                <ColumnDefinition Width="180"/>
-                <ColumnDefinition Width="170"/>
-                <ColumnDefinition Width="180"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Rimborso totale:"/>
-            <TextBlock Grid.Column="1" Text="{Binding RefundTotalText}" VerticalAlignment="Center"/>
-            <TextBlock Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center" Text="Motivo:"/>
-            <TextBox Grid.Column="3" Margin="8,0,0,0" Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
-            <TextBlock Grid.Column="4" Margin="12,0,0,0" VerticalAlignment="Center" Text="Rimanente rimborsabile:"/>
-            <TextBlock Grid.Column="5" Margin="8,0,0,0" Text="{Binding RemainingRefundableText}" VerticalAlignment="Center"/>
-        </Grid>
+        <!-- Blocco totali + motivo -->
+        <Border Grid.Row="4" Background="{StaticResource BackgroundLightBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" CornerRadius="6" Margin="0,0,0,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="100"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="100"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Rimborso selezionato:" Margin="0,0,6,0"/>
+                <TextBlock Grid.Column="1" Text="{Binding RefundTotalText}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="2" Margin="12,0,6,0" VerticalAlignment="Center" Text="Motivo:"/>
+                <TextBox Grid.Column="3" Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" VerticalAlignment="Center"/>
+            </Grid>
+        </Border>
 
-        <Grid Grid.Row="4" Grid.ColumnSpan="2" Margin="0,10,0,0">
+        <!-- Rimborso per metodo + stato + pulsanti -->
+        <Grid Grid.Row="5">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="120"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="120"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Contanti:"/>
-            <TextBox x:Name="CashRefundBox" Grid.Column="1" Margin="0,0,8,0" Text="{Binding CashRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
-            <Button Grid.Column="2" Content="Tutto contanti" Margin="0,0,12,0" Command="{Binding AllCashCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-            <TextBlock Grid.Column="3" VerticalAlignment="Center" Text="Carta:"/>
-            <TextBox Grid.Column="4" Margin="0,0,8,0" Text="{Binding CardRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
-            <Button Grid.Column="5" Content="Tutto carta" Margin="0,0,8,0" Command="{Binding AllCardCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-            <Button Grid.Column="6" Content="Azzera" Command="{Binding ZeroRefundCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-            <TextBlock Grid.Column="7" Margin="8,0,0,0" VerticalAlignment="Center" Foreground="DarkRed" Text="{Binding MissingText}"/>
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Contanti:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <TextBox x:Name="CashRefundBox" Width="90" Margin="0,0,12,0" Text="{Binding CashRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                <Button Content="Tutto contanti" Command="{Binding AllCashCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0"/>
+                <TextBlock Text="Carta:" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                <TextBox Width="90" Margin="0,0,12,0" Text="{Binding CardRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                <Button Content="Tutto carta" Command="{Binding AllCardCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0"/>
+                <Button Content="Dividi 50/50" Command="{Binding SplitHalfCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0" ToolTip="Metà contanti, metà carta"/>
+                <Button Content="Azzera" Command="{Binding ZeroRefundCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0"/>
+                <TextBlock VerticalAlignment="Center" Foreground="#C62828" Text="{Binding MissingText}" FontWeight="SemiBold"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button MinWidth="110" Height="36" Margin="0,0,8,0" Content="Conferma" Click="OnConfirmClick" Style="{StaticResource PrimaryButtonStyle}"
+                        IsEnabled="{Binding IsValid}"/>
+                <Button MinWidth="110" Height="36" Content="Annulla" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+            </StackPanel>
         </Grid>
-
-        <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-            <Button MinWidth="110" Height="36" Margin="0,0,8,0" Content="Conferma" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
-            <Button MinWidth="110" Height="36" Content="Annulla" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-        </StackPanel>
     </Grid>
 </Window>

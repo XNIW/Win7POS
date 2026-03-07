@@ -16,6 +16,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _cashRefund = "0";
         private string _cardRefund = "0";
         private string _reason = string.Empty;
+        private string _scanMessage = string.Empty;
 
         public RefundViewModel(RefundPreviewModel preview)
         {
@@ -47,6 +48,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             AllCashCommand = new RelayCommand(_ => { CashRefund = MoneyClp.Format(RefundTotalMinor); CardRefund = "0"; }, _ => RefundTotalMinor > 0);
             AllCardCommand = new RelayCommand(_ => { CardRefund = MoneyClp.Format(RefundTotalMinor); CashRefund = "0"; }, _ => RefundTotalMinor > 0);
             ZeroRefundCommand = new RelayCommand(_ => { CashRefund = "0"; CardRefund = "0"; }, _ => true);
+            SplitHalfCommand = new RelayCommand(_ =>
+            {
+                if (RefundTotalMinor <= 0) return;
+                var half = RefundTotalMinor / 2;
+                CashRefund = MoneyClp.Format(half);
+                CardRefund = MoneyClp.Format(RefundTotalMinor - half);
+            }, _ => RefundTotalMinor > 0);
         }
 
         public RefundPreviewModel Preview { get; }
@@ -124,6 +132,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string RefundTotalText => MoneyClp.Format(RefundTotalMinor);
         public long RemainingRefundableMinor => Preview.MaxRefundableMinor;
         public string RemainingRefundableText => MoneyClp.Format(RemainingRefundableMinor);
+        public long AlreadyRefundedMinor => Preview.OriginalTotalMinor - Preview.MaxRefundableMinor;
+        public string AlreadyRefundedText => MoneyClp.Format(AlreadyRefundedMinor);
         public int CashMinor => MoneyClp.Parse(CashRefund);
         public int CardMinor => MoneyClp.Parse(CardRefund);
         public bool IsValid => RefundTotalMinor > 0 && CashMinor >= 0 && CardMinor >= 0 && (long)CashMinor + (long)CardMinor == RefundTotalMinor;
@@ -138,26 +148,42 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
         public string MissingText => IsValid ? string.Empty : "Manca: " + MoneyClp.Format(MissingMinor);
 
+        public string ScanMessage
+        {
+            get => _scanMessage;
+            private set { _scanMessage = value ?? string.Empty; OnPropertyChanged(); OnPropertyChanged(nameof(HasScanMessage)); }
+        }
+
+        /// <summary>True se c'è un messaggio da mostrare (es. "Quantità massima già resa"). Usato per Visibility del TextBlock.</summary>
+        public bool HasScanMessage => !string.IsNullOrEmpty(_scanMessage);
+
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }
         public ICommand AllCashCommand { get; }
         public ICommand AllCardCommand { get; }
+        public ICommand SplitHalfCommand { get; }
         public ICommand ZeroRefundCommand { get; }
 
         public event Action<bool> RequestClose;
 
+        /// <summary>Scansiona barcode: se presente una volta incrementa Da rendere; se già al massimo mostra messaggio.</summary>
         public void ApplyBarcodeScan(string barcode)
         {
+            ScanMessage = string.Empty;
             if (string.IsNullOrWhiteSpace(barcode)) return;
             var trimmed = barcode.Trim();
-            foreach (var line in Lines)
+            var matches = Lines.Where(l => string.Equals(l.Barcode?.Trim(), trimmed, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (matches.Count == 0) return;
+            foreach (var line in matches)
             {
-                if (string.Equals(line.Barcode?.Trim(), trimmed, StringComparison.OrdinalIgnoreCase) && line.RemainingQty > 0)
+                if (line.RemainingQty <= 0) continue;
+                if (line.QtyToRefund >= line.RemainingQty)
                 {
-                    if (line.QtyToRefund < line.RemainingQty)
-                        line.QtyToRefund = line.QtyToRefund + 1;
+                    ScanMessage = "Quantità massima già resa.";
                     return;
                 }
+                line.QtyToRefund = line.QtyToRefund + 1;
+                return;
             }
         }
         public event PropertyChangedEventHandler PropertyChanged;
@@ -228,6 +254,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (ConfirmCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (AllCashCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (AllCardCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (SplitHalfCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
@@ -256,8 +283,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     if (_qtyToRefund == next) return;
                     _qtyToRefund = next;
                     OnPropertyChanged();
+                    OnPropertyChanged(nameof(RefundLineTotalMinor));
+                    OnPropertyChanged(nameof(RefundLineTotalDisplay));
                 }
             }
+
+            public long RefundLineTotalMinor => (long)QtyToRefund * UnitPriceMinor;
+            public string RefundLineTotalDisplay => MoneyClp.Format(RefundLineTotalMinor);
+            public string UnitPriceDisplay => MoneyClp.Format(UnitPriceMinor);
 
             public event PropertyChangedEventHandler PropertyChanged;
 

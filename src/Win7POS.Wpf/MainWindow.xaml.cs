@@ -43,15 +43,9 @@ namespace Win7POS.Wpf
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
-        private void OnMenuImportClick(object sender, RoutedEventArgs e)
-        {
-            MainTabControl.SelectedIndex = 1;
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
-        }
-
         private void OnMenuProdottiClick(object sender, RoutedEventArgs e)
         {
-            MainTabControl.SelectedIndex = 2;
+            MainTabControl.SelectedIndex = 1;
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
@@ -219,7 +213,6 @@ namespace Win7POS.Wpf
 
         private void ApplyCashierMode(bool enabled)
         {
-            ImportTab.IsEnabled = !enabled;
             ProductsTab.IsEnabled = !enabled;
         }
 
@@ -252,7 +245,7 @@ namespace Win7POS.Wpf
                 PaymentViewControl.DataContext = vm;
                 vm.RequestClose += OnClose;
 
-                MainTabControl.SelectedIndex = 3; // 0 POS, 1 Import, 2 Prodotti, 3 Pagamento
+                MainTabControl.SelectedIndex = 2; // 0 POS, 1 Prodotti, 2 Pagamento
             }));
 
             return tcs.Task;

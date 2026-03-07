@@ -33,5 +33,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
             CodeSearchBox.Focus();
             CodeSearchBox.SelectAll();
         }
+
+        private void OnWindowKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            if (e.Key == System.Windows.Input.Key.F5 && DataContext is SalesRegisterViewModel vm && vm.LoadCommand.CanExecute(null))
+            {
+                vm.LoadCommand.Execute(null);
+                e.Handled = true;
+            }
+        }
     }
 }

@@ -1,9 +1,9 @@
 <Window x:Class="Win7POS.Wpf.Pos.Dialogs.SalesRegisterDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Registro vendite" Width="920" Height="580"
+        Title="Registro vendite" Width="960" Height="600"
         WindowStartupLocation="CenterOwner" ResizeMode="CanResize"
-        MinWidth="780" MinHeight="480">
+        MinWidth="800" MinHeight="500" KeyDown="OnWindowKeyDown">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
     </Window.Resources>
@@ -11,7 +11,7 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" MinWidth="320"/>
             <ColumnDefinition Width="12"/>
-            <ColumnDefinition Width="340" MinWidth="280"/>
+            <ColumnDefinition Width="360" MinWidth="300"/>
         </Grid.ColumnDefinitions>
 
         <!-- Colonna sinistra: filtri + lista vendite -->
@@ -19,47 +19,48 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Text="Filtri" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8"/>
-            <StackPanel Grid.Row="1" Margin="0,0,0,8">
-                <WrapPanel>
-                    <RadioButton Content="Oggi" IsChecked="{Binding FilterOggi, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
-                    <RadioButton Content="Ieri" IsChecked="{Binding FilterIeri, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
-                    <RadioButton Content="7 giorni" IsChecked="{Binding Filter7G, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
-                    <RadioButton Content="Mese" IsChecked="{Binding FilterMese, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
+            <!-- Riga 1: preset filtri + Codice + Ricarica -->
+            <Grid Grid.Row="0" Margin="0,0,0,10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <RadioButton Content="Oggi" IsChecked="{Binding FilterOggi, Mode=TwoWay}" Margin="0,0,10,0" GroupName="Filter"/>
+                    <RadioButton Content="Ieri" IsChecked="{Binding FilterIeri, Mode=TwoWay}" Margin="0,0,10,0" GroupName="Filter"/>
+                    <RadioButton Content="7 giorni" IsChecked="{Binding Filter7G, Mode=TwoWay}" Margin="0,0,10,0" GroupName="Filter"/>
+                    <RadioButton Content="Mese" IsChecked="{Binding FilterMese, Mode=TwoWay}" Margin="0,0,10,0" GroupName="Filter"/>
                     <RadioButton Content="Periodo" IsChecked="{Binding FilterPeriodo, Mode=TwoWay}" Margin="0,0,12,0" GroupName="Filter"/>
-                    <Button Content="Ricarica" MinWidth="88" Command="{Binding LoadCommand}" Margin="8,0,0,0" Style="{StaticResource OutlineButtonStyle}"/>
-                </WrapPanel>
-                <Grid Margin="0,6,0,0"
-                      Visibility="{Binding IsRangeFilter, Converter={StaticResource BoolToVis}}">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="160"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="160"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Da:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <DatePicker Grid.Column="1" SelectedDate="{Binding RangeFrom}"/>
-                    <TextBlock Grid.Column="2" Text="A:" VerticalAlignment="Center" Margin="12,0,6,0"/>
-                    <DatePicker Grid.Column="3" SelectedDate="{Binding RangeTo}"/>
-                </Grid>
-            </StackPanel>
-            <Grid Grid.Row="2" Margin="0,0,0,8">
+                    <TextBlock Text="Codice:" VerticalAlignment="Center" Margin="8,0,4,0"/>
+                    <TextBox x:Name="CodeSearchBox" Width="120" Text="{Binding CodeSearch, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource ModernTextBoxStyle}"
+                             KeyDown="CodeSearchBox_KeyDown"
+                             ToolTip="Cerca per codice (Invio ricarica)"/>
+                </StackPanel>
+                <Button Grid.Column="1" Content="Ricarica" MinWidth="88" Command="{Binding LoadCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+            </Grid>
+
+            <!-- Dal / Al solo quando Periodo -->
+            <Grid Grid.Row="1" Margin="0,0,0,8"
+                  Visibility="{Binding IsRangeFilter, Converter={StaticResource BoolToVis}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="140"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="140"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Codice:" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBox x:Name="CodeSearchBox" Grid.Column="1" Text="{Binding CodeSearch, UpdateSourceTrigger=PropertyChanged}"
-                         Style="{StaticResource ModernTextBoxStyle}"
-                         KeyDown="CodeSearchBox_KeyDown"
-                         ToolTip="Cerca per codice vendita (Invio per cercare, lascia vuoto per usare il periodo)"/>
+                <TextBlock Grid.Column="0" Text="Dal:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <DatePicker Grid.Column="1" SelectedDate="{Binding RangeFrom}"/>
+                <TextBlock Grid.Column="2" Text="Al:" VerticalAlignment="Center" Margin="12,0,6,0"/>
+                <DatePicker Grid.Column="3" SelectedDate="{Binding RangeTo}"/>
             </Grid>
-            <ListBox Grid.Row="3" ItemsSource="{Binding SalesList}" SelectedItem="{Binding SelectedSale, Mode=TwoWay}"
+
+            <!-- Lista scontrini: codice in grassetto, data sotto, badge tipo, totale a destra -->
+            <ListBox Grid.Row="2" ItemsSource="{Binding SalesList}" SelectedItem="{Binding SelectedSale, Mode=TwoWay}"
                      BorderThickness="1" BorderBrush="{StaticResource BorderBrush}" Background="{StaticResource CardBgBrush}" Padding="0"
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      Margin="0,0,0,8">
@@ -94,26 +95,24 @@
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0">
                                     <WrapPanel>
-                                        <Border Background="{Binding BadgeBrush}" CornerRadius="3" Padding="6,2" Margin="0,0,6,4" VerticalAlignment="Center">
+                                        <Border Background="{Binding BadgeBrush}" CornerRadius="3" Padding="6,2" Margin="0,0,8,0" VerticalAlignment="Center">
                                             <TextBlock Text="{Binding KindText, Mode=OneWay}" Foreground="White" FontSize="10" FontWeight="SemiBold"/>
                                         </Border>
-                                        <TextBlock Text="{Binding SaleCode}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding SaleCode}" FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
                                         <TextBlock Text="{Binding VoidedText, Mode=OneWay}" Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="DarkRed"/>
                                     </WrapPanel>
-                                    <TextBlock FontSize="11" Opacity="0.75" Text="{Binding TimeText, Mode=OneWay}"/>
+                                    <TextBlock FontSize="11" Opacity="0.85" Text="{Binding TimeText, Mode=OneWay}" Margin="0,2,0,0"/>
                                 </StackPanel>
-                                <TextBlock Grid.Column="1" Text="{Binding TotalDisplay, Mode=OneWay}" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <TextBlock Grid.Column="1" Text="{Binding TotalDisplay, Mode=OneWay}" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="12"/>
                             </Grid>
                         </Border>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>
-            <StackPanel Grid.Row="4" Orientation="Horizontal">
-                <TextBlock Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="Gray" TextTrimming="CharacterEllipsis"/>
-            </StackPanel>
+            <TextBlock Grid.Row="3" Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="Gray" TextTrimming="CharacterEllipsis" FontSize="11"/>
         </Grid>
 
-        <!-- Colonna destra: dettagli + azioni -->
+        <!-- Colonna destra: 3 blocchi (Testata, Articoli, Azioni) -->
         <Border Grid.Column="2" Style="{StaticResource DialogPanelStyle}">
             <Grid>
                 <Grid.RowDefinitions>
@@ -124,12 +123,14 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Text="Dettaglio vendita" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,10"/>
+                <!-- Blocco 1: Testata vendita -->
+                <StackPanel Grid.Row="0" Margin="0,0,0,12">
+                    <TextBlock Text="Dettaglio vendita" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8"/>
+                    <TextBlock Text="{Binding DetailSummary, Mode=OneWay}" TextWrapping="Wrap" FontSize="12" Foreground="#333"/>
+                </StackPanel>
 
-                <TextBlock Grid.Row="1" Text="{Binding DetailSummary, Mode=OneWay}" TextWrapping="Wrap" Margin="0,0,0,10"
-                           FontSize="12" Foreground="#333"/>
-
-                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10">
+                <!-- Blocco 2: Articoli -->
+                <ScrollViewer Grid.Row="1" Grid.RowSpan="2" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10">
                     <ItemsControl ItemsSource="{Binding DetailLines}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
@@ -150,12 +151,16 @@
                     </ItemsControl>
                 </ScrollViewer>
 
-                <Border Grid.Row="3" Background="{StaticResource BackgroundLightBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Margin="0,0,0,10" CornerRadius="6">
-                    <ScrollViewer MaxHeight="120" VerticalScrollBarVisibility="Auto">
-                        <TextBlock Text="{Binding DetailReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
-                    </ScrollViewer>
-                </Border>
+                <!-- Anteprima scontrino collassabile -->
+                <Expander Grid.Row="3" Header="Anteprima scontrino" Margin="0,0,0,10" IsExpanded="False">
+                    <Border Background="{StaticResource BackgroundLightBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="8" CornerRadius="4">
+                        <ScrollViewer MaxHeight="100" VerticalScrollBarVisibility="Auto">
+                            <TextBlock Text="{Binding DetailReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="10" TextWrapping="NoWrap"/>
+                        </ScrollViewer>
+                    </Border>
+                </Expander>
 
+                <!-- Blocco 3: Azioni -->
                 <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
                     <Button Content="Stampa" MinWidth="90" Height="36" Margin="0,0,8,0" Command="{Binding PrintCommand}" Style="{StaticResource OutlineButtonStyle}"/>
                     <Button Content="Reso / Storno" MinWidth="120" Height="36" Command="{Binding RefundCommand}" Style="{StaticResource PrimaryButtonStyle}"/>

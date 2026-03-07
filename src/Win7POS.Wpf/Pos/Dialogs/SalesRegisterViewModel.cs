@@ -220,15 +220,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 foreach (var x in items)
                 {
                     var when = DateTimeOffset.FromUnixTimeMilliseconds(x.CreatedAtMs).ToLocalTime();
+                    var isVoided = x.VoidedBySaleId.HasValue;
+                    var kind = x.Kind;
+                    string kindText;
+                    if (isVoided) kindText = "Storno";
+                    else if (kind == (int)SaleKind.Refund) kindText = "Reso";
+                    else kindText = "Vendita";
                     SalesList.Add(new SaleRow
                     {
                         SaleId = x.SaleId,
                         SaleCode = x.SaleCode ?? "",
-                        Kind = x.Kind,
-                        KindText = x.Kind == (int)SaleKind.Refund ? "Reso" : "Vendita",
+                        Kind = kind,
+                        KindText = kindText,
                         Total = x.TotalMinor,
                         TimeText = when.ToString("yyyy-MM-dd HH:mm"),
-                        IsVoided = x.VoidedBySaleId.HasValue
+                        IsVoided = isVoided
                     });
                 }
 
@@ -344,7 +350,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public string TimeText { get; set; }
             public bool IsVoided { get; set; }
             public string VoidedText => IsVoided ? "Annullata" : "";
-            public string BadgeBrush => Kind == (int)SaleKind.Refund ? "#FF9800" : "#4CAF50";
+            /// <summary>Vendita verde, Reso arancione, Storno rosso.</summary>
+            public string BadgeBrush => IsVoided ? "#B71C1C" : (Kind == (int)SaleKind.Refund ? "#FF9800" : "#4CAF50");
         }
 
         public sealed class DetailLineRow
