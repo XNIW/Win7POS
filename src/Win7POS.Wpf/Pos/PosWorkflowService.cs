@@ -831,7 +831,9 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        /// <summary>Imposta la quantità della riga identificata da LineKey (indice nella lista). Funziona anche per righe manuali.</summary>
+        /// <summary>Imposta la quantità della riga identificata da LineKey (indice nella lista). Funziona anche per righe manuali.
+        /// Nota: LineKey = index è una patch veloce; la riga è ancora aggiornata tramite barcode interno (_session.SetQuantity(line.Barcode, qty)).
+        /// In futuro preferire una chiave riga stabile (es. id univoco) per evitare fragilità con barcode duplicati o riordini.</summary>
         public async Task<PosWorkflowSnapshot> SetQtyByLineAsync(string lineKey, int qty)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
@@ -850,28 +852,6 @@ namespace Win7POS.Wpf.Pos
             catch (Exception ex)
             {
                 _logger.LogError(ex, "POS SetQtyByLine failed");
-                throw;
-            }
-            finally
-            {
-                _gate.Release();
-            }
-        }
-
-        /// <summary>Imposta la quantità dell'ultima riga aggiunta (non sconto). Usare dopo AddByBarcodeAsync o AddManualPriceAsync.</summary>
-        public async Task<PosWorkflowSnapshot> SetLastAddedQtyAsync(int qty)
-        {
-            await _gate.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                var last = _session.Lines.Where(x => !DiscountKeys.IsDiscount(x.Barcode ?? "")).LastOrDefault();
-                if (last == null) return await BuildSnapshotAsync(string.Empty);
-                _session.SetQuantity(last.Barcode ?? "", qty <= 0 ? 1 : qty);
-                return await BuildSnapshotAsync(string.Empty);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "POS SetLastAddedQty failed");
                 throw;
             }
             finally
@@ -1330,6 +1310,7 @@ namespace Win7POS.Wpf.Pos
         {
             var lines = new List<PosCartLine>();
             var index = 0;
+            // LineKey = index: patch veloce; in futuro usare chiave riga stabile (id univoco)
             foreach (var x in _session.Lines)
             {
                 var stockQty = 0;

@@ -243,6 +243,7 @@ namespace Win7POS.Wpf.Pos
 
             if (await TryHandleQuantityInputAsync(input).ConfigureAwait(true))
             {
+                PendingInputQuantity = null;
                 BarcodeInput = string.Empty;
                 RequestFocusBarcode();
                 return;
@@ -283,10 +284,9 @@ namespace Win7POS.Wpf.Pos
                 {
                     var snapshot = await _service.AddManualPriceAsync(priceMinor).ConfigureAwait(true);
                     if (PendingInputQuantity.HasValue && inputQty > 1)
-                        snapshot = await _service.SetLastAddedQtyAsync(inputQty).ConfigureAwait(true);
+                        snapshot = await _service.SetQtyAsync(DiscountKeys.ManualPrefix + priceMinor, inputQty).ConfigureAwait(true);
                     ApplySnapshot(snapshot);
                     StatusMessage = "Aggiunto (senza codice): " + MoneyClp.Format(priceMinor);
-                    PendingInputQuantity = null;
                     return;
                 }
                 catch (PosException ex) when (ex.Code == PosErrorCode.InvalidPrice)
@@ -296,6 +296,7 @@ namespace Win7POS.Wpf.Pos
                 }
                 finally
                 {
+                    PendingInputQuantity = null;
                     BarcodeInput = string.Empty;
                     IsBusy = false;
                     RequestFocusBarcode();
@@ -307,10 +308,9 @@ namespace Win7POS.Wpf.Pos
             {
                 var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
                 if (PendingInputQuantity.HasValue && inputQty > 1)
-                    snapshot = await _service.SetLastAddedQtyAsync(inputQty).ConfigureAwait(true);
+                    snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
                 ApplySnapshot(snapshot, input);
                 StatusMessage = "Prodotto aggiunto: " + input;
-                PendingInputQuantity = null;
             }
             catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
             {
@@ -326,7 +326,7 @@ namespace Win7POS.Wpf.Pos
                     {
                         var snapshot = await _service.AddByBarcodeAsync(input).ConfigureAwait(true);
                         if (PendingInputQuantity.HasValue && inputQty > 1)
-                            snapshot = await _service.SetLastAddedQtyAsync(inputQty).ConfigureAwait(true);
+                            snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
                         ApplySnapshot(snapshot, input);
                         StatusMessage = "Prodotto creato e aggiunto: " + input;
                     }

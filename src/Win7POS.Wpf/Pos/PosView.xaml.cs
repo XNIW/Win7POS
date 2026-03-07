@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 
 namespace Win7POS.Wpf.Pos
@@ -31,10 +32,26 @@ namespace Win7POS.Wpf.Pos
             item.IsSelected = true;
             item.Focusable = false;
 
+            // Non rubare il focus se il click è su un pulsante della riga (+, -, ✕, modifica prezzo): lasciamo che il comando del pulsante venga eseguito.
+            if (IsClickFromButton(e))
+                return;
+
             Dispatcher.BeginInvoke((Action)(() =>
             {
                 FocusBarcode();
             }), DispatcherPriority.Input);
+        }
+
+        private static bool IsClickFromButton(MouseButtonEventArgs e)
+        {
+            var source = e.OriginalSource as DependencyObject;
+            while (source != null)
+            {
+                if (source is Button)
+                    return true;
+                source = VisualTreeHelper.GetParent(source);
+            }
+            return false;
         }
 
         private void CartListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
