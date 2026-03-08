@@ -1364,7 +1364,9 @@ namespace Win7POS.Wpf.Pos
                 {
                     var details = await _products.GetDetailsByBarcodeAsync(x.Barcode ?? "").ConfigureAwait(false);
                     if (details != null) stockQty = details.StockQty;
-                    // Sconto riga: cerca una riga sconto che riferisce questo barcode
+                }
+                if (!DiscountKeys.IsDiscount(x.Barcode ?? ""))
+                {
                     var discLine = _session.Lines.FirstOrDefault(d => DiscountKeys.IsLineDiscountFor(d.Barcode ?? "", x.Barcode ?? ""));
                     if (discLine != null)
                     {
