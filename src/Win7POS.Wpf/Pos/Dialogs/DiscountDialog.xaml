@@ -60,10 +60,15 @@
         <TextBlock Grid.Row="1" Text="{Binding ScopeText}" Margin="0,8,0,12"
                    FontSize="13" FontWeight="SemiBold"/>
 
-        <TextBox x:Name="ValueBox" Grid.Row="2" MinHeight="64" FontSize="28" Padding="16,8" Margin="0,0,0,12"
-                 Style="{StaticResource ModernTextBoxStyle}"
-                 Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
-                 IsReadOnly="True" HorizontalContentAlignment="Right" VerticalContentAlignment="Center"/>
+        <StackPanel Grid.Row="2" Margin="0,0,0,12">
+            <TextBox x:Name="ValueBox" MinHeight="64" FontSize="28" Padding="16,8" Margin="0,0,0,4"
+                     Style="{StaticResource ModernTextBoxStyle}"
+                     Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                     HorizontalContentAlignment="Right" VerticalContentAlignment="Center"/>
+            <TextBlock FontSize="11" Foreground="Gray" Margin="0,0,0,0"
+                       Text="Percentuale massima: 100"
+                       Visibility="{Binding IsPercentMode, Converter={StaticResource BoolToVis}}"/>
+        </StackPanel>
 
         <Grid Grid.Row="3" Margin="0,0,0,12">
             <Grid.RowDefinitions>

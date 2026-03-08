@@ -3,9 +3,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Chiusura cassa / Incasso giornaliero"
         WindowStartupLocation="CenterOwner"
-        SizeToContent="WidthAndHeight"
+        Width="1020"
+        Height="720"
         MinWidth="640"
         MinHeight="480"
+        MaxWidth="1200"
+        MaxHeight="800"
+        SizeToContent="Manual"
         ResizeMode="CanResize">
     <Border Padding="12">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
@@ -106,10 +110,10 @@
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Text="Scontrino chiusura cassa (stampabile)" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" MaxHeight="240"
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="240"
                                       BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Background="{StaticResource BackgroundLightBrush}">
                             <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}"
-                                       FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
+                                       FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"/>
                         </ScrollViewer>
                         <Button Grid.Row="2" Content="Stampa scontrino" MinWidth="120" Height="36" Margin="0,8,0,0"
                                 Command="{Binding PrintSummaryCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
@@ -118,9 +122,9 @@
                 <TabItem Header="Storico">
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" MinWidth="280"/>
+                            <ColumnDefinition Width="*" MinWidth="420"/>
                             <ColumnDefinition Width="8"/>
-                            <ColumnDefinition Width="200" MinWidth="160"/>
+                            <ColumnDefinition Width="180"/>
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -140,17 +144,18 @@
                                   IsReadOnly="True" AutoGenerateColumns="False" MinHeight="140" Margin="0,0,0,8"
                                   CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="Data" Binding="{Binding DateText}" Width="95"/>
-                                <DataGridTextColumn Header="N. scontrini" Binding="{Binding SalesCount}" Width="75"/>
-                                <DataGridTextColumn Header="Netto" Binding="{Binding NetDisplay}" Width="70"/>
-                                <DataGridTextColumn Header="Contanti" Binding="{Binding CashDisplay}" Width="70"/>
-                                <DataGridTextColumn Header="Carta" Binding="{Binding CardDisplay}" Width="70"/>
-                                <DataGridTextColumn Header="Rimborsi" Binding="{Binding RefundsDisplay}" Width="70"/>
+                                <DataGridTextColumn Header="Data" Binding="{Binding DateText}" Width="90"/>
+                                <DataGridTextColumn Header="Scontrini" Binding="{Binding SalesCount}" Width="70"/>
+                                <DataGridTextColumn Header="Totale" Binding="{Binding TotalDisplay}" Width="80"/>
+                                <DataGridTextColumn Header="Netto" Binding="{Binding NetDisplay}" Width="80"/>
+                                <DataGridTextColumn Header="Contanti" Binding="{Binding CashDisplay}" Width="75"/>
+                                <DataGridTextColumn Header="Carta" Binding="{Binding CardDisplay}" Width="75"/>
+                                <DataGridTextColumn Header="Rimborsi" Binding="{Binding RefundsDisplay}" Width="75"/>
                             </DataGrid.Columns>
                         </DataGrid>
                         <Border Grid.Row="2" Grid.Column="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Background="{StaticResource BackgroundLightBrush}" CornerRadius="6">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="10" TextWrapping="NoWrap"/>
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"/>
                             </ScrollViewer>
                         </Border>
                         <TextBlock Grid.Row="3" Grid.ColumnSpan="3" Text="{Binding Status, Mode=OneWay}" Foreground="Gray" TextWrapping="Wrap"/>

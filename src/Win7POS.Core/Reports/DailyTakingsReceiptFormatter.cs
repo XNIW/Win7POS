@@ -18,35 +18,27 @@ namespace Win7POS.Core.Reports
             var width = 42;
 
             var result = new List<string>();
-            AddCentered(result, width, shop.Name);
-            if (!string.IsNullOrWhiteSpace(shop.Address)) AddLine(result, width, shop.Address);
-            AddLine(result, width, new string('-', width));
             AddCentered(result, width, "CHIUSURA CASSA");
             AddLine(result, width, "Data: " + model.Date.ToString("yyyy-MM-dd", culture));
             AddLine(result, width, new string('-', width));
 
-            AddLeftRight(result, width, "Vendite", model.SalesCount.ToString(CultureInfo.InvariantCulture));
+            AddLeftRight(result, width, "N. vendite", model.SalesCount.ToString(CultureInfo.InvariantCulture));
             AddLeftRight(result, width, "Totale", FormatClp(model.TotalAmount));
             AddLeftRight(result, width, "Contanti", FormatClp(model.CashAmount));
             AddLeftRight(result, width, "Carta", FormatClp(model.CardAmount));
-            AddLeftRight(result, width, "Gross sales", FormatClp(model.GrossSalesAmount));
+            AddLeftRight(result, width, "Lorde", FormatClp(model.GrossSalesAmount));
             AddLeftRight(result, width, "Resi", FormatClp(model.RefundsAmount));
             AddLine(result, width, new string('-', width));
-            AddLeftRight(result, width, "NET", FormatClp(model.NetAmount));
+            AddLeftRight(result, width, "Netto", FormatClp(model.NetAmount));
             AddLine(result, width, new string('-', width));
-            AddCentered(result, width, string.IsNullOrWhiteSpace(shop.Footer) ? "Grazie" : shop.Footer);
+            AddCentered(result, width, string.IsNullOrWhiteSpace(shop.Footer) ? "Grazie" : shop.Footer.Trim());
 
             return result;
         }
 
-        private static string FormatClp(int pesos)
-        {
-            return pesos.ToString(CultureInfo.InvariantCulture);
-        }
-
         private static string FormatClp(long pesos)
         {
-            return pesos.ToString(CultureInfo.InvariantCulture);
+            return pesos.ToString("N0", CultureInfo.GetCultureInfo("es-CL"));
         }
 
         private static void AddCentered(List<string> lines, int width, string text)

@@ -3,9 +3,13 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Registro vendite"
         WindowStartupLocation="CenterOwner"
-        SizeToContent="WidthAndHeight"
-        MinWidth="800"
-        MinHeight="500"
+        Width="980"
+        Height="700"
+        MinWidth="900"
+        MinHeight="620"
+        MaxWidth="1024"
+        MaxHeight="740"
+        SizeToContent="Manual"
         ResizeMode="CanResize"
         KeyDown="OnWindowKeyDown">
     <Window.Resources>
@@ -17,7 +21,7 @@
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" MinWidth="320"/>
             <ColumnDefinition Width="12"/>
-            <ColumnDefinition Width="360" MinWidth="300"/>
+            <ColumnDefinition Width="340"/>
         </Grid.ColumnDefinitions>
 
         <!-- Colonna sinistra: filtri + lista vendite -->
@@ -160,8 +164,8 @@
                 <!-- Anteprima scontrino collassabile -->
                 <Expander Grid.Row="3" Header="Anteprima scontrino" Margin="0,0,0,10" IsExpanded="False">
                     <Border Background="{StaticResource BackgroundLightBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="8" CornerRadius="4">
-                        <ScrollViewer MaxHeight="100" VerticalScrollBarVisibility="Auto">
-                            <TextBlock Text="{Binding DetailReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="10" TextWrapping="NoWrap"/>
+                        <ScrollViewer MaxHeight="140" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <TextBlock Text="{Binding DetailReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"/>
                         </ScrollViewer>
                     </Border>
                 </Expander>

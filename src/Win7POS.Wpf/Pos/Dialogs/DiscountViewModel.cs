@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
@@ -72,7 +73,39 @@ namespace Win7POS.Wpf.Pos.Dialogs
             get => _valueText ?? "0";
             set
             {
-                _valueText = value ?? "0";
+                var incoming = value ?? "0";
+                var digits = new string(incoming.Where(char.IsDigit).ToArray());
+
+                if (string.IsNullOrEmpty(digits))
+                    digits = "0";
+
+                if (IsPercentMode)
+                {
+                    if (!int.TryParse(digits, out var n))
+                        n = 0;
+                    if (n < 0) n = 0;
+                    if (n > 100) n = 100;
+                    _valueText = n.ToString();
+                }
+                else
+                {
+                    var sep = System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
+                    var idx = incoming.IndexOf('.');
+                    if (idx < 0) idx = incoming.IndexOf(',');
+                    if (idx >= 0)
+                    {
+                        var left = new string(incoming.Where((c, i) => i < idx && char.IsDigit(c)).ToArray()).TrimStart('0');
+                        var right = new string(incoming.Where((c, i) => i > idx && char.IsDigit(c)).ToArray());
+                        if (string.IsNullOrEmpty(left)) left = "0";
+                        _valueText = left + sep + right;
+                    }
+                    else
+                    {
+                        _valueText = digits.TrimStart('0');
+                        if (string.IsNullOrEmpty(_valueText)) _valueText = "0";
+                    }
+                }
+
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(ValueInt));
                 OnPropertyChanged(nameof(CanConfirm));
