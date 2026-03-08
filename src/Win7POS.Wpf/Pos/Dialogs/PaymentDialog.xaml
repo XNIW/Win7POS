@@ -6,9 +6,9 @@
         mc:Ignorable="d"
         Title="Pagamento"
         WindowStartupLocation="CenterOwner"
-        SizeToContent="WidthAndHeight"
-        MinWidth="820"
-        MinHeight="520"
+        SizeToContent="Manual"
+        MinWidth="1100"
+        MinHeight="650"
         ResizeMode="CanResize"
         Loaded="OnLoaded"
         KeyDown="OnKeyDown">
@@ -18,39 +18,39 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="260"/>
-            <ColumnDefinition Width="280"/>
-            <ColumnDefinition Width="300"/>
+            <ColumnDefinition Width="230"/>
+            <ColumnDefinition Width="210"/>
+            <ColumnDefinition Width="210"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Col 0: Scontrino (receipt preview, 80mm style) + Stampa PDF sotto -->
-        <Border Grid.Row="0" Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,6,0" Padding="12">
+        <!-- Col 0: Scontrino (receipt preview) + Stampa PDF sotto, compatti -->
+        <Border Grid.Row="0" Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,6,0" Padding="8">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <Grid Grid.Row="0" Margin="0,0,0,6">
+                <Grid Grid.Row="0" Margin="0,0,0,4">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Scontrino" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <CheckBox Grid.Column="1" Content="Stampa" IsChecked="{Binding ShouldPrint}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="0" Text="Scontrino" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+                    <CheckBox Grid.Column="1" Content="Stampa" IsChecked="{Binding ShouldPrint}" VerticalAlignment="Center" Margin="8,0,0,0"/>
                 </Grid>
-                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,6">
                     <StackPanel>
                         <TextBlock Text="{Binding ReceiptPreviewFirstLine, Mode=OneWay}"
-                                   FontFamily="Courier New" FontSize="12" FontWeight="Bold"
+                                   FontFamily="Courier New" FontSize="11" FontWeight="Bold"
                                    TextWrapping="NoWrap" Margin="0,0,0,2"/>
                         <TextBlock Text="{Binding ReceiptPreviewRest, Mode=OneWay}"
-                                   FontFamily="Courier New" FontSize="11"
+                                   FontFamily="Courier New" FontSize="10"
                                    TextWrapping="NoWrap" VerticalAlignment="Top"/>
                     </StackPanel>
                 </ScrollViewer>
-                <GroupBox Grid.Row="2" Header="Sezione PDF" Margin="0,10,0,0" Padding="10"
+                <GroupBox Grid.Row="2" Header="PDF" Margin="0,6,0,0" Padding="8"
                           BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
                     <Grid>
                         <Grid.RowDefinitions>
@@ -58,7 +58,7 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <Grid Grid.Row="0" Margin="0,0,0,10">
+                        <Grid Grid.Row="0" Margin="0,0,0,6">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="Auto"/>
@@ -77,7 +77,7 @@
                                     Style="{StaticResource SmallRoundButtonStyle}"
                                     Command="{Binding IncrementBoletaCommand}" VerticalAlignment="Center" Focusable="False"/>
                         </Grid>
-                        <StackPanel Grid.Row="1">
+                        <StackPanel Grid.Row="1" Margin="0,0,0,6">
                             <TextBlock Text="{Binding FiscalStatus, Mode=OneWay}" Foreground="Gray" FontSize="10" Margin="0,0,0,4"/>
                             <Image x:Name="SiiQrImage" Width="120" Height="40" Stretch="Uniform" HorizontalAlignment="Center" Visibility="Collapsed"/>
                         </StackPanel>
@@ -97,24 +97,24 @@
             </Grid>
         </Border>
 
-        <!-- Col 1: Fiscale (SII Web) -->
+        <!-- Col 1: Fiscale (SII Web) - placeholder bianco finché non attivo -->
         <Border Grid.Row="0" Grid.Column="1"
                 BorderBrush="{StaticResource BorderBrush}"
                 BorderThickness="1"
                 CornerRadius="8"
                 Margin="0,0,6,0"
                 Padding="12"
-                Background="{StaticResource BackgroundLightBrush}">
+                Background="White">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="Fiscale (SII Web)" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                <WebBrowser x:Name="SiiWeb" Grid.Row="1"/>
-                <TextBlock Grid.Row="2" Text="Cookie salvati: al prossimo pagamento non dovrebbe richiedere login."
-                           Foreground="Gray" FontSize="10" Margin="0,8,0,0"/>
+                <TextBlock Grid.Row="0" Text="Fiscale (SII Web)" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,8"/>
+                <Border Grid.Row="1" Background="White" CornerRadius="6" BorderBrush="#E5E5E5" BorderThickness="1">
+                    <TextBlock Text="Area fiscale temporaneamente disattivata"
+                               Foreground="#888" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
             </Grid>
         </Border>
 
@@ -134,17 +134,17 @@
                 <Button Content="+ 1000" Margin="0,0,0,10" Style="{StaticResource SecondaryButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="1000"/>
                 <TextBlock Text="Importo" FontSize="11" Foreground="Gray" Margin="0,14,0,6"/>
-                <Button Content="≈ Totale arrot." Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
+                <Button Content="Arrotonda" Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
                         Command="{Binding SetRoundedTotalCommand}"/>
-                <Button Content="= Totale esatto" Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
+                <Button Content="Importo esatto" Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
                         Command="{Binding SetExactTotalCommand}"/>
-                <Button Content="Carta (tutto)" Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
+                <Button Content="Tutto su carta" Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}" MinHeight="46" FontSize="16" Focusable="False"
                         Command="{Binding PayAllCardCommand}"/>
             </StackPanel>
         </Border>
 
-        <!-- Col 3: Total pesos + Contanti/Carta + Resto in evidenza + Tastierino grande -->
-        <Border Grid.Row="0" Grid.Column="3" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12">
+        <!-- Col 3: Totale + Contanti/Carta + Manca/Resto in evidenza + Tastierino + Conferma -->
+        <Border Grid.Row="0" Grid.Column="3" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -154,51 +154,51 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" FontWeight="Bold" FontSize="18" Margin="0,0,0,8">
-                    <Run Text="Total pesos "/><Run Text="{Binding TotalDueText, Mode=OneWay}"/>
+                <TextBlock Grid.Row="0" FontWeight="Bold" FontSize="16" Margin="0,0,0,10">
+                    <Run Text="Totale "/><Run Text="{Binding TotalDueText, Mode=OneWay}"/><Run Text=" CLP"/>
                 </TextBlock>
-                <Grid Grid.Row="1" Margin="0,0,0,6">
+                <Grid Grid.Row="1" Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Contanti:" VerticalAlignment="Center" Width="70" FontSize="14"/>
-                    <TextBox x:Name="CashBox" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" FontSize="16"
+                    <TextBlock Grid.Column="0" Text="Contanti:" VerticalAlignment="Center" Width="72" FontSize="13" FontWeight="SemiBold"/>
+                    <TextBox x:Name="CashBox" Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" FontSize="18" MinHeight="44"
                              Text="{Binding CashReceived, UpdateSourceTrigger=PropertyChanged}"
                              GotFocus="CashBox_GotFocus" LostFocus="CashBox_LostFocus"/>
                 </Grid>
-                <Grid Grid.Row="2" Margin="0,0,0,6">
+                <Grid Grid.Row="2" Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Carta:" VerticalAlignment="Center" Width="70" FontSize="14"/>
-                    <TextBox Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" FontSize="16"
+                    <TextBlock Grid.Column="0" Text="Carta:" VerticalAlignment="Center" Width="72" FontSize="12" Foreground="#666"/>
+                    <TextBox Grid.Column="1" Style="{StaticResource ModernTextBoxStyle}" FontSize="14" MinHeight="36"
                              Text="{Binding CardAmount, UpdateSourceTrigger=PropertyChanged}"
                              GotFocus="CardBox_GotFocus" LostFocus="CardBox_LostFocus"/>
                 </Grid>
-                <TextBlock Grid.Row="3" Margin="0,0,0,6" FontSize="15" Foreground="Gray">
+                <TextBlock Grid.Row="3" Margin="0,0,0,6" FontSize="12" Foreground="Gray">
                     <Run Text="Pagato "/><Run Text="{Binding TotalPaidText, Mode=OneWay}"/>
                 </TextBlock>
-                <Border Grid.Row="4" Margin="0,0,0,12" Padding="14,12" Background="#E8F5E9" CornerRadius="6" BorderBrush="#4CAF50" BorderThickness="1">
-                    <TextBlock FontSize="24" FontWeight="Bold" Foreground="#2E7D32"
+                <Border Grid.Row="4" Margin="0,0,0,14" Padding="16,14" Background="#E8F5E9" CornerRadius="8" BorderBrush="#4CAF50" BorderThickness="1">
+                    <TextBlock FontSize="26" FontWeight="Bold" Foreground="#2E7D32"
                                Text="{Binding RestoOrMissingDisplay, Mode=OneWay}"/>
                 </Border>
-                <!-- Keypad: Viewbox DownOnly = non ingrandisce su schermo grande, si riduce su piccolo -->
-                <Viewbox Grid.Row="5" Stretch="Uniform" StretchDirection="DownOnly" MaxWidth="520" Margin="0,6,0,0">
-                    <UniformGrid Rows="4" Columns="3" Width="480" Height="360">
-                        <Button Content="7" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="7"/>
-                        <Button Content="8" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="8"/>
-                        <Button Content="9" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="9"/>
-                        <Button Content="4" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="4"/>
-                        <Button Content="5" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="5"/>
-                        <Button Content="6" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="6"/>
-                        <Button Content="1" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="1"/>
-                        <Button Content="2" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="2"/>
-                        <Button Content="3" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="3"/>
-                        <Button Content="0" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="0"/>
-                        <Button Content="00" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="00"/>
-                        <Button Content="⌫" Margin="4" Padding="12" MinHeight="64" FontSize="20" Style="{StaticResource SecondaryButtonStyle}" Focusable="False" Command="{Binding BackspaceCommand}"/>
+                <!-- Tastierino numerico -->
+                <Viewbox Grid.Row="5" Stretch="Uniform" StretchDirection="DownOnly" MaxWidth="560" Margin="0,8,0,0">
+                    <UniformGrid Rows="4" Columns="3" Width="500" Height="380">
+                        <Button Content="7" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="7"/>
+                        <Button Content="8" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="8"/>
+                        <Button Content="9" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="9"/>
+                        <Button Content="4" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="4"/>
+                        <Button Content="5" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="5"/>
+                        <Button Content="6" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="6"/>
+                        <Button Content="1" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="1"/>
+                        <Button Content="2" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="2"/>
+                        <Button Content="3" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="3"/>
+                        <Button Content="0" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="0"/>
+                        <Button Content="00" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource OutlineButtonStyle}" Focusable="False" Command="{Binding AppendDigitCommand}" CommandParameter="00"/>
+                        <Button Content="⌫" Margin="5" Padding="14" MinHeight="72" FontSize="22" Style="{StaticResource SecondaryButtonStyle}" Focusable="False" Command="{Binding BackspaceCommand}"/>
                     </UniformGrid>
                 </Viewbox>
             </Grid>
@@ -209,7 +209,7 @@
             <Button Content="Sospendi" MinWidth="110" Height="40" Margin="0,0,10,0"
                     Style="{StaticResource AccentButtonStyle}" Command="{Binding SuspendCommand}"/>
             <Button Content="Annulla" MinWidth="120" Height="40" Margin="0,0,10,0" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CancelCommand}"/>
-            <Button Content="Conferma pagamento" MinWidth="180" Height="42"
+            <Button Content="Conferma pagamento" MinWidth="220" Height="48" FontSize="15" FontWeight="SemiBold"
                     Style="{StaticResource PrimaryButtonStyle}"
                     Command="{Binding ConfirmCommand}"
                     IsEnabled="{Binding IsValid}"/>

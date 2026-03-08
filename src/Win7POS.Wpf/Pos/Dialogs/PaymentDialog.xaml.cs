@@ -16,26 +16,36 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public PaymentDialog(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null, Func<string, string, Task> printFiscalToThermal = null)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 820, minHeight: 520, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 1100, minHeight: 650, maxWidthPercent: 0.98, maxHeightPercent: 0.98, allowResize: true);
             ViewModel = new PaymentViewModel(totalDueMinor, draft, generateFiscalPdf, printFiscalToThermal);
             ViewModel.RequestClose += OnRequestClose;
             DataContext = ViewModel;
         }
 
-        private const string SiiLoginUrl =
-            "https://clave.w.sii.cl/oauthsii-v1/?response_type=code&client_id=e0378e96-4014-4a47-b852-9d9246797f5c&redirect_uri=https://eboleta.sii.cl/emitir/&scope=user_info&state=730b12d3-0586-42cb-8d8e-57c15125a8a9";
+        // SII Web placeholder: area fiscale temporaneamente disattivata in XAML; Navigate commentato
+        // private const string SiiLoginUrl = "https://clave.w.sii.cl/...";
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            Keyboard.Focus(CashBox);
-            CashBox.SelectAll();
-            LoadSiiQrCode();
-            try
+            if (Owner != null)
             {
-                if (SiiWeb != null)
-                    SiiWeb.Navigate(SiiLoginUrl);
+                Width = Math.Max(1100, Owner.ActualWidth - 24);
+                Height = Math.Max(650, Owner.ActualHeight - 24);
+                Left = Owner.Left + 12;
+                Top = Owner.Top + 12;
             }
-            catch { }
+
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (CashBox != null)
+                {
+                    CashBox.Focus();
+                    Keyboard.Focus(CashBox);
+                    CashBox.SelectAll();
+                }
+            }), DispatcherPriority.Input);
+
+            LoadSiiQrCode();
         }
 
         private void LoadSiiQrCode()
