@@ -1358,10 +1358,20 @@ namespace Win7POS.Wpf.Pos
             foreach (var x in _session.Lines)
             {
                 var stockQty = 0;
+                long discountAmountMinor = 0;
+                int discountPercent = 0;
                 if (!DiscountKeys.IsDiscount(x.Barcode ?? "") && !(x.Barcode ?? "").StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase))
                 {
                     var details = await _products.GetDetailsByBarcodeAsync(x.Barcode ?? "").ConfigureAwait(false);
                     if (details != null) stockQty = details.StockQty;
+                    // Sconto riga: cerca una riga sconto che riferisce questo barcode
+                    var discLine = _session.Lines.FirstOrDefault(d => DiscountKeys.IsLineDiscountFor(d.Barcode ?? "", x.Barcode ?? ""));
+                    if (discLine != null)
+                    {
+                        discountAmountMinor = discLine.LineTotal < 0 ? -discLine.LineTotal : 0;
+                        var (_, pct) = DiscountKeys.ParseLinePct(discLine.Barcode ?? "");
+                        discountPercent = pct ?? 0;
+                    }
                 }
                 lines.Add(new PosCartLine
                 {
@@ -1371,7 +1381,9 @@ namespace Win7POS.Wpf.Pos
                     Quantity = x.Quantity,
                     UnitPrice = x.UnitPrice,
                     LineTotal = x.LineTotal,
-                    StockQty = stockQty
+                    StockQty = stockQty,
+                    DiscountAmountMinor = discountAmountMinor,
+                    DiscountPercent = discountPercent
                 });
                 index++;
             }
@@ -1620,6 +1632,10 @@ SELECT last_insert_rowid();";
         public long UnitPrice { get; set; }
         public long LineTotal { get; set; }
         public int StockQty { get; set; }
+        /// <summary>Importo sconto applicato a questa riga (solo righe prodotto con sconto riga).</summary>
+        public long DiscountAmountMinor { get; set; }
+        /// <summary>Percentuale sconto (es. 58 per -58%). Solo se sconto riga percentuale.</summary>
+        public int DiscountPercent { get; set; }
     }
 
     public sealed class PosPrinterSettings

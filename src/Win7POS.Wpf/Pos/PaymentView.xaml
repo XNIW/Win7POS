@@ -4,7 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
-             Loaded="OnLoaded" KeyDown="OnKeyDown">
+             Loaded="OnLoaded" KeyDown="OnKeyDown" PreviewKeyDown="OnPaymentPreviewKeyDown">
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
@@ -102,7 +102,7 @@
                         Command="{Binding SetRoundedTotalCommand}"/>
                 <Button Content="Importo esatto" Margin="0,0,0,6" Style="{StaticResource OutlineButtonStyle}" MinHeight="38" FontSize="14" Focusable="False"
                         Command="{Binding SetExactTotalCommand}"/>
-                <Button Content="Tutto su carta" Margin="0,0,0,6" Style="{StaticResource OutlineButtonStyle}" MinHeight="38" FontSize="14" Focusable="False"
+                <Button Content="Tutto su carta (+)" Margin="0,0,0,6" Style="{StaticResource OutlineButtonStyle}" MinHeight="38" FontSize="14" Focusable="False"
                         Command="{Binding PayAllCardCommand}"/>
             </StackPanel>
         </Border>

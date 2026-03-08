@@ -47,6 +47,24 @@ namespace Win7POS.Wpf.Pos
 
         private void CardBox_LostFocus(object sender, RoutedEventArgs e) { }
 
+        private void OnPaymentPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            var vm = ViewModel;
+            if (vm == null) return;
+
+            var isPlusMainKeyboard = e.Key == Key.OemPlus && (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift;
+            var isPlusNumpad = e.Key == Key.Add;
+
+            if (isPlusMainKeyboard || isPlusNumpad)
+            {
+                if (vm.PayAllCardCommand != null && vm.PayAllCardCommand.CanExecute(null))
+                {
+                    vm.PayAllCardCommand.Execute(null);
+                    e.Handled = true;
+                }
+            }
+        }
+
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
             var vm = ViewModel;

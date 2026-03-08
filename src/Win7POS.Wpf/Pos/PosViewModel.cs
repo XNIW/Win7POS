@@ -64,6 +64,15 @@ namespace Win7POS.Wpf.Pos
 
         public string TotalDisplay => MoneyClp.Format(Total);
 
+        /// <summary>Totale carrello prima degli sconti (solo righe prodotto, senza righe sconto).</summary>
+        public long OriginalTotal => CartItems.Where(x => !x.IsDiscountLine).Sum(x => x.LineTotal);
+
+        /// <summary>Importo totale sconti (OriginalTotal - Total).</summary>
+        public long DiscountTotal => Math.Max(0, OriginalTotal - Total);
+
+        public string OriginalTotalDisplay => MoneyClp.Format(OriginalTotal);
+        public string DiscountTotalDisplay => MoneyClp.Format(DiscountTotal);
+
         public bool IsBusy
         {
             get => _isBusy;
@@ -437,8 +446,11 @@ namespace Win7POS.Wpf.Pos
                 {
                     try
                     {
-                        var snapshot = await _service.RemoveLineAsync(SelectedCartItem.Barcode).ConfigureAwait(true);
-                        ApplySnapshot(snapshot); // nessun preferBarcode: fallback ultima riga
+                        var barcode = SelectedCartItem.Barcode;
+                        var indexBefore = CartItems.IndexOf(SelectedCartItem);
+                        var snapshot = await _service.RemoveLineAsync(barcode).ConfigureAwait(true);
+                        var preferIndex = indexBefore < CartItems.Count - 1 ? indexBefore : (indexBefore > 0 ? indexBefore - 1 : (int?)null);
+                        ApplySnapshot(snapshot, preferBarcode: null, preferIndex: preferIndex);
                         StatusMessage = "Riga rimossa.";
                     }
                     catch (Exception ex)
@@ -765,12 +777,13 @@ namespace Win7POS.Wpf.Pos
 
         private async Task IncreaseQtyAsync()
         {
-            if (SelectedCartItem == null) return;
+            if (SelectedCartItem == null || IsDiscountLine(SelectedCartItem.Barcode)) return;
+            var barcode = SelectedCartItem.Barcode;
             IsBusy = true;
             try
             {
-                var snapshot = await _service.IncreaseQtyAsync(SelectedCartItem.Barcode).ConfigureAwait(true);
-                ApplySnapshot(snapshot);
+                var snapshot = await _service.IncreaseQtyAsync(barcode).ConfigureAwait(true);
+                ApplySnapshot(snapshot, barcode);
             }
             catch (Exception ex)
             {
@@ -786,12 +799,13 @@ namespace Win7POS.Wpf.Pos
 
         private async Task DecreaseQtyAsync()
         {
-            if (SelectedCartItem == null) return;
+            if (SelectedCartItem == null || IsDiscountLine(SelectedCartItem.Barcode)) return;
+            var barcode = SelectedCartItem.Barcode;
             IsBusy = true;
             try
             {
-                var snapshot = await _service.DecreaseQtyAsync(SelectedCartItem.Barcode).ConfigureAwait(true);
-                ApplySnapshot(snapshot);
+                var snapshot = await _service.DecreaseQtyAsync(barcode).ConfigureAwait(true);
+                ApplySnapshot(snapshot, barcode);
             }
             catch (Exception ex)
             {
@@ -808,11 +822,13 @@ namespace Win7POS.Wpf.Pos
         private async Task RemoveLineAsync()
         {
             if (SelectedCartItem == null) return;
+            var barcode = SelectedCartItem.Barcode;
+            var indexBefore = CartItems.IndexOf(SelectedCartItem);
             IsBusy = true;
             try
             {
-                var snapshot = await _service.RemoveLineAsync(SelectedCartItem.Barcode).ConfigureAwait(true);
-                ApplySnapshot(snapshot);
+                var snapshot = await _service.RemoveLineAsync(barcode).ConfigureAwait(true);
+                ApplySnapshot(snapshot, preferBarcode: null, preferIndex: indexBefore < CartItems.Count - 1 ? indexBefore : (indexBefore > 0 ? indexBefore - 1 : (int?)null));
             }
             catch (Exception ex)
             {
@@ -856,7 +872,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 var snapshot = await _service.IncreaseQtyAsync(row.Barcode).ConfigureAwait(true);
-                ApplySnapshot(snapshot);
+                ApplySnapshot(snapshot, row.Barcode);
             }
             catch (Exception ex)
             {
@@ -879,7 +895,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 var snapshot = await _service.DecreaseQtyAsync(row.Barcode).ConfigureAwait(true);
-                ApplySnapshot(snapshot);
+                ApplySnapshot(snapshot, row.Barcode);
             }
             catch (Exception ex)
             {
@@ -897,11 +913,13 @@ namespace Win7POS.Wpf.Pos
         {
             var row = parameter as PosCartLineRow;
             if (row == null) return;
+            var indexBefore = CartItems.IndexOf(row);
             IsBusy = true;
             try
             {
                 var snapshot = await _service.RemoveLineAsync(row.Barcode).ConfigureAwait(true);
-                ApplySnapshot(snapshot);
+                var preferIndex = indexBefore < CartItems.Count - 1 ? indexBefore : (indexBefore > 0 ? indexBefore - 1 : (int?)null);
+                ApplySnapshot(snapshot, preferBarcode: null, preferIndex: preferIndex);
             }
             catch (Exception ex)
             {
@@ -1377,8 +1395,8 @@ namespace Win7POS.Wpf.Pos
             if (snapshot != null) ApplySnapshot(snapshot);
         }
 
-        /// <summary>Applica lo snapshot. Se preferBarcode è valorizzato, seleziona quella riga (per add/merge); altrimenti l'ultima.</summary>
-        private void ApplySnapshot(PosWorkflowSnapshot snapshot, string preferBarcode = null)
+        /// <summary>Applica lo snapshot. preferBarcode: riga da selezionare; preferIndex: indice da selezionare (es. dopo rimozione).</summary>
+        private void ApplySnapshot(PosWorkflowSnapshot snapshot, string preferBarcode = null, int? preferIndex = null)
         {
             CartItems.Clear();
             foreach (var item in snapshot.Lines)
@@ -1391,13 +1409,17 @@ namespace Win7POS.Wpf.Pos
                     Quantity = item.Quantity,
                     UnitPrice = item.UnitPrice,
                     LineTotal = item.LineTotal,
-                    StockQty = item.StockQty
+                    StockQty = item.StockQty,
+                    DiscountAmountMinor = item.DiscountAmountMinor,
+                    DiscountPercent = item.DiscountPercent
                 });
             }
 
             Subtotal = snapshot.Subtotal;
             Total = snapshot.Total;
             OnPropertyChanged(nameof(TotalDisplay));
+            OnPropertyChanged(nameof(OriginalTotalDisplay));
+            OnPropertyChanged(nameof(DiscountTotalDisplay));
             if (!string.IsNullOrWhiteSpace(snapshot.Status))
                 StatusMessage = snapshot.Status;
             OnPropertyChanged(nameof(ItemsCount));
@@ -1405,6 +1427,8 @@ namespace Win7POS.Wpf.Pos
             PosCartLineRow selected = null;
             if (!string.IsNullOrWhiteSpace(preferBarcode))
                 selected = CartItems.LastOrDefault(x => string.Equals(x.Barcode, preferBarcode, StringComparison.OrdinalIgnoreCase));
+            if (selected == null && preferIndex.HasValue && preferIndex.Value >= 0 && preferIndex.Value < CartItems.Count)
+                selected = CartItems[preferIndex.Value];
             if (selected == null && CartItems.Count > 0)
                 selected = CartItems[CartItems.Count - 1];
             SelectedCartItem = selected;
@@ -1490,8 +1514,19 @@ namespace Win7POS.Wpf.Pos
             public long UnitPrice { get; set; }
             public long LineTotal { get; set; }
             public int StockQty { get; set; }
+            public long DiscountAmountMinor { get; set; }
+            public int DiscountPercent { get; set; }
+
+            public bool HasDiscount => !IsDiscountLine && DiscountAmountMinor > 0;
             public string UnitPriceDisplay => MoneyClp.Format(UnitPrice);
             public string LineTotalDisplay => MoneyClp.Format(LineTotal);
+            public string OriginalUnitPriceDisplay => MoneyClp.Format(UnitPrice);
+            public string OriginalLineTotalDisplay => MoneyClp.Format(LineTotal);
+            public string DiscountedUnitPriceDisplay => HasDiscount && Quantity > 0 ? MoneyClp.Format((LineTotal - DiscountAmountMinor) / Quantity) : MoneyClp.Format(UnitPrice);
+            public string DiscountedLineTotalDisplay => HasDiscount ? MoneyClp.Format(LineTotal - DiscountAmountMinor) : MoneyClp.Format(LineTotal);
+            public string DiscountPercentDisplay => HasDiscount && DiscountPercent > 0 ? "-" + DiscountPercent + "%" : string.Empty;
+            public string DiscountAmountDisplay => HasDiscount ? "Risparmio " + MoneyClp.Format(DiscountAmountMinor) : string.Empty;
+
             /// <summary>Nome da mostrare in carrello/scontrino: per sconti aggiunge prefisso "— " per evidenza.</summary>
             public string DisplayName => IsDiscountLine ? "— " + (Name ?? "Sconto") : (Name ?? "");
             public string StockDisplay => IsDiscountLine || (Barcode ?? "").StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase) ? "" : "Stock: " + StockQty;

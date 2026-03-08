@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using Win7POS.Core.Models;
+using Win7POS.Core.Pos;
 
 namespace Win7POS.Core.Receipt
 {
@@ -53,30 +55,79 @@ namespace Win7POS.Core.Receipt
             AddLine(result, width, $"Data/Ora: {when}");
             AddLine(result, width, new string('-', width));
 
-            if (lines != null)
+            if (lines != null && lines.Count > 0)
             {
+                var discountByProduct = new Dictionary<string, SaleLine>(StringComparer.Ordinal);
+                foreach (var d in lines)
+                {
+                    if (d?.Barcode == null || !d.Barcode.StartsWith("DISC:LINE:", StringComparison.Ordinal)) continue;
+                    var (key, _) = DiscountKeys.ParseLinePct(d.Barcode);
+                    if (key != null && !discountByProduct.ContainsKey(key))
+                        discountByProduct[key] = d;
+                }
+
                 foreach (var x in lines)
                 {
+                    if (x.LineTotal < 0 && (x.Barcode?.StartsWith("DISC:CART:", StringComparison.Ordinal) == true))
+                        continue; // sconto carrello lo mettiamo nel riepilogo
+                    if (x.Barcode != null && x.Barcode.StartsWith("DISC:LINE:", StringComparison.Ordinal))
+                        continue; // sconto riga lo abbiamo già mostrato con il prodotto
+
+                    var qty = x.Quantity < 0 ? 0 : x.Quantity;
+                    var unit = FormatAmount(x.UnitPrice, options.Currency, culture);
                     var lineTotalFormatted = FormatAmount(x.LineTotal, options.Currency, culture);
-                    if (x.LineTotal < 0)
+                    AddWrappedLine(result, width, x.Name ?? "-");
+
+                    if (discountByProduct.TryGetValue(x.Barcode ?? "", out var discLine))
                     {
-                        // Riga sconto: nome in evidenza, poi "Sconto" + importo negativo
-                        AddWrappedLine(result, width, x.Name ?? "Sconto");
-                        AddLeftRight(result, width, "  Sconto", lineTotalFormatted);
+                        var origTotal = FormatAmount(x.LineTotal, options.Currency, culture);
+                        var discAmount = discLine.LineTotal < 0 ? -discLine.LineTotal : 0L;
+                        var discFormatted = FormatAmount(-discAmount, options.Currency, culture);
+                        var netTotal = x.LineTotal + discLine.LineTotal;
+                        var netFormatted = FormatAmount(netTotal, options.Currency, culture);
+                        var (_, pct) = DiscountKeys.ParseLinePct(discLine.Barcode ?? "");
+                        var pctStr = pct.HasValue ? pct.Value + "%" : "";
+                        AddLeftRight(result, width, $"  {qty} x {unit}", origTotal);
+                        AddLeftRight(result, width, "Sconto " + pctStr, discFormatted);
+                        AddLeftRight(result, width, "Riga", netFormatted);
                     }
                     else
                     {
-                        var qty = x.Quantity < 0 ? 0 : x.Quantity;
-                        var unit = FormatAmount(x.UnitPrice, options.Currency, culture);
-                        AddWrappedLine(result, width, x.Name ?? "-");
                         AddLeftRight(result, width, $"  {qty} x {unit}", lineTotalFormatted);
+                    }
+                }
+
+                // Sconti carrello (non associati a una riga)
+                foreach (var d in lines)
+                {
+                    if (d?.LineTotal >= 0) continue;
+                    if (d.Barcode != null && d.Barcode.StartsWith("DISC:CART:", StringComparison.Ordinal))
+                    {
+                        AddWrappedLine(result, width, d.Name ?? "Sconto carrello");
+                        AddLeftRight(result, width, "Sconto", FormatAmount(d.LineTotal, options.Currency, culture));
                     }
                 }
             }
 
             AddLine(result, width, new string('-', width));
-            var itemCount = lines?.Count ?? 0;
+            var itemCount = lines?.Count(x => x.LineTotal >= 0 && (x.Barcode == null || !x.Barcode.StartsWith("DISC:", StringComparison.Ordinal))) ?? 0;
             AddLine(result, width, TrimToWidth("Articoli: " + itemCount, width));
+
+            long subtotale = 0;
+            long scontiTotali = 0;
+            if (lines != null)
+            {
+                foreach (var x in lines)
+                {
+                    if (x.LineTotal >= 0 && (x.Barcode == null || !x.Barcode.StartsWith("DISC:", StringComparison.Ordinal)))
+                        subtotale += x.LineTotal;
+                    else if (x.LineTotal < 0)
+                        scontiTotali += -x.LineTotal;
+                }
+            }
+            AddLeftRight(result, width, "Subtotale", FormatAmount(subtotale, options.Currency, culture));
+            if (scontiTotali > 0)
+                AddLeftRight(result, width, "Sconti totali", "-" + FormatAmount(scontiTotali, options.Currency, culture));
             AddLeftRight(result, width, "Totale", FormatAmount(sale.Total, options.Currency, culture));
             if (sale.PaidCash > 0)
                 AddLeftRight(result, width, "Contanti", FormatAmount(sale.PaidCash, options.Currency, culture));

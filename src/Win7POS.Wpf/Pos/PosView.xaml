@@ -7,6 +7,7 @@
              mc:Ignorable="d"
              d:DesignHeight="720" d:DesignWidth="1100">
     <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <Style x:Key="CartRowStyle" TargetType="ListBoxItem">
             <Setter Property="Padding" Value="12,10"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -158,6 +159,8 @@
                                             </Style>
                                         </TextBlock.Style>
                                     </TextBlock>
+                                    <TextBlock Text="{Binding DiscountPercentDisplay, StringFormat='Promo {0}'}" FontSize="11" Foreground="#8B6914" FontWeight="SemiBold"
+                                               Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVis}}"/>
                                 </StackPanel>
                                 <Button Grid.Column="1" Content="✎" FontSize="13" Padding="0" Focusable="False" IsTabStop="False"
                                         ToolTip="Modifica prezzo"
@@ -231,28 +234,24 @@
                                     </Button.Style>
                                 </Button>
                             </StackPanel>
-                            <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
-                                                <Setter Property="Foreground" Value="#8B6914"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                            <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,18,0">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
-                                                <Setter Property="Foreground" Value="#8B6914"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
+                            <!-- Colonna Prezzo: normale o scontato (prezzo barrato + badge %) -->
+                            <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0">
+                                <TextBlock Text="{Binding DiscountedUnitPriceDisplay}" FontWeight="Bold" FontSize="15" HorizontalAlignment="Right"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                            Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVis}}">
+                                    <TextBlock Text="{Binding OriginalUnitPriceDisplay}" Foreground="#777" FontSize="11"
+                                               TextDecorations="Strikethrough" VerticalAlignment="Center"/>
+                                    <TextBlock Text="{Binding DiscountPercentDisplay}" Foreground="#8B6914" FontSize="11"
+                                               Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                </StackPanel>
+                            </StackPanel>
+                            <!-- Colonna Totale: normale o scontato + risparmio -->
+                            <StackPanel Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,18,0">
+                                <TextBlock Text="{Binding DiscountedLineTotalDisplay}" FontWeight="SemiBold" FontSize="15" HorizontalAlignment="Right"/>
+                                <TextBlock Text="{Binding DiscountAmountDisplay}" Foreground="#6F6475" FontSize="11"
+                                           HorizontalAlignment="Right"
+                                           Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVis}}"/>
+                            </StackPanel>
                             <Button Grid.Column="4" Content="✕" FontSize="12" Padding="0" Focusable="False" IsTabStop="False"
                                     Style="{StaticResource SmallRoundButtonStyle}"
                                     Foreground="White" Background="#C45C5C"
@@ -312,10 +311,15 @@
                         MinWidth="90" Height="42" Margin="10,0,0,0"/>
                 <TextBlock Grid.Column="3" VerticalAlignment="Center" Foreground="White" Margin="20,0,0,0" FontSize="14"
                            Text="{Binding ItemsCount, StringFormat=Articoli: {0}}"/>
-                <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,20,0">
-                    <TextBlock VerticalAlignment="Center" Foreground="#E8E0F0" FontSize="14" Margin="0,0,10,0" Text="Totale spesa"/>
-                    <TextBlock VerticalAlignment="Center" Foreground="White" FontSize="24" FontWeight="Bold"
-                               Text="{Binding TotalDisplay}"/>
+                <StackPanel Grid.Column="4" Orientation="Vertical" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,20,0">
+                    <TextBlock Text="Totale spesa" Foreground="#E8E0F0" FontSize="14" HorizontalAlignment="Right"/>
+                    <TextBlock Text="{Binding TotalDisplay}" Foreground="#FFCCBC" FontSize="26" FontWeight="Bold" HorizontalAlignment="Right"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
+                        <TextBlock Text="Prima " Foreground="#C8B8D0" FontSize="12"/>
+                        <TextBlock Text="{Binding OriginalTotalDisplay}" Foreground="#C8B8D0" FontSize="12" TextDecorations="Strikethrough"/>
+                        <TextBlock Text="   Sconto " Foreground="#C8B8D0" FontSize="12" Margin="10,0,0,0"/>
+                        <TextBlock Text="{Binding DiscountTotalDisplay}" Foreground="#C8B8D0" FontSize="12"/>
+                    </StackPanel>
                 </StackPanel>
                 <Button Grid.Column="5" Grid.ColumnSpan="2" MinWidth="180" Height="48" FontSize="16" FontWeight="SemiBold"
                         Content="Paga" Command="{Binding PayCommand}"
