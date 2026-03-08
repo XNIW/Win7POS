@@ -138,7 +138,7 @@
                                     <TextBlock Margin="0,2,0,0" FontSize="10" FontWeight="SemiBold" Foreground="#8A5AA8"
                                                Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVis}}">
                                         <Run Text="Promo "/>
-                                        <Run Text="{Binding DiscountPercentDisplay}"/>
+                                        <Run Text="{Binding DiscountPercentDisplay, Mode=OneWay}"/>
                                     </TextBlock>
                                 </StackPanel>
                                 <Button Grid.Column="1" Content="✎" FontSize="13" Padding="0" Focusable="False" IsTabStop="False"
@@ -190,7 +190,7 @@
                                     <TextBlock Text="{Binding OriginalUnitPriceDisplay}" Margin="0,0,6,0" FontSize="11"
                                                Foreground="#7A6F86" TextDecorations="Strikethrough" VerticalAlignment="Center"/>
                                     <Border Background="#E9D8F3" CornerRadius="4" Padding="6,1,6,1" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding DiscountPercentDisplay}" FontSize="10" FontWeight="SemiBold" Foreground="#5D3E75"/>
+                                        <TextBlock Text="{Binding DiscountPercentDisplay, Mode=OneWay}" FontSize="10" FontWeight="SemiBold" Foreground="#5D3E75"/>
                                     </Border>
                                 </StackPanel>
                             </StackPanel>
