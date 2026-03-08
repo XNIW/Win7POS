@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using Win7POS.Core.Models;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
 {
@@ -13,6 +14,7 @@ namespace Win7POS.Wpf.Products
         public ProductEditDialog(ProductEditViewModel vm)
         {
             InitializeComponent();
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 560, minHeight: 480, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             DataContext = vm;
             vm.RequestClose += OnRequestClose;
         }
@@ -41,12 +43,6 @@ namespace Win7POS.Wpf.Products
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
-            if (Owner != null)
-            {
-                MaxHeight = Math.Max(520, Owner.ActualHeight - 60);
-                MaxWidth = Math.Max(700, Owner.ActualWidth - 60);
-            }
-            UpdateLayout();
             if (PriceBox != null)
             {
                 PriceBox.Focus();

@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Forms;
 using Microsoft.Win32;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
 {
@@ -12,6 +13,7 @@ namespace Win7POS.Wpf.Products
         public ExportDataDialog()
         {
             InitializeComponent();
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 400, minHeight: 260, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: false);
             PathBox.Text = "";
         }
 

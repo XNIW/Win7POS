@@ -11,6 +11,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public DiscountDialog(string selectedLineBarcode, bool hasCartItems, PosWorkflowService service, PosViewModel posViewModel)
         {
             InitializeComponent();
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 520, minHeight: 380, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             ViewModel = new DiscountViewModel(selectedLineBarcode, hasCartItems, OnApplyAsync);
             ViewModel.RequestClose += ok => DialogResult = ok;
             DataContext = ViewModel;

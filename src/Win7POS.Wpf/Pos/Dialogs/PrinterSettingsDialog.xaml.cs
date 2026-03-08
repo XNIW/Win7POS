@@ -10,7 +10,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public PrinterSettingsDialog(PrinterSettingsViewModel viewModel)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.5, heightPercent: 0.55, minWidth: 480, minHeight: 380);
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 520, minHeight: 320, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             ViewModel = viewModel;
             ViewModel.RequestClose += ok => DialogResult = ok;
             DataContext = ViewModel;

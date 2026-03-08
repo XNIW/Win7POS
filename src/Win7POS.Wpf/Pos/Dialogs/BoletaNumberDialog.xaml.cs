@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -12,6 +13,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public BoletaNumberDialog(int currentNumber)
         {
             InitializeComponent();
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 360, minHeight: 280, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: false);
             BoletaBox.Text = currentNumber > 0 ? currentNumber.ToString() : "1";
             Loaded += (s, ev) =>
             {

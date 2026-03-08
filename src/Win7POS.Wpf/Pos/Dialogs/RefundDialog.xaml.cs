@@ -11,7 +11,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public RefundDialog(RefundViewModel vm)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.8, heightPercent: 0.8, minWidth: 800, minHeight: 580);
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 720, minHeight: 520, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             ViewModel = vm;
             ViewModel.RequestClose += OnRequestClose;
             DataContext = vm;

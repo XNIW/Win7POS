@@ -4,9 +4,14 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
-        Title="Pagamento" Width="1000" Height="580"
-        Loaded="OnLoaded" KeyDown="OnKeyDown"
-        WindowStartupLocation="CenterOwner" ResizeMode="CanResize">
+        Title="Pagamento"
+        WindowStartupLocation="CenterOwner"
+        SizeToContent="WidthAndHeight"
+        MinWidth="820"
+        MinHeight="520"
+        ResizeMode="CanResize"
+        Loaded="OnLoaded"
+        KeyDown="OnKeyDown">
     <Grid Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>

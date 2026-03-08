@@ -16,7 +16,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public PaymentDialog(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null, Func<string, string, Task> printFiscalToThermal = null)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.85, heightPercent: 0.8, minWidth: 900, minHeight: 550);
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 820, minHeight: 520, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             ViewModel = new PaymentViewModel(totalDueMinor, draft, generateFiscalPdf, printFiscalToThermal);
             ViewModel.RequestClose += OnRequestClose;
             DataContext = ViewModel;

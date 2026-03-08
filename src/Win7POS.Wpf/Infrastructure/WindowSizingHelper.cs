@@ -1,11 +1,14 @@
 using System;
 using System.Windows;
+using System.Windows.Controls;
 
 namespace Win7POS.Wpf.Infrastructure
 {
     /// <summary>
     /// Helper per dimensionare finestre e dialog in modo proporzionale allo schermo
     /// rispettando l'area di lavoro (es. senza essere tagliati dalla taskbar).
+    /// I dialog si dimensionano in base al contenuto e allo schermo disponibile (WorkArea),
+    /// non in base alla dimensione della finestra Owner.
     /// </summary>
     public static class WindowSizingHelper
     {
@@ -20,71 +23,55 @@ namespace Win7POS.Wpf.Infrastructure
         }
 
         /// <summary>
-        /// Restituisce l'area di lavoro del monitor primario (schermo meno taskbar/dock).
-        /// </summary>
-        private static Rect GetWorkArea()
-        {
-            try
-            {
-                return SystemParameters.WorkArea;
-            }
-            catch
-            {
-                return new Rect(0, 0, SystemParameters.PrimaryScreenWidth, SystemParameters.PrimaryScreenHeight);
-            }
-        }
-
-        /// <summary>
-        /// Imposta dimensioni responsive per un dialog: non supera l'area di lavoro,
-        /// si centra e non viene tagliato dalla taskbar.
+        /// Dimensionamento adattivo per dialog: SizeToContent, tetto massimo da WorkArea (non da Owner).
+        /// Il dialog si adatta al contenuto; se supera lo schermo è ridimensionabile con scroll interno.
         /// </summary>
         /// <param name="window">La finestra dialog</param>
-        /// <param name="widthPercent">Percentuale larghezza (0.0-1.0), es. 0.7 = 70%</param>
-        /// <param name="heightPercent">Percentuale altezza (0.0-1.0)</param>
         /// <param name="minWidth">Larghezza minima</param>
         /// <param name="minHeight">Altezza minima</param>
-        /// <param name="maxWidth">Larghezza massima (0 = illimitata)</param>
-        /// <param name="maxHeight">Altezza massima (0 = illimitata)</param>
-        public static void ApplyDialogSizing(Window window,
-            double widthPercent = 0.6, double heightPercent = 0.7,
-            double minWidth = 400, double minHeight = 320,
-            double maxWidth = 0, double maxHeight = 0)
+        /// <param name="maxWidthPercent">Percentuale dell'area di lavoro per MaxWidth (es. 0.92)</param>
+        /// <param name="maxHeightPercent">Percentuale dell'area di lavoro per MaxHeight</param>
+        /// <param name="allowResize">Se true il dialog è ridimensionabile</param>
+        public static void ApplyAdaptiveDialogSizing(
+            Window window,
+            double minWidth = 420,
+            double minHeight = 260,
+            double maxWidthPercent = 0.92,
+            double maxHeightPercent = 0.92,
+            bool allowResize = true)
         {
+            if (window == null) throw new ArgumentNullException("window");
+
+            window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
+            window.SizeToContent = SizeToContent.WidthAndHeight;
+            window.MinWidth = minWidth;
+            window.MinHeight = minHeight;
+            window.ResizeMode = allowResize ? ResizeMode.CanResize : ResizeMode.NoResize;
+
             window.Loaded += (s, e) =>
             {
-                var work = GetWorkArea();
-                // Usa l'area di lavoro così il dialog non viene mai tagliato dalla taskbar
-                double refWidth = work.Width;
-                double refHeight = work.Height;
+                var work = SystemParameters.WorkArea;
+                var maxWidth = Math.Max(minWidth, work.Width * maxWidthPercent);
+                var maxHeight = Math.Max(minHeight, work.Height * maxHeightPercent);
+                window.MaxWidth = maxWidth;
+                window.MaxHeight = maxHeight;
 
-                var target = window.Owner ?? Application.Current?.MainWindow;
-                if (target != null && target.IsLoaded && target.ActualWidth > 0 && target.ActualHeight > 0)
+                // forza il measure del contenuto
+                var fe = window.Content as FrameworkElement;
+                if (fe != null)
                 {
-                    // Limita al minimo tra area di lavoro e dimensione owner
-                    refWidth = Math.Min(refWidth, target.ActualWidth);
-                    refHeight = Math.Min(refHeight, target.ActualHeight);
+                    fe.Measure(new Size(maxWidth, maxHeight));
+                    var desired = fe.DesiredSize;
+                    window.Width = Math.Min(Math.Max(desired.Width + 40, minWidth), maxWidth);
+                    window.Height = Math.Min(Math.Max(desired.Height + 60, minHeight), maxHeight);
                 }
 
-                var w = Math.Max(minWidth, refWidth * widthPercent);
-                var h = Math.Max(minHeight, refHeight * heightPercent);
-                // Non superare mai l'area di lavoro
-                w = Math.Min(w, work.Width);
-                h = Math.Min(h, work.Height);
-                if (maxWidth > 0) w = Math.Min(maxWidth, w);
-                if (maxHeight > 0) h = Math.Min(maxHeight, h);
-
-                window.Width = w;
-                window.Height = h;
-                window.MinWidth = minWidth;
-                window.MinHeight = minHeight;
-                if (maxWidth > 0) window.MaxWidth = maxWidth;
-                if (maxHeight > 0) window.MaxHeight = maxHeight;
-
-                // Centra nella area di lavoro e clampa così non esce mai dallo schermo
-                var left = work.Left + (work.Width - w) / 2;
-                var top = work.Top + (work.Height - h) / 2;
-                window.Left = Math.Max(work.Left, Math.Min(work.Right - w, left));
-                window.Top = Math.Max(work.Top, Math.Min(work.Bottom - h, top));
+                // ricentra dopo il sizing finale (rispetto all'owner, ma senza limitare la size all'owner)
+                if (window.Owner != null)
+                {
+                    window.Left = window.Owner.Left + Math.Max(0, (window.Owner.ActualWidth - window.Width) / 2);
+                    window.Top = window.Owner.Top + Math.Max(0, (window.Owner.ActualHeight - window.Height) / 2);
+                }
             };
         }
     }

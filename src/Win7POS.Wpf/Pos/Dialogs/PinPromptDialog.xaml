@@ -2,10 +2,11 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="PIN Cassa"
-        Width="420"
-        Height="210"
-        ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
+        SizeToContent="WidthAndHeight"
+        MinWidth="360"
+        MinHeight="180"
+        ResizeMode="NoResize"
         KeyDown="OnWindowKeyDown">
     <Grid Margin="12">
         <Grid.RowDefinitions>

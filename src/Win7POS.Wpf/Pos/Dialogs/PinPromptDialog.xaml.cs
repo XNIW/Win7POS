@@ -11,7 +11,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public PinPromptDialog(string prompt)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.3, heightPercent: 0.25, minWidth: 380, minHeight: 180);
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 360, minHeight: 180, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: false);
             ViewModel = new PinPromptViewModel(prompt);
             DataContext = ViewModel;
             Loaded += OnLoaded;

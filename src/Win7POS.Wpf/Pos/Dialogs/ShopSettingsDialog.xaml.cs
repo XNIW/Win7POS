@@ -8,7 +8,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ShopSettingsDialog(ShopSettingsViewModel vm)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.6, heightPercent: 0.65, minWidth: 560, minHeight: 450);
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 520, minHeight: 420, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             DataContext = vm;
             vm.RequestClose += ok =>
             {

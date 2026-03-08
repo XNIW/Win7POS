@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -12,6 +13,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ChangeQuantityDialog(string productName, int currentQuantity)
         {
             InitializeComponent();
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 360, minHeight: 320, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: false);
             ProductNameText.Text = productName ?? "";
             QtyBox.Text = currentQuantity.ToString();
             Loaded += (s, ev) =>

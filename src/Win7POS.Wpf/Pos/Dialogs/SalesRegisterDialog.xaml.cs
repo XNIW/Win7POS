@@ -10,7 +10,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public SalesRegisterDialog(SalesRegisterViewModel viewModel)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyDialogSizing(this, widthPercent: 0.85, heightPercent: 0.8, minWidth: 900, minHeight: 600);
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 800, minHeight: 500, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             DataContext = viewModel;
             viewModel.RequestCloseDialog += () => Dispatcher.BeginInvoke(new Action(() => { try { Close(); } catch { } }));
             Loaded += OnLoaded;
