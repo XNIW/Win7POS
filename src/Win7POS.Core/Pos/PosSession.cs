@@ -203,7 +203,9 @@ namespace Win7POS.Core.Pos
 
         public void ApplyCartDiscountPercent(int percent)
         {
-            if (percent <= 0 || percent > 100) return;
+            if (percent < 0 || percent > 100) return;
+            ClearCartDiscount();
+            if (percent <= 0) return;
             var baseTotal = _lines.Where(l => !DiscountKeys.IsDiscount(l.Barcode)).Sum(l => l.LineTotal);
             if (baseTotal <= 0) return;
             var disc = (long)Math.Round(baseTotal * (percent / 100.0), MidpointRounding.AwayFromZero);
@@ -211,11 +213,15 @@ namespace Win7POS.Core.Pos
             SetOrReplaceLine(DiscountKeys.BuildCartPct(percent), "Sconto carrello " + percent + "%", -disc, 1);
         }
 
+        /// <summary>lineKey = Barcode della riga prodotto (session garantisce una sola riga per barcode).</summary>
         public void ApplyLineDiscountPercent(string lineKey, int percent)
         {
-            if (percent <= 0 || percent > 100) return;
+            if (percent < 0 || percent > 100) return;
             var line = _lines.FirstOrDefault(l => l.Barcode == lineKey && !DiscountKeys.IsDiscount(l.Barcode));
             if (line == null) return;
+            ClearDiscountForLine(lineKey);
+            if (percent == 0)
+                return;
             var lineTotal = line.LineTotal;
             var disc = (long)Math.Round(lineTotal * (percent / 100.0), MidpointRounding.AwayFromZero);
             if (disc <= 0) return;
@@ -224,15 +230,40 @@ namespace Win7POS.Core.Pos
 
         public void ApplyLineDiscountAmount(string lineKey, long amountMinor)
         {
-            if (amountMinor <= 0) return;
             var line = _lines.FirstOrDefault(l => l.Barcode == lineKey && !DiscountKeys.IsDiscount(l.Barcode));
             if (line == null) return;
+            ClearDiscountForLine(lineKey);
+            if (amountMinor <= 0) return;
             var lineTotal = line.LineTotal;
             var disc = Math.Min(amountMinor, lineTotal);
             if (disc <= 0) return;
             SetOrReplaceLine(DiscountKeys.BuildLine(lineKey), "Sconto riga", -disc, 1);
         }
 
+        /// <summary>Prezzo unitario originale della riga prodotto identificata da lineKey (Barcode). Session: una sola riga per barcode.</summary>
+        private long GetOriginalUnitPrice(string lineKey)
+        {
+            var line = _lines.FirstOrDefault(l => l.Barcode == lineKey && !DiscountKeys.IsDiscount(l.Barcode));
+            return line?.UnitPrice ?? 0L;
+        }
+
+        /// <summary>Applica sconto riga per prezzo finale unitario desiderato. Usa importo esatto (BuildLine) per evitare arrotondamenti diversi da preview.</summary>
+        public void ApplyLineDiscountByFinalUnitPrice(string lineKey, long finalUnitPriceMinor)
+        {
+            var original = GetOriginalUnitPrice(lineKey);
+            if (original <= 0) return;
+            var clamped = Math.Max(0L, Math.Min(finalUnitPriceMinor, original));
+            ClearDiscountForLine(lineKey);
+            if (clamped >= original)
+                return;
+            var line = _lines.FirstOrDefault(l => l.Barcode == lineKey && !DiscountKeys.IsDiscount(l.Barcode));
+            if (line == null) return;
+            var discountUnit = original - clamped;
+            var disc = discountUnit * line.Quantity;
+            SetOrReplaceLine(DiscountKeys.BuildLine(lineKey), "Sconto riga", -disc, 1);
+        }
+
+        /// <summary>Rimuove tutte le righe sconto associate a questa riga prodotto (lineKey = Barcode). Garantisce rimozione completa.</summary>
         public void ClearDiscountForLine(string lineKey)
         {
             var toRemove = _lines.Where(l => DiscountKeys.IsDiscount(l.Barcode) && DiscountKeys.IsLineDiscountFor(l.Barcode, lineKey)).ToList();

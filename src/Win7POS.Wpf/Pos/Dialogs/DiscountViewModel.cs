@@ -10,6 +10,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
 {
     public enum DiscountMode { Percent, Amount }
 
+    /// <summary>Contesto per anteprima sconto: riga selezionata o carrello.</summary>
+    public sealed class DiscountPreviewContext
+    {
+        public string Barcode { get; set; }
+        public string Name { get; set; }
+        public int Quantity { get; set; }
+        public long OriginalUnitPrice { get; set; }
+        public long CurrentFinalUnitPrice { get; set; }
+        public int? CurrentDiscountPercent { get; set; }
+    }
+
     public sealed class DiscountViewModel : INotifyPropertyChanged
     {
         private string _valueText = "0";
@@ -19,13 +30,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private readonly string _selectedLineBarcode;
         private readonly bool _hasCartItems;
-        private readonly Func<int, bool, string, Task> _onApplyAsync; // value, isPercent, lineBarcodeOrNull
+        private readonly Func<int, long, bool, string, Task> _onApplyAsync; // percentOrZero, finalPriceMinor (solo amount), isPercent, lineBarcodeOrNull
+        private readonly DiscountPreviewContext _previewContext;
 
-        public DiscountViewModel(string selectedLineBarcode, bool hasCartItems, Func<int, bool, string, Task> onApplyAsync)
+        public DiscountViewModel(string selectedLineBarcode, bool hasCartItems, Func<int, long, bool, string, Task> onApplyAsync, DiscountPreviewContext previewContext = null)
         {
             _selectedLineBarcode = selectedLineBarcode?.Trim();
             _hasCartItems = hasCartItems;
             _onApplyAsync = onApplyAsync ?? throw new ArgumentNullException(nameof(onApplyAsync));
+            _previewContext = previewContext;
 
             DigitCommand = new RelayCommandParam(Digit);
             BackspaceCommand = new RelayCommand(_ => Backspace(), _ => (ValueText ?? string.Empty).Length > 0);
@@ -42,7 +55,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public DiscountMode Mode
         {
             get => _mode;
-            set { _mode = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsPercentMode)); OnPropertyChanged(nameof(IsAmountMode)); OnPropertyChanged(nameof(ValueLabel)); OnPropertyChanged(nameof(ScopeText)); OnPropertyChanged(nameof(CanConfirm)); RaiseCanExecuteChanged(); }
+            set { _mode = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsPercentMode)); OnPropertyChanged(nameof(IsAmountMode)); OnPropertyChanged(nameof(ValueLabel)); OnPropertyChanged(nameof(ScopeText)); OnPropertyChanged(nameof(ValueLong)); OnPropertyChanged(nameof(CanConfirm)); RaisePreviewChanged(); RaiseCanExecuteChanged(); }
         }
 
         public bool ApplyToWholeCart
@@ -123,9 +136,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(ValueInt));
+                OnPropertyChanged(nameof(ValueLong));
                 OnPropertyChanged(nameof(CanConfirm));
+                RaisePreviewChanged();
                 RaiseCanExecuteChanged();
             }
+        }
+
+        private void RaisePreviewChanged()
+        {
+            OnPropertyChanged(nameof(PreviewFinalUnitPrice));
+            OnPropertyChanged(nameof(OriginalPriceDisplay));
+            OnPropertyChanged(nameof(PreviewFinalPriceDisplay));
+            OnPropertyChanged(nameof(PreviewDiscountPercentDisplay));
+            OnPropertyChanged(nameof(PreviewDiscountAmountDisplay));
+            OnPropertyChanged(nameof(HasPreviewDiscount));
+            OnPropertyChanged(nameof(IsRemovingDiscount));
         }
 
         public int ValueInt
@@ -148,13 +174,70 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
+        /// <summary>In modalità Importo: prezzo finale unitario inserito (parsed as long).</summary>
+        public long ValueLong
+        {
+            get
+            {
+                if (IsPercentMode) return 0;
+                var text = (ValueText ?? string.Empty).Trim().Replace(",", "").Replace(".", "").Replace(" ", "");
+                if (string.IsNullOrEmpty(text)) return 0;
+                return long.TryParse(text, out var n) && n >= 0 ? n : 0;
+            }
+        }
+
         public bool HasLineSelected => !string.IsNullOrEmpty(_selectedLineBarcode);
 
         public bool CanConfirm =>
-            (IsPercentMode && ValueInt >= 1 && ValueInt <= 100 && (
-                (ApplyToWholeCart && _hasCartItems) ||
-                (!ApplyToWholeCart && HasLineSelected))) ||
-            (IsAmountMode && ValueInt > 0 && HasLineSelected);
+            IsPercentMode
+                ? ValueInt >= 0 && ValueInt <= 100 &&
+                  ((ApplyToWholeCart && _hasCartItems) || (!ApplyToWholeCart && HasLineSelected))
+                : ValueLong >= 0 && HasLineSelected;
+
+        /// <summary>Prezzo unitario originale (sempre unitario, non totale riga).</summary>
+        public long OriginalUnitPrice => _previewContext?.OriginalUnitPrice ?? 0;
+
+        /// <summary>Anteprima prezzo finale unitario (coerente con applicazione che usa finalUnitPriceMinor).</summary>
+        public long PreviewFinalUnitPrice
+        {
+            get
+            {
+                if (OriginalUnitPrice <= 0) return 0;
+                if (IsPercentMode)
+                {
+                    var p = Math.Max(0, Math.Min(100, ValueInt));
+                    return (OriginalUnitPrice * (100 - p)) / 100;
+                }
+                var final = ValueLong;
+                if (final < 0) final = 0;
+                if (final > OriginalUnitPrice) final = OriginalUnitPrice;
+                return final;
+            }
+        }
+
+        public string OriginalPriceDisplay => MoneyClp.Format(OriginalUnitPrice);
+        public string PreviewFinalPriceDisplay => MoneyClp.Format(PreviewFinalUnitPrice);
+        public string PreviewDiscountPercentDisplay
+        {
+            get
+            {
+                if (OriginalUnitPrice <= 0 || PreviewFinalUnitPrice >= OriginalUnitPrice) return string.Empty;
+                var pct = (int)Math.Round((OriginalUnitPrice - PreviewFinalUnitPrice) * 100.0 / OriginalUnitPrice, MidpointRounding.AwayFromZero);
+                return pct > 0 ? "-" + pct + "%" : string.Empty;
+            }
+        }
+        public string PreviewDiscountAmountDisplay
+        {
+            get
+            {
+                if (OriginalUnitPrice <= 0 || PreviewFinalUnitPrice >= OriginalUnitPrice) return string.Empty;
+                var amount = OriginalUnitPrice - PreviewFinalUnitPrice;
+                return "Risparmio " + MoneyClp.Format(amount);
+            }
+        }
+        public bool HasPreviewDiscount => OriginalUnitPrice > 0 && PreviewFinalUnitPrice < OriginalUnitPrice;
+        public bool IsRemovingDiscount => OriginalUnitPrice > 0 && (IsPercentMode ? ValueInt == 0 : PreviewFinalUnitPrice >= OriginalUnitPrice);
+        public bool ShowPreview => OriginalUnitPrice > 0;
 
         public ICommand DigitCommand { get; }
         public ICommand BackspaceCommand { get; }
@@ -216,11 +299,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 if (IsPercentMode && ApplyToWholeCart)
-                    await _onApplyAsync(ValueInt, true, null).ConfigureAwait(true);
+                    await _onApplyAsync(ValueInt, 0L, true, null).ConfigureAwait(true);
                 else if (IsPercentMode && HasLineSelected)
-                    await _onApplyAsync(ValueInt, true, _selectedLineBarcode).ConfigureAwait(true);
+                    await _onApplyAsync(ValueInt, 0L, true, _selectedLineBarcode).ConfigureAwait(true);
                 else if (IsAmountMode && HasLineSelected)
-                    await _onApplyAsync(ValueInt, false, _selectedLineBarcode).ConfigureAwait(true);
+                    await _onApplyAsync(0, ValueLong, false, _selectedLineBarcode).ConfigureAwait(true);
                 else return;
                 RequestClose?.Invoke(true);
             }

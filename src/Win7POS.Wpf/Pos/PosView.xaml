@@ -260,16 +260,28 @@
                         MinWidth="90" Height="42" Margin="10,0,0,0"/>
                 <TextBlock Grid.Column="3" VerticalAlignment="Center" Foreground="White" Margin="20,0,0,0" FontSize="14"
                            Text="{Binding ItemsCount, StringFormat=Articoli: {0}}"/>
-                <StackPanel Grid.Column="4" Orientation="Vertical" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,20,0">
-                    <TextBlock Text="Totale spesa" Foreground="#E8E0F0" FontSize="14" HorizontalAlignment="Right" Opacity="0.9"/>
-                    <TextBlock Text="{Binding FinalTotalDisplay}" Foreground="#FFCCBC" FontSize="26" FontWeight="Bold" HorizontalAlignment="Right"/>
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0"
+                <Grid Grid.Column="4" Margin="0,0,20,0" VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="18"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="24"/>
+                        <RowDefinition Height="30"/>
+                        <RowDefinition Height="18"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Text="Totale spesa"
+                               Foreground="#E8E0F0" FontSize="14" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding FinalTotalDisplay}"
+                               Foreground="#FFCCBC" FontSize="26" FontWeight="Bold" HorizontalAlignment="Right"/>
+                    <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right"
                                 Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="{Binding OriginalTotalDisplay}" Foreground="#C8B8D0" FontSize="12" TextDecorations="Strikethrough" Opacity="0.75" Margin="0,0,10,0"/>
-                        <TextBlock Text="Sconto " Foreground="#C8B8D0" FontSize="12" Opacity="0.9" Margin="0,0,4,0"/>
+                        <TextBlock Text="{Binding OriginalTotalDisplay}" Foreground="#C8B8D0" FontSize="12" TextDecorations="Strikethrough"/>
+                        <TextBlock Text="  Sconto " Foreground="#C8B8D0" FontSize="12"/>
                         <TextBlock Text="{Binding DiscountAmountDisplay}" Foreground="#C8B8D0" FontSize="12" FontWeight="SemiBold"/>
                     </StackPanel>
-                </StackPanel>
+                </Grid>
                 <Button Grid.Column="5" Grid.ColumnSpan="2" MinWidth="180" Height="48" FontSize="16" FontWeight="SemiBold"
                         Content="Paga" Command="{Binding PayCommand}"
                         Style="{StaticResource PrimaryButtonStyle}"

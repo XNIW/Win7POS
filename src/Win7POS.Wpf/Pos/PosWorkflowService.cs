@@ -913,7 +913,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyCartDiscountPercent(percent);
-                return await BuildSnapshotAsync("Sconto carrello applicato.");
+                return await BuildSnapshotAsync(percent <= 0 ? "Sconto carrello rimosso." : "Sconto carrello applicato.");
             }
             finally
             {
@@ -927,7 +927,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountPercent(barcode, percent);
-                return await BuildSnapshotAsync("Sconto riga applicato.");
+                return await BuildSnapshotAsync(percent <= 0 ? "Sconto rimosso." : "Sconto aggiornato.");
             }
             finally
             {
@@ -942,6 +942,21 @@ namespace Win7POS.Wpf.Pos
             {
                 _session.ApplyLineDiscountAmount(barcode, amountMinor);
                 return await BuildSnapshotAsync("Sconto importo applicato.");
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        /// <summary>Applica sconto riga impostando il prezzo unitario finale desiderato (sempre unitario, non totale riga). 0 = rimuovi sconto.</summary>
+        public async Task<PosWorkflowSnapshot> ApplyLineDiscountByFinalPriceAsync(string barcode, long finalUnitPriceMinor)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                _session.ApplyLineDiscountByFinalUnitPrice(barcode, finalUnitPriceMinor);
+                return await BuildSnapshotAsync("Sconto aggiornato.");
             }
             finally
             {
@@ -1372,7 +1387,7 @@ namespace Win7POS.Wpf.Pos
                     {
                         discountAmountMinor = discLine.LineTotal < 0 ? -discLine.LineTotal : 0;
                         var (_, pct) = DiscountKeys.ParseLinePct(discLine.Barcode ?? "");
-                        discountPercent = pct ?? 0;
+                        discountPercent = pct ?? (x.LineTotal > 0 ? (int)Math.Round(discountAmountMinor * 100.0 / x.LineTotal, MidpointRounding.AwayFromZero) : 0);
                     }
                 }
                 lines.Add(new PosCartLine

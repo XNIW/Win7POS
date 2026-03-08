@@ -1367,7 +1367,26 @@ namespace Win7POS.Wpf.Pos
             {
                 var selectedBarcode = SelectedCartItem?.Barcode;
                 var hasCart = CartItems.Count > 0;
-                var dlg = new Dialogs.DiscountDialog(selectedBarcode ?? string.Empty, hasCart, _service, this)
+                Dialogs.DiscountPreviewContext previewContext = null;
+                if (SelectedCartItem != null && !IsDiscountLine(SelectedCartItem.Barcode))
+                {
+                    var line = SelectedCartItem;
+                    var originalUnit = line.UnitPrice;
+                    var currentFinal = (line.DiscountAmountMinor > 0 && line.Quantity > 0)
+                        ? (line.LineTotal - line.DiscountAmountMinor) / line.Quantity
+                        : originalUnit;
+                    var currentPct = line.DiscountPercent > 0 ? (int?)line.DiscountPercent : null;
+                    previewContext = new Dialogs.DiscountPreviewContext
+                    {
+                        Barcode = line.Barcode ?? string.Empty,
+                        Name = line.Name ?? string.Empty,
+                        Quantity = line.Quantity,
+                        OriginalUnitPrice = originalUnit,
+                        CurrentFinalUnitPrice = currentFinal,
+                        CurrentDiscountPercent = currentPct
+                    };
+                }
+                var dlg = new Dialogs.DiscountDialog(selectedBarcode ?? string.Empty, hasCart, _service, this, previewContext)
                 {
                     Owner = Application.Current?.MainWindow
                 };

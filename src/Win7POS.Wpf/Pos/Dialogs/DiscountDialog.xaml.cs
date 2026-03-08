@@ -10,11 +10,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         public DiscountViewModel ViewModel { get; }
 
-        public DiscountDialog(string selectedLineBarcode, bool hasCartItems, PosWorkflowService service, PosViewModel posViewModel)
+        public DiscountDialog(string selectedLineBarcode, bool hasCartItems, PosWorkflowService service, PosViewModel posViewModel, DiscountPreviewContext previewContext = null)
         {
             InitializeComponent();
             WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 520, minHeight: 380, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
-            ViewModel = new DiscountViewModel(selectedLineBarcode, hasCartItems, OnApplyAsync);
+            ViewModel = new DiscountViewModel(selectedLineBarcode, hasCartItems, OnApplyAsync, previewContext);
             ViewModel.RequestClose += ok => DialogResult = ok;
             DataContext = ViewModel;
             _service = service;
@@ -38,17 +38,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private readonly PosWorkflowService _service;
         private readonly PosViewModel _posViewModel;
 
-        private async System.Threading.Tasks.Task OnApplyAsync(int value, bool isPercent, string lineBarcodeOrNull)
+        private async System.Threading.Tasks.Task OnApplyAsync(int percentValue, long finalPriceMinor, bool isPercent, string lineBarcodeOrNull)
         {
             if (_service == null) return;
 
             PosWorkflowSnapshot snapshot = null;
             if (isPercent && string.IsNullOrEmpty(lineBarcodeOrNull))
-                snapshot = await _service.ApplyCartDiscountPercentAsync(value).ConfigureAwait(true);
+                snapshot = await _service.ApplyCartDiscountPercentAsync(percentValue).ConfigureAwait(true);
             else if (isPercent && !string.IsNullOrEmpty(lineBarcodeOrNull))
-                snapshot = await _service.ApplyLineDiscountPercentAsync(lineBarcodeOrNull, value).ConfigureAwait(true);
+                snapshot = await _service.ApplyLineDiscountPercentAsync(lineBarcodeOrNull, percentValue).ConfigureAwait(true);
             else if (!isPercent && !string.IsNullOrEmpty(lineBarcodeOrNull))
-                snapshot = await _service.ApplyLineDiscountAmountAsync(lineBarcodeOrNull, value).ConfigureAwait(true);
+                snapshot = await _service.ApplyLineDiscountByFinalPriceAsync(lineBarcodeOrNull, finalPriceMinor).ConfigureAwait(true);
 
             _posViewModel?.ApplyDiscountSnapshot(snapshot);
         }
