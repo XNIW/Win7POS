@@ -1416,12 +1416,14 @@ namespace Win7POS.Wpf.Pos
             if (snapshot != null) ApplySnapshot(snapshot);
         }
 
-        /// <summary>Applica lo snapshot. preferBarcode: riga da selezionare; preferIndex: indice da selezionare (es. dopo rimozione).</summary>
+        /// <summary>Applica lo snapshot. preferBarcode: riga da selezionare; preferIndex: indice da selezionare (es. dopo rimozione). Le righe sconto (DISC:*) non vengono mostrate: lo sconto è fuso nella riga prodotto.</summary>
         private void ApplySnapshot(PosWorkflowSnapshot snapshot, string preferBarcode = null, int? preferIndex = null)
         {
             CartItems.Clear();
             foreach (var item in snapshot.Lines)
             {
+                if (IsDiscountLine(item.Barcode ?? ""))
+                    continue;
                 CartItems.Add(new PosCartLineRow
                 {
                     LineKey = item.LineKey ?? string.Empty,
@@ -1540,7 +1542,7 @@ namespace Win7POS.Wpf.Pos
             public long DiscountAmountMinor { get; set; }
             public int DiscountPercent { get; set; }
 
-            public bool HasDiscount => !IsDiscountLine && DiscountAmountMinor > 0;
+            public bool HasDiscount => (DiscountAmountMinor > 0 || DiscountPercent > 0) && !IsDiscountLine;
             public string UnitPriceDisplay => MoneyClp.Format(UnitPrice);
             public string LineTotalDisplay => MoneyClp.Format(LineTotal);
             public string OriginalUnitPriceDisplay => MoneyClp.Format(UnitPrice);

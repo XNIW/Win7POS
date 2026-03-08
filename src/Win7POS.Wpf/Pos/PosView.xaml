@@ -85,16 +85,6 @@
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <Grid>
-                            <Grid.Style>
-                                <Style TargetType="Grid">
-                                    <Setter Property="Background" Value="Transparent"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
-                                            <Setter Property="Background" Value="#FFF8E7"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </Grid.Style>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="2*"/>
                                 <ColumnDefinition Width="130"/>
@@ -102,21 +92,17 @@
                                 <ColumnDefinition Width="110"/>
                                 <ColumnDefinition Width="36"/>
                             </Grid.ColumnDefinitions>
-                            <!-- Col 0: Nome + Barcode (nascosto per sconti), con matita a destra del nome -->
+                            <!-- Col 0: Nome + Barcode + Stock + Promo (solo se HasDiscount) -->
                             <Grid Grid.Column="0" Margin="0,0,8,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" TextWrapping="Wrap">
+                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" TextWrapping="Wrap" Foreground="#1F1F1F">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
-                                                <Setter Property="Foreground" Value="#1F1F1F"/>
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
-                                                        <Setter Property="Foreground" Value="#8B6914"/>
-                                                    </DataTrigger>
                                                     <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                                                         <Setter Property="Foreground" Value="#2E1F3A"/>
                                                     </DataTrigger>
@@ -124,17 +110,7 @@
                                             </Style>
                                         </TextBlock.Style>
                                     </TextBlock>
-                                    <TextBlock Text="{Binding Barcode}" FontSize="11" Foreground="Gray">
-                                        <TextBlock.Style>
-                                            <Style TargetType="TextBlock">
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
-                                                        <Setter Property="Visibility" Value="Collapsed"/>
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </TextBlock.Style>
-                                    </TextBlock>
+                                    <TextBlock Text="{Binding Barcode}" FontSize="11" Foreground="Gray"/>
                                     <TextBlock Text="{Binding StockDisplay}" FontSize="11" Foreground="#8A6F9B">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
@@ -159,8 +135,11 @@
                                             </Style>
                                         </TextBlock.Style>
                                     </TextBlock>
-                                    <TextBlock Text="{Binding DiscountPercentDisplay, StringFormat='Promo {0}'}" FontSize="11" Foreground="#8B6914" FontWeight="SemiBold"
-                                               Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVis}}"/>
+                                    <TextBlock Margin="0,2,0,0" FontSize="10" FontWeight="SemiBold" Foreground="#8A5AA8"
+                                               Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVis}}">
+                                        <Run Text="Promo "/>
+                                        <Run Text="{Binding DiscountPercentDisplay}"/>
+                                    </TextBlock>
                                 </StackPanel>
                                 <Button Grid.Column="1" Content="✎" FontSize="13" Padding="0" Focusable="False" IsTabStop="False"
                                         ToolTip="Modifica prezzo"
@@ -182,18 +161,8 @@
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
                                 <Button Content="−" FontSize="14" Padding="0" Focusable="False" IsTabStop="False"
                                         Command="{Binding DataContext.DecreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}">
-                                    <Button.Style>
-                                        <Style TargetType="Button" BasedOn="{StaticResource SmallRoundButtonStyle}">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
-                                </Button>
+                                        CommandParameter="{Binding}"
+                                        Style="{StaticResource SmallRoundButtonStyle}"/>
                                 <Button Content="{Binding Quantity}"
                                         Command="{Binding DataContext.OpenChangeQuantityForLineCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
                                         CommandParameter="{Binding}"
@@ -202,54 +171,34 @@
                                         FontWeight="SemiBold" Cursor="Hand"
                                         Focusable="False" IsTabStop="False"
                                         ToolTip="Modifica quantità">
-                                    <Button.Style>
-                                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-                                            <Setter Property="Template">
-                                                <Setter.Value>
-                                                    <ControlTemplate TargetType="Button">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </ControlTemplate>
-                                                </Setter.Value>
-                                            </Setter>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </ControlTemplate>
+                                    </Button.Template>
                                 </Button>
                                 <Button Content="+" FontSize="14" Padding="0" Focusable="False" IsTabStop="False"
                                         Command="{Binding DataContext.IncreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                        CommandParameter="{Binding}">
-                                    <Button.Style>
-                                        <Style TargetType="Button" BasedOn="{StaticResource SmallRoundButtonStyle}">
-                                            <Setter Property="Visibility" Value="Visible"/>
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
-                                                    <Setter Property="Visibility" Value="Collapsed"/>
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Button.Style>
-                                </Button>
+                                        CommandParameter="{Binding}"
+                                        Style="{StaticResource SmallRoundButtonStyle}"/>
                             </StackPanel>
-                            <!-- Colonna Prezzo: normale o scontato (prezzo barrato + badge %) -->
+                            <!-- Colonna Prezzo: prezzo scontato in bold; sotto (se HasDiscount) originale barrato + badge % -->
                             <StackPanel Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0">
-                                <TextBlock Text="{Binding DiscountedUnitPriceDisplay}" FontWeight="Bold" FontSize="15" HorizontalAlignment="Right"/>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                <TextBlock Text="{Binding DiscountedUnitPriceDisplay}" FontWeight="Bold" FontSize="14" HorizontalAlignment="Right"/>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,1,0,0"
                                             Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVis}}">
-                                    <TextBlock Text="{Binding OriginalUnitPriceDisplay}" Foreground="#777" FontSize="11"
-                                               TextDecorations="Strikethrough" VerticalAlignment="Center"/>
-                                    <TextBlock Text="{Binding DiscountPercentDisplay}" Foreground="#8B6914" FontSize="11"
-                                               Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                    <TextBlock Text="{Binding OriginalUnitPriceDisplay}" Margin="0,0,6,0" FontSize="11"
+                                               Foreground="#7A6F86" TextDecorations="Strikethrough" VerticalAlignment="Center"/>
+                                    <Border Background="#E9D8F3" CornerRadius="4" Padding="6,1,6,1" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding DiscountPercentDisplay}" FontSize="10" FontWeight="SemiBold" Foreground="#5D3E75"/>
+                                    </Border>
                                 </StackPanel>
                             </StackPanel>
-                            <!-- Colonna Totale: normale o scontato + risparmio -->
+                            <!-- Colonna Totale: totale netto in bold; sotto (se HasDiscount) totale originale barrato -->
                             <StackPanel Grid.Column="3" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,18,0">
-                                <TextBlock Text="{Binding DiscountedLineTotalDisplay}" FontWeight="SemiBold" FontSize="15" HorizontalAlignment="Right"/>
-                                <TextBlock Text="{Binding DiscountAmountDisplay}" Foreground="#6F6475" FontSize="11"
-                                           HorizontalAlignment="Right"
+                                <TextBlock Text="{Binding DiscountedLineTotalDisplay}" FontWeight="Bold" FontSize="14" HorizontalAlignment="Right"/>
+                                <TextBlock Text="{Binding OriginalLineTotalDisplay}" HorizontalAlignment="Right" FontSize="11"
+                                           Foreground="#7A6F86" TextDecorations="Strikethrough" Margin="0,1,0,0"
                                            Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVis}}"/>
                             </StackPanel>
                             <Button Grid.Column="4" Content="✕" FontSize="12" Padding="0" Focusable="False" IsTabStop="False"
