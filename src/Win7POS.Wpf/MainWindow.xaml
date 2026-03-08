@@ -32,7 +32,7 @@
         </Border>
 
         <!-- Contenuto principale: TabControl (tab headers nascosti) -->
-        <TabControl x:Name="MainTabControl" Grid.Row="1" Padding="0" BorderThickness="0">
+        <TabControl x:Name="MainTabControl" Grid.Row="1" Padding="0" BorderThickness="0" SelectedIndex="0">
             <TabControl.Template>
                 <ControlTemplate TargetType="{x:Type TabControl}">
                     <Grid>

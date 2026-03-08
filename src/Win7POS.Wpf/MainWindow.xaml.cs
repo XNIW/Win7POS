@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Input;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.Dialogs;
@@ -17,7 +18,23 @@ namespace Win7POS.Wpf
         public MainWindow()
         {
             InitializeComponent();
+
+            MainTabControl.SelectedIndex = 0;
+
             Loaded += OnLoadedAsync;
+            ContentRendered += OnContentRendered;
+        }
+
+        private void OnContentRendered(object sender, EventArgs e)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                MainTabControl.SelectedIndex = 0;
+                MainTabControl.UpdateLayout();
+                PosViewControl?.InvalidateMeasure();
+                PosViewControl?.InvalidateArrange();
+                PosViewControl?.UpdateLayout();
+            }), DispatcherPriority.Loaded);
         }
 
         private void OnHamburgerClick(object sender, RoutedEventArgs e)

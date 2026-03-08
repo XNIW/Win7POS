@@ -105,11 +105,12 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
-            if (e.Key == Key.Oem2)
+            if (e.Key == Key.Oem2 || e.Key == Key.Divide)
             {
                 if (vm.OpenDiscountCommand?.CanExecute(null) == true)
                 {
                     vm.OpenDiscountCommand.Execute(null);
+                    FocusBarcode();
                     e.Handled = true;
                 }
                 return;
