@@ -225,7 +225,7 @@ namespace Win7POS.Wpf.Products
             var p = new Product { Barcode = barcode.Trim(), Name = name?.Trim() ?? string.Empty, UnitPrice = unitPriceMinor };
             await _products.UpsertProductAndMetaInTransactionAsync(p, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty).ConfigureAwait(false);
             await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductCreate, AuditDetails.Kv(("barcode", p.Barcode), ("name", p.Name))).ConfigureAwait(false);
-            Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged();
+            Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(p.Barcode);
         }
 
         /// <summary>Alias per creazione prodotto con tutti i dettagli (barcode, nome, prezzi, fornitore, categoria, stock).</summary>
@@ -244,7 +244,7 @@ namespace Win7POS.Wpf.Products
             var b = before.Barcode ?? barcode ?? "";
             await _products.UpdateProductAndMetaWithPriceHistoryAsync(productId, name?.Trim() ?? string.Empty, unitPriceMinor, b, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty, "MANUAL_EDIT").ConfigureAwait(false);
             await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductUpdate, AuditDetails.Kv(("productId", productId.ToString()), ("barcode", b))).ConfigureAwait(false);
-            Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged();
+            Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(b);
         }
 
         public async Task<bool> DeleteProductAsync(string barcode)
@@ -254,7 +254,7 @@ namespace Win7POS.Wpf.Products
             if (ok)
             {
                 await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductDelete, AuditDetails.Kv(("barcode", barcode))).ConfigureAwait(false);
-                Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged();
+                Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(barcode.Trim());
             }
             return ok;
         }

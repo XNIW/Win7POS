@@ -185,9 +185,29 @@ namespace Win7POS.Wpf.Pos
             StatusMessage = "POS pronto.";
         }
 
-        private void OnCatalogChanged()
+        private void OnCatalogChanged(string barcode)
         {
-            _ = RefreshCartFromDatabaseAsync("Carrello sincronizzato col database.");
+            if (string.IsNullOrEmpty(barcode))
+            {
+                _ = RefreshCartFromDatabaseAsync("Carrello sincronizzato col database.");
+                return;
+            }
+            _ = SyncCartLineFromCatalogAsync(barcode);
+        }
+
+        private async Task SyncCartLineFromCatalogAsync(string barcode)
+        {
+            try
+            {
+                var snapshot = await _service.SyncCartLineFromCatalogAsync(barcode).ConfigureAwait(true);
+                ApplySnapshot(snapshot);
+                StatusMessage = snapshot.Status ?? "Carrello sincronizzato.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore sync riga carrello: " + ex.Message;
+                _logger.LogError(ex, "POS VM sync cart line failed");
+            }
         }
 
         private async Task RefreshCartFromDatabaseAsync(string reason)

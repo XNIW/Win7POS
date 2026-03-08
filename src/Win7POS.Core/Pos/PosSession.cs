@@ -142,6 +142,18 @@ namespace Win7POS.Core.Pos
             RecalcDiscounts();
         }
 
+        /// <summary>Imposta il nome di una riga (es. dopo modifica prodotto).</summary>
+        public void SetLineName(string barcode, string name)
+        {
+            var code = (barcode ?? "").Trim();
+            if (code.Length == 0) return;
+            if (DiscountKeys.IsDiscount(code)) return;
+
+            var line = _lines.FirstOrDefault(x => x.Barcode == code);
+            if (line == null) return;
+            line.Name = name ?? string.Empty;
+        }
+
         public void RemoveLine(string barcode)
         {
             var code = (barcode ?? "").Trim();

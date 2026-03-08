@@ -452,6 +452,39 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        /// <summary>Sincronizza la riga carrello con il catalogo (prezzo/nome). Se il prodotto non è più in DB, rimuove la riga. Usato dopo Modifica prodotto -> Salva.</summary>
+        public async Task<PosWorkflowSnapshot> SyncCartLineFromCatalogAsync(string barcode)
+        {
+            var code = (barcode ?? string.Empty).Trim();
+            if (code.Length == 0)
+                return await GetSnapshotAsync().ConfigureAwait(false);
+
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, code, StringComparison.Ordinal));
+                if (line == null)
+                    return await BuildSnapshotAsync(string.Empty).ConfigureAwait(false);
+
+                var product = await _products.GetByBarcodeAsync(code).ConfigureAwait(false);
+
+                if (product == null)
+                {
+                    _session.SetQuantity(code, 0);
+                    return await BuildSnapshotAsync("Prodotto rimosso dal carrello: non più presente nel database.").ConfigureAwait(false);
+                }
+
+                _session.SetLineUnitPrice(code, product.UnitPrice);
+                _session.SetLineName(code, product.Name ?? string.Empty);
+
+                return await BuildSnapshotAsync("Carrello sincronizzato con il catalogo.").ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         public async Task<IReadOnlyList<Data.Repositories.SupplierListItem>> GetSuppliersAsync()
         {
             return await _suppliers.ListAllAsync().ConfigureAwait(false);
