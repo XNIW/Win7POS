@@ -1388,10 +1388,17 @@ namespace Win7POS.Wpf.Pos
                 index++;
             }
 
+            long subtotalBeforeDiscounts = 0;
+            foreach (var x in _session.Lines)
+            {
+                if (!DiscountKeys.IsDiscount(x.Barcode ?? ""))
+                    subtotalBeforeDiscounts += x.LineTotal;
+            }
+
             return new PosWorkflowSnapshot
             {
                 Lines = lines,
-                Subtotal = _session.Total,
+                Subtotal = subtotalBeforeDiscounts,
                 Total = _session.Total,
                 Status = status ?? string.Empty
             };

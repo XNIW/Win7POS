@@ -51,27 +51,48 @@ namespace Win7POS.Wpf.Pos
         public long Subtotal
         {
             get => _subtotal;
-            set { _subtotal = value; OnPropertyChanged(); }
+            set
+            {
+                _subtotal = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(DiscountAmount));
+                OnPropertyChanged(nameof(HasDiscount));
+                OnPropertyChanged(nameof(OriginalTotalDisplay));
+                OnPropertyChanged(nameof(DiscountAmountDisplay));
+            }
         }
 
         public long Total
         {
             get => _total;
-            set { _total = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalDisplay)); }
+            set
+            {
+                _total = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(TotalDisplay));
+                OnPropertyChanged(nameof(FinalTotalDisplay));
+                OnPropertyChanged(nameof(DiscountAmount));
+                OnPropertyChanged(nameof(HasDiscount));
+                OnPropertyChanged(nameof(DiscountAmountDisplay));
+            }
         }
 
         public int ItemsCount => CartItems.Sum(x => x.Quantity);
 
         public string TotalDisplay => MoneyClp.Format(Total);
 
-        /// <summary>Totale carrello prima degli sconti (solo righe prodotto, senza righe sconto).</summary>
-        public long OriginalTotal => CartItems.Where(x => !x.IsDiscountLine).Sum(x => x.LineTotal);
+        /// <summary>Importo totale sconti (Subtotal - Total).</summary>
+        public long DiscountAmount => Math.Max(0, Subtotal - Total);
 
-        /// <summary>Importo totale sconti (OriginalTotal - Total).</summary>
-        public long DiscountTotal => Math.Max(0, OriginalTotal - Total);
+        public bool HasDiscount => DiscountAmount > 0;
 
-        public string OriginalTotalDisplay => MoneyClp.Format(OriginalTotal);
-        public string DiscountTotalDisplay => MoneyClp.Format(DiscountTotal);
+        /// <summary>Totale prima degli sconti (per UI footer).</summary>
+        public string OriginalTotalDisplay => MoneyClp.Format(Subtotal);
+
+        public string DiscountAmountDisplay => MoneyClp.Format(DiscountAmount);
+
+        /// <summary>Totale finale da pagare (per UI footer).</summary>
+        public string FinalTotalDisplay => MoneyClp.Format(Total);
 
         public bool IsBusy
         {
@@ -1419,7 +1440,9 @@ namespace Win7POS.Wpf.Pos
             Total = snapshot.Total;
             OnPropertyChanged(nameof(TotalDisplay));
             OnPropertyChanged(nameof(OriginalTotalDisplay));
-            OnPropertyChanged(nameof(DiscountTotalDisplay));
+            OnPropertyChanged(nameof(DiscountAmountDisplay));
+            OnPropertyChanged(nameof(FinalTotalDisplay));
+            OnPropertyChanged(nameof(HasDiscount));
             if (!string.IsNullOrWhiteSpace(snapshot.Status))
                 StatusMessage = snapshot.Status;
             OnPropertyChanged(nameof(ItemsCount));
