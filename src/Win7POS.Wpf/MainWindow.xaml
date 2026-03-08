@@ -78,11 +78,6 @@
                         <Button Content="Impostazioni stampante" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuPrinterClick"/>
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource BorderBrush}"/>
-                        <TextBlock Text="Stampa &amp; Backup" Foreground="#6B5B73" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="Stampa ultima" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuPrintLastClick"/>
-                        <Button Content="Backup DB" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuBackupClick"/>
-
-                        <Separator Margin="0,16,0,16" Background="{StaticResource BorderBrush}"/>
                         <TextBlock Text="Supporto" Foreground="#6B5B73" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <Button Content="About / Support" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuAboutClick"/>
                     </StackPanel>

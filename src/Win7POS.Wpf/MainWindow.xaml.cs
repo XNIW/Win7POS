@@ -75,13 +75,6 @@ namespace Win7POS.Wpf
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
-        private void OnMenuBackupClick(object sender, RoutedEventArgs e)
-        {
-            MainTabControl.SelectedIndex = 0;
-            GetPosViewModel()?.BackupDbCommand?.Execute(null);
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
-        }
-
         private void OnMenuShopSettingsClick(object sender, RoutedEventArgs e)
         {
             MainTabControl.SelectedIndex = 0;
@@ -100,13 +93,6 @@ namespace Win7POS.Wpf
         {
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.OpenSalesRegisterCommand?.Execute(null);
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
-        }
-
-        private void OnMenuPrintLastClick(object sender, RoutedEventArgs e)
-        {
-            MainTabControl.SelectedIndex = 0;
-            GetPosViewModel()?.PrintLastReceiptCommand?.Execute(null);
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 

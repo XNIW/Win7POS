@@ -105,6 +105,16 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
+            if (e.Key == Key.Oem2)
+            {
+                if (vm.OpenDiscountCommand?.CanExecute(null) == true)
+                {
+                    vm.OpenDiscountCommand.Execute(null);
+                    e.Handled = true;
+                }
+                return;
+            }
+
             if (e.Key == Key.Up)
             {
                 MoveSelection(-1);
