@@ -54,14 +54,6 @@ namespace Win7POS.Wpf.Pos
             return false;
         }
 
-        private void CartListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
-        {
-            var vm = DataContext as PosViewModel;
-            if (vm == null) return;
-            if (vm.OpenEditProductCommand?.CanExecute(null) == true)
-                vm.OpenEditProductCommand.Execute(null);
-        }
-
         private void BarcodeBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key != Key.Enter) return;

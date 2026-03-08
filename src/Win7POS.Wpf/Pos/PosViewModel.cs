@@ -1492,6 +1492,8 @@ namespace Win7POS.Wpf.Pos
             public int StockQty { get; set; }
             public string UnitPriceDisplay => MoneyClp.Format(UnitPrice);
             public string LineTotalDisplay => MoneyClp.Format(LineTotal);
+            /// <summary>Nome da mostrare in carrello/scontrino: per sconti aggiunge prefisso "— " per evidenza.</summary>
+            public string DisplayName => IsDiscountLine ? "— " + (Name ?? "Sconto") : (Name ?? "");
             public string StockDisplay => IsDiscountLine || (Barcode ?? "").StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase) ? "" : "Stock: " + StockQty;
             public bool IsDiscountLine => DiscountKeys.IsDiscount(Barcode ?? "");
             /// <summary>True se la riga è modificabile (no sconto, no manual).</summary>

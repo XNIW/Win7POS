@@ -57,11 +57,20 @@ namespace Win7POS.Core.Receipt
             {
                 foreach (var x in lines)
                 {
-                    var qty = x.Quantity < 0 ? 0 : x.Quantity;
-                    var unit = FormatAmount(x.UnitPrice, options.Currency, culture);
-                    var lineTotal = FormatAmount(x.LineTotal, options.Currency, culture);
-                    AddWrappedLine(result, width, x.Name ?? "-");
-                    AddLeftRight(result, width, $"  {qty} x {unit}", lineTotal);
+                    var lineTotalFormatted = FormatAmount(x.LineTotal, options.Currency, culture);
+                    if (x.LineTotal < 0)
+                    {
+                        // Riga sconto: nome in evidenza, poi "Sconto" + importo negativo
+                        AddWrappedLine(result, width, x.Name ?? "Sconto");
+                        AddLeftRight(result, width, "  Sconto", lineTotalFormatted);
+                    }
+                    else
+                    {
+                        var qty = x.Quantity < 0 ? 0 : x.Quantity;
+                        var unit = FormatAmount(x.UnitPrice, options.Currency, culture);
+                        AddWrappedLine(result, width, x.Name ?? "-");
+                        AddLeftRight(result, width, $"  {qty} x {unit}", lineTotalFormatted);
+                    }
                 }
             }
 

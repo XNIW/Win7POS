@@ -52,7 +52,7 @@
             </Border>
             <ListBox x:Name="CartListBox" Grid.Row="1" ItemsSource="{Binding CartItems}" SelectedItem="{Binding SelectedCartItem, Mode=TwoWay}"
                      AlternationCount="2" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     MouseDoubleClick="CartListBox_MouseDoubleClick" SelectionChanged="CartListBox_SelectionChanged">
+                     SelectionChanged="CartListBox_SelectionChanged">
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource CartRowStyle}">
                         <Setter Property="Focusable" Value="False"/>
@@ -84,6 +84,16 @@
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <Grid>
+                            <Grid.Style>
+                                <Style TargetType="Grid">
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
+                                            <Setter Property="Background" Value="#FFF8E7"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Grid.Style>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="2*"/>
                                 <ColumnDefinition Width="130"/>
@@ -91,18 +101,21 @@
                                 <ColumnDefinition Width="110"/>
                                 <ColumnDefinition Width="36"/>
                             </Grid.ColumnDefinitions>
-                            <!-- Col 0: Nome + Barcode, con matita a destra del nome -->
+                            <!-- Col 0: Nome + Barcode (nascosto per sconti), con matita a destra del nome -->
                             <Grid Grid.Column="0" Margin="0,0,8,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
                                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Name}" FontWeight="Bold" TextWrapping="Wrap">
+                                    <TextBlock Text="{Binding DisplayName}" FontWeight="Bold" TextWrapping="Wrap">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Setter Property="Foreground" Value="#1F1F1F"/>
                                                 <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
+                                                        <Setter Property="Foreground" Value="#8B6914"/>
+                                                    </DataTrigger>
                                                     <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
                                                         <Setter Property="Foreground" Value="#2E1F3A"/>
                                                     </DataTrigger>
@@ -110,7 +123,17 @@
                                             </Style>
                                         </TextBlock.Style>
                                     </TextBlock>
-                                    <TextBlock Text="{Binding Barcode}" FontSize="11" Foreground="Gray"/>
+                                    <TextBlock Text="{Binding Barcode}" FontSize="11" Foreground="Gray">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                     <TextBlock Text="{Binding StockDisplay}" FontSize="11" Foreground="#8A6F9B">
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
@@ -208,8 +231,28 @@
                                     </Button.Style>
                                 </Button>
                             </StackPanel>
-                            <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0"/>
-                            <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,18,0"/>
+                            <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay}" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
+                                                <Setter Property="Foreground" Value="#8B6914"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,18,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsDiscountLine}" Value="True">
+                                                <Setter Property="Foreground" Value="#8B6914"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                             <Button Grid.Column="4" Content="✕" FontSize="12" Padding="0" Focusable="False" IsTabStop="False"
                                     Style="{StaticResource SmallRoundButtonStyle}"
                                     Foreground="White" Background="#C45C5C"
