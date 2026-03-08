@@ -1,14 +1,15 @@
 using System;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Win7POS.Wpf.Pos.Dialogs;
 
 namespace Win7POS.Wpf.Pos
 {
     public partial class PaymentView
     {
-        private const string SiiLoginUrl =
-            "https://clave.w.sii.cl/oauthsii-v1/?response_type=code&client_id=e0378e96-4014-4a47-b852-9d9246797f5c&redirect_uri=https://eboleta.sii.cl/emitir/&scope=user_info&state=730b12d3-0586-42cb-8d8e-57c15125a8a9";
+        // SII Web: area fiscale temporaneamente disattivata (placeholder in XAML); Navigate non usato
+        // private const string SiiLoginUrl = "https://clave.w.sii.cl/...";
 
         public PaymentView()
         {
@@ -19,14 +20,15 @@ namespace Win7POS.Wpf.Pos
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            Keyboard.Focus(CashBox);
-            CashBox.SelectAll();
-            try
+            Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (SiiWeb != null)
-                    SiiWeb.Navigate(SiiLoginUrl);
-            }
-            catch { }
+                if (CashBox != null)
+                {
+                    CashBox.Focus();
+                    Keyboard.Focus(CashBox);
+                    CashBox.SelectAll();
+                }
+            }), DispatcherPriority.Input);
         }
 
         private void CashBox_GotFocus(object sender, RoutedEventArgs e)
