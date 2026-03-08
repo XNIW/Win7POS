@@ -3,7 +3,7 @@ using Win7POS.Core.Receipt;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    /// <summary>Dati per anteprima scontrino nel PaymentDialog (stesso formato della stampa).</summary>
+    /// <summary>Dati per anteprima scontrino nella schermata Pagamento (PaymentView, stesso formato della stampa).</summary>
     public sealed class PaymentReceiptDraft
     {
         public string SaleCode { get; set; }

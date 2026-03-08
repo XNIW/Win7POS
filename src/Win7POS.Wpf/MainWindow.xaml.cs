@@ -37,6 +37,20 @@ namespace Win7POS.Wpf
             }), DispatcherPriority.Loaded);
         }
 
+        private void MainTabControl_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+        {
+            UpdateShellForCurrentView();
+        }
+
+        private void UpdateShellForCurrentView()
+        {
+            var isPayment = MainTabControl?.SelectedItem == PaymentTab;
+            if (TopHeaderBar != null)
+                TopHeaderBar.Visibility = isPayment ? Visibility.Collapsed : Visibility.Visible;
+            if (BottomStatusBar != null)
+                BottomStatusBar.Visibility = isPayment ? Visibility.Collapsed : Visibility.Visible;
+        }
+
         private void OnHamburgerClick(object sender, RoutedEventArgs e)
         {
             SideMenuOverlay.Visibility = SideMenuOverlay.Visibility == System.Windows.Visibility.Visible
@@ -231,6 +245,7 @@ namespace Win7POS.Wpf
                 PaymentViewControl.DataContext = null;
 
                 MainTabControl.SelectedIndex = prevIndex;
+                UpdateShellForCurrentView();
                 HamburgerButton.IsEnabled = true;
                 tcs.TrySetResult(ok);
             }
@@ -249,6 +264,7 @@ namespace Win7POS.Wpf
                 vm.RequestClose += OnClose;
 
                 MainTabControl.SelectedIndex = 2; // 0 POS, 1 Prodotti, 2 Pagamento
+                UpdateShellForCurrentView();
             }));
 
             return tcs.Task;
