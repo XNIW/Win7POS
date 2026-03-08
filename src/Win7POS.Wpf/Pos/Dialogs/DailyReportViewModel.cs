@@ -36,6 +36,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
             ExportCsvCommand = new AsyncRelayCommand(ExportCsvAsync, _ => !IsBusy);
             PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview));
+            PrintSelectedHistoryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && SelectedHistoryRow != null && !string.IsNullOrEmpty(SummaryReceiptPreview));
             LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync, _ => !IsBusy);
             FilterOggiCommand = new AsyncRelayCommand(ApplyFilterOggiAsync, _ => !IsBusy);
             FilterIeriCommand = new AsyncRelayCommand(ApplyFilterIeriAsync, _ => !IsBusy);
@@ -138,8 +139,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public HistoryRow SelectedHistoryRow
         {
             get => _selectedHistoryRow;
-            set { _selectedHistoryRow = value; OnPropertyChanged(); _ = LoadPreviewForSelectedHistoryAsync(); }
+            set
+            {
+                _selectedHistoryRow = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasHistorySelection));
+                _ = LoadPreviewForSelectedHistoryAsync();
+                RaiseCanExecuteChanged();
+            }
         }
+
+        public bool HasHistorySelection => SelectedHistoryRow != null;
 
         public ICommand LoadCommand { get; }
         public ICommand FilterOggiCommand { get; }
@@ -150,6 +160,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand FilterAnnoCorrenteCommand { get; }
         public ICommand ExportCsvCommand { get; }
         public ICommand PrintSummaryCommand { get; }
+        public ICommand PrintSelectedHistoryCommand { get; }
         public ICommand LoadHistoryCommand { get; }
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -388,6 +399,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (LoadCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ExportCsvCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintSummaryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (PrintSelectedHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (FilterOggiCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (FilterIeriCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();

@@ -28,7 +28,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _onApplyAsync = onApplyAsync ?? throw new ArgumentNullException(nameof(onApplyAsync));
 
             DigitCommand = new RelayCommandParam(Digit);
-            BackspaceCommand = new RelayCommand(_ => Backspace(), _ => (ValueText ?? "").Length > 0);
+            BackspaceCommand = new RelayCommand(_ => Backspace(), _ => (ValueText ?? string.Empty).Length > 0);
             ConfirmCommand = new AsyncRelayCommand(ConfirmAsync, _ => CanConfirm && !IsBusy);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
         }
@@ -70,39 +70,54 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public string ValueText
         {
-            get => _valueText ?? "0";
+            get => _valueText ?? string.Empty;
             set
             {
-                var incoming = value ?? "0";
-                var digits = new string(incoming.Where(char.IsDigit).ToArray());
-
-                if (string.IsNullOrEmpty(digits))
-                    digits = "0";
+                var incoming = value ?? string.Empty;
 
                 if (IsPercentMode)
                 {
-                    if (!int.TryParse(digits, out var n))
-                        n = 0;
-                    if (n < 0) n = 0;
-                    if (n > 100) n = 100;
-                    _valueText = n.ToString();
+                    var digits = new string(incoming.Where(char.IsDigit).ToArray());
+
+                    if (digits.Length == 0)
+                    {
+                        _valueText = string.Empty;
+                    }
+                    else
+                    {
+                        if (!int.TryParse(digits, out var n))
+                            n = 0;
+
+                        if (n < 0) n = 0;
+                        if (n > 100) n = 100;
+
+                        _valueText = n.ToString();
+                    }
                 }
                 else
                 {
                     var sep = System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
                     var idx = incoming.IndexOf('.');
                     if (idx < 0) idx = incoming.IndexOf(',');
+
                     if (idx >= 0)
                     {
                         var left = new string(incoming.Where((c, i) => i < idx && char.IsDigit(c)).ToArray()).TrimStart('0');
                         var right = new string(incoming.Where((c, i) => i > idx && char.IsDigit(c)).ToArray());
-                        if (string.IsNullOrEmpty(left)) left = "0";
+
+                        if (string.IsNullOrEmpty(left))
+                            left = "0";
+
                         _valueText = left + sep + right;
                     }
                     else
                     {
-                        _valueText = digits.TrimStart('0');
-                        if (string.IsNullOrEmpty(_valueText)) _valueText = "0";
+                        var digits = new string(incoming.Where(char.IsDigit).ToArray());
+
+                        if (digits.Length == 0)
+                            _valueText = string.Empty;
+                        else
+                            _valueText = digits.TrimStart('0').Length == 0 ? "0" : digits.TrimStart('0');
                     }
                 }
 
@@ -117,13 +132,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             get
             {
+                var text = (ValueText ?? string.Empty).Trim();
+
+                if (string.IsNullOrEmpty(text))
+                    return 0;
+
                 if (IsPercentMode)
                 {
-                    if (int.TryParse((ValueText ?? "").Trim().Replace(",", "").Replace(".", ""), out var n) && n >= 0 && n <= 100)
+                    if (int.TryParse(text.Replace(",", "").Replace(".", ""), out var n) && n >= 0 && n <= 100)
                         return n;
                     return 0;
                 }
-                return MoneyClp.Parse(ValueText);
+
+                return MoneyClp.Parse(text);
             }
         }
 
@@ -148,32 +169,44 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             var d = digit as string;
             if (string.IsNullOrEmpty(d)) return;
+
             if (d == "00")
             {
-                if (ValueText == "0") ValueText = "00";
-                else ValueText += "00";
+                if (string.IsNullOrEmpty(ValueText))
+                    ValueText = "0";
+                else
+                    ValueText += "00";
                 return;
             }
+
             if (d.Length != 1) return;
             var c = d[0];
+
             if (c >= '0' && c <= '9')
             {
-                if (ValueText == "0" && c != '0') ValueText = d;
-                else if (ValueText != "0") ValueText += d;
-                else ValueText = d;
+                if (string.IsNullOrEmpty(ValueText))
+                    ValueText = d;
+                else if (ValueText == "0" && c != '0')
+                    ValueText = d;
+                else
+                    ValueText += d;
             }
             else if (c == '.' || c == ',')
             {
                 if (IsAmountMode && !ValueText.Contains(".") && !ValueText.Contains(","))
-                    ValueText += System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
+                    ValueText = string.IsNullOrEmpty(ValueText)
+                        ? "0" + System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator
+                        : ValueText + System.Globalization.CultureInfo.CurrentCulture.NumberFormat.NumberDecimalSeparator;
             }
         }
 
         private void Backspace()
         {
-            var t = ValueText ?? "0";
-            if (t.Length <= 1) ValueText = "0";
-            else ValueText = t.Substring(0, t.Length - 1);
+            var t = ValueText ?? string.Empty;
+            if (t.Length <= 1)
+                ValueText = string.Empty;
+            else
+                ValueText = t.Substring(0, t.Length - 1);
         }
 
         private async Task ConfirmAsync()

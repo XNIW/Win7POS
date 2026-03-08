@@ -1160,7 +1160,18 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await BuildSnapshotAsync(string.Empty);
+                var toRemove = new List<string>();
+                foreach (var x in _session.Lines)
+                {
+                    if (DiscountKeys.IsDiscount(x.Barcode ?? "")) continue;
+                    if ((x.Barcode ?? "").StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase)) continue;
+                    var product = await _products.GetByBarcodeAsync(x.Barcode ?? "").ConfigureAwait(false);
+                    if (product == null) toRemove.Add(x.Barcode ?? "");
+                }
+                foreach (var b in toRemove)
+                    _session.RemoveLine(b);
+                var status = toRemove.Count > 0 ? "Prodotto rimosso dal carrello: non più presente nel database." : string.Empty;
+                return await BuildSnapshotAsync(status).ConfigureAwait(false);
             }
             finally
             {

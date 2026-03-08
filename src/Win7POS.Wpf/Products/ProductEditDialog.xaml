@@ -44,7 +44,8 @@
         <TextBox x:Name="PriceBox" Grid.Row="2" Grid.Column="1" Margin="8,10,0,0"
                  Text="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}"
                  Style="{StaticResource ModernTextBoxStyle}"
-                 KeyDown="PriceBox_KeyDown"/>
+                 KeyDown="PriceBox_KeyDown"
+                 GotKeyboardFocus="PriceBox_GotKeyboardFocus"/>
 
         <!-- Prezzo acquisto -->
         <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Prezzo acquisto:"/>

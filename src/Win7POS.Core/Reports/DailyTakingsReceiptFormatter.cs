@@ -10,70 +10,50 @@ namespace Win7POS.Core.Reports
     /// </summary>
     public static class DailyTakingsReceiptFormatter
     {
+        private const int Width = 42;
+
         public static IReadOnlyList<string> Format(DailyTakingsReceiptModel model, ReceiptShopInfo shop = null)
         {
             if (model == null) throw new ArgumentNullException(nameof(model));
             shop = shop ?? new ReceiptShopInfo();
             var culture = CultureInfo.GetCultureInfo("es-CL");
-            var width = 42;
 
-            var result = new List<string>();
-            AddCentered(result, width, "CHIUSURA CASSA");
-            AddLine(result, width, "Data: " + model.Date.ToString("yyyy-MM-dd", culture));
-            AddLine(result, width, new string('-', width));
+            var lines = new List<string>();
+            lines.Add("CHIUSURA CASSA");
+            lines.Add("Data: " + model.Date.ToString("yyyy-MM-dd", culture));
+            lines.Add(new string('-', Width));
+            lines.Add(Row("N. vendite", model.SalesCount.ToString(CultureInfo.InvariantCulture)));
+            lines.Add(Row("Totale", Money(model.TotalAmount)));
+            lines.Add(Row("Contanti", Money(model.CashAmount)));
+            lines.Add(Row("Carta", Money(model.CardAmount)));
+            lines.Add(Row("Lorde", Money(model.GrossSalesAmount)));
+            lines.Add(Row("Resi", Money(model.RefundsAmount)));
+            lines.Add(new string('-', Width));
+            lines.Add(Row("Netto", Money(model.NetAmount)));
+            lines.Add(new string('-', Width));
+            lines.Add(string.IsNullOrWhiteSpace(shop.Footer) ? "Grazie e arrivederci" : Fit(shop.Footer.Trim(), Width));
 
-            AddLeftRight(result, width, "N. vendite", model.SalesCount.ToString(CultureInfo.InvariantCulture));
-            AddLeftRight(result, width, "Totale", FormatClp(model.TotalAmount));
-            AddLeftRight(result, width, "Contanti", FormatClp(model.CashAmount));
-            AddLeftRight(result, width, "Carta", FormatClp(model.CardAmount));
-            AddLeftRight(result, width, "Lorde", FormatClp(model.GrossSalesAmount));
-            AddLeftRight(result, width, "Resi", FormatClp(model.RefundsAmount));
-            AddLine(result, width, new string('-', width));
-            AddLeftRight(result, width, "Netto", FormatClp(model.NetAmount));
-            AddLine(result, width, new string('-', width));
-            AddCentered(result, width, string.IsNullOrWhiteSpace(shop.Footer) ? "Grazie" : shop.Footer.Trim());
-
-            return result;
+            return lines;
         }
 
-        private static string FormatClp(long pesos)
+        private static string Fit(string text, int max)
+        {
+            text = text ?? string.Empty;
+            return text.Length <= max ? text : text.Substring(0, max);
+        }
+
+        private static string Row(string label, string value, int width = Width)
+        {
+            label = Fit(label, 14);
+            value = value ?? "0";
+            var spaces = width - label.Length - value.Length;
+            if (spaces < 1) spaces = 1;
+            return label + new string(' ', spaces) + value;
+        }
+
+        private static string Money(long pesos)
         {
             return pesos.ToString("N0", CultureInfo.GetCultureInfo("es-CL"));
-        }
-
-        private static void AddCentered(List<string> lines, int width, string text)
-        {
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                AddLine(lines, width, string.Empty);
-                return;
-            }
-            var safe = TrimToWidth(text.Trim(), width);
-            var left = (width - safe.Length) / 2;
-            if (left < 0) left = 0;
-            AddLine(lines, width, new string(' ', left) + safe);
-        }
-
-        private static void AddLeftRight(List<string> lines, int width, string left, string right)
-        {
-            left = left ?? string.Empty;
-            right = right ?? string.Empty;
-            var room = width - right.Length;
-            var l = room <= 1 ? string.Empty : TrimToWidth(left, room - 1);
-            var spaces = width - l.Length - right.Length;
-            if (spaces < 1) spaces = 1;
-            AddLine(lines, width, l + new string(' ', spaces) + right);
-        }
-
-        private static void AddLine(List<string> lines, int width, string text)
-        {
-            lines.Add(TrimToWidth(text ?? string.Empty, width));
-        }
-
-        private static string TrimToWidth(string value, int width)
-        {
-            if (string.IsNullOrEmpty(value)) return string.Empty;
-            return value.Length <= width ? value : value.Substring(0, width);
         }
     }
 

@@ -1,5 +1,7 @@
 using System;
 using System.Windows;
+using System.Windows.Input;
+using System.Windows.Threading;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -17,6 +19,20 @@ namespace Win7POS.Wpf.Pos.Dialogs
             DataContext = ViewModel;
             _service = service;
             _posViewModel = posViewModel;
+            Loaded += DiscountDialog_Loaded;
+        }
+
+        private void DiscountDialog_Loaded(object sender, RoutedEventArgs e)
+        {
+            Dispatcher.BeginInvoke(new Action(() =>
+            {
+                if (ValueBox != null)
+                {
+                    ValueBox.Focus();
+                    Keyboard.Focus(ValueBox);
+                    ValueBox.SelectAll();
+                }
+            }), DispatcherPriority.Input);
         }
 
         private readonly PosWorkflowService _service;

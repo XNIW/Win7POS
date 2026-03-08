@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Threading;
 using Win7POS.Core.Models;
 using Win7POS.Wpf.Infrastructure;
 
@@ -9,6 +10,8 @@ namespace Win7POS.Wpf.Products
 {
     public partial class ProductEditDialog : Window
     {
+        private bool _priceBoxAutoSelected;
+
         public ProductEditViewModel ViewModel => (ProductEditViewModel)DataContext;
 
         public ProductEditDialog(ProductEditViewModel vm)
@@ -43,11 +46,28 @@ namespace Win7POS.Wpf.Products
 
         private void Window_Loaded(object sender, RoutedEventArgs e)
         {
+            if (Owner != null)
+            {
+                MaxHeight = Math.Max(520, Owner.ActualHeight - 60);
+                MaxWidth = Math.Max(700, Owner.ActualWidth - 60);
+            }
+            UpdateLayout();
             if (PriceBox != null)
             {
-                PriceBox.Focus();
-                PriceBox.SelectAll();
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    PriceBox.Focus();
+                    Keyboard.Focus(PriceBox);
+                    PriceBox.SelectAll();
+                }), DispatcherPriority.Input);
             }
+        }
+
+        private void PriceBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (_priceBoxAutoSelected) return;
+            _priceBoxAutoSelected = true;
+            PriceBox?.SelectAll();
         }
 
         private void PriceBox_KeyDown(object sender, KeyEventArgs e)

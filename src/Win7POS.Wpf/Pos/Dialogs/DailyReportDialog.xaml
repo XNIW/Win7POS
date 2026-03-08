@@ -109,13 +109,13 @@
                             <RowDefinition Height="*"/>
                             <RowDefinition Height="Auto"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Text="Scontrino chiusura cassa (stampabile)" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="240"
-                                      BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Background="{StaticResource BackgroundLightBrush}">
-                            <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}"
-                                       FontFamily="Consolas" FontSize="11" TextWrapping="Wrap"/>
-                        </ScrollViewer>
-                        <Button Grid.Row="2" Content="Stampa scontrino" MinWidth="120" Height="36" Margin="0,8,0,0"
+                        <TextBlock Grid.Row="0" Text="Scontrino chiusura cassa (stampabile)" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,8"/>
+                        <Border Grid.Row="1" BorderBrush="#D8D8D8" BorderThickness="1" CornerRadius="8" Padding="16" Background="White" Margin="0,0,0,10">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="13" TextWrapping="NoWrap"/>
+                            </ScrollViewer>
+                        </Border>
+                        <Button Grid.Row="2" Content="Stampa scontrino" MinWidth="140" Height="44" Margin="0,0,0,0"
                                 Command="{Binding PrintSummaryCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
                     </Grid>
                 </TabItem>
@@ -153,10 +153,15 @@
                                 <DataGridTextColumn Header="Rimborsi" Binding="{Binding RefundsDisplay}" Width="75"/>
                             </DataGrid.Columns>
                         </DataGrid>
-                        <Border Grid.Row="2" Grid.Column="2" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Background="{StaticResource BackgroundLightBrush}" CornerRadius="6">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="10" TextWrapping="Wrap"/>
-                            </ScrollViewer>
+                        <Border Grid.Row="2" Grid.Column="2" BorderBrush="#D8D8D8" BorderThickness="1" Padding="16" Background="White" CornerRadius="8">
+                            <StackPanel>
+                                <TextBlock Text="Anteprima chiusura" FontSize="11" Foreground="#555" Margin="0,0,0,6"/>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="200">
+                                    <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="13" TextWrapping="NoWrap"/>
+                                </ScrollViewer>
+                                <Button Content="Stampa giorno selezionato" Command="{Binding PrintSelectedHistoryCommand}" Height="44" Margin="0,10,0,0"
+                                        Style="{StaticResource PrimaryButtonStyle}"/>
+                            </StackPanel>
                         </Border>
                         <TextBlock Grid.Row="3" Grid.ColumnSpan="3" Text="{Binding Status, Mode=OneWay}" Foreground="Gray" TextWrapping="Wrap"/>
                     </Grid>

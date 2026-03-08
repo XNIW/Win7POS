@@ -181,7 +181,28 @@ namespace Win7POS.Wpf.Pos
             OpenChangeQuantityForLineCommand = new RelayCommand(p => OpenChangeQuantityForLine(p as PosCartLineRow), p => !IsBusy && p is PosCartLineRow row && !row.IsDiscountLine);
             SuspendCartCommand = new AsyncRelayCommand(SuspendCartAsync, _ => !IsBusy && CartItems.Count > 0, _logger);
             RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy, _logger);
+            CatalogEvents.CatalogChanged += OnCatalogChanged;
             StatusMessage = "POS pronto.";
+        }
+
+        private void OnCatalogChanged()
+        {
+            _ = RefreshCartFromDatabaseAsync("Carrello sincronizzato col database.");
+        }
+
+        private async Task RefreshCartFromDatabaseAsync(string reason)
+        {
+            try
+            {
+                var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
+                ApplySnapshot(snapshot);
+                StatusMessage = reason;
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore refresh carrello: " + ex.Message;
+                _logger.LogError(ex, "POS VM refresh cart failed");
+            }
         }
 
         /// <summary>Avvia l'inizializzazione (chiamato da PosView.Loaded per evitare schermata bianca al primo render).</summary>
@@ -1224,9 +1245,7 @@ namespace Win7POS.Wpf.Pos
                 var ok = await ProductEditDialog.ShowAsync(ProductEditMode.Edit, product, productsService).ConfigureAwait(true);
                 if (ok)
                 {
-                    var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
-                    ApplySnapshot(snapshot);
-                    StatusMessage = "Prodotto aggiornato: " + line.Barcode;
+                    await RefreshCartFromDatabaseAsync("Carrello aggiornato dopo modifica prodotto.").ConfigureAwait(true);
                     RequestFocusBarcode();
                 }
             }
