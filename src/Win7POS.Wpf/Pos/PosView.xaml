@@ -261,8 +261,8 @@
                 <TextBlock Grid.Column="3" VerticalAlignment="Center" Foreground="White" Margin="20,0,0,0" FontSize="14"
                            Text="{Binding ItemsCount, StringFormat=Articoli: {0}}"/>
                 <Grid Grid.Column="4"
-                      Width="320"
-                      Margin="0,0,20,0"
+                      Width="280"
+                      Margin="0,0,18,0"
                       HorizontalAlignment="Right"
                       VerticalAlignment="Center">
                     <Grid.RowDefinitions>
@@ -271,8 +271,8 @@
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="12"/>
-                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="8"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0"
@@ -280,15 +280,25 @@
                                Foreground="#E8E0F0"
                                FontSize="14"
                                VerticalAlignment="Center"
-                               Opacity="0.9"/>
+                               Margin="0,0,0,1"/>
 
                     <TextBlock Grid.Row="0" Grid.Column="2"
                                Text="{Binding FinalTotalDisplay}"
-                               Foreground="#FFCCBC"
-                               FontSize="26"
-                               FontWeight="Bold"
                                HorizontalAlignment="Right"
-                               VerticalAlignment="Center"/>
+                               VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="FontSize" Value="32"/>
+                                <Setter Property="FontWeight" Value="Bold"/>
+                                <Setter Property="Foreground" Value="#FFCCBC"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding HasDiscount}" Value="True">
+                                        <Setter Property="FontSize" Value="28"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
 
                     <StackPanel Grid.Row="1" Grid.Column="2"
                                 Orientation="Horizontal"

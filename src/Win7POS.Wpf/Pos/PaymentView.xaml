@@ -34,9 +34,9 @@
                         <TextBlock Text="Stampa scontrino" FontSize="14" FontWeight="SemiBold" Foreground="#2E2236"/>
                         <TextBlock Text="Stampa lo scontrino prodotti al completamento del pagamento" FontSize="11" Foreground="#7A6E82" Margin="0,2,0,0"/>
                     </StackPanel>
-                    <ToggleButton Grid.Column="1" Style="{StaticResource ToggleSwitchStyle}"
+                    <ToggleButton Grid.Column="1" Style="{StaticResource CompactToggleSwitchStyle}"
                                   IsChecked="{Binding ShouldPrint, Mode=TwoWay}"
-                                  Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                  Margin="10,0,0,0" VerticalAlignment="Center"/>
                 </Grid>
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,6">
                     <StackPanel>
@@ -67,9 +67,9 @@
                                 <TextBlock Text="Stampa automatica PDF SII" FontSize="14" FontWeight="SemiBold" Foreground="#2E2236"/>
                                 <TextBlock Text="Se attivo, stampa il PDF SII dopo lo scontrino prodotti" FontSize="11" Foreground="#7A6E82" Margin="0,2,0,0"/>
                             </StackPanel>
-                            <ToggleButton Grid.Column="1" Style="{StaticResource ToggleSwitchStyle}"
+                            <ToggleButton Grid.Column="1" Style="{StaticResource CompactToggleSwitchStyle}"
                                           IsChecked="{Binding AutoPrintPdfSii, Mode=TwoWay}"
-                                          Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                          Margin="10,0,0,0" VerticalAlignment="Center"/>
                         </Grid>
                     </StackPanel>
                 </GroupBox>
