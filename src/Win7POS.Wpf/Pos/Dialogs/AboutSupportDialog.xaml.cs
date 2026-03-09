@@ -1,5 +1,4 @@
 using System.Windows;
-using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -8,7 +7,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public AboutSupportDialog(AboutSupportViewModel vm)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 760, minHeight: 420, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
+            // Dimensioni compatte da XAML (520x400), Build nascosto in UI ma disponibile in Copia info
             DataContext = vm;
         }
     }

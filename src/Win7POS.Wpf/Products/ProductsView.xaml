@@ -23,33 +23,31 @@
         <KeyBinding Key="R" Modifiers="Control" Command="{Binding CopyNewCommand}"/>
         <KeyBinding Key="F5" Command="{Binding RefreshCommand}"/>
     </UserControl.InputBindings>
-    <Grid Margin="16">
+    <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Toolbar: layout dinamico (WrapPanel) — azioni e filtri si adattano/wrappano -->
-        <Border Grid.Row="0" Margin="0,0,0,12"
+        <!-- Toolbar: spaziatura uniforme, pulsanti bilanciati -->
+        <Border Grid.Row="0" Margin="0,0,0,14"
                 Background="{StaticResource BackgroundLightBrush}"
-                Padding="12" CornerRadius="8"
+                Padding="14" CornerRadius="8"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
                 ClipToBounds="False">
             <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <!-- Blocco azioni -->
-                <StackPanel x:Name="ToolbarActions" Orientation="Horizontal" Margin="0,0,24,0">
-                    <Button MinWidth="100" MinHeight="36" Content="Nuovo" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding NewProductCommand}"/>
-                    <Button MinWidth="100" Margin="8,0,0,0" MinHeight="36" Content="Modifica" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding EditProductCommand}"/>
-                    <Button MinWidth="90" Margin="8,0,0,0" MinHeight="36" Content="Duplica" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CopyNewCommand}"/>
-                    <Button MinWidth="90" Margin="8,0,0,0" MinHeight="36" Content="Elimina" Style="{StaticResource OutlineButtonStyle}" Command="{Binding DeleteCommand}"/>
-                    <Button MinWidth="100" Margin="8,0,0,0" MinHeight="36" Content="Import dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ImportCommand}"/>
-                    <Button MinWidth="100" Margin="8,0,0,0" MinHeight="36" Content="Esporta dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ExportDataCommand}"/>
-                    <Button MinWidth="110" Margin="8,0,0,0" MinHeight="36" Content="Storico prezzi" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenPriceHistoryCommand}"/>
+                <StackPanel x:Name="ToolbarActions" Orientation="Horizontal" Margin="0,0,28,0">
+                    <Button MinWidth="96" MinHeight="36" Content="Nuovo" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding NewProductCommand}"/>
+                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Modifica" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding EditProductCommand}"/>
+                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Duplica" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CopyNewCommand}"/>
+                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Elimina" Style="{StaticResource OutlineButtonStyle}" Command="{Binding DeleteCommand}"/>
+                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Import dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ImportCommand}"/>
+                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Esporta dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ExportDataCommand}"/>
+                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Storico prezzi" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenPriceHistoryCommand}"/>
                 </StackPanel>
-                <!-- Blocco filtri: Fornitore + Cerca (dropdown non più sovrapposto grazie a MaxDropDownHeight e ClipToBounds=False) -->
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="Fornitore:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#6B5B73" FontSize="12"/>
+                    <TextBlock Text="Fornitore:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="#6B5B73" FontSize="12"/>
                     <ComboBox x:Name="SupplierComboBox"
                               MinWidth="160" MaxWidth="220" MinHeight="34"
                               Style="{StaticResource ModernComboBoxStyle}"
@@ -57,8 +55,8 @@
                               SelectedItem="{Binding SelectedSupplier, Mode=TwoWay}"
                               MaxDropDownHeight="280"
                               ToolTip="Filtra per fornitore"/>
-                    <TextBlock Text="Cerca:" VerticalAlignment="Center" Margin="16,0,6,0" Foreground="#6B5B73" FontSize="12"/>
-                    <TextBox MinWidth="160" MaxWidth="240" MinHeight="34"
+                    <TextBlock Text="Cerca:" VerticalAlignment="Center" Margin="20,0,8,0" Foreground="#6B5B73" FontSize="12"/>
+                    <TextBox MinWidth="180" MaxWidth="260" MinHeight="34"
                              Style="{StaticResource ModernTextBoxStyle}"
                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                              ToolTip="Testo da cercare (Invio per cercare)">
@@ -66,31 +64,31 @@
                             <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
                         </TextBox.InputBindings>
                     </TextBox>
-                    <Button MinWidth="70" Margin="10,0,0,0" MinHeight="34" Content="Cerca" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SearchCommand}"/>
-                    <Button MinWidth="90" Margin="8,0,0,0" MinHeight="34" Content="Azzera filtri" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ClearFiltersCommand}"/>
+                    <Button MinWidth="84" Margin="12,0,0,0" MinHeight="34" Content="Cerca" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SearchCommand}"/>
+                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="34" Content="Azzera filtri" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ClearFiltersCommand}"/>
                 </StackPanel>
             </WrapPanel>
         </Border>
 
-        <!-- Content: Categorie (sinistra) + Riga filtri attivi + Griglia (destra) -->
+        <!-- Content: Categorie (sinistra) + Griglia (destra) -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="260"/>
-                <ColumnDefinition Width="12"/>
+                <ColumnDefinition Width="14"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Pannello Categorie -->
+            <!-- Pannello Categorie: più spazio tra voci -->
             <Border Grid.Column="0" Background="White" CornerRadius="8"
-                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10">
+                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="12">
                 <Grid>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="Categorie" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,6"/>
-                    <TextBlock Grid.Row="1" Foreground="Gray" FontSize="11" Margin="0,0,0,8">
+                    <TextBlock Grid.Row="0" Text="Categorie" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8"/>
+                    <TextBlock Grid.Row="1" Foreground="#666" FontSize="11" Margin="0,0,0,10">
                         <Run Text="Seleziona per filtrare"/>
                     </TextBlock>
                     <ListBox Grid.Row="2"
@@ -98,7 +96,15 @@
                              SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
                              DisplayMemberPath="Name"
                              BorderThickness="0"
-                             Background="Transparent"/>
+                             Background="Transparent"
+                             Padding="0,2">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="10,8"/>
+                                <Setter Property="Margin" Value="0,0,0,2"/>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                    </ListBox>
                 </Grid>
             </Border>
 
@@ -110,14 +116,14 @@
                 </Grid.RowDefinitions>
 
                 <!-- Riga filtri attivi -->
-                <Border Grid.Row="0" Background="#F5F5F5" Padding="8,6" Margin="0,0,0,4" CornerRadius="4"
+                <Border Grid.Row="0" Background="#F5F5F5" Padding="10,8" Margin="0,0,0,6" CornerRadius="4"
                         Visibility="{Binding HasActiveFilters, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="{Binding FilterSummary, Mode=OneWay}" FontSize="11" Foreground="#555" TextWrapping="Wrap"/>
                 </Border>
 
-                <!-- DataGrid -->
+                <!-- DataGrid: colonne bilanciate, righe meno strette -->
                 <Border Grid.Row="1" Background="White" CornerRadius="8"
-                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="0">
                     <DataGrid ItemsSource="{Binding Items}"
                               SelectedItem="{Binding SelectedProduct}"
                               AutoGenerateColumns="False"
@@ -128,59 +134,72 @@
                               VirtualizingPanel.VirtualizationMode="Recycling"
                               RowBackground="White"
                               AlternatingRowBackground="#FAFAFA"
+                              RowHeight="34"
                               MouseDoubleClick="ProductsGrid_MouseDoubleClick"
                               GridLinesVisibility="Horizontal"
                               HorizontalGridLinesBrush="#EEE"
                               HeadersVisibility="Column"
                               BorderThickness="0">
+                        <DataGrid.ColumnHeaderStyle>
+                            <Style TargetType="DataGridColumnHeader">
+                                <Setter Property="Padding" Value="10,10,10,10"/>
+                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                <Setter Property="FontSize" Value="12"/>
+                            </Style>
+                        </DataGrid.ColumnHeaderStyle>
+                        <DataGrid.CellStyle>
+                            <Style TargetType="DataGridCell">
+                                <Setter Property="Padding" Value="10,0,10,0"/>
+                                <Setter Property="VerticalAlignment" Value="Center"/>
+                            </Style>
+                        </DataGrid.CellStyle>
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" Width="110" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Nome" Binding="{Binding Name}" Width="2*" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Cod. articolo" Binding="{Binding ArticleCode}" Width="90" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Secondo nome" Binding="{Binding Name2}" Width="1*" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Vendita" Binding="{Binding UnitPrice, StringFormat={}{0:N0}}" Width="85" IsReadOnly="True">
+                            <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" Width="120" MinWidth="100" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Nome" Binding="{Binding Name}" Width="2*" MinWidth="140" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Cod. articolo" Binding="{Binding ArticleCode}" Width="100" MinWidth="90" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Secondo nome" Binding="{Binding Name2}" Width="1.2*" MinWidth="100" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Vendita" Binding="{Binding UnitPrice, StringFormat={}{0:N0}}" Width="82" MinWidth="72" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="HorizontalAlignment" Value="Right"/>
-                                        <Setter Property="Margin" Value="4,0"/>
+                                        <Setter Property="Margin" Value="6,0"/>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Acquisto" Binding="{Binding PurchasePrice, StringFormat={}{0:N0}}" Width="85" IsReadOnly="True">
+                            <DataGridTextColumn Header="Acquisto" Binding="{Binding PurchasePrice, StringFormat={}{0:N0}}" Width="82" MinWidth="72" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="HorizontalAlignment" Value="Right"/>
-                                        <Setter Property="Margin" Value="4,0"/>
+                                        <Setter Property="Margin" Value="6,0"/>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Stock" Binding="{Binding StockQty}" Width="60" IsReadOnly="True">
+                            <DataGridTextColumn Header="Stock" Binding="{Binding StockQty}" Width="56" MinWidth="48" IsReadOnly="True">
                                 <DataGridTextColumn.ElementStyle>
                                     <Style TargetType="TextBlock">
                                         <Setter Property="HorizontalAlignment" Value="Center"/>
-                                        <Setter Property="Margin" Value="4,0"/>
+                                        <Setter Property="Margin" Value="6,0"/>
                                     </Style>
                                 </DataGridTextColumn.ElementStyle>
                             </DataGridTextColumn>
-                            <DataGridTextColumn Header="Fornitore" Binding="{Binding SupplierName}" Width="1*" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="Categoria" Binding="{Binding CategoryName}" Width="1*" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Fornitore" Binding="{Binding SupplierName}" Width="1*" MinWidth="90" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Categoria" Binding="{Binding CategoryName}" Width="1*" MinWidth="90" IsReadOnly="True"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Border>
             </Grid>
         </Grid>
 
-        <!-- Footer: paginazione + stato -->
-        <DockPanel Grid.Row="2" Margin="0,12,0,0">
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                <TextBlock Foreground="#6B5B73" VerticalAlignment="Center" Text="{Binding PagingStatus}" Margin="0,0,16,0"/>
-                <Button Content="Prec" Style="{StaticResource OutlineButtonStyle}" Command="{Binding PrevPageCommand}" MinWidth="60" Margin="0,0,6,0"/>
-                <Button Content="Succ" Style="{StaticResource OutlineButtonStyle}" Command="{Binding NextPageCommand}" MinWidth="60" Margin="0,0,12,0"/>
-                <TextBox Text="{Binding GoPageText, UpdateSourceTrigger=PropertyChanged}" Width="50" Margin="0,0,4,0" VerticalContentAlignment="Center"
+        <!-- Footer: paginazione unificata, pulsanti uniformi -->
+        <Border Grid.Row="2" Margin="0,14,0,0" Padding="0,10,0,0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Foreground="#6B5B73" VerticalAlignment="Center" Text="{Binding PagingStatus}" Margin="0,0,20,0" FontSize="12"/>
+                <Button Content="Prec" Style="{StaticResource OutlineButtonStyle}" Command="{Binding PrevPageCommand}" MinWidth="64" Height="34" Margin="0,0,8,0"/>
+                <Button Content="Succ" Style="{StaticResource OutlineButtonStyle}" Command="{Binding NextPageCommand}" MinWidth="64" Height="34" Margin="0,0,12,0"/>
+                <TextBox Text="{Binding GoPageText, UpdateSourceTrigger=PropertyChanged}" Width="52" Height="34" Margin="0,0,6,0" VerticalContentAlignment="Center"
                          Style="{StaticResource ModernTextBoxStyle}"/>
-                <Button Content="Vai" Style="{StaticResource OutlineButtonStyle}" Command="{Binding GoToPageCommand}" MinWidth="50"/>
+                <Button Content="Vai" Style="{StaticResource OutlineButtonStyle}" Command="{Binding GoToPageCommand}" MinWidth="64" Height="34"/>
             </StackPanel>
-            <TextBlock Foreground="#6B5B73" DockPanel.Dock="Right" VerticalAlignment="Center" Text="{Binding StatusMessage}"/>
-        </DockPanel>
+        </Border>
     </Grid>
 </UserControl>

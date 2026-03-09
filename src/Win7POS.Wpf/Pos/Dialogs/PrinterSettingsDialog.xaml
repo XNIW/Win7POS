@@ -1,16 +1,17 @@
 <Window x:Class="Win7POS.Wpf.Pos.Dialogs.PrinterSettingsDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Printer settings"
+        Title="Impostazioni stampante"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
-        MinWidth="520"
-        MinHeight="320"
+        MinWidth="540"
+        MinHeight="360"
         ResizeMode="CanResize">
-    <Border Padding="12">
+    <Border Padding="20">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <Grid>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -20,47 +21,61 @@
                     <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="180"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="200"/>
+                    <ColumnDefinition Width="*" MinWidth="260"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Printer name:"/>
-                <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" Text="{Binding PrinterName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
-                <TextBlock Grid.Row="1" Grid.Column="1" Margin="8,4,0,0" Foreground="DimGray"
-                           Text="Lascia vuoto per stampante predefinita"/>
+                <!-- Nome stampante -->
+                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Nome stampante:" FontWeight="SemiBold"/>
+                <TextBox Grid.Row="0" Grid.Column="1" Margin="12,0,0,0" MinHeight="34"
+                         Text="{Binding PrinterName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                <TextBlock Grid.Row="1" Grid.Column="1" Margin="12,6,0,0" Foreground="#666" FontSize="11"
+                           Text="Lascia vuoto per usare la stampante predefinita"/>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Copies:"/>
-                <TextBox Grid.Row="2" Grid.Column="1" Margin="8,8,0,0" Width="90" HorizontalAlignment="Left"
-                         Text="{Binding Copies, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                <!-- Copie -->
+                <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,18,0,0" VerticalAlignment="Center" Text="Copie:" FontWeight="SemiBold"/>
+                <TextBox Grid.Row="2" Grid.Column="1" Margin="12,18,0,0" Width="100" HorizontalAlignment="Left" MinHeight="34"
+                         Text="{Binding Copies, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
+                         ToolTip="Numero di copie per ogni scontrino"/>
 
-                <Grid Grid.Row="3" Margin="0,10,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Auto print after sale" VerticalAlignment="Center"/>
-                    <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
-                                  IsChecked="{Binding AutoPrint, Mode=TwoWay}"
-                                  Margin="8,0,0,0" VerticalAlignment="Center"/>
-                </Grid>
+                <!-- Stampa automatica dopo vendita -->
+                <Border Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,20,0,0" Padding="0,12,0,12" Background="#F8F8F8" CornerRadius="6">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Stampa automatica dopo la vendita" VerticalAlignment="Center" FontSize="12"/>
+                        <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
+                                      IsChecked="{Binding AutoPrint, Mode=TwoWay}"
+                                      Margin="12,0,0,0" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
 
-                <Grid Grid.Row="4" Margin="0,6,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Save receipt copy to file" VerticalAlignment="Center"/>
-                    <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
-                                  IsChecked="{Binding SaveCopyToFile, Mode=TwoWay}"
-                                  Margin="8,0,0,0" VerticalAlignment="Center"/>
-                </Grid>
+                <!-- Salva copia scontrino su file -->
+                <Border Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="0,12,0,12" Background="#F8F8F8" CornerRadius="6">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Salva copia scontrino su file" VerticalAlignment="Center" FontSize="12"/>
+                        <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
+                                      IsChecked="{Binding SaveCopyToFile, Mode=TwoWay}"
+                                      Margin="12,0,0,0" VerticalAlignment="Center"/>
+                    </Grid>
+                </Border>
 
-                <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Output directory:"/>
-                <TextBox Grid.Row="5" Grid.Column="1" Margin="8,8,0,0" Text="{Binding OutputDirectory, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                <!-- Cartella di output -->
+                <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,18,0,0" VerticalAlignment="Center" Text="Cartella di output:" FontWeight="SemiBold"/>
+                <TextBox Grid.Row="5" Grid.Column="1" Margin="12,18,0,0" MinHeight="34"
+                         Text="{Binding OutputDirectory, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
+                         ToolTip="Cartella in cui salvare le copie degli scontrini"/>
 
-                <StackPanel Grid.Row="6" Grid.ColumnSpan="2" Margin="0,12,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button MinWidth="120" Height="36" Margin="0,0,8,0" Content="OK" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
-                    <Button MinWidth="120" Height="36" Content="Cancel" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <!-- Pulsanti -->
+                <StackPanel Grid.Row="7" Grid.ColumnSpan="2" Margin="0,24,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button MinWidth="120" Height="38" Margin="0,0,10,0" Content="Conferma" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                    <Button MinWidth="120" Height="38" Content="Annulla" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
                 </StackPanel>
             </Grid>
         </ScrollViewer>
