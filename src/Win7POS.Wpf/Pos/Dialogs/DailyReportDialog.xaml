@@ -3,14 +3,12 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Chiusura cassa / Incasso giornaliero"
         WindowStartupLocation="CenterOwner"
-        Width="1020"
-        Height="720"
-        MinWidth="640"
-        MinHeight="480"
-        MaxWidth="1200"
-        MaxHeight="800"
         SizeToContent="Manual"
-        ResizeMode="CanResize">
+        ResizeMode="CanResize"
+        Width="980"
+        Height="700"
+        MinWidth="900"
+        MinHeight="620">
     <Border Padding="12">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <Grid Margin="0">

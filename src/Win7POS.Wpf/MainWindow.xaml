@@ -56,28 +56,28 @@
 
         <!-- Overlay menu laterale -->
         <Grid x:Name="SideMenuOverlay" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed" Background="#80000000" MouseLeftButtonDown="OnOverlayClick">
-            <Border x:Name="SideMenuPanel" Width="280" HorizontalAlignment="Left" Background="White" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,1,0" CornerRadius="0,0,8,0" MouseLeftButtonDown="OnPanelClick">
+            <Border x:Name="SideMenuPanel" Width="280" HorizontalAlignment="Left" Background="{StaticResource SidebarBackgroundBrush}" BorderBrush="{StaticResource SidebarBorderBrush}" BorderThickness="0,0,1,0" CornerRadius="0,0,8,0" MouseLeftButtonDown="OnPanelClick">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="16,24,16,20">
                         <TextBlock Text="Menu" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,20"/>
 
-                        <TextBlock Text="Navigazione" Foreground="#6B5B73" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="POS" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuPosClick"/>
-                        <Button Content="Prodotti" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuProdottiClick"/>
+                        <TextBlock Text="Navigazione" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Button Content="POS" Tag="Pos" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPosClick"/>
+                        <Button Content="Prodotti" Tag="Prodotti" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuProdottiClick"/>
 
-                        <Separator Margin="0,16,0,16" Background="{StaticResource BorderBrush}"/>
-                        <TextBlock Text="Gestione" Foreground="#6B5B73" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="Registro vendite" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuSalesRegisterClick"/>
-                        <Button Content="Incasso giornaliero" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuDailyReportClick"/>
+                        <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
+                        <TextBlock Text="Gestione" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Button Content="Registro vendite" Tag="SalesRegister" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuSalesRegisterClick"/>
+                        <Button Content="Incasso giornaliero" Tag="DailyReport" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuDailyReportClick"/>
 
-                        <Separator Margin="0,16,0,16" Background="{StaticResource BorderBrush}"/>
-                        <TextBlock Text="Impostazioni" Foreground="#6B5B73" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="Impostazioni negozio" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuShopSettingsClick"/>
-                        <Button Content="Impostazioni stampante" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuPrinterClick"/>
+                        <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
+                        <TextBlock Text="Impostazioni" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Button Content="Impostazioni negozio" Tag="ShopSettings" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuShopSettingsClick"/>
+                        <Button Content="Impostazioni stampante" Tag="Printer" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPrinterClick"/>
 
-                        <Separator Margin="0,16,0,16" Background="{StaticResource BorderBrush}"/>
-                        <TextBlock Text="Supporto" Foreground="#6B5B73" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="About / Support" Style="{StaticResource MenuButtonStyle}" Margin="0,0,0,6" Click="OnMenuAboutClick"/>
+                        <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
+                        <TextBlock Text="Supporto" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Button Content="About / Support" Tag="About" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuAboutClick"/>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

@@ -10,6 +10,15 @@
     <SolidColorBrush x:Key="CardBgBrush" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="BorderBrush" Color="#E0D8E4"/>
 
+    <!-- Menu laterale: viola chiaro coerente con palette -->
+    <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#F6F1FB"/>
+    <SolidColorBrush x:Key="SidebarCardBrush" Color="#EEE3F8"/>
+    <SolidColorBrush x:Key="SidebarHoverBrush" Color="#E3D0F4"/>
+    <SolidColorBrush x:Key="SidebarSelectedBrush" Color="#D4B6EE"/>
+    <SolidColorBrush x:Key="SidebarBorderBrush" Color="#D7C3E7"/>
+    <!-- Totale POS evidenziato in rosso -->
+    <SolidColorBrush x:Key="DangerTotalBrush" Color="#C62828"/>
+
     <!-- Base button template with rounded corners -->
     <ControlTemplate x:Key="RoundedButtonTemplate" TargetType="Button">
         <Border x:Name="border" Background="{TemplateBinding Background}"
@@ -113,6 +122,34 @@
         </Style.Triggers>
     </Style>
 
+    <!-- Pulsanti menu laterale: viola chiaro, hover/selected (voce attiva = SidebarSelectedBrush) -->
+    <Style x:Key="SidebarNavButtonStyle" TargetType="Button" BasedOn="{StaticResource MenuButtonStyle}">
+        <Setter Property="Background" Value="{StaticResource SidebarCardBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource SidebarBorderBrush}"/>
+        <Setter Property="Foreground" Value="#4B2E67"/>
+        <Setter Property="Margin" Value="0,0,0,10"/>
+        <Setter Property="Padding" Value="14,12"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Style.Triggers>
+            <DataTrigger Value="True">
+                <DataTrigger.Binding>
+                    <MultiBinding Converter="{StaticResource EqualityConverter}">
+                        <Binding Path="CurrentMenuKey" RelativeSource="{RelativeSource AncestorType=Window}"/>
+                        <Binding Path="Tag" RelativeSource="{RelativeSource Self}"/>
+                    </MultiBinding>
+                </DataTrigger.Binding>
+                <Setter Property="Background" Value="{StaticResource SidebarSelectedBrush}"/>
+            </DataTrigger>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="{StaticResource SidebarHoverBrush}"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter Property="Background" Value="{StaticResource SidebarHoverBrush}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <!-- Hamburger button (transparent) -->
     <Style x:Key="HamburgerButtonStyle" TargetType="Button">
         <Setter Property="Template" Value="{StaticResource RoundedButtonTemplate}"/>
@@ -152,6 +189,14 @@
         <Setter Property="Background" Value="White"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
         <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="MaxDropDownHeight" Value="280"/>
+        <Setter Property="ItemContainerStyle" Value="{StaticResource ModernComboBoxItemStyle}"/>
+    </Style>
+    <!-- Item del dropdown: altezza e padding fissi per evitare sovrapposizioni -->
+    <Style x:Key="ModernComboBoxItemStyle" TargetType="ComboBoxItem">
+        <Setter Property="Padding" Value="10,8"/>
+        <Setter Property="MinHeight" Value="32"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
     </Style>
 
     <!-- Dialog/panel: pannelli con bordo arrotondato (Incasso, Registro, ecc.) -->

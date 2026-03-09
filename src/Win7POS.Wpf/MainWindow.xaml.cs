@@ -10,6 +10,16 @@ namespace Win7POS.Wpf
 {
     public partial class MainWindow : Window
     {
+        public static readonly DependencyProperty CurrentMenuKeyProperty = DependencyProperty.Register(
+            nameof(CurrentMenuKey), typeof(string), typeof(MainWindow), new PropertyMetadata("Pos"));
+
+        /// <summary>Chiave della voce di menu attiva (Pos, Prodotti, SalesRegister, DailyReport, ShopSettings, Printer, About).</summary>
+        public string CurrentMenuKey
+        {
+            get => (string)GetValue(CurrentMenuKeyProperty);
+            set => SetValue(CurrentMenuKeyProperty, value);
+        }
+
         public MainWindow()
         {
             InitializeComponent();
@@ -33,7 +43,17 @@ namespace Win7POS.Wpf
 
         private void MainTabControl_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
+            UpdateCurrentMenuKeyFromTab();
             UpdateShellForCurrentView();
+        }
+
+        private void UpdateCurrentMenuKeyFromTab()
+        {
+            if (MainTabControl == null) return;
+            var idx = MainTabControl.SelectedIndex;
+            if (idx == 0) CurrentMenuKey = "Pos";
+            else if (idx == 1) CurrentMenuKey = "Prodotti";
+            // tab 2 = Pagamento: lasciamo la chiave invariata (es. Pos)
         }
 
         private void UpdateShellForCurrentView()
@@ -62,12 +82,14 @@ namespace Win7POS.Wpf
 
         private void OnMenuPosClick(object sender, RoutedEventArgs e)
         {
+            CurrentMenuKey = "Pos";
             MainTabControl.SelectedIndex = 0;
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
         private void OnMenuProdottiClick(object sender, RoutedEventArgs e)
         {
+            CurrentMenuKey = "Prodotti";
             MainTabControl.SelectedIndex = 1;
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
@@ -79,6 +101,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuDailyReportClick(object sender, RoutedEventArgs e)
         {
+            CurrentMenuKey = "DailyReport";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.DailyReportCommand?.Execute(null);
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
@@ -93,6 +116,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuPrinterClick(object sender, RoutedEventArgs e)
         {
+            CurrentMenuKey = "Printer";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.PrinterSettingsCommand?.Execute(null);
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
@@ -100,6 +124,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuShopSettingsClick(object sender, RoutedEventArgs e)
         {
+            CurrentMenuKey = "ShopSettings";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.OpenShopSettingsCommand?.Execute(null);
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
@@ -107,6 +132,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuAboutClick(object sender, RoutedEventArgs e)
         {
+            CurrentMenuKey = "About";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.AboutSupportCommand?.Execute(null);
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
@@ -114,6 +140,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuSalesRegisterClick(object sender, RoutedEventArgs e)
         {
+            CurrentMenuKey = "SalesRegister";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.OpenSalesRegisterCommand?.Execute(null);
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;

@@ -279,13 +279,16 @@
 
                     <TextBlock Grid.Row="0" Grid.Column="2"
                                Text="{Binding FinalTotalDisplay}"
+                               Foreground="{StaticResource DangerTotalBrush}"
+                               FontSize="30"
+                               FontWeight="Bold"
                                HorizontalAlignment="Right"
                                VerticalAlignment="Center">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
-                                <Setter Property="FontSize" Value="32"/>
+                                <Setter Property="Foreground" Value="{StaticResource DangerTotalBrush}"/>
+                                <Setter Property="FontSize" Value="30"/>
                                 <Setter Property="FontWeight" Value="Bold"/>
-                                <Setter Property="Foreground" Value="#FFCCBC"/>
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding HasDiscount}" Value="True">
                                         <Setter Property="FontSize" Value="28"/>

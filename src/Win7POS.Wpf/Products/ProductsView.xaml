@@ -30,20 +30,15 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Toolbar: azioni a sinistra, filtri a destra -->
+        <!-- Toolbar: layout dinamico (WrapPanel) — azioni e filtri si adattano/wrappano -->
         <Border Grid.Row="0" Margin="0,0,0,12"
                 Background="{StaticResource BackgroundLightBrush}"
                 Padding="12" CornerRadius="8"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-
+                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                ClipToBounds="False">
+            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <!-- Blocco azioni -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <StackPanel x:Name="ToolbarActions" Orientation="Horizontal" Margin="0,0,24,0">
                     <Button MinWidth="100" MinHeight="36" Content="Nuovo" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding NewProductCommand}"/>
                     <Button MinWidth="100" Margin="8,0,0,0" MinHeight="36" Content="Modifica" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding EditProductCommand}"/>
                     <Button MinWidth="90" Margin="8,0,0,0" MinHeight="36" Content="Duplica" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CopyNewCommand}"/>
@@ -52,24 +47,29 @@
                     <Button MinWidth="100" Margin="8,0,0,0" MinHeight="36" Content="Esporta dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ExportDataCommand}"/>
                     <Button MinWidth="110" Margin="8,0,0,0" MinHeight="36" Content="Storico prezzi" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenPriceHistoryCommand}"/>
                 </StackPanel>
-
-                <!-- Blocco filtri: fornitore + cerca (categoria solo a sinistra) -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <TextBlock Text="Fornitore:" VerticalAlignment="Center" Margin="0,0,4,0" Foreground="Gray"/>
-                    <ComboBox MinWidth="140" MinHeight="34" Style="{StaticResource ModernComboBoxStyle}"
+                <!-- Blocco filtri: Fornitore + Cerca (dropdown non più sovrapposto grazie a MaxDropDownHeight e ClipToBounds=False) -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="Fornitore:" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#6B5B73" FontSize="12"/>
+                    <ComboBox x:Name="SupplierComboBox"
+                              MinWidth="160" MaxWidth="220" MinHeight="34"
+                              Style="{StaticResource ModernComboBoxStyle}"
                               ItemsSource="{Binding Suppliers}" DisplayMemberPath="Name"
-                              SelectedItem="{Binding SelectedSupplier, Mode=TwoWay}"/>
-                    <TextBlock Text="Cerca:" VerticalAlignment="Center" Margin="12,0,4,0" Foreground="Gray"/>
-                    <TextBox MinWidth="180" MinHeight="34" Style="{StaticResource ModernTextBoxStyle}"
-                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}">
+                              SelectedItem="{Binding SelectedSupplier, Mode=TwoWay}"
+                              MaxDropDownHeight="280"
+                              ToolTip="Filtra per fornitore"/>
+                    <TextBlock Text="Cerca:" VerticalAlignment="Center" Margin="16,0,6,0" Foreground="#6B5B73" FontSize="12"/>
+                    <TextBox MinWidth="160" MaxWidth="240" MinHeight="34"
+                             Style="{StaticResource ModernTextBoxStyle}"
+                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                             ToolTip="Testo da cercare (Invio per cercare)">
                         <TextBox.InputBindings>
                             <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
                         </TextBox.InputBindings>
                     </TextBox>
-                    <Button MinWidth="70" Margin="8,0,0,0" MinHeight="34" Content="Cerca" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SearchCommand}"/>
+                    <Button MinWidth="70" Margin="10,0,0,0" MinHeight="34" Content="Cerca" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SearchCommand}"/>
                     <Button MinWidth="90" Margin="8,0,0,0" MinHeight="34" Content="Azzera filtri" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ClearFiltersCommand}"/>
                 </StackPanel>
-            </Grid>
+            </WrapPanel>
         </Border>
 
         <!-- Content: Categorie (sinistra) + Riga filtri attivi + Griglia (destra) -->
