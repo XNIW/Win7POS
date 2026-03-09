@@ -1,7 +1,9 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Windows.Threading;
 using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.Dialogs;
@@ -11,7 +13,13 @@ namespace Win7POS.Wpf
     public partial class MainWindow : Window
     {
         public static readonly DependencyProperty CurrentMenuKeyProperty = DependencyProperty.Register(
-            nameof(CurrentMenuKey), typeof(string), typeof(MainWindow), new PropertyMetadata("Pos"));
+            nameof(CurrentMenuKey), typeof(string), typeof(MainWindow), new PropertyMetadata("Pos", OnCurrentMenuKeyChanged));
+
+        private static void OnCurrentMenuKeyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            if (d is MainWindow w)
+                w.UpdateMenuSelectionVisual();
+        }
 
         /// <summary>Chiave della voce di menu attiva (Pos, Prodotti, SalesRegister, DailyReport, ShopSettings, Printer, About).</summary>
         public string CurrentMenuKey
@@ -26,7 +34,44 @@ namespace Win7POS.Wpf
 
             MainTabControl.SelectedIndex = 0;
 
+            Loaded += (s, e) => UpdateMenuSelectionVisual();
             ContentRendered += OnContentRendered;
+        }
+
+        /// <summary>Aggiorna lo sfondo dei pulsanti del menu laterale (voce attiva = SidebarSelectedBrush). Compatibile Win7.</summary>
+        private void UpdateMenuSelectionVisual()
+        {
+            if (SideMenuPanel == null) return;
+            try
+            {
+                var selectedBrush = TryFindResource("SidebarSelectedBrush") as Brush;
+                var cardBrush = TryFindResource("SidebarCardBrush") as Brush;
+                if (selectedBrush == null || cardBrush == null) return;
+
+                var key = CurrentMenuKey ?? "";
+                foreach (var btn in FindButtonsByTag(SideMenuPanel))
+                {
+                    var tag = btn.Tag?.ToString() ?? "";
+                    btn.Background = string.Equals(tag, key, StringComparison.Ordinal) ? selectedBrush : cardBrush;
+                }
+            }
+            catch
+            {
+                // ignorare errori di risorse/layout
+            }
+        }
+
+        private static System.Collections.Generic.IEnumerable<Button> FindButtonsByTag(DependencyObject root)
+        {
+            if (root == null) yield break;
+            if (root is Button b && b.Tag is string)
+                yield return b;
+            for (int i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+            {
+                var child = VisualTreeHelper.GetChild(root, i);
+                foreach (var x in FindButtonsByTag(child))
+                    yield return x;
+            }
         }
 
         private void OnContentRendered(object sender, EventArgs e)
