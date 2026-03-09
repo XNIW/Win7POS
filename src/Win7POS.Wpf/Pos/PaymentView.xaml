@@ -11,14 +11,14 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="270"/>
+            <ColumnDefinition Width="252"/>
             <ColumnDefinition Width="320"/>
             <ColumnDefinition Width="230"/>
             <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Col 0: Scontrino + Stampa PDF, compatti -->
-        <Border Grid.Row="0" Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,6,0" Padding="8">
+        <!-- Col 0: Scontrino + Stampa PDF, dimensionata in base all'anteprima scontrino -->
+        <Border Grid.Row="0" Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,6,0" Padding="6">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -30,13 +30,13 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Stampa scontrino" FontSize="17" FontWeight="SemiBold" Foreground="#2E2236" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="0" Text="Stampa scontrino" FontSize="15" FontWeight="SemiBold" Foreground="#2E2236" VerticalAlignment="Center"/>
                     <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
                                   IsChecked="{Binding ShouldPrint, Mode=TwoWay}"
-                                  Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                  Margin="6,0,0,0" VerticalAlignment="Center"/>
                 </Grid>
                 <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,6">
-                    <StackPanel>
+                    <StackPanel HorizontalAlignment="Left">
                         <TextBlock Text="{Binding ReceiptPreviewFirstLine, Mode=OneWay}"
                                    FontFamily="Courier New" FontSize="11" FontWeight="Bold"
                                    TextWrapping="NoWrap" Margin="0,0,0,2"/>
@@ -46,24 +46,24 @@
                     </StackPanel>
                 </ScrollViewer>
                 <!-- PDF: Boleta + switch stampa automatica -->
-                <GroupBox Grid.Row="2" Header="PDF" Margin="0,6,0,0" Padding="6"
+                <GroupBox Grid.Row="2" Header="PDF" Margin="0,6,0,0" Padding="5"
                           BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
                     <StackPanel>
                         <Button x:Name="BoletaNumberButton"
-                                MinWidth="80" MinHeight="28" Padding="6,2" Margin="0,0,0,8"
+                                MinWidth="72" MinHeight="26" Padding="4,2" Margin="0,0,0,6"
                                 HorizontalAlignment="Left"
                                 Content="{Binding NextBoletaNumberText}"
                                 FontWeight="SemiBold" FontSize="11"
                                 Cursor="Hand" Click="BoletaNumberButton_Click" Focusable="False"/>
-                        <Grid Margin="0,4,0,0">
+                        <Grid Margin="0,2,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Stampa automatica" FontSize="17" FontWeight="SemiBold" Foreground="#2E2236" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="0" Text="Stampa automatica" FontSize="13" FontWeight="SemiBold" Foreground="#2E2236" VerticalAlignment="Center"/>
                             <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
                                           IsChecked="{Binding AutoPrintPdfSii, Mode=TwoWay}"
-                                          Margin="10,0,0,0" VerticalAlignment="Center"/>
+                                          Margin="6,0,0,0" VerticalAlignment="Center"/>
                         </Grid>
                     </StackPanel>
                 </GroupBox>

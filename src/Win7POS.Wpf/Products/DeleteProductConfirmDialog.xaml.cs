@@ -19,6 +19,7 @@ namespace Win7POS.Wpf.Products
             {
                 Owner = owner
             };
+            WindowSizingHelper.CapMaxHeightToOwner(dlg);
             return dlg.ShowDialog() == true;
         }
 

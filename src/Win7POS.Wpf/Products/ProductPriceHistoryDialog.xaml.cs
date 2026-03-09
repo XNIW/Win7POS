@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
 {
@@ -26,6 +27,7 @@ namespace Win7POS.Wpf.Products
             {
                 Owner = owner
             };
+            WindowSizingHelper.CapMaxHeightToOwner(dlg);
             dlg.ShowDialog();
         }
 

@@ -989,6 +989,7 @@ namespace Win7POS.Wpf.Pos
             {
                 Owner = Application.Current?.MainWindow
             };
+            WindowSizingHelper.CapMaxHeightToOwner(dlg);
             var ok = dlg.ShowDialog() == true;
             if (!ok)
             {
@@ -1077,6 +1078,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     Owner = Application.Current?.MainWindow
                 };
+                WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
             }
             catch (Exception ex)
@@ -1096,6 +1098,7 @@ namespace Win7POS.Wpf.Pos
             {
                 Owner = Application.Current?.MainWindow
             };
+            WindowSizingHelper.CapMaxHeightToOwner(dlg);
             dlg.ShowDialog();
             RequestFocusBarcode();
             return Task.CompletedTask;
@@ -1110,6 +1113,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     Owner = Application.Current?.MainWindow
                 };
+                WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
             }
             catch (Exception ex)
@@ -1145,6 +1149,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     Owner = Application.Current?.MainWindow
                 };
+                WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 var ok = dlg.ShowDialog() == true;
                 if (!ok)
                 {
@@ -1195,6 +1200,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     Owner = Application.Current?.MainWindow
                 };
+                WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
             }
             catch (Exception ex)
@@ -1216,6 +1222,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     Owner = Application.Current?.MainWindow
                 };
+                WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
             }
             catch (Exception ex)
@@ -1264,6 +1271,7 @@ namespace Win7POS.Wpf.Pos
                 StatusMessage = snapshot?.Status ?? "Carrello recuperato.";
             });
             var dlg = new Dialogs.HeldCartsDialog(vm) { Owner = Application.Current?.MainWindow };
+            WindowSizingHelper.CapMaxHeightToOwner(dlg);
 
             try
             {
@@ -1328,6 +1336,7 @@ namespace Win7POS.Wpf.Pos
             {
                 Owner = Application.Current?.MainWindow
             };
+            WindowSizingHelper.CapMaxHeightToOwner(dlg);
             if (dlg.ShowDialog() == true)
                 _ = SetSelectedLineQtyAsync(dlg.Quantity);
         }
@@ -1390,6 +1399,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     Owner = Application.Current?.MainWindow
                 };
+                WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
             }
             catch (Exception ex)

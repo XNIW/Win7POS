@@ -35,9 +35,9 @@
 
         <!-- Options -->
         <WrapPanel Grid.Row="1" Margin="0,0,0,8">
-            <CheckBox Content="InsertNew" IsChecked="{Binding InsertNew}" Margin="0,0,16,0">
-                <CheckBox.Style>
-                    <Style TargetType="CheckBox">
+            <StackPanel Orientation="Horizontal" Margin="0,0,16,0" VerticalAlignment="Center">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
                         <Setter Property="Visibility" Value="Visible"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsCsv}" Value="False">
@@ -45,11 +45,15 @@
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </CheckBox.Style>
-            </CheckBox>
-            <CheckBox Content="UpdatePrice" IsChecked="{Binding UpdatePrice}" Margin="0,0,16,0">
-                <CheckBox.Style>
-                    <Style TargetType="CheckBox">
+                </StackPanel.Style>
+                <TextBlock Text="InsertNew" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ToggleButton Style="{StaticResource TinyToggleSwitchStyle}"
+                              IsChecked="{Binding InsertNew, Mode=TwoWay}"
+                              VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,16,0" VerticalAlignment="Center">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
                         <Setter Property="Visibility" Value="Visible"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsCsv}" Value="False">
@@ -57,11 +61,15 @@
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </CheckBox.Style>
-            </CheckBox>
-            <CheckBox Content="UpdateName" IsChecked="{Binding UpdateName}" Margin="0,0,16,0">
-                <CheckBox.Style>
-                    <Style TargetType="CheckBox">
+                </StackPanel.Style>
+                <TextBlock Text="UpdatePrice" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ToggleButton Style="{StaticResource TinyToggleSwitchStyle}"
+                              IsChecked="{Binding UpdatePrice, Mode=TwoWay}"
+                              VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,16,0" VerticalAlignment="Center">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
                         <Setter Property="Visibility" Value="Visible"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsCsv}" Value="False">
@@ -69,9 +77,18 @@
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </CheckBox.Style>
-            </CheckBox>
-            <CheckBox Content="DryRun" IsChecked="{Binding DryRun}" Margin="0,0,16,0"/>
+                </StackPanel.Style>
+                <TextBlock Text="UpdateName" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ToggleButton Style="{StaticResource TinyToggleSwitchStyle}"
+                              IsChecked="{Binding UpdateName, Mode=TwoWay}"
+                              VerticalAlignment="Center"/>
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Margin="0,0,16,0" VerticalAlignment="Center">
+                <TextBlock Text="DryRun" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ToggleButton Style="{StaticResource TinyToggleSwitchStyle}"
+                              IsChecked="{Binding DryRun, Mode=TwoWay}"
+                              VerticalAlignment="Center"/>
+            </StackPanel>
             <TextBlock VerticalAlignment="Center" Foreground="DimGray"
                        Text="{Binding ApplyModeText}"/>
         </WrapPanel>

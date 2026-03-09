@@ -25,6 +25,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public static bool ShowDialog(Window owner, int currentNumber, out int result)
         {
             var dlg = new BoletaNumberDialog(currentNumber) { Owner = owner };
+            Win7POS.Wpf.Infrastructure.WindowSizingHelper.CapMaxHeightToOwner(dlg);
             var ok = dlg.ShowDialog() == true;
             result = ok ? dlg.BoletaNumber : currentNumber;
             return ok;
@@ -71,7 +72,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             else
             {
-                MessageBox.Show("Inserire un numero Boleta valido (intero > 0).", "Numero Boleta", MessageBoxButton.OK, MessageBoxImage.Warning);
+                MessageBox.Show("Inserire un numero Boleta valido (intero > 0).", "Numero", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
         }
 

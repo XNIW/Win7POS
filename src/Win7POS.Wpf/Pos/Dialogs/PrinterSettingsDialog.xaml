@@ -33,11 +33,27 @@
                 <TextBox Grid.Row="2" Grid.Column="1" Margin="8,8,0,0" Width="90" HorizontalAlignment="Left"
                          Text="{Binding Copies, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                <CheckBox Grid.Row="3" Grid.ColumnSpan="2" Margin="0,10,0,0" Content="Auto print after sale"
-                          IsChecked="{Binding AutoPrint}"/>
+                <Grid Grid.Row="3" Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Auto print after sale" VerticalAlignment="Center"/>
+                    <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
+                                  IsChecked="{Binding AutoPrint, Mode=TwoWay}"
+                                  Margin="8,0,0,0" VerticalAlignment="Center"/>
+                </Grid>
 
-                <CheckBox Grid.Row="4" Grid.ColumnSpan="2" Margin="0,6,0,0" Content="Save receipt copy to file"
-                          IsChecked="{Binding SaveCopyToFile}"/>
+                <Grid Grid.Row="4" Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Save receipt copy to file" VerticalAlignment="Center"/>
+                    <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
+                                  IsChecked="{Binding SaveCopyToFile, Mode=TwoWay}"
+                                  Margin="8,0,0,0" VerticalAlignment="Center"/>
+                </Grid>
 
                 <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Center" Text="Output directory:"/>
                 <TextBox Grid.Row="5" Grid.Column="1" Margin="8,8,0,0" Text="{Binding OutputDirectory, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>

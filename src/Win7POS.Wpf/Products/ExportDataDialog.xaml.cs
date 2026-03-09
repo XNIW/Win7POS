@@ -87,6 +87,7 @@ namespace Win7POS.Wpf.Products
         public static ExportDataChoice ShowDialogAndGetChoice(Window owner)
         {
             var dlg = new ExportDataDialog { Owner = owner };
+            Win7POS.Wpf.Infrastructure.WindowSizingHelper.CapMaxHeightToOwner(dlg);
             return dlg.ShowDialog() == true ? dlg.Result : null;
         }
     }

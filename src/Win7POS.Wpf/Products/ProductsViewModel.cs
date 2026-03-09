@@ -424,6 +424,7 @@ namespace Win7POS.Wpf.Products
                     Owner = Application.Current?.MainWindow,
                     Content = new ImportView()
                 };
+                Win7POS.Wpf.Infrastructure.WindowSizingHelper.CapMaxHeightToOwner(win);
                 win.ShowDialog();
                 await RefreshAsync().ConfigureAwait(true);
             }

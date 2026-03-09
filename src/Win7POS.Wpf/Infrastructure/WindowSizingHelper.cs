@@ -74,5 +74,25 @@ namespace Win7POS.Wpf.Infrastructure
                 }
             };
         }
+
+        /// <summary>
+        /// Limita l'altezza massima del dialog a quella della finestra Owner (schermata POS),
+        /// così nessun dialog supera l'altezza della finestra principale.
+        /// Va chiamato dopo aver impostato Owner e prima di ShowDialog().
+        /// </summary>
+        /// <param name="window">Dialog da limitare</param>
+        /// <param name="margin">Margine verticale da sottrarre all'altezza Owner (default 48)</param>
+        public static void CapMaxHeightToOwner(Window window, double margin = 48)
+        {
+            if (window == null) return;
+            window.Loaded += (s, e) =>
+            {
+                if (window.Owner == null || window.Owner.ActualHeight <= 0) return;
+                var maxFromOwner = Math.Max(200, window.Owner.ActualHeight - margin);
+                var currentMax = window.MaxHeight;
+                if (double.IsNaN(currentMax) || currentMax > maxFromOwner || double.IsPositiveInfinity(currentMax))
+                    window.MaxHeight = maxFromOwner;
+            };
+        }
     }
 }

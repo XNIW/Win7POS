@@ -136,11 +136,9 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <CheckBox Grid.Column="0" Content="Sconto intero carrello" MinHeight="42" Margin="0,0,16,0"
-                      IsChecked="{Binding ApplyToWholeCart, Mode=TwoWay}"
-                      VerticalAlignment="Center">
-                <CheckBox.Style>
-                    <Style TargetType="CheckBox">
+            <Grid Grid.Column="0" MinHeight="42" Margin="0,0,16,0" VerticalAlignment="Center">
+                <Grid.Style>
+                    <Style TargetType="Grid">
                         <Setter Property="Visibility" Value="Collapsed"/>
                         <Style.Triggers>
                             <DataTrigger Binding="{Binding IsPercentMode}" Value="True">
@@ -148,8 +146,16 @@
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>
-                </CheckBox.Style>
-            </CheckBox>
+                </Grid.Style>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="Sconto intero carrello" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
+                              IsChecked="{Binding ApplyToWholeCart, Mode=TwoWay}"
+                              VerticalAlignment="Center"/>
+            </Grid>
             <TextBlock Grid.Column="1" Text="{Binding ScopeText}" VerticalAlignment="Center"
                        FontSize="13" FontWeight="SemiBold"/>
             <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
