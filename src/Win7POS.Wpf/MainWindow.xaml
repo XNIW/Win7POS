@@ -3,13 +3,11 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:pos="clr-namespace:Win7POS.Wpf.Pos"
         xmlns:prod="clr-namespace:Win7POS.Wpf.Products"
-        xmlns:core="clr-namespace:Win7POS.Core;assembly=Win7POS.Core"
         Title="Win7POS" MinWidth="1024" MinHeight="600" WindowState="Maximized">
     <Grid Margin="0">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <!-- Header con hamburger (nascosto in modalità Pagamento) -->
@@ -84,22 +82,5 @@
                 </ScrollViewer>
             </Border>
         </Grid>
-
-        <!-- Barra stato inferiore (nascosta in modalità Pagamento) -->
-        <Border x:Name="BottomStatusBar" Grid.Row="2" Background="{StaticResource BackgroundLightBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="12,8">
-            <Grid>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="DB: " VerticalAlignment="Center"/>
-                    <TextBlock Text="{x:Static core:AppPaths.DbPath}" VerticalAlignment="Center" Foreground="#555"/>
-                    <Border Width="1" Margin="12,0" Background="{StaticResource BorderBrush}" VerticalAlignment="Stretch"/>
-                    <CheckBox x:Name="CashierModeCheckBox"
-                              Content="Modalita cassa"
-                              Margin="8,0,0,0"
-                              VerticalAlignment="Center"
-                              Checked="OnCashierModeChecked"
-                              Unchecked="OnCashierModeUnchecked"/>
-                </StackPanel>
-            </Grid>
-        </Border>
     </Grid>
 </Window>

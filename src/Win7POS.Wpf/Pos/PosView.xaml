@@ -92,7 +92,7 @@
                                 <ColumnDefinition Width="110"/>
                                 <ColumnDefinition Width="36"/>
                             </Grid.ColumnDefinitions>
-                            <!-- Col 0: Nome + Barcode + Stock + Promo (solo se HasDiscount) -->
+                            <!-- Col 0: Nome + Barcode + Stock (sconto si vede in colonna Prezzo) -->
                             <Grid Grid.Column="0" Margin="0,0,8,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -134,11 +134,6 @@
                                                 </Style.Triggers>
                                             </Style>
                                         </TextBlock.Style>
-                                    </TextBlock>
-                                    <TextBlock Margin="0,2,0,0" FontSize="10" FontWeight="SemiBold" Foreground="#8A5AA8"
-                                               Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVis}}">
-                                        <Run Text="Promo "/>
-                                        <Run Text="{Binding DiscountPercentDisplay, Mode=OneWay}"/>
                                     </TextBlock>
                                 </StackPanel>
                                 <Button Grid.Column="1" Content="✎" FontSize="13" Padding="0" Focusable="False" IsTabStop="False"

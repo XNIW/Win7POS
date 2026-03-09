@@ -260,4 +260,50 @@
         </Setter>
     </Style>
 
+    <!-- Switch piccolo per Payment: 56x28, knob 20, meno dominante nella card -->
+    <Style x:Key="SmallToggleSwitchStyle" TargetType="{x:Type ToggleButton}">
+        <Setter Property="Width" Value="56"/>
+        <Setter Property="Height" Value="28"/>
+        <Setter Property="Background" Value="#D9D9D9"/>
+        <Setter Property="BorderBrush" Value="#CFCFCF"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ToggleButton}">
+                    <Grid Width="{TemplateBinding Width}" Height="{TemplateBinding Height}">
+                        <Border x:Name="Track"
+                                CornerRadius="14"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"/>
+                        <Border x:Name="Knob"
+                                Width="20"
+                                Height="20"
+                                CornerRadius="10"
+                                Background="White"
+                                HorizontalAlignment="Left"
+                                Margin="3,0,0,0"
+                                VerticalAlignment="Center"/>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="{StaticResource PrimaryLightBrush}"/>
+                            <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource PrimaryLightBrush}"/>
+                            <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/>
+                            <Setter TargetName="Knob" Property="Margin" Value="0,0,3,0"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Track" Property="Opacity" Value="0.92"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Track" Property="Opacity" Value="0.5"/>
+                            <Setter TargetName="Knob" Property="Opacity" Value="0.7"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>
