@@ -3,11 +3,15 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Impostazioni stampante"
         WindowStartupLocation="CenterOwner"
-        SizeToContent="WidthAndHeight"
-        MinWidth="540"
-        MinHeight="360"
+        SizeToContent="Manual"
+        Width="560"
+        Height="420"
+        MinWidth="500"
+        MinHeight="380"
+        MaxWidth="620"
+        MaxHeight="520"
         ResizeMode="CanResize">
-    <Border Padding="20">
+    <Border Padding="18">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <Grid>
                 <Grid.RowDefinitions>

@@ -1,5 +1,4 @@
 using System.Windows;
-using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -8,7 +7,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public DailyReportDialog(DailyReportViewModel vm)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 640, minHeight: 480, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
+            // Dimensioni da XAML (980x700, Max 980x700), coerente con Registro vendite / Reso
             DataContext = vm;
             Loaded += OnLoaded;
         }

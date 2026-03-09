@@ -8,8 +8,10 @@
         Width="980"
         Height="700"
         MinWidth="900"
-        MinHeight="620">
-    <Border Padding="12">
+        MinHeight="620"
+        MaxWidth="980"
+        MaxHeight="700">
+    <Border Padding="14">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <Grid Margin="0">
         <Grid.RowDefinitions>
