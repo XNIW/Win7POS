@@ -1,5 +1,6 @@
 using System;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Win7POS.Wpf.Infrastructure;
@@ -13,7 +14,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public DiscountDialog(string selectedLineBarcode, bool hasCartItems, PosWorkflowService service, PosViewModel posViewModel, DiscountPreviewContext previewContext = null)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 520, minHeight: 380, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             ViewModel = new DiscountViewModel(selectedLineBarcode, hasCartItems, OnApplyAsync, previewContext);
             ViewModel.RequestClose += ok => DialogResult = ok;
             DataContext = ViewModel;
@@ -24,14 +24,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void DiscountDialog_Loaded(object sender, RoutedEventArgs e)
         {
+            FocusAndSelectAll(ValueBox);
+        }
+
+        private void Tab_Checked(object sender, RoutedEventArgs e)
+        {
+            FocusAndSelectAll(ValueBox);
+        }
+
+        private void FocusAndSelectAll(TextBox tb)
+        {
+            if (tb == null) return;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (ValueBox != null)
-                {
-                    ValueBox.Focus();
-                    Keyboard.Focus(ValueBox);
-                    ValueBox.SelectAll();
-                }
+                tb.Focus();
+                tb.SelectAll();
+                Keyboard.Focus(tb);
             }), DispatcherPriority.Input);
         }
 

@@ -163,4 +163,55 @@
         <Setter Property="Padding" Value="14"/>
     </Style>
 
+    <!-- Switch ON/OFF per opzioni stampa (touch-friendly, coerente con tema viola) -->
+    <Style x:Key="ToggleSwitchStyle" TargetType="{x:Type ToggleButton}">
+        <Setter Property="Width" Value="84"/>
+        <Setter Property="Height" Value="40"/>
+        <Setter Property="Background" Value="#D9D9D9"/>
+        <Setter Property="BorderBrush" Value="#CFCFCF"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Cursor" Value="Hand"/>
+        <Setter Property="Focusable" Value="True"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ToggleButton}">
+                    <Grid Width="{TemplateBinding Width}" Height="{TemplateBinding Height}">
+                        <Border x:Name="Track"
+                                CornerRadius="20"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"/>
+                        <Border x:Name="Knob"
+                                Width="32"
+                                Height="32"
+                                CornerRadius="16"
+                                Background="White"
+                                HorizontalAlignment="Left"
+                                Margin="4,0,0,0"
+                                VerticalAlignment="Center">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="6" ShadowDepth="1" Opacity="0.20"/>
+                            </Border.Effect>
+                        </Border>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Track" Property="Background" Value="{StaticResource PrimaryLightBrush}"/>
+                            <Setter TargetName="Track" Property="BorderBrush" Value="{StaticResource PrimaryLightBrush}"/>
+                            <Setter TargetName="Knob" Property="HorizontalAlignment" Value="Right"/>
+                            <Setter TargetName="Knob" Property="Margin" Value="0,0,4,0"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Track" Property="Opacity" Value="0.92"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Track" Property="Opacity" Value="0.5"/>
+                            <Setter TargetName="Knob" Property="Opacity" Value="0.7"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>

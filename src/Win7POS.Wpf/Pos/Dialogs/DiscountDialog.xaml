@@ -3,9 +3,11 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Sconto"
         WindowStartupLocation="CenterOwner"
-        SizeToContent="WidthAndHeight"
-        MinWidth="520"
-        MinHeight="380"
+        SizeToContent="Manual"
+        Width="760"
+        Height="860"
+        MinWidth="760"
+        MinHeight="860"
         ResizeMode="CanResize"
         Background="{StaticResource BackgroundLightBrush}">
     <Window.Resources>
@@ -38,30 +40,32 @@
             <Setter Property="FontWeight" Value="SemiBold"/>
         </Style>
     </Window.Resources>
-    <Grid Margin="16">
+    <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="170"/>
+            <RowDefinition Height="140"/>
+            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
-            <ToggleButton Content="Percentuale %" MinWidth="140" Height="36" Margin="0,0,8,0"
+            <ToggleButton x:Name="PercentToggle" Content="Percentuale %" MinWidth="140" Height="36" Margin="0,0,8,0"
                          IsChecked="{Binding IsPercentMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         Style="{StaticResource DiscountToggleStyle}"/>
-            <ToggleButton Content="Importo $" MinWidth="140" Height="36"
+                         Style="{StaticResource DiscountToggleStyle}"
+                         Checked="Tab_Checked"/>
+            <ToggleButton x:Name="ImportoToggle" Content="Importo $" MinWidth="140" Height="36"
                          IsChecked="{Binding IsAmountMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                         Style="{StaticResource DiscountToggleStyle}"/>
+                         Style="{StaticResource DiscountToggleStyle}"
+                         Checked="Tab_Checked"/>
         </StackPanel>
 
         <TextBlock Grid.Row="1" Text="{Binding ScopeText}" Margin="0,8,0,12"
                    FontSize="13" FontWeight="SemiBold"/>
 
-        <!-- Anteprima prezzo: originale barrato → prezzo finale + badge sconto -->
-        <Border Grid.Row="2" Margin="0,0,0,10" Padding="14" CornerRadius="10" Background="White" BorderBrush="#DDD" BorderThickness="1"
+        <!-- Anteprima prezzo: originale barrato → prezzo finale + badge sconto (altezza fissa per tab uguali) -->
+        <Border Grid.Row="2" Margin="0,0,0,0" Padding="14" CornerRadius="10" Background="White" BorderBrush="#DDD" BorderThickness="1"
                 Visibility="{Binding ShowPreview, Converter={StaticResource BoolToVis}}">
             <Border.Resources>
                 <Style TargetType="TextBlock">
@@ -84,8 +88,8 @@
             </StackPanel>
         </Border>
 
-        <StackPanel Grid.Row="3" Margin="0,0,0,12">
-            <TextBox x:Name="ValueBox" MinHeight="64" FontSize="28" Padding="16,8" Margin="0,0,0,4"
+        <StackPanel Grid.Row="3" Margin="0,0,0,0">
+            <TextBox x:Name="ValueBox" FontSize="28" Padding="16,8" Margin="0,0,0,4"
                      Style="{StaticResource ModernTextBoxStyle}"
                      Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
                      HorizontalContentAlignment="Right" VerticalContentAlignment="Center"/>
@@ -97,40 +101,33 @@
                        Visibility="{Binding IsAmountMode, Converter={StaticResource BoolToVis}}"/>
         </StackPanel>
 
-        <Grid Grid.Row="4" Margin="0,0,0,12">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <UniformGrid Grid.Row="0" Rows="4" Columns="3">
+        <Grid Grid.Row="4" Margin="0,0,0,0">
+            <UniformGrid Rows="4" Columns="3">
                 <Button Content="7" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="7"/>
-            <Button Content="8" Style="{StaticResource KeypadBtn}"
+                <Button Content="8" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="8"/>
-            <Button Content="9" Style="{StaticResource KeypadBtn}"
+                <Button Content="9" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="9"/>
-            <Button Content="4" Style="{StaticResource KeypadBtn}"
+                <Button Content="4" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="4"/>
-            <Button Content="5" Style="{StaticResource KeypadBtn}"
+                <Button Content="5" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="5"/>
-            <Button Content="6" Style="{StaticResource KeypadBtn}"
+                <Button Content="6" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="6"/>
-            <Button Content="1" Style="{StaticResource KeypadBtn}"
+                <Button Content="1" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="1"/>
-            <Button Content="2" Style="{StaticResource KeypadBtn}"
+                <Button Content="2" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="2"/>
-            <Button Content="3" Style="{StaticResource KeypadBtn}"
+                <Button Content="3" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="3"/>
-            <Button Content="0" Style="{StaticResource KeypadBtn}"
+                <Button Content="0" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="0"/>
-            <Button Content="00" Style="{StaticResource KeypadBtn}"
+                <Button Content="00" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="00"/>
-            <Button Content="⌫" Style="{StaticResource KeypadBtn}"
+                <Button Content="⌫" Style="{StaticResource KeypadBtn}"
                     Command="{Binding BackspaceCommand}"/>
             </UniformGrid>
-            <Button Grid.Row="1" Content="." Style="{StaticResource KeypadBtn}" Margin="6,6,0,0" HorizontalAlignment="Left"
-                    Command="{Binding DigitCommand}" CommandParameter=","
-                    Visibility="{Binding IsAmountMode, Converter={StaticResource BoolToVis}}"/>
         </Grid>
 
         <Grid Grid.Row="5">
