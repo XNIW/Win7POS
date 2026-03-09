@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Input;
-using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -11,7 +10,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public RefundDialog(RefundViewModel vm)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 720, minHeight: 520, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
+            // Dimensioni fisse come Registro vendite (980x700 da XAML, NoResize)
             ViewModel = vm;
             ViewModel.RequestClose += OnRequestClose;
             DataContext = vm;

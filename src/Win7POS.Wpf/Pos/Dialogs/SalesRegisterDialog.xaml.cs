@@ -1,7 +1,6 @@
 using System;
 using System.Windows;
 using System.Windows.Input;
-using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -10,7 +9,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public SalesRegisterDialog(SalesRegisterViewModel viewModel)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 800, minHeight: 500, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
+            // Dimensioni fisse da XAML (980x700, NoResize); niente sizing adattivo per evitare resize con molti scontrini
             DataContext = viewModel;
             viewModel.RequestCloseDialog += () => Dispatcher.BeginInvoke(new Action(() => { try { Close(); } catch { } }));
             Loaded += OnLoaded;
