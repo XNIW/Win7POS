@@ -27,6 +27,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private SaleRow _selectedSale;
         private string _detailSummary = "";
         private string _detailReceiptPreview = "";
+        private bool _showReceiptPreview = true;
 
         public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, Action<long, SalesRegisterViewModel> onRequestRefund = null, bool isRefundScanMode = false)
         {
@@ -146,6 +147,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             get => _detailReceiptPreview;
             set { _detailReceiptPreview = value ?? ""; OnPropertyChanged(); }
+        }
+
+        public bool ShowReceiptPreview
+        {
+            get => _showReceiptPreview;
+            set { _showReceiptPreview = value; OnPropertyChanged(); }
         }
 
         public ICommand LoadCommand { get; }
