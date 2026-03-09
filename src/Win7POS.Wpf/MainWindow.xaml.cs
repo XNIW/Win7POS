@@ -110,9 +110,15 @@ namespace Win7POS.Wpf
 
         private void OnHamburgerClick(object sender, RoutedEventArgs e)
         {
-            SideMenuOverlay.Visibility = SideMenuOverlay.Visibility == System.Windows.Visibility.Visible
-                ? System.Windows.Visibility.Collapsed
-                : System.Windows.Visibility.Visible;
+            if (SideMenuOverlay.Visibility == System.Windows.Visibility.Visible)
+            {
+                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            }
+            else
+            {
+                CurrentMenuKey = ""; // reset evidenziazione: nessuna voce selezionata alla riapertura del menu
+                SideMenuOverlay.Visibility = System.Windows.Visibility.Visible;
+            }
         }
 
         private void OnOverlayClick(object sender, MouseButtonEventArgs e)

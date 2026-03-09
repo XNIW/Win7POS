@@ -4,13 +4,13 @@
         Title="Registro vendite"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        ResizeMode="CanResize"
-        Width="1120"
-        Height="760"
-        MinWidth="1000"
-        MinHeight="680"
-        MaxWidth="1024"
-        MaxHeight="740"
+        ResizeMode="NoResize"
+        Width="980"
+        Height="700"
+        MinWidth="980"
+        MaxWidth="980"
+        MinHeight="700"
+        MaxHeight="700"
         KeyDown="OnWindowKeyDown">
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
