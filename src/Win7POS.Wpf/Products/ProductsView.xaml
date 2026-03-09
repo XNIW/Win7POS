@@ -30,21 +30,21 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Toolbar: spaziatura uniforme, pulsanti bilanciati -->
+        <!-- Toolbar: più ariosa, separazione chiara tra azioni e ricerca -->
         <Border Grid.Row="0" Margin="0,0,0,14"
                 Background="{StaticResource BackgroundLightBrush}"
-                Padding="14" CornerRadius="8"
+                Padding="16" CornerRadius="8"
                 BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
                 ClipToBounds="False">
             <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <StackPanel x:Name="ToolbarActions" Orientation="Horizontal" Margin="0,0,28,0">
+                <StackPanel x:Name="ToolbarActions" Orientation="Horizontal" Margin="0,0,40,0">
                     <Button MinWidth="96" MinHeight="36" Content="Nuovo" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding NewProductCommand}"/>
-                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Modifica" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding EditProductCommand}"/>
-                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Duplica" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CopyNewCommand}"/>
-                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Elimina" Style="{StaticResource OutlineButtonStyle}" Command="{Binding DeleteCommand}"/>
-                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Import dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ImportCommand}"/>
-                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Esporta dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ExportDataCommand}"/>
-                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="36" Content="Storico prezzi" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenPriceHistoryCommand}"/>
+                    <Button MinWidth="96" Margin="12,0,0,0" MinHeight="36" Content="Modifica" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding EditProductCommand}"/>
+                    <Button MinWidth="96" Margin="12,0,0,0" MinHeight="36" Content="Duplica" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CopyNewCommand}"/>
+                    <Button MinWidth="96" Margin="12,0,0,0" MinHeight="36" Content="Elimina" Style="{StaticResource OutlineButtonStyle}" Command="{Binding DeleteCommand}"/>
+                    <Button MinWidth="96" Margin="12,0,0,0" MinHeight="36" Content="Import dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ImportCommand}"/>
+                    <Button MinWidth="96" Margin="12,0,0,0" MinHeight="36" Content="Esporta dati" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ExportDataCommand}"/>
+                    <Button MinWidth="96" Margin="12,0,0,0" MinHeight="36" Content="Storico prezzi" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenPriceHistoryCommand}"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="Fornitore:" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="#6B5B73" FontSize="12"/>
@@ -55,7 +55,7 @@
                               SelectedItem="{Binding SelectedSupplier, Mode=TwoWay}"
                               MaxDropDownHeight="280"
                               ToolTip="Filtra per fornitore"/>
-                    <TextBlock Text="Cerca:" VerticalAlignment="Center" Margin="20,0,8,0" Foreground="#6B5B73" FontSize="12"/>
+                    <TextBlock Text="Cerca:" VerticalAlignment="Center" Margin="24,0,8,0" Foreground="#6B5B73" FontSize="12"/>
                     <TextBox MinWidth="180" MaxWidth="260" MinHeight="34"
                              Style="{StaticResource ModernTextBoxStyle}"
                              Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
@@ -65,7 +65,7 @@
                         </TextBox.InputBindings>
                     </TextBox>
                     <Button MinWidth="84" Margin="12,0,0,0" MinHeight="34" Content="Cerca" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SearchCommand}"/>
-                    <Button MinWidth="96" Margin="10,0,0,0" MinHeight="34" Content="Azzera filtri" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ClearFiltersCommand}"/>
+                    <Button MinWidth="96" Margin="12,0,0,0" MinHeight="34" Content="Azzera filtri" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ClearFiltersCommand}"/>
                 </StackPanel>
             </WrapPanel>
         </Border>

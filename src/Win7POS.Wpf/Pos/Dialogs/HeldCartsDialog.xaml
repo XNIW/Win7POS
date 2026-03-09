@@ -4,11 +4,11 @@
         Title="Scontrini sospesi"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        Width="580"
-        Height="380"
-        MinWidth="480"
-        MinHeight="320"
-        MaxWidth="720"
+        Width="660"
+        Height="400"
+        MinWidth="620"
+        MinHeight="360"
+        MaxWidth="760"
         MaxHeight="520"
         ResizeMode="CanResize"
         Background="{StaticResource BackgroundLightBrush}">
@@ -19,9 +19,9 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*" MinWidth="200"/>
+            <ColumnDefinition Width="1.35*" MinWidth="280"/>
             <ColumnDefinition Width="12"/>
-            <ColumnDefinition Width="220" MinWidth="180"/>
+            <ColumnDefinition Width="0.95*" MinWidth="180"/>
         </Grid.ColumnDefinitions>
 
         <!-- Titolo compatto -->

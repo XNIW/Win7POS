@@ -4,13 +4,13 @@
         Title="About / Support"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        Width="520"
-        Height="400"
-        MinWidth="440"
-        MinHeight="360"
-        MaxWidth="640"
-        MaxHeight="520"
-        ResizeMode="CanResize">
+        ResizeMode="NoResize"
+        Width="760"
+        Height="560"
+        MinWidth="760"
+        MaxWidth="760"
+        MinHeight="560"
+        MaxHeight="560">
     <Border Padding="14">
         <Grid>
             <Grid.RowDefinitions>
