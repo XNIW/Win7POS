@@ -110,6 +110,12 @@
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="Padding" Value="10,8"/>
                                 <Setter Property="Margin" Value="0,0,0,2"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#A97BC7"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </Trigger>
+                                </Style.Triggers>
                             </Style>
                         </ListBox.ItemContainerStyle>
                     </ListBox>
@@ -152,11 +158,18 @@
                             <Style TargetType="DataGridRow">
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="#E8E0F0"/>
-                                        <Setter Property="Foreground" Value="#222"/>
-                                        <Setter Property="BorderBrush" Value="#6B5B73"/>
+                                        <Setter Property="Background" Value="#E8D9F2"/>
+                                        <Setter Property="Foreground" Value="#2F1F3A"/>
+                                        <Setter Property="BorderBrush" Value="#8F63B8"/>
                                         <Setter Property="BorderThickness" Value="3,0,0,0"/>
                                     </Trigger>
+                                    <MultiTrigger>
+                                        <MultiTrigger.Conditions>
+                                            <Condition Property="IsMouseOver" Value="True"/>
+                                            <Condition Property="IsSelected" Value="False"/>
+                                        </MultiTrigger.Conditions>
+                                        <Setter Property="Background" Value="#F3ECF8"/>
+                                    </MultiTrigger>
                                 </Style.Triggers>
                             </Style>
                         </DataGrid.RowStyle>
@@ -174,7 +187,7 @@
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
                                         <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="Foreground" Value="#222"/>
+                                        <Setter Property="Foreground" Value="#2F1F3A"/>
                                     </Trigger>
                                 </Style.Triggers>
                             </Style>
