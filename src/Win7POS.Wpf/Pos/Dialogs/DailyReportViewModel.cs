@@ -29,6 +29,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private long _netAmount;
         private bool _isBusy;
         private string _summaryReceiptPreview = string.Empty;
+        private string _singleMarkedReceiptPreview = string.Empty;
         private string _historyFromText = DateTime.Now.AddMonths(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         private string _historyToText = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         private bool _reportLoaded;
@@ -54,6 +55,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             FilterQuestoMeseCommand = new AsyncRelayCommand(ApplyFilterQuestoMeseAsync, _ => !IsBusy);
             FilterMeseScorsoCommand = new AsyncRelayCommand(ApplyFilterMeseScorsoAsync, _ => !IsBusy);
             FilterAnnoCorrenteCommand = new AsyncRelayCommand(ApplyFilterAnnoCorrenteAsync, _ => !IsBusy);
+            MarkAllHistoryRowsCommand = new RelayCommand(MarkAllHistoryRows, _ => HasHistoryRows);
+            ClearMarkedHistoryRowsCommand = new RelayCommand(ClearMarkedHistoryRows, _ => HasMarkedRows);
             HistoryRows = new ObservableCollection<HistoryRow>();
         }
 
@@ -147,6 +150,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _summaryReceiptPreview = value ?? string.Empty; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
+        /// <summary>Anteprima ricevuta per il singolo giorno spuntato (MarkedCount==1). Usata nel pannello destro.</summary>
+        public string SingleMarkedReceiptPreview
+        {
+            get => _singleMarkedReceiptPreview;
+            private set { _singleMarkedReceiptPreview = value ?? string.Empty; OnPropertyChanged(); }
+        }
+
         public string HistoryFromText
         {
             get => _historyFromText;
@@ -211,6 +221,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand PrintSummaryCommand { get; }
         public ICommand PrintSelectedHistoryCommand { get; }
         public ICommand LoadHistoryCommand { get; }
+        public ICommand MarkAllHistoryRowsCommand { get; }
+        public ICommand ClearMarkedHistoryRowsCommand { get; }
 
         /// <summary>True se in Storico serve chiedere Periodo vs Giorno (ha righe e selezione).</summary>
         public bool NeedsExportScopeChoice => SelectedTabIndex == 1 && HasHistoryRows && HasHistorySelection;
@@ -238,7 +250,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private int _markedCount;
         private long _markedNetAmount, _markedGrossAmount, _markedRefundsAmount, _markedCashAmount, _markedCardAmount;
         private int _markedSalesCount;
-        public int MarkedCount { get => _markedCount; private set { _markedCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(DetailPanelTitle)); OnPropertyChanged(nameof(StampaRiepilogoSubtitle)); OnPropertyChanged(nameof(ShowMarkedSummary)); OnPropertyChanged(nameof(ShowSingleDayDetail)); OnPropertyChanged(nameof(ShowMultiDaySummary)); OnPropertyChanged(nameof(ShowSelectionPlaceholder)); OnPropertyChanged(nameof(ShowSelectedRowDetail)); OnPropertyChanged(nameof(ShowReceiptPreview)); } }
+        public int MarkedCount { get => _markedCount; private set { _markedCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(DetailPanelTitle)); OnPropertyChanged(nameof(PrintButtonText)); OnPropertyChanged(nameof(MarkedIntervalLine1)); OnPropertyChanged(nameof(MarkedIntervalLine2)); OnPropertyChanged(nameof(SingleMarkedDateText)); OnPropertyChanged(nameof(StampaRiepilogoSubtitle)); OnPropertyChanged(nameof(ShowMarkedSummary)); OnPropertyChanged(nameof(ShowSingleDayDetail)); OnPropertyChanged(nameof(ShowMultiDaySummary)); OnPropertyChanged(nameof(ShowSelectionPlaceholder)); OnPropertyChanged(nameof(ShowSelectedRowDetail)); OnPropertyChanged(nameof(ShowReceiptPreview)); } }
         public int MarkedSalesCount { get => _markedSalesCount; private set { _markedSalesCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarkedTicketAverageDisplay)); } }
         public long MarkedNetAmount { get => _markedNetAmount; private set { _markedNetAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarkedNetDisplay)); OnPropertyChanged(nameof(MarkedTicketAverageDisplay)); } }
         public long MarkedGrossAmount { get => _markedGrossAmount; private set { _markedGrossAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarkedGrossDisplay)); } }
@@ -261,7 +273,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool ShowSelectedRowDetail => MarkedCount == 0 && HasHistorySelection;
         /// <summary>Mostra anteprima ricevuta (1 giorno spuntato oppure riga selezionata senza spunte).</summary>
         public bool ShowReceiptPreview => ShowSingleDayDetail || ShowSelectedRowDetail;
-        public string DetailPanelTitle => MarkedCount == 0 ? "Dettaglio selezione" : (MarkedCount == 1 ? "Dettaglio giorno selezionato" : "Riepilogo giorni selezionati");
+        /// <summary>Titolo pannello: Dettaglio giorno (0 o 1 spuntato) oppure Riepilogo selezione (2+).</summary>
+        public string DetailPanelTitle => MarkedCount >= 2 ? "Riepilogo selezione" : "Dettaglio giorno";
+        /// <summary>Testo bottone stampa: corto (Stampa / Stampa riepilogo).</summary>
+        public string PrintButtonText => MarkedCount >= 2 ? "Stampa riepilogo" : "Stampa";
+        /// <summary>Multi-giorno: riga 1 "Giorni selezionati: N".</summary>
+        public string MarkedIntervalLine1 => GetMarkedIntervalLine1();
+        /// <summary>Multi-giorno: riga 2 "Dal yyyy-MM-dd al yyyy-MM-dd".</summary>
+        public string MarkedIntervalLine2 => GetMarkedIntervalLine2();
+        /// <summary>Quando MarkedCount==1: data del giorno spuntato per il pannello destro.</summary>
+        public string SingleMarkedDateText => GetSingleMarkedDateText();
         public string StampaRiepilogoSubtitle => GetStampaRiepilogoSubtitle();
 
         /// <summary>0 = Giornaliero, 1 = Storico. Cambiato dai filtri rapidi (es. Settimana → tab Storico).</summary>
@@ -585,6 +606,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (HistoryRows.Count > 0)
                     SelectedHistoryRow = HistoryRows[0];
                 (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+                (MarkAllHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (ClearMarkedHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 Status = summaries.Count + " giorni caricati nello storico.";
             }
             catch (Exception ex)
@@ -626,6 +649,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             MarkedCashAmount = cash;
             MarkedCardAmount = card;
             (PrintSelectedHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ClearMarkedHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            if (count == 1)
+                _ = LoadPreviewForSingleMarkedAsync();
+            else
+                SingleMarkedReceiptPreview = string.Empty;
         }
 
         private string GetStampaRiepilogoSubtitle()
@@ -641,6 +669,41 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (HasHistoryRows && TryParseHistoryDates(out var from, out var to))
                 return "Periodo " + from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " → " + to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             return "";
+        }
+
+        private string GetMarkedIntervalLine1()
+        {
+            if (MarkedCount < 2) return "";
+            return "Giorni selezionati: " + MarkedCount;
+        }
+
+        private string GetMarkedIntervalLine2()
+        {
+            if (MarkedCount < 2) return "";
+            var dates = HistoryRows.Where(r => r.IsMarked).Select(r => r.Date).ToList();
+            if (dates.Count == 0) return "";
+            var min = dates.Min();
+            var max = dates.Max();
+            return "Dal " + min.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " al " + max.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+
+        private string GetSingleMarkedDateText()
+        {
+            if (MarkedCount != 1) return "";
+            var row = HistoryRows.FirstOrDefault(r => r.IsMarked);
+            return row?.DateText ?? "";
+        }
+
+        private void MarkAllHistoryRows()
+        {
+            foreach (var row in HistoryRows)
+                row.IsMarked = true;
+        }
+
+        private void ClearMarkedHistoryRows()
+        {
+            foreach (var row in HistoryRows)
+                row.IsMarked = false;
         }
 
         private bool TryParseHistoryDates(out DateTime from, out DateTime to)
@@ -678,6 +741,31 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 UpdateSummaryReceiptPreview(SelectedHistoryRow.Date, summary, shop);
             }
             catch { SummaryReceiptPreview = ""; }
+        }
+
+        private async Task LoadPreviewForSingleMarkedAsync()
+        {
+            var row = HistoryRows.FirstOrDefault(r => r.IsMarked);
+            if (row == null) { SingleMarkedReceiptPreview = ""; return; }
+            try
+            {
+                var summary = await _service.GetDailySummaryAsync(row.Date).ConfigureAwait(true);
+                var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
+                var model = new DailyTakingsReceiptModel
+                {
+                    Date = row.Date,
+                    SalesCount = summary.SalesCount,
+                    TotalAmount = summary.TotalAmount,
+                    CashAmount = summary.CashAmount,
+                    CardAmount = summary.CardAmount,
+                    GrossSalesAmount = summary.GrossSalesAmount,
+                    RefundsAmount = summary.RefundsAmount,
+                    NetAmount = summary.NetAmount
+                };
+                var lines = DailyTakingsReceiptFormatter.Format(model, shop ?? new ReceiptShopInfo());
+                SingleMarkedReceiptPreview = string.Join(Environment.NewLine, lines);
+            }
+            catch { SingleMarkedReceiptPreview = ""; }
         }
 
         private static DateTime StartOfWeek(DateTime d)
@@ -754,6 +842,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (FilterQuestoMeseCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (FilterMeseScorsoCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (FilterAnnoCorrenteCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (MarkAllHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ClearMarkedHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
@@ -783,6 +873,25 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     Win7POS.Wpf.Infrastructure.UiErrorHandler.Handle(ex, null, "DailyReport AsyncRelayCommand failed");
                 }
             }
+
+            public event EventHandler CanExecuteChanged;
+            public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        private sealed class RelayCommand : ICommand
+        {
+            private readonly Action _execute;
+            private readonly Func<object, bool> _canExecute;
+
+            public RelayCommand(Action execute, Func<object, bool> canExecute = null)
+            {
+                _execute = execute ?? throw new ArgumentNullException(nameof(execute));
+                _canExecute = canExecute;
+            }
+
+            public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
+
+            public void Execute(object parameter) => _execute();
 
             public event EventHandler CanExecuteChanged;
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);

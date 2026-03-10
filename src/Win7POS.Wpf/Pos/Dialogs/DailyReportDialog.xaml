@@ -173,7 +173,7 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <!-- Barra filtri periodo -->
+                        <!-- Barra filtri periodo + azioni selezione -->
                         <Border Grid.Row="0" Background="#F5F5F5" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1" Padding="0,8,0,10" Margin="0,0,0,8">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Text="Da:" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
@@ -181,37 +181,41 @@
                                 <TextBlock Text="A:" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
                                 <TextBox Text="{Binding HistoryToText, UpdateSourceTrigger=PropertyChanged}" Width="100" Margin="0,0,16,0" Style="{StaticResource ModernTextBoxStyle}"/>
                                 <Button Content="Carica storico" MinWidth="110" Height="36" Command="{Binding LoadHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0"/>
-                                <Button Content="Esporta..." MinWidth="100" Height="36" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                                <Button Content="Esporta..." MinWidth="100" Height="36" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0"/>
+                                <Button Content="Seleziona tutto" MinWidth="100" Height="32" Command="{Binding MarkAllHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,6,0"/>
+                                <Button Content="Pulisci selezione" MinWidth="110" Height="32" Command="{Binding ClearMarkedHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}"/>
                             </StackPanel>
                         </Border>
 
-                        <!-- Riepilogo periodo -->
-                        <Border Grid.Row="1" Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="8" Padding="14,12" Margin="0,0,0,10"
+                        <!-- Riepilogo periodo: prima riga Da/A, seconda riga metriche su 2 linee -->
+                        <Border Grid.Row="1" Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="8" Padding="12,10" Margin="0,0,0,8"
                                 Visibility="{Binding HasHistoryRows, Converter={StaticResource BoolToVis}}">
                             <StackPanel>
-                                <TextBlock Text="Riepilogo periodo" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,8"/>
+                                <TextBlock Text="Riepilogo periodo" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,6"/>
                                 <TextBlock Margin="0,0,0,6">
-                                    <Run Text="Da: " FontSize="11" Foreground="#666"/>
+                                    <Run Text="Da " FontSize="11" Foreground="#666"/>
                                     <Run Text="{Binding HistoryFromText, Mode=OneWay}" FontSize="11" FontWeight="SemiBold"/>
-                                    <Run Text="  →  A: " FontSize="11" Foreground="#666"/>
+                                    <Run Text=" a " FontSize="11" Foreground="#666"/>
                                     <Run Text="{Binding HistoryToText, Mode=OneWay}" FontSize="11" FontWeight="SemiBold"/>
                                 </TextBlock>
-                                <WrapPanel>
-                                    <TextBlock Text="N. scontrini: " FontSize="11" Foreground="#666" Margin="0,0,2,0"/>
-                                    <TextBlock Text="{Binding PeriodSalesCount, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" Margin="0,0,16,0"/>
-                                    <TextBlock Text="Lorde: " FontSize="11" Foreground="#666" Margin="0,0,2,0"/>
-                                    <TextBlock Text="{Binding PeriodGrossDisplay, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" Margin="0,0,16,0"/>
-                                    <TextBlock Text="Resi: " FontSize="11" Foreground="#666" Margin="0,0,2,0"/>
-                                    <TextBlock Text="{Binding PeriodRefundsDisplay, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" Margin="0,0,16,0"/>
-                                    <TextBlock Text="Netto: " FontSize="11" Foreground="#666" Margin="0,0,2,0"/>
-                                    <TextBlock Text="{Binding PeriodNetDisplay, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" Margin="0,0,16,0"/>
-                                    <TextBlock Text="Contanti: " FontSize="11" Foreground="#666" Margin="0,0,2,0"/>
-                                    <TextBlock Text="{Binding PeriodCashDisplay, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" Margin="0,0,16,0"/>
-                                    <TextBlock Text="Carta: " FontSize="11" Foreground="#666" Margin="0,0,2,0"/>
-                                    <TextBlock Text="{Binding PeriodCardDisplay, Mode=OneWay}" FontSize="11" FontWeight="SemiBold" Margin="0,0,16,0"/>
-                                    <TextBlock Text="Ticket medio: " FontSize="11" Foreground="#666" Margin="0,0,2,0"/>
-                                    <TextBlock Text="{Binding PeriodTicketAverageDisplay, Mode=OneWay}" FontSize="11" FontWeight="SemiBold"/>
-                                </WrapPanel>
+                                <TextBlock FontSize="11" Foreground="#555" Margin="0,0,0,2">
+                                    <Run Text="Scontrini " Foreground="#666"/>
+                                    <Run Text="{Binding PeriodSalesCount, Mode=OneWay}" FontWeight="SemiBold"/>
+                                    <Run Text="  Lorde " Foreground="#666"/>
+                                    <Run Text="{Binding PeriodGrossDisplay, Mode=OneWay}" FontWeight="SemiBold"/>
+                                    <Run Text="  Resi " Foreground="#666"/>
+                                    <Run Text="{Binding PeriodRefundsDisplay, Mode=OneWay}" FontWeight="SemiBold"/>
+                                    <Run Text="  Netto " Foreground="#666"/>
+                                    <Run Text="{Binding PeriodNetDisplay, Mode=OneWay}" FontWeight="SemiBold"/>
+                                </TextBlock>
+                                <TextBlock FontSize="11" Foreground="#555">
+                                    <Run Text="Contanti " Foreground="#666"/>
+                                    <Run Text="{Binding PeriodCashDisplay, Mode=OneWay}" FontWeight="SemiBold"/>
+                                    <Run Text="  Carta " Foreground="#666"/>
+                                    <Run Text="{Binding PeriodCardDisplay, Mode=OneWay}" FontWeight="SemiBold"/>
+                                    <Run Text="  Ticket medio " Foreground="#666"/>
+                                    <Run Text="{Binding PeriodTicketAverageDisplay, Mode=OneWay}" FontWeight="SemiBold"/>
+                                </TextBlock>
                             </StackPanel>
                         </Border>
 
@@ -223,17 +227,20 @@
                                 <ColumnDefinition Width="32*"/>
                             </Grid.ColumnDefinitions>
 
-                            <!-- Tabella storico con checkbox "includi in riepilogo" -->
+                            <!-- Tabella storico: checkbox stretta, riga selezionata=blu, riga spuntata=segno laterale -->
                             <Grid Grid.Column="0">
                                 <DataGrid x:Name="HistoryGrid" ItemsSource="{Binding HistoryRows}" SelectedItem="{Binding SelectedHistoryRow, Mode=TwoWay}"
                                           IsReadOnly="False" AutoGenerateColumns="False" MinHeight="200"
                                           CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
                                           GridLinesVisibility="Horizontal" BorderThickness="1" BorderBrush="#E0D8E4"
-                                          RowHeight="34"
+                                          RowHeight="36"
                                           Background="White" RowBackground="White" AlternatingRowBackground="#FAFAFA"
                                           SelectionMode="Single" SelectionUnit="FullRow">
                                     <DataGrid.Columns>
-                                        <DataGridTemplateColumn Header="" Width="42" IsReadOnly="False">
+                                        <DataGridTemplateColumn Width="28" IsReadOnly="False">
+                                            <DataGridTemplateColumn.Header>
+                                                <TextBlock Width="28" Text=""/>
+                                            </DataGridTemplateColumn.Header>
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <CheckBox IsChecked="{Binding IsMarked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -244,7 +251,7 @@
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="HorizontalAlignment" Value="Left"/>
-                                                    <Setter Property="Margin" Value="6,0"/>
+                                                    <Setter Property="Margin" Value="8,0"/>
                                                 </Style>
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
@@ -252,7 +259,8 @@
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                    <Setter Property="Margin" Value="6,0"/>
+                                                    <Setter Property="Margin" Value="8,0"/>
+                                                    <Setter Property="FontFamily" Value="Consolas"/>
                                                 </Style>
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
@@ -260,7 +268,8 @@
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                    <Setter Property="Margin" Value="6,0"/>
+                                                    <Setter Property="Margin" Value="8,0"/>
+                                                    <Setter Property="FontFamily" Value="Consolas"/>
                                                 </Style>
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
@@ -268,7 +277,8 @@
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                    <Setter Property="Margin" Value="6,0"/>
+                                                    <Setter Property="Margin" Value="8,0"/>
+                                                    <Setter Property="FontFamily" Value="Consolas"/>
                                                 </Style>
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
@@ -276,7 +286,8 @@
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                    <Setter Property="Margin" Value="6,0"/>
+                                                    <Setter Property="Margin" Value="8,0"/>
+                                                    <Setter Property="FontFamily" Value="Consolas"/>
                                                 </Style>
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
@@ -284,7 +295,8 @@
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                    <Setter Property="Margin" Value="6,0"/>
+                                                    <Setter Property="Margin" Value="8,0"/>
+                                                    <Setter Property="FontFamily" Value="Consolas"/>
                                                 </Style>
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
@@ -292,11 +304,28 @@
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="HorizontalAlignment" Value="Right"/>
-                                                    <Setter Property="Margin" Value="6,0"/>
+                                                    <Setter Property="Margin" Value="8,0"/>
+                                                    <Setter Property="FontFamily" Value="Consolas"/>
                                                 </Style>
                                             </DataGridTextColumn.ElementStyle>
                                         </DataGridTextColumn>
                                     </DataGrid.Columns>
+                                    <DataGrid.RowStyle>
+                                        <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                                            <Setter Property="BorderThickness" Value="0"/>
+                                            <Setter Property="BorderBrush" Value="Transparent"/>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter Property="Background" Value="#E3F2FD"/>
+                                                    <Setter Property="Foreground" Value="Black"/>
+                                                </Trigger>
+                                                <DataTrigger Binding="{Binding IsMarked}" Value="True">
+                                                    <Setter Property="BorderThickness" Value="3,0,0,0"/>
+                                                    <Setter Property="BorderBrush" Value="#9B7BAD"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DataGrid.RowStyle>
                                     <DataGrid.ColumnHeaderStyle>
                                         <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
                                             <Setter Property="Background" Value="#F0EDF2"/>
@@ -312,85 +341,119 @@
                                            Foreground="#888" FontSize="13" Visibility="{Binding ShowHistoryEmptyMessage, Converter={StaticResource BoolToVis}}"/>
                             </Grid>
 
-                            <!-- Pannello destro: titolo dinamico + riepilogo selezione / dettaglio -->
+                            <!-- Pannello destro: titolo, badge/date, contenuto, bottone fisso in basso -->
                             <Border Grid.Column="2" BorderBrush="#E0D8E4" BorderThickness="1" CornerRadius="8" Padding="14" Background="#FAFAFA">
                                 <Grid>
                                     <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="Auto"/>
                                         <RowDefinition Height="*"/>
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
                                     <TextBlock Grid.Row="0" Text="{Binding DetailPanelTitle, Mode=OneWay}" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,8"/>
-                                    <Border Grid.Row="1" Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,10"
-                                            Visibility="{Binding ShowMarkedSummary, Converter={StaticResource BoolToVis}}">
-                                        <TextBlock FontSize="12" Foreground="#4B2E67">
-                                            <Run Text="{Binding MarkedCount, Mode=OneWay}"/>
-                                            <Run Text=" giorno/i"/>
-                                        </TextBlock>
-                                    </Border>
-                                    <Border Grid.Row="1" Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,10"
-                                            Visibility="{Binding ShowSelectedRowDetail, Converter={StaticResource BoolToVis}}">
-                                        <TextBlock Text="{Binding SelectedHistoryRow.DateText, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#4B2E67"/>
-                                    </Border>
-                                    <Grid Grid.Row="2" Margin="0,0,0,10" Visibility="{Binding ShowMarkedSummary, Converter={StaticResource BoolToVis}}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock Text="Scontrini" FontSize="10" Foreground="#666"/>
-                                            <TextBlock Text="Lorde" FontSize="10" Foreground="#666" Margin="0,4,0,0"/>
-                                            <TextBlock Text="Resi" FontSize="10" Foreground="#666" Margin="0,4,0,0"/>
-                                            <TextBlock Text="Netto" FontSize="10" Foreground="#666" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                                            <TextBlock Text="{Binding MarkedSalesCount, Mode=OneWay}" FontSize="10" FontFamily="Consolas"/>
-                                            <TextBlock Text="{Binding MarkedGrossDisplay, Mode=OneWay}" FontSize="10" FontFamily="Consolas" Margin="0,4,0,0"/>
-                                            <TextBlock Text="{Binding MarkedRefundsDisplay, Mode=OneWay}" FontSize="10" FontFamily="Consolas" Margin="0,4,0,0"/>
-                                            <TextBlock Text="{Binding MarkedNetDisplay, Mode=OneWay}" FontSize="10" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                    </Grid>
-                                    <Grid Grid.Row="2" Margin="0,0,0,10" Visibility="{Binding ShowSelectedRowDetail, Converter={StaticResource BoolToVis}}">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock Text="Scontrini" FontSize="10" Foreground="#666"/>
-                                            <TextBlock Text="Lorde" FontSize="10" Foreground="#666" Margin="0,4,0,0"/>
-                                            <TextBlock Text="Resi" FontSize="10" Foreground="#666" Margin="0,4,0,0"/>
-                                            <TextBlock Text="Netto" FontSize="10" Foreground="#666" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                        <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-                                            <TextBlock Text="{Binding SalesCount, Mode=OneWay}" FontSize="10" FontFamily="Consolas"/>
-                                            <TextBlock Text="{Binding GrossSalesAmountDisplay, Mode=OneWay}" FontSize="10" FontFamily="Consolas" Margin="0,4,0,0"/>
-                                            <TextBlock Text="{Binding RefundsAmountDisplay, Mode=OneWay}" FontSize="10" FontFamily="Consolas" Margin="0,4,0,0"/>
-                                            <TextBlock Text="{Binding NetAmountDisplay, Mode=OneWay}" FontSize="10" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
-                                        </StackPanel>
-                                    </Grid>
-                                    <Border Grid.Row="3" BorderBrush="#E8E8E8" BorderThickness="1" CornerRadius="6" Padding="10" Background="White" MinHeight="80">
-                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                            <Grid>
-                                                <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"
-                                                           Visibility="{Binding ShowReceiptPreview, Converter={StaticResource BoolToVis}}"/>
-                                                <TextBlock FontSize="11" Foreground="#888" TextWrapping="Wrap"
-                                                           Visibility="{Binding ShowMultiDaySummary, Converter={StaticResource BoolToVis}}">
-                                                    <Run Text="Riepilogo di "/>
-                                                    <Run Text="{Binding MarkedCount, Mode=OneWay}"/>
-                                                    <Run Text=" giorni. Usa Stampa riepilogo per stampare l&#x27;aggregato."/>
-                                                </TextBlock>
-                                                <TextBlock Text="{Binding PreviewPlaceholderText, Mode=OneWay}" FontSize="11" Foreground="#888" TextWrapping="Wrap"
-                                                           Visibility="{Binding ShowSelectionPlaceholder, Converter={StaticResource BoolToVis}}"/>
-                                            </Grid>
-                                        </ScrollViewer>
-                                    </Border>
-                                    <StackPanel Grid.Row="4" Margin="0,12,0,0">
-                                        <TextBlock Text="{Binding StampaRiepilogoSubtitle, Mode=OneWay}" FontSize="10" Foreground="#666" Margin="0,0,0,4"/>
-                                        <Button Content="Stampa riepilogo" Height="36" Margin="0,0,0,0"
-                                                Command="{Binding PrintSelectedHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                                    <!-- Riga 1: multi = badge + intervallo; singolo = data -->
+                                    <StackPanel Grid.Row="1" Margin="0,0,0,10">
+                                        <Border Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,6"
+                                                Visibility="{Binding ShowMultiDaySummary, Converter={StaticResource BoolToVis}}">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding MarkedIntervalLine1, Mode=OneWay}" FontSize="12" FontWeight="SemiBold" Foreground="#4B2E67"/>
+                                                <TextBlock Text="{Binding MarkedIntervalLine2, Mode=OneWay}" FontSize="11" Foreground="#4B2E67" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                        </Border>
+                                        <Border Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="6" Padding="10,8"
+                                                Visibility="{Binding ShowSingleDayDetail, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding SingleMarkedDateText, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#4B2E67"/>
+                                        </Border>
+                                        <Border Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="6" Padding="10,8"
+                                                Visibility="{Binding ShowSelectedRowDetail, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding SelectedHistoryRow.DateText, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#4B2E67"/>
+                                        </Border>
                                     </StackPanel>
+                                    <!-- Riga 2: contenuto (riepilogo multi oppure 4 valori + anteprima singolo) -->
+                                    <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10">
+                                        <StackPanel>
+                                            <!-- Multi-giorno: solo riepilogo numeri (no preview) -->
+                                            <Grid Visibility="{Binding ShowMultiDaySummary, Converter={StaticResource BoolToVis}}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Scontrini" FontSize="11" Foreground="#666"/>
+                                                    <TextBlock Text="Lorde" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="Resi" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="Netto" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="Contanti" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="Carta" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="Ticket medio" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                                    <TextBlock Text="{Binding MarkedSalesCount, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
+                                                    <TextBlock Text="{Binding MarkedGrossDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="{Binding MarkedRefundsDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="{Binding MarkedNetDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="{Binding MarkedCashDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="{Binding MarkedCardDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="{Binding MarkedTicketAverageDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <!-- Singolo giorno o riga selezionata: 4 valori + anteprima ricevuta -->
+                                            <Grid Visibility="{Binding ShowSelectedRowDetail, Converter={StaticResource BoolToVis}}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Scontrini" FontSize="11" Foreground="#666"/>
+                                                    <TextBlock Text="Lorde" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="Resi" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="Netto" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                                    <TextBlock Text="{Binding SalesCount, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
+                                                    <TextBlock Text="{Binding GrossSalesAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="{Binding RefundsAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="{Binding NetAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Grid Visibility="{Binding ShowSingleDayDetail, Converter={StaticResource BoolToVis}}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="Scontrini" FontSize="11" Foreground="#666"/>
+                                                    <TextBlock Text="Lorde" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="Resi" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="Netto" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                                    <TextBlock Text="{Binding MarkedSalesCount, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
+                                                    <TextBlock Text="{Binding MarkedGrossDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="{Binding MarkedRefundsDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                    <TextBlock Text="{Binding MarkedNetDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <!-- Anteprima ricevuta: 1 giorno spuntato = SingleMarkedReceiptPreview; riga selezionata = SummaryReceiptPreview -->
+                                            <Border Margin="0,10,0,0" BorderBrush="#E8E8E8" BorderThickness="1" CornerRadius="6" Padding="10" Background="White" MinHeight="60"
+                                                    Visibility="{Binding ShowSingleDayDetail, Converter={StaticResource BoolToVis}}">
+                                                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                                    <TextBlock Text="{Binding SingleMarkedReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
+                                                </ScrollViewer>
+                                            </Border>
+                                            <Border Margin="0,10,0,0" BorderBrush="#E8E8E8" BorderThickness="1" CornerRadius="6" Padding="10" Background="White" MinHeight="60"
+                                                    Visibility="{Binding ShowSelectedRowDetail, Converter={StaticResource BoolToVis}}">
+                                                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                                    <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
+                                                </ScrollViewer>
+                                            </Border>
+                                            <TextBlock Text="{Binding PreviewPlaceholderText, Mode=OneWay}" FontSize="11" Foreground="#888" TextWrapping="Wrap" Margin="0,8,0,0"
+                                                       Visibility="{Binding ShowSelectionPlaceholder, Converter={StaticResource BoolToVis}}"/>
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                    <!-- Riga 3: bottone stampa fisso in basso, full width, 36px -->
+                                    <Button Grid.Row="3" Content="{Binding PrintButtonText, Mode=OneWay}" Height="36" HorizontalAlignment="Stretch"
+                                            Command="{Binding PrintSelectedHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
                                 </Grid>
                             </Border>
                         </Grid>
@@ -398,9 +461,9 @@
                 </TabItem>
             </TabControl>
 
-            <!-- Footer: stato solo se utile (no duplicazione con badge), Chiudi a destra -->
-            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
-                <TextBlock Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="Gray" FontSize="11" Margin="0,0,12,0" MaxWidth="420" TextTrimming="CharacterEllipsis"
+            <!-- Footer: testo grigio piccolo, meno spazio, Chiudi a destra -->
+            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+                <TextBlock Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="#888" FontSize="10" Margin="0,0,10,0" MaxWidth="380" TextTrimming="CharacterEllipsis"
                            Visibility="{Binding ShowFooterStatus, Converter={StaticResource BoolToVis}}"/>
                 <Button MinWidth="100" Height="36" Content="Chiudi" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
             </StackPanel>
