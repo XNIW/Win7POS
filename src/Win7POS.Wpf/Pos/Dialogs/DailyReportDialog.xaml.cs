@@ -7,7 +7,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public DailyReportDialog(DailyReportViewModel vm)
         {
             InitializeComponent();
-            // Dimensioni da XAML (980x700, Max 980x700), coerente con Registro vendite / Reso
+            // Dimensioni: XAML Width=1180 Height=760 MinWidth=1000 MinHeight=660 (nessun Max per ridimensionamento). Tab Giornaliero/Storico, KPI compatti.
             DataContext = vm;
             Loaded += OnLoaded;
         }

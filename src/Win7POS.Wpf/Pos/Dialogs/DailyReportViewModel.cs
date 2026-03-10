@@ -29,6 +29,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _summaryReceiptPreview = string.Empty;
         private string _historyFromText = DateTime.Now.AddMonths(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         private string _historyToText = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        private bool _reportLoaded;
+        private int _selectedTabIndex;
 
         public DailyReportViewModel(Pos.PosWorkflowService service)
         {
@@ -38,6 +40,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview));
             PrintSelectedHistoryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && SelectedHistoryRow != null && !string.IsNullOrEmpty(SummaryReceiptPreview));
             LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync, _ => !IsBusy);
+            ExportHistoryCsvCommand = new AsyncRelayCommand(ExportHistoryCsvAsync, _ => !IsBusy && SelectedHistoryRow != null);
             FilterOggiCommand = new AsyncRelayCommand(ApplyFilterOggiAsync, _ => !IsBusy);
             FilterIeriCommand = new AsyncRelayCommand(ApplyFilterIeriAsync, _ => !IsBusy);
             FilterQuestaSettimanaCommand = new AsyncRelayCommand(ApplyFilterQuestaSettimanaAsync, _ => !IsBusy);
@@ -107,13 +110,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _netAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(NetAmountDisplay)); OnPropertyChanged(nameof(TicketMedioDisplay)); }
         }
 
-        public string TotalAmountDisplay => MoneyClp.Format(TotalAmount);
-        public string CashAmountDisplay => MoneyClp.Format(CashAmount);
-        public string CardAmountDisplay => MoneyClp.Format(CardAmount);
-        public string GrossSalesAmountDisplay => MoneyClp.Format(GrossSalesAmount);
-        public string RefundsAmountDisplay => MoneyClp.Format(RefundsAmount);
-        public string NetAmountDisplay => MoneyClp.Format(NetAmount);
-        public string TicketMedioDisplay => SalesCount > 0 ? MoneyClp.Format(NetAmount / SalesCount) : "0";
+        public string TotalAmountDisplay => MoneyClp.FormatDisplay(TotalAmount);
+        public string CashAmountDisplay => MoneyClp.FormatDisplay(CashAmount);
+        public string CardAmountDisplay => MoneyClp.FormatDisplay(CardAmount);
+        public string GrossSalesAmountDisplay => MoneyClp.FormatDisplay(GrossSalesAmount);
+        public string RefundsAmountDisplay => MoneyClp.FormatDisplay(RefundsAmount);
+        public string NetAmountDisplay => MoneyClp.FormatDisplay(NetAmount);
+        public string TicketMedioDisplay => SalesCount > 0 ? MoneyClp.FormatDisplay(NetAmount / SalesCount) : "0";
+
+        /// <summary>Badge stato: "Report caricato" / "Nessun dato" per header.</summary>
+        public string StatusBadgeText => !_reportLoaded ? "" : (SalesCount > 0 || NetAmount != 0 ? "Report caricato" : "Nessun dato");
+
+        /// <summary>True se il badge stato va mostrato (evita converter StringToVisibility).</summary>
+        public bool ShowStatusBadge => !string.IsNullOrEmpty(StatusBadgeText);
 
         public string SummaryReceiptPreview
         {
@@ -141,15 +150,36 @@ namespace Win7POS.Wpf.Pos.Dialogs
             get => _selectedHistoryRow;
             set
             {
+                if (_selectedHistoryRow == value) return;
                 _selectedHistoryRow = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(HasHistorySelection));
+                OnPropertyChanged(nameof(PreviewPlaceholderText));
+                OnPropertyChanged(nameof(ShowDetailPanel));
+                OnPropertyChanged(nameof(ShowPlaceholder));
                 _ = LoadPreviewForSelectedHistoryAsync();
                 RaiseCanExecuteChanged();
+                (ExportHistoryCsvCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             }
         }
 
         public bool HasHistorySelection => SelectedHistoryRow != null;
+
+        private int _historyRowCount;
+        public int HistoryRowCount { get => _historyRowCount; private set { _historyRowCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasHistoryRows)); OnPropertyChanged(nameof(ShowHistoryEmptyMessage)); } }
+        public bool HasHistoryRows => HistoryRowCount > 0;
+
+        /// <summary>True per mostrare "Nessun movimento nel periodo" (evita converter inverso).</summary>
+        public bool ShowHistoryEmptyMessage => !HasHistoryRows;
+
+        /// <summary>Testo placeholder quando nessuna riga storico selezionata.</summary>
+        public string PreviewPlaceholderText => HasHistorySelection ? "" : "Seleziona una data dallo storico per vedere il dettaglio.";
+
+        /// <summary>True per mostrare dettaglio giorno nello storico (evita converter).</summary>
+        public bool ShowDetailPanel => HasHistorySelection;
+
+        /// <summary>True per mostrare placeholder "Seleziona una data..." nello storico (evita converter inverso).</summary>
+        public bool ShowPlaceholder => !HasHistorySelection;
 
         public ICommand LoadCommand { get; }
         public ICommand FilterOggiCommand { get; }
@@ -162,6 +192,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand PrintSummaryCommand { get; }
         public ICommand PrintSelectedHistoryCommand { get; }
         public ICommand LoadHistoryCommand { get; }
+        public ICommand ExportHistoryCsvCommand { get; }
+
+        /// <summary>0 = Giornaliero, 1 = Storico. Cambiato dai filtri rapidi (es. Settimana → tab Storico).</summary>
+        public int SelectedTabIndex { get => _selectedTabIndex; set { _selectedTabIndex = value; OnPropertyChanged(); } }
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -186,6 +220,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 NetAmount = summary.NetAmount;
                 var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
                 UpdateSummaryReceiptPreview(date, summary, shop);
+                _reportLoaded = true;
+                OnPropertyChanged(nameof(StatusBadgeText));
+                OnPropertyChanged(nameof(ShowStatusBadge));
                 Status = "Report caricato.";
             }
             catch (Exception ex)
@@ -210,6 +247,25 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 var path = await _service.ExportDailyCsvAsync(date).ConfigureAwait(true);
+                Status = "Export CSV: " + path;
+            }
+            catch (Exception ex)
+            {
+                Status = "Errore export CSV: " + ex.Message;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task ExportHistoryCsvAsync()
+        {
+            if (SelectedHistoryRow == null) return;
+            IsBusy = true;
+            try
+            {
+                var path = await _service.ExportDailyCsvAsync(SelectedHistoryRow.Date).ConfigureAwait(true);
                 Status = "Export CSV: " + path;
             }
             catch (Exception ex)
@@ -276,6 +332,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 var summaries = await _service.GetDailySummariesAsync(from, to).ConfigureAwait(true);
                 HistoryRows.Clear();
+                HistoryRowCount = 0;
                 foreach (var s in summaries)
                 {
                     HistoryRows.Add(new HistoryRow
@@ -283,13 +340,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         Date = s.Date,
                         DateText = s.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                         SalesCount = s.SalesCount,
-                        TotalDisplay = MoneyClp.Format(s.TotalAmount),
-                        CashDisplay = MoneyClp.Format(s.CashAmount),
-                        CardDisplay = MoneyClp.Format(s.CardAmount),
-                        RefundsDisplay = MoneyClp.Format(s.RefundsAmount),
-                        NetDisplay = MoneyClp.Format(s.NetAmount)
+                        GrossDisplay = MoneyClp.FormatDisplay(s.GrossSalesAmount),
+                        RefundsDisplay = MoneyClp.FormatDisplay(s.RefundsAmount),
+                        NetDisplay = MoneyClp.FormatDisplay(s.NetAmount),
+                        CashDisplay = MoneyClp.FormatDisplay(s.CashAmount),
+                        CardDisplay = MoneyClp.FormatDisplay(s.CardAmount)
                     });
                 }
+                HistoryRowCount = HistoryRows.Count;
                 Status = summaries.Count + " giorni caricati nello storico.";
             }
             catch (Exception ex)
@@ -347,18 +405,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task ApplyFilterOggiAsync()
         {
+            SelectedTabIndex = 0; // resta su Giornaliero
             DateText = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             await LoadAsync().ConfigureAwait(true);
         }
 
         private async Task ApplyFilterIeriAsync()
         {
+            SelectedTabIndex = 0; // resta su Giornaliero
             DateText = DateTime.Now.AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             await LoadAsync().ConfigureAwait(true);
         }
 
         private async Task ApplyFilterQuestaSettimanaAsync()
         {
+            SelectedTabIndex = 1;
             var today = DateTime.Now.Date;
             var from = StartOfWeek(today);
             HistoryFromText = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -368,6 +429,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task ApplyFilterQuestoMeseAsync()
         {
+            SelectedTabIndex = 1;
             var now = DateTime.Now;
             var from = new DateTime(now.Year, now.Month, 1);
             HistoryFromText = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -377,6 +439,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task ApplyFilterMeseScorsoAsync()
         {
+            SelectedTabIndex = 1;
             var now = DateTime.Now;
             var from = new DateTime(now.Year, now.Month, 1).AddMonths(-1);
             var to = from.AddMonths(1).AddDays(-1);
@@ -387,6 +450,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task ApplyFilterAnnoCorrenteAsync()
         {
+            SelectedTabIndex = 1;
             var now = DateTime.Now;
             var from = new DateTime(now.Year, 1, 1);
             HistoryFromText = from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
@@ -401,6 +465,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (PrintSummaryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintSelectedHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ExportHistoryCsvCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (FilterOggiCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (FilterIeriCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (FilterQuestaSettimanaCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
@@ -446,11 +511,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public DateTime Date { get; set; }
             public string DateText { get; set; }
             public int SalesCount { get; set; }
-            public string TotalDisplay { get; set; }
-            public string CashDisplay { get; set; }
-            public string CardDisplay { get; set; }
+            public string GrossDisplay { get; set; }
             public string RefundsDisplay { get; set; }
             public string NetDisplay { get; set; }
+            public string CashDisplay { get; set; }
+            public string CardDisplay { get; set; }
         }
     }
 }

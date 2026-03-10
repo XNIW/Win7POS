@@ -21,6 +21,12 @@ namespace Win7POS.Core.Util
             return pesos.ToString(CultureInfo.InvariantCulture);
         }
 
+        /// <summary>Formatta per display UI con separatore migliaia (es. 475.870). Usa it-IT.</summary>
+        public static string FormatDisplay(long pesos)
+        {
+            return pesos.ToString("N0", new CultureInfo("it-IT"));
+        }
+
         /// <summary>
         /// Parsing di stringa in pesos interi.
         /// Accetta "1200", "1.200", "1,200" (punti/virgole e spazi vengono rimossi).
