@@ -215,25 +215,32 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- Split 65/35: tabella + dettaglio -->
+                        <!-- Split 68/32: tabella + dettaglio -->
                         <Grid Grid.Row="2">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="2*"/>
+                                <ColumnDefinition Width="68*"/>
                                 <ColumnDefinition Width="16"/>
-                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="32*"/>
                             </Grid.ColumnDefinitions>
 
-                            <!-- Tabella storico -->
+                            <!-- Tabella storico con checkbox "includi in riepilogo" -->
                             <Grid Grid.Column="0">
                                 <DataGrid x:Name="HistoryGrid" ItemsSource="{Binding HistoryRows}" SelectedItem="{Binding SelectedHistoryRow, Mode=TwoWay}"
-                                          IsReadOnly="True" AutoGenerateColumns="False" MinHeight="200"
+                                          IsReadOnly="False" AutoGenerateColumns="False" MinHeight="200"
                                           CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
                                           GridLinesVisibility="Horizontal" BorderThickness="1" BorderBrush="#E0D8E4"
-                                          RowHeight="32"
+                                          RowHeight="34"
                                           Background="White" RowBackground="White" AlternatingRowBackground="#FAFAFA"
                                           SelectionMode="Single" SelectionUnit="FullRow">
                                     <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Data" Binding="{Binding DateText}" Width="90">
+                                        <DataGridTemplateColumn Header="" Width="42" IsReadOnly="False">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <CheckBox IsChecked="{Binding IsMarked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="Data" Binding="{Binding DateText}" Width="90" IsReadOnly="True">
                                             <DataGridTextColumn.ElementStyle>
                                                 <Style TargetType="TextBlock">
                                                     <Setter Property="HorizontalAlignment" Value="Left"/>
@@ -305,7 +312,7 @@
                                            Foreground="#888" FontSize="13" Visibility="{Binding ShowHistoryEmptyMessage, Converter={StaticResource BoolToVis}}"/>
                             </Grid>
 
-                            <!-- Dettaglio giorno selezionato -->
+                            <!-- Pannello destro: titolo dinamico + riepilogo selezione / dettaglio -->
                             <Border Grid.Column="2" BorderBrush="#E0D8E4" BorderThickness="1" CornerRadius="8" Padding="14" Background="#FAFAFA">
                                 <Grid>
                                     <Grid.RowDefinitions>
@@ -315,12 +322,37 @@
                                         <RowDefinition Height="*"/>
                                         <RowDefinition Height="Auto"/>
                                     </Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Text="Dettaglio giorno selezionato" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,8"/>
+                                    <TextBlock Grid.Row="0" Text="{Binding DetailPanelTitle, Mode=OneWay}" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,8"/>
                                     <Border Grid.Row="1" Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,10"
-                                            Visibility="{Binding ShowDetailPanel, Converter={StaticResource BoolToVis}}">
+                                            Visibility="{Binding ShowMarkedSummary, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock FontSize="12" Foreground="#4B2E67">
+                                            <Run Text="{Binding MarkedCount, Mode=OneWay}"/>
+                                            <Run Text=" giorno/i"/>
+                                        </TextBlock>
+                                    </Border>
+                                    <Border Grid.Row="1" Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,10"
+                                            Visibility="{Binding ShowSelectedRowDetail, Converter={StaticResource BoolToVis}}">
                                         <TextBlock Text="{Binding SelectedHistoryRow.DateText, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#4B2E67"/>
                                     </Border>
-                                    <Grid Grid.Row="2" Margin="0,0,0,10" Visibility="{Binding ShowDetailPanel, Converter={StaticResource BoolToVis}}">
+                                    <Grid Grid.Row="2" Margin="0,0,0,10" Visibility="{Binding ShowMarkedSummary, Converter={StaticResource BoolToVis}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="Scontrini" FontSize="10" Foreground="#666"/>
+                                            <TextBlock Text="Lorde" FontSize="10" Foreground="#666" Margin="0,4,0,0"/>
+                                            <TextBlock Text="Resi" FontSize="10" Foreground="#666" Margin="0,4,0,0"/>
+                                            <TextBlock Text="Netto" FontSize="10" Foreground="#666" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                            <TextBlock Text="{Binding MarkedSalesCount, Mode=OneWay}" FontSize="10" FontFamily="Consolas"/>
+                                            <TextBlock Text="{Binding MarkedGrossDisplay, Mode=OneWay}" FontSize="10" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                            <TextBlock Text="{Binding MarkedRefundsDisplay, Mode=OneWay}" FontSize="10" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                            <TextBlock Text="{Binding MarkedNetDisplay, Mode=OneWay}" FontSize="10" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <Grid Grid.Row="2" Margin="0,0,0,10" Visibility="{Binding ShowSelectedRowDetail, Converter={StaticResource BoolToVis}}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -338,19 +370,27 @@
                                             <TextBlock Text="{Binding NetAmountDisplay, Mode=OneWay}" FontSize="10" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
                                         </StackPanel>
                                     </Grid>
-                                    <Border Grid.Row="3" BorderBrush="#E8E8E8" BorderThickness="1" CornerRadius="6" Padding="10" Background="White" MinHeight="100">
+                                    <Border Grid.Row="3" BorderBrush="#E8E8E8" BorderThickness="1" CornerRadius="6" Padding="10" Background="White" MinHeight="80">
                                         <ScrollViewer VerticalScrollBarVisibility="Auto">
                                             <Grid>
                                                 <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"
-                                                           Visibility="{Binding ShowDetailPanel, Converter={StaticResource BoolToVis}}"/>
+                                                           Visibility="{Binding ShowReceiptPreview, Converter={StaticResource BoolToVis}}"/>
+                                                <TextBlock FontSize="11" Foreground="#888" TextWrapping="Wrap"
+                                                           Visibility="{Binding ShowMultiDaySummary, Converter={StaticResource BoolToVis}}">
+                                                    <Run Text="Riepilogo di "/>
+                                                    <Run Text="{Binding MarkedCount, Mode=OneWay}"/>
+                                                    <Run Text=" giorni. Usa Stampa riepilogo per stampare l&#x27;aggregato."/>
+                                                </TextBlock>
                                                 <TextBlock Text="{Binding PreviewPlaceholderText, Mode=OneWay}" FontSize="11" Foreground="#888" TextWrapping="Wrap"
-                                                           Visibility="{Binding ShowPlaceholder, Converter={StaticResource BoolToVis}}"/>
+                                                           Visibility="{Binding ShowSelectionPlaceholder, Converter={StaticResource BoolToVis}}"/>
                                             </Grid>
                                         </ScrollViewer>
                                     </Border>
-                                    <Button Grid.Row="4" Content="Stampa giorno selezionato" MinWidth="160" Height="38" Margin="0,12,0,0"
-                                            Command="{Binding PrintSelectedHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}"
-                                            Visibility="{Binding ShowDetailPanel, Converter={StaticResource BoolToVis}}"/>
+                                    <StackPanel Grid.Row="4" Margin="0,12,0,0">
+                                        <TextBlock Text="{Binding StampaRiepilogoSubtitle, Mode=OneWay}" FontSize="10" Foreground="#666" Margin="0,0,0,4"/>
+                                        <Button Content="Stampa riepilogo" Height="36" Margin="0,0,0,0"
+                                                Command="{Binding PrintSelectedHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                                    </StackPanel>
                                 </Grid>
                             </Border>
                         </Grid>

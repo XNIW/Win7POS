@@ -292,6 +292,48 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        /// <summary>Restituisce CSV per un elenco di date (es. giorni selezionati nello storico).</summary>
+        public async Task<string> GetDaysCsvContentAsync(IReadOnlyList<DateTime> dates)
+        {
+            if (dates == null || dates.Count == 0)
+                return "saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change" + Environment.NewLine;
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var sb = new StringBuilder();
+                var headerDone = false;
+                foreach (var date in dates)
+                {
+                    var rows = await _sales.GetSalesForDateAsync(date.Date).ConfigureAwait(false);
+                    if (rows.Count == 0) continue;
+                    if (!headerDone)
+                    {
+                        sb.AppendLine("saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change");
+                        headerDone = true;
+                    }
+                    foreach (var s in rows)
+                    {
+                        sb.Append(s.Id).Append(';')
+                            .Append(EscapeCsv(s.Code)).Append(';')
+                            .Append(s.Kind).Append(';')
+                            .Append(s.RelatedSaleId.HasValue ? s.RelatedSaleId.Value.ToString(CultureInfo.InvariantCulture) : string.Empty).Append(';')
+                            .Append(s.CreatedAt).Append(';')
+                            .Append(s.Total).Append(';')
+                            .Append(s.PaidCash).Append(';')
+                            .Append(s.PaidCard).Append(';')
+                            .Append(s.Change).AppendLine();
+                    }
+                }
+                if (!headerDone)
+                    sb.AppendLine("saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change");
+                return sb.ToString();
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         private static string BuildSalesCsvContent(IReadOnlyList<Sale> rows)
         {
             var sb = new StringBuilder();

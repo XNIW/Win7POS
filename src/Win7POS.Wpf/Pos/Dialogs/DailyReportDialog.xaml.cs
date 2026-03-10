@@ -27,17 +27,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (vm == null) return;
             var menu = new ContextMenu();
             var periodo = new MenuItem { Header = "Esporta periodo" };
-            periodo.Click += (_, __) =>
-            {
-                vm.ChooseExportPeriod();
-            };
-            var giorno = new MenuItem { Header = "Esporta giorno selezionato" };
-            giorno.Click += (_, __) =>
-            {
-                vm.ChooseExportDay();
-            };
+            periodo.Click += (_, __) => vm.ChooseExportPeriod();
+            var giorno = new MenuItem { Header = "Esporta giorno corrente" };
+            giorno.Click += (_, __) => vm.ChooseExportDay();
             menu.Items.Add(periodo);
             menu.Items.Add(giorno);
+            if (vm.HasMarkedRows)
+            {
+                var selezione = new MenuItem { Header = "Esporta giorni selezionati" };
+                selezione.Click += (_, __) => vm.ChooseExportMarked();
+                menu.Items.Add(selezione);
+            }
             menu.Closed += (_, __) => menu.PlacementTarget = null;
             menu.PlacementTarget = this;
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Center;
