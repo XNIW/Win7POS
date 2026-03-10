@@ -280,7 +280,7 @@
                                 </Setter>
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="Background" Value="#E8D9F2"/>
                                         <Setter Property="Foreground" Value="#2F1F3A"/>
                                     </Trigger>
                                 </Style.Triggers>
