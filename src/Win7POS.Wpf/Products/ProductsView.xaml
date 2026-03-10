@@ -110,6 +110,20 @@
                             <Style TargetType="ListBoxItem">
                                 <Setter Property="Padding" Value="10,8"/>
                                 <Setter Property="Margin" Value="0,0,0,2"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ListBoxItem">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    Padding="{TemplateBinding Padding}"
+                                                    SnapsToDevicePixels="True">
+                                                <ContentPresenter ContentSource="Content"
+                                                                  VerticalAlignment="Center"
+                                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
                                         <Setter Property="Background" Value="#A97BC7"/>
@@ -156,6 +170,39 @@
                               BorderThickness="0">
                         <DataGrid.RowStyle>
                             <Style TargetType="DataGridRow">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderBrush" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="DataGridRow">
+                                            <Border x:Name="DGR_Border"
+                                                    Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    SnapsToDevicePixels="True">
+                                                <SelectiveScrollingGrid>
+                                                    <SelectiveScrollingGrid.RowDefinitions>
+                                                        <RowDefinition Height="*"/>
+                                                        <RowDefinition Height="Auto"/>
+                                                    </SelectiveScrollingGrid.RowDefinitions>
+                                                    <DataGridCellsPresenter Grid.Row="0"
+                                                                           SelectiveScrollingGrid.SelectiveScrollingOrientation="Vertical"
+                                                                           ItemsPanel="{TemplateBinding ItemsPanel}"
+                                                                           SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                                                    <DataGridDetailsPresenter Grid.Row="1"
+                                                                             SelectiveScrollingGrid.SelectiveScrollingOrientation="Vertical"
+                                                                             Visibility="{TemplateBinding DetailsVisibility}"
+                                                                             SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                                                    <DataGridRowHeader Grid.RowSpan="2"
+                                                                      SelectiveScrollingGrid.SelectiveScrollingOrientation="Vertical"
+                                                                      Visibility="Collapsed"
+                                                                      SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                                                </SelectiveScrollingGrid>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
                                         <Setter Property="Background" Value="#E8D9F2"/>
