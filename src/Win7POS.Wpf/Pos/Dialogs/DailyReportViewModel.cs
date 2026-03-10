@@ -306,8 +306,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>0 = Giornaliero, 1 = Storico. Cambiato dai filtri rapidi (es. Settimana → tab Storico).</summary>
         public int SelectedTabIndex { get => _selectedTabIndex; set { _selectedTabIndex = value; OnPropertyChanged(); RefreshHeaderSummary(); } }
 
+        /// <summary>Se true, la stampa multi-giorno include l'elenco giorni (data + netto); se false solo totali finali.</summary>
+        private bool _printMarkedDaysDetail = true;
+        public bool PrintMarkedDaysDetail
+        {
+            get => _printMarkedDaysDetail;
+            set { if (_printMarkedDaysDetail == value) return; _printMarkedDaysDetail = value; OnPropertyChanged(); }
+        }
+
         /// <summary>24 punti (0-23) per grafico vendite orarie nel tab Giornaliero.</summary>
         public ObservableCollection<HourlySalesPoint> HourlySalesPoints { get; }
+
+        /// <summary>Etichetta picco orario (es. "Picco: 13h").</summary>
+        public string HourlyPeakText => GetHourlyPeakText();
+        /// <summary>Etichetta totale giorno sotto il grafico (es. "Totale giorno: 748.085").</summary>
+        public string HourlyDayTotalText => "Totale giorno: " + NetAmountDisplay;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -375,6 +388,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 HourlySalesPoints.Clear();
             }
+            OnPropertyChanged(nameof(HourlyPeakText));
+        }
+
+        private string GetHourlyPeakText()
+        {
+            if (HourlySalesPoints == null || HourlySalesPoints.Count == 0) return "";
+            int peakHour = 0;
+            long peakAmount = 0;
+            foreach (var p in HourlySalesPoints)
+            {
+                if (p.AmountMinor > peakAmount) { peakAmount = p.AmountMinor; peakHour = p.Hour; }
+            }
+            return peakAmount > 0 ? "Picco: " + peakHour + "h" : "";
         }
 
         private bool CanExport()
@@ -586,15 +612,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var sep = new string('-', ReceiptWidth);
             var lines = new List<string>();
             lines.Add("CHIUSURA CASSA");
-            lines.Add("Riepilogo " + MarkedCount + " giorni");
+            lines.Add("RIEPILOGO " + MarkedCount + " GG");
+            var markedRows = HistoryRows.Where(r => r.IsMarked).OrderBy(r => r.Date).ToList();
+            if (markedRows.Count > 0)
+                lines.Add("Dal " + markedRows[0].DateText + " al " + markedRows[markedRows.Count - 1].DateText);
             lines.Add(sep);
-            foreach (var row in HistoryRows)
+            if (PrintMarkedDaysDetail)
             {
-                if (!row.IsMarked) continue;
-                lines.Add(row.DateText);
-                lines.Add("Scontr.: " + row.SalesCount + "  Netto: " + row.NetDisplay);
+                foreach (var row in markedRows)
+                    lines.Add(ReceiptLine2(row.DateText, "Net " + MoneyClp.FormatDisplay(row.NetAmount)));
+                lines.Add(sep);
             }
-            lines.Add(sep);
             lines.Add(ReceiptLine2("Scontr.", MarkedSalesCount.ToString(CultureInfo.InvariantCulture)));
             lines.Add(ReceiptLine2("Lorde", MarkedGrossDisplay));
             lines.Add(ReceiptLine2("Resi", MarkedRefundsDisplay));
