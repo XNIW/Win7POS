@@ -195,7 +195,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool HasHistorySelection => SelectedHistoryRow != null;
 
         private int _historyRowCount;
-        public int HistoryRowCount { get => _historyRowCount; private set { _historyRowCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasHistoryRows)); OnPropertyChanged(nameof(ShowHistoryEmptyMessage)); } }
+        public int HistoryRowCount { get => _historyRowCount; private set { _historyRowCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(HasHistoryRows)); OnPropertyChanged(nameof(ShowHistoryEmptyMessage)); OnPropertyChanged(nameof(HistoryToolbarSummary)); } }
         public bool HasHistoryRows => HistoryRowCount > 0;
 
         /// <summary>True per mostrare "Nessun movimento nel periodo" (evita converter inverso).</summary>
@@ -250,7 +250,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private int _markedCount;
         private long _markedNetAmount, _markedGrossAmount, _markedRefundsAmount, _markedCashAmount, _markedCardAmount;
         private int _markedSalesCount;
-        public int MarkedCount { get => _markedCount; private set { _markedCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(DetailPanelTitle)); OnPropertyChanged(nameof(PrintButtonText)); OnPropertyChanged(nameof(MarkedIntervalLine1)); OnPropertyChanged(nameof(MarkedIntervalLine2)); OnPropertyChanged(nameof(SingleMarkedDateText)); OnPropertyChanged(nameof(StampaRiepilogoSubtitle)); OnPropertyChanged(nameof(ShowMarkedSummary)); OnPropertyChanged(nameof(ShowSingleDayDetail)); OnPropertyChanged(nameof(ShowMultiDaySummary)); OnPropertyChanged(nameof(ShowSelectionPlaceholder)); OnPropertyChanged(nameof(ShowSelectedRowDetail)); OnPropertyChanged(nameof(ShowReceiptPreview)); } }
+        public int MarkedCount { get => _markedCount; private set { _markedCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(DetailPanelTitle)); OnPropertyChanged(nameof(PrintButtonText)); OnPropertyChanged(nameof(MarkedIntervalLine1)); OnPropertyChanged(nameof(MarkedIntervalLine2)); OnPropertyChanged(nameof(SingleMarkedDateText)); OnPropertyChanged(nameof(HistoryToolbarSummary)); OnPropertyChanged(nameof(StampaRiepilogoSubtitle)); OnPropertyChanged(nameof(ShowMarkedSummary)); OnPropertyChanged(nameof(ShowSingleDayDetail)); OnPropertyChanged(nameof(ShowMultiDaySummary)); OnPropertyChanged(nameof(ShowSelectionPlaceholder)); OnPropertyChanged(nameof(ShowSelectedRowDetail)); OnPropertyChanged(nameof(ShowReceiptPreview)); } }
         public int MarkedSalesCount { get => _markedSalesCount; private set { _markedSalesCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarkedTicketAverageDisplay)); } }
         public long MarkedNetAmount { get => _markedNetAmount; private set { _markedNetAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarkedNetDisplay)); OnPropertyChanged(nameof(MarkedTicketAverageDisplay)); } }
         public long MarkedGrossAmount { get => _markedGrossAmount; private set { _markedGrossAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(MarkedGrossDisplay)); } }
@@ -284,6 +284,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>Quando MarkedCount==1: data del giorno spuntato per il pannello destro.</summary>
         public string SingleMarkedDateText => GetSingleMarkedDateText();
         public string StampaRiepilogoSubtitle => GetStampaRiepilogoSubtitle();
+
+        /// <summary>Testo compatto per toolbar storico: "Nessun giorno" / "12 giorni" / "12 giorni · 2 selezionati".</summary>
+        public string HistoryToolbarSummary
+        {
+            get
+            {
+                if (HistoryRowCount == 0) return "Nessun giorno";
+                if (MarkedCount > 0) return HistoryRowCount + " giorni · " + MarkedCount + " selezionati";
+                return HistoryRowCount + " giorni";
+            }
+        }
 
         /// <summary>0 = Giornaliero, 1 = Storico. Cambiato dai filtri rapidi (es. Settimana → tab Storico).</summary>
         public int SelectedTabIndex { get => _selectedTabIndex; set { _selectedTabIndex = value; OnPropertyChanged(); } }

@@ -176,6 +176,9 @@ namespace Win7POS.Wpf.Pos
         public ICommand SuspendCartCommand { get; }
         public ICommand RecoverCartCommand { get; }
 
+        /// <summary>Crea un ViewModel per la schermata Chiusura cassa (pagina integrata).</summary>
+        public Dialogs.DailyReportViewModel CreateDailyReportViewModel() => new Dialogs.DailyReportViewModel(_service);
+
         /// <summary>Costruttore con dipendenze iniettate. Se null, usa istanze di default (compatibilità designer XAML).</summary>
         public PosViewModel(PosWorkflowService service = null, FileLogger logger = null)
         {

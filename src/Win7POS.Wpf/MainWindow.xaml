@@ -49,6 +49,9 @@
             <TabItem x:Name="ProductsTab" Header="Prodotti">
                 <prod:ProductsView/>
             </TabItem>
+            <TabItem x:Name="DailyReportTab" Header="Chiusura cassa">
+                <pos:DailyReportView x:Name="DailyReportViewControl"/>
+            </TabItem>
             <TabItem x:Name="PaymentTab" Header="Pagamento">
                 <pos:PaymentView x:Name="PaymentViewControl"/>
             </TabItem>
@@ -68,7 +71,7 @@
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
                         <TextBlock Text="Gestione" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <Button Content="Registro vendite" Tag="SalesRegister" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuSalesRegisterClick"/>
-                        <Button Content="Incasso giornaliero" Tag="DailyReport" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuDailyReportClick"/>
+                        <Button Content="Chiusura cassa" Tag="DailyReport" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuDailyReportClick"/>
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
                         <TextBlock Text="Impostazioni" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>

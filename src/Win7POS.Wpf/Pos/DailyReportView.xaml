@@ -1,0 +1,412 @@
+<UserControl x:Class="Win7POS.Wpf.Pos.DailyReportView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DesignHeight="700" d:DesignWidth="1100">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </UserControl.Resources>
+    <Grid Margin="18">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header: titolo e sottotitolo -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,12">
+            <TextBlock Text="Chiusura cassa" FontSize="20" FontWeight="SemiBold" Foreground="#333"/>
+            <TextBlock Text="Incasso giornaliero, storico e stampa riepiloghi" FontSize="11" Foreground="#666" Margin="0,2,0,0"/>
+        </StackPanel>
+
+        <!-- Filtri rapidi (pill) -->
+        <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <WrapPanel>
+                <Button Content="Oggi" MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterOggiCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Ieri" MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterIeriCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Settimana" MinWidth="80" Height="32" Margin="0,0,6,6" Command="{Binding FilterQuestaSettimanaCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Mese" MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterQuestoMeseCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Mese scorso" MinWidth="88" Height="32" Margin="0,0,6,6" Command="{Binding FilterMeseScorsoCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Anno" MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterAnnoCorrenteCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+            </WrapPanel>
+        </StackPanel>
+
+        <!-- KPI: Netto, Scontrini, Ticket medio, Rimborsi, Contanti, Carta -->
+        <Grid Grid.Row="2" Margin="0,0,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Background="#E3F2FD" BorderBrush="#90A4C0" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,4,0" MinHeight="48">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Netto" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
+                    <TextBlock Text="{Binding NetAmountDisplay, Mode=OneWay}" FontWeight="Bold" FontSize="16" Foreground="#1565C0"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Background="#F3E5F5" BorderBrush="#9B7BAD" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="4,0" MinHeight="48">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="N. scontrini" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
+                    <TextBlock Text="{Binding SalesCount, Mode=OneWay}" FontWeight="Bold" FontSize="16" Foreground="#7B1FA2"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Background="#E8F5E9" BorderBrush="#81B082" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="4,0" MinHeight="48">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Ticket medio" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
+                    <TextBlock Text="{Binding TicketMedioDisplay, Mode=OneWay}" FontWeight="Bold" FontSize="16" Foreground="#2E7D32"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="3" Background="#FFEBEE" BorderBrush="#C62828" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="4,0" MinHeight="48">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Rimborsi" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
+                    <TextBlock Text="{Binding RefundsAmountDisplay, Mode=OneWay}" FontWeight="Bold" FontSize="16" Foreground="#C62828"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="4" Background="#FFF8E1" BorderBrush="#FFA726" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="4,0" MinHeight="48">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Contanti" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
+                    <TextBlock Text="{Binding CashAmountDisplay, Mode=OneWay}" FontWeight="Bold" FontSize="14" Foreground="#E65100"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="5" Background="#E0F7FA" BorderBrush="#4DD0E1" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="4,0,0,0" MinHeight="48">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Carta" FontSize="10" Foreground="#555" Margin="0,0,0,2"/>
+                    <TextBlock Text="{Binding CardAmountDisplay, Mode=OneWay}" FontWeight="Bold" FontSize="14" Foreground="#0097A7"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Tab Giornaliero / Storico -->
+        <TabControl Grid.Row="3" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+            <TabItem Header="Giornaliero">
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="320"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0">
+                        <Border BorderBrush="#E0D8E4" BorderThickness="1" CornerRadius="8" Padding="12" Background="#FAFAFA" Margin="0,0,0,10">
+                            <StackPanel>
+                                <TextBlock Text="Dati del giorno" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,8"/>
+                                <TextBlock Text="Data (yyyy-MM-dd)" FontSize="11" Foreground="#666"/>
+                                <TextBox Margin="0,4,0,10" HorizontalAlignment="Stretch"
+                                         Text="{Binding DateText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource ModernTextBoxStyle}"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button MinWidth="90" Height="36" Margin="0,0,8,0" Content="Carica" Command="{Binding LoadCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                                    <Button MinWidth="100" Height="36" Content="Esporta..." Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                        <Border BorderBrush="#E0D8E4" BorderThickness="1" CornerRadius="8" Padding="12" Background="#FAFAFA">
+                            <StackPanel>
+                                <TextBlock Text="Totali pagamento" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,8"/>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Contanti" FontSize="11" Margin="0,2,0,0"/>
+                                        <TextBlock Text="Carta" FontSize="11" Margin="0,4,0,0"/>
+                                        <TextBlock Text="Lorde" FontSize="11" Margin="0,4,0,0"/>
+                                        <TextBlock Text="Resi" FontSize="11" Margin="0,4,0,0"/>
+                                        <TextBlock Text="Netto" FontSize="11" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                        <TextBlock Text="{Binding CashAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,2,0,0"/>
+                                        <TextBlock Text="{Binding CardAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                        <TextBlock Text="{Binding GrossSalesAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                        <TextBlock Text="{Binding RefundsAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                        <TextBlock Text="{Binding NetAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,6,0,0"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+
+                    <Border Grid.Column="2" BorderBrush="#D8D8D8" BorderThickness="1" CornerRadius="8" Padding="14" Background="White">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Text="Anteprima scontrino chiusura" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,8"/>
+                            <Border Grid.Row="1" BorderBrush="#E8E8E8" BorderThickness="1" CornerRadius="6" Padding="12" Background="#F9F9F9" Margin="0,0,0,10">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                    <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"/>
+                                </ScrollViewer>
+                            </Border>
+                            <Button Grid.Row="2" Content="Stampa" Height="36" HorizontalAlignment="Left" Command="{Binding PrintSummaryCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <TabItem Header="Storico">
+                <Grid Margin="0,8,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Toolbar: Da, A, pulsanti + a destra testo "N giorni · M selezionati" -->
+                    <Border Grid.Row="0" Background="#F7F7F7" BorderBrush="#E3E3E3" BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,0,0,8">
+                        <DockPanel LastChildFill="False">
+                            <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
+                                <TextBlock Text="Da:" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
+                                <TextBox Text="{Binding HistoryFromText, UpdateSourceTrigger=PropertyChanged}" Width="100" Margin="0,0,12,0" Style="{StaticResource ModernTextBoxStyle}"/>
+                                <TextBlock Text="A:" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
+                                <TextBox Text="{Binding HistoryToText, UpdateSourceTrigger=PropertyChanged}" Width="100" Margin="0,0,16,0" Style="{StaticResource ModernTextBoxStyle}"/>
+                                <Button Content="Carica storico" MinWidth="110" Height="36" Command="{Binding LoadHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0"/>
+                                <Button Content="Esporta..." MinWidth="100" Height="36" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0"/>
+                                <Button Content="Seleziona tutto" MinWidth="100" Height="32" Command="{Binding MarkAllHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,6,0"/>
+                                <Button Content="Pulisci selezione" MinWidth="110" Height="32" Command="{Binding ClearMarkedHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                            </StackPanel>
+                            <TextBlock DockPanel.Dock="Right" Text="{Binding HistoryToolbarSummary, Mode=OneWay}" Foreground="#666" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Layout 2 colonne: sinistra *, destra 380 fissa -->
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="16"/>
+                            <ColumnDefinition Width="380"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Sinistra: tabella -->
+                        <Grid Grid.Column="0">
+                            <DataGrid x:Name="HistoryGrid" ItemsSource="{Binding HistoryRows}" SelectedItem="{Binding SelectedHistoryRow, Mode=TwoWay}"
+                                      IsReadOnly="False" AutoGenerateColumns="False" MinHeight="200"
+                                      CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
+                                      GridLinesVisibility="Horizontal" BorderThickness="1" BorderBrush="#E0D8E4"
+                                      RowHeight="36"
+                                      Background="White" RowBackground="White" AlternatingRowBackground="#FAFAFA"
+                                      SelectionMode="Single" SelectionUnit="FullRow">
+                                <DataGrid.Columns>
+                                    <DataGridTemplateColumn Width="28" IsReadOnly="False">
+                                        <DataGridTemplateColumn.Header><TextBlock Width="28" Text=""/></DataGridTemplateColumn.Header>
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <CheckBox IsChecked="{Binding IsMarked, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTextColumn Header="Data" Binding="{Binding DateText}" Width="90" IsReadOnly="True">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="HorizontalAlignment" Value="Left"/>
+                                                <Setter Property="Margin" Value="8,0"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Scontrini" Binding="{Binding SalesCount}" Width="70">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                <Setter Property="Margin" Value="8,0"/>
+                                                <Setter Property="FontFamily" Value="Consolas"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Lorde" Binding="{Binding GrossDisplay}" Width="85">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                <Setter Property="Margin" Value="8,0"/>
+                                                <Setter Property="FontFamily" Value="Consolas"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Resi" Binding="{Binding RefundsDisplay}" Width="75">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                <Setter Property="Margin" Value="8,0"/>
+                                                <Setter Property="FontFamily" Value="Consolas"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Netto" Binding="{Binding NetDisplay}" Width="85">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                <Setter Property="Margin" Value="8,0"/>
+                                                <Setter Property="FontFamily" Value="Consolas"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Contanti" Binding="{Binding CashDisplay}" Width="80">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                <Setter Property="Margin" Value="8,0"/>
+                                                <Setter Property="FontFamily" Value="Consolas"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                    <DataGridTextColumn Header="Carta" Binding="{Binding CardDisplay}" Width="80">
+                                        <DataGridTextColumn.ElementStyle>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="HorizontalAlignment" Value="Right"/>
+                                                <Setter Property="Margin" Value="8,0"/>
+                                                <Setter Property="FontFamily" Value="Consolas"/>
+                                            </Style>
+                                        </DataGridTextColumn.ElementStyle>
+                                    </DataGridTextColumn>
+                                </DataGrid.Columns>
+                                <DataGrid.RowStyle>
+                                    <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Setter Property="BorderBrush" Value="Transparent"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter Property="Background" Value="#E3F2FD"/>
+                                                <Setter Property="Foreground" Value="Black"/>
+                                            </Trigger>
+                                            <DataTrigger Binding="{Binding IsMarked}" Value="True">
+                                                <Setter Property="BorderThickness" Value="3,0,0,0"/>
+                                                <Setter Property="BorderBrush" Value="#9B7BAD"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGrid.RowStyle>
+                                <DataGrid.ColumnHeaderStyle>
+                                    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                                        <Setter Property="Background" Value="#F0EDF2"/>
+                                        <Setter Property="Foreground" Value="#444"/>
+                                        <Setter Property="Padding" Value="8,8"/>
+                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                        <Setter Property="FontSize" Value="11"/>
+                                    </Style>
+                                </DataGrid.ColumnHeaderStyle>
+                            </DataGrid>
+                            <TextBlock Text="Nessun movimento nel periodo selezionato" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       Foreground="#888" FontSize="13" Visibility="{Binding ShowHistoryEmptyMessage, Converter={StaticResource BoolToVis}}"/>
+                        </Grid>
+
+                        <!-- Destra: pannello fisso 380 -->
+                        <Border Grid.Column="2" BorderBrush="#E0D8E4" BorderThickness="1" CornerRadius="8" Padding="14" Background="#FAFAFA">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0" Text="{Binding DetailPanelTitle, Mode=OneWay}" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,8"/>
+                                <StackPanel Grid.Row="1" Margin="0,0,0,10">
+                                    <Border Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,6"
+                                            Visibility="{Binding ShowMultiDaySummary, Converter={StaticResource BoolToVis}}">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding MarkedIntervalLine1, Mode=OneWay}" FontSize="12" FontWeight="SemiBold" Foreground="#4B2E67"/>
+                                            <TextBlock Text="{Binding MarkedIntervalLine2, Mode=OneWay}" FontSize="11" Foreground="#4B2E67" Margin="0,2,0,0"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="6" Padding="10,8"
+                                            Visibility="{Binding ShowSingleDayDetail, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="{Binding SingleMarkedDateText, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#4B2E67"/>
+                                    </Border>
+                                    <Border Background="#E8E0F0" BorderBrush="#B8A0C8" BorderThickness="1" CornerRadius="6" Padding="10,8"
+                                            Visibility="{Binding ShowSelectedRowDetail, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="{Binding SelectedHistoryRow.DateText, Mode=OneWay}" FontSize="13" FontWeight="SemiBold" Foreground="#4B2E67"/>
+                                    </Border>
+                                </StackPanel>
+                                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <Grid Visibility="{Binding ShowMultiDaySummary, Converter={StaticResource BoolToVis}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="Scontrini" FontSize="11" Foreground="#666"/>
+                                                <TextBlock Text="Lorde" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="Resi" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="Netto" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="Contanti" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="Carta" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="Ticket medio" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                                <TextBlock Text="{Binding MarkedSalesCount, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
+                                                <TextBlock Text="{Binding MarkedGrossDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding MarkedRefundsDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding MarkedNetDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding MarkedCashDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding MarkedCardDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding MarkedTicketAverageDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Visibility="{Binding ShowSelectedRowDetail, Converter={StaticResource BoolToVis}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="Scontrini" FontSize="11" Foreground="#666"/>
+                                                <TextBlock Text="Lorde" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="Resi" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="Netto" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                                <TextBlock Text="{Binding SalesCount, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
+                                                <TextBlock Text="{Binding GrossSalesAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding RefundsAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding NetAmountDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Visibility="{Binding ShowSingleDayDetail, Converter={StaticResource BoolToVis}}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="Scontrini" FontSize="11" Foreground="#666"/>
+                                                <TextBlock Text="Lorde" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="Resi" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                                <TextBlock Text="Netto" FontSize="11" Foreground="#666" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" HorizontalAlignment="Right">
+                                                <TextBlock Text="{Binding MarkedSalesCount, Mode=OneWay}" FontSize="11" FontFamily="Consolas"/>
+                                                <TextBlock Text="{Binding MarkedGrossDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding MarkedRefundsDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" Margin="0,4,0,0"/>
+                                                <TextBlock Text="{Binding MarkedNetDisplay, Mode=OneWay}" FontSize="11" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                        </Grid>
+                                        <Border Margin="0,10,0,0" BorderBrush="#E8E8E8" BorderThickness="1" CornerRadius="6" Padding="10" Background="White" MinHeight="60"
+                                                Visibility="{Binding ShowSingleDayDetail, Converter={StaticResource BoolToVis}}">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                                <TextBlock Text="{Binding SingleMarkedReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
+                                            </ScrollViewer>
+                                        </Border>
+                                        <Border Margin="0,10,0,0" BorderBrush="#E8E8E8" BorderThickness="1" CornerRadius="6" Padding="10" Background="White" MinHeight="60"
+                                                Visibility="{Binding ShowSelectedRowDetail, Converter={StaticResource BoolToVis}}">
+                                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                                                <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="11" TextWrapping="NoWrap"/>
+                                            </ScrollViewer>
+                                        </Border>
+                                        <TextBlock Text="{Binding PreviewPlaceholderText, Mode=OneWay}" FontSize="11" Foreground="#888" TextWrapping="Wrap" Margin="0,8,0,0"
+                                                   Visibility="{Binding ShowSelectionPlaceholder, Converter={StaticResource BoolToVis}}"/>
+                                    </StackPanel>
+                                </ScrollViewer>
+                                <Button Grid.Row="3" Content="{Binding PrintButtonText, Mode=OneWay}" Height="36" HorizontalAlignment="Stretch"
+                                        Command="{Binding PrintSelectedHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</UserControl>

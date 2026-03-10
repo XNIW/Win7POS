@@ -98,7 +98,8 @@ namespace Win7POS.Wpf
             var idx = MainTabControl.SelectedIndex;
             if (idx == 0) CurrentMenuKey = "Pos";
             else if (idx == 1) CurrentMenuKey = "Prodotti";
-            // tab 2 = Pagamento: lasciamo la chiave invariata (es. Pos)
+            else if (idx == 2) CurrentMenuKey = "DailyReport";
+            // tab 3 = Pagamento: lasciamo la chiave invariata
         }
 
         private void UpdateShellForCurrentView()
@@ -152,9 +153,13 @@ namespace Win7POS.Wpf
 
         private void OnMenuDailyReportClick(object sender, RoutedEventArgs e)
         {
+            var posVm = GetPosViewModel();
+            if (posVm != null && DailyReportViewControl != null)
+            {
+                DailyReportViewControl.DataContext = posVm.CreateDailyReportViewModel();
+            }
             CurrentMenuKey = "DailyReport";
-            MainTabControl.SelectedIndex = 0;
-            GetPosViewModel()?.DailyReportCommand?.Execute(null);
+            MainTabControl.SelectedIndex = 2; // 0=POS, 1=Prodotti, 2=Chiusura cassa, 3=Pagamento
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
@@ -227,7 +232,7 @@ namespace Win7POS.Wpf
                 PaymentViewControl.DataContext = vm;
                 vm.RequestClose += OnClose;
 
-                MainTabControl.SelectedIndex = 2; // 0 POS, 1 Prodotti, 2 Pagamento
+                MainTabControl.SelectedIndex = 3; // 0 POS, 1 Prodotti, 2 Chiusura cassa, 3 Pagamento
                 UpdateShellForCurrentView();
             }));
 
