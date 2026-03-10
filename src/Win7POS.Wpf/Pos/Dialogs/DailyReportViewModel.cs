@@ -31,16 +31,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _historyToText = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         private bool _reportLoaded;
         private int _selectedTabIndex;
+        private long _periodNetAmount;
+        private long _periodGrossAmount;
+        private long _periodRefundsAmount;
+        private long _periodCashAmount;
+        private long _periodCardAmount;
+        private int _periodSalesCount;
 
         public DailyReportViewModel(Pos.PosWorkflowService service)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
-            ExportCsvCommand = new AsyncRelayCommand(ExportCsvAsync, _ => !IsBusy);
             PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview));
             PrintSelectedHistoryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && SelectedHistoryRow != null && !string.IsNullOrEmpty(SummaryReceiptPreview));
             LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync, _ => !IsBusy);
-            ExportHistoryCsvCommand = new AsyncRelayCommand(ExportHistoryCsvAsync, _ => !IsBusy && SelectedHistoryRow != null);
+            ExportCommand = new AsyncRelayCommand(ExportAsync, _ => !IsBusy && CanExport());
             FilterOggiCommand = new AsyncRelayCommand(ApplyFilterOggiAsync, _ => !IsBusy);
             FilterIeriCommand = new AsyncRelayCommand(ApplyFilterIeriAsync, _ => !IsBusy);
             FilterQuestaSettimanaCommand = new AsyncRelayCommand(ApplyFilterQuestaSettimanaAsync, _ => !IsBusy);
@@ -59,8 +64,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string Status
         {
             get => _status;
-            set { _status = value; OnPropertyChanged(); }
+            set { _status = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowFooterStatus)); }
         }
+
+        /// <summary>Consente alla View di impostare il messaggio di stato (es. dopo Salva con nome).</summary>
+        public void SetStatus(string message)
+        {
+            Status = message ?? string.Empty;
+            OnPropertyChanged(nameof(ShowFooterStatus));
+        }
+
+        /// <summary>True per mostrare il messaggio di stato nel footer (evita duplicazione con badge: nasconde "Report caricato.").</summary>
+        public bool ShowFooterStatus => !string.IsNullOrEmpty(Status) && Status != "Report caricato.";
 
         public int SalesCount
         {
@@ -159,7 +174,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 OnPropertyChanged(nameof(ShowPlaceholder));
                 _ = LoadPreviewForSelectedHistoryAsync();
                 RaiseCanExecuteChanged();
-                (ExportHistoryCsvCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+                (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             }
         }
 
@@ -188,11 +203,33 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand FilterQuestoMeseCommand { get; }
         public ICommand FilterMeseScorsoCommand { get; }
         public ICommand FilterAnnoCorrenteCommand { get; }
-        public ICommand ExportCsvCommand { get; }
+        public ICommand ExportCommand { get; }
         public ICommand PrintSummaryCommand { get; }
         public ICommand PrintSelectedHistoryCommand { get; }
         public ICommand LoadHistoryCommand { get; }
-        public ICommand ExportHistoryCsvCommand { get; }
+
+        /// <summary>True se in Storico serve chiedere Periodo vs Giorno (ha righe e selezione).</summary>
+        public bool NeedsExportScopeChoice => SelectedTabIndex == 1 && HasHistoryRows && HasHistorySelection;
+
+        /// <summary>Richiesta export: nome base senza estensione + ambito. La View mostra SaveFileDialog e chiede contenuto.</summary>
+        public event Action<ExportRequest> ExportRequested;
+
+        /// <summary>In Storico: la View deve mostrare scelta "Periodo" / "Giorno selezionato", poi chiamare ChooseExportPeriod o ChooseExportDay.</summary>
+        public event Action RequestExportScopeChoice;
+
+        /// <summary>Riepilogo periodo (somma giorni caricati nello storico).</summary>
+        public long PeriodNetAmount { get => _periodNetAmount; private set { _periodNetAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(PeriodNetDisplay)); OnPropertyChanged(nameof(PeriodTicketAverageDisplay)); } }
+        public long PeriodGrossAmount { get => _periodGrossAmount; private set { _periodGrossAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(PeriodGrossDisplay)); } }
+        public long PeriodRefundsAmount { get => _periodRefundsAmount; private set { _periodRefundsAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(PeriodRefundsDisplay)); } }
+        public long PeriodCashAmount { get => _periodCashAmount; private set { _periodCashAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(PeriodCashDisplay)); } }
+        public long PeriodCardAmount { get => _periodCardAmount; private set { _periodCardAmount = value; OnPropertyChanged(); OnPropertyChanged(nameof(PeriodCardDisplay)); } }
+        public int PeriodSalesCount { get => _periodSalesCount; private set { _periodSalesCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(PeriodTicketAverageDisplay)); } }
+        public string PeriodNetDisplay => MoneyClp.FormatDisplay(PeriodNetAmount);
+        public string PeriodGrossDisplay => MoneyClp.FormatDisplay(PeriodGrossAmount);
+        public string PeriodRefundsDisplay => MoneyClp.FormatDisplay(PeriodRefundsAmount);
+        public string PeriodCashDisplay => MoneyClp.FormatDisplay(PeriodCashAmount);
+        public string PeriodCardDisplay => MoneyClp.FormatDisplay(PeriodCardAmount);
+        public string PeriodTicketAverageDisplay => PeriodSalesCount > 0 ? MoneyClp.FormatDisplay(PeriodNetAmount / PeriodSalesCount) : "0";
 
         /// <summary>0 = Giornaliero, 1 = Storico. Cambiato dai filtri rapidi (es. Settimana → tab Storico).</summary>
         public int SelectedTabIndex { get => _selectedTabIndex; set { _selectedTabIndex = value; OnPropertyChanged(); } }
@@ -235,46 +272,82 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        private async Task ExportCsvAsync()
+        private bool CanExport()
         {
-            if (!TryParseDate(out var date))
+            if (SelectedTabIndex == 0)
+                return TryParseDate(out _);
+            return HasHistoryRows || HasHistorySelection;
+        }
+
+        private async Task ExportAsync()
+        {
+            if (SelectedTabIndex == 0)
             {
-                Status = "Data non valida. Usa yyyy-MM-dd.";
+                if (!TryParseDate(out var date))
+                {
+                    Status = "Data non valida. Usa yyyy-MM-dd.";
+                    return;
+                }
+                var request = ExportRequest.ForDaily(date);
+                ExportRequested?.Invoke(request);
                 return;
             }
-
-            IsBusy = true;
-            try
+            if (SelectedTabIndex == 1)
             {
-                var path = await _service.ExportDailyCsvAsync(date).ConfigureAwait(true);
-                Status = "Export CSV: " + path;
-            }
-            catch (Exception ex)
-            {
-                Status = "Errore export CSV: " + ex.Message;
-            }
-            finally
-            {
-                IsBusy = false;
+                if (HasHistoryRows && HasHistorySelection)
+                {
+                    RequestExportScopeChoice?.Invoke();
+                    return;
+                }
+                if (HasHistoryRows)
+                {
+                    ChooseExportPeriod();
+                    return;
+                }
+                if (HasHistorySelection)
+                {
+                    ChooseExportDay();
+                    return;
+                }
+                Status = "Carica lo storico o seleziona un giorno.";
             }
         }
 
-        private async Task ExportHistoryCsvAsync()
+        /// <summary>Chiamato dalla View dopo scelta "Esporta periodo". Crea la richiesta e solleva ExportRequested.</summary>
+        public void ChooseExportPeriod()
         {
-            if (SelectedHistoryRow == null) return;
-            IsBusy = true;
-            try
+            if (!TryParseHistoryDates(out var from, out var to) || from > to)
             {
-                var path = await _service.ExportDailyCsvAsync(SelectedHistoryRow.Date).ConfigureAwait(true);
-                Status = "Export CSV: " + path;
+                Status = "Date periodo non valide.";
+                return;
             }
-            catch (Exception ex)
+            ExportRequested?.Invoke(ExportRequest.ForPeriod(from, to));
+        }
+
+        /// <summary>Chiamato dalla View dopo scelta "Esporta giorno selezionato". Crea la richiesta e solleva ExportRequested.</summary>
+        public void ChooseExportDay()
+        {
+            if (SelectedHistoryRow == null)
             {
-                Status = "Errore export CSV: " + ex.Message;
+                Status = "Nessun giorno selezionato.";
+                return;
             }
-            finally
+            ExportRequested?.Invoke(ExportRequest.ForDay(SelectedHistoryRow.Date));
+        }
+
+        /// <summary>Restituisce il contenuto CSV per la richiesta (chiamato dalla View dopo SaveFileDialog con estensione .csv).</summary>
+        public async Task<string> GetExportCsvContentAsync(ExportRequest request)
+        {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            switch (request.Scope)
             {
-                IsBusy = false;
+                case ExportScope.Daily:
+                case ExportScope.Day:
+                    return await _service.GetDailyCsvContentAsync(request.Date.Value).ConfigureAwait(true);
+                case ExportScope.Period:
+                    return await _service.GetPeriodCsvContentAsync(request.From.Value, request.To.Value).ConfigureAwait(true);
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(request));
             }
         }
 
@@ -333,8 +406,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var summaries = await _service.GetDailySummariesAsync(from, to).ConfigureAwait(true);
                 HistoryRows.Clear();
                 HistoryRowCount = 0;
+                PeriodNetAmount = 0;
+                PeriodGrossAmount = 0;
+                PeriodRefundsAmount = 0;
+                PeriodCashAmount = 0;
+                PeriodCardAmount = 0;
+                PeriodSalesCount = 0;
+                long periodNet = 0, periodGross = 0, periodRefunds = 0, periodCash = 0, periodCard = 0;
+                int periodCount = 0;
                 foreach (var s in summaries)
                 {
+                    periodNet += s.NetAmount;
+                    periodGross += s.GrossSalesAmount;
+                    periodRefunds += s.RefundsAmount;
+                    periodCash += s.CashAmount;
+                    periodCard += s.CardAmount;
+                    periodCount += s.SalesCount;
                     HistoryRows.Add(new HistoryRow
                     {
                         Date = s.Date,
@@ -347,7 +434,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         CardDisplay = MoneyClp.FormatDisplay(s.CardAmount)
                     });
                 }
+                PeriodNetAmount = periodNet;
+                PeriodGrossAmount = periodGross;
+                PeriodRefundsAmount = periodRefunds;
+                PeriodCashAmount = periodCash;
+                PeriodCardAmount = periodCard;
+                PeriodSalesCount = periodCount;
                 HistoryRowCount = HistoryRows.Count;
+                if (HistoryRows.Count > 0)
+                    SelectedHistoryRow = HistoryRows[0];
+                (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
                 Status = summaries.Count + " giorni caricati nello storico.";
             }
             catch (Exception ex)
@@ -461,11 +557,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void RaiseCanExecuteChanged()
         {
             (LoadCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-            (ExportCsvCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintSummaryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintSelectedHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-            (ExportHistoryCsvCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (FilterOggiCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (FilterIeriCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (FilterQuestaSettimanaCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
@@ -516,6 +611,50 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public string NetDisplay { get; set; }
             public string CashDisplay { get; set; }
             public string CardDisplay { get; set; }
+        }
+    }
+
+    /// <summary>Ambito export: giorno (Giornaliero o giorno selezionato) o periodo.</summary>
+    public enum ExportScope { Daily, Period, Day }
+
+    /// <summary>Richiesta export: nome base senza estensione + ambito e date. La View mostra SaveFileDialog e chiede contenuto.</summary>
+    public sealed class ExportRequest
+    {
+        public ExportScope Scope { get; set; }
+        public string BaseFileName { get; set; }
+        public DateTime? Date { get; set; }
+        public DateTime? From { get; set; }
+        public DateTime? To { get; set; }
+
+        public static ExportRequest ForDaily(DateTime date)
+        {
+            return new ExportRequest
+            {
+                Scope = ExportScope.Daily,
+                BaseFileName = "chiusura_" + date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                Date = date
+            };
+        }
+
+        public static ExportRequest ForPeriod(DateTime from, DateTime to)
+        {
+            return new ExportRequest
+            {
+                Scope = ExportScope.Period,
+                BaseFileName = "chiusure_" + from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + "_" + to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                From = from,
+                To = to
+            };
+        }
+
+        public static ExportRequest ForDay(DateTime date)
+        {
+            return new ExportRequest
+            {
+                Scope = ExportScope.Day,
+                BaseFileName = "chiusura_" + date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                Date = date
+            };
         }
     }
 }

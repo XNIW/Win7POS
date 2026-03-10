@@ -248,32 +248,67 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 AppPaths.EnsureCreated();
-                var rows = await _sales.GetSalesForDateAsync(date).ConfigureAwait(false);
+                var content = await GetDailyCsvContentAsync(date).ConfigureAwait(false);
                 var fileName = "daily_" + date.ToString("yyyyMMdd", CultureInfo.InvariantCulture) + ".csv";
                 var path = Path.Combine(AppPaths.ExportsDirectory, fileName);
-                using (var sw = new StreamWriter(path, false, Encoding.UTF8))
-                {
-                    await sw.WriteLineAsync("saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change").ConfigureAwait(false);
-                    foreach (var s in rows)
-                    {
-                        await sw.WriteLineAsync(
-                            s.Id + ";" +
-                            EscapeCsv(s.Code) + ";" +
-                            s.Kind + ";" +
-                            (s.RelatedSaleId.HasValue ? s.RelatedSaleId.Value.ToString(CultureInfo.InvariantCulture) : string.Empty) + ";" +
-                            s.CreatedAt + ";" +
-                            s.Total + ";" +
-                            s.PaidCash + ";" +
-                            s.PaidCard + ";" +
-                            s.Change).ConfigureAwait(false);
-                    }
-                }
+                await Task.Run(() => File.WriteAllText(path, content, Encoding.UTF8)).ConfigureAwait(false);
                 return path;
             }
             finally
             {
                 _gate.Release();
             }
+        }
+
+        /// <summary>Restituisce il contenuto CSV per un giorno (per Salva con nome).</summary>
+        public async Task<string> GetDailyCsvContentAsync(DateTime date)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var rows = await _sales.GetSalesForDateAsync(date).ConfigureAwait(false);
+                return BuildSalesCsvContent(rows);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        /// <summary>Restituisce il contenuto CSV per un periodo (per Salva con nome).</summary>
+        public async Task<string> GetPeriodCsvContentAsync(DateTime fromDate, DateTime toDate)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var from = new DateTimeOffset(fromDate.Date).ToUnixTimeMilliseconds();
+                var to = new DateTimeOffset(toDate.Date.AddDays(1)).ToUnixTimeMilliseconds();
+                var rows = await _sales.GetSalesBetweenAsync(from, to).ConfigureAwait(false);
+                return BuildSalesCsvContent(rows);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        private static string BuildSalesCsvContent(IReadOnlyList<Sale> rows)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change");
+            foreach (var s in rows)
+            {
+                sb.Append(s.Id).Append(';')
+                    .Append(EscapeCsv(s.Code)).Append(';')
+                    .Append(s.Kind).Append(';')
+                    .Append(s.RelatedSaleId.HasValue ? s.RelatedSaleId.Value.ToString(CultureInfo.InvariantCulture) : string.Empty).Append(';')
+                    .Append(s.CreatedAt).Append(';')
+                    .Append(s.Total).Append(';')
+                    .Append(s.PaidCash).Append(';')
+                    .Append(s.PaidCard).Append(';')
+                    .Append(s.Change).AppendLine();
+            }
+            return sb.ToString();
         }
 
         public async Task<string> BackupDbAsync()
