@@ -390,8 +390,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var amounts = await _service.GetHourlySalesAsync(date).ConfigureAwait(true);
                 if (amounts == null || amounts.Count < 24) return;
                 long max = 0;
+                int peakHour = 0;
                 for (int i = 0; i < 24; i++)
-                    if (amounts[i] > max) max = amounts[i];
+                {
+                    if (amounts[i] > max) { max = amounts[i]; peakHour = i; }
+                }
                 HourlySalesPoints.Clear();
                 for (int h = 0; h < 24; h++)
                 {
@@ -401,7 +404,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         Hour = h,
                         AmountMinor = amount,
                         AmountDisplay = MoneyClp.FormatDisplay(amount),
-                        NormalizedHeight = max > 0 ? (double)amount / max : 0
+                        NormalizedHeight = max > 0 ? (double)amount / max : 0,
+                        IsPeak = max > 0 && h == peakHour
                     });
                 }
             }
@@ -1149,8 +1153,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public long AmountMinor { get; set; }
             public string AmountDisplay { get; set; } = "";
             public double NormalizedHeight { get; set; }
+            public bool IsPeak { get; set; }
             /// <summary>Altezza barra in pixel (0–80) per il grafico.</summary>
             public double BarHeightPx => Math.Max(0, NormalizedHeight * 80);
+            /// <summary>Etichetta asse: solo per 0, 6, 12, 18, 23.</summary>
+            public string TickLabel => (Hour == 0 || Hour == 6 || Hour == 12 || Hour == 18 || Hour == 23) ? Hour + "h" : "";
+            /// <summary>Tooltip barra: ora e importo.</summary>
+            public string ToolTipText => $"{Hour:00}h  •  {AmountDisplay ?? ""}";
         }
 
         public sealed class HistoryRow : INotifyPropertyChanged

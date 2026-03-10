@@ -7,6 +7,24 @@
              d:DesignHeight="700" d:DesignWidth="1100">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <!-- Tab in stile segment/pill: due bottoni affiancati, selezionato viola -->
+        <Style x:Key="SegmentTabItemStyle" TargetType="TabItem">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="Bd" Background="#F0EDF2" BorderBrush="#C4B8CC" BorderThickness="1" CornerRadius="6" Padding="16,8" Margin="0,0,4,0">
+                            <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#E1BEE7"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#9B7BAD"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
     <Grid Margin="18">
         <Grid.RowDefinitions>
@@ -82,8 +100,9 @@
             </Border>
         </Grid>
 
-        <!-- Tab Giornaliero / Storico -->
-        <TabControl Grid.Row="3" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+        <!-- Tab Giornaliero / Storico (stile segment) + overlay caricamento -->
+        <Grid Grid.Row="3">
+            <TabControl SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}" ItemContainerStyle="{StaticResource SegmentTabItemStyle}">
             <TabItem Header="Giornaliero">
                 <Grid Margin="0,8,0,0">
                     <Grid.ColumnDefinitions>
@@ -105,8 +124,8 @@
                                          Text="{Binding DateText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                          Style="{StaticResource ModernTextBoxStyle}"/>
                                 <StackPanel Orientation="Horizontal">
-                                    <Button MinWidth="90" Height="36" Margin="0,0,8,0" Content="Carica" Command="{Binding LoadCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
-                                    <Button MinWidth="100" Height="36" Content="Esporta..." Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                                    <Button MinWidth="90" Height="36" Margin="0,0,8,0" Content="Carica" Command="{Binding LoadCommand}" Style="{StaticResource PrimaryButtonStyle}" ToolTip="Carica dati giorno (Invio)"/>
+                                    <Button MinWidth="100" Height="36" Content="Esporta..." Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" ToolTip="Esporta in CSV"/>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -182,31 +201,42 @@
                                         <ItemsControl.ItemTemplate>
                                             <DataTemplate>
                                                 <Grid Margin="1,0" VerticalAlignment="Bottom">
-                                                    <Border Background="#7B1FA2" VerticalAlignment="Bottom" Height="{Binding BarHeightPx}" CornerRadius="2,2,0,0" ToolTip="{Binding AmountDisplay}"/>
+                                                    <Border x:Name="Bar" Background="#7B1FA2" VerticalAlignment="Bottom" Height="{Binding BarHeightPx}" CornerRadius="2,2,0,0" ToolTip="{Binding ToolTipText}"
+                                                            BorderThickness="0" BorderBrush="Transparent">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsPeak}" Value="True">
+                                                                        <Setter Property="BorderBrush" Value="#E1BEE7"/>
+                                                                        <Setter Property="BorderThickness" Value="1"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                    </Border>
                                                 </Grid>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </Border>
+                                <!-- Etichette asse X allineate sulle 24 colonne (0h, 6h, 12h, 18h, 23h) -->
                                 <Grid Grid.Row="3" Margin="0,2,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
                                     </Grid.ColumnDefinitions>
-                                    <Grid Grid.Column="0">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="0h" FontSize="9" Foreground="#888" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="6h" FontSize="9" Foreground="#888" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="2" Text="12h" FontSize="9" Foreground="#888" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="3" Text="18h" FontSize="9" Foreground="#888" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="4" Text="23h" FontSize="9" Foreground="#888" VerticalAlignment="Center"/>
-                                    </Grid>
+                                    <ItemsControl Grid.Column="0" ItemsSource="{Binding HourlySalesPoints}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <UniformGrid Columns="24" Rows="1"/>
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding TickLabel, Mode=OneWay}" FontSize="9" Foreground="#888" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
                                     <TextBlock Grid.Column="1" Text="{Binding HourlyDayTotalText, Mode=OneWay}" FontSize="10" Foreground="#666" VerticalAlignment="Center" Margin="12,0,0,0"/>
                                 </Grid>
                             </Grid>
@@ -231,10 +261,10 @@
                                     <TextBox Text="{Binding HistoryFromText, UpdateSourceTrigger=PropertyChanged}" Width="100" Margin="0,0,12,0" Style="{StaticResource ModernTextBoxStyle}"/>
                                     <TextBlock Text="A:" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
                                     <TextBox Text="{Binding HistoryToText, UpdateSourceTrigger=PropertyChanged}" Width="100" Margin="0,0,16,0" Style="{StaticResource ModernTextBoxStyle}"/>
-                                    <Button Content="Carica storico" MinWidth="110" Height="36" Command="{Binding LoadHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0"/>
-                                    <Button Content="Esporta..." MinWidth="100" Height="36" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0"/>
-                                    <Button Content="Seleziona tutto" MinWidth="100" Height="32" Command="{Binding MarkAllHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,6,0"/>
-                                    <Button Content="Pulisci selezione" MinWidth="110" Height="32" Command="{Binding ClearMarkedHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                                    <Button Content="Carica storico" MinWidth="110" Height="36" Command="{Binding LoadHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" ToolTip="Carica storico (Invio)"/>
+                                    <Button Content="Esporta..." MinWidth="100" Height="36" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0" ToolTip="Esporta in CSV"/>
+                                    <Button Content="Seleziona tutto" MinWidth="100" Height="32" Command="{Binding MarkAllHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,6,0" ToolTip="Seleziona tutte le righe"/>
+                                    <Button Content="Pulisci selezione" MinWidth="110" Height="32" Command="{Binding ClearMarkedHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" ToolTip="Deseleziona tutte"/>
                                 </StackPanel>
                                 <TextBlock DockPanel.Dock="Right" Text="{Binding HistoryToolbarSummary, Mode=OneWay}" Foreground="#666" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
                             </DockPanel>
@@ -358,8 +388,10 @@
                                     </Style>
                                 </DataGrid.ColumnHeaderStyle>
                             </DataGrid>
-                            <TextBlock Text="Nessun movimento nel periodo selezionato" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                       Foreground="#888" FontSize="13" Visibility="{Binding ShowHistoryEmptyMessage, Converter={StaticResource BoolToVis}}"/>
+                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="{Binding ShowHistoryEmptyMessage, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="Nessun movimento nel periodo selezionato" HorizontalAlignment="Center" Foreground="#888" FontSize="13"/>
+                                <TextBlock Text="Imposta un periodo e premi Carica storico" HorizontalAlignment="Center" Foreground="#AAA" FontSize="11" Margin="0,6,0,0"/>
+                            </StackPanel>
                         </Grid>
 
                         <!-- Destra: pannello fisso 380 -->
@@ -479,5 +511,13 @@
                 </Grid>
             </TabItem>
         </TabControl>
+            <!-- Overlay caricamento -->
+            <Border Background="#E0FFFFFF" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,0,0,12"/>
+                    <TextBlock Text="Caricamento..." FontSize="12" Foreground="#666"/>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>
