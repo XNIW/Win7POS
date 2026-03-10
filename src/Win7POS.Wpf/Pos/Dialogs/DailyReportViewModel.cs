@@ -113,7 +113,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool IsBusy
         {
             get => _isBusy;
-            set { _isBusy = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
+            set { _isBusy = value; OnPropertyChanged(); OnPropertyChanged(nameof(PrintSummaryToolTip)); RaiseCanExecuteChanged(); }
         }
 
         public long GrossSalesAmount
@@ -154,8 +154,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string SummaryReceiptPreview
         {
             get => _summaryReceiptPreview;
-            set { _summaryReceiptPreview = value ?? string.Empty; OnPropertyChanged(); RaiseCanExecuteChanged(); }
+            set { _summaryReceiptPreview = value ?? string.Empty; OnPropertyChanged(); OnPropertyChanged(nameof(PrintSummaryToolTip)); RaiseCanExecuteChanged(); }
         }
+
+        /// <summary>Tooltip pulsante Stampa Giornaliero: guida quando disabilitato.</summary>
+        public string PrintSummaryToolTip => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview) ? "Stampa riepilogo giornata" : "Carica prima il report";
 
         /// <summary>Anteprima ricevuta per il singolo giorno spuntato (MarkedCount==1). Usata nel pannello destro.</summary>
         public string SingleMarkedReceiptPreview

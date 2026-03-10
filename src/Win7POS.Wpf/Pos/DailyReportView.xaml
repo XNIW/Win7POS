@@ -7,17 +7,17 @@
              d:DesignHeight="700" d:DesignWidth="1100">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-        <!-- Tab in stile segment/pill: due bottoni affiancati, selezionato viola -->
+        <!-- Tab in stile segment/pill: altezza 32 come filtri, selezionato viola chiaro -->
         <Style x:Key="SegmentTabItemStyle" TargetType="TabItem">
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="Bd" Background="#F0EDF2" BorderBrush="#C4B8CC" BorderThickness="1" CornerRadius="6" Padding="16,8" Margin="0,0,4,0">
+                        <Border x:Name="Bd" Background="#F0EDF2" BorderBrush="#D0C8D8" BorderThickness="1" CornerRadius="6" Padding="16,6" Margin="0,0,4,0" MinHeight="32" VerticalAlignment="Center">
                             <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#E1BEE7"/>
+                                <Setter TargetName="Bd" Property="Background" Value="#E8E0F0"/>
                                 <Setter TargetName="Bd" Property="BorderBrush" Value="#9B7BAD"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -104,7 +104,8 @@
         <Grid Grid.Row="3">
             <TabControl SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}" ItemContainerStyle="{StaticResource SegmentTabItemStyle}">
             <TabItem Header="Giornaliero">
-                <Grid Margin="0,8,0,0">
+                <Grid>
+                    <Grid Margin="0,8,0,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="320"/>
                         <ColumnDefinition Width="16"/>
@@ -177,7 +178,7 @@
                                         <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"/>
                                     </ScrollViewer>
                                 </Border>
-                                <Button Grid.Row="2" Content="Stampa" Height="36" HorizontalAlignment="Stretch" Command="{Binding PrintSummaryCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                                <Button Grid.Row="2" Content="Stampa" Height="36" HorizontalAlignment="Stretch" Command="{Binding PrintSummaryCommand}" Style="{StaticResource PrimaryButtonStyle}" ToolTip="{Binding PrintSummaryToolTip, Mode=OneWay}"/>
                             </Grid>
                         </Border>
                         <!-- Vendite per fascia oraria: più largo -->
@@ -205,10 +206,12 @@
                                                             BorderThickness="0" BorderBrush="Transparent">
                                                         <Border.Style>
                                                             <Style TargetType="Border">
+                                                                <Setter Property="BorderThickness" Value="0"/>
+                                                                <Setter Property="BorderBrush" Value="Transparent"/>
                                                                 <Style.Triggers>
                                                                     <DataTrigger Binding="{Binding IsPeak}" Value="True">
-                                                                        <Setter Property="BorderBrush" Value="#E1BEE7"/>
                                                                         <Setter Property="BorderThickness" Value="1"/>
+                                                                        <Setter Property="BorderBrush" Value="#E1BEE7"/>
                                                                     </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
@@ -219,34 +222,35 @@
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </Border>
-                                <!-- Etichette asse X allineate sulle 24 colonne (0h, 6h, 12h, 18h, 23h) -->
-                                <Grid Grid.Row="3" Margin="0,2,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <ItemsControl Grid.Column="0" ItemsSource="{Binding HourlySalesPoints}">
-                                        <ItemsControl.ItemsPanel>
-                                            <ItemsPanelTemplate>
-                                                <UniformGrid Columns="24" Rows="1"/>
-                                            </ItemsPanelTemplate>
-                                        </ItemsControl.ItemsPanel>
-                                        <ItemsControl.ItemTemplate>
-                                            <DataTemplate>
-                                                <TextBlock Text="{Binding TickLabel, Mode=OneWay}" FontSize="9" Foreground="#888" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
-                                    <TextBlock Grid.Column="1" Text="{Binding HourlyDayTotalText, Mode=OneWay}" FontSize="10" Foreground="#666" VerticalAlignment="Center" Margin="12,0,0,0"/>
-                                </Grid>
+                                <!-- Etichette asse X (24 colonne, testo solo su 0/6/12/18/23) -->
+                                <ItemsControl Grid.Row="3" ItemsSource="{Binding HourlySalesPoints}" Margin="0,2,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="24" Rows="1"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding TickLabel}" FontSize="9" Foreground="#888" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </Grid>
                         </Border>
                     </Grid>
+                    </Grid>
+                    <Border Background="#E0FFFFFF" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,0,0,12"/>
+                            <TextBlock Text="Caricamento..." FontSize="12" Foreground="#666"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </TabItem>
 
             <TabItem Header="Storico">
-                <Grid Margin="0,8,0,0">
+                <Grid>
+                    <Grid Margin="0,8,0,0">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
@@ -263,8 +267,8 @@
                                     <TextBox Text="{Binding HistoryToText, UpdateSourceTrigger=PropertyChanged}" Width="100" Margin="0,0,16,0" Style="{StaticResource ModernTextBoxStyle}"/>
                                     <Button Content="Carica storico" MinWidth="110" Height="36" Command="{Binding LoadHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" ToolTip="Carica storico (Invio)"/>
                                     <Button Content="Esporta..." MinWidth="100" Height="36" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0" ToolTip="Esporta in CSV"/>
-                                    <Button Content="Seleziona tutto" MinWidth="100" Height="32" Command="{Binding MarkAllHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,6,0" ToolTip="Seleziona tutte le righe"/>
-                                    <Button Content="Pulisci selezione" MinWidth="110" Height="32" Command="{Binding ClearMarkedHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" ToolTip="Deseleziona tutte"/>
+                                    <Button Content="Seleziona tutto" MinWidth="100" Height="36" Command="{Binding MarkAllHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,6,0" ToolTip="Seleziona tutte le righe"/>
+                                    <Button Content="Pulisci selezione" MinWidth="110" Height="36" Command="{Binding ClearMarkedHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" ToolTip="Deseleziona tutte"/>
                                 </StackPanel>
                                 <TextBlock DockPanel.Dock="Right" Text="{Binding HistoryToolbarSummary, Mode=OneWay}" Foreground="#666" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
                             </DockPanel>
@@ -368,13 +372,23 @@
                                         <Setter Property="BorderBrush" Value="Transparent"/>
                                         <Style.Triggers>
                                             <Trigger Property="IsSelected" Value="True">
-                                                <Setter Property="Background" Value="#E3F2FD"/>
+                                                <Setter Property="Background" Value="#E8E0F0"/>
                                                 <Setter Property="Foreground" Value="Black"/>
                                             </Trigger>
                                             <DataTrigger Binding="{Binding IsMarked}" Value="True">
                                                 <Setter Property="BorderThickness" Value="3,0,0,0"/>
                                                 <Setter Property="BorderBrush" Value="#9B7BAD"/>
+                                                <Setter Property="Background" Value="#F3E8F7"/>
                                             </DataTrigger>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding IsMarked}" Value="True"/>
+                                                    <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                                </MultiDataTrigger.Conditions>
+                                                <MultiDataTrigger.Setters>
+                                                    <Setter Property="Background" Value="#E8E0F0"/>
+                                                </MultiDataTrigger.Setters>
+                                            </MultiDataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </DataGrid.RowStyle>
@@ -508,16 +522,16 @@
                             </Grid>
                         </Border>
                     </Grid>
+                    </Grid>
+                    <Border Background="#E0FFFFFF" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                            <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,0,0,12"/>
+                            <TextBlock Text="Caricamento..." FontSize="12" Foreground="#666"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </TabItem>
         </TabControl>
-            <!-- Overlay caricamento -->
-            <Border Background="#E0FFFFFF" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                    <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,0,0,12"/>
-                    <TextBlock Text="Caricamento..." FontSize="12" Foreground="#666"/>
-                </StackPanel>
-            </Border>
         </Grid>
     </Grid>
 </UserControl>
