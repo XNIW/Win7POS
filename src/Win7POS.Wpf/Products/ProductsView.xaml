@@ -129,7 +129,7 @@
                     <TextBlock Text="{Binding FilterSummary, Mode=OneWay}" FontSize="11" Foreground="#555" TextWrapping="Wrap"/>
                 </Border>
 
-                <!-- DataGrid: colonne bilanciate, righe meno strette -->
+                <!-- DataGrid: compatto, zebra più visibile, selezione tema viola -->
                 <Border Grid.Row="1" Background="White" CornerRadius="8"
                         BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="0">
                     <DataGrid ItemsSource="{Binding Items}"
@@ -141,24 +141,42 @@
                               VirtualizingPanel.IsVirtualizing="True"
                               VirtualizingPanel.VirtualizationMode="Recycling"
                               RowBackground="White"
-                              AlternatingRowBackground="#FAFAFA"
-                              RowHeight="34"
+                              AlternatingRowBackground="#F3F0F5"
+                              RowHeight="32"
                               MouseDoubleClick="ProductsGrid_MouseDoubleClick"
                               GridLinesVisibility="Horizontal"
                               HorizontalGridLinesBrush="#EEE"
                               HeadersVisibility="Column"
                               BorderThickness="0">
+                        <DataGrid.RowStyle>
+                            <Style TargetType="DataGridRow">
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#E8E0F0"/>
+                                        <Setter Property="Foreground" Value="#222"/>
+                                        <Setter Property="BorderBrush" Value="#6B5B73"/>
+                                        <Setter Property="BorderThickness" Value="3,0,0,0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DataGrid.RowStyle>
                         <DataGrid.ColumnHeaderStyle>
                             <Style TargetType="DataGridColumnHeader">
-                                <Setter Property="Padding" Value="10,10,10,10"/>
+                                <Setter Property="Padding" Value="8,8,8,8"/>
                                 <Setter Property="FontWeight" Value="SemiBold"/>
                                 <Setter Property="FontSize" Value="12"/>
                             </Style>
                         </DataGrid.ColumnHeaderStyle>
                         <DataGrid.CellStyle>
                             <Style TargetType="DataGridCell">
-                                <Setter Property="Padding" Value="10,0,10,0"/>
+                                <Setter Property="Padding" Value="8,0,8,0"/>
                                 <Setter Property="VerticalAlignment" Value="Center"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="Transparent"/>
+                                        <Setter Property="Foreground" Value="#222"/>
+                                    </Trigger>
+                                </Style.Triggers>
                             </Style>
                         </DataGrid.CellStyle>
                         <DataGrid.Columns>
