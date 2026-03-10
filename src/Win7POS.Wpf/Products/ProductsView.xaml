@@ -61,7 +61,37 @@
                               ItemsSource="{Binding Suppliers}" DisplayMemberPath="Name"
                               SelectedItem="{Binding SelectedSupplier, Mode=TwoWay}"
                               MaxDropDownHeight="280"
-                              ToolTip="Filtra per fornitore"/>
+                              ToolTip="Filtra per fornitore">
+                        <ComboBox.ItemContainerStyle>
+                            <Style TargetType="ComboBoxItem">
+                                <Setter Property="Padding" Value="8,6"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="ComboBoxItem">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    Padding="{TemplateBinding Padding}"
+                                                    SnapsToDevicePixels="True">
+                                                <ContentPresenter ContentSource="Content"
+                                                                  VerticalAlignment="Center"
+                                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#A97BC7"/>
+                                        <Setter Property="Foreground" Value="White"/>
+                                    </Trigger>
+                                    <Trigger Property="IsHighlighted" Value="True">
+                                        <Setter Property="Background" Value="#E8D9F2"/>
+                                        <Setter Property="Foreground" Value="#2F1F3A"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ComboBox.ItemContainerStyle>
+                    </ComboBox>
                     <TextBlock Text="Cerca:" VerticalAlignment="Center" Margin="24,0,8,0" Foreground="#6B5B73" FontSize="12"/>
                     <TextBox MinWidth="180" MaxWidth="260" Height="36"
                              VerticalContentAlignment="Center"
@@ -231,6 +261,23 @@
                             <Style TargetType="DataGridCell">
                                 <Setter Property="Padding" Value="8,0,8,0"/>
                                 <Setter Property="VerticalAlignment" Value="Center"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Setter Property="BorderBrush" Value="Transparent"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="DataGridCell">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                                    Padding="{TemplateBinding Padding}"
+                                                    SnapsToDevicePixels="True">
+                                                <ContentPresenter VerticalAlignment="Center"
+                                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
                                         <Setter Property="Background" Value="Transparent"/>
