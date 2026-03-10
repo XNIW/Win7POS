@@ -174,6 +174,26 @@ GROUP BY DayStr",
             return GetSalesBetweenAsync(from, to);
         }
 
+        /// <summary>Vendite per fascia oraria (0-23) del giorno, solo vendite (kind=0).</summary>
+        public async Task<IReadOnlyList<long>> GetHourlySalesAsync(DateTime date)
+        {
+            var from = new DateTimeOffset(date.Date).ToUnixTimeMilliseconds();
+            var to = new DateTimeOffset(date.Date.AddDays(1)).ToUnixTimeMilliseconds();
+            using var conn = _factory.Open();
+            var rows = await conn.QueryAsync<(int Hour, long Amount)>(@"
+SELECT CAST(strftime('%H', datetime(createdAt/1000, 'unixepoch', 'localtime')) AS INTEGER) AS Hour,
+       COALESCE(SUM(CASE WHEN kind = 0 THEN total ELSE 0 END), 0) AS Amount
+FROM sales
+WHERE createdAt >= @from AND createdAt < @to
+GROUP BY strftime('%H', datetime(createdAt/1000, 'unixepoch', 'localtime'))
+ORDER BY Hour", new { from, to }).ConfigureAwait(false);
+            var result = new long[24];
+            foreach (var r in rows)
+                if (r.Hour >= 0 && r.Hour < 24)
+                    result[r.Hour] = r.Amount;
+            return result;
+        }
+
         public async Task<Sale> GetByIdAsync(long saleId)
         {
             using var conn = _factory.Open();

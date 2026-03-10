@@ -242,6 +242,20 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        /// <summary>Vendite per ora (0-23) del giorno, per grafico orario.</summary>
+        public async Task<IReadOnlyList<long>> GetHourlySalesAsync(DateTime date)
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                return await _sales.GetHourlySalesAsync(date).ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         public async Task<string> ExportDailyCsvAsync(DateTime date)
         {
             await _gate.WaitAsync().ConfigureAwait(false);

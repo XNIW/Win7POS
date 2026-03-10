@@ -10,7 +10,8 @@ namespace Win7POS.Core.Reports
     /// </summary>
     public static class DailyTakingsReceiptFormatter
     {
-        private const int Width = 42;
+        /// <summary>Larghezza termica conservativa (Win7 + driver).</summary>
+        private const int ReceiptWidth = 32;
 
         public static IReadOnlyList<string> Format(DailyTakingsReceiptModel model, ReceiptShopInfo shop = null)
         {
@@ -21,34 +22,36 @@ namespace Win7POS.Core.Reports
             var lines = new List<string>();
             lines.Add("CHIUSURA CASSA");
             lines.Add("Data: " + model.Date.ToString("yyyy-MM-dd", culture));
-            lines.Add(new string('-', Width));
-            lines.Add(Row("N. vendite", model.SalesCount.ToString(CultureInfo.InvariantCulture)));
-            lines.Add(Row("Totale", Money(model.TotalAmount)));
-            lines.Add(Row("Contanti", Money(model.CashAmount)));
-            lines.Add(Row("Carta", Money(model.CardAmount)));
-            lines.Add(Row("Lorde", Money(model.GrossSalesAmount)));
-            lines.Add(Row("Resi", Money(model.RefundsAmount)));
-            lines.Add(new string('-', Width));
-            lines.Add(Row("Netto", Money(model.NetAmount)));
-            lines.Add(new string('-', Width));
-            lines.Add(string.IsNullOrWhiteSpace(shop.Footer) ? "Grazie e arrivederci" : Fit(shop.Footer.Trim(), Width));
+            lines.Add(new string('-', ReceiptWidth));
+            lines.Add(Line2("Scontr.", model.SalesCount.ToString(CultureInfo.InvariantCulture)));
+            lines.Add(Line2("Totale", Money(model.TotalAmount)));
+            lines.Add(Line2("Cash", Money(model.CashAmount)));
+            lines.Add(Line2("Carta", Money(model.CardAmount)));
+            lines.Add(Line2("Lorde", Money(model.GrossSalesAmount)));
+            lines.Add(Line2("Resi", Money(model.RefundsAmount)));
+            lines.Add(new string('-', ReceiptWidth));
+            lines.Add(Line2("Netto", Money(model.NetAmount)));
+            lines.Add(new string('-', ReceiptWidth));
+            lines.Add(string.IsNullOrWhiteSpace(shop.Footer) ? "Grazie" : Fit(shop.Footer.Trim(), ReceiptWidth));
 
             return lines;
+        }
+
+        /// <summary>Riga con label a sinistra e valore a destra, senza superare ReceiptWidth.</summary>
+        private static string Line2(string left, string right)
+        {
+            left = left ?? "";
+            right = right ?? "";
+            var maxLeft = Math.Max(1, ReceiptWidth - right.Length - 1);
+            if (left.Length > maxLeft)
+                left = left.Substring(0, maxLeft);
+            return left.PadRight(ReceiptWidth - right.Length) + right;
         }
 
         private static string Fit(string text, int max)
         {
             text = text ?? string.Empty;
             return text.Length <= max ? text : text.Substring(0, max);
-        }
-
-        private static string Row(string label, string value, int width = Width)
-        {
-            label = Fit(label, 14);
-            value = value ?? "0";
-            var spaces = width - label.Length - value.Length;
-            if (spaces < 1) spaces = 1;
-            return label + new string(' ', spaces) + value;
         }
 
         private static string Money(long pesos)

@@ -34,6 +34,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _historyToText = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         private bool _reportLoaded;
         private int _selectedTabIndex;
+        /// <summary>Sorgente unica per i 6 KPI in alto: Giornaliero, riga selezionata in Storico, o somma righe spuntate.</summary>
+        private HeaderSummary _currentHeaderSummary;
+
         private long _periodNetAmount;
         private long _periodGrossAmount;
         private long _periodRefundsAmount;
@@ -58,6 +61,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             MarkAllHistoryRowsCommand = new RelayCommand(MarkAllHistoryRows, _ => HasHistoryRows);
             ClearMarkedHistoryRowsCommand = new RelayCommand(ClearMarkedHistoryRows, _ => HasMarkedRows);
             HistoryRows = new ObservableCollection<HistoryRow>();
+            HourlySalesPoints = new ObservableCollection<HourlySalesPoint>();
         }
 
         public string DateText
@@ -131,12 +135,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         public string TotalAmountDisplay => MoneyClp.FormatDisplay(TotalAmount);
-        public string CashAmountDisplay => MoneyClp.FormatDisplay(CashAmount);
-        public string CardAmountDisplay => MoneyClp.FormatDisplay(CardAmount);
-        public string GrossSalesAmountDisplay => MoneyClp.FormatDisplay(GrossSalesAmount);
-        public string RefundsAmountDisplay => MoneyClp.FormatDisplay(RefundsAmount);
-        public string NetAmountDisplay => MoneyClp.FormatDisplay(NetAmount);
-        public string TicketMedioDisplay => SalesCount > 0 ? MoneyClp.FormatDisplay(NetAmount / SalesCount) : "0";
+        /// <summary>KPI in alto: da _currentHeaderSummary (Giornaliero / riga selezionata / righe spuntate).</summary>
+        public string CashAmountDisplay => MoneyClp.FormatDisplay(_currentHeaderSummary?.CashAmount ?? 0);
+        public string CardAmountDisplay => MoneyClp.FormatDisplay(_currentHeaderSummary?.CardAmount ?? 0);
+        public string GrossSalesAmountDisplay => MoneyClp.FormatDisplay(_currentHeaderSummary?.GrossAmount ?? 0);
+        public string RefundsAmountDisplay => MoneyClp.FormatDisplay(_currentHeaderSummary?.RefundsAmount ?? 0);
+        public string NetAmountDisplay => MoneyClp.FormatDisplay(_currentHeaderSummary?.NetAmount ?? 0);
+        public int SalesCountDisplay => _currentHeaderSummary?.SalesCount ?? 0;
+        public string TicketMedioDisplay => _currentHeaderSummary != null && _currentHeaderSummary.SalesCount > 0
+            ? MoneyClp.FormatDisplay(_currentHeaderSummary.NetAmount / _currentHeaderSummary.SalesCount) : "0";
 
         /// <summary>Badge stato: "Report caricato" / "Nessun dato" per header.</summary>
         public string StatusBadgeText => !_reportLoaded ? "" : (SalesCount > 0 || NetAmount != 0 ? "Report caricato" : "Nessun dato");
@@ -297,7 +304,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         /// <summary>0 = Giornaliero, 1 = Storico. Cambiato dai filtri rapidi (es. Settimana → tab Storico).</summary>
-        public int SelectedTabIndex { get => _selectedTabIndex; set { _selectedTabIndex = value; OnPropertyChanged(); } }
+        public int SelectedTabIndex { get => _selectedTabIndex; set { _selectedTabIndex = value; OnPropertyChanged(); RefreshHeaderSummary(); } }
+
+        /// <summary>24 punti (0-23) per grafico vendite orarie nel tab Giornaliero.</summary>
+        public ObservableCollection<HourlySalesPoint> HourlySalesPoints { get; }
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -323,6 +333,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
                 UpdateSummaryReceiptPreview(date, summary, shop);
                 _reportLoaded = true;
+                RefreshHeaderSummary();
+                _ = LoadHourlySalesAsync(date);
                 OnPropertyChanged(nameof(StatusBadgeText));
                 OnPropertyChanged(nameof(ShowStatusBadge));
                 Status = "Report caricato.";
@@ -334,6 +346,34 @@ namespace Win7POS.Wpf.Pos.Dialogs
             finally
             {
                 IsBusy = false;
+            }
+        }
+
+        private async Task LoadHourlySalesAsync(DateTime date)
+        {
+            try
+            {
+                var amounts = await _service.GetHourlySalesAsync(date).ConfigureAwait(true);
+                if (amounts == null || amounts.Count < 24) return;
+                long max = 0;
+                for (int i = 0; i < 24; i++)
+                    if (amounts[i] > max) max = amounts[i];
+                HourlySalesPoints.Clear();
+                for (int h = 0; h < 24; h++)
+                {
+                    var amount = amounts[h];
+                    HourlySalesPoints.Add(new HourlySalesPoint
+                    {
+                        Hour = h,
+                        AmountMinor = amount,
+                        AmountDisplay = MoneyClp.FormatDisplay(amount),
+                        NormalizedHeight = max > 0 ? (double)amount / max : 0
+                    });
+                }
+            }
+            catch
+            {
+                HourlySalesPoints.Clear();
             }
         }
 
@@ -471,7 +511,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (SelectedTabIndex == 0)
                 return !string.IsNullOrEmpty(SummaryReceiptPreview);
             if (MarkedCount >= 1) return true;
-            return SelectedHistoryRow != null && !string.IsNullOrEmpty(SummaryReceiptPreview);
+            return SelectedHistoryRow != null;
         }
 
         private async Task PrintStampaRiepilogoAsync()
@@ -530,26 +570,39 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
+        private const int ReceiptWidth = 32;
+
+        private static string ReceiptLine2(string left, string right)
+        {
+            left = left ?? "";
+            right = right ?? "";
+            var maxLeft = Math.Max(1, ReceiptWidth - right.Length - 1);
+            if (left.Length > maxLeft) left = left.Substring(0, maxLeft);
+            return left.PadRight(ReceiptWidth - right.Length) + right;
+        }
+
         private string BuildMarkedAggregateReceiptText()
         {
+            var sep = new string('-', ReceiptWidth);
             var lines = new List<string>();
-            lines.Add("========================================");
-            lines.Add("  RIEPILOGO SELEZIONE - " + MarkedCount + " giorni");
-            lines.Add("========================================");
-            lines.Add("");
+            lines.Add("CHIUSURA CASSA");
+            lines.Add("Riepilogo " + MarkedCount + " giorni");
+            lines.Add(sep);
             foreach (var row in HistoryRows)
             {
                 if (!row.IsMarked) continue;
-                lines.Add(row.DateText + "  Scontrini: " + row.SalesCount + "  Netto: " + row.NetDisplay);
+                lines.Add(row.DateText);
+                lines.Add("Scontr.: " + row.SalesCount + "  Netto: " + row.NetDisplay);
             }
-            lines.Add("----------------------------------------");
-            lines.Add("Totale scontrini: " + MarkedSalesCount);
-            lines.Add("Lorde:  " + MarkedGrossDisplay);
-            lines.Add("Resi:   " + MarkedRefundsDisplay);
-            lines.Add("Netto:  " + MarkedNetDisplay);
-            lines.Add("Contanti: " + MarkedCashDisplay + "  Carta: " + MarkedCardDisplay);
-            lines.Add("Ticket medio: " + MarkedTicketAverageDisplay);
-            lines.Add("========================================");
+            lines.Add(sep);
+            lines.Add(ReceiptLine2("Scontr.", MarkedSalesCount.ToString(CultureInfo.InvariantCulture)));
+            lines.Add(ReceiptLine2("Lorde", MarkedGrossDisplay));
+            lines.Add(ReceiptLine2("Resi", MarkedRefundsDisplay));
+            lines.Add(ReceiptLine2("Netto", MarkedNetDisplay));
+            lines.Add(ReceiptLine2("Cash", MarkedCashDisplay));
+            lines.Add(ReceiptLine2("Carta", MarkedCardDisplay));
+            lines.Add(ReceiptLine2("Ticket medio", MarkedTicketAverageDisplay));
+            lines.Add(sep);
             return string.Join(Environment.NewLine, lines);
         }
 
@@ -665,6 +718,77 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 _ = LoadPreviewForSingleMarkedAsync();
             else
                 SingleMarkedReceiptPreview = string.Empty;
+            RefreshHeaderSummary();
+        }
+
+        /// <summary>Aggiorna _currentHeaderSummary: MarkedCount>=1 → somma spuntate; Storico+riga selezionata → riga; altrimenti giorno Giornaliero.</summary>
+        private void RefreshHeaderSummary()
+        {
+            if (MarkedCount >= 1)
+                _currentHeaderSummary = BuildHeaderSummaryFromMarkedRows();
+            else if (SelectedTabIndex == 1 && SelectedHistoryRow != null)
+                _currentHeaderSummary = BuildHeaderSummaryFromRow(SelectedHistoryRow);
+            else
+                _currentHeaderSummary = BuildHeaderSummaryFromDaily();
+            OnPropertyChanged(nameof(NetAmountDisplay));
+            OnPropertyChanged(nameof(SalesCountDisplay));
+            OnPropertyChanged(nameof(TicketMedioDisplay));
+            OnPropertyChanged(nameof(RefundsAmountDisplay));
+            OnPropertyChanged(nameof(CashAmountDisplay));
+            OnPropertyChanged(nameof(CardAmountDisplay));
+            OnPropertyChanged(nameof(GrossSalesAmountDisplay));
+        }
+
+        private HeaderSummary BuildHeaderSummaryFromDaily()
+        {
+            return new HeaderSummary
+            {
+                SalesCount = _salesCount,
+                NetAmount = _netAmount,
+                CashAmount = _cashAmount,
+                CardAmount = _cardAmount,
+                GrossAmount = _grossSalesAmount,
+                RefundsAmount = _refundsAmount
+            };
+        }
+
+        private HeaderSummary BuildHeaderSummaryFromRow(HistoryRow row)
+        {
+            if (row == null) return BuildHeaderSummaryFromDaily();
+            return new HeaderSummary
+            {
+                SalesCount = row.SalesCount,
+                NetAmount = row.NetAmount,
+                CashAmount = row.CashAmount,
+                CardAmount = row.CardAmount,
+                GrossAmount = row.GrossAmount,
+                RefundsAmount = row.RefundsAmount
+            };
+        }
+
+        private HeaderSummary BuildHeaderSummaryFromMarkedRows()
+        {
+            var rows = HistoryRows.Where(r => r.IsMarked).ToList();
+            int salesCount = 0;
+            long net = 0, cash = 0, card = 0, gross = 0, refunds = 0;
+            foreach (var r in rows)
+            {
+                salesCount += r.SalesCount;
+                net += r.NetAmount;
+                cash += r.CashAmount;
+                card += r.CardAmount;
+                gross += r.GrossAmount;
+                refunds += r.RefundsAmount;
+            }
+            return new HeaderSummary
+            {
+                SalesCount = salesCount,
+                NetAmount = net,
+                CashAmount = cash,
+                CardAmount = card,
+                GrossAmount = gross,
+                RefundsAmount = refunds
+            };
         }
 
         private string GetStampaRiepilogoSubtitle()
@@ -752,6 +876,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 UpdateSummaryReceiptPreview(SelectedHistoryRow.Date, summary, shop);
             }
             catch { SummaryReceiptPreview = ""; }
+            finally { RefreshHeaderSummary(); }
         }
 
         private async Task LoadPreviewForSingleMarkedAsync()
@@ -889,6 +1014,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }
 
+        /// <summary>DTO per i 6 KPI in alto (sorgente unica).</summary>
+        private sealed class HeaderSummary
+        {
+            public int SalesCount { get; set; }
+            public long NetAmount { get; set; }
+            public long CashAmount { get; set; }
+            public long CardAmount { get; set; }
+            public long GrossAmount { get; set; }
+            public long RefundsAmount { get; set; }
+        }
+
         private sealed class RelayCommand : ICommand
         {
             private readonly Action _execute;
@@ -906,6 +1042,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             public event EventHandler CanExecuteChanged;
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>Punto per grafico vendite orarie (0-23).</summary>
+        public sealed class HourlySalesPoint
+        {
+            public int Hour { get; set; }
+            public long AmountMinor { get; set; }
+            public string AmountDisplay { get; set; } = "";
+            public double NormalizedHeight { get; set; }
+            /// <summary>Altezza barra in pixel (0–80) per il grafico.</summary>
+            public double BarHeightPx => Math.Max(0, NormalizedHeight * 80);
         }
 
         public sealed class HistoryRow : INotifyPropertyChanged
