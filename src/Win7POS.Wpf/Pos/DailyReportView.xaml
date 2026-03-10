@@ -262,9 +262,9 @@
                             <DockPanel LastChildFill="False">
                                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
                                     <TextBlock Text="Da:" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
-                                    <TextBox Text="{Binding HistoryFromText, UpdateSourceTrigger=PropertyChanged}" Width="100" Margin="0,0,12,0" Style="{StaticResource ModernTextBoxStyle}"/>
+                                    <TextBox Text="{Binding HistoryFromText, UpdateSourceTrigger=PropertyChanged}" Width="112" HorizontalContentAlignment="Center" Margin="0,0,12,0" Style="{StaticResource ModernTextBoxStyle}"/>
                                     <TextBlock Text="A:" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
-                                    <TextBox Text="{Binding HistoryToText, UpdateSourceTrigger=PropertyChanged}" Width="100" Margin="0,0,16,0" Style="{StaticResource ModernTextBoxStyle}"/>
+                                    <TextBox Text="{Binding HistoryToText, UpdateSourceTrigger=PropertyChanged}" Width="112" HorizontalContentAlignment="Center" Margin="0,0,16,0" Style="{StaticResource ModernTextBoxStyle}"/>
                                     <Button Content="Carica storico" MinWidth="110" Height="36" Command="{Binding LoadHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" ToolTip="Carica storico (Invio)"/>
                                     <Button Content="Esporta..." MinWidth="100" Height="36" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0" ToolTip="Esporta in CSV"/>
                                     <Button Content="Seleziona tutto" MinWidth="100" Height="36" Command="{Binding MarkAllHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,6,0" ToolTip="Seleziona tutte le righe"/>
@@ -290,7 +290,8 @@
                             <DataGrid x:Name="HistoryGrid" ItemsSource="{Binding HistoryRows}" SelectedItem="{Binding SelectedHistoryRow, Mode=TwoWay}"
                                       IsReadOnly="False" AutoGenerateColumns="False" MinHeight="200"
                                       CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
-                                      GridLinesVisibility="Horizontal" BorderThickness="1" BorderBrush="#E0D8E4"
+                                      GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#EEE8F2" VerticalGridLinesBrush="#EEE8F2"
+                                      BorderThickness="1" BorderBrush="#E0D8E4"
                                       RowHeight="36"
                                       Background="White" RowBackground="White" AlternatingRowBackground="#FAFAFA"
                                       SelectionMode="Single" SelectionUnit="FullRow">
@@ -392,6 +393,17 @@
                                         </Style.Triggers>
                                     </Style>
                                 </DataGrid.RowStyle>
+                                <DataGrid.CellStyle>
+                                    <Style TargetType="DataGridCell">
+                                        <Setter Property="BorderThickness" Value="0"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter Property="Background" Value="#E8E0F0"/>
+                                                <Setter Property="Foreground" Value="#111"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </DataGrid.CellStyle>
                                 <DataGrid.ColumnHeaderStyle>
                                     <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
                                         <Setter Property="Background" Value="#F0EDF2"/>
