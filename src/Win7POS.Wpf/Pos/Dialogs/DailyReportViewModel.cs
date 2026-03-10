@@ -50,7 +50,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
             PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview));
             PrintSelectedHistoryCommand = new AsyncRelayCommand(PrintStampaRiepilogoAsync, _ => !IsBusy && CanPrintStampaRiepilogo());
-            LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync, _ => !IsBusy);
+            LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync, _ => !IsBusy && CanLoadHistory());
             ExportCommand = new AsyncRelayCommand(ExportAsync, _ => !IsBusy && CanExport());
             FilterOggiCommand = new AsyncRelayCommand(ApplyFilterOggiAsync, _ => !IsBusy);
             FilterIeriCommand = new AsyncRelayCommand(ApplyFilterIeriAsync, _ => !IsBusy);
@@ -167,13 +167,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string HistoryFromText
         {
             get => _historyFromText;
-            set { _historyFromText = value ?? string.Empty; OnPropertyChanged(); }
+            set { _historyFromText = value ?? string.Empty; OnPropertyChanged(); OnPropertyChanged(nameof(HasInvalidHistoryRange)); (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); }
         }
 
         public string HistoryToText
         {
             get => _historyToText;
-            set { _historyToText = value ?? string.Empty; OnPropertyChanged(); }
+            set { _historyToText = value ?? string.Empty; OnPropertyChanged(); OnPropertyChanged(nameof(HasInvalidHistoryRange)); (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); }
         }
 
         public ObservableCollection<HistoryRow> HistoryRows { get; }
@@ -292,19 +292,40 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string SingleMarkedDateText => GetSingleMarkedDateText();
         public string StampaRiepilogoSubtitle => GetStampaRiepilogoSubtitle();
 
-        /// <summary>Testo compatto per toolbar storico: "Nessun giorno" / "12 giorni" / "12 giorni · 2 selezionati".</summary>
+        /// <summary>Testo compatto per toolbar storico: "N giorni caricati · M selezionati".</summary>
         public string HistoryToolbarSummary
         {
             get
             {
                 if (HistoryRowCount == 0) return "Nessun giorno";
-                if (MarkedCount > 0) return HistoryRowCount + " giorni · " + MarkedCount + " selezionati";
-                return HistoryRowCount + " giorni";
+                if (MarkedCount > 0) return HistoryRowCount + " giorni caricati · " + MarkedCount + " selezionati";
+                return HistoryRowCount + " giorni caricati";
             }
         }
 
-        /// <summary>0 = Giornaliero, 1 = Storico. Cambiato dai filtri rapidi (es. Settimana → tab Storico).</summary>
-        public int SelectedTabIndex { get => _selectedTabIndex; set { _selectedTabIndex = value; OnPropertyChanged(); RefreshHeaderSummary(); } }
+        /// <summary>True se Da &gt; A (intervallo invalido): disabilita Carica storico e mostra messaggio.</summary>
+        public bool HasInvalidHistoryRange => TryParseHistoryDates(out var from, out var to) && from > to;
+
+        /// <summary>0 = Giornaliero, 1 = Storico. Cambiato dai filtri rapidi. Uscendo da Storico: reset stato + refresh giornaliero.</summary>
+        public int SelectedTabIndex
+        {
+            get => _selectedTabIndex;
+            set
+            {
+                if (_selectedTabIndex == value) return;
+                _selectedTabIndex = value;
+                OnPropertyChanged();
+                if (value == 0)
+                {
+                    ResetHistoryState();
+                    _ = LoadAsync();
+                }
+                else
+                {
+                    RefreshHeaderSummary();
+                }
+            }
+        }
 
         /// <summary>Se true, la stampa multi-giorno include l'elenco giorni (data + netto); se false solo totali finali.</summary>
         private bool _printMarkedDaysDetail = true;
@@ -651,6 +672,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 var summaries = await _service.GetDailySummariesAsync(from, to).ConfigureAwait(true);
+                foreach (var row in HistoryRows)
+                    row.PropertyChanged -= OnHistoryRowPropertyChanged;
                 HistoryRows.Clear();
                 HistoryRowCount = 0;
                 PeriodNetAmount = 0;
@@ -683,7 +706,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         RefundsDisplay = MoneyClp.FormatDisplay(s.RefundsAmount),
                         NetDisplay = MoneyClp.FormatDisplay(s.NetAmount),
                         CashDisplay = MoneyClp.FormatDisplay(s.CashAmount),
-                        CardDisplay = MoneyClp.FormatDisplay(s.CardAmount)
+                        CardDisplay = MoneyClp.FormatDisplay(s.CardAmount),
+                        IsMarked = true
                     };
                     row.PropertyChanged += OnHistoryRowPropertyChanged;
                     HistoryRows.Add(row);
@@ -697,10 +721,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 HistoryRowCount = HistoryRows.Count;
                 if (HistoryRows.Count > 0)
                     SelectedHistoryRow = HistoryRows[0];
+                RefreshMarkedAggregates();
+                RefreshHeaderSummary();
                 (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
                 (MarkAllHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (ClearMarkedHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                Status = summaries.Count + " giorni caricati nello storico.";
+                Status = summaries.Count + " giorni caricati · tutti selezionati.";
             }
             catch (Exception ex)
             {
@@ -710,6 +736,50 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 IsBusy = false;
             }
+        }
+
+        private bool CanLoadHistory()
+        {
+            if (!TryParseHistoryDates(out var from, out var to)) return false;
+            return from <= to;
+        }
+
+        /// <summary>Reset completo stato Storico quando si torna al tab Giornaliero.</summary>
+        private void ResetHistoryState()
+        {
+            foreach (var row in HistoryRows)
+                row.PropertyChanged -= OnHistoryRowPropertyChanged;
+            HistoryRows.Clear();
+            _historyRowCount = 0;
+            OnPropertyChanged(nameof(HistoryRowCount));
+            OnPropertyChanged(nameof(HasHistoryRows));
+            OnPropertyChanged(nameof(ShowHistoryEmptyMessage));
+            _selectedHistoryRow = null;
+            OnPropertyChanged(nameof(SelectedHistoryRow));
+            OnPropertyChanged(nameof(HasHistorySelection));
+            OnPropertyChanged(nameof(PreviewPlaceholderText));
+            OnPropertyChanged(nameof(ShowDetailPanel));
+            OnPropertyChanged(nameof(ShowPlaceholder));
+            OnPropertyChanged(nameof(ShowSelectedRowDetail));
+            OnPropertyChanged(nameof(ShowReceiptPreview));
+            RefreshMarkedAggregates();
+            PeriodNetAmount = 0;
+            PeriodGrossAmount = 0;
+            PeriodRefundsAmount = 0;
+            PeriodCashAmount = 0;
+            PeriodCardAmount = 0;
+            PeriodSalesCount = 0;
+            var today = DateTime.Now.Date;
+            _historyFromText = today.AddDays(-30).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            _historyToText = today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            OnPropertyChanged(nameof(HistoryFromText));
+            OnPropertyChanged(nameof(HistoryToText));
+            OnPropertyChanged(nameof(HasInvalidHistoryRange));
+            OnPropertyChanged(nameof(HistoryToolbarSummary));
+            (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (MarkAllHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (ClearMarkedHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnHistoryRowPropertyChanged(object sender, PropertyChangedEventArgs e)
