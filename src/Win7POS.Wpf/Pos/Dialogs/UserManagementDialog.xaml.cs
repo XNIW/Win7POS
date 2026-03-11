@@ -1,0 +1,42 @@
+using System.Windows;
+using Win7POS.Wpf.Infrastructure;
+
+namespace Win7POS.Wpf.Pos.Dialogs
+{
+    public partial class UserManagementDialog : Window
+    {
+        public UserManagementDialog(UserManagementViewModel vm)
+        {
+            InitializeComponent();
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 720, minHeight: 480, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
+            DataContext = vm;
+            vm.RequestClose += ok =>
+            {
+                if (!Dispatcher.CheckAccess())
+                {
+                    Dispatcher.Invoke(() => CloseWithResult(ok));
+                    return;
+                }
+                CloseWithResult(ok);
+            };
+        }
+
+        private void NewPinBox_PasswordChanged(object sender, System.Windows.RoutedEventArgs e)
+        {
+            if (DataContext is UserManagementViewModel vm && sender is System.Windows.Controls.PasswordBox pb)
+                vm.NewPin = pb.Password;
+        }
+
+        private void OnCloseClick(object sender, RoutedEventArgs e)
+        {
+            DialogResult = false;
+            Close();
+        }
+
+        private void CloseWithResult(bool ok)
+        {
+            try { DialogResult = ok; }
+            catch { Close(); }
+        }
+    }
+}

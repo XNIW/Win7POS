@@ -1,6 +1,9 @@
+using System;
 using System.IO;
 using System.Linq;
 using Dapper;
+using Win7POS.Core.Security;
+using Win7POS.Core.Util;
 
 namespace Win7POS.Data
 {
@@ -122,9 +125,52 @@ CREATE TABLE IF NOT EXISTS held_cart_lines (
 );
 
 CREATE INDEX IF NOT EXISTS idx_held_cart_lines_holdId ON held_cart_lines(holdId);
+
+CREATE TABLE IF NOT EXISTS roles (
+  id   INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  is_system INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS users (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  username          TEXT NOT NULL UNIQUE,
+  display_name      TEXT NOT NULL,
+  pin_hash          TEXT NOT NULL,
+  pin_salt          TEXT NOT NULL,
+  role_id           INTEGER NOT NULL,
+  is_active         INTEGER NOT NULL DEFAULT 1,
+  require_pin_change INTEGER NOT NULL DEFAULT 0,
+  max_discount_percent INTEGER NOT NULL DEFAULT 0,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL,
+  last_login_at     INTEGER NULL,
+  failed_attempts   INTEGER NOT NULL DEFAULT 0,
+  lockout_until     INTEGER NULL,
+  FOREIGN KEY(role_id) REFERENCES roles(id)
+);
+
+CREATE TABLE IF NOT EXISTS role_permissions (
+  role_id         INTEGER NOT NULL,
+  permission_code TEXT NOT NULL,
+  PRIMARY KEY(role_id, permission_code),
+  FOREIGN KEY(role_id) REFERENCES roles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS security_events (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts        INTEGER NOT NULL,
+  user_id   INTEGER NULL,
+  event_type TEXT NOT NULL,
+  details   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_security_events_ts ON security_events(ts);
 ");
 
             EnsureMigrations(conn);
+            SeedSecurity(conn);
         }
 
         private static void EnsureMigrations(Microsoft.Data.Sqlite.SqliteConnection conn)
@@ -135,6 +181,65 @@ CREATE INDEX IF NOT EXISTS idx_held_cart_lines_holdId ON held_cart_lines(holdId)
             EnsureColumn(conn, "sales", "voided_at", "INTEGER NULL");
             EnsureColumn(conn, "sales", "reason", "TEXT NULL");
             EnsureColumn(conn, "sale_lines", "related_original_line_id", "INTEGER NULL");
+            EnsureColumn(conn, "sales", "operator_id", "INTEGER NULL");
+        }
+
+        private static void SeedSecurity(Microsoft.Data.Sqlite.SqliteConnection conn)
+        {
+            conn.Execute(@"
+INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('admin','Admin',1);
+INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('manager','Manager',1);
+INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('supervisor','Supervisore',1);
+INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('cashier','Cassiere',1);
+");
+
+            SeedRolePermissions(conn);
+            SeedAdminUser(conn);
+        }
+
+        private static void SeedRolePermissions(Microsoft.Data.Sqlite.SqliteConnection conn)
+        {
+            var allPerms = new[] {
+                PermissionCodes.PosSell, PermissionCodes.PosPay, PermissionCodes.PosSuspendCart, PermissionCodes.PosRecoverCart,
+                PermissionCodes.PosDiscount, PermissionCodes.PosDiscountOverLimit, PermissionCodes.PosRefund, PermissionCodes.PosVoidSale,
+                PermissionCodes.PosReprintReceipt,
+                PermissionCodes.CatalogView, PermissionCodes.CatalogEdit, PermissionCodes.CatalogImport, PermissionCodes.CatalogPriceEdit,
+                PermissionCodes.RegisterView, PermissionCodes.RegisterViewAll,
+                PermissionCodes.DailyCloseView, PermissionCodes.DailyCloseRun, PermissionCodes.DailyClosePrint,
+                PermissionCodes.SettingsShop, PermissionCodes.SettingsPrinter,
+                PermissionCodes.DbBackup, PermissionCodes.DbRestore, PermissionCodes.DbMaintenance,
+                PermissionCodes.UsersManage, PermissionCodes.RolesManage, PermissionCodes.SecurityOverride
+            };
+            var cashierPerms = new[] { PermissionCodes.PosSell, PermissionCodes.PosPay, PermissionCodes.PosSuspendCart, PermissionCodes.PosRecoverCart, PermissionCodes.PosReprintReceipt, PermissionCodes.CatalogView, PermissionCodes.RegisterView };
+            var supervisorPerms = new[] { PermissionCodes.PosSell, PermissionCodes.PosPay, PermissionCodes.PosSuspendCart, PermissionCodes.PosRecoverCart, PermissionCodes.PosDiscount, PermissionCodes.PosRefund, PermissionCodes.PosVoidSale, PermissionCodes.PosReprintReceipt, PermissionCodes.CatalogView, PermissionCodes.RegisterView, PermissionCodes.RegisterViewAll, PermissionCodes.DailyCloseView, PermissionCodes.DailyCloseRun, PermissionCodes.DailyClosePrint, PermissionCodes.SettingsPrinter };
+            var managerPerms = new[] { PermissionCodes.PosSell, PermissionCodes.PosPay, PermissionCodes.PosSuspendCart, PermissionCodes.PosRecoverCart, PermissionCodes.PosDiscount, PermissionCodes.PosDiscountOverLimit, PermissionCodes.PosRefund, PermissionCodes.PosVoidSale, PermissionCodes.PosReprintReceipt, PermissionCodes.CatalogView, PermissionCodes.CatalogEdit, PermissionCodes.CatalogPriceEdit, PermissionCodes.RegisterView, PermissionCodes.RegisterViewAll, PermissionCodes.DailyCloseView, PermissionCodes.DailyCloseRun, PermissionCodes.DailyClosePrint, PermissionCodes.SettingsShop, PermissionCodes.SettingsPrinter, PermissionCodes.DbBackup };
+            var adminPerms = allPerms;
+
+            var roleIds = conn.Query<RoleSeedRow>("SELECT code AS Code, id AS Id FROM roles").ToList();
+            foreach (var r in roleIds)
+            {
+                var perms = r.Code == "admin" ? adminPerms : r.Code == "manager" ? managerPerms : r.Code == "supervisor" ? supervisorPerms : r.Code == "cashier" ? cashierPerms : Array.Empty<string>();
+                foreach (var p in perms)
+                {
+                    conn.Execute("INSERT OR IGNORE INTO role_permissions(role_id, permission_code) VALUES(@rid, @code)", new { rid = r.Id, code = p });
+                }
+            }
+        }
+
+        private static void SeedAdminUser(Microsoft.Data.Sqlite.SqliteConnection conn)
+        {
+            var existing = conn.QuerySingleOrDefault<int?>("SELECT 1 FROM users LIMIT 1");
+            if (existing.HasValue) return;
+
+            var adminRoleId = conn.QuerySingle<int>("SELECT id FROM roles WHERE code = 'admin' LIMIT 1");
+            var now = UnixTime.NowSeconds();
+            var salt = PinHelper.GenerateSalt();
+            var hash = PinHelper.HashPin("1234", salt);
+
+            conn.Execute(@"
+INSERT INTO users(username, display_name, pin_hash, pin_salt, role_id, is_active, require_pin_change, max_discount_percent, created_at, updated_at)
+VALUES('admin', 'Amministratore', @hash, @salt, @roleId, 1, 1, 100, @now, @now)",
+                new { hash, salt, roleId = adminRoleId, now });
         }
 
         private static void EnsureColumn(Microsoft.Data.Sqlite.SqliteConnection conn, string table, string column, string ddl)
@@ -148,6 +253,12 @@ CREATE INDEX IF NOT EXISTS idx_held_cart_lines_holdId ON held_cart_lines(holdId)
         private sealed class TableInfoRow
         {
             public string Name { get; set; }
+        }
+
+        private sealed class RoleSeedRow
+        {
+            public string Code { get; set; }
+            public int Id { get; set; }
         }
     }
 }

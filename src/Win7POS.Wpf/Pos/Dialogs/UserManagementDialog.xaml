@@ -1,0 +1,122 @@
+<Window x:Class="Win7POS.Wpf.Pos.Dialogs.UserManagementDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Utenti e ruoli"
+        WindowStartupLocation="CenterOwner"
+        SizeToContent="WidthAndHeight"
+        MinWidth="720"
+        MinHeight="480"
+        ResizeMode="CanResize">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+    </Window.Resources>
+    <Border Padding="14">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280"/>
+                <ColumnDefinition Width="*" MinWidth="300"/>
+            </Grid.ColumnDefinitions>
+
+            <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="0">
+                <TextBlock Text="Utenti" FontSize="16" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
+                <TextBox Margin="0,0,0,8" Style="{StaticResource ModernTextBoxStyle}" Text="{Binding Filter, UpdateSourceTrigger=PropertyChanged}" Height="32"/>
+                <ListBox Margin="0,0,0,12" ItemsSource="{Binding FilteredUsers}" SelectedItem="{Binding SelectedUser, Mode=TwoWay}"
+                         DisplayMemberPath="DisplayName" MinHeight="160" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="8,6"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+                <Button Content="Nuovo utente" Command="{Binding NewUserCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" Padding="12,6" Margin="0,0,0,16"/>
+                <TextBlock Text="Ruoli (modifica permessi)" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
+                <ListBox ItemsSource="{Binding Roles}" SelectedItem="{Binding SelectedRole, Mode=TwoWay}"
+                         MinHeight="100" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="8,6"/>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
+                                <TextBlock Text=" (sistema)" Foreground="Gray" FontStyle="Italic" Margin="4,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSystem}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding IsSystem}" Value="1">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Content="Nuovo ruolo" Command="{Binding NewRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,6,0"/>
+                    <Button Content="Duplica" Command="{Binding DuplicateRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,6,0" ToolTip="Duplica il ruolo selezionato con gli stessi permessi."/>
+                    <Button Content="Rinomina" Command="{Binding RenameRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,6,0" ToolTip="{Binding RenameRoleToolTip}"/>
+                    <Button Content="Elimina" Command="{Binding DeleteRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" ToolTip="{Binding DeleteRoleToolTip}"/>
+                </StackPanel>
+            </StackPanel>
+
+            <ScrollViewer Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" VerticalScrollBarVisibility="Auto" Margin="16,0,0,0">
+                <StackPanel IsEnabled="{Binding HasSelection}">
+                    <StackPanel Visibility="{Binding IsUserSelected, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Dettaglio utente" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                        <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Nome:"/>
+                        <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                        <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Ruolo:"/>
+                        <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" ItemsSource="{Binding Roles}" SelectedValue="{Binding SelectedRoleId}" SelectedValuePath="Id" DisplayMemberPath="Name" MinHeight="34"/>
+                        <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Attivo:"/>
+                        <CheckBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" IsChecked="{Binding IsActive}" VerticalAlignment="Center"/>
+                        <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Nuovo PIN:"/>
+                        <PasswordBox x:Name="NewPinBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" MinHeight="34" Padding="8,6" PasswordChanged="NewPinBox_PasswordChanged"/>
+                        <Button Grid.Row="4" Grid.Column="1" Content="Reset PIN" Command="{Binding ResetPinCommand}" HorizontalAlignment="Left" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,0,16"/>
+                        </Grid>
+                    </StackPanel>
+                    <TextBlock Text="{Binding PermissionsSectionTitle}" FontSize="12" FontWeight="SemiBold" Margin="0,8,0,8" Foreground="Gray"/>
+                    <ItemsControl ItemsSource="{Binding PermissionItems}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" Content="{Binding Label}" Margin="0,2" IsEnabled="{Binding IsEditable}" ToolTip="{Binding ToolTip}"/>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Visibility="{Binding CanEditSelectedRole, Converter={StaticResource BoolToVis}}" Content="Salva permessi ruolo" Command="{Binding SaveRolePermissionsCommand}" Style="{StaticResource OutlineButtonStyle}" HorizontalAlignment="Left" Margin="0,12,0,0" ToolTip="{Binding SaveRolePermissionsToolTip}"/>
+                </StackPanel>
+            </ScrollViewer>
+
+            <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,8,0,0" Foreground="Gray" Text="{Binding Status, Mode=OneWay}"/>
+            <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                <Button Content="Salva" MinWidth="90" Height="36" Margin="0,0,8,0" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                <Button Content="Chiudi" MinWidth="90" Height="36" IsCancel="True" Click="OnCloseClick" Style="{StaticResource OutlineButtonStyle}"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

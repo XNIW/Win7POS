@@ -28,15 +28,28 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _detailSummary = "";
         private string _detailReceiptPreview = "";
         private bool _showReceiptPreview = true;
+        private OperatorFilterItem _selectedOperator;
+        private readonly bool _canViewAll;
+        private readonly int? _forceOperatorId;
 
-        public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, Action<long, SalesRegisterViewModel> onRequestRefund = null, bool isRefundScanMode = false)
+        public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, Action<long, SalesRegisterViewModel> onRequestRefund = null, bool isRefundScanMode = false, System.Collections.Generic.IReadOnlyList<(int id, string displayName)> operators = null, bool canViewAll = true, int? forceOperatorId = null)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _useReceipt42 = useReceipt42;
             _isRefundScanMode = isRefundScanMode;
+            _canViewAll = canViewAll;
+            _forceOperatorId = forceOperatorId;
 
             SalesList = new ObservableCollection<SaleRow>();
             DetailLines = new ObservableCollection<DetailLineRow>();
+            OperatorFilterList = new ObservableCollection<OperatorFilterItem>();
+            OperatorFilterList.Add(new OperatorFilterItem(0, "Tutti"));
+            if (operators != null)
+            {
+                foreach (var o in operators)
+                    OperatorFilterList.Add(new OperatorFilterItem(o.id, o.displayName ?? ""));
+                _selectedOperator = OperatorFilterList[0];
+            }
 
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
             PrintCommand = new AsyncRelayCommand(PrintAsync, _ => !IsBusy && SelectedSale != null);
@@ -59,6 +72,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public ObservableCollection<SaleRow> SalesList { get; }
         public ObservableCollection<DetailLineRow> DetailLines { get; }
+        public ObservableCollection<OperatorFilterItem> OperatorFilterList { get; }
+
+        public OperatorFilterItem SelectedOperator
+        {
+            get => _selectedOperator;
+            set
+            {
+                if (_selectedOperator == value) return;
+                _selectedOperator = value;
+                OnPropertyChanged();
+                if (LoadCommand.CanExecute(null)) LoadCommand.Execute(null);
+            }
+        }
+
+        /// <summary>Mostra il filtro operatore solo se l'utente può vedere tutte le vendite (RegisterViewAll).</summary>
+        public bool HasOperatorFilter => _canViewAll && OperatorFilterList.Count > 1;
 
         public SalesRegisterFilter Filter
         {
@@ -161,6 +190,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public event PropertyChangedEventHandler PropertyChanged;
 
+        public sealed class OperatorFilterItem
+        {
+            public int Id { get; }
+            public string DisplayName { get; }
+            public OperatorFilterItem(int id, string displayName) { Id = id; DisplayName = displayName ?? ""; }
+        }
+
         private void GetCurrentRange(out long fromMs, out long toMs)
         {
             var now = DateTime.Now;
@@ -214,7 +250,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 else
                 {
                     GetCurrentRange(out var fromMs, out var toMs);
-                    items = await _service.GetSalesBetweenAsync(fromMs, toMs).ConfigureAwait(true);
+                    int? operatorId;
+                    if (_forceOperatorId.HasValue)
+                        operatorId = _forceOperatorId;
+                    else if (_canViewAll)
+                    {
+                        var opId = SelectedOperator?.Id;
+                        operatorId = (opId.HasValue && opId.Value != 0) ? (int?)opId.Value : null;
+                    }
+                    else
+                        operatorId = _forceOperatorId;
+                    items = await _service.GetSalesBetweenAsync(fromMs, toMs, operatorId).ConfigureAwait(true);
 
                     var countVendite = items.Count(i => i.Kind == (int)SaleKind.Sale && !i.VoidedBySaleId.HasValue);
                     var countResi = items.Count(i => i.Kind == (int)SaleKind.Refund);

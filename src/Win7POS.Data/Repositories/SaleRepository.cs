@@ -26,8 +26,8 @@ namespace Win7POS.Data.Repositories
                     sale.Kind = (int)SaleKind.Sale;
 
                 var saleId = await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change)
-VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @VoidedBySaleId, @VoidedAt, @Reason, @Total, @PaidCash, @PaidCard, @Change);
+INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change, operator_id)
+VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @VoidedBySaleId, @VoidedAt, @Reason, @Total, @PaidCash, @PaidCard, @Change, @OperatorId);
 SELECT last_insert_rowid();", sale, tx);
 
                 foreach (var l in lines)
@@ -54,7 +54,7 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
         {
             using var conn = _factory.Open();
             var rows = await conn.QueryAsync<Sale>(
-                @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change
+                @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId
                   FROM sales
                   ORDER BY id DESC LIMIT @take",
                 new { take }
@@ -62,16 +62,16 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
             return rows.ToList();
         }
 
-        public async Task<IReadOnlyList<Sale>> GetSalesBetweenAsync(long fromMs, long toMs)
+        public async Task<IReadOnlyList<Sale>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null)
         {
             using var conn = _factory.Open();
-            var rows = await conn.QueryAsync<Sale>(
-                @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change
+            var sql = @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId
                   FROM sales
-                  WHERE createdAt >= @fromMs AND createdAt < @toMs
-                  ORDER BY createdAt ASC, id ASC",
-                new { fromMs, toMs }
-            );
+                  WHERE createdAt >= @fromMs AND createdAt < @toMs";
+            if (operatorId.HasValue)
+                sql += " AND (operator_id IS NULL OR operator_id = @operatorId)";
+            sql += " ORDER BY createdAt ASC, id ASC";
+            var rows = await conn.QueryAsync<Sale>(sql, new { fromMs, toMs, operatorId });
             return rows.ToList();
         }
 

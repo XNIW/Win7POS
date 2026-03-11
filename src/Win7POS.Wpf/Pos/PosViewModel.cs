@@ -10,19 +10,26 @@ using System.Windows.Input;
 using System.Globalization;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
+using Win7POS.Core.Security;
 using Win7POS.Core.Util;
 using Win7POS.Wpf.Fiscal;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Pos.Dialogs;
 using Win7POS.Wpf;
 using Win7POS.Wpf.Products;
 
 namespace Win7POS.Wpf.Pos
 {
+    /// <summary>ViewModel POS. Tutti i punti sensibili passano da Demand/TryDemandOrOverride: vendita (PosSell), pagamento (PosPay), sconto, refund, void, sospendi/recupera carrello, registro vendite, ristampa, impostazioni negozio/stampante, backup/restore DB, manutenzione DB, modifica catalogo, utenti/ruoli.</summary>
     public sealed class PosViewModel : INotifyPropertyChanged
     {
         private readonly PosWorkflowService _service;
         private readonly FileLogger _logger;
+        private readonly IPermissionService _permissionService;
+        private readonly IOperatorSession _operatorSession;
+        private readonly IOverrideAuthService _overrideAuthService;
+        private readonly Win7POS.Data.Repositories.UserRepository _userRepo;
 
         private string _barcodeInput = string.Empty;
         private long _subtotal;
@@ -175,15 +182,20 @@ namespace Win7POS.Wpf.Pos
         public ICommand OpenChangeQuantityForLineCommand { get; }
         public ICommand SuspendCartCommand { get; }
         public ICommand RecoverCartCommand { get; }
+        public ICommand OpenUserManagementCommand { get; }
 
         /// <summary>Crea un ViewModel per la schermata Chiusura cassa (pagina integrata).</summary>
         public Dialogs.DailyReportViewModel CreateDailyReportViewModel() => new Dialogs.DailyReportViewModel(_service);
 
         /// <summary>Costruttore con dipendenze iniettate. Se null, usa istanze di default (compatibilità designer XAML).</summary>
-        public PosViewModel(PosWorkflowService service = null, FileLogger logger = null)
+        public PosViewModel(PosWorkflowService service = null, FileLogger logger = null, IPermissionService permissionService = null, IOperatorSession operatorSession = null, IOverrideAuthService overrideAuthService = null, Win7POS.Data.Repositories.UserRepository userRepo = null)
         {
             _service = service ?? new PosWorkflowService();
             _logger = logger ?? new FileLogger();
+            _permissionService = permissionService;
+            _operatorSession = operatorSession;
+            _overrideAuthService = overrideAuthService;
+            _userRepo = userRepo;
 
             AddBarcodeCommand = new AsyncRelayCommand(AddBarcodeAsync, _ => !IsBusy, _logger);
             PayCommand = new AsyncRelayCommand(PayAsync, _ => !IsBusy, _logger);
@@ -214,6 +226,7 @@ namespace Win7POS.Wpf.Pos
             OpenChangeQuantityForLineCommand = new RelayCommand(p => OpenChangeQuantityForLine(p as PosCartLineRow), p => !IsBusy && p is PosCartLineRow row && !row.IsDiscountLine);
             SuspendCartCommand = new AsyncRelayCommand(SuspendCartAsync, _ => !IsBusy && CartItems.Count > 0, _logger);
             RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy, _logger);
+            OpenUserManagementCommand = new AsyncRelayCommand(OpenUserManagementAsync, _ => !IsBusy && (_permissionService == null || _permissionService.Has(PermissionCodes.UsersManage)), _logger);
             CatalogEvents.CatalogChanged += OnCatalogChanged;
             StatusMessage = "POS pronto.";
         }
@@ -313,6 +326,8 @@ namespace Win7POS.Wpf.Pos
 
         private async Task AddBarcodeAsync()
         {
+            try { _permissionService?.Demand(PermissionCodes.PosSell, "Vendita"); }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             var input = (BarcodeInput ?? string.Empty).Trim();
             if (input.Length == 0)
                 return;
@@ -552,6 +567,8 @@ namespace Win7POS.Wpf.Pos
 
         private async Task PayAsync()
         {
+            try { _permissionService?.Demand(PermissionCodes.PosPay, "Pagamento"); }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             if (CartItems.Count == 0)
             {
                 StatusMessage = "Carrello vuoto";
@@ -627,10 +644,12 @@ namespace Win7POS.Wpf.Pos
                     CashAmountMinor = vm.CashAmountMinor,
                     CardAmountMinor = vm.CardAmountMinor
                 };
+                var operatorId = _operatorSession?.CurrentUser?.Id;
                 var result = await _service.CompleteSaleAsync(
                     payment,
                     vm.SaleCode,
-                    vm.CreatedAtMs).ConfigureAwait(true);
+                    vm.CreatedAtMs,
+                    operatorId).ConfigureAwait(true);
                 ApplySnapshot(result.Snapshot);
                 ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
                 StatusMessage = "Pagamento OK: " + result.SaleCode;
@@ -740,6 +759,8 @@ namespace Win7POS.Wpf.Pos
 
         private async Task ReprintPreviewAsync()
         {
+            try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, "Ristampa ricevuta"); }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             if (SelectedRecentSale == null) return;
 
             IsBusy = true;
@@ -768,6 +789,8 @@ namespace Win7POS.Wpf.Pos
 
         private async Task PrintSelectedReceiptAsync()
         {
+            try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, "Stampa ricevuta"); }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             if (SelectedRecentSale == null)
             {
                 StatusMessage = "Seleziona una vendita.";
@@ -959,10 +982,13 @@ namespace Win7POS.Wpf.Pos
 
         private async Task BackupDbAsync()
         {
+            try { _permissionService?.Demand(PermissionCodes.DbBackup, "Backup database"); }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             IsBusy = true;
             try
             {
                 var outputPath = await _service.BackupDbAsync().ConfigureAwait(true);
+                _operatorSession?.LogSecurityEvent(SecurityEventCodes.DbBackup, "path=" + (outputPath ?? ""));
                 StatusMessage = "Backup DB creato: " + outputPath;
             }
             catch (Exception ex)
@@ -979,6 +1005,7 @@ namespace Win7POS.Wpf.Pos
 
         private async Task OpenPrinterSettingsAsync()
         {
+            if (!TryDemandOrOverride(PermissionCodes.SettingsPrinter, "Impostazioni stampante")) { RequestFocusBarcode(); return; }
             var vm = new PrinterSettingsViewModel
             {
                 PrinterName = _printerSettings.PrinterName,
@@ -1030,6 +1057,8 @@ namespace Win7POS.Wpf.Pos
 
         private async Task PrintLastReceiptAsync()
         {
+            try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, "Stampa ultima ricevuta"); }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             IsBusy = true;
             try
             {
@@ -1076,6 +1105,7 @@ namespace Win7POS.Wpf.Pos
         {
             try
             {
+                _permissionService?.Demand(PermissionCodes.DailyCloseView, "Chiusura cassa");
                 var vm = new DailyReportViewModel(_service);
                 var dlg = new DailyReportDialog(vm)
                 {
@@ -1083,6 +1113,11 @@ namespace Win7POS.Wpf.Pos
                 };
                 WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
+            }
+            catch (InvalidOperationException ex)
+            {
+                StatusMessage = ex.Message;
+                MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch (Exception ex)
             {
@@ -1096,7 +1131,9 @@ namespace Win7POS.Wpf.Pos
 
         private Task OpenDbMaintenanceAsync()
         {
-            var vm = new DbMaintenanceViewModel(_service);
+            try { _permissionService?.Demand(PermissionCodes.DbMaintenance, "Manutenzione database"); }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning); RequestFocusBarcode(); return Task.CompletedTask; }
+            var vm = new DbMaintenanceViewModel(_service, () => TryDemandOrOverride(PermissionCodes.DbRestore, "Restore DB"));
             var dlg = new DbMaintenanceDialog(vm)
             {
                 Owner = Application.Current?.MainWindow
@@ -1129,8 +1166,34 @@ namespace Win7POS.Wpf.Pos
             return Task.CompletedTask;
         }
 
+        private bool TryDemandOrOverride(string permissionCode, string operationText)
+        {
+            try
+            {
+                _permissionService?.Demand(permissionCode, operationText);
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                if (_overrideAuthService == null) { StatusMessage = "Permesso negato: " + operationText; MessageBox.Show("Permesso negato: " + operationText, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning); return false; }
+                var result = MessageBox.Show("Operazione riservata a Supervisore o superiore. Vuoi richiedere autorizzazione?", operationText, MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (result != MessageBoxResult.Yes) { _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideDenied, "permission=" + permissionCode + " op=" + operationText + " reason=user_declined"); return false; }
+                _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideRequested, "permission=" + permissionCode + " op=" + operationText);
+                if (!_overrideAuthService.RequestOverride(operationText, permissionCode, out var authorizerId) || !authorizerId.HasValue)
+                {
+                    _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideDenied, "permission=" + permissionCode + " op=" + operationText + " reason=authorizer_failed");
+                    _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideFailed, "permission=" + permissionCode + " op=" + operationText);
+                    return false;
+                }
+                _operatorSession?.LogOverride(permissionCode, operationText, authorizerId.Value);
+                _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideGranted, "permission=" + permissionCode + " op=" + operationText + " authorizerId=" + authorizerId.Value);
+                return true;
+            }
+        }
+
         private async Task OpenRefundAsync()
         {
+            if (!TryDemandOrOverride(PermissionCodes.PosRefund, "Reso/Refund")) return;
             if (SelectedRecentSale == null)
             {
                 StatusMessage = "Seleziona una vendita.";
@@ -1160,9 +1223,16 @@ namespace Win7POS.Wpf.Pos
                     return;
                 }
 
-                IsBusy = true;
                 var req = vm.BuildRequest();
+                if (req.IsFullVoid && !TryDemandOrOverride(PermissionCodes.PosVoidSale, "Storno vendita"))
+                {
+                    StatusMessage = "Permesso storno vendita negato.";
+                    return;
+                }
+
+                IsBusy = true;
                 var result = await _service.CreateRefundAsync(req, UseReceipt42, _printerSettings.AutoPrint).ConfigureAwait(true);
+                _operatorSession?.LogSecurityEvent(SecurityEventCodes.Refund, "originalSaleId=" + saleId + " refundCode=" + result.RefundSaleCode);
                 ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
                 StatusMessage = "Reso completato: " + result.RefundSaleCode;
                 await LoadRecentSalesAsync().ConfigureAwait(true);
@@ -1191,20 +1261,34 @@ namespace Win7POS.Wpf.Pos
             return OpenSalesRegisterInternalAsync(isRefundScanMode: true);
         }
 
-        private Task OpenSalesRegisterInternalAsync(bool isRefundScanMode)
+        private async Task OpenSalesRegisterInternalAsync(bool isRefundScanMode)
         {
             try
             {
+                _permissionService?.Demand(PermissionCodes.RegisterView, "Registro vendite");
+                var canViewAll = _permissionService?.Has(PermissionCodes.RegisterViewAll) == true;
+                var currentUserId = _operatorSession?.CurrentUser?.Id;
+                System.Collections.Generic.IReadOnlyList<(int id, string displayName)> operators = null;
+                if (_userRepo != null)
+                {
+                    var users = await _userRepo.ListAsync().ConfigureAwait(true);
+                    operators = users.Select(u => (u.Id, u.DisplayName)).ToList();
+                }
                 var registerVm = new Dialogs.SalesRegisterViewModel(_service, UseReceipt42, (saleId, regVm) =>
                 {
                     _ = OpenRefundForSaleIdThenRefreshAsync(saleId, regVm);
-                }, isRefundScanMode);
+                }, isRefundScanMode, operators, canViewAll: canViewAll, forceOperatorId: canViewAll ? null : currentUserId);
                 var dlg = new Dialogs.SalesRegisterDialog(registerVm)
                 {
                     Owner = Application.Current?.MainWindow
                 };
                 WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
+            }
+            catch (InvalidOperationException ex)
+            {
+                StatusMessage = ex.Message;
+                MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch (Exception ex)
             {
@@ -1213,13 +1297,40 @@ namespace Win7POS.Wpf.Pos
                 MessageBox.Show("Errore apertura " + (isRefundScanMode ? "Reso" : "Registro vendite") + ".\n\n" + ex.Message, isRefundScanMode ? "Reso" : "Registro vendite", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             RequestFocusBarcode();
-            return Task.CompletedTask;
+        }
+
+        private async Task OpenUserManagementAsync()
+        {
+            try
+            {
+                _permissionService?.Demand(PermissionCodes.UsersManage, "Utenti e ruoli");
+                var vm = new Dialogs.UserManagementViewModel();
+                var dlg = new Dialogs.UserManagementDialog(vm)
+                {
+                    Owner = Application.Current?.MainWindow
+                };
+                WindowSizingHelper.CapMaxHeightToOwner(dlg);
+                dlg.ShowDialog();
+            }
+            catch (InvalidOperationException ex)
+            {
+                StatusMessage = ex.Message;
+                MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "User management dialog failed");
+                StatusMessage = "Errore apertura Utenti e ruoli.";
+                MessageBox.Show("Errore apertura Utenti e ruoli.\n\n" + ex.Message, "Utenti e ruoli", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            RequestFocusBarcode();
         }
 
         private Task OpenShopSettingsAsync()
         {
             try
             {
+                if (!TryDemandOrOverride(PermissionCodes.SettingsShop, "Impostazioni negozio")) { RequestFocusBarcode(); return Task.CompletedTask; }
                 var vm = new Dialogs.ShopSettingsViewModel(_service);
                 var dlg = new Dialogs.ShopSettingsDialog(vm)
                 {
@@ -1227,6 +1338,11 @@ namespace Win7POS.Wpf.Pos
                 };
                 WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
+            }
+            catch (InvalidOperationException ex)
+            {
+                StatusMessage = ex.Message;
+                MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch (Exception ex)
             {
@@ -1240,6 +1356,8 @@ namespace Win7POS.Wpf.Pos
 
         private async Task SuspendCartAsync()
         {
+            try { _permissionService?.Demand(PermissionCodes.PosSuspendCart, "Sospendi carrello"); }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             IsBusy = true;
             try
             {
@@ -1268,6 +1386,8 @@ namespace Win7POS.Wpf.Pos
 
         private async Task RecoverCartAsync()
         {
+            try { _permissionService?.Demand(PermissionCodes.PosRecoverCart, "Recupera carrello"); }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
             var vm = new Dialogs.HeldCartsViewModel(_service, snapshot =>
             {
                 ApplySnapshot(snapshot);
@@ -1304,6 +1424,7 @@ namespace Win7POS.Wpf.Pos
             if (line == null || !CanEditCartLine(line)) return;
             try
             {
+                if (!TryDemandOrOverride(PermissionCodes.CatalogEdit, "Modifica prodotto")) return;
                 var productsService = new ProductsWorkflowService();
                 var product = await productsService.GetByBarcodeDetailsAsync(line.Barcode).ConfigureAwait(true);
                 if (product == null)
@@ -1318,6 +1439,11 @@ namespace Win7POS.Wpf.Pos
                     await RefreshCartFromDatabaseAsync("Carrello aggiornato dopo modifica prodotto.").ConfigureAwait(true);
                     RequestFocusBarcode();
                 }
+            }
+            catch (InvalidOperationException ex)
+            {
+                StatusMessage = ex.Message;
+                MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             catch (Exception ex)
             {
@@ -1377,6 +1503,7 @@ namespace Win7POS.Wpf.Pos
         {
             try
             {
+                if (!TryDemandOrOverride(PermissionCodes.PosDiscount, "Sconto")) return;
                 var selectedBarcode = SelectedCartItem?.Barcode;
                 var hasCart = CartItems.Count > 0;
                 Dialogs.DiscountPreviewContext previewContext = null;
@@ -1547,6 +1674,7 @@ namespace Win7POS.Wpf.Pos
             (OpenChangeQuantityForLineCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SuspendCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (RecoverCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (OpenUserManagementCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             System.Windows.Input.CommandManager.InvalidateRequerySuggested();
         }
 

@@ -5,8 +5,11 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Win7POS.Data;
 using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.Dialogs;
+using Win7POS.Wpf.Infrastructure.Security;
+using Win7POS.Data.Repositories;
 
 namespace Win7POS.Wpf
 {
@@ -34,8 +37,59 @@ namespace Win7POS.Wpf
 
             MainTabControl.SelectedIndex = 0;
 
-            Loaded += (s, e) => UpdateMenuSelectionVisual();
+            Loaded += OnMainWindowLoaded;
             ContentRendered += OnContentRendered;
+        }
+
+        private void OnMainWindowLoaded(object sender, RoutedEventArgs e)
+        {
+            UpdateMenuSelectionVisual();
+            EnsureSecuritySessionAndLogin();
+            var session = OperatorSessionHolder.Current;
+            if (session != null)
+            {
+                UpdateOperatorDisplay(session);
+                session.SessionChanged += () => Dispatcher.BeginInvoke(new Action(() => UpdateOperatorDisplay(session)));
+            }
+        }
+
+        private void EnsureSecuritySessionAndLogin()
+        {
+            DbInitializer.EnsureCreated(PosDbOptions.Default());
+            if (OperatorSessionHolder.Current == null)
+            {
+                var options = PosDbOptions.Default();
+                var factory = new SqliteConnectionFactory(options);
+                var userRepo = new UserRepository(factory);
+                var securityRepo = new SecurityRepository(factory);
+                var operatorSession = new OperatorSession(userRepo, securityRepo);
+                OperatorSessionHolder.Current = operatorSession;
+            }
+            var loginDlg = new OperatorLoginDialog { Owner = this };
+            loginDlg.ShowDialog();
+        }
+
+        private void UpdateOperatorDisplay(IOperatorSession session)
+        {
+            if (OperatorDisplayText != null)
+                OperatorDisplayText.Text = session != null && session.IsLoggedIn ? session.CurrentDisplayName : "—";
+            if (OperatorRoleText != null)
+                OperatorRoleText.Text = session != null && session.IsLoggedIn ? "(" + session.CurrentRoleName + ")" : "";
+        }
+
+        private void OnChangeOperatorClick(object sender, RoutedEventArgs e)
+        {
+            var loginDlg = new OperatorLoginDialog { Owner = this };
+            if (loginDlg.ShowDialog() == true && OperatorSessionHolder.Current != null)
+                UpdateOperatorDisplay(OperatorSessionHolder.Current);
+        }
+
+        private void OnMenuUsersClick(object sender, RoutedEventArgs e)
+        {
+            CurrentMenuKey = "UsersRoles";
+            MainTabControl.SelectedIndex = 0;
+            GetPosViewModel()?.OpenUserManagementCommand?.Execute(null);
+            SideMenuOverlay.Visibility = Visibility.Collapsed;
         }
 
         /// <summary>Aggiorna lo sfondo dei pulsanti del menu laterale (voce attiva = SidebarSelectedBrush). Compatibile Win7.</summary>

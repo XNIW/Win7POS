@@ -16,6 +16,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Button x:Name="HamburgerButton" Grid.Column="0" Width="40" Height="40" Margin="0,0,16,0"
                         Style="{StaticResource HamburgerButtonStyle}"
@@ -26,6 +27,16 @@
                     </Button.Content>
                 </Button>
                 <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="White" FontSize="18" FontWeight="SemiBold" Text="Win7POS"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Background="#33FFFFFF" CornerRadius="8" Padding="12,6" Margin="0,0,10,0" BorderBrush="White" BorderThickness="1">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock VerticalAlignment="Center" Foreground="White" FontSize="11" Margin="0,0,6,0" Text="Operatore:"/>
+                            <TextBlock x:Name="OperatorDisplayText" Foreground="White" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Text="—"/>
+                            <TextBlock x:Name="OperatorRoleText" Foreground="#E8FFFFFF" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0" Text=""/>
+                        </StackPanel>
+                    </Border>
+                    <Button x:Name="ChangeOperatorButton" Content="Cambia" Style="{StaticResource OutlineButtonStyle}" Foreground="White" BorderBrush="White" Click="OnChangeOperatorClick" Padding="10,6" ToolTip="Cambia operatore / Blocca"/>
+                </StackPanel>
             </Grid>
         </Border>
 
@@ -77,6 +88,7 @@
                         <TextBlock Text="Impostazioni" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <Button Content="Impostazioni negozio" Tag="ShopSettings" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuShopSettingsClick"/>
                         <Button Content="Impostazioni stampante" Tag="Printer" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPrinterClick"/>
+                        <Button Content="Utenti e ruoli" Tag="UsersRoles" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuUsersClick"/>
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
                         <TextBlock Text="Supporto" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>

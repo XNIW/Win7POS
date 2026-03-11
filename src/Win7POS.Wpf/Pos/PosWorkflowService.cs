@@ -619,7 +619,8 @@ namespace Win7POS.Wpf.Pos
         public async Task<PosSaleResult> CompleteSaleAsync(
             PosPaymentInfo payment,
             string saleCode = null,
-            long? createdAtMs = null)
+            long? createdAtMs = null,
+            int? operatorId = null)
         {
             if (payment == null) throw new ArgumentNullException(nameof(payment));
 
@@ -641,7 +642,8 @@ namespace Win7POS.Wpf.Pos
                     Total = total,
                     PaidCash = payment.CashAmountMinor,
                     PaidCard = payment.CardAmountMinor,
-                    Change = payment.GetChangeMinor(total)
+                    Change = payment.GetChangeMinor(total),
+                    OperatorId = operatorId
                 };
 
                 var saleLines = _session.Lines.Select(x => new SaleLine
@@ -1092,12 +1094,12 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesBetweenAsync(long fromMs, long toMs)
+        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var rows = await _sales.GetSalesBetweenAsync(fromMs, toMs).ConfigureAwait(false);
+                var rows = await _sales.GetSalesBetweenAsync(fromMs, toMs, operatorId).ConfigureAwait(false);
                 return rows.Select(x => new RecentSaleItem
                 {
                     SaleId = x.Id,

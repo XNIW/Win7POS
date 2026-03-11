@@ -4,6 +4,9 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using Win7POS.Data;
+using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Infrastructure.Security;
 
 namespace Win7POS.Wpf.Pos
 {
@@ -201,7 +204,19 @@ namespace Win7POS.Wpf.Pos
         {
             var logger = new Infrastructure.FileLogger();
             var service = new PosWorkflowService();
-            return new PosViewModel(service, logger);
+            var options = PosDbOptions.Default();
+            var factory = new SqliteConnectionFactory(options);
+            var userRepo = new UserRepository(factory);
+            var securityRepo = new SecurityRepository(factory);
+            IOperatorSession operatorSession = OperatorSessionHolder.Current;
+            if (operatorSession == null)
+            {
+                operatorSession = new OperatorSession(userRepo, securityRepo);
+                OperatorSessionHolder.Current = operatorSession;
+            }
+            var permissionService = new PermissionService(operatorSession);
+            var overrideAuthService = new OverrideAuthService(userRepo);
+            return new PosViewModel(service, logger, permissionService, operatorSession, overrideAuthService, userRepo);
         }
     }
 }

@@ -7,19 +7,23 @@ using System.Windows;
 using System.Windows.Input;
 using Microsoft.Win32;
 using Win7POS.Core;
+using Win7POS.Core.Security;
+using Win7POS.Wpf.Infrastructure.Security;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public sealed class DbMaintenanceViewModel : INotifyPropertyChanged
     {
         private readonly Pos.PosWorkflowService _service;
+        private readonly Func<bool> _demandRestorePermission;
 
         private string _outputLog = string.Empty;
         private bool _isBusy;
 
-        public DbMaintenanceViewModel(Pos.PosWorkflowService service)
+        public DbMaintenanceViewModel(Pos.PosWorkflowService service, Func<bool> demandRestorePermission = null)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
+            _demandRestorePermission = demandRestorePermission;
             BackupNowCommand = new AsyncRelayCommand(BackupNowAsync, _ => !IsBusy);
             RestoreBackupCommand = new AsyncRelayCommand(RestoreBackupAsync, _ => !IsBusy);
             IntegrityCheckCommand = new AsyncRelayCommand(IntegrityCheckAsync, _ => !IsBusy);
@@ -71,6 +75,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task RestoreBackupAsync()
         {
+            if (_demandRestorePermission != null && !_demandRestorePermission())
+            {
+                Append("Permesso Restore DB negato.");
+                return;
+            }
             var dlg = new OpenFileDialog
             {
                 Title = "Seleziona backup DB",
@@ -85,6 +94,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 await _service.RestoreDbAsync(dlg.FileName).ConfigureAwait(true);
+                OperatorSessionHolder.Current?.LogSecurityEvent(SecurityEventCodes.DbRestore, "path=" + (dlg.FileName ?? ""));
                 Append("Ripristino completato da: " + dlg.FileName);
                 MessageBox.Show("Ripristino completato. Riavvia l'app.", "Gestione DB", MessageBoxButton.OK, MessageBoxImage.Information);
             }

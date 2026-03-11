@@ -14,5 +14,7 @@ namespace Win7POS.Core.Models
         public long PaidCash { get; set; }
         public long PaidCard { get; set; }
         public long Change { get; set; }
+        /// <summary>Utente operatore che ha effettuato la vendita (nullable per compatibilità).</summary>
+        public int? OperatorId { get; set; }
     }
 }
