@@ -139,9 +139,30 @@ namespace Win7POS.Wpf
 
         private void OnMenuUsersClick(object sender, RoutedEventArgs e)
         {
-            CurrentMenuKey = "UsersRoles";
-            MainTabControl.SelectedIndex = 0;
-            GetPosViewModel()?.OpenUserManagementCommand?.Execute(null);
+            if (UserManagementViewControl == null || MainTabControl == null) return;
+            if (UserManagementViewControl.DataContext is Pos.Dialogs.UserManagementViewModel)
+            {
+                CurrentMenuKey = "UsersRoles";
+                MainTabControl.SelectedItem = UsersRolesTab;
+                SideMenuOverlay.Visibility = Visibility.Collapsed;
+                return;
+            }
+            try
+            {
+                var vm = GetPosViewModel()?.CreateUserManagementViewModel();
+                if (vm == null) return;
+                UserManagementViewControl.DataContext = vm;
+                CurrentMenuKey = "UsersRoles";
+                MainTabControl.SelectedItem = UsersRolesTab;
+            }
+            catch (InvalidOperationException ex)
+            {
+                MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Errore apertura Utenti e ruoli.\n\n" + ex.Message, "Utenti e ruoli", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
             SideMenuOverlay.Visibility = Visibility.Collapsed;
         }
 
@@ -202,11 +223,12 @@ namespace Win7POS.Wpf
         private void UpdateCurrentMenuKeyFromTab()
         {
             if (MainTabControl == null) return;
-            var idx = MainTabControl.SelectedIndex;
-            if (idx == 0) CurrentMenuKey = "Pos";
-            else if (idx == 1) CurrentMenuKey = "Prodotti";
-            else if (idx == 2) CurrentMenuKey = "DailyReport";
-            // tab 3 = Pagamento: lasciamo la chiave invariata
+            var selected = MainTabControl.SelectedItem;
+            if (selected == UsersRolesTab) CurrentMenuKey = "UsersRoles";
+            else if (selected == DailyReportTab) CurrentMenuKey = "DailyReport";
+            else if (selected == ProductsTab) CurrentMenuKey = "Prodotti";
+            else if (selected == PaymentTab) { /* Pagamento: chiave invariata */ }
+            else CurrentMenuKey = "Pos";
         }
 
         private void UpdateShellForCurrentView()

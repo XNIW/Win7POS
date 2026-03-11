@@ -66,6 +66,9 @@
             <TabItem x:Name="PaymentTab" Header="Pagamento">
                 <pos:PaymentView x:Name="PaymentViewControl"/>
             </TabItem>
+            <TabItem x:Name="UsersRolesTab" Header="Utenti e ruoli">
+                <pos:UserManagementView x:Name="UserManagementViewControl"/>
+            </TabItem>
         </TabControl>
 
         <!-- Overlay menu laterale -->

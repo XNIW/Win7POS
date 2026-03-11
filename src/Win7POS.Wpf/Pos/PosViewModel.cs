@@ -1299,22 +1299,30 @@ namespace Win7POS.Wpf.Pos
             RequestFocusBarcode();
         }
 
+        /// <summary>Crea il ViewModel per la pagina Utenti e ruoli (navigazione full-page). Richiede permesso UsersManage.</summary>
+        public Dialogs.UserManagementViewModel CreateUserManagementViewModel()
+        {
+            _permissionService?.Demand(PermissionCodes.UsersManage, "Utenti e ruoli");
+            var vm = new Dialogs.UserManagementViewModel();
+            if (_operatorSession != null && _operatorSession.IsLoggedIn)
+            {
+                vm.CurrentOperatorDisplay = "Operatore: " + _operatorSession.CurrentDisplayName + " (" + _operatorSession.CurrentRoleName + ")";
+                vm.CurrentOperatorUsername = _operatorSession.CurrentUser?.Username ?? "";
+            }
+            else
+            {
+                vm.CurrentOperatorDisplay = "Operatore: —";
+                vm.CurrentOperatorUsername = "";
+            }
+            return vm;
+        }
+
+        /// <summary>Fallback temporaneo: apre la dialog modale. Il flusso ufficiale è la pagina full-screen via menu (CreateUserManagementViewModel + navigazione tab).</summary>
         private async Task OpenUserManagementAsync()
         {
             try
             {
-                _permissionService?.Demand(PermissionCodes.UsersManage, "Utenti e ruoli");
-                var vm = new Dialogs.UserManagementViewModel();
-                if (_operatorSession != null && _operatorSession.IsLoggedIn)
-                {
-                    vm.CurrentOperatorDisplay = "Operatore: " + _operatorSession.CurrentDisplayName + " (" + _operatorSession.CurrentRoleName + ")";
-                    vm.CurrentOperatorUsername = _operatorSession.CurrentUser?.Username ?? "";
-                }
-                else
-                {
-                    vm.CurrentOperatorDisplay = "Operatore: —";
-                    vm.CurrentOperatorUsername = "";
-                }
+                var vm = CreateUserManagementViewModel();
                 var dlg = new Dialogs.UserManagementDialog(vm)
                 {
                     Owner = Application.Current?.MainWindow
