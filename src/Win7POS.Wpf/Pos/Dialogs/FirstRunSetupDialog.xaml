@@ -4,13 +4,13 @@
         Title="Configurazione iniziale"
         Width="520"
         MinWidth="520"
-        Height="360"
-        MinHeight="360"
+        Height="440"
+        MinHeight="440"
         SizeToContent="Manual"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner">
     <Border Padding="0" Background="{StaticResource BackgroundLightBrush}">
-        <Grid Margin="20">
+        <Grid Margin="24,20,24,28">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -54,7 +54,7 @@
 
             <TextBlock x:Name="ErrorText" Grid.Row="4" Foreground="#C62828" TextWrapping="Wrap" Visibility="Collapsed" VerticalAlignment="Top" Margin="0,4,0,0"/>
 
-            <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
                 <Button Content="Conferma" Width="100" Height="34" Margin="0,0,8,0" Click="OnCreateAdminClick" Style="{StaticResource PrimaryButtonStyle}" IsDefault="True"/>
                 <Button Content="Annulla" Width="100" Height="34" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
             </StackPanel>
