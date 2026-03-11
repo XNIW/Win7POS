@@ -21,8 +21,9 @@ namespace Win7POS.Data.Repositories
         {
             using var conn = _factory.Open();
             var rows = await conn.QueryAsync<UserRow>(
-                @"SELECT u.id, u.username, u.display_name, u.role_id, u.is_active, u.require_pin_change, u.max_discount_percent,
-                         r.code AS role_code, r.name AS role_name
+                @"SELECT u.id AS Id, u.username AS Username, u.display_name AS DisplayName, u.role_id AS RoleId,
+                         u.is_active AS IsActive, u.require_pin_change AS RequirePinChange, u.max_discount_percent AS MaxDiscountPercent,
+                         r.code AS RoleCode, r.name AS RoleName
                   FROM users u
                   INNER JOIN roles r ON r.id = u.role_id
                   ORDER BY u.username").ConfigureAwait(false);
@@ -33,8 +34,9 @@ namespace Win7POS.Data.Repositories
         {
             using var conn = _factory.Open();
             var row = await conn.QuerySingleOrDefaultAsync<UserRow>(
-                @"SELECT u.id, u.username, u.display_name, u.role_id, u.is_active, u.require_pin_change, u.max_discount_percent,
-                         r.code AS role_code, r.name AS role_name
+                @"SELECT u.id AS Id, u.username AS Username, u.display_name AS DisplayName, u.role_id AS RoleId,
+                         u.is_active AS IsActive, u.require_pin_change AS RequirePinChange, u.max_discount_percent AS MaxDiscountPercent,
+                         r.code AS RoleCode, r.name AS RoleName
                   FROM users u
                   INNER JOIN roles r ON r.id = u.role_id
                   WHERE u.id = @id",
@@ -51,8 +53,9 @@ namespace Win7POS.Data.Repositories
             if (string.IsNullOrWhiteSpace(username)) return null;
             using var conn = _factory.Open();
             var row = await conn.QuerySingleOrDefaultAsync<UserRow>(
-                @"SELECT u.id, u.username, u.display_name, u.role_id, u.is_active, u.require_pin_change, u.max_discount_percent,
-                         r.code AS role_code, r.name AS role_name
+                @"SELECT u.id AS Id, u.username AS Username, u.display_name AS DisplayName, u.role_id AS RoleId,
+                         u.is_active AS IsActive, u.require_pin_change AS RequirePinChange, u.max_discount_percent AS MaxDiscountPercent,
+                         r.code AS RoleCode, r.name AS RoleName
                   FROM users u
                   INNER JOIN roles r ON r.id = u.role_id
                   WHERE u.username = @username",
@@ -81,7 +84,10 @@ namespace Win7POS.Data.Repositories
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(pin)) return fail;
             using var conn = _factory.Open();
             var row = await conn.QuerySingleOrDefaultAsync<UserPinRow>(
-                "SELECT id, username, display_name, pin_hash, pin_salt, role_id, is_active, require_pin_change, max_discount_percent, failed_attempts, lockout_until FROM users WHERE username = @username",
+                @"SELECT id AS Id, username AS Username, display_name AS DisplayName, pin_hash AS PinHash, pin_salt AS PinSalt,
+                         role_id AS RoleId, is_active AS IsActive, require_pin_change AS RequirePinChange, max_discount_percent AS MaxDiscountPercent,
+                         failed_attempts AS FailedAttempts, lockout_until AS LockoutUntil
+                  FROM users WHERE username = @username",
                 new { username }).ConfigureAwait(false);
             if (row == null || row.IsActive != 1) return fail;
 
