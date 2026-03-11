@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -10,6 +11,7 @@ using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.Dialogs;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Data.Repositories;
+using Win7POS.Core;
 
 namespace Win7POS.Wpf
 {
@@ -41,6 +43,21 @@ namespace Win7POS.Wpf
             ContentRendered += OnContentRendered;
         }
 
+        /// <summary>True se non esiste almeno un utente loggabile (attivo, con username valido). Copre DB inesistente, users vuota, solo utenti disabilitati.</summary>
+        private async Task<bool> RequiresFirstRunAsync(SqliteConnectionFactory factory)
+        {
+            var userRepo = new UserRepository(factory);
+            var users = await userRepo.ListAsync().ConfigureAwait(true);
+
+            var loginableUsers = users
+                .Where(x => x != null
+                    && !string.IsNullOrWhiteSpace(x.Username)
+                    && x.IsActive)
+                .ToList();
+
+            return loginableUsers.Count == 0;
+        }
+
         private async void OnLoadedAsync(object sender, RoutedEventArgs e)
         {
             UpdateMenuSelectionVisual();
@@ -51,16 +68,15 @@ namespace Win7POS.Wpf
                 DbInitializer.EnsureCreated(options);
 
                 var factory = new SqliteConnectionFactory(options);
-                var userRepo = new UserRepository(factory);
 
-                var hasUsers = await userRepo.HasAnyUsersAsync().ConfigureAwait(true);
-                if (!hasUsers)
+                var needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
+                if (needFirstRun)
                 {
                     var wizard = new FirstRunSetupDialog(factory) { Owner = this };
                     var ok = wizard.ShowDialog() == true;
 
-                    hasUsers = await userRepo.HasAnyUsersAsync().ConfigureAwait(true);
-                    if (!ok || !hasUsers)
+                    needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
+                    if (!ok || needFirstRun)
                     {
                         MessageBox.Show(this,
                             "Configurazione iniziale non completata.",
@@ -72,6 +88,7 @@ namespace Win7POS.Wpf
                     }
                 }
 
+                var userRepo = new UserRepository(factory);
                 if (OperatorSessionHolder.Current == null)
                 {
                     var securityRepo = new SecurityRepository(factory);
@@ -95,13 +112,12 @@ namespace Win7POS.Wpf
             }
             catch (Exception ex)
             {
-                var logDir = Win7POS.Core.AppPaths.LogsDirectory;
                 MessageBox.Show(this,
-                    "Si è verificato un errore durante il caricamento.\nControlla i log in " + logDir + ".",
+                    "Errore in avvio.\nControlla i log in " + AppPaths.LogsDirectory + "\n\n" + ex.Message,
                     "Win7POS",
                     MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                System.Diagnostics.Debug.WriteLine("MainWindow OnLoaded failed: " + ex);
+                    MessageBoxImage.Error);
+                Close();
             }
         }
 

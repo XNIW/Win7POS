@@ -28,8 +28,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             var userRepo = new UserRepository(_factory);
             var users = userRepo.ListAsync().GetAwaiter().GetResult();
-            _operators = users.Where(u => u.IsActive).Select(u => new OperatorLoginItem(u.Username, u.DisplayName)).ToList();
+
+            var loginable = users
+                .Where(x => x != null
+                    && !string.IsNullOrWhiteSpace(x.Username)
+                    && x.IsActive)
+                .Select(u => new OperatorLoginItem(u.Username, u.DisplayName))
+                .ToList();
+
+            _operators = loginable;
             OperatorCombo.ItemsSource = _operators;
+
+            if (_operators.Count == 0)
+            {
+                MessageBox.Show(this,
+                    "Non esistono operatori configurati. Verrà avviata la configurazione iniziale.",
+                    "Win7POS",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                DialogResult = false;
+                Close();
+                return;
+            }
+
             if (_operators.Count == 1)
                 OperatorCombo.SelectedIndex = 0;
             OperatorCombo.Focus();
