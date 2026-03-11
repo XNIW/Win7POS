@@ -19,7 +19,9 @@ namespace Win7POS.Data
         public static PosDbOptions Default(bool isDemo = false)
         {
             AppPaths.EnsureDataDirectories();
-            return new PosDbOptions(AppPaths.DbPath, isDemo);
+            var dbPath = AppPaths.DbPath;
+            var fullPath = Path.GetFullPath(dbPath);
+            return new PosDbOptions(fullPath, isDemo);
         }
 
         public static PosDbOptions ForPath(string dbPath, bool isDemo = false)

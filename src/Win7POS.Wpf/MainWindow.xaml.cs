@@ -75,7 +75,11 @@ namespace Win7POS.Wpf
                     var wizard = new FirstRunSetupDialog(factory) { Owner = this };
                     var ok = wizard.ShowDialog() == true;
 
-                    needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
+                    // Se il wizard è stato completato con successo, l'utente è stato creato: non rieseguire
+                    // il controllo per evitare falsi negativi (timing/visibility del commit).
+                    if (!ok)
+                        needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
+
                     if (!ok || needFirstRun)
                     {
                         MessageBox.Show(this,
