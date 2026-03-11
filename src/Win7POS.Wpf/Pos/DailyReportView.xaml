@@ -294,7 +294,9 @@
                                       BorderThickness="1" BorderBrush="#E0D8E4"
                                       RowHeight="36"
                                       Background="White" RowBackground="White" AlternatingRowBackground="#FAFAFA"
-                                      SelectionMode="Single" SelectionUnit="FullRow">
+                                      SelectionMode="Single" SelectionUnit="FullRow"
+                                      PreviewMouseLeftButtonUp="HistoryGrid_PreviewMouseLeftButtonUp"
+                                      PreviewKeyDown="HistoryGrid_PreviewKeyDown">
                                 <DataGrid.Columns>
                                     <DataGridTemplateColumn Width="28" IsReadOnly="False">
                                         <DataGridTemplateColumn.Header><TextBlock Width="28" Text=""/></DataGridTemplateColumn.Header>

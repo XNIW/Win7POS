@@ -2,6 +2,8 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using Microsoft.Win32;
 using Win7POS.Wpf.Pos.Dialogs;
 
@@ -92,6 +94,41 @@ namespace Win7POS.Wpf.Pos
             var vm = DataContext as DailyReportViewModel;
             if (vm != null && vm.LoadCommand.CanExecute(null))
                 vm.LoadCommand.Execute(null);
+        }
+
+        private void HistoryGrid_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        {
+            var dep = e.OriginalSource as DependencyObject;
+            if (dep == null) return;
+
+            if (FindVisualParent<CheckBox>(dep) != null) return;
+
+            var row = FindVisualParent<DataGridRow>(dep);
+            if (row?.Item is DailyReportViewModel.HistoryRow hr)
+            {
+                hr.IsMarked = !hr.IsMarked;
+            }
+        }
+
+        private void HistoryGrid_PreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Space) return;
+
+            if (HistoryGrid?.SelectedItem is DailyReportViewModel.HistoryRow hr)
+            {
+                hr.IsMarked = !hr.IsMarked;
+                e.Handled = true;
+            }
+        }
+
+        private static T FindVisualParent<T>(DependencyObject child) where T : DependencyObject
+        {
+            while (child != null)
+            {
+                if (child is T t) return t;
+                child = VisualTreeHelper.GetParent(child);
+            }
+            return null;
         }
     }
 }
