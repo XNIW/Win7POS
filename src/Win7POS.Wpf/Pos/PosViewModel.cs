@@ -1305,6 +1305,16 @@ namespace Win7POS.Wpf.Pos
             {
                 _permissionService?.Demand(PermissionCodes.UsersManage, "Utenti e ruoli");
                 var vm = new Dialogs.UserManagementViewModel();
+                if (_operatorSession != null && _operatorSession.IsLoggedIn)
+                {
+                    vm.CurrentOperatorDisplay = "Operatore: " + _operatorSession.CurrentDisplayName + " (" + _operatorSession.CurrentRoleName + ")";
+                    vm.CurrentOperatorUsername = _operatorSession.CurrentUser?.Username ?? "";
+                }
+                else
+                {
+                    vm.CurrentOperatorDisplay = "Operatore: —";
+                    vm.CurrentOperatorUsername = "";
+                }
                 var dlg = new Dialogs.UserManagementDialog(vm)
                 {
                     Owner = Application.Current?.MainWindow
