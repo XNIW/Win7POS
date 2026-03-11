@@ -44,29 +44,52 @@ namespace Win7POS.Wpf
         private void OnMainWindowLoaded(object sender, RoutedEventArgs e)
         {
             UpdateMenuSelectionVisual();
-            EnsureSecuritySessionAndLogin();
+
+            var options = PosDbOptions.Default();
+            DbInitializer.EnsureCreated(options);
+
+            var factory = new SqliteConnectionFactory(options);
+            var userRepo = new UserRepository(factory);
+            bool hasUsers = userRepo.HasAnyUsersAsync().GetAwaiter().GetResult();
+
+            if (!hasUsers)
+            {
+                var setupDlg = new FirstRunSetupDialog { Owner = this };
+                if (setupDlg.ShowDialog() != true)
+                {
+                    Close();
+                    return;
+                }
+                hasUsers = userRepo.HasAnyUsersAsync().GetAwaiter().GetResult();
+                if (!hasUsers)
+                {
+                    MessageBox.Show("Configurazione iniziale non completata.", "Win7POS",
+                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    Close();
+                    return;
+                }
+            }
+
+            if (OperatorSessionHolder.Current == null)
+            {
+                var securityRepo = new SecurityRepository(factory);
+                var operatorSession = new OperatorSession(userRepo, securityRepo);
+                OperatorSessionHolder.Current = operatorSession;
+            }
+
+            var loginDlg = new OperatorLoginDialog { Owner = this };
+            if (loginDlg.ShowDialog() != true)
+            {
+                Close();
+                return;
+            }
+
             var session = OperatorSessionHolder.Current;
             if (session != null)
             {
                 UpdateOperatorDisplay(session);
                 session.SessionChanged += () => Dispatcher.BeginInvoke(new Action(() => UpdateOperatorDisplay(session)));
             }
-        }
-
-        private void EnsureSecuritySessionAndLogin()
-        {
-            DbInitializer.EnsureCreated(PosDbOptions.Default());
-            if (OperatorSessionHolder.Current == null)
-            {
-                var options = PosDbOptions.Default();
-                var factory = new SqliteConnectionFactory(options);
-                var userRepo = new UserRepository(factory);
-                var securityRepo = new SecurityRepository(factory);
-                var operatorSession = new OperatorSession(userRepo, securityRepo);
-                OperatorSessionHolder.Current = operatorSession;
-            }
-            var loginDlg = new OperatorLoginDialog { Owner = this };
-            loginDlg.ShowDialog();
         }
 
         private void UpdateOperatorDisplay(IOperatorSession session)

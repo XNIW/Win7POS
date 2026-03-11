@@ -3,7 +3,6 @@ using System.IO;
 using System.Linq;
 using Dapper;
 using Win7POS.Core.Security;
-using Win7POS.Core.Util;
 
 namespace Win7POS.Data
 {
@@ -194,7 +193,7 @@ INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('cashier','Cassiere',1
 ");
 
             SeedRolePermissions(conn);
-            SeedAdminUser(conn);
+            // Nessun utente admin seedato: il primo admin viene creato dal wizard FirstRunSetupDialog.
         }
 
         private static void SeedRolePermissions(Microsoft.Data.Sqlite.SqliteConnection conn)
@@ -224,22 +223,6 @@ INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('cashier','Cassiere',1
                     conn.Execute("INSERT OR IGNORE INTO role_permissions(role_id, permission_code) VALUES(@rid, @code)", new { rid = r.Id, code = p });
                 }
             }
-        }
-
-        private static void SeedAdminUser(Microsoft.Data.Sqlite.SqliteConnection conn)
-        {
-            var existing = conn.QuerySingleOrDefault<int?>("SELECT 1 FROM users LIMIT 1");
-            if (existing.HasValue) return;
-
-            var adminRoleId = conn.QuerySingle<int>("SELECT id FROM roles WHERE code = 'admin' LIMIT 1");
-            var now = UnixTime.NowSeconds();
-            var salt = PinHelper.GenerateSalt();
-            var hash = PinHelper.HashPin("1234", salt);
-
-            conn.Execute(@"
-INSERT INTO users(username, display_name, pin_hash, pin_salt, role_id, is_active, require_pin_change, max_discount_percent, created_at, updated_at)
-VALUES('admin', 'Amministratore', @hash, @salt, @roleId, 1, 1, 100, @now, @now)",
-                new { hash, salt, roleId = adminRoleId, now });
         }
 
         private static void EnsureColumn(Microsoft.Data.Sqlite.SqliteConnection conn, string table, string column, string ddl)

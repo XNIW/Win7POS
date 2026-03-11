@@ -120,6 +120,24 @@ namespace Win7POS.Data.Repositories
             return new VerifyPinResult { User = account, WasLockedOut = false };
         }
 
+        /// <summary>Restituisce true se esiste almeno un utente nel database.</summary>
+        public async Task<bool> HasAnyUsersAsync()
+        {
+            using var conn = _factory.Open();
+            var count = await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM users").ConfigureAwait(false);
+            return count > 0;
+        }
+
+        /// <summary>Restituisce il primo utente admin attivo, se presente.</summary>
+        public async Task<UserAccount> GetFirstAdminAsync()
+        {
+            using var conn = _factory.Open();
+            var id = await conn.ExecuteScalarAsync<int?>(
+                @"SELECT u.id FROM users u INNER JOIN roles r ON r.id = u.role_id WHERE LOWER(r.code) = 'admin' AND u.is_active = 1 LIMIT 1").ConfigureAwait(false);
+            if (!id.HasValue) return null;
+            return await GetByIdAsync(id.Value).ConfigureAwait(false);
+        }
+
         public async Task<int> CreateAsync(string username, string displayName, string pinHash, string pinSalt, int roleId, int maxDiscountPercent = 0, bool requirePinChange = false)
         {
             var now = UnixTime.NowSeconds();
