@@ -37,58 +37,71 @@ namespace Win7POS.Wpf
 
             MainTabControl.SelectedIndex = 0;
 
-            Loaded += OnMainWindowLoaded;
+            Loaded += OnLoadedAsync;
             ContentRendered += OnContentRendered;
         }
 
-        private void OnMainWindowLoaded(object sender, RoutedEventArgs e)
+        private async void OnLoadedAsync(object sender, RoutedEventArgs e)
         {
             UpdateMenuSelectionVisual();
 
-            var options = PosDbOptions.Default();
-            DbInitializer.EnsureCreated(options);
-
-            var factory = new SqliteConnectionFactory(options);
-            var userRepo = new UserRepository(factory);
-            bool hasUsers = userRepo.HasAnyUsersAsync().GetAwaiter().GetResult();
-
-            if (!hasUsers)
+            try
             {
-                var setupDlg = new FirstRunSetupDialog { Owner = this };
-                if (setupDlg.ShowDialog() != true)
-                {
-                    Close();
-                    return;
-                }
-                hasUsers = userRepo.HasAnyUsersAsync().GetAwaiter().GetResult();
+                var options = PosDbOptions.Default();
+                DbInitializer.EnsureCreated(options);
+
+                var factory = new SqliteConnectionFactory(options);
+                var userRepo = new UserRepository(factory);
+
+                var hasUsers = await userRepo.HasAnyUsersAsync().ConfigureAwait(true);
                 if (!hasUsers)
                 {
-                    MessageBox.Show("Configurazione iniziale non completata.", "Win7POS",
-                        MessageBoxButton.OK, MessageBoxImage.Warning);
+                    var wizard = new FirstRunSetupDialog(factory) { Owner = this };
+                    var ok = wizard.ShowDialog() == true;
+
+                    hasUsers = await userRepo.HasAnyUsersAsync().ConfigureAwait(true);
+                    if (!ok || !hasUsers)
+                    {
+                        MessageBox.Show(this,
+                            "Configurazione iniziale non completata.",
+                            "Win7POS",
+                            MessageBoxButton.OK,
+                            MessageBoxImage.Warning);
+                        Close();
+                        return;
+                    }
+                }
+
+                if (OperatorSessionHolder.Current == null)
+                {
+                    var securityRepo = new SecurityRepository(factory);
+                    var operatorSession = new OperatorSession(userRepo, securityRepo);
+                    OperatorSessionHolder.Current = operatorSession;
+                }
+
+                var login = new OperatorLoginDialog(factory) { Owner = this };
+                if (login.ShowDialog() != true)
+                {
                     Close();
                     return;
                 }
-            }
 
-            if (OperatorSessionHolder.Current == null)
-            {
-                var securityRepo = new SecurityRepository(factory);
-                var operatorSession = new OperatorSession(userRepo, securityRepo);
-                OperatorSessionHolder.Current = operatorSession;
+                var session = OperatorSessionHolder.Current;
+                if (session != null)
+                {
+                    UpdateOperatorDisplay(session);
+                    session.SessionChanged += () => Dispatcher.BeginInvoke(new Action(() => UpdateOperatorDisplay(session)));
+                }
             }
-
-            var loginDlg = new OperatorLoginDialog { Owner = this };
-            if (loginDlg.ShowDialog() != true)
+            catch (Exception ex)
             {
-                Close();
-                return;
-            }
-
-            var session = OperatorSessionHolder.Current;
-            if (session != null)
-            {
-                UpdateOperatorDisplay(session);
-                session.SessionChanged += () => Dispatcher.BeginInvoke(new Action(() => UpdateOperatorDisplay(session)));
+                var logDir = Win7POS.Core.AppPaths.LogsDirectory;
+                MessageBox.Show(this,
+                    "Si è verificato un errore durante il caricamento.\nControlla i log in " + logDir + ".",
+                    "Win7POS",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                System.Diagnostics.Debug.WriteLine("MainWindow OnLoaded failed: " + ex);
             }
         }
 

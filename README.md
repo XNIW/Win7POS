@@ -24,6 +24,20 @@ In ambiente Windows l’applicazione usa la cartella comune:
 
 In caso di errore, controllare i log in `C:\ProgramData\Win7POS\logs\app.log`.
 
+### Modalità test / data dir diverso
+
+Per usare una directory dati diversa (es. test senza toccare i dati reali):
+
+- **Variabile d'ambiente:** `WIN7POS_DATA_DIR`  
+  Esempio: `WIN7POS_DATA_DIR=C:\POSData\TestRun1`  
+  L'app userà `C:\POSData\TestRun1\pos.db`, log in `C:\POSData\TestRun1\logs\`, ecc.
+
+- **Reset DB di test (solo ambiente dev/test):** eliminare il file `pos.db` nella cartella dati scelta. All'avvio successivo l'app mostrerà il wizard di primo avvio per creare il primo amministratore.  
+  Esempio (PowerShell, dati in `C:\POSData\TestRun1`):  
+  `Remove-Item -Force "C:\POSData\TestRun1\pos.db" -ErrorAction SilentlyContinue`  
+  **Attenzione:** non eliminare il DB in produzione; usare solo per ambienti di test.  
+  In repository è disponibile lo script `scripts/reset-test-db.ps1` (usa `WIN7POS_DATA_DIR` o `-DataDir`).
+
 ## Stampante
 
 - Dal menu laterale: **Stampa** → **Impostazioni stampante** per scegliere la stampante e le opzioni (copie, stampa automatica, salvataggio copia).

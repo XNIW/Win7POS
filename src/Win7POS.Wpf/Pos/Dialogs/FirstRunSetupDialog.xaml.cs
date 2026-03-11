@@ -14,11 +14,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private readonly RoleRepository _roleRepo;
         private readonly SecurityRepository _securityRepo;
 
-        public FirstRunSetupDialog()
+        public FirstRunSetupDialog(SqliteConnectionFactory factory)
         {
             InitializeComponent();
-            var options = PosDbOptions.Default();
-            _factory = new SqliteConnectionFactory(options);
+            _factory = factory ?? throw new ArgumentNullException(nameof(factory));
             _userRepo = new UserRepository(_factory);
             _roleRepo = new RoleRepository(_factory);
             _securityRepo = new SecurityRepository(_factory);

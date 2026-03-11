@@ -11,19 +11,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
 {
     public partial class OperatorLoginDialog : Window
     {
+        private readonly SqliteConnectionFactory _factory;
         private List<OperatorLoginItem> _operators;
 
-        public OperatorLoginDialog()
+        public OperatorLoginDialog(SqliteConnectionFactory factory)
         {
             InitializeComponent();
+            _factory = factory ?? throw new ArgumentNullException(nameof(factory));
             Loaded += OnLoaded;
         }
 
+        /// <summary>Costruttore per chiamate che non hanno la factory (es. Cambia operatore). Usa il path dati di default.</summary>
+        public OperatorLoginDialog() : this(new SqliteConnectionFactory(PosDbOptions.Default())) { }
+
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            var options = PosDbOptions.Default();
-            var factory = new SqliteConnectionFactory(options);
-            var userRepo = new UserRepository(factory);
+            var userRepo = new UserRepository(_factory);
             var users = userRepo.ListAsync().GetAwaiter().GetResult();
             _operators = users.Where(u => u.IsActive).Select(u => new OperatorLoginItem(u.Username, u.DisplayName)).ToList();
             OperatorCombo.ItemsSource = _operators;

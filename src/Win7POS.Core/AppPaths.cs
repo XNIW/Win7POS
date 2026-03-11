@@ -35,24 +35,7 @@ namespace Win7POS.Core
 
         private static string ResolveBaseDirectory()
         {
-            var platform = Environment.OSVersion.Platform;
-            var isWindows = platform == PlatformID.Win32NT ||
-                            platform == PlatformID.Win32S ||
-                            platform == PlatformID.Win32Windows ||
-                            platform == PlatformID.WinCE;
-
-            if (isWindows)
-            {
-                var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-                if (!string.IsNullOrWhiteSpace(programData))
-                    return Path.Combine(programData, "Win7POS");
-            }
-
-            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            if (!string.IsNullOrWhiteSpace(localAppData))
-                return Path.Combine(localAppData, "Win7POS");
-
-            return Path.Combine(Path.GetTempPath(), "Win7POS");
+            return PosPaths.GetDataRoot();
         }
     }
 }
