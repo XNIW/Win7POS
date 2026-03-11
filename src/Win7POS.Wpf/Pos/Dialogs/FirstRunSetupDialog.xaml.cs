@@ -14,10 +14,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private readonly RoleRepository _roleRepo;
         private readonly SecurityRepository _securityRepo;
 
-        public FirstRunSetupDialog(SqliteConnectionFactory factory)
+        /// <summary>Usa le stesse options di MainWindow per garantire lo stesso DB (evita wizard scrive DB A, MainWindow legge DB B).</summary>
+        public FirstRunSetupDialog(PosDbOptions options)
         {
             InitializeComponent();
-            _factory = factory ?? throw new ArgumentNullException(nameof(factory));
+            var opts = options ?? throw new ArgumentNullException(nameof(options));
+            _factory = new SqliteConnectionFactory(opts);
             _userRepo = new UserRepository(_factory);
             _roleRepo = new RoleRepository(_factory);
             _securityRepo = new SecurityRepository(_factory);

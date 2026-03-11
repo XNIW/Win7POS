@@ -72,14 +72,15 @@ namespace Win7POS.Wpf
                 var needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
                 if (needFirstRun)
                 {
-                    var wizard = new FirstRunSetupDialog(factory) { Owner = this };
+                    var wizard = new FirstRunSetupDialog(options) { Owner = this };
                     var ok = wizard.ShowDialog() == true;
 
                     needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
                     if (!ok || needFirstRun)
                     {
+                        var dbPathInfo = " DB: " + options.DbPath;
                         MessageBox.Show(this,
-                            "Configurazione iniziale non completata.",
+                            "Configurazione iniziale non completata." + dbPathInfo,
                             "Win7POS",
                             MessageBoxButton.OK,
                             MessageBoxImage.Warning);
