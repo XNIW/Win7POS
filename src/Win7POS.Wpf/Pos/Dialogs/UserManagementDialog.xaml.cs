@@ -1,15 +1,19 @@
 using System.Windows;
+using System.Windows.Data;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public partial class UserManagementDialog : Window
     {
+        private CollectionViewSource _groupedPermissionsView;
+
         public UserManagementDialog(UserManagementViewModel vm)
         {
             InitializeComponent();
             WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 720, minHeight: 480, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             DataContext = vm;
+            Loaded += OnLoaded;
             vm.RequestClose += ok =>
             {
                 if (!Dispatcher.CheckAccess())
@@ -19,6 +23,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 }
                 CloseWithResult(ok);
             };
+        }
+
+        private void OnLoaded(object sender, RoutedEventArgs e)
+        {
+            if (DataContext is UserManagementViewModel vm && vm.PermissionItems != null)
+            {
+                _groupedPermissionsView = new CollectionViewSource { Source = vm.PermissionItems };
+                _groupedPermissionsView.GroupDescriptions.Add(new PropertyGroupDescription("Section"));
+                PermissionItemsControl.ItemsSource = _groupedPermissionsView.View;
+            }
         }
 
         private void NewPinBox_PasswordChanged(object sender, System.Windows.RoutedEventArgs e)

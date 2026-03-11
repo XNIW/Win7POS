@@ -11,11 +11,6 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <conv:EqualityToVisibilityConverter x:Key="EqToVis"/>
-        <CollectionViewSource x:Key="GroupedPermissions" Source="{Binding PermissionItems}">
-            <CollectionViewSource.GroupDescriptions>
-                <PropertyGroupDescription PropertyName="Section"/>
-            </CollectionViewSource.GroupDescriptions>
-        </CollectionViewSource>
     </Window.Resources>
     <Border Padding="16">
         <Grid>
@@ -159,62 +154,73 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
                         <TextBlock Text="{Binding SelectedRoleSystemInfo}" FontSize="11" Foreground="#6B5B73" Margin="0,6,0,0" TextWrapping="Wrap"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Content="Nuovo ruolo" Command="{Binding NewRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,6,0"/>
-                            <Button Content="Duplica" Command="{Binding DuplicateRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,6,0" ToolTip="Duplica il ruolo selezionato con gli stessi permessi."/>
-                            <Button Content="Rinomina" Command="{Binding RenameRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,6,0" ToolTip="{Binding RenameRoleToolTip}"/>
-                            <Button Content="Elimina" Command="{Binding DeleteRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" ToolTip="{Binding DeleteRoleToolTip}"/>
-                        </StackPanel>
+                        <WrapPanel Margin="0,8,0,0">
+                            <Button Content="Nuovo ruolo" Command="{Binding NewRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8"/>
+                            <Button Content="Duplica" Command="{Binding DuplicateRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="Duplica il ruolo selezionato con gli stessi permessi."/>
+                            <Button Content="Rinomina" Command="{Binding RenameRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="{Binding RenameRoleToolTip}"/>
+                            <Button Content="Elimina" Command="{Binding DeleteRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="{Binding DeleteRoleToolTip}"/>
+                        </WrapPanel>
                     </StackPanel>
                 </Border>
             </StackPanel>
 
-            <!-- Colonna destra: due card (Dettaglio utente + Permessi ruolo) -->
-            <ScrollViewer Grid.Row="1" Grid.Column="1" VerticalScrollBarVisibility="Auto" Margin="16,0,0,0">
-                <StackPanel IsEnabled="{Binding HasSelection}">
-                    <!-- Card Dettaglio utente -->
-                    <Border Visibility="{Binding IsUserSelected, Converter={StaticResource BoolToVis}}" Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,12">
-                        <StackPanel>
-                            <TextBlock Text="{Binding DetailUserTitle}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,4"/>
-                            <TextBlock Text="{Binding EditingUserDisplay}" FontSize="12" Foreground="#6B5B73" Margin="0,0,0,12"/>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="120"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="Auto"/>
-                                </Grid.RowDefinitions>
-                                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Nome:"/>
-                                <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
-                                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Ruolo:"/>
-                                <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" ItemsSource="{Binding Roles}" SelectedValue="{Binding SelectedRoleId}" SelectedValuePath="Id" DisplayMemberPath="Name" MinHeight="34"/>
-                                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Stato account:"/>
-                                <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" Orientation="Horizontal">
-                                    <CheckBox IsChecked="{Binding IsActive}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                    <TextBlock Text="{Binding AccountStatusText}" VerticalAlignment="Center" Foreground="#555" FontSize="12"/>
-                                </StackPanel>
-                                <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Imposta nuovo PIN:"/>
-                                <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,0,0,4">
-                                    <PasswordBox x:Name="NewPinBox" MinHeight="34" Padding="8,6" PasswordChanged="NewPinBox_PasswordChanged"/>
-                                    <Button Content="Salva nuovo PIN" Command="{Binding ResetPinCommand}" HorizontalAlignment="Left" Style="{StaticResource OutlineButtonStyle}" Margin="0,6,0,0"/>
-                                    <TextBlock Text="Lascia vuoto per non modificare." FontSize="11" Foreground="#8A7C93" Margin="0,4,0,0"/>
-                                </StackPanel>
-                            </Grid>
-                        </StackPanel>
-                    </Border>
+            <!-- Colonna destra: Dettaglio utente (Auto) + Permessi ruolo (* con ScrollViewer) -->
+            <Grid Grid.Row="1" Grid.Column="1" Margin="16,0,0,0" IsEnabled="{Binding HasSelection}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+                <!-- Card Dettaglio utente -->
+                <Border Grid.Row="0" Visibility="{Binding IsUserSelected, Converter={StaticResource BoolToVis}}" Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,12">
+                    <StackPanel>
+                        <TextBlock Text="{Binding DetailUserTitle}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,4"/>
+                        <TextBlock Text="{Binding EditingUserDisplay}" FontSize="12" Foreground="#6B5B73" Margin="0,0,0,12"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="120"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Nome operatore:"/>
+                            <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Ruolo:"/>
+                            <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" ItemsSource="{Binding Roles}" SelectedValue="{Binding SelectedRoleId}" SelectedValuePath="Id" DisplayMemberPath="Name" MinHeight="34"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Stato accesso:"/>
+                            <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" Orientation="Horizontal">
+                                <CheckBox IsChecked="{Binding IsActive}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="{Binding AccountStatusText}" VerticalAlignment="Center" Foreground="#555" FontSize="12"/>
+                            </StackPanel>
+                            <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Imposta nuovo PIN:"/>
+                            <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,0,0,4">
+                                <PasswordBox x:Name="NewPinBox" MinHeight="34" Padding="8,6" PasswordChanged="NewPinBox_PasswordChanged"/>
+                                <Button Content="Salva nuovo PIN" Command="{Binding ResetPinCommand}" HorizontalAlignment="Left" Style="{StaticResource OutlineButtonStyle}" Margin="0,6,0,0"/>
+                                <TextBlock Text="Lascia vuoto per non modificare." FontSize="11" Foreground="#8A7C93" Margin="0,4,0,0"/>
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
 
-                    <!-- Card Permessi ruolo (raggruppati per sezione) -->
-                    <Border Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14">
-                        <StackPanel>
-                            <TextBlock Text="{Binding PermissionsRoleTitle}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,4"/>
-                            <TextBlock Text="{Binding SelectedRoleSystemInfo}" FontSize="11" Foreground="#6B5B73" Margin="0,0,0,8" TextWrapping="Wrap"/>
-                            <ItemsControl ItemsSource="{Binding Source={StaticResource GroupedPermissions}, Path=View}">
+                <!-- Card Permessi ruolo: titolo + area scrollabile + pulsante -->
+                <Border Grid.Row="1" Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14" MinHeight="200">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <StackPanel Grid.Row="0" Margin="0,0,0,8">
+                            <TextBlock Text="{Binding PermissionsRoleTitle}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}"/>
+                            <TextBlock Text="{Binding SelectedRoleSystemInfo}" FontSize="11" Foreground="#6B5B73" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl x:Name="PermissionItemsControl">
                                 <ItemsControl.GroupStyle>
                                     <GroupStyle>
                                         <GroupStyle.HeaderTemplate>
@@ -230,11 +236,11 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <Button Visibility="{Binding CanEditSelectedRole, Converter={StaticResource BoolToVis}}" Content="Salva permessi ruolo" Command="{Binding SaveRolePermissionsCommand}" Style="{StaticResource OutlineButtonStyle}" HorizontalAlignment="Left" Margin="0,12,0,0" ToolTip="{Binding SaveRolePermissionsToolTip}"/>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-            </ScrollViewer>
+                        </ScrollViewer>
+                        <Button Grid.Row="2" Visibility="{Binding CanEditSelectedRole, Converter={StaticResource BoolToVis}}" Content="Salva permessi ruolo" Command="{Binding SaveRolePermissionsCommand}" Style="{StaticResource OutlineButtonStyle}" HorizontalAlignment="Left" Margin="0,12,0,0" ToolTip="{Binding SaveRolePermissionsToolTip}"/>
+                    </Grid>
+                </Border>
+            </Grid>
 
             <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="Gray" FontSize="11" Text="{Binding Status, Mode=OneWay}"/>
             <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
