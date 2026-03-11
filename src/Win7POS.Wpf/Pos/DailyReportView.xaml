@@ -288,8 +288,8 @@
                         <!-- Sinistra: tabella -->
                         <Grid Grid.Column="0">
                             <DataGrid x:Name="HistoryGrid" ItemsSource="{Binding HistoryRows}" SelectedItem="{Binding SelectedHistoryRow, Mode=TwoWay}"
-                                      IsReadOnly="False" AutoGenerateColumns="False" MinHeight="200"
-                                      CanUserAddRows="False" CanUserDeleteRows="False" HeadersVisibility="Column"
+                                      IsReadOnly="True" AutoGenerateColumns="False" MinHeight="200"
+                                      CanUserAddRows="False" CanUserDeleteRows="False" CanUserReorderColumns="False" HeadersVisibility="Column"
                                       GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#EEE8F2" VerticalGridLinesBrush="#EEE8F2"
                                       BorderThickness="1" BorderBrush="#E0D8E4"
                                       RowHeight="36"

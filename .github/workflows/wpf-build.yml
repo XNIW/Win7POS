@@ -13,8 +13,8 @@ jobs:
       DOTNET_NOLOGO: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "true"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
         with:
           dotnet-version: "8.0.x"
       - run: dotnet --info
@@ -23,7 +23,7 @@ jobs:
       - name: List WPF bin output
         run: Get-ChildItem -Path "src/Win7POS.Wpf/bin" -Recurse | Select-Object FullName
       - name: Upload WPF artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: Win7POS.Wpf-Release-x86
           path: src/Win7POS.Wpf/bin/**/Release/**
