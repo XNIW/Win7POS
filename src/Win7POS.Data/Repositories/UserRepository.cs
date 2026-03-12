@@ -134,6 +134,24 @@ namespace Win7POS.Data.Repositories
             return count > 0;
         }
 
+        /// <summary>Elenco utenti attivi il cui ruolo ha il permesso richiesto (o SecurityOverride).</summary>
+        public async Task<IReadOnlyList<UserAccount>> ListUsersWithPermissionAsync(string requiredPermissionCode)
+        {
+            if (string.IsNullOrWhiteSpace(requiredPermissionCode)) return Array.Empty<UserAccount>();
+            using var conn = _factory.Open();
+            var rows = await conn.QueryAsync<UserRow>(
+                @"SELECT DISTINCT u.id AS Id, u.username AS Username, u.display_name AS DisplayName, u.role_id AS RoleId,
+                         u.is_active AS IsActive, u.require_pin_change AS RequirePinChange, u.max_discount_percent AS MaxDiscountPercent,
+                         r.code AS RoleCode, r.name AS RoleName
+                  FROM users u
+                  INNER JOIN roles r ON r.id = u.role_id
+                  INNER JOIN role_permissions rp ON rp.role_id = r.id AND (rp.permission_code = @code OR rp.permission_code = @override)
+                  WHERE u.is_active = 1
+                  ORDER BY u.display_name, u.username",
+                new { code = requiredPermissionCode, @override = PermissionCodes.SecurityOverride }).ConfigureAwait(false);
+            return (rows ?? Enumerable.Empty<UserRow>()).Select(r => MapToAccount(r)).ToList();
+        }
+
         /// <summary>Restituisce il primo utente admin attivo, se presente.</summary>
         public async Task<UserAccount> GetFirstAdminAsync()
         {

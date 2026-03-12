@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using Win7POS.Core.Security;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Pos.Dialogs;
 
 namespace Win7POS.Wpf.Infrastructure.Security
@@ -20,6 +22,25 @@ namespace Win7POS.Wpf.Infrastructure.Security
         {
             authorizerUserId = null;
 
+            var authorizableUsers = _userRepo.ListUsersWithPermissionAsync(requiredPermissionCode).GetAwaiter().GetResult();
+            if (authorizableUsers == null || authorizableUsers.Count == 0)
+            {
+                ModernMessageDialog.Show(Application.Current?.MainWindow, "Autorizzazione",
+                    "Nessun operatore con permessi adeguati configurato. Impossibile proseguire.");
+                return false;
+            }
+
+            var items = new List<OverrideOperatorItem>();
+            foreach (var u in authorizableUsers)
+            {
+                items.Add(new OverrideOperatorItem
+                {
+                    Username = u.Username ?? "",
+                    DisplayName = u.DisplayName ?? "",
+                    RoleName = u.RoleName ?? ""
+                });
+            }
+
             (bool ok, int? userId) Verify(string username, string pin)
             {
                 var result = _userRepo.VerifyPinAsync(username, pin).GetAwaiter().GetResult();
@@ -31,14 +52,14 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 return hasPermission ? (true, (int?)account.Id) : (false, null);
             }
 
-            var dlg = new OverrideAuthorizationDialog(operationText, requiredPermissionCode, Verify)
+            var dlg = new OverrideAuthorizationDialog(operationText, items, Verify)
             {
                 Owner = Application.Current?.MainWindow
             };
-            var result = dlg.ShowDialog() == true;
-            if (result)
+            var ok = dlg.ShowDialog() == true;
+            if (ok)
                 authorizerUserId = dlg.AuthorizerUserId;
-            return result;
+            return ok;
         }
     }
 }

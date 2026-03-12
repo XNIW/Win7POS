@@ -12,12 +12,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _autoPrint = true;
         private bool _saveCopyToFile;
         private string _outputDirectory = string.Empty;
-        private string _cashDrawerCommand = "27,112,0,25,25";
+        private string _cashDrawerCommand = "27,112,0,60,255";
+        private bool _cashDrawerEnabled = true;
 
         public string PrinterName
         {
             get => _printerName;
-            set { _printerName = value ?? string.Empty; OnPropertyChanged(); RaiseCanExecuteChanged(); }
+            set
+            {
+                _printerName = value ?? string.Empty;
+                OnPropertyChanged();
+                RaiseCanExecuteChanged();
+            }
         }
 
         public string Copies
@@ -53,10 +59,31 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string CashDrawerCommand
         {
             get => _cashDrawerCommand;
-            set { _cashDrawerCommand = value ?? string.Empty; OnPropertyChanged(); }
+            set
+            {
+                _cashDrawerCommand = value ?? string.Empty;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanTestCashDrawer));
+                OnPropertyChanged(nameof(TestCashDrawerStatusMessage));
+                (TestCashDrawerCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            }
+        }
+
+        public bool CashDrawerEnabled
+        {
+            get => _cashDrawerEnabled;
+            set { _cashDrawerEnabled = value; OnPropertyChanged(); }
         }
 
         public bool IsValid => ParsedCopies >= 1;
+
+        /// <summary>Abilitato quando Istruzione cassetto è compilata. Stampante: usa quella indicata o predefinita Windows.</summary>
+        public bool CanTestCashDrawer => !string.IsNullOrWhiteSpace(CashDrawerCommand);
+
+        /// <summary>Messaggio helper sotto il bottone Test cassetto.</summary>
+        public string TestCashDrawerStatusMessage => CanTestCashDrawer
+            ? "Usa la stampante indicata sopra, oppure la stampante predefinita di Windows se lasci vuoto."
+            : "Inserisci un comando cassetto (es. 27,112,0,60,255) per abilitare il test.";
 
         public int ParsedCopies
         {
@@ -81,15 +108,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
             TestCashDrawerCommand = new RelayCommand(_ =>
             {
-                if (!string.IsNullOrWhiteSpace(PrinterName))
-                    TestCashDrawerRequested?.Invoke(PrinterName, CashDrawerCommand);
-            }, _ => !string.IsNullOrWhiteSpace(PrinterName));
+                var name = string.IsNullOrWhiteSpace(PrinterName) ? string.Empty : PrinterName.Trim();
+                var cmd = string.IsNullOrWhiteSpace(CashDrawerCommand) ? "27,112,0,60,255" : CashDrawerCommand.Trim();
+                TestCashDrawerRequested?.Invoke(name, cmd);
+            }, _ => CanTestCashDrawer);
         }
 
         private void RaiseCanExecuteChanged()
         {
             (ConfirmCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (TestCashDrawerCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)

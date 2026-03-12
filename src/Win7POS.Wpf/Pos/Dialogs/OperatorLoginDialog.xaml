@@ -20,7 +20,10 @@
                 <ColumnDefinition Width="*" MinWidth="180"/>
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Operatore:"/>
-            <ComboBox x:Name="OperatorCombo" Grid.Row="0" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" DisplayMemberPath="DisplayName" IsEditable="False"/>
+            <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,10">
+                <ComboBox x:Name="OperatorCombo" MinHeight="34" DisplayMemberPath="DisplayText" IsEditable="False"/>
+                <TextBlock Text="Seleziona l'operatore visualizzato. Lo username è mostrato tra parentesi." FontSize="10" Foreground="#8A7C93" Margin="0,4,0,0"/>
+            </StackPanel>
             <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="PIN:"/>
             <PasswordBox x:Name="PinBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
             <TextBlock x:Name="ErrorText" Grid.Row="2" Grid.ColumnSpan="2" Foreground="#C62828" Margin="0,0,0,12" TextWrapping="Wrap" Visibility="Collapsed"/>

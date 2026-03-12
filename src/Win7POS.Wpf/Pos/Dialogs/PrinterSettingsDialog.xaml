@@ -77,11 +77,23 @@
                          Text="{Binding OutputDirectory, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
                          ToolTip="Cartella in cui salvare le copie degli scontrini"/>
 
-                <!-- Cassetto portamonete (ispirato a 博优原客 钱箱客显) -->
+                <!-- Cassetto portamonete -->
                 <Border Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,20,0,0" Padding="12,14" Background="#F5F9FF" CornerRadius="6" BorderBrush="#D0E0F8" BorderThickness="1">
                     <StackPanel>
                         <TextBlock Text="Cassetto portamonete" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,10"/>
-                        <Grid>
+                        <Border Margin="0,0,0,10" Padding="0,10,0,10">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="Apri cassa abilitato" VerticalAlignment="Center" FontSize="12"/>
+                                <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
+                                              IsChecked="{Binding CashDrawerEnabled, Mode=TwoWay}" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <TextBlock Text="Stampante e comando:" FontSize="11" Foreground="#666" Margin="0,0,0,6"/>
+                        <Grid Margin="0,0,0,8">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="140"/>
                                 <ColumnDefinition Width="*" MinWidth="200"/>
@@ -89,11 +101,13 @@
                             <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Istruzione cassetto:" FontWeight="SemiBold" FontSize="11"/>
                             <TextBox Grid.Column="1" Margin="12,0,0,0" MinHeight="34"
                                      Text="{Binding CashDrawerCommand, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
-                                     ToolTip="Byte ESC/POS separati da virgola (es. 27,112,0,60,255). Default: 27,112,0,25,25"/>
+                                     ToolTip="Byte ESC/POS separati da virgola (es. 27,112,0,60,255)"/>
                         </Grid>
-                        <Button Margin="0,12,0,0" HorizontalAlignment="Left" MinWidth="140" Height="34" Content="Test cassetto"
+                        <Button Margin="0,4,0,0" HorizontalAlignment="Left" MinWidth="140" Height="34" Content="Test cassetto"
                                 Command="{Binding TestCashDrawerCommand}" Style="{StaticResource OutlineButtonStyle}"
                                 ToolTip="Prova ad aprire il cassetto con le impostazioni correnti"/>
+                        <TextBlock Text="{Binding TestCashDrawerStatusMessage}" FontSize="11" Foreground="#666" Margin="0,8,0,0"
+                                   TextWrapping="Wrap" MaxWidth="400" VerticalAlignment="Top"/>
                     </StackPanel>
                 </Border>
 

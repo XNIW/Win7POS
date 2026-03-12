@@ -4,13 +4,17 @@ using System.Globalization;
 using System.Drawing;
 using System.Drawing.Printing;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Win7POS.Core;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Printing
 {
     public sealed class WindowsSpoolerReceiptPrinter : IReceiptPrinter
     {
+        private static readonly FileLogger _logger = new FileLogger();
         private const string SiiMarker = "Timbre Electrónico SII";
         private const string ScontrinoPrefix = "Scontrino:";
 
@@ -57,30 +61,35 @@ namespace Win7POS.Wpf.Printing
             await TryPrintWithRetryAsync(receiptText, opt).ConfigureAwait(false);
         }
 
+        private const string DefaultCashDrawerCommand = "27,112,0,60,255";
+
         public Task OpenCashDrawerAsync(ReceiptPrintOptions opt)
         {
             if (opt == null) return Task.CompletedTask;
-            var bytes = ParseCashDrawerCommand(opt.CashDrawerCommand);
-            return Task.Run(() => TryOpenCashDrawer(opt.PrinterName, bytes));
+            var cmd = string.IsNullOrWhiteSpace(opt.CashDrawerCommand) ? DefaultCashDrawerCommand : opt.CashDrawerCommand;
+            var bytes = ParseCashDrawerCommand(cmd);
+            return Task.Run(() => TryOpenCashDrawer(opt.PrinterName, bytes, cmd));
         }
 
-        /// <summary>ESC/POS kick drawer: ESC p m t1 t2. Comando configurabile (es. 27,112,0,60,255) o default 27,112,0,25,25.</summary>
-        private static void TryOpenCashDrawer(string printerName, byte[] bytes)
+        /// <summary>ESC/POS kick drawer: ESC p m t1 t2. Comando configurabile (es. 27,112,0,60,255).</summary>
+        private static void TryOpenCashDrawer(string printerName, byte[] bytes, string cmdForLog)
         {
             if (string.IsNullOrWhiteSpace(printerName) || bytes == null || bytes.Length == 0) return;
+            var bytesStr = bytes == null || bytes.Length == 0 ? "(vuoto)" : string.Join(",", bytes.Select(b => b.ToString()));
+            _logger.LogInfo("CashDrawer: stampante=\"" + (printerName ?? "") + "\" comando=" + (cmdForLog ?? "") + " bytes=[" + bytesStr + "]");
             try
             {
                 RawPrinterHelper.SendBytesToPrinter(printerName, bytes);
             }
-            catch
+            catch (Exception ex)
             {
-                // Driver potrebbe non supportare raw; no-op silenzioso
+                _logger.LogError(ex, "CashDrawer SendBytes failed");
             }
         }
 
         private static byte[] ParseCashDrawerCommand(string cmd)
         {
-            if (string.IsNullOrWhiteSpace(cmd)) return new byte[] { 27, 112, 0, 25, 25 };
+            if (string.IsNullOrWhiteSpace(cmd)) return new byte[] { 27, 112, 0, 60, 255 };
             var parts = cmd.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
             var list = new List<byte>();
             foreach (var p in parts)
@@ -88,7 +97,7 @@ namespace Win7POS.Wpf.Printing
                 if (byte.TryParse(p.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var b))
                     list.Add(b);
             }
-            return list.Count > 0 ? list.ToArray() : new byte[] { 27, 112, 0, 25, 25 };
+            return list.Count > 0 ? list.ToArray() : new byte[] { 27, 112, 0, 60, 255 };
         }
 
         private const int RetryDelayMs = 300;

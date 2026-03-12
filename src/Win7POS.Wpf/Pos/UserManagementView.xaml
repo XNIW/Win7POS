@@ -7,7 +7,9 @@
              mc:Ignorable="d" d:DesignHeight="600" d:DesignWidth="1200">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <conv:InverseBooleanToVisibilityConverter x:Key="InverseBoolToVis"/>
         <conv:EqualityToVisibilityConverter x:Key="EqToVis"/>
+        <conv:DisplayNameOrUsernameConverter x:Key="DisplayNameOrUsername"/>
     </UserControl.Resources>
     <Grid Margin="12">
         <Grid.RowDefinitions>
@@ -84,11 +86,18 @@
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel>
-                                        <TextBlock FontWeight="SemiBold" Text="{Binding Username}"/>
+                                        <TextBlock FontWeight="SemiBold">
+                                            <TextBlock.Text>
+                                                <MultiBinding Converter="{StaticResource DisplayNameOrUsername}">
+                                                    <Binding Path="DisplayName"/>
+                                                    <Binding Path="Username"/>
+                                                </MultiBinding>
+                                            </TextBlock.Text>
+                                        </TextBlock>
                                         <TextBlock FontSize="11" Foreground="#6B5B73" Margin="0,2,0,0">
                                             <TextBlock.Text>
-                                                <MultiBinding StringFormat="{}{0} • {1}">
-                                                    <Binding Path="DisplayName"/>
+                                                <MultiBinding StringFormat="@{0} • {1}">
+                                                    <Binding Path="Username"/>
                                                     <Binding Path="RoleName"/>
                                                 </MultiBinding>
                                             </TextBlock.Text>
@@ -136,70 +145,71 @@
                 </Grid>
             </Border>
 
-            <!-- 2) Dettaglio utente: card sempre visibile, layout compatto per 1024x768 -->
+            <!-- 2) Dettaglio utente: due stati distinti (form / placeholder) senza sovrapposizioni -->
             <Border Grid.Column="1" Margin="0,0,6,0" Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="10" MinWidth="200">
                 <Grid>
-                    <Grid.Style>
-                        <Style TargetType="Grid">
-                            <Setter Property="IsEnabled" Value="True"/>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding IsUserSelected}" Value="False">
-                                    <Setter Property="IsEnabled" Value="False"/>
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Grid.Style>
-                    <TextBlock Text="Seleziona un utente dalla lista." HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#8A7C93" FontSize="13">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Collapsed"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsUserSelected}" Value="False">
-                                        <Setter Property="Visibility" Value="Visible"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <StackPanel>
-                        <TextBlock Text="Utente selezionato" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="110" MinWidth="90"/>
-                                <ColumnDefinition Width="*" MinWidth="120"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="Auto"/>
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,6" Text="Username:"/>
-                            <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,0,6" Text="{Binding SelectedUsername}" VerticalAlignment="Center" Foreground="#555" FontSize="12"/>
-                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,6" Text="Nome operatore:"/>
-                            <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,6" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
-                            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,6" Text="Ruolo:"/>
-                            <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,6" ItemsSource="{Binding Roles}" SelectedValue="{Binding SelectedRoleId}" SelectedValuePath="Id" DisplayMemberPath="Name" MinHeight="32"/>
-                            <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,6" Text="Stato accesso:"/>
-                            <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,0,0,6" Orientation="Horizontal">
-                                <CheckBox IsChecked="{Binding IsActive}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <TextBlock Text="{Binding AccountStatusText}" VerticalAlignment="Center" Foreground="#555" FontSize="12"/>
-                            </StackPanel>
-                            <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,6" Text="PIN:"/>
-                            <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,0,0,6">
-                                <PasswordBox x:Name="NewPinBox" MinHeight="32" Padding="6,4" PasswordChanged="NewPinBox_PasswordChanged"/>
-                                <TextBlock Text="Lascia vuoto per non modificare." FontSize="11" Foreground="#8A7C93" Margin="0,2,0,0"/>
-                            </StackPanel>
-                            <!-- Pulsanti stacked verticalmente per evitare taglio su 1024x768 -->
-                            <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,4,0,0">
-                                <Button Content="Salva utente" Command="{Binding SaveUserCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="8,6" Margin="0,0,0,6" HorizontalAlignment="Left" MinWidth="120"/>
-                                <Button Content="Annulla modifiche" Command="{Binding CancelUserChangesCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,0,6" HorizontalAlignment="Left" MinWidth="120"/>
-                                <Button Content="Reimposta PIN" Command="{Binding ResetPinCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" HorizontalAlignment="Left" MinWidth="120"/>
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
+                    <!-- Form: visibile solo quando c'è selezione -->
+                    <Grid Visibility="{Binding HasSelectedUser, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <TextBlock Text="Utente selezionato" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" MinWidth="90"/>
+                                    <ColumnDefinition Width="*" MinWidth="120"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <StackPanel Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,6">
+                                    <TextBlock Text="Username accesso:"/>
+                                    <TextBlock Text="Usato per accesso e identificazione interna." FontSize="10" Foreground="#8A7C93" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,6" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding SelectedUsername}" Foreground="#555" FontSize="12"/>
+                                    <TextBlock Text="(sola lettura)" FontSize="10" Foreground="#8A7C93" Margin="0,1,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,6">
+                                    <TextBlock Text="Nome visualizzato:"/>
+                                    <TextBlock Text="Mostrato nelle schermate e nel cambio operatore." FontSize="10" Foreground="#8A7C93" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,6" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
+                                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,6" Text="Ruolo:"/>
+                                <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,6" ItemsSource="{Binding Roles}" SelectedValue="{Binding SelectedRoleId}" SelectedValuePath="Id" DisplayMemberPath="Name" MinHeight="32"/>
+                                <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,6" Text="Stato accesso:"/>
+                                <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,0,0,6" Orientation="Horizontal">
+                                    <CheckBox IsChecked="{Binding IsActive}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                    <TextBlock Text="{Binding AccountStatusText}" VerticalAlignment="Center" Foreground="#555" FontSize="12"/>
+                                </StackPanel>
+                                <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,6,6" Text="PIN:"/>
+                                <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,0,0,6">
+                                    <PasswordBox x:Name="NewPinBox" MinHeight="32" Padding="6,4" PasswordChanged="NewPinBox_PasswordChanged"/>
+                                    <TextBlock Text="Lascia vuoto per non modificare." FontSize="11" Foreground="#8A7C93" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <!-- Pulsanti stacked verticalmente per evitare taglio su 1024x768 -->
+                                <StackPanel Grid.Row="5" Grid.Column="1" Margin="0,4,0,0">
+                                    <Button Content="Salva utente" Command="{Binding SaveUserCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="8,6" Margin="0,0,0,6" HorizontalAlignment="Left" MinWidth="120"/>
+                                    <Button Content="Annulla modifiche" Command="{Binding CancelUserChangesCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,0,6" HorizontalAlignment="Left" MinWidth="120"/>
+                                    <Button Content="Reimposta PIN" Command="{Binding ResetPinCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" HorizontalAlignment="Left" MinWidth="120"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- Placeholder: centrato, solo quando non c'è selezione -->
+                    <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                            Visibility="{Binding HasSelectedUser, Converter={StaticResource InverseBoolToVis}}">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="Utente selezionato" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8" TextAlignment="Center"/>
+                            <TextBlock Text="Nessun utente selezionato" FontSize="22" Foreground="#7A6F86" Margin="0,0,0,6" TextAlignment="Center"/>
+                            <TextBlock Text="Seleziona un utente dalla lista per modificare nome, ruolo e PIN."
+                                       FontSize="12" Foreground="#8A7C93" TextWrapping="Wrap" MaxWidth="220" TextAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
             </Border>
 

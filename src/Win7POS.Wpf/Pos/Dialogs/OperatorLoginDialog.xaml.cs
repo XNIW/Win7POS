@@ -55,26 +55,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void OnLoginClick(object sender, RoutedEventArgs e)
         {
-            var typed = (OperatorCombo.Text ?? "").Trim();
             var selected = OperatorCombo.SelectedItem as OperatorLoginItem;
-
-            string username = null;
-            if (selected != null && string.Equals(selected.DisplayName, typed, StringComparison.OrdinalIgnoreCase))
-                username = selected.Username;
-            else if (!string.IsNullOrWhiteSpace(typed))
-            {
-                var byUsername = _operators?.FirstOrDefault(o => string.Equals(o.Username, typed, StringComparison.OrdinalIgnoreCase));
-                if (byUsername != null)
-                    username = byUsername.Username;
-            }
+            // Autenticazione sempre su username (identità univoca), mai solo nome
+            var username = selected?.Username;
 
             var pin = PinBox?.Password ?? "";
 
             if (string.IsNullOrEmpty(username))
             {
-                ShowError(selected == null && _operators?.Count > 0
-                    ? "Seleziona un operatore dalla lista."
-                    : "Operatore non valido. Seleziona dalla lista o verifica l'username.");
+                ShowError("Seleziona un operatore dalla lista.");
                 return;
             }
 
@@ -119,6 +108,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             public string Username { get; }
             public string DisplayName { get; }
+            /// <summary>Formato per combo: Nome operatore (@username)</summary>
+            public string DisplayText => string.IsNullOrWhiteSpace(DisplayName) ? "@" + Username : DisplayName + " (@" + Username + ")";
+
             public OperatorLoginItem(string username, string displayName)
             {
                 Username = username ?? "";

@@ -29,6 +29,8 @@ namespace Win7POS.Wpf.Pos
         private const string KeySaveReceiptCopy = "printer.saveReceiptCopy";
         private const string KeyReceiptOutputDirectory = "printer.outputDirectory";
         private const string KeyCashDrawerCommand = "printer.cashDrawerCommand";
+        private const string KeyCashDrawerEnabled = "printer.cashDrawerEnabled";
+        private const string DefaultCashDrawerCommand = "27,112,0,60,255";
         private const string KeyShopName = "shop.name";
         private const string KeyShopAddress = "shop.address";
         private const string KeyShopCity = "shop.city";
@@ -130,6 +132,7 @@ namespace Win7POS.Wpf.Pos
                 await _settings.SetBoolAsync(KeySaveReceiptCopy, settings.SaveCopyToFile).ConfigureAwait(false);
                 await _settings.SetStringAsync(KeyReceiptOutputDirectory, outputDir).ConfigureAwait(false);
                 await _settings.SetStringAsync(KeyCashDrawerCommand, settings.CashDrawerCommand ?? string.Empty).ConfigureAwait(false);
+                await _settings.SetBoolAsync(KeyCashDrawerEnabled, settings.CashDrawerEnabled).ConfigureAwait(false);
             }
             finally
             {
@@ -1577,7 +1580,8 @@ SELECT last_insert_rowid();";
                 outputDir = Path.Combine(AppPaths.DataDirectory, "receipts");
             var cashDrawerCmd = await _settings.GetStringAsync(KeyCashDrawerCommand).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(cashDrawerCmd))
-                cashDrawerCmd = "27,112,0,25,25";
+                cashDrawerCmd = DefaultCashDrawerCommand;
+            var cashDrawerEnabled = await _settings.GetBoolAsync(KeyCashDrawerEnabled).ConfigureAwait(false);
 
             return new PosPrinterSettings
             {
@@ -1586,7 +1590,8 @@ SELECT last_insert_rowid();";
                 AutoPrint = autoPrint ?? true,
                 SaveCopyToFile = saveCopy ?? false,
                 OutputDirectory = outputDir,
-                CashDrawerCommand = cashDrawerCmd
+                CashDrawerCommand = cashDrawerCmd,
+                CashDrawerEnabled = cashDrawerEnabled ?? true
             };
         }
 
@@ -1625,6 +1630,7 @@ SELECT last_insert_rowid();";
             try
             {
                 var printer = await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
+                if (!printer.CashDrawerEnabled) return;
                 await _receiptPrinter.OpenCashDrawerAsync(new ReceiptPrintOptions
                 {
                     PrinterName = printer.PrinterName ?? string.Empty,
@@ -1637,14 +1643,37 @@ SELECT last_insert_rowid();";
             }
         }
 
-        /// <summary>Testa il cassetto portamonete con i parametri forniti (senza salvare in impostazioni).</summary>
+        /// <summary>Testa il cassetto portamonete con i parametri forniti (senza salvare in impostazioni). Se printerName è vuoto, usa la stampante predefinita di Windows.</summary>
         public Task TestCashDrawerAsync(string printerName, string cashDrawerCommand)
         {
+            var resolvedPrinter = !string.IsNullOrWhiteSpace(printerName)
+                ? printerName.Trim()
+                : GetDefaultPrinterName();
+            var cmd = !string.IsNullOrWhiteSpace(cashDrawerCommand)
+                ? cashDrawerCommand.Trim()
+                : DefaultCashDrawerCommand;
+
+            if (string.IsNullOrWhiteSpace(resolvedPrinter))
+                throw new InvalidOperationException("Nessuna stampante disponibile. Inserisci il nome della stampante oppure configura una stampante predefinita di Windows.");
+
             return _receiptPrinter.OpenCashDrawerAsync(new ReceiptPrintOptions
             {
-                PrinterName = printerName ?? string.Empty,
-                CashDrawerCommand = cashDrawerCommand ?? string.Empty
+                PrinterName = resolvedPrinter,
+                CashDrawerCommand = cmd
             });
+        }
+
+        private static string GetDefaultPrinterName()
+        {
+            try
+            {
+                using (var doc = new System.Drawing.Printing.PrintDocument())
+                    return doc.PrinterSettings.PrinterName ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
 
         private static string NormalizeFileTag(string value)
@@ -1796,7 +1825,9 @@ SELECT last_insert_rowid();";
         public bool AutoPrint { get; set; } = true;
         public bool SaveCopyToFile { get; set; }
         public string OutputDirectory { get; set; } = string.Empty;
-        /// <summary>Istruzione ESC/POS per aprire cassetto (es. "27,112,0,60,255"). Default: "27,112,0,25,25"</summary>
-        public string CashDrawerCommand { get; set; } = "27,112,0,25,25";
+        /// <summary>Istruzione ESC/POS per aprire cassetto (es. "27,112,0,60,255"). Default: "27,112,0,60,255".</summary>
+        public string CashDrawerCommand { get; set; } = "27,112,0,60,255";
+        /// <summary>Se true, il pulsante "Apri cassa" è attivo.</summary>
+        public bool CashDrawerEnabled { get; set; } = true;
     }
 }

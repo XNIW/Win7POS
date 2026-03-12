@@ -4,7 +4,7 @@
         Title="Autorizzazione supervisore"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
-        MinWidth="340"
+        MinWidth="380"
         ResizeMode="NoResize">
     <Border Padding="20">
         <Grid>
@@ -17,12 +17,9 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
             <TextBlock x:Name="MessageText" Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,16" Foreground="#333"/>
-            <TextBlock Grid.Row="1" Text="Operatore (supervisore o superiore):" Margin="0,0,0,6"/>
-            <TextBox x:Name="UsernameBox" Grid.Row="2" Margin="0,0,0,8" Style="{StaticResource ModernTextBoxStyle}" MinHeight="34"/>
+            <TextBlock Grid.Row="1" Text="Operatore autorizzante:" Margin="0,0,0,6"/>
+            <ComboBox x:Name="OperatorCombo" Grid.Row="2" Margin="0,0,0,8" MinHeight="34" DisplayMemberPath="DisplayText" IsEditable="False"/>
             <TextBlock Grid.Row="3" Text="PIN:" Margin="0,0,0,6"/>
             <PasswordBox x:Name="PinBox" Grid.Row="4" Margin="0,0,0,16" MinHeight="34" Padding="8,6"/>
             <TextBlock x:Name="ErrorText" Grid.Row="5" Foreground="#C62828" Margin="0,0,0,12" TextWrapping="Wrap" Visibility="Collapsed"/>

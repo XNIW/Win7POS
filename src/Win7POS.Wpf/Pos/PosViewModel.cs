@@ -210,7 +210,7 @@ namespace Win7POS.Wpf.Pos
             BackupDbCommand = new AsyncRelayCommand(BackupDbAsync, _ => !IsBusy, _logger);
             PrinterSettingsCommand = new AsyncRelayCommand(OpenPrinterSettingsAsync, _ => !IsBusy, _logger);
             PrintLastReceiptCommand = new AsyncRelayCommand(PrintLastReceiptAsync, _ => !IsBusy, _logger);
-            OpenCashDrawerCommand = new AsyncRelayCommand(OpenCashDrawerAsync, _ => !IsBusy, _logger);
+            OpenCashDrawerCommand = new AsyncRelayCommand(OpenCashDrawerAsync, _ => !IsBusy && _printerSettings.CashDrawerEnabled, _logger);
             DailyReportCommand = new AsyncRelayCommand(OpenDailyReportAsync, _ => !IsBusy, _logger);
             DbMaintenanceCommand = new AsyncRelayCommand(OpenDbMaintenanceAsync, _ => !IsBusy, _logger);
             AboutSupportCommand = new AsyncRelayCommand(OpenAboutSupportAsync, _ => !IsBusy, _logger);
@@ -299,6 +299,7 @@ namespace Win7POS.Wpf.Pos
                     _isLoadingSettings = false;
                 }
                 _printerSettings = await _service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                RaiseCanExecuteChanged();
                 var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
                 ApplySnapshot(snapshot);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
@@ -1012,19 +1013,20 @@ namespace Win7POS.Wpf.Pos
                 AutoPrint = _printerSettings.AutoPrint,
                 SaveCopyToFile = _printerSettings.SaveCopyToFile,
                 OutputDirectory = _printerSettings.OutputDirectory,
-                CashDrawerCommand = string.IsNullOrWhiteSpace(_printerSettings.CashDrawerCommand) ? "27,112,0,25,25" : _printerSettings.CashDrawerCommand
+                CashDrawerCommand = string.IsNullOrWhiteSpace(_printerSettings.CashDrawerCommand) ? "27,112,0,60,255" : _printerSettings.CashDrawerCommand,
+                CashDrawerEnabled = _printerSettings.CashDrawerEnabled
             };
             vm.TestCashDrawerRequested += async (name, cmd) =>
             {
                 try
                 {
                     await _service.TestCashDrawerAsync(name, cmd).ConfigureAwait(true);
-                    StatusMessage = "Cassetto aperto (test).";
+                    StatusMessage = "Comando inviato alla stampante.";
                 }
                 catch (Exception ex)
                 {
                     StatusMessage = "Errore test cassetto: " + ex.Message;
-                    ModernMessageDialog.Show(Application.Current?.MainWindow, "Test cassetto", "Errore: " + ex.Message);
+                    ModernMessageDialog.Show(Application.Current?.MainWindow, "Test cassetto", ex.Message);
                 }
             };
 
@@ -1050,13 +1052,15 @@ namespace Win7POS.Wpf.Pos
                 OutputDirectory = string.IsNullOrWhiteSpace(vm.OutputDirectory)
                     ? Path.Combine(Win7POS.Core.AppPaths.DataDirectory, "receipts")
                     : vm.OutputDirectory,
-                CashDrawerCommand = string.IsNullOrWhiteSpace(vm.CashDrawerCommand) ? "27,112,0,25,25" : vm.CashDrawerCommand
+                CashDrawerCommand = string.IsNullOrWhiteSpace(vm.CashDrawerCommand) ? "27,112,0,60,255" : vm.CashDrawerCommand,
+                CashDrawerEnabled = vm.CashDrawerEnabled
             };
 
             try
             {
                 await _service.SetPrinterSettingsAsync(_printerSettings).ConfigureAwait(true);
                 StatusMessage = "Impostazioni stampante salvate.";
+                RaiseCanExecuteChanged();
             }
             catch (Exception ex)
             {

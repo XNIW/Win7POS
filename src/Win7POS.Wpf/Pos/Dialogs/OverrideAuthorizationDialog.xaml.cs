@@ -1,34 +1,38 @@
 using System;
+using System.Collections.Generic;
 using System.Windows;
-using Win7POS.Core.Security;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public partial class OverrideAuthorizationDialog : Window
     {
-        private readonly string _requiredPermissionCode;
         private readonly Func<string, string, (bool ok, int? userId)> _verify;
 
         public int? AuthorizerUserId { get; private set; }
 
-        public OverrideAuthorizationDialog(string operationText, string requiredPermissionCode, Func<string, string, (bool ok, int? userId)> verify)
+        /// <summary>Crea il dialog con la lista filtrata di utenti autorizzabili. Verifica usa sempre username.</summary>
+        public OverrideAuthorizationDialog(string operationText, IReadOnlyList<OverrideOperatorItem> authorizableUsers, Func<string, string, (bool ok, int? userId)> verify)
         {
             InitializeComponent();
-            _requiredPermissionCode = requiredPermissionCode ?? "";
             _verify = verify ?? ((_, __) => (false, null));
             MessageText.Text = string.IsNullOrEmpty(operationText)
                 ? "Operazione riservata a Supervisore o superiore. Inserire credenziali per autorizzare."
                 : "Operazione riservata a Supervisore o superiore: " + operationText + ". Inserire credenziali per autorizzare.";
+
+            OperatorCombo.ItemsSource = authorizableUsers ?? new List<OverrideOperatorItem>();
+            if (OperatorCombo.Items.Count > 0)
+                OperatorCombo.SelectedIndex = 0;
         }
 
-        private void OnAuthorizeClick(object sender, System.Windows.RoutedEventArgs e)
+        private void OnAuthorizeClick(object sender, RoutedEventArgs e)
         {
-            var username = (UsernameBox?.Text ?? "").Trim();
+            var selected = OperatorCombo.SelectedItem as OverrideOperatorItem;
+            var username = selected?.Username ?? "";
             var pin = PinBox?.Password ?? "";
 
             if (string.IsNullOrEmpty(username))
             {
-                ShowError("Inserire operatore.");
+                ShowError("Seleziona un operatore dalla lista.");
                 return;
             }
 
@@ -53,5 +57,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
             ErrorText.Text = message;
             ErrorText.Visibility = Visibility.Visible;
         }
+    }
+
+    /// <summary>Elemento per combo autorizzazione: Nome (@username) - Ruolo</summary>
+    public sealed class OverrideOperatorItem
+    {
+        public string Username { get; set; }
+        public string DisplayName { get; set; }
+        public string RoleName { get; set; }
+        public string DisplayText => string.IsNullOrWhiteSpace(DisplayName) ? "@" + Username + " - " + RoleName : DisplayName + " (@" + Username + ") - " + RoleName;
     }
 }

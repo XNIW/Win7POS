@@ -97,13 +97,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public UserAccount SelectedUser
         {
             get => _selectedUser;
-            set { _selectedUser = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsUserSelected)); OnPropertyChanged(nameof(HasSelection)); OnPropertyChanged(nameof(DetailUserTitle)); OnPropertyChanged(nameof(EditingUserDisplay)); OnPropertyChanged(nameof(SelectedUserRoleDisplay)); OnPropertyChanged(nameof(SelectedUsername)); (SaveUserCommand as RelayCommand)?.RaiseCanExecuteChanged(); (CancelUserChangesCommand as RelayCommand)?.RaiseCanExecuteChanged(); _ = LoadSelectedUserAsync(); }
+            set { _selectedUser = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsUserSelected)); OnPropertyChanged(nameof(HasSelectedUser)); OnPropertyChanged(nameof(HasSelection)); OnPropertyChanged(nameof(DetailUserTitle)); OnPropertyChanged(nameof(EditingUserDisplay)); OnPropertyChanged(nameof(SelectedUserRoleDisplay)); OnPropertyChanged(nameof(SelectedUsername)); (SaveUserCommand as RelayCommand)?.RaiseCanExecuteChanged(); (CancelUserChangesCommand as RelayCommand)?.RaiseCanExecuteChanged(); _ = LoadSelectedUserAsync(); }
         }
 
         /// <summary>Username dell'utente selezionato (sola lettura).</summary>
         public string SelectedUsername => SelectedUser?.Username ?? "";
 
         public bool IsUserSelected => SelectedUser != null;
+
+        /// <summary>True quando c'è un utente selezionato; usato per alternare form / placeholder senza sovrapposizioni.</summary>
+        public bool HasSelectedUser => SelectedUser != null;
 
         public string DisplayName { get => _displayName; set { _displayName = value ?? ""; OnPropertyChanged(); SetDirty(); } }
         public int SelectedRoleId { get => _selectedRoleId; set { _selectedRoleId = value; OnPropertyChanged(); SetDirty(); } }
