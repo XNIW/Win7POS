@@ -1011,7 +1011,21 @@ namespace Win7POS.Wpf.Pos
                 Copies = _printerSettings.Copies.ToString(),
                 AutoPrint = _printerSettings.AutoPrint,
                 SaveCopyToFile = _printerSettings.SaveCopyToFile,
-                OutputDirectory = _printerSettings.OutputDirectory
+                OutputDirectory = _printerSettings.OutputDirectory,
+                CashDrawerCommand = string.IsNullOrWhiteSpace(_printerSettings.CashDrawerCommand) ? "27,112,0,25,25" : _printerSettings.CashDrawerCommand
+            };
+            vm.TestCashDrawerRequested += async (name, cmd) =>
+            {
+                try
+                {
+                    await _service.TestCashDrawerAsync(name, cmd).ConfigureAwait(true);
+                    StatusMessage = "Cassetto aperto (test).";
+                }
+                catch (Exception ex)
+                {
+                    StatusMessage = "Errore test cassetto: " + ex.Message;
+                    ModernMessageDialog.Show(Application.Current?.MainWindow, "Test cassetto", "Errore: " + ex.Message);
+                }
             };
 
             var dlg = new PrinterSettingsDialog(vm)
@@ -1035,7 +1049,8 @@ namespace Win7POS.Wpf.Pos
                 SaveCopyToFile = vm.SaveCopyToFile,
                 OutputDirectory = string.IsNullOrWhiteSpace(vm.OutputDirectory)
                     ? Path.Combine(Win7POS.Core.AppPaths.DataDirectory, "receipts")
-                    : vm.OutputDirectory
+                    : vm.OutputDirectory,
+                CashDrawerCommand = string.IsNullOrWhiteSpace(vm.CashDrawerCommand) ? "27,112,0,25,25" : vm.CashDrawerCommand
             };
 
             try

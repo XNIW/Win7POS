@@ -12,11 +12,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _autoPrint = true;
         private bool _saveCopyToFile;
         private string _outputDirectory = string.Empty;
+        private string _cashDrawerCommand = "27,112,0,25,25";
 
         public string PrinterName
         {
             get => _printerName;
-            set { _printerName = value ?? string.Empty; OnPropertyChanged(); }
+            set { _printerName = value ?? string.Empty; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
         public string Copies
@@ -49,6 +50,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _outputDirectory = value ?? string.Empty; OnPropertyChanged(); }
         }
 
+        public string CashDrawerCommand
+        {
+            get => _cashDrawerCommand;
+            set { _cashDrawerCommand = value ?? string.Empty; OnPropertyChanged(); }
+        }
+
         public bool IsValid => ParsedCopies >= 1;
 
         public int ParsedCopies
@@ -62,14 +69,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }
+        public ICommand TestCashDrawerCommand { get; }
 
         public event Action<bool> RequestClose;
+        public event Action<string, string> TestCashDrawerRequested;
         public event PropertyChangedEventHandler PropertyChanged;
 
         public PrinterSettingsViewModel()
         {
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
+            TestCashDrawerCommand = new RelayCommand(_ =>
+            {
+                if (!string.IsNullOrWhiteSpace(PrinterName))
+                    TestCashDrawerRequested?.Invoke(PrinterName, CashDrawerCommand);
+            }, _ => !string.IsNullOrWhiteSpace(PrinterName));
         }
 
         private void RaiseCanExecuteChanged()

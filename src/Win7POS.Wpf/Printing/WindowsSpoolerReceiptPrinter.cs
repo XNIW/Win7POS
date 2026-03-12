@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Drawing;
 using System.Drawing.Printing;
 using System.IO;
@@ -58,22 +60,35 @@ namespace Win7POS.Wpf.Printing
         public Task OpenCashDrawerAsync(ReceiptPrintOptions opt)
         {
             if (opt == null) return Task.CompletedTask;
-            return Task.Run(() => TryOpenCashDrawer(opt.PrinterName));
+            var bytes = ParseCashDrawerCommand(opt.CashDrawerCommand);
+            return Task.Run(() => TryOpenCashDrawer(opt.PrinterName, bytes));
         }
 
-        /// <summary>ESC/POS kick drawer: ESC p m t1 t2 (pin 2: m=0, t1=25, t2=25). Invia raw alla stampante se possibile.</summary>
-        private static void TryOpenCashDrawer(string printerName)
+        /// <summary>ESC/POS kick drawer: ESC p m t1 t2. Comando configurabile (es. 27,112,0,60,255) o default 27,112,0,25,25.</summary>
+        private static void TryOpenCashDrawer(string printerName, byte[] bytes)
         {
-            if (string.IsNullOrWhiteSpace(printerName)) return;
-            var escPosKickDrawer = new byte[] { 27, 112, 0, 25, 25 };
+            if (string.IsNullOrWhiteSpace(printerName) || bytes == null || bytes.Length == 0) return;
             try
             {
-                RawPrinterHelper.SendBytesToPrinter(printerName, escPosKickDrawer);
+                RawPrinterHelper.SendBytesToPrinter(printerName, bytes);
             }
             catch
             {
                 // Driver potrebbe non supportare raw; no-op silenzioso
             }
+        }
+
+        private static byte[] ParseCashDrawerCommand(string cmd)
+        {
+            if (string.IsNullOrWhiteSpace(cmd)) return new byte[] { 27, 112, 0, 25, 25 };
+            var parts = cmd.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            var list = new List<byte>();
+            foreach (var p in parts)
+            {
+                if (byte.TryParse(p.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var b))
+                    list.Add(b);
+            }
+            return list.Count > 0 ? list.ToArray() : new byte[] { 27, 112, 0, 25, 25 };
         }
 
         private const int RetryDelayMs = 300;
