@@ -60,7 +60,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             DeleteRoleCommand = new RelayCommand(() => _ = DeleteRoleAsync(), () => !IsBusy && CanEditSelectedRole);
             ClearFilterCommand = new RelayCommand(ClearFilter, () => !string.IsNullOrWhiteSpace(Filter));
             ReloadCommand = new RelayCommand(() => _ = ReloadWithConfirmAsync(), () => !IsBusy);
-            CancelCommand = new RelayCommand(() => { Status = ""; }, () => true);
+            CancelCommand = CancelUserChangesCommand;
             _ = LoadAsync();
         }
 

@@ -12,6 +12,7 @@ using Win7POS.Wpf.Pos.Dialogs;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Data.Repositories;
 using Win7POS.Core;
+using Win7POS.Core.Security;
 
 namespace Win7POS.Wpf
 {
@@ -133,8 +134,28 @@ namespace Win7POS.Wpf
         private void OnChangeOperatorClick(object sender, RoutedEventArgs e)
         {
             var loginDlg = new OperatorLoginDialog { Owner = this };
-            if (loginDlg.ShowDialog() == true && OperatorSessionHolder.Current != null)
-                UpdateOperatorDisplay(OperatorSessionHolder.Current);
+            if (loginDlg.ShowDialog() != true || OperatorSessionHolder.Current == null)
+                return;
+            var session = OperatorSessionHolder.Current;
+            UpdateOperatorDisplay(session);
+            RefreshShellAfterOperatorChange(session);
+        }
+
+        /// <summary>Dopo cambio operatore: ricaricare permessi e aggiornare tutta l'UI (menu, tab, command).</summary>
+        private void RefreshShellAfterOperatorChange(IOperatorSession session)
+        {
+            var posVm = GetPosViewModel();
+            posVm?.RaiseCanExecuteChanged();
+            System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+            if (MainTabControl != null && MainTabControl.SelectedItem == UsersRolesTab && session?.CurrentUser != null)
+            {
+                var hasUsersManage = session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.UsersManage) == true;
+                if (!hasUsersManage)
+                {
+                    MainTabControl.SelectedIndex = 0;
+                    CurrentMenuKey = "Pos";
+                }
+            }
         }
 
         private void OnMenuUsersClick(object sender, RoutedEventArgs e)

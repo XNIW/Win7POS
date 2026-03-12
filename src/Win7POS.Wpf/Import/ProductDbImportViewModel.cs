@@ -136,12 +136,7 @@ namespace Win7POS.Wpf.Import
 
             if (!DryRun)
             {
-                var confirm = MessageBox.Show(
-                    "Confermi Apply? Verranno scritti prodotti, supplier, categories e storico prezzi nel DB.",
-                    "Conferma Apply Database",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Warning);
-                if (confirm != MessageBoxResult.Yes)
+                if (!ApplyConfirmDialog.ShowConfirm(Application.Current?.MainWindow, "Conferma Apply Database", "Confermi Apply? Verranno scritti prodotti, supplier, categories e storico prezzi nel DB."))
                 {
                     Status = "Apply annullato.";
                     return;

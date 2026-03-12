@@ -1683,7 +1683,7 @@ namespace Win7POS.Wpf.Pos
             return string.Join(Environment.NewLine, lines);
         }
 
-        private void RaiseCanExecuteChanged()
+        public void RaiseCanExecuteChanged()
         {
             (AddBarcodeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PayCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
