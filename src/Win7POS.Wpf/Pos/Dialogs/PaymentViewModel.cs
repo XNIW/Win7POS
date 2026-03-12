@@ -34,8 +34,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _fiscalPreviewText = "";
         private string _fiscalStatus = "";
         private bool _autoPrintPdfSii;
+        private bool _openDrawerForCurrentPayment;
 
-        public PaymentViewModel(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null, Func<string, string, Task> printFiscalToThermal = null)
+        public PaymentViewModel(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null, Func<string, string, Task> printFiscalToThermal = null, bool openDrawerDefault = true)
         {
             _totalDueMinor = totalDueMinor;
             _draft = draft;
@@ -43,6 +44,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _printFiscalToThermal = printFiscalToThermal;
             _shouldPrint = draft?.DefaultPrint ?? false;
             _autoPrintPdfSii = true;
+            _openDrawerForCurrentPayment = openDrawerDefault;
             _nextBoletaNumber = draft?.NextBoletaNumber ?? 0;
 
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
@@ -101,6 +103,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             get => _autoPrintPdfSii;
             set { _autoPrintPdfSii = value; OnPropertyChanged(); }
+        }
+
+        /// <summary>Per questa vendita: apri cassetto se contanti &gt; 0. Default da impostazioni stampante.</summary>
+        public bool OpenDrawerForCurrentPayment
+        {
+            get => _openDrawerForCurrentPayment;
+            set { _openDrawerForCurrentPayment = value; OnPropertyChanged(); }
         }
 
         public string ReceiptPreviewText

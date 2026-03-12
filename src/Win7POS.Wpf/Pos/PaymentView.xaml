@@ -179,15 +179,38 @@
             </Grid>
         </Border>
 
-        <!-- Bottom: Sospendi + Annulla + Conferma pagamento -->
-        <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="Sospendi" MinWidth="110" Height="40" Margin="0,0,10,0"
-                    Style="{StaticResource AccentButtonStyle}" Command="{Binding SuspendCommand}"/>
-            <Button Content="Annulla" MinWidth="120" Height="40" Margin="0,0,10,0" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CancelCommand}"/>
-            <Button Content="Conferma pagamento" MinWidth="220" Height="48" FontSize="15" FontWeight="SemiBold"
-                    Style="{StaticResource PrimaryButtonStyle}"
-                    Command="{Binding ConfirmCommand}"
-                    IsEnabled="{Binding IsValid}"/>
-        </StackPanel>
+        <!-- Bottom: Apri cassa (sinistra) + Sospendi + Annulla + Conferma pagamento (destra) -->
+        <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Margin="0,16,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Padding="12,8" CornerRadius="10" Background="#F6F3F9" BorderBrush="#D9CFE6" BorderThickness="1" VerticalAlignment="Center">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="10"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="Apri cassa" VerticalAlignment="Center" FontWeight="SemiBold" FontSize="13"/>
+                        <TextBlock Text="solo per contanti" FontSize="10" Foreground="#888" Margin="0,1,0,0"/>
+                    </StackPanel>
+                    <ToggleButton Grid.Column="2" Style="{StaticResource TinyToggleSwitchStyle}"
+                                  IsChecked="{Binding OpenDrawerForCurrentPayment, Mode=TwoWay}"
+                                  VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Sospendi" MinWidth="110" Height="40" Margin="0,0,10,0"
+                        Style="{StaticResource AccentButtonStyle}" Command="{Binding SuspendCommand}"/>
+                <Button Content="Annulla" MinWidth="120" Height="40" Margin="0,0,10,0" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CancelCommand}"/>
+                <Button Content="Conferma pagamento" MinWidth="220" Height="48" FontSize="15" FontWeight="SemiBold"
+                        Style="{StaticResource PrimaryButtonStyle}"
+                        Command="{Binding ConfirmCommand}"
+                        IsEnabled="{Binding IsValid}"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </UserControl>

@@ -602,7 +602,8 @@ namespace Win7POS.Wpf.Pos
             var fiscalPdf = new FiscalPdfService();
             var vm = new PaymentViewModel(Total, draft,
                 (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code),
-                async (text, code) => await _service.PrintReceiptTextAsync(text, UseReceipt42, "FISCAL_" + code, isFiscalPrint: true).ConfigureAwait(true));
+                async (text, code) => await _service.PrintReceiptTextAsync(text, UseReceipt42, "FISCAL_" + code, isFiscalPrint: true).ConfigureAwait(true),
+                openDrawerDefault: _printerSettings.CashDrawerEnabled);
 
             bool ok;
             try
@@ -677,6 +678,8 @@ namespace Win7POS.Wpf.Pos
                 if (!fiscalPrinted && vm.AutoPrintPdfSii && vm.CardAmountMinor > 0 && vm.CashAmountMinor == 0)
                     StatusMessage = "Pagamento OK: " + result.SaleCode + " (PDF SII non stampato: pagamento con carta)";
 
+                await TryAutoOpenDrawerAfterPaymentAsync(vm).ConfigureAwait(true);
+
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }
             catch (PosException ex)
@@ -692,6 +695,24 @@ namespace Win7POS.Wpf.Pos
             {
                 IsBusy = false;
                 RequestFocusBarcode();
+            }
+        }
+
+        private async Task TryAutoOpenDrawerAfterPaymentAsync(PaymentViewModel vm)
+        {
+            if (vm == null) return;
+            if (!_printerSettings.CashDrawerEnabled) return;
+            if (!vm.OpenDrawerForCurrentPayment) return;
+            if (vm.CashAmountMinor <= 0) return;
+
+            try
+            {
+                await _service.OpenCashDrawerAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "POS VM auto drawer open failed");
+                StatusMessage = "Pagamento OK, ma apertura cassetto non riuscita.";
             }
         }
 
