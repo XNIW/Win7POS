@@ -96,7 +96,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 await _service.RestoreDbAsync(dlg.FileName).ConfigureAwait(true);
                 OperatorSessionHolder.Current?.LogSecurityEvent(SecurityEventCodes.DbRestore, "path=" + (dlg.FileName ?? ""));
                 Append("Ripristino completato da: " + dlg.FileName);
-                MessageBox.Show("Ripristino completato. Riavvia l'app.", "Gestione DB", MessageBoxButton.OK, MessageBoxImage.Information);
+                Win7POS.Wpf.Import.ModernMessageDialog.Show(System.Windows.Application.Current?.MainWindow, "Gestione DB", "Ripristino completato. Riavvia l'app.");
             }
             catch (Exception ex)
             {

@@ -70,7 +70,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task ReloadWithConfirmAsync()
         {
-            if (IsDirty && MessageBox.Show("Modifiche non salvate. Ricaricare comunque?", "Utenti e ruoli", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            if (IsDirty && !Win7POS.Wpf.Import.ApplyConfirmDialog.ShowConfirm(System.Windows.Application.Current?.MainWindow, "Utenti e ruoli", "Modifiche non salvate. Ricaricare comunque?"))
                 return;
             await LoadAsync().ConfigureAwait(true);
         }
@@ -573,7 +573,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private async Task DeleteRoleAsync()
         {
             if (SelectedRole == null || SelectedRole.IsSystem) return;
-            if (System.Windows.MessageBox.Show("Eliminare il ruolo \"" + SelectedRole.Name + "\"? Gli utenti non devono averlo assegnato.", "Conferma eliminazione", System.Windows.MessageBoxButton.YesNo, System.Windows.MessageBoxImage.Question) != System.Windows.MessageBoxResult.Yes)
+            if (!Win7POS.Wpf.Import.ApplyConfirmDialog.ShowConfirm(System.Windows.Application.Current?.MainWindow, "Conferma eliminazione", "Eliminare il ruolo \"" + SelectedRole.Name + "\"? Gli utenti non devono averlo assegnato."))
                 return;
             IsBusy = true;
             try

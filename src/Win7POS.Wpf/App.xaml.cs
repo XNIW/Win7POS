@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Win7POS.Core;
+using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf
@@ -39,11 +40,8 @@ namespace Win7POS.Wpf
             catch (Exception ex)
             {
                 _logger.LogError(ex, "App startup failed while ensuring app paths.");
-                MessageBox.Show(
-                    "Impossibile creare le directory dati dell'applicazione. L'app verrà chiusa.\n\n" + ex.Message,
-                    "Errore avvio Win7POS",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                ModernMessageDialog.Show(Application.Current?.MainWindow, "Errore avvio Win7POS",
+                    "Impossibile creare le directory dati dell'applicazione. L'app verrà chiusa.\n\n" + ex.Message);
                 Shutdown(-1);
             }
         }
@@ -51,11 +49,8 @@ namespace Win7POS.Wpf
         private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
         {
             _logger.LogError(e.Exception, "DispatcherUnhandledException");
-            MessageBox.Show(
-                "Si è verificato un errore.\n\n" + e.Exception.Message,
-                "Errore",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            ModernMessageDialog.Show(Application.Current?.MainWindow, "Errore",
+                "Si è verificato un errore.\n\n" + e.Exception.Message);
             e.Handled = true;
         }
     }

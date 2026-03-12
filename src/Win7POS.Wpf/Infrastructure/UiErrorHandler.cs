@@ -12,7 +12,7 @@ namespace Win7POS.Wpf.Infrastructure
         {
             var log = logger ?? new FileLogger();
             log.LogError(ex, context ?? "UI error");
-            MessageBox.Show(Application.Current?.MainWindow, LogPathMessage, "Win7POS", MessageBoxButton.OK, MessageBoxImage.Warning);
+            Win7POS.Wpf.Import.ModernMessageDialog.Show(Application.Current?.MainWindow, "Win7POS", LogPathMessage);
         }
     }
 }

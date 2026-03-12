@@ -72,7 +72,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             else
             {
-                MessageBox.Show("Inserire un numero Boleta valido (intero > 0).", "Numero", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Win7POS.Wpf.Import.ModernMessageDialog.Show(this, "Numero", "Inserire un numero Boleta valido (intero > 0).");
             }
         }
 

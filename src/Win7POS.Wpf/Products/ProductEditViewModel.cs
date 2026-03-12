@@ -80,7 +80,7 @@ namespace Win7POS.Wpf.Products
             }
             catch (Exception ex)
             {
-                System.Windows.MessageBox.Show(ex.Message, "Errore salvataggio", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                Win7POS.Wpf.Import.ModernMessageDialog.Show(System.Windows.Application.Current?.MainWindow, "Errore salvataggio", ex.Message);
             }
         }
 

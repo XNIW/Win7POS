@@ -13,6 +13,7 @@ using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Data.Repositories;
 using Win7POS.Core;
 using Win7POS.Core.Security;
+using Win7POS.Wpf.Import;
 
 namespace Win7POS.Wpf
 {
@@ -80,11 +81,8 @@ namespace Win7POS.Wpf
                     if (!ok || needFirstRun)
                     {
                         var dbPathInfo = " DB: " + options.DbPath;
-                        MessageBox.Show(this,
-                            "Configurazione iniziale non completata." + dbPathInfo,
-                            "Win7POS",
-                            MessageBoxButton.OK,
-                            MessageBoxImage.Warning);
+                        ModernMessageDialog.Show(this, "Win7POS",
+                            "Configurazione iniziale non completata." + dbPathInfo);
                         Close();
                         return;
                     }
@@ -109,16 +107,18 @@ namespace Win7POS.Wpf
                 if (session != null)
                 {
                     UpdateOperatorDisplay(session);
-                    session.SessionChanged += () => Dispatcher.BeginInvoke(new Action(() => UpdateOperatorDisplay(session)));
+                    RefreshShellAfterOperatorChange(session);
+                    session.SessionChanged += () => Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        UpdateOperatorDisplay(session);
+                        RefreshShellAfterOperatorChange(session);
+                    }));
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show(this,
-                    "Errore in avvio.\nControlla i log in " + AppPaths.LogsDirectory + "\n\n" + ex.Message,
-                    "Win7POS",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                ModernMessageDialog.Show(this, "Win7POS",
+                    "Errore in avvio.\nControlla i log in " + AppPaths.LogsDirectory + "\n\n" + ex.Message);
                 Close();
             }
         }
@@ -141,26 +141,43 @@ namespace Win7POS.Wpf
             RefreshShellAfterOperatorChange(session);
         }
 
-        /// <summary>Dopo cambio operatore: ricaricare permessi e aggiornare tutta l'UI (menu, tab, command).</summary>
+        /// <summary>Dopo cambio operatore: ricaricare permessi, aggiornare UI e uscire da tab non consentiti.</summary>
         private void RefreshShellAfterOperatorChange(IOperatorSession session)
         {
             var posVm = GetPosViewModel();
             posVm?.RaiseCanExecuteChanged();
             System.Windows.Input.CommandManager.InvalidateRequerySuggested();
-            if (MainTabControl != null && MainTabControl.SelectedItem == UsersRolesTab && session?.CurrentUser != null)
+
+            if (session?.CurrentUser == null) return;
+            var hasUsersManage = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.UsersManage) == true);
+            var hasDailyCloseView = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.DailyCloseView) == true);
+
+            if (MainTabControl?.SelectedItem == UsersRolesTab && !hasUsersManage)
             {
-                var hasUsersManage = session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.UsersManage) == true;
-                if (!hasUsersManage)
-                {
-                    MainTabControl.SelectedIndex = 0;
-                    CurrentMenuKey = "Pos";
-                }
+                UserManagementViewControl.DataContext = null;
+                MainTabControl.SelectedIndex = 0;
+                CurrentMenuKey = "Pos";
+            }
+            else if (MainTabControl?.SelectedItem == DailyReportTab && !hasDailyCloseView)
+            {
+                DailyReportViewControl.DataContext = null;
+                MainTabControl.SelectedIndex = 0;
+                CurrentMenuKey = "Pos";
             }
         }
 
         private void OnMenuUsersClick(object sender, RoutedEventArgs e)
         {
             if (UserManagementViewControl == null || MainTabControl == null) return;
+            var session = OperatorSessionHolder.Current;
+            var hasUsersManage = session?.CurrentUser != null && (session.CurrentUser.IsAdmin || session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.UsersManage) == true);
+            if (!hasUsersManage)
+            {
+                UserManagementViewControl.DataContext = null;
+                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", "Non hai il permesso di accedere a Utenti e ruoli.");
+                SideMenuOverlay.Visibility = Visibility.Collapsed;
+                return;
+            }
             if (UserManagementViewControl.DataContext is Pos.Dialogs.UserManagementViewModel)
             {
                 CurrentMenuKey = "UsersRoles";
@@ -178,11 +195,11 @@ namespace Win7POS.Wpf
             }
             catch (InvalidOperationException ex)
             {
-                MessageBox.Show(ex.Message, "Permesso negato", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message);
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Errore apertura Utenti e ruoli.\n\n" + ex.Message, "Utenti e ruoli", MessageBoxButton.OK, MessageBoxImage.Warning);
+                ModernMessageDialog.Show(Application.Current?.MainWindow, "Utenti e ruoli", "Errore apertura Utenti e ruoli.\n\n" + ex.Message);
             }
             SideMenuOverlay.Visibility = Visibility.Collapsed;
         }

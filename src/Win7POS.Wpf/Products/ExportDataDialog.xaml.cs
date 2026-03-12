@@ -63,11 +63,10 @@ namespace Win7POS.Wpf.Products
             var path = (PathBox.Text ?? "").Trim();
             if (string.IsNullOrEmpty(path))
             {
-                System.Windows.MessageBox.Show(
-                    RadioXlsx.IsChecked == true ? "Seleziona un file di destinazione." : "Seleziona una cartella di destinazione.",
+                Win7POS.Wpf.Import.ModernMessageDialog.Show(
+                    this,
                     "Esporta dati",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                    RadioXlsx.IsChecked == true ? "Seleziona un file di destinazione." : "Seleziona una cartella di destinazione.");
                 return;
             }
 

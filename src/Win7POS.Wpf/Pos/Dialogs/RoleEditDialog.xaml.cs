@@ -1,4 +1,5 @@
 using System.Windows;
+using Win7POS.Wpf.Import;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -20,12 +21,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (string.IsNullOrWhiteSpace(RoleName))
             {
-                MessageBox.Show("Inserire il nome del ruolo.", Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+                ModernMessageDialog.Show(this, Title ?? "Ruolo", "Inserire il nome del ruolo.");
                 return;
             }
             if (!CodeBox.IsReadOnly && string.IsNullOrWhiteSpace(RoleCode))
             {
-                MessageBox.Show("Inserire il codice del ruolo (es. mio_ruolo).", Title, MessageBoxButton.OK, MessageBoxImage.Warning);
+                ModernMessageDialog.Show(this, Title ?? "Ruolo", "Inserire il codice del ruolo (es. mio_ruolo).");
                 return;
             }
             DialogResult = true;

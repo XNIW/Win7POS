@@ -41,11 +41,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (_operators.Count == 0)
             {
-                MessageBox.Show(this,
-                    "Non esistono operatori configurati. Verrà avviata la configurazione iniziale.",
-                    "Win7POS",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
+                Win7POS.Wpf.Import.ModernMessageDialog.Show(this, "Win7POS",
+                    "Non esistono operatori configurati. Verrà avviata la configurazione iniziale.");
                 DialogResult = false;
                 Close();
                 return;

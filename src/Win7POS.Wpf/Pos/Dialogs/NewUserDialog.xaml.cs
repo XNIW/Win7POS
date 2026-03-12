@@ -3,6 +3,7 @@ using System.Windows;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Import;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -26,13 +27,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void OnCreateClick(object sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrWhiteSpace(Username)) { MessageBox.Show("Inserire username.", "Nuovo utente", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
-            if (string.IsNullOrWhiteSpace(DisplayName)) { MessageBox.Show("Inserire nome visualizzato.", "Nuovo utente", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
-            if (Pin.Length < 4 || Pin.Length > 6) { MessageBox.Show("PIN 4-6 cifre.", "Nuovo utente", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            if (string.IsNullOrWhiteSpace(Username)) { ModernMessageDialog.Show(this, "Nuovo utente", "Inserire username."); return; }
+            if (string.IsNullOrWhiteSpace(DisplayName)) { ModernMessageDialog.Show(this, "Nuovo utente", "Inserire nome visualizzato."); return; }
+            if (Pin.Length < 4 || Pin.Length > 6) { ModernMessageDialog.Show(this, "Nuovo utente", "PIN 4-6 cifre."); return; }
             if (RoleCombo.SelectedItem is UserRole r)
                 RoleId = r.Id;
             else
-            { MessageBox.Show("Selezionare un ruolo.", "Nuovo utente", MessageBoxButton.OK, MessageBoxImage.Warning); return; }
+            { ModernMessageDialog.Show(this, "Nuovo utente", "Selezionare un ruolo."); return; }
             DialogResult = true;
             Close();
         }

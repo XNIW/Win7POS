@@ -70,7 +70,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             else
             {
-                MessageBox.Show("Inserire una quantità valida (numero ≥ 0).", "Modifica quantità", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Win7POS.Wpf.Import.ModernMessageDialog.Show(System.Windows.Application.Current?.MainWindow, "Modifica quantità", "Inserire una quantità valida (numero ≥ 0).");
             }
         }
 

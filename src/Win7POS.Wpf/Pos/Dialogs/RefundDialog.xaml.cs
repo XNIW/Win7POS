@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Input;
+using Win7POS.Wpf.Import;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -45,7 +46,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (ViewModel.IsFullVoid)
             {
                 var msg = $"Confermi storno totale dello scontrino {ViewModel.SaleCodeText}?";
-                if (MessageBox.Show(this, msg, "Conferma storno", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+                if (!ApplyConfirmDialog.ShowConfirm(this, "Conferma storno", msg))
                     return;
             }
             ViewModel.TryConfirm();
