@@ -49,6 +49,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             LoadCommand = new RelayCommand(() => _ = LoadAsync(), () => !IsBusy);
             SaveCommand = new RelayCommand(() => _ = SaveAsync(), () => !IsBusy && SelectedUser != null);
+            SaveUserCommand = SaveCommand;
+            CancelUserChangesCommand = new RelayCommand(() => _ = CancelUserChangesAsync(), () => !IsBusy && SelectedUser != null);
             NewUserCommand = new RelayCommand(() => _ = NewUserAsync(), () => !IsBusy);
             ResetPinCommand = new RelayCommand(() => _ = ResetPinAsync(), () => !IsBusy && SelectedUser != null && !string.IsNullOrWhiteSpace(NewPin));
             SaveRolePermissionsCommand = new RelayCommand(() => _ = SaveSelectedRolePermissionsAsync(), () => !IsBusy && CanEditSelectedRole);
@@ -95,8 +97,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public UserAccount SelectedUser
         {
             get => _selectedUser;
-            set { _selectedUser = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsUserSelected)); OnPropertyChanged(nameof(HasSelection)); OnPropertyChanged(nameof(DetailUserTitle)); OnPropertyChanged(nameof(EditingUserDisplay)); OnPropertyChanged(nameof(SelectedUserRoleDisplay)); _ = LoadSelectedUserAsync(); }
+            set { _selectedUser = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsUserSelected)); OnPropertyChanged(nameof(HasSelection)); OnPropertyChanged(nameof(DetailUserTitle)); OnPropertyChanged(nameof(EditingUserDisplay)); OnPropertyChanged(nameof(SelectedUserRoleDisplay)); OnPropertyChanged(nameof(SelectedUsername)); (SaveUserCommand as RelayCommand)?.RaiseCanExecuteChanged(); (CancelUserChangesCommand as RelayCommand)?.RaiseCanExecuteChanged(); _ = LoadSelectedUserAsync(); }
         }
+
+        /// <summary>Username dell'utente selezionato (sola lettura).</summary>
+        public string SelectedUsername => SelectedUser?.Username ?? "";
 
         public bool IsUserSelected => SelectedUser != null;
 
@@ -105,7 +110,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool IsActive { get => _isActive; set { _isActive = value; OnPropertyChanged(); OnPropertyChanged(nameof(AccountStatusText)); SetDirty(); } }
         public string NewPin { get => _newPin; set { _newPin = value ?? ""; OnPropertyChanged(); (ResetPinCommand as RelayCommand)?.RaiseCanExecuteChanged(); SetDirty(); } }
         public string Status { get => _status; set { _status = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(StatusMessage)); } }
-        public bool IsBusy { get => _isBusy; set { _isBusy = value; OnPropertyChanged(); (LoadCommand as RelayCommand)?.RaiseCanExecuteChanged(); (ReloadCommand as RelayCommand)?.RaiseCanExecuteChanged(); (SaveCommand as RelayCommand)?.RaiseCanExecuteChanged(); (NewUserCommand as RelayCommand)?.RaiseCanExecuteChanged(); (ResetPinCommand as RelayCommand)?.RaiseCanExecuteChanged(); (SaveRolePermissionsCommand as RelayCommand)?.RaiseCanExecuteChanged(); (NewRoleCommand as RelayCommand)?.RaiseCanExecuteChanged(); (DuplicateRoleCommand as RelayCommand)?.RaiseCanExecuteChanged(); (RenameRoleCommand as RelayCommand)?.RaiseCanExecuteChanged(); (DeleteRoleCommand as RelayCommand)?.RaiseCanExecuteChanged(); } }
+        public bool IsBusy { get => _isBusy; set { _isBusy = value; OnPropertyChanged(); (LoadCommand as RelayCommand)?.RaiseCanExecuteChanged(); (ReloadCommand as RelayCommand)?.RaiseCanExecuteChanged(); (SaveCommand as RelayCommand)?.RaiseCanExecuteChanged(); (CancelUserChangesCommand as RelayCommand)?.RaiseCanExecuteChanged(); (NewUserCommand as RelayCommand)?.RaiseCanExecuteChanged(); (ResetPinCommand as RelayCommand)?.RaiseCanExecuteChanged(); (SaveRolePermissionsCommand as RelayCommand)?.RaiseCanExecuteChanged(); (NewRoleCommand as RelayCommand)?.RaiseCanExecuteChanged(); (DuplicateRoleCommand as RelayCommand)?.RaiseCanExecuteChanged(); (RenameRoleCommand as RelayCommand)?.RaiseCanExecuteChanged(); (DeleteRoleCommand as RelayCommand)?.RaiseCanExecuteChanged(); } }
         public string Filter { get => _filter; set { _filter = value ?? ""; OnPropertyChanged(); OnPropertyChanged(nameof(IsFilterActive)); (ClearFilterCommand as RelayCommand)?.RaiseCanExecuteChanged(); RefreshFilteredUsers(); } }
 
         /// <summary>Testo mostrato in dialog: operatore e ruolo correnti (es. "Operatore: Mario Rossi (Cassiere)").</summary>
@@ -122,6 +127,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string DetailUserTitle => "Dettaglio utente selezionato";
         public string EditingUserDisplay => SelectedUser != null ? "Stai modificando: " + SelectedUser.Username : "";
         public string PermissionsRoleTitle => SelectedRole != null ? "Permessi del ruolo: " + SelectedRole.Name : "Permessi ruolo";
+        /// <summary>Messaggio quando il ruolo selezionato è di sistema (permessi non modificabili).</summary>
+        public bool IsSelectedRoleSystem => SelectedRole != null && SelectedRole.IsSystem;
+        public string PermessiRoleSystemMessage => SelectedRole != null && SelectedRole.IsSystem ? "Ruolo predefinito di sistema: i permessi non sono modificabili." : "";
+
+        /// <summary>Visibility per il messaggio permessi ruolo di sistema (Visible se ruolo sistema).</summary>
+        public Visibility PermessiRoleSystemMessageVisibility => string.IsNullOrEmpty(PermessiRoleSystemMessage) ? Visibility.Collapsed : Visibility.Visible;
         public string AccountStatusText => IsActive ? "Può accedere al sistema" : "Stato: accesso bloccato";
 
         /// <summary>Modifiche utente non salvate (nome, ruolo, stato, PIN).</summary>
@@ -140,6 +151,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string StatusMessage => Status;
 
         public ICommand ClearFilterCommand { get; }
+        public ICommand SaveUserCommand { get; }
+        public ICommand CancelUserChangesCommand { get; }
         public ICommand ReloadCommand { get; }
         public ICommand CancelCommand { get; }
         public ICommand LoadCommand { get; }
@@ -174,6 +187,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 OnPropertyChanged(nameof(DeleteRoleToolTip));
                 OnPropertyChanged(nameof(SelectedRoleDescription));
                 OnPropertyChanged(nameof(SelectedRoleOperativeDescription));
+                OnPropertyChanged(nameof(IsSelectedRoleSystem));
+                OnPropertyChanged(nameof(PermessiRoleSystemMessage));
+                OnPropertyChanged(nameof(PermessiRoleSystemMessageVisibility));
                 _ = LoadSelectedRolePermissionsAsync();
             }
         }
@@ -267,6 +283,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             OnPropertyChanged(nameof(PermissionsSectionTitle));
         }
 
+        private async Task CancelUserChangesAsync()
+        {
+            if (SelectedUser == null) return;
+            var id = SelectedUser.Id;
+            var refreshed = await _userRepo.GetByIdAsync(id).ConfigureAwait(true);
+            if (refreshed == null) return;
+            var idx = Users.TakeWhile(u => u.Id != id).Count();
+            if (idx < Users.Count) Users[idx] = refreshed;
+            RefreshFilteredUsers();
+            SelectedUser = refreshed;
+            Status = "Modifiche annullate.";
+        }
+
         private async Task LoadSelectedRolePermissionsAsync()
         {
             if (SelectedRole == null)
@@ -328,8 +357,38 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private static string CodeToLabel(string code)
         {
             if (string.IsNullOrEmpty(code)) return code;
-            var parts = code.Split('.');
-            return parts.Length >= 2 ? parts[1] : code;
+            switch (code)
+            {
+                case PermissionCodes.UsersManage: return "Gestione utenti";
+                case PermissionCodes.RolesManage: return "Gestione ruoli";
+                case PermissionCodes.SecurityOverride: return "Autorizzazioni straordinarie";
+                case PermissionCodes.RegisterViewAll: return "Vedi vendite di tutti";
+                case PermissionCodes.CatalogPriceEdit: return "Modifica prezzi";
+                case PermissionCodes.PosReprintReceipt: return "Ristampa scontrino";
+                case PermissionCodes.PosVoidSale: return "Storno vendita";
+                case PermissionCodes.PosRefund: return "Reso";
+                case PermissionCodes.PosDiscountOverLimit: return "Sconto oltre limite";
+                case PermissionCodes.PosSell: return "Vendita";
+                case PermissionCodes.PosPay: return "Pagamento";
+                case PermissionCodes.PosSuspendCart: return "Sospendi carrello";
+                case PermissionCodes.PosRecoverCart: return "Recupera carrello";
+                case PermissionCodes.PosDiscount: return "Sconto";
+                case PermissionCodes.CatalogView: return "Visualizza catalogo";
+                case PermissionCodes.CatalogEdit: return "Modifica catalogo";
+                case PermissionCodes.CatalogImport: return "Importa catalogo";
+                case PermissionCodes.RegisterView: return "Registro vendite";
+                case PermissionCodes.DailyCloseView: return "Visualizza chiusura cassa";
+                case PermissionCodes.DailyCloseRun: return "Esegui chiusura cassa";
+                case PermissionCodes.DailyClosePrint: return "Stampa chiusura cassa";
+                case PermissionCodes.SettingsShop: return "Impostazioni negozio";
+                case PermissionCodes.SettingsPrinter: return "Impostazioni stampante";
+                case PermissionCodes.DbBackup: return "Backup database";
+                case PermissionCodes.DbRestore: return "Ripristino database";
+                case PermissionCodes.DbMaintenance: return "Manutenzione database";
+                default:
+                    var parts = code.Split('.');
+                    return parts.Length >= 2 ? parts[1] : code;
+            }
         }
 
         private static string GetPermissionSection(string code)

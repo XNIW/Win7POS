@@ -24,7 +24,10 @@
                     <ColumnDefinition Width="*" MinWidth="180"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock x:Name="CodeLabel" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Codice:"/>
-                <TextBox x:Name="CodeBox" Grid.Column="1" Margin="0,0,0,10" Style="{StaticResource ModernTextBoxStyle}" MinHeight="34"/>
+                <StackPanel Grid.Column="1">
+                    <TextBox x:Name="CodeBox" Margin="0,0,0,4" Style="{StaticResource ModernTextBoxStyle}" MinHeight="34"/>
+                    <TextBlock Text="Codice interno, univoco, minuscolo, senza spazi. Es: dipendente" Foreground="#6B5B73" FontSize="11" Margin="0,0,0,10"/>
+                </StackPanel>
             </Grid>
             <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Nome:"/>
             <TextBox x:Name="NameBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" Style="{StaticResource ModernTextBoxStyle}" MinHeight="34"/>

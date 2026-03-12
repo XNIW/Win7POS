@@ -164,6 +164,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand BackupDbCommand { get; }
         public ICommand PrinterSettingsCommand { get; }
         public ICommand PrintLastReceiptCommand { get; }
+        public ICommand OpenCashDrawerCommand { get; }
         public ICommand DailyReportCommand { get; }
         public ICommand DbMaintenanceCommand { get; }
         public ICommand AboutSupportCommand { get; }
@@ -208,6 +209,7 @@ namespace Win7POS.Wpf.Pos
             BackupDbCommand = new AsyncRelayCommand(BackupDbAsync, _ => !IsBusy, _logger);
             PrinterSettingsCommand = new AsyncRelayCommand(OpenPrinterSettingsAsync, _ => !IsBusy, _logger);
             PrintLastReceiptCommand = new AsyncRelayCommand(PrintLastReceiptAsync, _ => !IsBusy, _logger);
+            OpenCashDrawerCommand = new AsyncRelayCommand(OpenCashDrawerAsync, _ => !IsBusy, _logger);
             DailyReportCommand = new AsyncRelayCommand(OpenDailyReportAsync, _ => !IsBusy, _logger);
             DbMaintenanceCommand = new AsyncRelayCommand(OpenDbMaintenanceAsync, _ => !IsBusy, _logger);
             AboutSupportCommand = new AsyncRelayCommand(OpenAboutSupportAsync, _ => !IsBusy, _logger);
@@ -1083,6 +1085,25 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        private async Task OpenCashDrawerAsync()
+        {
+            IsBusy = true;
+            try
+            {
+                await _service.OpenCashDrawerAsync().ConfigureAwait(true);
+                StatusMessage = "Cassetto aperto.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = "Errore apertura cassetto: " + ex.Message;
+                _logger.LogError(ex, "POS VM open cash drawer failed");
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
         private async Task<bool> PrintReceiptAsync(string receiptText, string saleCode)
         {
             try
@@ -1675,6 +1696,7 @@ namespace Win7POS.Wpf.Pos
             (BackupDbCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrinterSettingsCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintLastReceiptCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (OpenCashDrawerCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (DailyReportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (DbMaintenanceCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (AboutSupportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();

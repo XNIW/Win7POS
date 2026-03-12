@@ -55,6 +55,27 @@ namespace Win7POS.Wpf.Printing
             await TryPrintWithRetryAsync(receiptText, opt).ConfigureAwait(false);
         }
 
+        public Task OpenCashDrawerAsync(ReceiptPrintOptions opt)
+        {
+            if (opt == null) return Task.CompletedTask;
+            return Task.Run(() => TryOpenCashDrawer(opt.PrinterName));
+        }
+
+        /// <summary>ESC/POS kick drawer: ESC p m t1 t2 (pin 2: m=0, t1=25, t2=25). Invia raw alla stampante se possibile.</summary>
+        private static void TryOpenCashDrawer(string printerName)
+        {
+            if (string.IsNullOrWhiteSpace(printerName)) return;
+            var escPosKickDrawer = new byte[] { 27, 112, 0, 25, 25 };
+            try
+            {
+                RawPrinterHelper.SendBytesToPrinter(printerName, escPosKickDrawer);
+            }
+            catch
+            {
+                // Driver potrebbe non supportare raw; no-op silenzioso
+            }
+        }
+
         private const int RetryDelayMs = 300;
         private const int ThermalPaper80mmMin = 300;
         private const int ThermalPaper80mmMax = 330;

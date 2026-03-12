@@ -227,6 +227,7 @@
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Sconto  /" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenDiscountCommand}"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Modifica quantità  +" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenChangeQuantityCommand}"/>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Stampa ultima" Style="{StaticResource OutlineButtonStyle}" Command="{Binding PrintLastReceiptCommand}"/>
+                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Apri cassa" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenCashDrawerCommand}" ToolTip="Apre il cassetto portamonete della stampante"/>
                 <Button MinWidth="120" MinHeight="38" Content="Reso (Scan scontrino)" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenResoScanCommand}"
                         ToolTip="Scansiona il codice scontrino: se trova 1 vendita apre il reso direttamente"/>
             </StackPanel>

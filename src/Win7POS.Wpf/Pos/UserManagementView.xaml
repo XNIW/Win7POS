@@ -28,7 +28,6 @@
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Bottom">
                 <Button Content="Ricarica" Command="{Binding ReloadCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0" Padding="12,6"/>
-                <Button Content="Salva" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="12,6"/>
             </StackPanel>
         </Grid>
 
@@ -163,8 +162,7 @@
                         </TextBlock.Style>
                     </TextBlock>
                     <StackPanel>
-                        <TextBlock Text="{Binding DetailUserTitle}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,4"/>
-                        <TextBlock Text="{Binding EditingUserDisplay}" FontSize="12" Foreground="#6B5B73" Margin="0,0,0,12"/>
+                        <TextBlock Text="Utente selezionato" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="130"/>
@@ -175,28 +173,36 @@
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Nome operatore:"/>
-                            <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
-                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Ruolo:"/>
-                            <ComboBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" ItemsSource="{Binding Roles}" SelectedValue="{Binding SelectedRoleId}" SelectedValuePath="Id" DisplayMemberPath="Name" MinHeight="34"/>
-                            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Stato accesso:"/>
-                            <StackPanel Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" Orientation="Horizontal">
+                            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Username:"/>
+                            <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" Text="{Binding SelectedUsername}" VerticalAlignment="Center" Foreground="#555" FontSize="12"/>
+                            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Nome operatore:"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Ruolo:"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" ItemsSource="{Binding Roles}" SelectedValue="{Binding SelectedRoleId}" SelectedValuePath="Id" DisplayMemberPath="Name" MinHeight="34"/>
+                            <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Stato accesso:"/>
+                            <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" Orientation="Horizontal">
                                 <CheckBox IsChecked="{Binding IsActive}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 <TextBlock Text="{Binding AccountStatusText}" VerticalAlignment="Center" Foreground="#555" FontSize="12"/>
                             </StackPanel>
-                            <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Imposta nuovo PIN:"/>
-                            <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,0,0,4">
+                            <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="PIN:"/>
+                            <StackPanel Grid.Row="4" Grid.Column="1" Margin="0,0,0,8">
                                 <PasswordBox x:Name="NewPinBox" MinHeight="34" Padding="8,6" PasswordChanged="NewPinBox_PasswordChanged"/>
-                                <Button Content="Salva nuovo PIN" Command="{Binding ResetPinCommand}" HorizontalAlignment="Left" Style="{StaticResource OutlineButtonStyle}" Margin="0,6,0,0"/>
                                 <TextBlock Text="Lascia vuoto per non modificare." FontSize="11" Foreground="#8A7C93" Margin="0,4,0,0"/>
+                            </StackPanel>
+                            <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Margin="0,4,0,0">
+                                <Button Content="Salva utente" Command="{Binding SaveUserCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="10,6" Margin="0,0,8,0"/>
+                                <Button Content="Annulla modifiche" Command="{Binding CancelUserChangesCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="10,6" Margin="0,0,8,0"/>
+                                <Button Content="Reimposta PIN" Command="{Binding ResetPinCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="10,6"/>
                             </StackPanel>
                         </Grid>
                     </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- 3) Ruoli -->
+            <!-- 3) Ruolo selezionato -->
             <Border Grid.Column="2" Margin="0,0,8,0" Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -205,7 +211,7 @@
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
-                    <TextBlock Text="Ruoli" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
+                    <TextBlock Text="Ruolo selezionato" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
                         <ListBox ItemsSource="{Binding Roles}" SelectedItem="{Binding SelectedRole, Mode=TwoWay}"
                                  BorderThickness="0" Background="Transparent" Padding="0">
@@ -238,17 +244,23 @@
                             </ListBox.ItemTemplate>
                         </ListBox>
                     </ScrollViewer>
-                    <TextBlock Grid.Row="2" Text="{Binding SelectedRoleSystemInfo}" FontSize="11" Foreground="#6B5B73" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                    <StackPanel Grid.Row="2" Margin="0,0,0,8">
+                        <TextBlock Text="{Binding SelectedRoleDescription}" FontSize="12" Foreground="#6B5B73" TextWrapping="Wrap"/>
+                        <TextBlock Text="{Binding SelectedRoleOperativeDescription}" FontSize="11" Foreground="#8A7C93" Margin="0,2,0,0" TextWrapping="Wrap"/>
+                        <Border Background="#E8E0F0" CornerRadius="4" Padding="6,4" Margin="0,6,0,0" HorizontalAlignment="Left" Visibility="{Binding IsSelectedRoleSystem, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Ruolo di sistema" FontSize="11" FontWeight="SemiBold" Foreground="#4B2E67"/>
+                        </Border>
+                    </StackPanel>
                     <WrapPanel Grid.Row="3">
                         <Button Content="Nuovo ruolo" Command="{Binding NewRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8"/>
-                        <Button Content="Duplica" Command="{Binding DuplicateRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="Duplica il ruolo selezionato con gli stessi permessi."/>
+                        <Button Content="Duplica ruolo" Command="{Binding DuplicateRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="Duplica il ruolo selezionato con gli stessi permessi."/>
                         <Button Content="Rinomina" Command="{Binding RenameRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="{Binding RenameRoleToolTip}"/>
                         <Button Content="Elimina" Command="{Binding DeleteRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="{Binding DeleteRoleToolTip}"/>
                     </WrapPanel>
                 </Grid>
             </Border>
 
-            <!-- 4) Permessi ruolo: nome ruolo, tipo, descrizione operativa, poi checkbox -->
+            <!-- 4) Permessi del ruolo selezionato -->
             <Border Grid.Column="3" Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="14" MinHeight="200">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -257,10 +269,8 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
                     <StackPanel Grid.Row="0" Margin="0,0,0,8">
-                        <TextBlock Text="{Binding PermissionsRoleTitle}" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}"/>
-                        <TextBlock Text="{Binding SelectedRoleDescription}" FontSize="12" Foreground="#6B5B73" Margin="0,2,0,0"/>
-                        <TextBlock Text="{Binding SelectedRoleOperativeDescription}" FontSize="11" Foreground="#8A7C93" Margin="0,2,0,0" TextWrapping="Wrap"/>
-                        <TextBlock Text="{Binding SelectedRoleSystemInfo}" FontSize="11" Foreground="#6B5B73" Margin="0,4,0,0" TextWrapping="Wrap"/>
+                        <TextBlock Text="Permessi del ruolo selezionato" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}"/>
+                        <TextBlock Text="{Binding PermessiRoleSystemMessage}" FontSize="11" Foreground="#6B5B73" Margin="0,6,0,0" TextWrapping="Wrap" Visibility="{Binding PermessiRoleSystemMessageVisibility}"/>
                     </StackPanel>
                     <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                         <ItemsControl x:Name="PermissionItemsControl">
@@ -289,8 +299,7 @@
         <DockPanel Grid.Row="2" Margin="0,12,0,0">
             <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="#6B5B73" FontSize="11"/>
             <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
-                <Button Content="Annulla" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0" Padding="12,6"/>
-                <Button Content="Salva modifiche" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}" Padding="12,6"/>
+                <Button Content="Annulla" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="12,6"/>
             </StackPanel>
         </DockPanel>
     </Grid>

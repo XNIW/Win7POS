@@ -1613,6 +1613,23 @@ SELECT last_insert_rowid();";
             };
         }
 
+        public async Task OpenCashDrawerAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var printer = await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
+                await _receiptPrinter.OpenCashDrawerAsync(new ReceiptPrintOptions
+                {
+                    PrinterName = printer.PrinterName ?? string.Empty
+                }).ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         private static string NormalizeFileTag(string value)
         {
             var tag = string.IsNullOrWhiteSpace(value) ? "RECEIPT" : value.Trim();

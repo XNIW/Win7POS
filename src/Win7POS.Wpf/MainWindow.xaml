@@ -35,7 +35,12 @@
                             <TextBlock x:Name="OperatorRoleText" Foreground="#E8FFFFFF" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0" Text=""/>
                         </StackPanel>
                     </Border>
-                    <Button x:Name="ChangeOperatorButton" Content="Cambia operatore" Style="{StaticResource OutlineButtonStyle}" Foreground="White" BorderBrush="White" Click="OnChangeOperatorClick" Padding="12,6" MinWidth="120" ToolTip="Cambia operatore o blocca sessione"/>
+                    <Button x:Name="ChangeOperatorButton" Style="{StaticResource HeaderActionButtonStyle}" Click="OnChangeOperatorClick" ToolTip="Blocca o cambia operatore">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="🔐" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                            <TextBlock Text="Cambia operatore" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>
