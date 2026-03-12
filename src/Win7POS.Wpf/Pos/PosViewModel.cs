@@ -1059,6 +1059,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 await _service.SetPrinterSettingsAsync(_printerSettings).ConfigureAwait(true);
+                _printerSettings = await _service.GetPrinterSettingsAsync().ConfigureAwait(true);
                 StatusMessage = "Impostazioni stampante salvate.";
                 RaiseCanExecuteChanged();
             }

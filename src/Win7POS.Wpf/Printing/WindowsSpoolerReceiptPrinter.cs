@@ -71,15 +71,32 @@ namespace Win7POS.Wpf.Printing
             return Task.Run(() => TryOpenCashDrawer(opt.PrinterName, bytes, cmd));
         }
 
-        /// <summary>ESC/POS kick drawer: ESC p m t1 t2. Comando configurabile (es. 27,112,0,60,255).</summary>
+        /// <summary>ESC/POS kick drawer: ESC p m t1 t2. Se printerName è vuoto, usa stampante predefinita Windows (come Test cassetto).</summary>
         private static void TryOpenCashDrawer(string printerName, byte[] bytes, string cmdForLog)
         {
-            if (string.IsNullOrWhiteSpace(printerName) || bytes == null || bytes.Length == 0) return;
-            var bytesStr = bytes == null || bytes.Length == 0 ? "(vuoto)" : string.Join(",", bytes.Select(b => b.ToString()));
-            _logger.LogInfo("CashDrawer: stampante=\"" + (printerName ?? "") + "\" comando=" + (cmdForLog ?? "") + " bytes=[" + bytesStr + "]");
+            if (bytes == null || bytes.Length == 0) return;
+
+            var effectivePrinter = printerName;
+            if (string.IsNullOrWhiteSpace(effectivePrinter))
+            {
+                try
+                {
+                    using (var doc = new System.Drawing.Printing.PrintDocument())
+                        effectivePrinter = doc.PrinterSettings.PrinterName;
+                }
+                catch
+                {
+                    effectivePrinter = null;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(effectivePrinter)) return;
+
+            var bytesStr = string.Join(",", bytes.Select(b => b.ToString()));
+            _logger.LogInfo("CashDrawer: stampante=\"" + (effectivePrinter ?? "") + "\" comando=" + (cmdForLog ?? "") + " bytes=[" + bytesStr + "]");
             try
             {
-                RawPrinterHelper.SendBytesToPrinter(printerName, bytes);
+                RawPrinterHelper.SendBytesToPrinter(effectivePrinter, bytes);
             }
             catch (Exception ex)
             {
