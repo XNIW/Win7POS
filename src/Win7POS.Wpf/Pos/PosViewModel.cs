@@ -658,6 +658,8 @@ namespace Win7POS.Wpf.Pos
                 ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
                 StatusMessage = "Pagamento OK: " + result.SaleCode;
 
+                await TryAutoOpenDrawerAfterPaymentAsync(vm).ConfigureAwait(true);
+
                 var fiscalPrinted = false;
                 if (vm.ShouldPrint)
                 {
@@ -677,8 +679,6 @@ namespace Win7POS.Wpf.Pos
 
                 if (!fiscalPrinted && vm.AutoPrintPdfSii && vm.CardAmountMinor > 0 && vm.CashAmountMinor == 0)
                     StatusMessage = "Pagamento OK: " + result.SaleCode + " (PDF SII non stampato: pagamento con carta)";
-
-                await TryAutoOpenDrawerAfterPaymentAsync(vm).ConfigureAwait(true);
 
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }
