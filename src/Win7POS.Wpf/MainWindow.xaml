@@ -85,7 +85,7 @@
 
                         <TextBlock Text="Navigazione" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <Button Content="POS" Tag="Pos" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPosClick"/>
-                        <Button Content="Apri cassa" Tag="OpenCash" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuOpenCashDrawerClick" ToolTip="Apre il cassetto portamonete"/>
+                        <Button x:Name="OpenCashDrawerMenuButton" Content="Apri cassa" Tag="OpenCash" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuOpenCashDrawerClick" ToolTip="Apre il cassetto portamonete (disabilitato se cassetto non configurato)"/>
                         <Button Content="Prodotti" Tag="Prodotti" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuProdottiClick"/>
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>

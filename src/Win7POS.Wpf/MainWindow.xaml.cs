@@ -293,6 +293,9 @@ namespace Win7POS.Wpf
             else
             {
                 // Mantieni evidenziata la sezione attiva: il cassiere vede subito "dove sono"
+                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
+                var cmd = GetPosViewModel()?.OpenCashDrawerCommand;
+                OpenCashDrawerMenuButton.IsEnabled = cmd?.CanExecute(null) ?? false;
                 SideMenuOverlay.Visibility = System.Windows.Visibility.Visible;
             }
         }

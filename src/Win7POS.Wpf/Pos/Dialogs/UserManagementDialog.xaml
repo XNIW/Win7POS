@@ -58,7 +58,7 @@
                         <ListBox ItemsSource="{Binding FilteredUsers}" SelectedItem="{Binding SelectedUser, Mode=TwoWay}"
                                  MinHeight="140" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}">
                             <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
                                     <Setter Property="Padding" Value="8,6"/>
                                 </Style>
                             </ListBox.ItemContainerStyle>
@@ -121,7 +121,7 @@
                         <ListBox ItemsSource="{Binding Roles}" SelectedItem="{Binding SelectedRole, Mode=TwoWay}"
                                  MinHeight="90" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}">
                             <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
                                     <Setter Property="Padding" Value="8,6"/>
                                 </Style>
                             </ListBox.ItemContainerStyle>

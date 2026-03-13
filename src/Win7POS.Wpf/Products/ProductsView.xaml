@@ -80,12 +80,12 @@
                                 </Setter>
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="#A97BC7"/>
+                                        <Setter Property="Background" Value="{StaticResource PrimaryLighterBrush}"/>
                                         <Setter Property="Foreground" Value="White"/>
                                     </Trigger>
                                     <Trigger Property="IsHighlighted" Value="True">
-                                        <Setter Property="Background" Value="#E8D9F2"/>
-                                        <Setter Property="Foreground" Value="#2F1F3A"/>
+                                        <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
+                                        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
                                     </Trigger>
                                 </Style.Triggers>
                             </Style>
@@ -155,7 +155,7 @@
                                 </Setter>
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="#A97BC7"/>
+                                        <Setter Property="Background" Value="{StaticResource PrimaryLighterBrush}"/>
                                         <Setter Property="Foreground" Value="White"/>
                                     </Trigger>
                                 </Style.Triggers>
@@ -234,9 +234,9 @@
                                 </Setter>
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="#E8D9F2"/>
-                                        <Setter Property="Foreground" Value="#2F1F3A"/>
-                                        <Setter Property="BorderBrush" Value="#8F63B8"/>
+                                        <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
+                                        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                                        <Setter Property="BorderBrush" Value="{StaticResource SelectionBorderBrush}"/>
                                         <Setter Property="BorderThickness" Value="3,0,0,0"/>
                                     </Trigger>
                                     <MultiTrigger>
@@ -244,7 +244,7 @@
                                             <Condition Property="IsMouseOver" Value="True"/>
                                             <Condition Property="IsSelected" Value="False"/>
                                         </MultiTrigger.Conditions>
-                                        <Setter Property="Background" Value="#F3ECF8"/>
+                                        <Setter Property="Background" Value="{StaticResource SelectionHoverBrush}"/>
                                     </MultiTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -279,8 +279,8 @@
                                 </Setter>
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="#E8D9F2"/>
-                                        <Setter Property="Foreground" Value="#2F1F3A"/>
+                                        <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
+                                        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
                                     </Trigger>
                                 </Style.Triggers>
                             </Style>
