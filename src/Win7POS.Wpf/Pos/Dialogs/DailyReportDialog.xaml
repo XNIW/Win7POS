@@ -43,9 +43,8 @@
                 </Border>
                 <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0"
                             Visibility="{Binding HasLockFeature, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="{Binding VisibilityModeText, Mode=OneWay}" FontSize="10" Foreground="#666" VerticalAlignment="Center" Margin="0,0,6,0"/>
                     <Button Content="{Binding LockGlyph, Mode=OneWay}" Command="{Binding ToggleHiddenModeCommand}" ToolTip="Sblocca/Blocca vista completa (solo Admin)"
-                            Style="{StaticResource OutlineButtonStyle}" MinWidth="36" Height="32" Padding="4" FontSize="14"/>
+                            Style="{StaticResource OutlineButtonStyle}" Width="36" Height="36" Padding="0" FontSize="15"/>
                 </StackPanel>
             </Grid>
 

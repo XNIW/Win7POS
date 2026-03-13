@@ -229,11 +229,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool IsUnlocked
         {
             get => _isUnlocked;
-            set { _isUnlocked = value; OnPropertyChanged(); OnPropertyChanged(nameof(LockGlyph)); OnPropertyChanged(nameof(VisibilityModeText)); }
+            set { _isUnlocked = value; OnPropertyChanged(); OnPropertyChanged(nameof(LockGlyph)); }
         }
 
         public string LockGlyph => IsUnlocked ? "\uD83D\uDD13" : "\uD83D\uDD12"; // 🔓 / 🔒
-        public string VisibilityModeText => IsUnlocked ? "Vista completa" : "Vista apparente";
         public bool HasLockFeature => _overrideAuthService != null;
 
         public ICommand LoadCommand { get; }
