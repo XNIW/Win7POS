@@ -313,8 +313,8 @@
                                             <Setter Property="BorderBrush" Value="Transparent"/>
                                             <Style.Triggers>
                                                 <Trigger Property="IsSelected" Value="True">
-                                                    <Setter Property="Background" Value="#E3F2FD"/>
-                                                    <Setter Property="Foreground" Value="Black"/>
+                                                    <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
+                                                    <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
                                                 </Trigger>
                                                 <DataTrigger Binding="{Binding IsMarked}" Value="True">
                                                     <Setter Property="BorderThickness" Value="3,0,0,0"/>
@@ -323,6 +323,16 @@
                                             </Style.Triggers>
                                         </Style>
                                     </DataGrid.RowStyle>
+                                    <DataGrid.CellStyle>
+                                        <Style TargetType="DataGridCell">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsSelected" Value="True">
+                                                    <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
+                                                    <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </DataGrid.CellStyle>
                                     <DataGrid.ColumnHeaderStyle>
                                         <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
                                             <Setter Property="Background" Value="#F0EDF2"/>

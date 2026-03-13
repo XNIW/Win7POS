@@ -26,6 +26,11 @@
     <!-- Totale POS evidenziato in rosso -->
     <SolidColorBrush x:Key="DangerTotalBrush" Color="#C62828"/>
 
+    <!-- Selezione riga: viola uniforme (ListBox, DataGrid, ComboBox) -->
+    <SolidColorBrush x:Key="SelectionBackgroundBrush" Color="#F1E8F8"/>
+    <SolidColorBrush x:Key="SelectionBorderBrush" Color="#7B4FA3"/>
+    <SolidColorBrush x:Key="SelectionHoverBrush" Color="#F3ECF8"/>
+
     <!-- Base button template with rounded corners -->
     <ControlTemplate x:Key="RoundedButtonTemplate" TargetType="Button">
         <Border x:Name="border" Background="{TemplateBinding Background}"
