@@ -35,10 +35,10 @@
                             <TextBlock x:Name="OperatorRoleText" Foreground="#E8FFFFFF" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0" Text=""/>
                         </StackPanel>
                     </Border>
-                    <Button x:Name="ChangeOperatorButton" Style="{StaticResource HeaderActionButtonStyle}" Click="OnChangeOperatorClick" ToolTip="Blocca o cambia operatore">
+                    <Button x:Name="ChangeOperatorButton" Style="{StaticResource HeaderActionButtonStyle}" Click="OnChangeOperatorClick" ToolTip="Cambia operatore o blocca sessione">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="🔐" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Cambia operatore" VerticalAlignment="Center"/>
+                            <TextBlock Text="Cambia / Blocca" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
                 </StackPanel>
@@ -85,6 +85,7 @@
 
                         <TextBlock Text="Navigazione" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <Button Content="POS" Tag="Pos" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPosClick"/>
+                        <Button Content="Apri cassa" Tag="OpenCash" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuOpenCashDrawerClick" ToolTip="Apre il cassetto portamonete"/>
                         <Button Content="Prodotti" Tag="Prodotti" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuProdottiClick"/>
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>

@@ -292,7 +292,7 @@ namespace Win7POS.Wpf
             }
             else
             {
-                CurrentMenuKey = ""; // reset evidenziazione: nessuna voce selezionata alla riapertura del menu
+                // Mantieni evidenziata la sezione attiva: il cassiere vede subito "dove sono"
                 SideMenuOverlay.Visibility = System.Windows.Visibility.Visible;
             }
         }
@@ -311,6 +311,12 @@ namespace Win7POS.Wpf
         {
             CurrentMenuKey = "Pos";
             MainTabControl.SelectedIndex = 0;
+            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+        }
+
+        private void OnMenuOpenCashDrawerClick(object sender, RoutedEventArgs e)
+        {
+            GetPosViewModel()?.OpenCashDrawerCommand?.Execute(null);
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 

@@ -308,14 +308,10 @@
                                         </DataGridTextColumn>
                                     </DataGrid.Columns>
                                     <DataGrid.RowStyle>
-                                        <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                                        <Style TargetType="DataGridRow" BasedOn="{StaticResource SelectableDataGridRowStyle}">
                                             <Setter Property="BorderThickness" Value="0"/>
                                             <Setter Property="BorderBrush" Value="Transparent"/>
                                             <Style.Triggers>
-                                                <Trigger Property="IsSelected" Value="True">
-                                                    <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                                    <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                                                </Trigger>
                                                 <DataTrigger Binding="{Binding IsMarked}" Value="True">
                                                     <Setter Property="BorderThickness" Value="3,0,0,0"/>
                                                     <Setter Property="BorderBrush" Value="#9B7BAD"/>
@@ -324,14 +320,7 @@
                                         </Style>
                                     </DataGrid.RowStyle>
                                     <DataGrid.CellStyle>
-                                        <Style TargetType="DataGridCell">
-                                            <Style.Triggers>
-                                                <Trigger Property="IsSelected" Value="True">
-                                                    <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                                    <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                                                </Trigger>
-                                            </Style.Triggers>
-                                        </Style>
+                                        <StaticResource ResourceKey="SelectableDataGridCellStyle"/>
                                     </DataGrid.CellStyle>
                                     <DataGrid.ColumnHeaderStyle>
                                         <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">

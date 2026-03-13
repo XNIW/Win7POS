@@ -72,16 +72,8 @@
                         <ListBox ItemsSource="{Binding FilteredUsers}" SelectedItem="{Binding SelectedUser, Mode=TwoWay}"
                                  BorderThickness="0" Background="Transparent" Padding="0">
                             <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
                                     <Setter Property="Padding" Value="8,6"/>
-                                    <Style.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                                            <Setter Property="BorderBrush" Value="{StaticResource SelectionBorderBrush}"/>
-                                            <Setter Property="BorderThickness" Value="1"/>
-                                        </Trigger>
-                                    </Style.Triggers>
                                 </Style>
                             </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>
@@ -228,16 +220,8 @@
                         <ListBox ItemsSource="{Binding Roles}" SelectedItem="{Binding SelectedRole, Mode=TwoWay}"
                                  BorderThickness="0" Background="Transparent" Padding="0">
                             <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
                                     <Setter Property="Padding" Value="8,6"/>
-                                    <Style.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                                            <Setter Property="BorderBrush" Value="{StaticResource SelectionBorderBrush}"/>
-                                            <Setter Property="BorderThickness" Value="1"/>
-                                        </Trigger>
-                                    </Style.Triggers>
                                 </Style>
                             </ListBox.ItemContainerStyle>
                             <ListBox.ItemTemplate>

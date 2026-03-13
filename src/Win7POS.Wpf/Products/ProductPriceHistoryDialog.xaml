@@ -70,24 +70,10 @@
             <DataGrid ItemsSource="{Binding RetailHistory}" AutoGenerateColumns="False" IsReadOnly="True"
                       HeadersVisibility="Column" GridLinesVisibility="Horizontal" MinHeight="120">
                 <DataGrid.RowStyle>
-                    <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
-                        <Style.Triggers>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
+                    <StaticResource ResourceKey="SelectableDataGridRowStyle"/>
                 </DataGrid.RowStyle>
                 <DataGrid.CellStyle>
-                    <Style TargetType="DataGridCell">
-                        <Style.Triggers>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
+                    <StaticResource ResourceKey="SelectableDataGridCellStyle"/>
                 </DataGrid.CellStyle>
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Data/Ora" Binding="{Binding ChangedAt}" Width="160"/>
@@ -104,24 +90,10 @@
             <DataGrid ItemsSource="{Binding PurchaseHistory}" AutoGenerateColumns="False" IsReadOnly="True"
                       HeadersVisibility="Column" GridLinesVisibility="Horizontal" MinHeight="120">
                 <DataGrid.RowStyle>
-                    <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
-                        <Style.Triggers>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
+                    <StaticResource ResourceKey="SelectableDataGridRowStyle"/>
                 </DataGrid.RowStyle>
                 <DataGrid.CellStyle>
-                    <Style TargetType="DataGridCell">
-                        <Style.Triggers>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                            </Trigger>
-                        </Style.Triggers>
-                    </Style>
+                    <StaticResource ResourceKey="SelectableDataGridCellStyle"/>
                 </DataGrid.CellStyle>
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Data/Ora" Binding="{Binding ChangedAt}" Width="160"/>

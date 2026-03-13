@@ -369,14 +369,10 @@
                                     </DataGridTextColumn>
                                 </DataGrid.Columns>
                                 <DataGrid.RowStyle>
-                                    <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                                    <Style TargetType="DataGridRow" BasedOn="{StaticResource SelectableDataGridRowStyle}">
                                         <Setter Property="BorderThickness" Value="0"/>
                                         <Setter Property="BorderBrush" Value="Transparent"/>
                                         <Style.Triggers>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter Property="Background" Value="#E8E0F0"/>
-                                                <Setter Property="Foreground" Value="Black"/>
-                                            </Trigger>
                                             <DataTrigger Binding="{Binding IsMarked}" Value="True">
                                                 <Setter Property="BorderThickness" Value="3,0,0,0"/>
                                                 <Setter Property="BorderBrush" Value="#9B7BAD"/>
@@ -388,21 +384,15 @@
                                                     <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource Self}}" Value="True"/>
                                                 </MultiDataTrigger.Conditions>
                                                 <MultiDataTrigger.Setters>
-                                                    <Setter Property="Background" Value="#E8E0F0"/>
+                                                    <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
                                                 </MultiDataTrigger.Setters>
                                             </MultiDataTrigger>
                                         </Style.Triggers>
                                     </Style>
                                 </DataGrid.RowStyle>
                                 <DataGrid.CellStyle>
-                                    <Style TargetType="DataGridCell">
+                                    <Style TargetType="DataGridCell" BasedOn="{StaticResource SelectableDataGridCellStyle}">
                                         <Setter Property="BorderThickness" Value="0"/>
-                                        <Style.Triggers>
-                                            <Trigger Property="IsSelected" Value="True">
-                                                <Setter Property="Background" Value="#E8E0F0"/>
-                                                <Setter Property="Foreground" Value="#111"/>
-                                            </Trigger>
-                                        </Style.Triggers>
                                     </Style>
                                 </DataGrid.CellStyle>
                                 <DataGrid.ColumnHeaderStyle>

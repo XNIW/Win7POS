@@ -91,7 +91,7 @@
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                              Margin="0,0,0,8">
                         <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem">
+                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
                                 <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
                                 <Setter Property="Foreground" Value="#222"/>
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -100,12 +100,6 @@
                                 <Style.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
                                         <Setter Property="Background" Value="#EEE8F0"/>
-                                    </Trigger>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                                        <Setter Property="BorderBrush" Value="{StaticResource SelectionBorderBrush}"/>
-                                        <Setter Property="BorderThickness" Value="1"/>
                                     </Trigger>
                                 </Style.Triggers>
                             </Style>
