@@ -12,13 +12,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public int? AuthorizerUserId { get; private set; }
 
         /// <summary>Crea il dialog con la lista filtrata di utenti autorizzabili. Verifica usa sempre username.</summary>
-        public OverrideAuthorizationDialog(string operationText, IReadOnlyList<OverrideOperatorItem> authorizableUsers, Func<string, string, Task<(bool ok, int? userId)>> verifyAsync)
+        /// <param name="isAdminOnly">Se true, mostra messaggio "Operazione riservata ad amministratore".</param>
+        public OverrideAuthorizationDialog(string operationText, IReadOnlyList<OverrideOperatorItem> authorizableUsers, Func<string, string, Task<(bool ok, int? userId)>> verifyAsync, bool isAdminOnly = false)
         {
             InitializeComponent();
             _verifyAsync = verifyAsync ?? ((_, __) => Task.FromResult((false, (int?)null)));
-            MessageText.Text = string.IsNullOrEmpty(operationText)
-                ? "Operazione riservata a Supervisore o superiore. Inserire credenziali per autorizzare."
-                : "Operazione riservata a Supervisore o superiore: " + operationText + ". Inserire credenziali per autorizzare.";
+            if (isAdminOnly)
+                MessageText.Text = string.IsNullOrEmpty(operationText)
+                    ? "Operazione riservata ad amministratore. Inserire credenziali per autorizzare."
+                    : "Operazione riservata ad amministratore: " + operationText + ". Inserire credenziali per autorizzare.";
+            else
+                MessageText.Text = string.IsNullOrEmpty(operationText)
+                    ? "Operazione riservata a Supervisore o superiore. Inserire credenziali per autorizzare."
+                    : "Operazione riservata a Supervisore o superiore: " + operationText + ". Inserire credenziali per autorizzare.";
 
             OperatorCombo.ItemsSource = authorizableUsers ?? new List<OverrideOperatorItem>();
             if (OperatorCombo.Items.Count > 0)

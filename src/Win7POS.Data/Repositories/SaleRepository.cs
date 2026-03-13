@@ -54,7 +54,7 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
         {
             using var conn = _factory.Open();
             var rows = await conn.QueryAsync<Sale>(
-                @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId
+                @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted
                   FROM sales
                   ORDER BY id DESC LIMIT @take",
                 new { take }
@@ -62,25 +62,28 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
             return rows.ToList();
         }
 
-        public async Task<IReadOnlyList<Sale>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null)
+        public async Task<IReadOnlyList<Sale>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null, bool includePdfHidden = false)
         {
             using var conn = _factory.Open();
-            var sql = @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId
+            var sql = @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted
                   FROM sales
                   WHERE createdAt >= @fromMs AND createdAt < @toMs";
             if (operatorId.HasValue)
                 sql += " AND (operator_id IS NULL OR operator_id = @operatorId)";
+            if (!includePdfHidden)
+                sql += " AND COALESCE(pdf_printed, 0) = 0";
             sql += " ORDER BY createdAt ASC, id ASC";
             var rows = await conn.QueryAsync<Sale>(sql, new { fromMs, toMs, operatorId }).ConfigureAwait(false);
             return rows.ToList();
         }
 
-        public async Task<DailySalesSummary> GetDailySummaryAsync(DateTime date)
+        public async Task<DailySalesSummary> GetDailySummaryAsync(DateTime date, bool includePdfHidden = false)
         {
             var from = new DateTimeOffset(date.Date).ToUnixTimeMilliseconds();
             var to = new DateTimeOffset(date.Date.AddDays(1)).ToUnixTimeMilliseconds();
             using var conn = _factory.Open();
-            var row = await conn.QuerySingleAsync<DailySalesSummary>(@"
+            var filterPdf = includePdfHidden ? "" : " AND COALESCE(pdf_printed, 0) = 0";
+            var row = await conn.QuerySingleAsync<DailySalesSummary>($@"
 SELECT
   COUNT(CASE WHEN kind = 0 THEN 1 END) AS SalesCount,
   COALESCE(SUM(total), 0) AS TotalAmount,
@@ -89,20 +92,20 @@ SELECT
   COALESCE(SUM(CASE WHEN kind = 0 THEN total ELSE 0 END), 0) AS GrossSalesAmount,
   COALESCE(SUM(CASE WHEN kind = 1 THEN ABS(total) ELSE 0 END), 0) AS RefundsAmount
 FROM sales
-WHERE createdAt >= @from AND createdAt < @to",
+WHERE createdAt >= @from AND createdAt < @to{filterPdf}",
                 new { from, to }).ConfigureAwait(false);
             row.NetAmount = row.TotalAmount;
             row.Date = date.Date;
             return row;
         }
 
-        public Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate)
+        public Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate, bool includePdfHidden = false)
         {
-            return GetDailySummariesRangeAsync(fromDate, toDate);
+            return GetDailySummariesRangeAsync(fromDate, toDate, includePdfHidden);
         }
 
         /// <summary>Report range veloce: una sola query aggregata + riempimento giorni mancanti.</summary>
-        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesRangeAsync(DateTime fromDate, DateTime toDate)
+        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesRangeAsync(DateTime fromDate, DateTime toDate, bool includePdfHidden = false)
         {
             var start = fromDate.Date;
             var end = toDate.Date;
@@ -112,7 +115,8 @@ WHERE createdAt >= @from AND createdAt < @to",
             var toMs = new DateTimeOffset(end.AddDays(1)).ToUnixTimeMilliseconds();
 
             using var conn = _factory.Open();
-            var rows = (await conn.QueryAsync<DailySummaryRow>(@"
+            var filterPdf = includePdfHidden ? "" : " AND COALESCE(pdf_printed, 0) = 0";
+            var rows = (await conn.QueryAsync<DailySummaryRow>($@"
 SELECT
   date(createdAt/1000, 'unixepoch', 'localtime') AS DayStr,
   COUNT(CASE WHEN kind = 0 THEN 1 END) AS SalesCount,
@@ -122,7 +126,7 @@ SELECT
   COALESCE(SUM(CASE WHEN kind = 0 THEN total ELSE 0 END), 0) AS GrossSalesAmount,
   COALESCE(SUM(CASE WHEN kind = 1 THEN ABS(total) ELSE 0 END), 0) AS RefundsAmount
 FROM sales
-WHERE createdAt >= @fromMs AND createdAt < @toMs
+WHERE createdAt >= @fromMs AND createdAt < @toMs{filterPdf}
 GROUP BY DayStr",
                 new { fromMs, toMs }).ConfigureAwait(false)).ToList();
 
@@ -167,24 +171,25 @@ GROUP BY DayStr",
             return result;
         }
 
-        public Task<IReadOnlyList<Sale>> GetSalesForDateAsync(DateTime date)
+        public Task<IReadOnlyList<Sale>> GetSalesForDateAsync(DateTime date, bool includePdfHidden = false)
         {
             var from = new DateTimeOffset(date.Date).ToUnixTimeMilliseconds();
             var to = new DateTimeOffset(date.Date.AddDays(1)).ToUnixTimeMilliseconds();
-            return GetSalesBetweenAsync(from, to);
+            return GetSalesBetweenAsync(from, to, null, includePdfHidden);
         }
 
         /// <summary>Vendite per fascia oraria (0-23) del giorno, solo vendite (kind=0).</summary>
-        public async Task<IReadOnlyList<long>> GetHourlySalesAsync(DateTime date)
+        public async Task<IReadOnlyList<long>> GetHourlySalesAsync(DateTime date, bool includePdfHidden = false)
         {
             var from = new DateTimeOffset(date.Date).ToUnixTimeMilliseconds();
             var to = new DateTimeOffset(date.Date.AddDays(1)).ToUnixTimeMilliseconds();
             using var conn = _factory.Open();
-            var rows = await conn.QueryAsync<(int Hour, long Amount)>(@"
+            var filterPdf = includePdfHidden ? "" : " AND COALESCE(pdf_printed, 0) = 0";
+            var rows = await conn.QueryAsync<(int Hour, long Amount)>($@"
 SELECT CAST(strftime('%H', datetime(createdAt/1000, 'unixepoch', 'localtime')) AS INTEGER) AS Hour,
        COALESCE(SUM(CASE WHEN kind = 0 THEN total ELSE 0 END), 0) AS Amount
 FROM sales
-WHERE createdAt >= @from AND createdAt < @to
+WHERE createdAt >= @from AND createdAt < @to{filterPdf}
 GROUP BY strftime('%H', datetime(createdAt/1000, 'unixepoch', 'localtime'))
 ORDER BY Hour", new { from, to }).ConfigureAwait(false);
             var result = new long[24];
@@ -198,23 +203,33 @@ ORDER BY Hour", new { from, to }).ConfigureAwait(false);
         {
             using var conn = _factory.Open();
             return await conn.QuerySingleOrDefaultAsync<Sale>(
-                @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change
+                @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted
                   FROM sales WHERE id = @saleId",
                 new { saleId }).ConfigureAwait(false);
         }
 
-        public async Task<IReadOnlyList<Sale>> GetByCodeLikeAsync(string codeFilter)
+        /// <summary>Imposta pdf_printed=1 per la vendita (nascosta nella vista apparente).</summary>
+        public Task MarkPdfPrintedAsync(long saleId)
+        {
+            using var conn = _factory.Open();
+            return conn.ExecuteAsync(
+                "UPDATE sales SET pdf_printed = 1 WHERE id = @saleId",
+                new { saleId });
+        }
+
+        public async Task<IReadOnlyList<Sale>> GetByCodeLikeAsync(string codeFilter, bool includePdfHidden = false)
         {
             if (string.IsNullOrWhiteSpace(codeFilter))
                 return new List<Sale>();
             using var conn = _factory.Open();
             var pattern = "%" + codeFilter.Trim() + "%";
-            var rows = await conn.QueryAsync<Sale>(
-                @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change
-                  FROM sales
-                  WHERE code LIKE @pattern
-                  ORDER BY createdAt DESC, id DESC
-                  LIMIT 200",
+            var filterPdf = includePdfHidden ? "" : " AND COALESCE(pdf_printed, 0) = 0";
+            var rows = await conn.QueryAsync<Sale>($@"
+SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted
+FROM sales
+WHERE code LIKE @pattern{filterPdf}
+ORDER BY createdAt DESC, id DESC
+LIMIT 200",
                 new { pattern }).ConfigureAwait(false);
             return rows.ToList();
         }

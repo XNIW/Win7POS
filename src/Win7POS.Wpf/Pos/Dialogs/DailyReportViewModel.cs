@@ -11,14 +11,17 @@ using Win7POS.Core.Receipt;
 using Win7POS.Core.Reports;
 using Win7POS.Core.Util;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Infrastructure.Security;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public sealed class DailyReportViewModel : INotifyPropertyChanged
     {
         private readonly Pos.PosWorkflowService _service;
+        private readonly IOverrideAuthService _overrideAuthService;
 
         private string _dateText = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        private bool _isUnlocked;
         private string _status = string.Empty;
         private int _salesCount;
         private long _totalAmount;
@@ -44,10 +47,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private long _periodCardAmount;
         private int _periodSalesCount;
 
-        public DailyReportViewModel(Pos.PosWorkflowService service)
+        public DailyReportViewModel(Pos.PosWorkflowService service, IOverrideAuthService overrideAuthService = null)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
+            _overrideAuthService = overrideAuthService;
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
+            ToggleHiddenModeCommand = new AsyncRelayCommand(ToggleHiddenModeAsync, _ => !IsBusy && _overrideAuthService != null);
             PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview));
             PrintSelectedHistoryCommand = new AsyncRelayCommand(PrintStampaRiepilogoAsync, _ => !IsBusy && CanPrintStampaRiepilogo());
             LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync, _ => !IsBusy && CanLoadHistory());
@@ -220,7 +225,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>True per mostrare placeholder "Seleziona una data..." nello storico (evita converter inverso).</summary>
         public bool ShowPlaceholder => !HasHistorySelection;
 
+        /// <summary>True se sbloccata con auth admin: mostra vendite con PDF stampato.</summary>
+        public bool IsUnlocked
+        {
+            get => _isUnlocked;
+            set { _isUnlocked = value; OnPropertyChanged(); OnPropertyChanged(nameof(LockGlyph)); OnPropertyChanged(nameof(VisibilityModeText)); }
+        }
+
+        public string LockGlyph => IsUnlocked ? "\uD83D\uDD13" : "\uD83D\uDD12"; // 🔓 / 🔒
+        public string VisibilityModeText => IsUnlocked ? "Vista completa" : "Vista apparente";
+        public bool HasLockFeature => _overrideAuthService != null;
+
         public ICommand LoadCommand { get; }
+        public ICommand ToggleHiddenModeCommand { get; }
         public ICommand FilterOggiCommand { get; }
         public ICommand FilterIeriCommand { get; }
         public ICommand FilterQuestaSettimanaCommand { get; }
@@ -359,7 +376,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             IsBusy = true;
             try
             {
-                DailySalesSummary summary = await _service.GetDailySummaryAsync(date).ConfigureAwait(true);
+                var includePdfHidden = IsUnlocked;
+                DailySalesSummary summary = await _service.GetDailySummaryAsync(date, includePdfHidden).ConfigureAwait(true);
                 SalesCount = summary.SalesCount;
                 TotalAmount = summary.TotalAmount;
                 CashAmount = summary.CashAmount;
@@ -371,7 +389,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 UpdateSummaryReceiptPreview(date, summary, shop);
                 _reportLoaded = true;
                 RefreshHeaderSummary();
-                _ = LoadHourlySalesAsync(date);
+                _ = LoadHourlySalesAsync(date, includePdfHidden);
                 OnPropertyChanged(nameof(StatusBadgeText));
                 OnPropertyChanged(nameof(ShowStatusBadge));
                 Status = "Report caricato.";
@@ -386,11 +404,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        private async Task LoadHourlySalesAsync(DateTime date)
+        private async Task LoadHourlySalesAsync(DateTime date, bool includePdfHidden = false)
         {
             try
             {
-                var amounts = await _service.GetHourlySalesAsync(date).ConfigureAwait(true);
+                var amounts = await _service.GetHourlySalesAsync(date, includePdfHidden).ConfigureAwait(true);
                 if (amounts == null || amounts.Count < 24) return;
                 long max = 0;
                 int peakHour = 0;
@@ -510,15 +528,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public async Task<string> GetExportCsvContentAsync(ExportRequest request)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
-            switch (request.Scope)
+                var includePdfHidden = IsUnlocked;
+                switch (request.Scope)
             {
                 case ExportScope.Daily:
                 case ExportScope.Day:
-                    return await _service.GetDailyCsvContentAsync(request.Date.Value).ConfigureAwait(true);
+                    return await _service.GetDailyCsvContentAsync(request.Date.Value, includePdfHidden).ConfigureAwait(true);
                 case ExportScope.Period:
-                    return await _service.GetPeriodCsvContentAsync(request.From.Value, request.To.Value).ConfigureAwait(true);
+                    return await _service.GetPeriodCsvContentAsync(request.From.Value, request.To.Value, includePdfHidden).ConfigureAwait(true);
                 case ExportScope.Marked:
-                    return await _service.GetDaysCsvContentAsync(request.Dates ?? Array.Empty<DateTime>()).ConfigureAwait(true);
+                    return await _service.GetDaysCsvContentAsync(request.Dates ?? Array.Empty<DateTime>(), includePdfHidden).ConfigureAwait(true);
                 default:
                     throw new ArgumentOutOfRangeException(nameof(request));
             }
@@ -586,7 +605,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     if (row.IsMarked) { marked = row; break; }
                 if (marked != null)
                 {
-                    var summary = await _service.GetDailySummaryAsync(marked.Date).ConfigureAwait(true);
+                    var summary = await _service.GetDailySummaryAsync(marked.Date, IsUnlocked).ConfigureAwait(true);
                     var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
                     var model = new DailyTakingsReceiptModel
                     {
@@ -678,7 +697,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             IsBusy = true;
             try
             {
-                var summaries = await _service.GetDailySummariesAsync(from, to).ConfigureAwait(true);
+                var includePdfHidden = IsUnlocked;
+                var summaries = await _service.GetDailySummariesAsync(from, to, includePdfHidden).ConfigureAwait(true);
                 foreach (var row in HistoryRows)
                     row.PropertyChanged -= OnHistoryRowPropertyChanged;
                 HistoryRows.Clear();
@@ -969,7 +989,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (SelectedHistoryRow == null) return;
             try
             {
-                var summary = await _service.GetDailySummaryAsync(SelectedHistoryRow.Date).ConfigureAwait(true);
+                var summary = await _service.GetDailySummaryAsync(SelectedHistoryRow.Date, IsUnlocked).ConfigureAwait(true);
                 SalesCount = summary.SalesCount;
                 TotalAmount = summary.TotalAmount;
                 CashAmount = summary.CashAmount;
@@ -990,7 +1010,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (row == null) { SingleMarkedReceiptPreview = ""; return; }
             try
             {
-                var summary = await _service.GetDailySummaryAsync(row.Date).ConfigureAwait(true);
+                var summary = await _service.GetDailySummaryAsync(row.Date, IsUnlocked).ConfigureAwait(true);
                 var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
                 var model = new DailyTakingsReceiptModel
                 {
@@ -1070,9 +1090,39 @@ namespace Win7POS.Wpf.Pos.Dialogs
             await LoadHistoryAsync().ConfigureAwait(true);
         }
 
+        private async Task ToggleHiddenModeAsync()
+        {
+            if (_overrideAuthService == null) return;
+            if (IsUnlocked)
+            {
+                IsUnlocked = false;
+                await RefreshCurrentViewAsync().ConfigureAwait(true);
+                return;
+            }
+            var (ok, _) = await _overrideAuthService.RequestAdminOverrideAsync("Vista completa vendite").ConfigureAwait(true);
+            if (ok)
+            {
+                IsUnlocked = true;
+                await RefreshCurrentViewAsync().ConfigureAwait(true);
+            }
+        }
+
+        private async Task RefreshCurrentViewAsync()
+        {
+            if (SelectedTabIndex == 0)
+            {
+                if (LoadCommand.CanExecute(null)) await LoadAsync().ConfigureAwait(true);
+            }
+            else if (HasHistoryRows && (LoadHistoryCommand as AsyncRelayCommand)?.CanExecute(null) == true)
+            {
+                await LoadHistoryAsync().ConfigureAwait(true);
+            }
+        }
+
         private void RaiseCanExecuteChanged()
         {
             (LoadCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ToggleHiddenModeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintSummaryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintSelectedHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();

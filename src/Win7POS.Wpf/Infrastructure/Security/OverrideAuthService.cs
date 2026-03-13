@@ -58,5 +58,42 @@ namespace Win7POS.Wpf.Infrastructure.Security
             var ok = dlg.ShowDialog() == true;
             return ok ? (true, dlg.AuthorizerUserId) : (false, null);
         }
+
+        public async Task<(bool ok, int? authorizerUserId)> RequestAdminOverrideAsync(string operationText)
+        {
+            var authorizableUsers = await _userRepo.ListAdminUsersAsync().ConfigureAwait(true);
+            if (authorizableUsers == null || authorizableUsers.Count == 0)
+            {
+                ModernMessageDialog.Show(Application.Current?.MainWindow, "Autorizzazione",
+                    "Nessun amministratore configurato. Impossibile proseguire.");
+                return (false, null);
+            }
+
+            var items = new List<OverrideOperatorItem>();
+            foreach (var u in authorizableUsers)
+            {
+                items.Add(new OverrideOperatorItem
+                {
+                    Username = u.Username ?? "",
+                    DisplayName = u.DisplayName ?? "",
+                    RoleName = u.RoleName ?? ""
+                });
+            }
+
+            async Task<(bool ok, int? userId)> VerifyAsync(string username, string pin)
+            {
+                var result = await _userRepo.VerifyPinAsync(username, pin).ConfigureAwait(true);
+                var account = result?.User;
+                if (account == null) return (false, null);
+                return account.IsAdmin ? (true, (int?)account.Id) : (false, null);
+            }
+
+            var dlg = new OverrideAuthorizationDialog(operationText, items, VerifyAsync, isAdminOnly: true)
+            {
+                Owner = Application.Current?.MainWindow
+            };
+            var ok = dlg.ShowDialog() == true;
+            return ok ? (true, dlg.AuthorizerUserId) : (false, null);
+        }
     }
 }

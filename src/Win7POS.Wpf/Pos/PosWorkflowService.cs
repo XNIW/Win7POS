@@ -221,12 +221,12 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<DailySalesSummary> GetDailySummaryAsync(DateTime date)
+        public async Task<DailySalesSummary> GetDailySummaryAsync(DateTime date, bool includePdfHidden = false)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await _sales.GetDailySummaryAsync(date).ConfigureAwait(false);
+                return await _sales.GetDailySummaryAsync(date, includePdfHidden).ConfigureAwait(false);
             }
             finally
             {
@@ -234,12 +234,12 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate)
+        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate, bool includePdfHidden = false)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await _sales.GetDailySummariesAsync(fromDate, toDate).ConfigureAwait(false);
+                return await _sales.GetDailySummariesAsync(fromDate, toDate, includePdfHidden).ConfigureAwait(false);
             }
             finally
             {
@@ -248,17 +248,23 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Vendite per ora (0-23) del giorno, per grafico orario.</summary>
-        public async Task<IReadOnlyList<long>> GetHourlySalesAsync(DateTime date)
+        public async Task<IReadOnlyList<long>> GetHourlySalesAsync(DateTime date, bool includePdfHidden = false)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await _sales.GetHourlySalesAsync(date).ConfigureAwait(false);
+                return await _sales.GetHourlySalesAsync(date, includePdfHidden).ConfigureAwait(false);
             }
             finally
             {
                 _gate.Release();
             }
+        }
+
+        /// <summary>Marca la vendita come pdf_printed=1 (nascosta nella vista apparente).</summary>
+        public Task MarkPdfPrintedAsync(long saleId)
+        {
+            return _sales.MarkPdfPrintedAsync(saleId);
         }
 
         public async Task<string> ExportDailyCsvAsync(DateTime date)
@@ -280,12 +286,12 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Restituisce il contenuto CSV per un giorno (per Salva con nome).</summary>
-        public async Task<string> GetDailyCsvContentAsync(DateTime date)
+        public async Task<string> GetDailyCsvContentAsync(DateTime date, bool includePdfHidden = false)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var rows = await _sales.GetSalesForDateAsync(date).ConfigureAwait(false);
+                var rows = await _sales.GetSalesForDateAsync(date, includePdfHidden).ConfigureAwait(false);
                 return BuildSalesCsvContent(rows);
             }
             finally
@@ -295,14 +301,14 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Restituisce il contenuto CSV per un periodo (per Salva con nome).</summary>
-        public async Task<string> GetPeriodCsvContentAsync(DateTime fromDate, DateTime toDate)
+        public async Task<string> GetPeriodCsvContentAsync(DateTime fromDate, DateTime toDate, bool includePdfHidden = false)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
                 var from = new DateTimeOffset(fromDate.Date).ToUnixTimeMilliseconds();
                 var to = new DateTimeOffset(toDate.Date.AddDays(1)).ToUnixTimeMilliseconds();
-                var rows = await _sales.GetSalesBetweenAsync(from, to).ConfigureAwait(false);
+                var rows = await _sales.GetSalesBetweenAsync(from, to, null, includePdfHidden).ConfigureAwait(false);
                 return BuildSalesCsvContent(rows);
             }
             finally
@@ -312,7 +318,7 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Restituisce CSV per un elenco di date (es. giorni selezionati nello storico).</summary>
-        public async Task<string> GetDaysCsvContentAsync(IReadOnlyList<DateTime> dates)
+        public async Task<string> GetDaysCsvContentAsync(IReadOnlyList<DateTime> dates, bool includePdfHidden = false)
         {
             if (dates == null || dates.Count == 0)
                 return "saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change" + Environment.NewLine;
@@ -323,7 +329,7 @@ namespace Win7POS.Wpf.Pos
                 var headerDone = false;
                 foreach (var date in dates)
                 {
-                    var rows = await _sales.GetSalesForDateAsync(date.Date).ConfigureAwait(false);
+                    var rows = await _sales.GetSalesForDateAsync(date.Date, includePdfHidden).ConfigureAwait(false);
                     if (rows.Count == 0) continue;
                     if (!headerDone)
                     {
@@ -1099,12 +1105,12 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null)
+        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null, bool includePdfHidden = false)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var rows = await _sales.GetSalesBetweenAsync(fromMs, toMs, operatorId).ConfigureAwait(false);
+                var rows = await _sales.GetSalesBetweenAsync(fromMs, toMs, operatorId, includePdfHidden).ConfigureAwait(false);
                 return rows.Select(x => new RecentSaleItem
                 {
                     SaleId = x.Id,
@@ -1122,14 +1128,14 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesByCodeFilterAsync(string codeFilter)
+        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesByCodeFilterAsync(string codeFilter, bool includePdfHidden = false)
         {
             if (string.IsNullOrWhiteSpace(codeFilter))
                 return Array.Empty<RecentSaleItem>();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var rows = await _sales.GetByCodeLikeAsync(codeFilter).ConfigureAwait(false);
+                var rows = await _sales.GetByCodeLikeAsync(codeFilter, includePdfHidden).ConfigureAwait(false);
                 return rows.Select(x => new RecentSaleItem
                 {
                     SaleId = x.Id,

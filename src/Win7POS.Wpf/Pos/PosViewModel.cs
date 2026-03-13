@@ -187,7 +187,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand OpenUserManagementCommand { get; }
 
         /// <summary>Crea un ViewModel per la schermata Chiusura cassa (pagina integrata).</summary>
-        public Dialogs.DailyReportViewModel CreateDailyReportViewModel() => new Dialogs.DailyReportViewModel(_service);
+        public Dialogs.DailyReportViewModel CreateDailyReportViewModel() => new Dialogs.DailyReportViewModel(_service, _overrideAuthService);
 
         /// <summary>Costruttore con dipendenze iniettate. Se null, usa istanze di default (compatibilità designer XAML).</summary>
         public PosViewModel(PosWorkflowService service = null, FileLogger logger = null, IPermissionService permissionService = null, IOperatorSession operatorSession = null, IOverrideAuthService overrideAuthService = null, Win7POS.Data.Repositories.UserRepository userRepo = null)
@@ -675,7 +675,10 @@ namespace Win7POS.Wpf.Pos
                     fiscalPrinted = await vm.TriggerAutoPrintPdfIfEnabledAsync().ConfigureAwait(true);
 
                 if (fiscalPrinted)
+                {
+                    await _service.MarkPdfPrintedAsync(result.SaleId).ConfigureAwait(true);
                     await _service.SetFiscalBoletaNumberAsync(vm.NextBoletaNumber).ConfigureAwait(true);
+                }
 
                 if (!fiscalPrinted && vm.AutoPrintPdfSii && vm.CardAmountMinor > 0 && vm.CashAmountMinor == 0)
                     StatusMessage = "Pagamento OK: " + result.SaleCode + " (PDF SII non stampato: pagamento con carta)";
@@ -1165,7 +1168,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _permissionService?.Demand(PermissionCodes.DailyCloseView, "Chiusura cassa");
-                var vm = new DailyReportViewModel(_service);
+                var vm = new DailyReportViewModel(_service, _overrideAuthService);
                 var dlg = new DailyReportDialog(vm)
                 {
                     Owner = Application.Current?.MainWindow
@@ -1336,7 +1339,7 @@ namespace Win7POS.Wpf.Pos
                 var registerVm = new Dialogs.SalesRegisterViewModel(_service, UseReceipt42, (saleId, regVm) =>
                 {
                     _ = OpenRefundForSaleIdThenRefreshAsync(saleId, regVm);
-                }, isRefundScanMode, operators, canViewAll: canViewAll, forceOperatorId: canViewAll ? null : currentUserId);
+                }, isRefundScanMode, operators, canViewAll: canViewAll, forceOperatorId: canViewAll ? null : currentUserId, overrideAuthService: _overrideAuthService);
                 var dlg = new Dialogs.SalesRegisterDialog(registerVm)
                 {
                     Owner = Application.Current?.MainWindow

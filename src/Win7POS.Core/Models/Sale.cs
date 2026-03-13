@@ -16,5 +16,7 @@ namespace Win7POS.Core.Models
         public long Change { get; set; }
         /// <summary>Utente operatore che ha effettuato la vendita (nullable per compatibilità).</summary>
         public int? OperatorId { get; set; }
+        /// <summary>True se il PDF SII è stato effettivamente stampato. Le vendite con PdfPrinted=1 sono nascoste nella vista apparente (Registro/Chiusura).</summary>
+        public bool PdfPrinted { get; set; }
     }
 }

@@ -20,11 +20,12 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Header: titolo, data evidenziata, badge stato -->
+            <!-- Header: titolo, data evidenziata, badge stato, lucchetto vista -->
             <Grid Grid.Row="0" Margin="0,0,0,14">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0" VerticalAlignment="Center">
@@ -40,6 +41,12 @@
                         Visibility="{Binding ShowStatusBadge, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="{Binding StatusBadgeText, Mode=OneWay}" FontSize="11" Foreground="#555"/>
                 </Border>
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0"
+                            Visibility="{Binding HasLockFeature, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="{Binding VisibilityModeText, Mode=OneWay}" FontSize="10" Foreground="#666" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <Button Content="{Binding LockGlyph, Mode=OneWay}" Command="{Binding ToggleHiddenModeCommand}" ToolTip="Sblocca/Blocca vista completa (solo Admin)"
+                            Style="{StaticResource OutlineButtonStyle}" MinWidth="36" Height="32" Padding="4" FontSize="14"/>
+                </StackPanel>
             </Grid>
 
             <!-- Filtri rapidi (pill) -->

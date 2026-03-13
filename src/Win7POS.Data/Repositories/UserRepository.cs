@@ -134,6 +134,22 @@ namespace Win7POS.Data.Repositories
             return count > 0;
         }
 
+        /// <summary>Elenco utenti attivi con ruolo admin. Per autorizzazioni riservate ai soli amministratori.</summary>
+        public async Task<IReadOnlyList<UserAccount>> ListAdminUsersAsync()
+        {
+            using var conn = _factory.Open();
+            var rows = await conn.QueryAsync<UserRow>(
+                @"SELECT u.id AS Id, u.username AS Username, u.display_name AS DisplayName, u.role_id AS RoleId,
+                         u.is_active AS IsActive, u.require_pin_change AS RequirePinChange, u.max_discount_percent AS MaxDiscountPercent,
+                         r.code AS RoleCode, r.name AS RoleName
+                  FROM users u
+                  INNER JOIN roles r ON r.id = u.role_id
+                  WHERE LOWER(r.code) = 'admin' AND u.is_active = 1
+                  ORDER BY u.display_name, u.username",
+                new { }).ConfigureAwait(false);
+            return (rows ?? Enumerable.Empty<UserRow>()).Select(r => MapToAccount(r)).ToList();
+        }
+
         /// <summary>Elenco utenti attivi il cui ruolo ha il permesso richiesto (o SecurityOverride).</summary>
         public async Task<IReadOnlyList<UserAccount>> ListUsersWithPermissionAsync(string requiredPermissionCode)
         {

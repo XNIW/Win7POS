@@ -181,6 +181,7 @@ CREATE INDEX IF NOT EXISTS idx_security_events_ts ON security_events(ts);
             EnsureColumn(conn, "sales", "reason", "TEXT NULL");
             EnsureColumn(conn, "sale_lines", "related_original_line_id", "INTEGER NULL");
             EnsureColumn(conn, "sales", "operator_id", "INTEGER NULL");
+            EnsureColumn(conn, "sales", "pdf_printed", "INTEGER NOT NULL DEFAULT 0");
         }
 
         private static void SeedSecurity(Microsoft.Data.Sqlite.SqliteConnection conn)

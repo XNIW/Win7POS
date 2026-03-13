@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Win7POS.Core.Models;
 using Win7POS.Core.Util;
+using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Pos;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -17,6 +18,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         private readonly PosWorkflowService _service;
         private readonly bool _useReceipt42;
+        private readonly IOverrideAuthService _overrideAuthService;
 
         private SalesRegisterFilter _filter = SalesRegisterFilter.Oggi;
         private DateTime? _rangeFrom = null;
@@ -31,11 +33,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private OperatorFilterItem _selectedOperator;
         private readonly bool _canViewAll;
         private readonly int? _forceOperatorId;
+        private bool _isUnlocked;
 
-        public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, Action<long, SalesRegisterViewModel> onRequestRefund = null, bool isRefundScanMode = false, System.Collections.Generic.IReadOnlyList<(int id, string displayName)> operators = null, bool canViewAll = true, int? forceOperatorId = null)
+        public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, Action<long, SalesRegisterViewModel> onRequestRefund = null, bool isRefundScanMode = false, System.Collections.Generic.IReadOnlyList<(int id, string displayName)> operators = null, bool canViewAll = true, int? forceOperatorId = null, IOverrideAuthService overrideAuthService = null)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _useReceipt42 = useReceipt42;
+            _overrideAuthService = overrideAuthService;
             _isRefundScanMode = isRefundScanMode;
             _canViewAll = canViewAll;
             _forceOperatorId = forceOperatorId;
@@ -54,6 +58,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
             PrintCommand = new AsyncRelayCommand(PrintAsync, _ => !IsBusy && SelectedSale != null);
             RefundCommand = new AsyncRelayCommand(RefundAsync, _ => !IsBusy && SelectedSale != null && SelectedSale.Kind == (int)SaleKind.Sale && !SelectedSale.IsVoided);
+            ToggleHiddenModeCommand = new AsyncRelayCommand(ToggleHiddenModeAsync, _ => !IsBusy && _overrideAuthService != null);
 
             _onRequestRefund = onRequestRefund;
 
@@ -63,6 +68,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     _ = LoadDetailsAsync();
             };
         }
+
+        /// <summary>True se sbloccata con auth admin: mostra vendite con PDF stampato.</summary>
+        public bool IsUnlocked
+        {
+            get => _isUnlocked;
+            set { _isUnlocked = value; OnPropertyChanged(); OnPropertyChanged(nameof(LockGlyph)); OnPropertyChanged(nameof(VisibilityModeText)); }
+        }
+
+        public string LockGlyph => IsUnlocked ? "\uD83D\uDD13" : "\uD83D\uDD12"; // 🔓 / 🔒
+        public string VisibilityModeText => IsUnlocked ? "Vista completa" : "Vista apparente";
+
+        /// <summary>True se il lucchetto è disponibile (overrideAuthService configurato).</summary>
+        public bool HasLockFeature => _overrideAuthService != null;
+
+        public ICommand ToggleHiddenModeCommand { get; }
 
         private readonly Action<long, SalesRegisterViewModel> _onRequestRefund;
         private readonly bool _isRefundScanMode;
@@ -241,10 +261,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 DetailSummary = "";
                 DetailReceiptPreview = "";
 
+                var includePdfHidden = IsUnlocked;
                 System.Collections.Generic.IReadOnlyList<RecentSaleItem> items;
                 if (!string.IsNullOrWhiteSpace(CodeSearch))
                 {
-                    items = await _service.GetSalesByCodeFilterAsync(CodeSearch).ConfigureAwait(true);
+                    items = await _service.GetSalesByCodeFilterAsync(CodeSearch, includePdfHidden).ConfigureAwait(true);
                     Status = items.Count + " vendite (ricerca codice).";
                 }
                 else
@@ -260,7 +281,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     }
                     else
                         operatorId = _forceOperatorId;
-                    items = await _service.GetSalesBetweenAsync(fromMs, toMs, operatorId).ConfigureAwait(true);
+                    items = await _service.GetSalesBetweenAsync(fromMs, toMs, operatorId, includePdfHidden).ConfigureAwait(true);
 
                     var countVendite = items.Count(i => i.Kind == (int)SaleKind.Sale && !i.VoidedBySaleId.HasValue);
                     var countResi = items.Count(i => i.Kind == (int)SaleKind.Refund);
@@ -382,11 +403,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
             return Task.CompletedTask;
         }
 
+        private async Task ToggleHiddenModeAsync()
+        {
+            if (_overrideAuthService == null) return;
+            if (IsUnlocked)
+            {
+                IsUnlocked = false;
+                if (LoadCommand.CanExecute(null)) LoadCommand.Execute(null);
+                return;
+            }
+            var (ok, _) = await _overrideAuthService.RequestAdminOverrideAsync("Vista completa vendite").ConfigureAwait(true);
+            if (ok)
+            {
+                IsUnlocked = true;
+                if (LoadCommand.CanExecute(null)) LoadCommand.Execute(null);
+            }
+        }
+
         private void RaiseCanExecuteChanged()
         {
             (LoadCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (RefundCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ToggleHiddenModeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
