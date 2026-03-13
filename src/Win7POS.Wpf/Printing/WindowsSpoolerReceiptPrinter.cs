@@ -14,7 +14,7 @@ namespace Win7POS.Wpf.Printing
 {
     public sealed class WindowsSpoolerReceiptPrinter : IReceiptPrinter
     {
-        private static readonly FileLogger _logger = new FileLogger();
+        private static readonly FileLogger _logger = new FileLogger("WindowsSpoolerReceiptPrinter");
         private const string SiiMarker = "Timbre Electrónico SII";
         private const string ScontrinoPrefix = "Scontrino:";
 

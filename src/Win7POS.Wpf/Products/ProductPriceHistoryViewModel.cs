@@ -6,11 +6,13 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Win7POS.Core.Models;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
 {
     public sealed class ProductPriceHistoryViewModel : INotifyPropertyChanged
     {
+        private static readonly FileLogger _logger = new FileLogger("ProductPriceHistoryViewModel");
         private readonly long _productId;
         private readonly ProductsWorkflowService _service;
         private string _currentRetail;
@@ -185,7 +187,11 @@ namespace Win7POS.Wpf.Products
             }
 
             public bool CanExecute(object parameter) => _canExecute?.Invoke(parameter) ?? true;
-            public async void Execute(object parameter) { try { await _execute().ConfigureAwait(true); } catch { } }
+            public async void Execute(object parameter)
+            {
+                try { await _execute().ConfigureAwait(true); }
+                catch (Exception ex) { UiErrorHandler.Handle(ex, _logger, "ProductPriceHistoryViewModel.AsyncRelayCommand"); }
+            }
             public event EventHandler CanExecuteChanged;
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
         }

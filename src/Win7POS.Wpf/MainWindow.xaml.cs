@@ -19,6 +19,7 @@ namespace Win7POS.Wpf
 {
     public partial class MainWindow : Window
     {
+        private static readonly Infrastructure.FileLogger _logger = new Infrastructure.FileLogger("MainWindow");
         public static readonly DependencyProperty CurrentMenuKeyProperty = DependencyProperty.Register(
             nameof(CurrentMenuKey), typeof(string), typeof(MainWindow), new PropertyMetadata("Pos", OnCurrentMenuKeyChanged));
 
@@ -117,8 +118,13 @@ namespace Win7POS.Wpf
             }
             catch (Exception ex)
             {
-                ModernMessageDialog.Show(this, "Win7POS",
-                    "Errore in avvio.\nControlla i log in " + AppPaths.LogsDirectory + "\n\n" + ex.Message);
+                _logger.LogError(ex, "MainWindow.OnLoadedAsync: avvio fallito (DB/FirstRun/Login)");
+                try
+                {
+                    ModernMessageDialog.Show(this, "Win7POS",
+                        "Errore in avvio.\nLog: " + AppPaths.LogPath + "\n\n" + ex.Message);
+                }
+                catch { }
                 Close();
             }
         }
@@ -195,10 +201,12 @@ namespace Win7POS.Wpf
             }
             catch (InvalidOperationException ex)
             {
+                _logger.LogWarning("OnMenuUsersClick: permesso negato - " + ex.Message, null);
                 ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message);
             }
             catch (Exception ex)
             {
+                _logger.LogError(ex, "MainWindow.OnMenuUsersClick: errore apertura Utenti e ruoli");
                 ModernMessageDialog.Show(Application.Current?.MainWindow, "Utenti e ruoli", "Errore apertura Utenti e ruoli.\n\n" + ex.Message);
             }
             SideMenuOverlay.Visibility = Visibility.Collapsed;

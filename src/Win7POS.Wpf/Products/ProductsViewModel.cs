@@ -16,7 +16,7 @@ namespace Win7POS.Wpf.Products
     public sealed class ProductsViewModel : INotifyPropertyChanged
     {
         private readonly ProductsWorkflowService _service = new ProductsWorkflowService();
-        private readonly FileLogger _logger = new FileLogger();
+        private readonly FileLogger _logger = new FileLogger("ProductsViewModel");
 
         private string _searchText = string.Empty;
         private string _statusMessage = "Pronto.";
@@ -518,7 +518,7 @@ namespace Win7POS.Wpf.Products
             {
                 _executeAsync = executeAsync ?? throw new ArgumentNullException(nameof(executeAsync));
                 _canExecute = canExecute;
-                _logger = logger ?? new FileLogger();
+                _logger = logger ?? new FileLogger("ProductsViewModel");
             }
 
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);

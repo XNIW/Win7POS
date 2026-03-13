@@ -193,7 +193,7 @@ namespace Win7POS.Wpf.Pos
         public PosViewModel(PosWorkflowService service = null, FileLogger logger = null, IPermissionService permissionService = null, IOperatorSession operatorSession = null, IOverrideAuthService overrideAuthService = null, Win7POS.Data.Repositories.UserRepository userRepo = null)
         {
             _service = service ?? new PosWorkflowService();
-            _logger = logger ?? new FileLogger();
+            _logger = logger ?? new FileLogger("PosViewModel");
             _permissionService = permissionService;
             _operatorSession = operatorSession;
             _overrideAuthService = overrideAuthService;
@@ -1838,7 +1838,7 @@ namespace Win7POS.Wpf.Pos
             {
                 _executeAsync = executeAsync ?? throw new ArgumentNullException(nameof(executeAsync));
                 _canExecute = canExecute;
-                _logger = logger ?? new FileLogger();
+                _logger = logger ?? new FileLogger("PosViewModel");
             }
 
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
@@ -1869,7 +1869,7 @@ namespace Win7POS.Wpf.Pos
             {
                 _executeAsync = executeAsync ?? throw new ArgumentNullException(nameof(executeAsync));
                 _canExecute = canExecute;
-                _logger = logger ?? new FileLogger();
+                _logger = logger ?? new FileLogger("PosViewModel");
             }
 
             public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);

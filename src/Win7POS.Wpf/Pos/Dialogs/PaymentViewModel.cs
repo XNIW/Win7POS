@@ -334,7 +334,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         _ = Task.Run(async () =>
                         {
                             await Task.Delay(15000).ConfigureAwait(false);
-                            try { if (System.IO.File.Exists(pathToDelete)) System.IO.File.Delete(pathToDelete); } catch { }
+                            try
+                            {
+                                if (System.IO.File.Exists(pathToDelete)) System.IO.File.Delete(pathToDelete);
+                            }
+                            catch (System.Exception delEx)
+                            {
+                                try { new Win7POS.Wpf.Infrastructure.FileLogger("PaymentViewModel").LogWarning("Cleanup PDF temporaneo fallito: " + pathToDelete, delEx); } catch { }
+                            }
                         });
                     }
 

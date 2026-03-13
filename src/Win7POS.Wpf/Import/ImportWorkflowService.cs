@@ -17,7 +17,7 @@ namespace Win7POS.Wpf.Import
 {
     public sealed class ImportWorkflowService
     {
-        private readonly FileLogger _logger = new FileLogger();
+        private readonly FileLogger _logger = new FileLogger("ImportWorkflowService");
         private readonly AuditLogRepository _audit = new AuditLogRepository();
 
         public async Task<ImportAnalyzeUiResult> AnalyzeAsync(string filePath, string dbPath = "", int maxItems = 200)

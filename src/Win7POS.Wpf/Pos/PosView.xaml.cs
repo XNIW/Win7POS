@@ -202,7 +202,7 @@ namespace Win7POS.Wpf.Pos
     {
         public static PosViewModel CreateViewModel()
         {
-            var logger = new Infrastructure.FileLogger();
+            var logger = new Infrastructure.FileLogger("PosView");
             var service = new PosWorkflowService();
             var options = PosDbOptions.Default();
             var factory = new SqliteConnectionFactory(options);

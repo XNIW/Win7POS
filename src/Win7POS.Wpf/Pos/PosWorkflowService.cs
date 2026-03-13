@@ -39,7 +39,7 @@ namespace Win7POS.Wpf.Pos
         private const string KeyShopFooter = "shop.footer";
         private const string KeyFiscalBoletaNumber = "fiscal.boletaNumber";
 
-        private readonly FileLogger _logger = new FileLogger();
+        private readonly FileLogger _logger = new FileLogger("PosWorkflowService");
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
 
         private readonly ProductRepository _products;

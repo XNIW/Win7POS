@@ -16,7 +16,7 @@ namespace Win7POS.Wpf.Products
 {
     public sealed class ProductsWorkflowService
     {
-        private readonly FileLogger _logger = new FileLogger();
+        private readonly FileLogger _logger = new FileLogger("ProductsWorkflowService");
         private readonly ProductRepository _products;
         private readonly CategoryRepository _categories;
         private readonly SupplierRepository _suppliers;
