@@ -2,11 +2,12 @@ using System;
 using System.Windows;
 using System.Windows.Forms;
 using Microsoft.Win32;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
 {
-    public partial class ExportDataDialog : Window
+    public partial class ExportDataDialog : DialogShellWindow
     {
         public ExportDataChoice Result { get; private set; }
 

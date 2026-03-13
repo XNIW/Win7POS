@@ -1,11 +1,12 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
 {
-    public partial class ProductPriceHistoryDialog : Window
+    public partial class ProductPriceHistoryDialog : DialogShellWindow
     {
         public ProductPriceHistoryViewModel ViewModel => (ProductPriceHistoryViewModel)DataContext;
 

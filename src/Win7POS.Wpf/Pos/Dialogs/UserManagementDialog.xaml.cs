@@ -1,10 +1,11 @@
 using System.Windows;
 using System.Windows.Data;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class UserManagementDialog : Window
+    public partial class UserManagementDialog : DialogShellWindow
     {
         private CollectionViewSource _groupedPermissionsView;
 

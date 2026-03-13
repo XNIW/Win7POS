@@ -95,6 +95,7 @@ namespace Win7POS.Wpf.Chrome
             var closeStyle = (Style)Application.Current.FindResource("DialogCaptionCloseButtonStyle");
             if (closeStyle != null)
                 closeButton.Style = closeStyle;
+            WindowChrome.SetIsHitTestVisibleInChrome(closeButton, true);
             closeButton.Click += Close_Click;
 
             var headerButtonsPanel = new StackPanel
@@ -104,6 +105,7 @@ namespace Win7POS.Wpf.Chrome
                 Margin = new Thickness(0, 0, 6, 0)
             };
             headerButtonsPanel.Children.Add(closeButton);
+            WindowChrome.SetIsHitTestVisibleInChrome(headerButtonsPanel, true);
             Grid.SetColumn(headerButtonsPanel, 1);
 
             headerGrid.Children.Add(titleBlock);

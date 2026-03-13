@@ -1,5 +1,6 @@
 using System.Linq;
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
@@ -7,7 +8,7 @@ using Win7POS.Wpf.Import;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class NewUserDialog : Window
+    public partial class NewUserDialog : DialogShellWindow
     {
         public string Username => (UsernameBox?.Text ?? "").Trim();
         public string DisplayName => (DisplayNameBox?.Text ?? "").Trim();

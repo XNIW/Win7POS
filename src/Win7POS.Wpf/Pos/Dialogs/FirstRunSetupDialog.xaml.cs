@@ -2,13 +2,14 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class FirstRunSetupDialog : Window
+    public partial class FirstRunSetupDialog : DialogShellWindow
     {
         private readonly SqliteConnectionFactory _factory;
         private readonly UserRepository _userRepo;

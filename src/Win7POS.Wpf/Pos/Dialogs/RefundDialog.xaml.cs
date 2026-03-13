@@ -1,10 +1,11 @@
 using System.Windows;
 using System.Windows.Input;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Import;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class RefundDialog : Window
+    public partial class RefundDialog : DialogShellWindow
     {
         public RefundViewModel ViewModel { get; }
 

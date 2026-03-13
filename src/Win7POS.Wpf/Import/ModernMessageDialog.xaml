@@ -1,14 +1,14 @@
-<Window x:Class="Win7POS.Wpf.Import.ModernMessageDialog"
+<chrome:DialogShellWindow x:Class="Win7POS.Wpf.Import.ModernMessageDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Win7POS"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="360"
         MinHeight="140"
-        ResizeMode="NoResize"
-        Background="{StaticResource BackgroundLightBrush}">
-    <Border Margin="16" Padding="20" Background="{StaticResource CardBgBrush}"
+        ResizeMode="NoResize">
+    <Border Margin="18" Padding="18" Background="{StaticResource CardBgBrush}"
             BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8">
         <Grid>
             <Grid.RowDefinitions>
@@ -22,4 +22,4 @@
                     Style="{StaticResource PrimaryButtonStyle}" Click="Ok_Click"/>
         </Grid>
     </Border>
-</Window>
+</chrome:DialogShellWindow>

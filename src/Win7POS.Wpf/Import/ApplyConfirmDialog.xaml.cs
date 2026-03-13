@@ -1,8 +1,9 @@
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 
 namespace Win7POS.Wpf.Import
 {
-    public partial class ApplyConfirmDialog : Window
+    public partial class ApplyConfirmDialog : DialogShellWindow
     {
         public ApplyConfirmDialog(string title, string message)
         {

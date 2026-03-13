@@ -1,11 +1,12 @@
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class ChangePinDialog : Window
+    public partial class ChangePinDialog : DialogShellWindow
     {
         private readonly int _userId;
         private readonly UserRepository _userRepo;

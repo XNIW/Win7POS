@@ -2,11 +2,12 @@ using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class BoletaNumberDialog : Window
+    public partial class BoletaNumberDialog : DialogShellWindow
     {
         public int BoletaNumber { get; private set; }
 

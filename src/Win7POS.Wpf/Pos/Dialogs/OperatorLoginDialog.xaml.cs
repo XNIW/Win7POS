@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
@@ -10,7 +11,7 @@ using Win7POS.Wpf.Infrastructure.Security;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class OperatorLoginDialog : Window
+    public partial class OperatorLoginDialog : DialogShellWindow
     {
         private readonly SqliteConnectionFactory _factory;
         private List<OperatorLoginItem> _operators;

@@ -1,6 +1,7 @@
-<Window x:Class="Win7POS.Wpf.Pos.Dialogs.AboutSupportDialog"
+<chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.AboutSupportDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="About / Support"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
@@ -11,7 +12,7 @@
         MaxWidth="760"
         MinHeight="560"
         MaxHeight="560">
-    <Border Padding="14">
+    <Border Padding="18">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -60,4 +61,4 @@
                 </StackPanel>
         </Grid>
     </Border>
-</Window>
+</chrome:DialogShellWindow>

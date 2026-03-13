@@ -1,9 +1,10 @@
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class DbMaintenanceDialog : Window
+    public partial class DbMaintenanceDialog : DialogShellWindow
     {
         public DbMaintenanceDialog(DbMaintenanceViewModel vm)
         {

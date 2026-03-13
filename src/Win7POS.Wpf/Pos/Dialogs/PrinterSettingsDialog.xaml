@@ -1,6 +1,7 @@
-<Window x:Class="Win7POS.Wpf.Pos.Dialogs.PrinterSettingsDialog"
+<chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.PrinterSettingsDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Impostazioni stampante"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
@@ -119,4 +120,4 @@
             </Grid>
         </ScrollViewer>
     </Border>
-</Window>
+</chrome:DialogShellWindow>

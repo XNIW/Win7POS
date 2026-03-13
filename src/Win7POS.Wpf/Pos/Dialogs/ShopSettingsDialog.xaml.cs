@@ -1,9 +1,10 @@
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class ShopSettingsDialog : Window
+    public partial class ShopSettingsDialog : DialogShellWindow
     {
         public ShopSettingsDialog(ShopSettingsViewModel vm)
         {

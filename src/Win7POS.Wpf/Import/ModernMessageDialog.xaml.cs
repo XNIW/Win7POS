@@ -1,9 +1,10 @@
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 
 namespace Win7POS.Wpf.Import
 {
     /// <summary>Dialog moderno con messaggio e pulsante OK (sostituisce MessageBox per info/warning).</summary>
-    public partial class ModernMessageDialog : Window
+    public partial class ModernMessageDialog : DialogShellWindow
     {
         public ModernMessageDialog(string title, string message)
         {

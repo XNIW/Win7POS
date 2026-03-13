@@ -1,9 +1,10 @@
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
 {
-    public partial class DeleteProductConfirmDialog : Window
+    public partial class DeleteProductConfirmDialog : DialogShellWindow
     {
         public DeleteProductConfirmDialog(string barcode, string name)
         {

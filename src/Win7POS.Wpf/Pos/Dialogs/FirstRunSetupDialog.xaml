@@ -1,6 +1,7 @@
-<Window x:Class="Win7POS.Wpf.Pos.Dialogs.FirstRunSetupDialog"
+<chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.FirstRunSetupDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Configurazione iniziale"
         Width="520"
         MinWidth="520"
@@ -10,7 +11,7 @@
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner">
     <Border Padding="0" Background="{StaticResource BackgroundLightBrush}">
-        <Grid Margin="24,20,24,28">
+        <Grid Margin="18,18,18,18">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -21,8 +22,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Text="Configurazione iniziale" FontSize="18" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}"/>
-            <TextBlock Grid.Row="1" Text="Crea il primo amministratore del sistema" FontSize="13" Foreground="#555" Margin="0,4,0,0"/>
+            <TextBlock Grid.Row="0" Text="Crea il primo amministratore del sistema" FontSize="14" FontWeight="SemiBold" Foreground="#555"/>
 
             <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
@@ -60,4 +60,4 @@
             </StackPanel>
         </Grid>
     </Border>
-</Window>
+</chrome:DialogShellWindow>

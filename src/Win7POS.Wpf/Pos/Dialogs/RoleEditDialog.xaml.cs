@@ -1,9 +1,10 @@
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Import;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class RoleEditDialog : Window
+    public partial class RoleEditDialog : DialogShellWindow
     {
         public string RoleCode => (CodeBox?.Text ?? "").Trim();
         public string RoleName => (NameBox?.Text ?? "").Trim();

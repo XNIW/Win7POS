@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Win7POS.Core.Models;
@@ -8,7 +9,7 @@ using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Products
 {
-    public partial class ProductEditDialog : Window
+    public partial class ProductEditDialog : DialogShellWindow
     {
         private bool _priceBoxAutoSelected;
 
