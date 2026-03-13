@@ -3,10 +3,11 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
+using Win7POS.Wpf.Chrome;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class DailyReportDialog : Window
+    public partial class DailyReportDialog : DialogShellWindow
     {
         public DailyReportDialog(DailyReportViewModel vm)
         {

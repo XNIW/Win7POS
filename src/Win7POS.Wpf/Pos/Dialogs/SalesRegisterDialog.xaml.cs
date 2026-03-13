@@ -1,10 +1,11 @@
 using System;
 using System.Windows;
 using System.Windows.Input;
+using Win7POS.Wpf.Chrome;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class SalesRegisterDialog : Window
+    public partial class SalesRegisterDialog : DialogShellWindow
     {
         public SalesRegisterDialog(SalesRegisterViewModel viewModel)
         {

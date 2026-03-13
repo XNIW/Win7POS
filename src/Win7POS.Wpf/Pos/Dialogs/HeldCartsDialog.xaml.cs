@@ -1,8 +1,9 @@
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class HeldCartsDialog : Window
+    public partial class HeldCartsDialog : DialogShellWindow
     {
         public HeldCartsViewModel ViewModel { get; }
 

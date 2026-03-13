@@ -2,10 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows;
+using Win7POS.Wpf.Chrome;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class OverrideAuthorizationDialog : Window
+    public partial class OverrideAuthorizationDialog : DialogShellWindow
     {
         private readonly Func<string, string, Task<(bool ok, int? userId)>> _verifyAsync;
 

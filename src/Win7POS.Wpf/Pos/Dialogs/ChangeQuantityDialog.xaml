@@ -1,22 +1,22 @@
-<Window x:Class="Win7POS.Wpf.Pos.Dialogs.ChangeQuantityDialog"
+<chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.ChangeQuantityDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Modifica quantità"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="360"
         MinHeight="320"
-        ResizeMode="NoResize"
-        Background="{StaticResource BackgroundLightBrush}">
-    <Window.Resources>
-        <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
-            <Setter Property="Height" Value="72"/>
-            <Setter Property="Margin" Value="6"/>
-            <Setter Property="FontSize" Value="24"/>
-            <Setter Property="FontWeight" Value="SemiBold"/>
-        </Style>
-    </Window.Resources>
-    <Grid Margin="20">
+        ResizeMode="NoResize">
+    <Grid Margin="18">
+        <Grid.Resources>
+            <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+                <Setter Property="Height" Value="72"/>
+                <Setter Property="Margin" Value="6"/>
+                <Setter Property="FontSize" Value="24"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+            </Style>
+        </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -48,4 +48,4 @@
             <Button Content="OK" MinWidth="90" Height="38" IsDefault="True" Click="Ok_Click" Style="{StaticResource PrimaryButtonStyle}"/>
         </StackPanel>
     </Grid>
-</Window>
+</chrome:DialogShellWindow>

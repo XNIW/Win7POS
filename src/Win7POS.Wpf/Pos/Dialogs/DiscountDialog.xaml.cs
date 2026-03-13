@@ -3,11 +3,12 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public partial class DiscountDialog : Window
+    public partial class DiscountDialog : DialogShellWindow
     {
         public DiscountViewModel ViewModel { get; }
 
