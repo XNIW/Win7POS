@@ -6,7 +6,6 @@
              mc:Ignorable="d"
              d:DesignHeight="720" d:DesignWidth="1100">
     <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <Style x:Key="RightAlignCell" TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
             <Setter Property="HorizontalAlignment" Value="Right"/>
             <Setter Property="Margin" Value="4,0"/>

@@ -15,7 +15,7 @@ namespace Win7POS.Data.Repositories
             using var conn = new SqliteConnectionFactory(options).Open();
             await conn.ExecuteAsync(
                 "INSERT INTO audit_log(ts, action, details) VALUES (@ts, @action, @details)",
-                new { ts = tsMs, action = action ?? string.Empty, details = details ?? string.Empty });
+                new { ts = tsMs, action = action ?? string.Empty, details = details ?? string.Empty }).ConfigureAwait(false);
         }
 
         public async Task AppendAsync(DbConnection conn, DbTransaction tx, long tsMs, string action, string details)
@@ -24,7 +24,7 @@ namespace Win7POS.Data.Repositories
             await conn.ExecuteAsync(
                 "INSERT INTO audit_log(ts, action, details) VALUES (@ts, @action, @details)",
                 new { ts = tsMs, action = action ?? string.Empty, details = details ?? string.Empty },
-                tx);
+                tx).ConfigureAwait(false);
         }
 
         public async Task<List<AuditLogRow>> GetRecentAsync(PosDbOptions options, int limit)
@@ -37,7 +37,7 @@ namespace Win7POS.Data.Repositories
                   FROM audit_log
                   ORDER BY ts DESC
                   LIMIT @limit",
-                new { limit });
+                new { limit }).ConfigureAwait(false);
             return rows.ToList();
         }
     }

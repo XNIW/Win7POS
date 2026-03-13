@@ -1,20 +1,21 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using System.Windows;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public partial class OverrideAuthorizationDialog : Window
     {
-        private readonly Func<string, string, (bool ok, int? userId)> _verify;
+        private readonly Func<string, string, Task<(bool ok, int? userId)>> _verifyAsync;
 
         public int? AuthorizerUserId { get; private set; }
 
         /// <summary>Crea il dialog con la lista filtrata di utenti autorizzabili. Verifica usa sempre username.</summary>
-        public OverrideAuthorizationDialog(string operationText, IReadOnlyList<OverrideOperatorItem> authorizableUsers, Func<string, string, (bool ok, int? userId)> verify)
+        public OverrideAuthorizationDialog(string operationText, IReadOnlyList<OverrideOperatorItem> authorizableUsers, Func<string, string, Task<(bool ok, int? userId)>> verifyAsync)
         {
             InitializeComponent();
-            _verify = verify ?? ((_, __) => (false, null));
+            _verifyAsync = verifyAsync ?? ((_, __) => Task.FromResult((false, (int?)null)));
             MessageText.Text = string.IsNullOrEmpty(operationText)
                 ? "Operazione riservata a Supervisore o superiore. Inserire credenziali per autorizzare."
                 : "Operazione riservata a Supervisore o superiore: " + operationText + ". Inserire credenziali per autorizzare.";
@@ -24,7 +25,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 OperatorCombo.SelectedIndex = 0;
         }
 
-        private void OnAuthorizeClick(object sender, RoutedEventArgs e)
+        private async void OnAuthorizeClick(object sender, RoutedEventArgs e)
         {
             var selected = OperatorCombo.SelectedItem as OverrideOperatorItem;
             var username = selected?.Username ?? "";
@@ -36,7 +37,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
-            var (ok, userId) = _verify(username, pin);
+            var (ok, userId) = await _verifyAsync(username, pin).ConfigureAwait(true);
             if (ok)
             {
                 AuthorizerUserId = userId;

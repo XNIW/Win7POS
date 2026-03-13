@@ -15,12 +15,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
     public sealed class DbMaintenanceViewModel : INotifyPropertyChanged
     {
         private readonly Pos.PosWorkflowService _service;
-        private readonly Func<bool> _demandRestorePermission;
+        private readonly Func<Task<bool>> _demandRestorePermission;
 
         private string _outputLog = string.Empty;
         private bool _isBusy;
 
-        public DbMaintenanceViewModel(Pos.PosWorkflowService service, Func<bool> demandRestorePermission = null)
+        public DbMaintenanceViewModel(Pos.PosWorkflowService service, Func<Task<bool>> demandRestorePermission = null)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _demandRestorePermission = demandRestorePermission;
@@ -75,7 +75,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task RestoreBackupAsync()
         {
-            if (_demandRestorePermission != null && !_demandRestorePermission())
+            if (_demandRestorePermission != null && !(await _demandRestorePermission().ConfigureAwait(true)))
             {
                 Append("Permesso Restore DB negato.");
                 return;

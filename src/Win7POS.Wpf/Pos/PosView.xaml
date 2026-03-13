@@ -7,7 +7,6 @@
              mc:Ignorable="d"
              d:DesignHeight="720" d:DesignWidth="1100">
     <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <Style x:Key="CartRowStyle" TargetType="ListBoxItem">
             <Setter Property="Padding" Value="12,10"/>
             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
@@ -321,6 +320,16 @@
                         Style="{StaticResource PrimaryButtonStyle}"
                         Background="{StaticResource PrimaryLighterBrush}" Foreground="White"/>
             </Grid>
+        </Border>
+
+        <!-- Overlay IsBusy: pagamento, stampa, operazioni lunghe -->
+        <Border Grid.Row="0" Grid.RowSpan="2" Grid.Column="0" Grid.ColumnSpan="2"
+                Background="#E0FFFFFF" Panel.ZIndex="10"
+                Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,0,0,12"/>
+                <TextBlock Text="Elaborazione in corso..." FontSize="14" Foreground="#555"/>
+            </StackPanel>
         </Border>
     </Grid>
 </UserControl>

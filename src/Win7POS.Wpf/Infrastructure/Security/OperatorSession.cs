@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
@@ -29,12 +30,12 @@ namespace Win7POS.Wpf.Infrastructure.Security
         public event Action SessionChanged;
         public event PropertyChangedEventHandler PropertyChanged;
 
-        public bool Login(string username, string pin)
+        public async Task<bool> LoginAsync(string username, string pin)
         {
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(pin))
                 return false;
 
-            var result = _userRepo.VerifyPinAsync(username, pin).GetAwaiter().GetResult();
+            var result = await _userRepo.VerifyPinAsync(username, pin).ConfigureAwait(true);
             if (result.User == null)
             {
                 if (result.WasLockedOut)

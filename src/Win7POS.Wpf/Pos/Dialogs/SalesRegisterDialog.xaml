@@ -12,9 +12,6 @@
         MinHeight="700"
         MaxHeight="700"
         KeyDown="OnWindowKeyDown">
-    <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-    </Window.Resources>
     <Border Padding="14">
         <Grid>
             <Grid.ColumnDefinitions>

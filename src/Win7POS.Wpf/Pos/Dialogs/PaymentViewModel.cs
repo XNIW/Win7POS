@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -29,7 +28,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _receiptPreviewText = "";
         private string _receiptPreviewFirstLine = "";
         private string _receiptPreviewRest = "";
-        private bool _showSiiWeb = true;
         private int _nextBoletaNumber;
         private string _fiscalPreviewText = "";
         private string _fiscalStatus = "";
@@ -57,9 +55,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             SetExactTotalCommand = new RelayCommand(_ => SetExactTotal(), _ => true);
             SetRoundedTotalCommand = new RelayCommand(_ => SetRoundedTotal(), _ => true);
             PayAllCardCommand = new RelayCommand(_ => PayAllCard(), _ => true);
-            GeneratePdfCommand = new RelayCommand(_ => _ = GeneratePdfAsync(), _ => _generateFiscalPdf != null);
             PrintPdfCommand = new RelayCommand(_ => _ = StampaPdfAsync(), _ => _generateFiscalPdf != null);
-            OpenSiiCommand = new RelayCommand(_ => OpenSii(), _ => true);
             IncrementBoletaCommand = new RelayCommand(_ => NextBoletaNumber += 1, _ => true);
             DecrementBoletaCommand = new RelayCommand(_ => { if (NextBoletaNumber > 0) NextBoletaNumber -= 1; }, _ => true);
 
@@ -209,13 +205,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand SetExactTotalCommand { get; }
         public ICommand SetRoundedTotalCommand { get; }
         public ICommand PayAllCardCommand { get; }
-        public ICommand GeneratePdfCommand { get; }
         public ICommand PrintPdfCommand { get; }
-        public ICommand OpenSiiCommand { get; }
         public ICommand IncrementBoletaCommand { get; }
         public ICommand DecrementBoletaCommand { get; }
 
-        public bool ShowSiiWeb { get => _showSiiWeb; set { _showSiiWeb = value; OnPropertyChanged(); } }
         public string FiscalPreviewText { get => _fiscalPreviewText; private set { _fiscalPreviewText = value ?? ""; OnPropertyChanged(); } }
         public string FiscalHeaderText { get; private set; }
         public string FiscalFooterText { get; private set; }
@@ -303,22 +296,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
             OnPropertyChanged(nameof(FiscalPreviewText));
         }
 
-        private async Task GeneratePdfAsync()
-        {
-            if (_generateFiscalPdf == null) return;
-            FiscalStatus = "Generazione...";
-            try
-            {
-                var path = await _generateFiscalPdf(FiscalPreviewText, SaleCode).ConfigureAwait(true);
-                FiscalStatus = "Aperto: " + path;
-                try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); } catch { }
-            }
-            catch (Exception ex)
-            {
-                FiscalStatus = "Errore: " + ex.Message;
-            }
-        }
-
         /// <summary>Se AutoPrintPdfSii è attivo e il pagamento include contanti, stampa il PDF SII. Ritorna true solo se il PDF è stato davvero stampato.</summary>
         public async Task<bool> TriggerAutoPrintPdfIfEnabledAsync()
         {
@@ -373,11 +350,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 FiscalStatus = "Errore: " + ex.Message;
                 return false;
             }
-        }
-
-        private void OpenSii()
-        {
-            try { Process.Start(new ProcessStartInfo("https://www.sii.cl") { UseShellExecute = true }); } catch { }
         }
 
         private void UpdateReceiptPreviewText()
@@ -502,7 +474,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             (ConfirmCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (GeneratePdfCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (PrintPdfCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 

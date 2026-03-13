@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using Win7POS.Core.Security;
 using Win7POS.Data.Repositories;
@@ -18,16 +19,14 @@ namespace Win7POS.Wpf.Infrastructure.Security
             _userRepo = userRepo ?? throw new ArgumentNullException(nameof(userRepo));
         }
 
-        public bool RequestOverride(string operationText, string requiredPermissionCode, out int? authorizerUserId)
+        public async Task<(bool ok, int? authorizerUserId)> RequestOverrideAsync(string operationText, string requiredPermissionCode)
         {
-            authorizerUserId = null;
-
-            var authorizableUsers = _userRepo.ListUsersWithPermissionAsync(requiredPermissionCode).GetAwaiter().GetResult();
+            var authorizableUsers = await _userRepo.ListUsersWithPermissionAsync(requiredPermissionCode).ConfigureAwait(true);
             if (authorizableUsers == null || authorizableUsers.Count == 0)
             {
                 ModernMessageDialog.Show(Application.Current?.MainWindow, "Autorizzazione",
                     "Nessun operatore con permessi adeguati configurato. Impossibile proseguire.");
-                return false;
+                return (false, null);
             }
 
             var items = new List<OverrideOperatorItem>();
@@ -41,9 +40,9 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 });
             }
 
-            (bool ok, int? userId) Verify(string username, string pin)
+            async Task<(bool ok, int? userId)> VerifyAsync(string username, string pin)
             {
-                var result = _userRepo.VerifyPinAsync(username, pin).GetAwaiter().GetResult();
+                var result = await _userRepo.VerifyPinAsync(username, pin).ConfigureAwait(true);
                 var account = result?.User;
                 if (account == null) return (false, null);
                 var hasPermission = account.IsAdmin ||
@@ -52,14 +51,12 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 return hasPermission ? (true, (int?)account.Id) : (false, null);
             }
 
-            var dlg = new OverrideAuthorizationDialog(operationText, items, Verify)
+            var dlg = new OverrideAuthorizationDialog(operationText, items, VerifyAsync)
             {
                 Owner = Application.Current?.MainWindow
             };
             var ok = dlg.ShowDialog() == true;
-            if (ok)
-                authorizerUserId = dlg.AuthorizerUserId;
-            return ok;
+            return ok ? (true, dlg.AuthorizerUserId) : (false, null);
         }
     }
 }

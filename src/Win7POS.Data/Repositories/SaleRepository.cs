@@ -28,7 +28,7 @@ namespace Win7POS.Data.Repositories
                 var saleId = await conn.ExecuteScalarAsync<long>(@"
 INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change, operator_id)
 VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @VoidedBySaleId, @VoidedAt, @Reason, @Total, @PaidCash, @PaidCard, @Change, @OperatorId);
-SELECT last_insert_rowid();", sale, tx);
+SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
 
                 foreach (var l in lines)
                 {
@@ -38,7 +38,7 @@ SELECT last_insert_rowid();", sale, tx);
 
                 await conn.ExecuteAsync(@"
 INSERT INTO sale_lines(saleId, productId, barcode, name, quantity, unitPrice, lineTotal, related_original_line_id)
-VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, @RelatedOriginalLineId);", lines, tx);
+VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, @RelatedOriginalLineId);", lines, tx).ConfigureAwait(false);
 
                 tx.Commit();
                 return saleId;
@@ -58,7 +58,7 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
                   FROM sales
                   ORDER BY id DESC LIMIT @take",
                 new { take }
-            );
+            ).ConfigureAwait(false);
             return rows.ToList();
         }
 
@@ -71,7 +71,7 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
             if (operatorId.HasValue)
                 sql += " AND (operator_id IS NULL OR operator_id = @operatorId)";
             sql += " ORDER BY createdAt ASC, id ASC";
-            var rows = await conn.QueryAsync<Sale>(sql, new { fromMs, toMs, operatorId });
+            var rows = await conn.QueryAsync<Sale>(sql, new { fromMs, toMs, operatorId }).ConfigureAwait(false);
             return rows.ToList();
         }
 
@@ -90,7 +90,7 @@ SELECT
   COALESCE(SUM(CASE WHEN kind = 1 THEN ABS(total) ELSE 0 END), 0) AS RefundsAmount
 FROM sales
 WHERE createdAt >= @from AND createdAt < @to",
-                new { from, to });
+                new { from, to }).ConfigureAwait(false);
             row.NetAmount = row.TotalAmount;
             row.Date = date.Date;
             return row;
@@ -200,7 +200,7 @@ ORDER BY Hour", new { from, to }).ConfigureAwait(false);
             return await conn.QuerySingleOrDefaultAsync<Sale>(
                 @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change
                   FROM sales WHERE id = @saleId",
-                new { saleId });
+                new { saleId }).ConfigureAwait(false);
         }
 
         public async Task<IReadOnlyList<Sale>> GetByCodeLikeAsync(string codeFilter)
@@ -215,7 +215,7 @@ ORDER BY Hour", new { from, to }).ConfigureAwait(false);
                   WHERE code LIKE @pattern
                   ORDER BY createdAt DESC, id DESC
                   LIMIT 200",
-                new { pattern });
+                new { pattern }).ConfigureAwait(false);
             return rows.ToList();
         }
 
@@ -227,7 +227,7 @@ ORDER BY Hour", new { from, to }).ConfigureAwait(false);
                   FROM sale_lines
                   WHERE saleId = @saleId
                   ORDER BY id ASC",
-                new { saleId });
+                new { saleId }).ConfigureAwait(false);
             return rows.ToList();
         }
 
@@ -236,7 +236,7 @@ ORDER BY Hour", new { from, to }).ConfigureAwait(false);
             using var conn = _factory.Open();
             var voidedBy = await conn.QuerySingleOrDefaultAsync<long?>(
                 "SELECT voided_by_sale_id FROM sales WHERE id = @saleId",
-                new { saleId });
+                new { saleId }).ConfigureAwait(false);
             return voidedBy.HasValue;
         }
 
@@ -255,7 +255,7 @@ WHERE s.kind = @kindRefund
                     kindRefund = (int)SaleKind.Refund,
                     originalSaleId,
                     originalLineId
-                });
+                }).ConfigureAwait(false);
             return qty;
         }
 
@@ -282,7 +282,7 @@ SELECT
 FROM sale_lines l
 WHERE l.saleId = @saleId
 ORDER BY l.id ASC",
-                new { saleId, kindRefund = (int)SaleKind.Refund });
+                new { saleId, kindRefund = (int)SaleKind.Refund }).ConfigureAwait(false);
 
             var list = rows.ToList();
             foreach (var x in list)

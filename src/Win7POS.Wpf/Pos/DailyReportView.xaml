@@ -6,7 +6,6 @@
              mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="1100">
     <UserControl.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <!-- Tab in stile segment/pill: altezza 32 come filtri, selezionato viola chiaro -->
         <Style x:Key="SegmentTabItemStyle" TargetType="TabItem">
             <Setter Property="Template">

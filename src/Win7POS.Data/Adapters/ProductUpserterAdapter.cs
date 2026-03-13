@@ -32,24 +32,24 @@ namespace Win7POS.Data.Adapters
                 existing = await _conn.QuerySingleOrDefaultAsync<Product>(
                     "SELECT id, barcode, name, unitPrice FROM products WHERE barcode = @barcode",
                     new { barcode = product.Barcode },
-                    _tx);
+                    _tx).ConfigureAwait(false);
 
                 var updated = await _conn.ExecuteAsync(@"
 UPDATE products
 SET name = @Name, unitPrice = @UnitPrice
-WHERE barcode = @Barcode", product, _tx);
+WHERE barcode = @Barcode", product, _tx).ConfigureAwait(false);
                 if (updated == 0)
                 {
                     await _conn.ExecuteScalarAsync<long>(@"
 INSERT INTO products(barcode, name, unitPrice)
 VALUES(@Barcode, @Name, @UnitPrice);
-SELECT last_insert_rowid();", product, _tx);
+SELECT last_insert_rowid();", product, _tx).ConfigureAwait(false);
                 }
             }
             else
             {
-                existing = await _products.GetByBarcodeAsync(product.Barcode);
-                await _products.UpsertAsync(product);
+                existing = await _products.GetByBarcodeAsync(product.Barcode).ConfigureAwait(false);
+                await _products.UpsertAsync(product).ConfigureAwait(false);
             }
 
             return existing == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;

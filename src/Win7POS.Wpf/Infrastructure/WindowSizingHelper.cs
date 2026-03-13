@@ -12,13 +12,20 @@ namespace Win7POS.Wpf.Infrastructure
     /// </summary>
     public static class WindowSizingHelper
     {
+        private const double MainWindowMinWidth = 1024;
+        private const double MainWindowMinHeight = 600;
+        private const double DialogContentPaddingX = 40;
+        private const double DialogContentPaddingY = 60;
+        private const double CapMaxHeightMargin = 48;
+        private const double CapMaxHeightMin = 200;
+
         /// <summary>
         /// Imposta la finestra principale a schermo intero con dimensioni minime quando ridotta.
         /// </summary>
         public static void ApplyMainWindowSizing(Window window)
         {
-            window.MinWidth = 1024;
-            window.MinHeight = 600;
+            window.MinWidth = MainWindowMinWidth;
+            window.MinHeight = MainWindowMinHeight;
             window.WindowState = WindowState.Maximized;
         }
 
@@ -62,8 +69,8 @@ namespace Win7POS.Wpf.Infrastructure
                 {
                     fe.Measure(new Size(maxWidth, maxHeight));
                     var desired = fe.DesiredSize;
-                    window.Width = Math.Min(Math.Max(desired.Width + 40, minWidth), maxWidth);
-                    window.Height = Math.Min(Math.Max(desired.Height + 60, minHeight), maxHeight);
+                    window.Width = Math.Min(Math.Max(desired.Width + DialogContentPaddingX, minWidth), maxWidth);
+                    window.Height = Math.Min(Math.Max(desired.Height + DialogContentPaddingY, minHeight), maxHeight);
                 }
 
                 // ricentra dopo il sizing finale (rispetto all'owner, ma senza limitare la size all'owner)
@@ -82,13 +89,13 @@ namespace Win7POS.Wpf.Infrastructure
         /// </summary>
         /// <param name="window">Dialog da limitare</param>
         /// <param name="margin">Margine verticale da sottrarre all'altezza Owner (default 48)</param>
-        public static void CapMaxHeightToOwner(Window window, double margin = 48)
+        public static void CapMaxHeightToOwner(Window window, double margin = CapMaxHeightMargin)
         {
             if (window == null) return;
             window.Loaded += (s, e) =>
             {
                 if (window.Owner == null || window.Owner.ActualHeight <= 0) return;
-                var maxFromOwner = Math.Max(200, window.Owner.ActualHeight - margin);
+                var maxFromOwner = Math.Max(CapMaxHeightMin, window.Owner.ActualHeight - margin);
                 var currentMax = window.MaxHeight;
                 if (double.IsNaN(currentMax) || currentMax > maxFromOwner || double.IsPositiveInfinity(currentMax))
                     window.MaxHeight = maxFromOwner;

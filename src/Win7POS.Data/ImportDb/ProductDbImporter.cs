@@ -33,16 +33,16 @@ namespace Win7POS.Data.ImportDb
             using var tx = conn.BeginTransaction();
             try
             {
-                await UpsertSuppliersAsync(conn, tx, workbook.Suppliers ?? Array.Empty<SupplierRow>(), dryRun);
-                await UpsertCategoriesAsync(conn, tx, workbook.Categories ?? Array.Empty<CategoryRow>(), dryRun);
+                await UpsertSuppliersAsync(conn, tx, workbook.Suppliers ?? Array.Empty<SupplierRow>(), dryRun).ConfigureAwait(false);
+                await UpsertCategoriesAsync(conn, tx, workbook.Categories ?? Array.Empty<CategoryRow>(), dryRun).ConfigureAwait(false);
 
                 var productMap = await UpsertProductsAndMetaAsync(conn, tx, workbook.Products,
                     workbook.Suppliers ?? Array.Empty<SupplierRow>(),
                     workbook.Categories ?? Array.Empty<CategoryRow>(),
-                    dryRun);
+                    dryRun).ConfigureAwait(false);
                 result.ProductsUpserted = productMap.Count;
 
-                result.PriceHistoryInserted = await InsertPriceHistoryAsync(conn, tx, workbook.PriceHistory ?? Array.Empty<PriceHistoryRow>(), productMap, dryRun);
+                result.PriceHistoryInserted = await InsertPriceHistoryAsync(conn, tx, workbook.PriceHistory ?? Array.Empty<PriceHistoryRow>(), productMap, dryRun).ConfigureAwait(false);
 
                 if (dryRun)
                     tx.Rollback();
@@ -66,7 +66,7 @@ namespace Win7POS.Data.ImportDb
             {
                 if (string.IsNullOrWhiteSpace(r.Name)) continue;
                 await conn.ExecuteAsync(@"INSERT OR REPLACE INTO suppliers(id, name) VALUES(@Id, @Name)",
-                    new { r.Id, r.Name }, tx);
+                    new { r.Id, r.Name }, tx).ConfigureAwait(false);
             }
         }
 
@@ -78,7 +78,7 @@ namespace Win7POS.Data.ImportDb
             {
                 if (string.IsNullOrWhiteSpace(r.Name)) continue;
                 await conn.ExecuteAsync(@"INSERT OR REPLACE INTO categories(id, name) VALUES(@Id, @Name)",
-                    new { r.Id, r.Name }, tx);
+                    new { r.Id, r.Name }, tx).ConfigureAwait(false);
             }
         }
 
@@ -146,7 +146,7 @@ namespace Win7POS.Data.ImportDb
 
                 if (!dryRun)
                 {
-                    var id = await ExecuteUpsertProductAsync(conn, tx, product);
+                    var id = await ExecuteUpsertProductAsync(conn, tx, product).ConfigureAwait(false);
                     map[r.Barcode] = id;
 
                     await conn.ExecuteAsync(@"INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
@@ -164,7 +164,7 @@ VALUES(@Barcode, @ArticleCode, @Name2, @PurchasePrice, @PurchaseOld, @RetailOld,
                             CategoryId = categoryId,
                             CategoryName = r.CategoryName ?? string.Empty,
                             StockQty = r.StockQty
-                        }, tx);
+                        }, tx).ConfigureAwait(false);
                 }
                 else
                 {
@@ -178,15 +178,15 @@ VALUES(@Barcode, @ArticleCode, @Name2, @PurchasePrice, @PurchaseOld, @RetailOld,
         private static async Task<long> ExecuteUpsertProductAsync(SqliteConnection conn, SqliteTransaction tx, Product p)
         {
             var updated = await conn.ExecuteAsync(
-                @"UPDATE products SET name = @Name, unitPrice = @UnitPrice WHERE barcode = @Barcode", p, tx);
+                @"UPDATE products SET name = @Name, unitPrice = @UnitPrice WHERE barcode = @Barcode", p, tx).ConfigureAwait(false);
             if (updated > 0)
             {
                 return await conn.ExecuteScalarAsync<long>(
-                    "SELECT id FROM products WHERE barcode = @Barcode", new { p.Barcode }, tx);
+                    "SELECT id FROM products WHERE barcode = @Barcode", new { p.Barcode }, tx).ConfigureAwait(false);
             }
             await conn.ExecuteAsync(
-                @"INSERT INTO products(barcode, name, unitPrice) VALUES(@Barcode, @Name, @UnitPrice)", p, tx);
-            return await conn.ExecuteScalarAsync<long>("SELECT last_insert_rowid()", null, tx);
+                @"INSERT INTO products(barcode, name, unitPrice) VALUES(@Barcode, @Name, @UnitPrice)", p, tx).ConfigureAwait(false);
+            return await conn.ExecuteScalarAsync<long>("SELECT last_insert_rowid()", null, tx).ConfigureAwait(false);
         }
 
         private static async Task<int> InsertPriceHistoryAsync(SqliteConnection conn, SqliteTransaction tx, IReadOnlyList<PriceHistoryRow> rows, Dictionary<string, long> productMap, bool dryRun)
@@ -211,7 +211,7 @@ VALUES(@Barcode, @Timestamp, @Type, @OldPrice, @NewPrice, @Source)",
                             OldPrice = r.OldPrice,
                             NewPrice = r.NewPrice,
                             Source = r.Source ?? string.Empty
-                        }, tx);
+                        }, tx).ConfigureAwait(false);
                     count++;
                 }
                 catch

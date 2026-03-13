@@ -25,7 +25,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             Loaded += (s, e) => NewPinBox.Focus();
         }
 
-        private void OnSaveClick(object sender, RoutedEventArgs e)
+        private async void OnSaveClick(object sender, RoutedEventArgs e)
         {
             var newPin = NewPinBox?.Password ?? "";
             var confirm = ConfirmPinBox?.Password ?? "";
@@ -43,8 +43,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             var salt = PinHelper.GenerateSalt();
             var hash = PinHelper.HashPin(newPin, salt);
-            _userRepo.UpdatePinAsync(_userId, hash, salt, requirePinChange: false).GetAwaiter().GetResult();
-            _securityRepo.LogEventAsync(SecurityEventCodes.PinChanged, "userId=" + _userId).GetAwaiter().GetResult();
+            await _userRepo.UpdatePinAsync(_userId, hash, salt, requirePinChange: false).ConfigureAwait(true);
+            await _securityRepo.LogEventAsync(SecurityEventCodes.PinChanged, "userId=" + _userId).ConfigureAwait(true);
             DialogResult = true;
             Close();
         }

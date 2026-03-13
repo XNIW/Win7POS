@@ -12,9 +12,6 @@
         MinHeight="700"
         MaxHeight="700"
         KeyDown="OnKeyDown">
-    <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-    </Window.Resources>
     <Border Padding="14">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <Grid Margin="0">

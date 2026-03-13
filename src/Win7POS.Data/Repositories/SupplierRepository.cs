@@ -15,7 +15,7 @@ namespace Win7POS.Data.Repositories
         {
             using var conn = _factory.Open();
             var rows = await conn.QueryAsync<SupplierListItem>(
-                "SELECT id AS Id, name AS Name FROM suppliers ORDER BY name ASC");
+                "SELECT id AS Id, name AS Name FROM suppliers ORDER BY name ASC").ConfigureAwait(false);
             return rows.ToList();
         }
     }

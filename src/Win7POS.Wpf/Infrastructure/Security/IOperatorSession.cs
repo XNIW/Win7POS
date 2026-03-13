@@ -1,3 +1,4 @@
+using System.Threading.Tasks;
 using Win7POS.Core.Security;
 
 namespace Win7POS.Wpf.Infrastructure.Security
@@ -11,7 +12,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
         string CurrentRoleName { get; }
 
         /// <summary>Esegue login con username e PIN. Ritorna true se OK.</summary>
-        bool Login(string username, string pin);
+        Task<bool> LoginAsync(string username, string pin);
 
         void Logout();
 

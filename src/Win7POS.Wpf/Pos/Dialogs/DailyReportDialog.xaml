@@ -10,9 +10,6 @@
         MinWidth="1000"
         MinHeight="660">
     <!-- Dimensioni: 1180x760, min 1000x660, ridimensionabile (no Max). Tab Giornaliero | Storico. -->
-    <Window.Resources>
-        <BooleanToVisibilityConverter x:Key="BoolToVis"/>
-    </Window.Resources>
     <Border Padding="14">
         <Grid>
             <Grid.RowDefinitions>

@@ -580,7 +580,7 @@ internal static class Program
         Console.WriteLine("ImportApply PASS");
 
         Console.WriteLine("自检 PASS");
-        CleanupSelfTestDb(opt.DbPath, keepDb);
+        await CleanupSelfTestDbAsync(opt.DbPath, keepDb).ConfigureAwait(false);
     }
 
     private static async Task RunDailyAsync(string dateArg, string dbPath)
@@ -927,7 +927,7 @@ SELECT last_insert_rowid();";
         return string.IsNullOrWhiteSpace(dbPath) ? PosDbOptions.Default() : PosDbOptions.ForPath(dbPath);
     }
 
-    private static void CleanupSelfTestDb(string dbPath, bool keepDb)
+    private static async Task CleanupSelfTestDbAsync(string dbPath, bool keepDb)
     {
         if (keepDb)
         {
@@ -937,10 +937,10 @@ SELECT last_insert_rowid();";
 
         // Make sure pooled SQLite handles are released before deleting DB file on Windows runners.
         SqliteConnection.ClearAllPools();
-        DeleteFileWithRetry(dbPath, 10, 200);
+        await DeleteFileWithRetryAsync(path: dbPath, maxAttempts: 10, delayMs: 200).ConfigureAwait(false);
     }
 
-    private static void DeleteFileWithRetry(string path, int maxAttempts, int delayMs)
+    private static async Task DeleteFileWithRetryAsync(string path, int maxAttempts, int delayMs)
     {
         if (string.IsNullOrWhiteSpace(path)) return;
 
@@ -953,11 +953,11 @@ SELECT last_insert_rowid();";
             }
             catch (IOException) when (i + 1 < maxAttempts)
             {
-                Thread.Sleep(delayMs);
+                await Task.Delay(delayMs).ConfigureAwait(false);
             }
             catch (UnauthorizedAccessException) when (i + 1 < maxAttempts)
             {
-                Thread.Sleep(delayMs);
+                await Task.Delay(delayMs).ConfigureAwait(false);
             }
         }
 

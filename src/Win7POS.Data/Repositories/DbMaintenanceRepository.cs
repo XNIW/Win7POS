@@ -17,7 +17,7 @@ namespace Win7POS.Data.Repositories
         public async Task<string> IntegrityCheckAsync()
         {
             using var conn = _factory.Open();
-            var rows = await conn.QueryAsync<string>("PRAGMA integrity_check;");
+            var rows = await conn.QueryAsync<string>("PRAGMA integrity_check;").ConfigureAwait(false);
             var list = rows.ToList();
             if (list.Count == 0) return "OK";
             return string.Join(Environment.NewLine, list);
@@ -26,13 +26,13 @@ namespace Win7POS.Data.Repositories
         public async Task VacuumAsync()
         {
             using var conn = _factory.Open();
-            await conn.ExecuteAsync("VACUUM;");
+            await conn.ExecuteAsync("VACUUM;").ConfigureAwait(false);
         }
 
         public async Task WalCheckpointAsync()
         {
             using var conn = _factory.Open();
-            await conn.ExecuteAsync("PRAGMA wal_checkpoint(FULL);");
+            await conn.ExecuteAsync("PRAGMA wal_checkpoint(FULL);").ConfigureAwait(false);
         }
     }
 }

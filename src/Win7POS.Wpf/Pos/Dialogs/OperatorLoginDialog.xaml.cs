@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using Win7POS.Core.Security;
 using Win7POS.Data;
@@ -18,16 +19,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             InitializeComponent();
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
-            Loaded += OnLoaded;
+            Loaded += OnLoadedAsync;
         }
 
         /// <summary>Costruttore per chiamate che non hanno la factory (es. Cambia operatore). Usa il path dati di default.</summary>
         public OperatorLoginDialog() : this(new SqliteConnectionFactory(PosDbOptions.Default())) { }
 
-        private void OnLoaded(object sender, RoutedEventArgs e)
+        private async void OnLoadedAsync(object sender, RoutedEventArgs e)
         {
             var userRepo = new UserRepository(_factory);
-            var users = userRepo.ListAsync().GetAwaiter().GetResult();
+            var users = await userRepo.ListAsync().ConfigureAwait(true);
 
             var loginable = users
                 .Where(x => x != null
@@ -53,7 +54,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             OperatorCombo.Focus();
         }
 
-        private void OnLoginClick(object sender, RoutedEventArgs e)
+        private async void OnLoginClick(object sender, RoutedEventArgs e)
         {
             var selected = OperatorCombo.SelectedItem as OperatorLoginItem;
             // Autenticazione sempre su username (identità univoca), mai solo nome
@@ -74,7 +75,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
-            if (session.Login(username, pin))
+            if (await session.LoginAsync(username, pin).ConfigureAwait(true))
             {
                 if (session.CurrentUser != null && session.CurrentUser.RequirePinChange)
                 {

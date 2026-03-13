@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading.Tasks;
 using System.Windows;
 using Win7POS.Core.Security;
 using Win7POS.Data;
@@ -25,7 +26,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _securityRepo = new SecurityRepository(_factory);
         }
 
-        private void OnCreateAdminClick(object sender, RoutedEventArgs e)
+        private async void OnCreateAdminClick(object sender, RoutedEventArgs e)
         {
             var displayName = (DisplayNameBox?.Text ?? "").Trim();
             var username = (UsernameBox?.Text ?? "").Trim();
@@ -56,14 +57,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
-            var adminRole = _roleRepo.GetByCodeAsync("admin").GetAwaiter().GetResult();
+            var adminRole = await _roleRepo.GetByCodeAsync("admin").ConfigureAwait(true);
             if (adminRole == null)
             {
                 ShowError("Ruolo admin non trovato nel database. Verificare DbInitializer.");
                 return;
             }
 
-            var existing = _userRepo.GetByUsernameAsync(username).GetAwaiter().GetResult();
+            var existing = await _userRepo.GetByUsernameAsync(username).ConfigureAwait(true);
             if (existing != null)
             {
                 ShowError("Username già in uso.");
@@ -75,7 +76,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var salt = PinHelper.GenerateSalt();
                 var hash = PinHelper.HashPin(pin, salt);
 
-                _userRepo.CreateAsync(
+                await _userRepo.CreateAsync(
                     username,
                     displayName,
                     hash,
@@ -83,17 +84,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     adminRole.Id,
                     0,
                     requirePinChange: false
-                ).GetAwaiter().GetResult();
+                ).ConfigureAwait(true);
 
-                _securityRepo.LogEventAsync(
+                await _securityRepo.LogEventAsync(
                     SecurityEventCodes.UserCreated,
                     "username=" + username + ", source=first_run"
-                ).GetAwaiter().GetResult();
+                ).ConfigureAwait(true);
 
-                _securityRepo.LogEventAsync(
+                await _securityRepo.LogEventAsync(
                     SecurityEventCodes.FirstRunAdminCreated,
                     "username=" + username
-                ).GetAwaiter().GetResult();
+                ).ConfigureAwait(true);
 
                 DialogResult = true;
                 Close();

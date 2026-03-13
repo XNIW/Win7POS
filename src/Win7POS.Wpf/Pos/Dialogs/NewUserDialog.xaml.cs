@@ -17,10 +17,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public NewUserDialog()
         {
             InitializeComponent();
+            Loaded += OnLoadedAsync;
+        }
+
+        private async void OnLoadedAsync(object sender, RoutedEventArgs e)
+        {
             var options = PosDbOptions.Default();
             var factory = new SqliteConnectionFactory(options);
             var roleRepo = new RoleRepository(factory);
-            var roles = roleRepo.GetAllAsync().GetAwaiter().GetResult();
+            var roles = await roleRepo.GetAllAsync().ConfigureAwait(true);
             RoleCombo.ItemsSource = roles;
             RoleCombo.SelectedIndex = roles.Count > 0 ? 0 : -1;
         }

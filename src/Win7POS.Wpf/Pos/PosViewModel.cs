@@ -1026,7 +1026,7 @@ namespace Win7POS.Wpf.Pos
 
         private async Task OpenPrinterSettingsAsync()
         {
-            if (!TryDemandOrOverride(PermissionCodes.SettingsPrinter, "Impostazioni stampante")) { RequestFocusBarcode(); return; }
+            if (!(await TryDemandOrOverrideAsync(PermissionCodes.SettingsPrinter, "Impostazioni stampante").ConfigureAwait(true))) { RequestFocusBarcode(); return; }
             var vm = new PrinterSettingsViewModel
             {
                 PrinterName = _printerSettings.PrinterName,
@@ -1192,7 +1192,7 @@ namespace Win7POS.Wpf.Pos
         {
             try { _permissionService?.Demand(PermissionCodes.DbMaintenance, "Manutenzione database"); }
             catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message); RequestFocusBarcode(); return Task.CompletedTask; }
-            var vm = new DbMaintenanceViewModel(_service, () => TryDemandOrOverride(PermissionCodes.DbRestore, "Restore DB"));
+            var vm = new DbMaintenanceViewModel(_service, async () => await TryDemandOrOverrideAsync(PermissionCodes.DbRestore, "Restore DB").ConfigureAwait(true));
             var dlg = new DbMaintenanceDialog(vm)
             {
                 Owner = Application.Current?.MainWindow
@@ -1225,7 +1225,7 @@ namespace Win7POS.Wpf.Pos
             return Task.CompletedTask;
         }
 
-        private bool TryDemandOrOverride(string permissionCode, string operationText)
+        private async Task<bool> TryDemandOrOverrideAsync(string permissionCode, string operationText)
         {
             try
             {
@@ -1237,7 +1237,8 @@ namespace Win7POS.Wpf.Pos
                 if (_overrideAuthService == null) { StatusMessage = "Permesso negato: " + operationText; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", "Permesso negato: " + operationText); return false; }
                 if (!ApplyConfirmDialog.ShowConfirm(Application.Current?.MainWindow, operationText, "Operazione riservata a Supervisore o superiore. Vuoi richiedere autorizzazione?")) { _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideDenied, "permission=" + permissionCode + " op=" + operationText + " reason=user_declined"); return false; }
                 _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideRequested, "permission=" + permissionCode + " op=" + operationText);
-                if (!_overrideAuthService.RequestOverride(operationText, permissionCode, out var authorizerId) || !authorizerId.HasValue)
+                var (ok, authorizerId) = await _overrideAuthService.RequestOverrideAsync(operationText, permissionCode).ConfigureAwait(true);
+                if (!ok || !authorizerId.HasValue)
                 {
                     _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideDenied, "permission=" + permissionCode + " op=" + operationText + " reason=authorizer_failed");
                     _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideFailed, "permission=" + permissionCode + " op=" + operationText);
@@ -1251,7 +1252,7 @@ namespace Win7POS.Wpf.Pos
 
         private async Task OpenRefundAsync()
         {
-            if (!TryDemandOrOverride(PermissionCodes.PosRefund, "Reso/Refund")) return;
+            if (!(await TryDemandOrOverrideAsync(PermissionCodes.PosRefund, "Reso/Refund").ConfigureAwait(true))) return;
             if (SelectedRecentSale == null)
             {
                 StatusMessage = "Seleziona una vendita.";
@@ -1282,7 +1283,7 @@ namespace Win7POS.Wpf.Pos
                 }
 
                 var req = vm.BuildRequest();
-                if (req.IsFullVoid && !TryDemandOrOverride(PermissionCodes.PosVoidSale, "Storno vendita"))
+                if (req.IsFullVoid && !(await TryDemandOrOverrideAsync(PermissionCodes.PosVoidSale, "Storno vendita").ConfigureAwait(true)))
                 {
                     StatusMessage = "Permesso storno vendita negato.";
                     return;
@@ -1402,11 +1403,11 @@ namespace Win7POS.Wpf.Pos
             RequestFocusBarcode();
         }
 
-        private Task OpenShopSettingsAsync()
+        private async Task OpenShopSettingsAsync()
         {
             try
             {
-                if (!TryDemandOrOverride(PermissionCodes.SettingsShop, "Impostazioni negozio")) { RequestFocusBarcode(); return Task.CompletedTask; }
+                if (!(await TryDemandOrOverrideAsync(PermissionCodes.SettingsShop, "Impostazioni negozio").ConfigureAwait(true))) { RequestFocusBarcode(); return; }
                 var vm = new Dialogs.ShopSettingsViewModel(_service);
                 var dlg = new Dialogs.ShopSettingsDialog(vm)
                 {
@@ -1427,7 +1428,6 @@ namespace Win7POS.Wpf.Pos
                 ModernMessageDialog.Show(Application.Current?.MainWindow, "Impostazioni negozio", "Errore apertura Impostazioni negozio.\n\n" + ex.Message);
             }
             RequestFocusBarcode();
-            return Task.CompletedTask;
         }
 
         private async Task SuspendCartAsync()
@@ -1500,7 +1500,7 @@ namespace Win7POS.Wpf.Pos
             if (line == null || !CanEditCartLine(line)) return;
             try
             {
-                if (!TryDemandOrOverride(PermissionCodes.CatalogEdit, "Modifica prodotto")) return;
+                if (!(await TryDemandOrOverrideAsync(PermissionCodes.CatalogEdit, "Modifica prodotto").ConfigureAwait(true))) return;
                 var productsService = new ProductsWorkflowService();
                 var product = await productsService.GetByBarcodeDetailsAsync(line.Barcode).ConfigureAwait(true);
                 if (product == null)
@@ -1575,11 +1575,11 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        private void OpenDiscount()
+        private async void OpenDiscount()
         {
             try
             {
-                if (!TryDemandOrOverride(PermissionCodes.PosDiscount, "Sconto")) return;
+                if (!(await TryDemandOrOverrideAsync(PermissionCodes.PosDiscount, "Sconto").ConfigureAwait(true))) return;
                 var selectedBarcode = SelectedCartItem?.Barcode;
                 var hasCart = CartItems.Count > 0;
                 Dialogs.DiscountPreviewContext previewContext = null;

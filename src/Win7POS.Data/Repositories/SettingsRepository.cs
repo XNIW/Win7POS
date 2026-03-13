@@ -20,7 +20,7 @@ namespace Win7POS.Data.Repositories
             using var conn = _factory.Open();
             return await conn.QuerySingleOrDefaultAsync<string>(
                 "SELECT value FROM app_settings WHERE key = @key",
-                new { key });
+                new { key }).ConfigureAwait(false);
         }
 
         public async Task SetStringAsync(string key, string value)
@@ -30,12 +30,12 @@ namespace Win7POS.Data.Repositories
             await conn.ExecuteAsync(@"
 INSERT INTO app_settings(key, value) VALUES(@key, @value)
 ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
-                new { key, value = value ?? string.Empty });
+                new { key, value = value ?? string.Empty }).ConfigureAwait(false);
         }
 
         public async Task<bool?> GetBoolAsync(string key)
         {
-            var raw = await GetStringAsync(key);
+            var raw = await GetStringAsync(key).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw)) return null;
 
             if (string.Equals(raw, "1", StringComparison.OrdinalIgnoreCase) ||
@@ -58,7 +58,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
 
         public async Task<int?> GetIntAsync(string key)
         {
-            var raw = await GetStringAsync(key);
+            var raw = await GetStringAsync(key).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw)) return null;
             if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
                 return null;
