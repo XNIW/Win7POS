@@ -107,15 +107,15 @@ namespace Win7POS.Wpf.Chrome
 
             var outerBorder = new Border
             {
-                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBF8FE")),
-                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D9CFE7")),
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FCFAFE")),
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDD4E8")),
                 BorderThickness = new Thickness(1),
                 CornerRadius = radius,
                 Effect = new DropShadowEffect
                 {
-                    BlurRadius = 18,
+                    BlurRadius = 16,
                     ShadowDepth = 0,
-                    Opacity = 0.12
+                    Opacity = 0.10
                 }
             };
 
@@ -183,7 +183,7 @@ namespace Win7POS.Wpf.Chrome
 
             var contentHost = new ContentPresenter
             {
-                Margin = new Thickness(24)
+                Margin = new Thickness(20)
             };
             contentHost.SetBinding(ContentPresenter.ContentProperty, new Binding("DialogContent") { Source = this });
             Grid.SetRow(contentHost, 1);
@@ -214,7 +214,7 @@ namespace Win7POS.Wpf.Chrome
             {
                 var cardW = Width;
                 var cardH = Height;
-                if (double.IsNaN(cardW) || cardW <= 0) cardW = 640;
+                if (double.IsNaN(cardW) || cardW <= 0) cardW = 580;
                 if (double.IsNaN(cardH) || cardH <= 0) cardH = 380;
 
                 Left = Owner.Left;
@@ -224,7 +224,7 @@ namespace Win7POS.Wpf.Chrome
 
                 var overlay = new Border
                 {
-                    Background = new SolidColorBrush(Color.FromArgb(28, 94, 63, 134))
+                    Background = new SolidColorBrush(Color.FromArgb(18, 0, 0, 0))
                 };
 
                 outerBorder.HorizontalAlignment = HorizontalAlignment.Center;

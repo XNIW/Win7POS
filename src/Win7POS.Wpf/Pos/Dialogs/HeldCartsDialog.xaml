@@ -5,36 +5,36 @@
         Title="Scontrini sospesi"
         ShowHeader="False"
         UseModalOverlay="True"
-        DialogCornerRadius="18"
+        DialogCornerRadius="16"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        Width="640"
-        Height="420"
-        MinWidth="560"
-        MinHeight="340"
-        MaxWidth="720"
-        MaxHeight="480"
+        Width="580"
+        Height="380"
+        MinWidth="520"
+        MinHeight="320"
+        MaxWidth="660"
+        MaxHeight="440"
         ResizeMode="CanResize">
-    <Grid Margin="24">
+    <Grid Margin="18">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="1.35*" MinWidth="260"/>
-            <ColumnDefinition Width="14"/>
-            <ColumnDefinition Width="0.95*" MinWidth="170"/>
+            <ColumnDefinition Width="1.35*" MinWidth="240"/>
+            <ColumnDefinition Width="12"/>
+            <ColumnDefinition Width="0.95*" MinWidth="160"/>
         </Grid.ColumnDefinitions>
 
         <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
                    Text="Scontrini sospesi"
                    FontWeight="SemiBold" FontSize="18"
                    Foreground="#5E3F86"
-                   Margin="0,0,0,16"/>
+                   Margin="0,0,0,14"/>
 
         <!-- Lista sospesi -->
-        <Border Grid.Row="1" Grid.Column="0" Background="#FFFFFF" CornerRadius="12" BorderBrush="#E2D9EC" BorderThickness="1" Padding="10" Margin="0,0,0,10">
+        <Border Grid.Row="1" Grid.Column="0" Background="#FFFFFF" CornerRadius="10" BorderBrush="#E3DCEB" BorderThickness="1" Padding="10" Margin="0,0,0,8">
             <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedHold}"
                      BorderThickness="0" Background="Transparent"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
@@ -63,7 +63,7 @@
         </Border>
 
         <!-- Anteprima scontrino: colonna più stretta, contenuto compatto -->
-        <Border Grid.Row="1" Grid.Column="2" Background="#FFFFFF" CornerRadius="12" BorderBrush="#E2D9EC" BorderThickness="1" Padding="10" Margin="0,0,0,10">
+        <Border Grid.Row="1" Grid.Column="2" Background="#FFFFFF" CornerRadius="10" BorderBrush="#E3DCEB" BorderThickness="1" Padding="10" Margin="0,0,0,8">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -90,18 +90,18 @@
         </Border>
 
         <!-- Footer: stato + pulsanti -->
-        <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,18,0,0">
+        <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,14,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="#666" FontSize="11" Margin="0,0,16,0"/>
+            <TextBlock Grid.Column="0" Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="#666" FontSize="11" Margin="0,0,12,0"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <Button Content="Recupera" MinWidth="110" Height="38" Margin="0,0,10,0"
+                <Button Content="Recupera" MinWidth="100" Height="36" Margin="0,0,8,0"
                         Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RecoverCommand}"/>
-                <Button Content="Elimina" MinWidth="90" Height="38" Margin="0,0,10,0"
+                <Button Content="Elimina" MinWidth="84" Height="36" Margin="0,0,8,0"
                         Style="{StaticResource SecondaryButtonStyle}" Command="{Binding DeleteCommand}"/>
-                <Button Content="Chiudi" MinWidth="90" Height="38"
+                <Button Content="Chiudi" MinWidth="84" Height="36"
                         Style="{StaticResource OutlineButtonStyle}" Command="{Binding CloseCommand}"/>
             </StackPanel>
         </Grid>
