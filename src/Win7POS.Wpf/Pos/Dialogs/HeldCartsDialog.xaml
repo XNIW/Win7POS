@@ -6,7 +6,7 @@
         ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
-        DialogBackground="#FBF8FD"
+        DialogBackground="#F7F2FB"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
         Width="760"
@@ -49,20 +49,26 @@
                          BorderThickness="0" Background="Transparent"
                          ScrollViewer.VerticalScrollBarVisibility="Auto"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.Resources>
+                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#E9E1F2"/>
+                        <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#E9E1F2"/>
+                        <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#222222"/>
+                        <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#222222"/>
+                    </ListBox.Resources>
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
                             <Setter Property="Padding" Value="8,6"/>
                             <Setter Property="Margin" Value="0,0,0,2"/>
                             <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Foreground" Value="#222222"/>
                             <Setter Property="Background" Value="Transparent"/>
-                            <Setter Property="Foreground" Value="#222"/>
                             <Style.Triggers>
-                                <Trigger Property="IsSelected" Value="True">
-                                    <Setter Property="Background" Value="#E9E1F2"/>
-                                    <Setter Property="Foreground" Value="#222"/>
-                                </Trigger>
                                 <Trigger Property="IsMouseOver" Value="True">
                                     <Setter Property="Background" Value="#F3EDF8"/>
+                                </Trigger>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="#E9E1F2"/>
+                                    <Setter Property="Foreground" Value="#222222"/>
                                 </Trigger>
                             </Style.Triggers>
                         </Style>
@@ -99,28 +105,34 @@
                     <TextBlock Grid.Row="0" Text="Anteprima" FontWeight="SemiBold" FontSize="11" Foreground="#666" Margin="0,0,0,8"/>
                     <ListBox Grid.Row="1" ItemsSource="{Binding SelectedLines}" BorderThickness="0" Background="Transparent"
                              ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.Resources>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#E9E1F2"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#E9E1F2"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#222222"/>
+                            <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#222222"/>
+                        </ListBox.Resources>
                         <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
-                                    <Setter Property="Padding" Value="0,4"/>
-                                    <Setter Property="Background" Value="Transparent"/>
-                                    <Setter Property="Foreground" Value="#222"/>
-                                    <Style.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter Property="Background" Value="#E9E1F2"/>
-                                            <Setter Property="Foreground" Value="#222"/>
-                                        </Trigger>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Background" Value="#F3EDF8"/>
-                                        </Trigger>
-                                    </Style.Triggers>
+                            <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
+                                <Setter Property="Padding" Value="0,4"/>
+                                <Setter Property="Foreground" Value="#222222"/>
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#F3EDF8"/>
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="#E9E1F2"/>
+                                        <Setter Property="Foreground" Value="#222222"/>
+                                    </Trigger>
+                                </Style.Triggers>
                             </Style>
                         </ListBox.ItemContainerStyle>
                         <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <StackPanel Margin="0,0,0,8">
-                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"/>
-                                        <TextBlock Text="{Binding DetailLine}" Foreground="#666" FontSize="11"/>
-                                    </StackPanel>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,8">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"/>
+                                    <TextBlock Text="{Binding DetailLine}" Foreground="#666" FontSize="11"/>
+                                </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
