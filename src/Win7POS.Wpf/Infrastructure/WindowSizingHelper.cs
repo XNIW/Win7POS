@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using Win7POS.Wpf.Chrome;
 
 namespace Win7POS.Wpf.Infrastructure
 {
@@ -92,6 +93,7 @@ namespace Win7POS.Wpf.Infrastructure
         public static void CapMaxHeightToOwner(Window window, double margin = CapMaxHeightMargin)
         {
             if (window == null) return;
+            if (window is DialogShellWindow dlg && dlg.UseModalOverlay) return;
             window.Loaded += (s, e) =>
             {
                 if (window.Owner == null || window.Owner.ActualHeight <= 0) return;

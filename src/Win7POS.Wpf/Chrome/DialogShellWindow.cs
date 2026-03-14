@@ -57,11 +57,29 @@ namespace Win7POS.Wpf.Chrome
             set => SetValue(DialogCornerRadiusProperty, value);
         }
 
+        public static readonly DependencyProperty UseModalOverlayProperty =
+            DependencyProperty.Register(
+                nameof(UseModalOverlay),
+                typeof(bool),
+                typeof(DialogShellWindow),
+                new PropertyMetadata(false, (d, e) =>
+                {
+                    if (d is DialogShellWindow w && (bool)e.NewValue)
+                        w.AllowsTransparency = true;
+                }));
+
+        /// <summary>Se true, mostra overlay lilla semitrasparente dietro al dialog (richiede Owner).</summary>
+        public bool UseModalOverlay
+        {
+            get => (bool)GetValue(UseModalOverlayProperty);
+            set => SetValue(UseModalOverlayProperty, value);
+        }
+
         public DialogShellWindow()
         {
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.CanResize;
-            Background = System.Windows.Media.Brushes.Transparent;
+            Background = Brushes.Transparent;
             AllowsTransparency = false;
 
             Loaded += OnLoaded;
@@ -95,9 +113,9 @@ namespace Win7POS.Wpf.Chrome
                 CornerRadius = radius,
                 Effect = new DropShadowEffect
                 {
-                    BlurRadius = 14,
+                    BlurRadius = 18,
                     ShadowDepth = 0,
-                    Opacity = 0.10
+                    Opacity = 0.12
                 }
             };
 
@@ -165,7 +183,7 @@ namespace Win7POS.Wpf.Chrome
 
             var contentHost = new ContentPresenter
             {
-                Margin = new Thickness(18)
+                Margin = new Thickness(24)
             };
             contentHost.SetBinding(ContentPresenter.ContentProperty, new Binding("DialogContent") { Source = this });
             Grid.SetRow(contentHost, 1);
@@ -191,7 +209,38 @@ namespace Win7POS.Wpf.Chrome
             }
 
             outerBorder.Child = mainGrid;
-            Content = outerBorder;
+
+            if (UseModalOverlay && Owner != null)
+            {
+                var cardW = Width;
+                var cardH = Height;
+                if (double.IsNaN(cardW) || cardW <= 0) cardW = 640;
+                if (double.IsNaN(cardH) || cardH <= 0) cardH = 380;
+
+                Left = Owner.Left;
+                Top = Owner.Top;
+                Width = Owner.ActualWidth;
+                Height = Owner.ActualHeight;
+
+                var overlay = new Border
+                {
+                    Background = new SolidColorBrush(Color.FromArgb(28, 94, 63, 134))
+                };
+
+                outerBorder.HorizontalAlignment = HorizontalAlignment.Center;
+                outerBorder.VerticalAlignment = VerticalAlignment.Center;
+                outerBorder.Width = cardW;
+                outerBorder.Height = cardH;
+
+                var fullGrid = new Grid();
+                fullGrid.Children.Add(overlay);
+                fullGrid.Children.Add(outerBorder);
+                Content = fullGrid;
+            }
+            else
+            {
+                Content = outerBorder;
+            }
         }
 
         private void Header_MouseLeftButtonDown(Button captionButtonsContainer, object sender, MouseButtonEventArgs e)
