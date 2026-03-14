@@ -5,6 +5,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Markup;
 using System.Windows.Media;
+using System.Windows.Media.Effects;
 using System.Windows.Shell;
 
 namespace Win7POS.Wpf.Chrome
@@ -88,10 +89,16 @@ namespace Win7POS.Wpf.Chrome
 
             var outerBorder = new Border
             {
-                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FCFBFD")),
-                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D8D0E4")),
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FBF8FE")),
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D9CFE7")),
                 BorderThickness = new Thickness(1),
-                CornerRadius = radius
+                CornerRadius = radius,
+                Effect = new DropShadowEffect
+                {
+                    BlurRadius = 14,
+                    ShadowDepth = 0,
+                    Opacity = 0.10
+                }
             };
 
             var mainGrid = new Grid();
