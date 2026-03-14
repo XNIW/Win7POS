@@ -50,8 +50,11 @@ namespace Win7POS.Wpf.Pos
                 if (CashBox == null) return;
                 CashBox.Focus();
                 Keyboard.Focus(CashBox);
-                CashBox.CaretIndex = CashBox.Text?.Length ?? 0;
-            }), DispatcherPriority.Input);
+                var text = CashBox.Text ?? string.Empty;
+                CashBox.CaretIndex = text.Length;
+                CashBox.SelectionStart = text.Length;
+                CashBox.SelectionLength = 0;
+            }), DispatcherPriority.ContextIdle);
         }
 
         private void CashBox_GotFocus(object sender, RoutedEventArgs e)
@@ -77,12 +80,23 @@ namespace Win7POS.Wpf.Pos
 
             var isPlusMainKeyboard = e.Key == Key.OemPlus && (Keyboard.Modifiers & ModifierKeys.Shift) == ModifierKeys.Shift;
             var isPlusNumpad = e.Key == Key.Add;
-
             if (isPlusMainKeyboard || isPlusNumpad)
             {
-                if (vm.PayAllCardCommand != null && vm.PayAllCardCommand.CanExecute(null))
+                if (vm.PayAllCardCommand?.CanExecute(null) == true)
                 {
                     vm.PayAllCardCommand.Execute(null);
+                    e.Handled = true;
+                }
+                return;
+            }
+
+            var isMinusMainKeyboard = e.Key == Key.OemMinus;
+            var isMinusNumpad = e.Key == Key.Subtract;
+            if (isMinusMainKeyboard || isMinusNumpad)
+            {
+                if (vm.SetRoundedTotalCommand?.CanExecute(null) == true)
+                {
+                    vm.SetRoundedTotalCommand.Execute(null);
                     e.Handled = true;
                 }
             }

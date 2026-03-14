@@ -463,6 +463,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             ActiveField = PaymentActiveField.Cash;
         }
 
+        /// <summary>Richiede refocus su CashBox con caret in fondo (dopo rapidi cash).</summary>
+        private void RequestCashCaretToEnd()
+        {
+            ActiveField = PaymentActiveField.Cash;
+            RequestCashRefocus?.Invoke();
+        }
+
         private void AddQuickAmount(object parameter)
         {
             var add = ParseQuickAmount(parameter);
@@ -470,6 +477,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             PrepareCashQuickAction();
             CashReceived = (CashAmountMinor + add).ToString(CultureInfo.InvariantCulture);
+            RequestCashCaretToEnd();
         }
 
         private static int ParseQuickAmount(object parameter)
@@ -484,6 +492,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             PrepareCashQuickAction();
             CashReceived = _totalDueMinor.ToString(CultureInfo.InvariantCulture);
+            RequestCashCaretToEnd();
         }
 
         private void SetRoundedTotal()
@@ -491,6 +500,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             PrepareCashQuickAction();
             var rounded = RoundCashAmount(_totalDueMinor);
             CashReceived = rounded.ToString(CultureInfo.InvariantCulture);
+            RequestCashCaretToEnd();
         }
 
         private static long RoundCashAmount(long minor)
