@@ -222,18 +222,12 @@ namespace Win7POS.Wpf.Chrome
                 Width = Owner.ActualWidth;
                 Height = Owner.ActualHeight;
 
-                var overlay = new Border
-                {
-                    Background = new SolidColorBrush(Color.FromArgb(20, 0, 0, 0))
-                };
-
                 outerBorder.HorizontalAlignment = HorizontalAlignment.Center;
                 outerBorder.VerticalAlignment = VerticalAlignment.Center;
                 outerBorder.Width = cardW;
                 outerBorder.Height = cardH;
 
-                var fullGrid = new Grid();
-                fullGrid.Children.Add(overlay);
+                var fullGrid = new Grid { Background = Brushes.Transparent };
                 fullGrid.Children.Add(outerBorder);
                 Content = fullGrid;
             }
