@@ -6,6 +6,7 @@
         ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
+        DialogBackground="#FBF8FD"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
         Width="760"
@@ -39,8 +40,8 @@
 
             <!-- Lista sospesi -->
             <Border Grid.Column="0"
-                    Background="#FFFFFF"
-                    BorderBrush="#E3DCEB"
+                    Background="#FFFEFF"
+                    BorderBrush="#E2D9EC"
                     BorderThickness="1"
                     CornerRadius="10"
                     Padding="10">
@@ -52,6 +53,18 @@
                         <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
                             <Setter Property="Padding" Value="8,6"/>
                             <Setter Property="Margin" Value="0,0,0,2"/>
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Background" Value="Transparent"/>
+                            <Setter Property="Foreground" Value="#222"/>
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="#E9E1F2"/>
+                                    <Setter Property="Foreground" Value="#222"/>
+                                </Trigger>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#F3EDF8"/>
+                                </Trigger>
+                            </Style.Triggers>
                         </Style>
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
@@ -73,8 +86,8 @@
 
             <!-- Anteprima scontrino: mini preview ricevuta -->
             <Border Grid.Column="2"
-                    Background="#FFFDFE"
-                    BorderBrush="#E6DFEE"
+                    Background="#FFFEFF"
+                    BorderBrush="#E2D9EC"
                     BorderThickness="1"
                     CornerRadius="8"
                     Padding="12">
@@ -84,18 +97,33 @@
                         <RowDefinition Height="*"/>
                     </Grid.RowDefinitions>
                     <TextBlock Grid.Row="0" Text="Anteprima" FontWeight="SemiBold" FontSize="11" Foreground="#666" Margin="0,0,0,8"/>
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-                        <ItemsControl ItemsSource="{Binding SelectedLines}">
-                            <ItemsControl.ItemTemplate>
+                    <ListBox Grid.Row="1" ItemsSource="{Binding SelectedLines}" BorderThickness="0" Background="Transparent"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto">
+                        <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
+                                    <Setter Property="Padding" Value="0,4"/>
+                                    <Setter Property="Background" Value="Transparent"/>
+                                    <Setter Property="Foreground" Value="#222"/>
+                                    <Style.Triggers>
+                                        <Trigger Property="IsSelected" Value="True">
+                                            <Setter Property="Background" Value="#E9E1F2"/>
+                                            <Setter Property="Foreground" Value="#222"/>
+                                        </Trigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#F3EDF8"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <StackPanel Margin="0,0,0,8">
                                         <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"/>
                                         <TextBlock Text="{Binding DetailLine}" Foreground="#666" FontSize="11"/>
                                     </StackPanel>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                 </Grid>
             </Border>
         </Grid>

@@ -57,6 +57,20 @@ namespace Win7POS.Wpf.Chrome
             set => SetValue(DialogCornerRadiusProperty, value);
         }
 
+        public static readonly DependencyProperty DialogBackgroundProperty =
+            DependencyProperty.Register(
+                nameof(DialogBackground),
+                typeof(Brush),
+                typeof(DialogShellWindow),
+                new PropertyMetadata(null));
+
+        /// <summary>Brush per lo sfondo della card dialog. Se null, usa #FCFAFE.</summary>
+        public Brush DialogBackground
+        {
+            get => (Brush)GetValue(DialogBackgroundProperty);
+            set => SetValue(DialogBackgroundProperty, value);
+        }
+
         public static readonly DependencyProperty UseModalOverlayProperty =
             DependencyProperty.Register(
                 nameof(UseModalOverlay),
@@ -105,9 +119,10 @@ namespace Win7POS.Wpf.Chrome
                 UseAeroCaptionButtons = false
             });
 
+            var cardBrush = DialogBackground ?? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FCFAFE"));
             var outerBorder = new Border
             {
-                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FCFAFE")),
+                Background = cardBrush,
                 BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDD4E8")),
                 BorderThickness = new Thickness(1),
                 CornerRadius = radius,
