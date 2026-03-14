@@ -40,6 +40,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _draft = draft;
             _generateFiscalPdf = generateFiscalPdf;
             _printFiscalToThermal = printFiscalToThermal;
+
+            _cashReceived = totalDueMinor > 0
+                ? totalDueMinor.ToString(CultureInfo.InvariantCulture)
+                : string.Empty;
+            _cardAmount = "0";
+            _activeField = PaymentActiveField.Cash;
+
             _shouldPrint = draft?.DefaultPrint ?? false;
             _autoPrintPdfSii = true;
             _openDrawerForCurrentPayment = openDrawerDefault;
@@ -215,6 +222,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string FiscalStatus { get => _fiscalStatus; private set { _fiscalStatus = value ?? ""; OnPropertyChanged(); } }
 
         public event Action<bool> RequestClose;
+        /// <summary>Richiesta di rifocalizzare il campo contanti (es. dopo PayAllCard) per fix caret visivo.</summary>
+        public event Action RequestCashRefocus;
         public event PropertyChangedEventHandler PropertyChanged;
 
         public bool TryConfirm()
@@ -447,34 +456,56 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 CardAmount = text;
         }
 
+        /// <summary>Simmetrico a PayAllCard: azzera carta e attiva contanti prima di applicare rapidi contanti.</summary>
+        private void PrepareCashQuickAction()
+        {
+            CardAmount = "0";
+            ActiveField = PaymentActiveField.Cash;
+        }
+
         private void AddQuickAmount(object parameter)
         {
-            int amountMinor = 0;
-            if (parameter is int i)
-                amountMinor = i;
-            else if (parameter is string str && int.TryParse(str, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed))
-                amountMinor = parsed;
-            if (amountMinor <= 0) return;
-            int current = GetActiveFieldMinor();
-            SetActiveFieldMinor(current + amountMinor);
+            var add = ParseQuickAmount(parameter);
+            if (add <= 0) return;
+
+            PrepareCashQuickAction();
+            CashReceived = (CashAmountMinor + add).ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static int ParseQuickAmount(object parameter)
+        {
+            if (parameter is int i) return i;
+            if (parameter is string str && int.TryParse(str, System.Globalization.NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                return parsed;
+            return 0;
         }
 
         private void SetExactTotal()
         {
-            SetActiveFieldMinor(_totalDueMinor);
+            PrepareCashQuickAction();
+            CashReceived = _totalDueMinor.ToString(CultureInfo.InvariantCulture);
         }
 
         private void SetRoundedTotal()
         {
-            long rounded = ((_totalDueMinor + 500) / 1000) * 1000;
-            if (rounded < _totalDueMinor) rounded += 1000;
-            SetActiveFieldMinor(rounded > int.MaxValue ? int.MaxValue : (int)rounded);
+            PrepareCashQuickAction();
+            var rounded = RoundCashAmount(_totalDueMinor);
+            CashReceived = rounded.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static long RoundCashAmount(long minor)
+        {
+            var rounded = ((minor + 500) / 1000) * 1000;
+            if (rounded < minor) rounded += 1000;
+            return rounded > int.MaxValue ? int.MaxValue : rounded;
         }
 
         private void PayAllCard()
         {
-            CardAmount = MoneyClp.Format(_totalDueMinor);
             CashReceived = "0";
+            CardAmount = _totalDueMinor.ToString(CultureInfo.InvariantCulture);
+            ActiveField = PaymentActiveField.Cash;
+            RequestCashRefocus?.Invoke();
         }
 
         private void RaiseCanExecuteChanged()

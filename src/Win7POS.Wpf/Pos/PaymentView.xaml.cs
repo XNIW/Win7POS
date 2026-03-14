@@ -20,14 +20,37 @@ namespace Win7POS.Wpf.Pos
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
+            if (ViewModel != null)
+                ViewModel.RequestCashRefocus += FocusCashBoxAtEnd;
+
+            Unloaded += OnUnloaded;
+
+            Dispatcher.BeginInvoke(new Action(FocusCashBoxSelectAll), DispatcherPriority.Input);
+        }
+
+        private void OnUnloaded(object sender, RoutedEventArgs e)
+        {
+            Unloaded -= OnUnloaded;
+            if (ViewModel != null)
+                ViewModel.RequestCashRefocus -= FocusCashBoxAtEnd;
+        }
+
+        private void FocusCashBoxSelectAll()
+        {
+            if (CashBox == null) return;
+            CashBox.Focus();
+            Keyboard.Focus(CashBox);
+            CashBox.SelectAll();
+        }
+
+        private void FocusCashBoxAtEnd()
+        {
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (CashBox != null)
-                {
-                    CashBox.Focus();
-                    Keyboard.Focus(CashBox);
-                    CashBox.SelectAll();
-                }
+                if (CashBox == null) return;
+                CashBox.Focus();
+                Keyboard.Focus(CashBox);
+                CashBox.CaretIndex = CashBox.Text?.Length ?? 0;
             }), DispatcherPriority.Input);
         }
 
