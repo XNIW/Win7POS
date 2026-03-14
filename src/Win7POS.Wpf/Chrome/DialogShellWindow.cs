@@ -71,6 +71,20 @@ namespace Win7POS.Wpf.Chrome
             set => SetValue(DialogBackgroundProperty, value);
         }
 
+        public static readonly DependencyProperty DialogBorderBrushProperty =
+            DependencyProperty.Register(
+                nameof(DialogBorderBrush),
+                typeof(Brush),
+                typeof(DialogShellWindow),
+                new PropertyMetadata(null));
+
+        /// <summary>Brush per il bordo della card. Se null, usa #DDD4E8.</summary>
+        public Brush DialogBorderBrush
+        {
+            get => (Brush)GetValue(DialogBorderBrushProperty);
+            set => SetValue(DialogBorderBrushProperty, value);
+        }
+
         public static readonly DependencyProperty UseModalOverlayProperty =
             DependencyProperty.Register(
                 nameof(UseModalOverlay),
@@ -120,10 +134,11 @@ namespace Win7POS.Wpf.Chrome
             });
 
             var cardBrush = DialogBackground ?? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FCFAFE"));
+            var borderBrush = DialogBorderBrush ?? new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDD4E8"));
             var outerBorder = new Border
             {
                 Background = cardBrush,
-                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DDD4E8")),
+                BorderBrush = borderBrush,
                 BorderThickness = new Thickness(1),
                 CornerRadius = radius,
                 Effect = new DropShadowEffect

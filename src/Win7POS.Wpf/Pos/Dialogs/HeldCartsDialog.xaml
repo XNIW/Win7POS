@@ -6,7 +6,8 @@
         ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
-        DialogBackground="#F4EEF8"
+        DialogBackground="#EEE6F6"
+        DialogBorderBrush="#DCCDEB"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
         Width="760"
@@ -40,7 +41,7 @@
 
             <!-- Lista sospesi -->
             <Border Grid.Column="0"
-                    Background="#FFFEFF"
+                    Background="#FCFAFE"
                     BorderBrush="#E5DAEF"
                     BorderThickness="1"
                     CornerRadius="10"
@@ -92,7 +93,7 @@
 
             <!-- Anteprima scontrino: mini preview ricevuta -->
             <Border Grid.Column="2"
-                    Background="#FFFEFF"
+                    Background="#FCFAFE"
                     BorderBrush="#E5DAEF"
                     BorderThickness="1"
                     CornerRadius="8"
