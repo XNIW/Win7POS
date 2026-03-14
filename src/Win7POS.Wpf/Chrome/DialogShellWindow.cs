@@ -193,28 +193,13 @@ namespace Win7POS.Wpf.Chrome
             Grid.SetRow(adornerDecorator, 1);
             mainGrid.Children.Add(adornerDecorator);
 
-            if (!showHeader)
-            {
-                outerBorder.MouseLeftButtonDown += (s, ev) =>
-                {
-                    if (ev.ClickCount == 2 && ResizeMode != ResizeMode.NoResize)
-                    {
-                        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
-                        ev.Handled = true;
-                        return;
-                    }
-                    if (ev.LeftButton == MouseButtonState.Pressed)
-                        DragMove();
-                };
-            }
-
             outerBorder.Child = mainGrid;
 
             if (UseModalOverlay && Owner != null)
             {
                 var cardW = Width;
                 var cardH = Height;
-                if (double.IsNaN(cardW) || cardW <= 0) cardW = 720;
+                if (double.IsNaN(cardW) || cardW <= 0) cardW = 760;
                 if (double.IsNaN(cardH) || cardH <= 0) cardH = 430;
 
                 Left = Owner.Left;

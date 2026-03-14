@@ -8,13 +8,14 @@
         DialogCornerRadius="16"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        Width="720"
+        Width="760"
         Height="430"
-        MinWidth="620"
-        MinHeight="360"
-        MaxWidth="860"
-        MaxHeight="520"
-        ResizeMode="CanResize">
+        MinWidth="760"
+        MaxWidth="760"
+        MinHeight="430"
+        MaxHeight="430"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
     <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>

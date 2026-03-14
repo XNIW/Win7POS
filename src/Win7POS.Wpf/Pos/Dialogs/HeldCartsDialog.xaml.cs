@@ -1,4 +1,6 @@
+using System;
 using System.Windows;
+using System.Windows.Input;
 using Win7POS.Wpf.Chrome;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -10,7 +12,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public HeldCartsDialog(HeldCartsViewModel vm)
         {
             InitializeComponent();
-            // Dimensioni compatte da XAML (580x380), ridimensionabile tra Min e Max
             ViewModel = vm ?? throw new System.ArgumentNullException(nameof(vm));
             DataContext = ViewModel;
             ViewModel.RequestClose += recovered =>
@@ -18,6 +19,30 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 DialogResult = recovered;
                 Close();
             };
+            Loaded += OnLoaded;
+            PreviewKeyDown += OnPreviewKeyDown;
+        }
+
+        private void OnLoaded(object sender, RoutedEventArgs e)
+        {
+            CenterToOwner();
+        }
+
+        private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape)
+            {
+                DialogResult = false;
+                Close();
+                e.Handled = true;
+            }
+        }
+
+        private void CenterToOwner()
+        {
+            if (Owner == null) return;
+            Left = Owner.Left + Math.Max(0, (Owner.ActualWidth - ActualWidth) / 2);
+            Top = Owner.Top + Math.Max(0, (Owner.ActualHeight - ActualHeight) / 2);
         }
     }
 }
