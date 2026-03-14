@@ -30,6 +30,32 @@ namespace Win7POS.Wpf.Chrome
             set => SetValue(DialogContentProperty, value);
         }
 
+        public static readonly DependencyProperty ShowHeaderProperty =
+            DependencyProperty.Register(
+                nameof(ShowHeader),
+                typeof(bool),
+                typeof(DialogShellWindow),
+                new PropertyMetadata(true));
+
+        public bool ShowHeader
+        {
+            get => (bool)GetValue(ShowHeaderProperty);
+            set => SetValue(ShowHeaderProperty, value);
+        }
+
+        public static readonly DependencyProperty DialogCornerRadiusProperty =
+            DependencyProperty.Register(
+                nameof(DialogCornerRadius),
+                typeof(CornerRadius),
+                typeof(DialogShellWindow),
+                new PropertyMetadata(new CornerRadius(8)));
+
+        public CornerRadius DialogCornerRadius
+        {
+            get => (CornerRadius)GetValue(DialogCornerRadiusProperty);
+            set => SetValue(DialogCornerRadiusProperty, value);
+        }
+
         public DialogShellWindow()
         {
             WindowStyle = WindowStyle.None;
@@ -37,82 +63,98 @@ namespace Win7POS.Wpf.Chrome
             Background = System.Windows.Media.Brushes.Transparent;
             AllowsTransparency = false;
 
+            Loaded += OnLoaded;
+        }
+
+        private void OnLoaded(object sender, RoutedEventArgs e)
+        {
+            Loaded -= OnLoaded;
+            BuildChrome();
+        }
+
+        private void BuildChrome()
+        {
+            var showHeader = ShowHeader;
+            var radius = DialogCornerRadius;
+
             WindowChrome.SetWindowChrome(this, new WindowChrome
             {
-                CaptionHeight = 42,
+                CaptionHeight = showHeader ? 42 : 0,
                 ResizeBorderThickness = new Thickness(6),
-                CornerRadius = new CornerRadius(8),
+                CornerRadius = radius,
                 GlassFrameThickness = new Thickness(0),
                 UseAeroCaptionButtons = false
             });
 
             var outerBorder = new Border
             {
-                Background = new System.Windows.Media.SolidColorBrush(
-                    (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FCFBFD")),
-                BorderBrush = new System.Windows.Media.SolidColorBrush(
-                    (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#D8D0E4")),
+                Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#FCFBFD")),
+                BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#D8D0E4")),
                 BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(8)
+                CornerRadius = radius
             };
 
             var mainGrid = new Grid();
-            mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(42) });
+            mainGrid.RowDefinitions.Add(new RowDefinition
+            {
+                Height = showHeader ? new GridLength(42) : new GridLength(0)
+            });
             mainGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
 
-            var headerBorder = new Border
+            if (showHeader)
             {
-                Background = new System.Windows.Media.SolidColorBrush(
-                    (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#6F4B8B")),
-                BorderBrush = new System.Windows.Media.SolidColorBrush(
-                    (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#5E3D79")),
-                BorderThickness = new Thickness(0, 0, 0, 1)
-            };
-            Grid.SetRow(headerBorder, 0);
+                var headerBorder = new Border
+                {
+                    Background = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#6F4B8B")),
+                    BorderBrush = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#5E3D79")),
+                    BorderThickness = new Thickness(0, 0, 0, 1)
+                };
+                Grid.SetRow(headerBorder, 0);
 
-            var headerGrid = new Grid();
-            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                var headerGrid = new Grid();
+                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-            var titleBlock = new TextBlock
-            {
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(14, 0, 0, 0),
-                Foreground = System.Windows.Media.Brushes.White,
-                FontSize = 15,
-                FontWeight = FontWeights.SemiBold
-            };
-            titleBlock.SetBinding(TextBlock.TextProperty, new Binding("Title") { Source = this });
-            Grid.SetColumn(titleBlock, 0);
+                var titleBlock = new TextBlock
+                {
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(14, 0, 0, 0),
+                    Foreground = Brushes.White,
+                    FontSize = 15,
+                    FontWeight = FontWeights.SemiBold
+                };
+                titleBlock.SetBinding(TextBlock.TextProperty, new Binding("Title") { Source = this });
+                Grid.SetColumn(titleBlock, 0);
 
-            var closeButton = new Button
-            {
-                Content = "✕",
-                Width = 36,
-                Height = 30,
-                ToolTip = "Chiudi"
-            };
-            var closeStyle = (Style)Application.Current.FindResource("DialogCaptionCloseButtonStyle");
-            if (closeStyle != null)
-                closeButton.Style = closeStyle;
-            WindowChrome.SetIsHitTestVisibleInChrome(closeButton, true);
-            closeButton.Click += Close_Click;
+                var closeButton = new Button
+                {
+                    Content = "✕",
+                    Width = 36,
+                    Height = 30,
+                    ToolTip = "Chiudi"
+                };
+                var closeStyle = (Style)Application.Current.FindResource("DialogCaptionCloseButtonStyle");
+                if (closeStyle != null)
+                    closeButton.Style = closeStyle;
+                WindowChrome.SetIsHitTestVisibleInChrome(closeButton, true);
+                closeButton.Click += Close_Click;
 
-            var headerButtonsPanel = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 6, 0)
-            };
-            headerButtonsPanel.Children.Add(closeButton);
-            WindowChrome.SetIsHitTestVisibleInChrome(headerButtonsPanel, true);
-            Grid.SetColumn(headerButtonsPanel, 1);
+                var headerButtonsPanel = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 6, 0)
+                };
+                headerButtonsPanel.Children.Add(closeButton);
+                WindowChrome.SetIsHitTestVisibleInChrome(headerButtonsPanel, true);
+                Grid.SetColumn(headerButtonsPanel, 1);
 
-            headerGrid.Children.Add(titleBlock);
-            headerGrid.Children.Add(headerButtonsPanel);
-            headerBorder.Child = headerGrid;
-            headerBorder.MouseLeftButtonDown += (s, ev) => Header_MouseLeftButtonDown(closeButton, s, ev);
-            mainGrid.Children.Add(headerBorder);
+                headerGrid.Children.Add(titleBlock);
+                headerGrid.Children.Add(headerButtonsPanel);
+                headerBorder.Child = headerGrid;
+                headerBorder.MouseLeftButtonDown += (s, ev) => Header_MouseLeftButtonDown(closeButton, s, ev);
+                mainGrid.Children.Add(headerBorder);
+            }
 
             var contentHost = new ContentPresenter
             {
@@ -125,6 +167,21 @@ namespace Win7POS.Wpf.Chrome
             adornerDecorator.Child = contentHost;
             Grid.SetRow(adornerDecorator, 1);
             mainGrid.Children.Add(adornerDecorator);
+
+            if (!showHeader)
+            {
+                outerBorder.MouseLeftButtonDown += (s, ev) =>
+                {
+                    if (ev.ClickCount == 2 && ResizeMode != ResizeMode.NoResize)
+                    {
+                        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+                        ev.Handled = true;
+                        return;
+                    }
+                    if (ev.LeftButton == MouseButtonState.Pressed)
+                        DragMove();
+                };
+            }
 
             outerBorder.Child = mainGrid;
             Content = outerBorder;

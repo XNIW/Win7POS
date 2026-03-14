@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Scontrini sospesi"
+        ShowHeader="False"
+        DialogCornerRadius="16"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
         Width="660"
@@ -12,8 +14,9 @@
         MaxWidth="760"
         MaxHeight="520"
         ResizeMode="CanResize">
-    <Grid Margin="18">
+    <Grid Margin="20">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
@@ -23,8 +26,14 @@
             <ColumnDefinition Width="0.95*" MinWidth="180"/>
         </Grid.ColumnDefinitions>
 
+        <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
+                   Text="Scontrini sospesi"
+                   FontWeight="SemiBold" FontSize="20"
+                   Foreground="{StaticResource PrimaryBrush}"
+                   Margin="4,2,0,14"/>
+
         <!-- Lista sospesi -->
-        <Border Grid.Row="0" Grid.Column="0" Background="White" CornerRadius="6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="6" Margin="0,0,0,10">
+        <Border Grid.Row="1" Grid.Column="0" Background="White" CornerRadius="10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="6" Margin="0,0,0,10">
             <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedHold}"
                      BorderThickness="0" Background="Transparent"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
@@ -53,7 +62,7 @@
         </Border>
 
         <!-- Anteprima scontrino: colonna più stretta, contenuto compatto -->
-        <Border Grid.Row="0" Grid.Column="2" Background="White" CornerRadius="6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Margin="0,0,0,10">
+        <Border Grid.Row="1" Grid.Column="2" Background="White" CornerRadius="10" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="10" Margin="0,0,0,10">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -80,7 +89,7 @@
         </Border>
 
         <!-- Footer: stato + pulsanti -->
-        <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3">
+        <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
