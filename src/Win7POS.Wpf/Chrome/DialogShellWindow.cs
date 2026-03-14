@@ -214,8 +214,8 @@ namespace Win7POS.Wpf.Chrome
             {
                 var cardW = Width;
                 var cardH = Height;
-                if (double.IsNaN(cardW) || cardW <= 0) cardW = 580;
-                if (double.IsNaN(cardH) || cardH <= 0) cardH = 380;
+                if (double.IsNaN(cardW) || cardW <= 0) cardW = 720;
+                if (double.IsNaN(cardH) || cardH <= 0) cardH = 430;
 
                 Left = Owner.Left;
                 Top = Owner.Top;
@@ -224,7 +224,7 @@ namespace Win7POS.Wpf.Chrome
 
                 var overlay = new Border
                 {
-                    Background = new SolidColorBrush(Color.FromArgb(18, 0, 0, 0))
+                    Background = new SolidColorBrush(Color.FromArgb(20, 0, 0, 0))
                 };
 
                 outerBorder.HorizontalAlignment = HorizontalAlignment.Center;

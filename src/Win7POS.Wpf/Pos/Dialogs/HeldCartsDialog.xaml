@@ -8,102 +8,112 @@
         DialogCornerRadius="16"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        Width="580"
-        Height="380"
-        MinWidth="520"
-        MinHeight="320"
-        MaxWidth="660"
-        MaxHeight="440"
+        Width="720"
+        Height="430"
+        MinWidth="620"
+        MinHeight="360"
+        MaxWidth="860"
+        MaxHeight="520"
         ResizeMode="CanResize">
-    <Grid Margin="18">
+    <Grid Margin="24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="1.35*" MinWidth="240"/>
-            <ColumnDefinition Width="12"/>
-            <ColumnDefinition Width="0.95*" MinWidth="160"/>
-        </Grid.ColumnDefinitions>
 
-        <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3"
+        <TextBlock Grid.Row="0"
                    Text="Scontrini sospesi"
-                   FontWeight="SemiBold" FontSize="18"
+                   FontSize="18"
+                   FontWeight="SemiBold"
                    Foreground="#5E3F86"
-                   Margin="0,0,0,14"/>
+                   Margin="0,0,0,16"/>
 
-        <!-- Lista sospesi -->
-        <Border Grid.Row="1" Grid.Column="0" Background="#FFFFFF" CornerRadius="10" BorderBrush="#E3DCEB" BorderThickness="1" Padding="10" Margin="0,0,0,8">
-            <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedHold}"
-                     BorderThickness="0" Background="Transparent"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                <ListBox.ItemContainerStyle>
-                    <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
-                        <Setter Property="Padding" Value="8,6"/>
-                        <Setter Property="Margin" Value="0,0,0,2"/>
-                    </Style>
-                </ListBox.ItemContainerStyle>
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="72"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="{Binding HoldId}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                            <TextBlock Grid.Column="1" Text="{Binding TimeText}" Foreground="#666" FontSize="11" VerticalAlignment="Center" Margin="6,0"/>
-                            <TextBlock Grid.Column="2" Text="{Binding TotalDisplay}" HorizontalAlignment="Right" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
-                        </Grid>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-        </Border>
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1.35*"/>
+                <ColumnDefinition Width="16"/>
+                <ColumnDefinition Width="0.9*"/>
+            </Grid.ColumnDefinitions>
 
-        <!-- Anteprima scontrino: colonna più stretta, contenuto compatto -->
-        <Border Grid.Row="1" Grid.Column="2" Background="#FFFFFF" CornerRadius="10" BorderBrush="#E3DCEB" BorderThickness="1" Padding="10" Margin="0,0,0,8">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="Anteprima" FontWeight="SemiBold" FontSize="11" Foreground="#666" Margin="0,0,0,6"/>
-                <ListBox Grid.Row="1" ItemsSource="{Binding SelectedLines}" BorderThickness="0" Background="Transparent"
-                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <!-- Lista sospesi -->
+            <Border Grid.Column="0"
+                    Background="#FFFFFF"
+                    BorderBrush="#E3DCEB"
+                    BorderThickness="1"
+                    CornerRadius="10"
+                    Padding="10">
+                <ListBox ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedHold}"
+                         BorderThickness="0" Background="Transparent"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                     <ListBox.ItemContainerStyle>
                         <Style TargetType="ListBoxItem" BasedOn="{StaticResource SelectableListBoxItemStyle}">
-                            <Setter Property="Padding" Value="0,4"/>
+                            <Setter Property="Padding" Value="8,6"/>
+                            <Setter Property="Margin" Value="0,0,0,2"/>
                         </Style>
                     </ListBox.ItemContainerStyle>
                     <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel>
-                                <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="11" TextWrapping="Wrap"/>
-                                <TextBlock Text="{Binding DetailLine}" FontSize="10" Foreground="#888" Margin="0,1,0,0"/>
-                            </StackPanel>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="72"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="{Binding HoldId}" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Grid.Column="1" Text="{Binding TimeText}" Foreground="#666" FontSize="11" VerticalAlignment="Center" Margin="6,0"/>
+                                <TextBlock Grid.Column="2" Text="{Binding TotalDisplay}" HorizontalAlignment="Right" FontWeight="SemiBold" FontSize="12" VerticalAlignment="Center"/>
+                            </Grid>
                         </DataTemplate>
                     </ListBox.ItemTemplate>
                 </ListBox>
-            </Grid>
-        </Border>
+            </Border>
+
+            <!-- Anteprima scontrino: mini preview ricevuta -->
+            <Border Grid.Column="2"
+                    Background="#FFFDFE"
+                    BorderBrush="#E6DFEE"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="12">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Anteprima" FontWeight="SemiBold" FontSize="11" Foreground="#666" Margin="0,0,0,8"/>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding SelectedLines}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,8">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" FontSize="12"/>
+                                        <TextBlock Text="{Binding DetailLine}" Foreground="#666" FontSize="11"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
 
         <!-- Footer: stato + pulsanti -->
-        <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Margin="0,14,0,0">
+        <Grid Grid.Row="2" Margin="0,16,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="#666" FontSize="11" Margin="0,0,12,0"/>
-            <StackPanel Grid.Column="1" Orientation="Horizontal">
-                <Button Content="Recupera" MinWidth="100" Height="36" Margin="0,0,8,0"
-                        Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RecoverCommand}"/>
-                <Button Content="Elimina" MinWidth="84" Height="36" Margin="0,0,8,0"
-                        Style="{StaticResource SecondaryButtonStyle}" Command="{Binding DeleteCommand}"/>
-                <Button Content="Chiudi" MinWidth="84" Height="36"
-                        Style="{StaticResource OutlineButtonStyle}" Command="{Binding CloseCommand}"/>
-            </StackPanel>
+            <TextBlock Grid.Column="0" Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="#666" FontSize="11"/>
+            <Button Grid.Column="1" Content="Recupera" MinWidth="112" Height="42" Margin="0,0,10,0"
+                    Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RecoverCommand}"/>
+            <Button Grid.Column="2" Content="Elimina" MinWidth="96" Height="42" Margin="0,0,10,0"
+                    Style="{StaticResource SecondaryButtonStyle}" Command="{Binding DeleteCommand}"/>
+            <Button Grid.Column="3" Content="Chiudi" MinWidth="96" Height="42"
+                    Style="{StaticResource OutlineButtonStyle}" Command="{Binding CloseCommand}"/>
         </Grid>
     </Grid>
 </chrome:DialogShellWindow>
