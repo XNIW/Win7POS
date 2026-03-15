@@ -9,7 +9,6 @@ namespace Win7POS.Wpf.Products
         public DeleteProductConfirmDialog(string barcode, string name)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 460, minHeight: 260, maxWidthPercent: 0.88, maxHeightPercent: 0.88, allowResize: false);
             BarcodeText.Text = barcode ?? "";
             NameText.Text = name ?? "";
         }

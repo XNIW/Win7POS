@@ -8,8 +8,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public AboutSupportDialog(AboutSupportViewModel vm)
         {
             InitializeComponent();
-            // Dimensioni compatte da XAML (520x400), Build nascosto in UI ma disponibile in Copia info
             DataContext = vm;
+        }
+
+        private void Close_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
         }
     }
 }

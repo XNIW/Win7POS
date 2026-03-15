@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Registro vendite"
-        ShowHeader="False"
+        ShowHeader="True"
         UseModalOverlay="True"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
@@ -11,13 +11,11 @@
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
         ResizeMode="NoResize"
-        Width="980"
-        Height="700"
+        Width="1000"
+        Height="750"
         ShowInTaskbar="False"
-        MinWidth="980"
-        MaxWidth="980"
-        MinHeight="700"
-        MaxHeight="700"
+        MinWidth="900"
+        MinHeight="640"
         KeyDown="OnWindowKeyDown">
     <Grid Margin="24" Background="#F1EDF7">
         <Grid.RowDefinitions>

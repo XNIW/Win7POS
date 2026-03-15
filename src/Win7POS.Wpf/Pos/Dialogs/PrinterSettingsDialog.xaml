@@ -3,134 +3,131 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Impostazioni stampante"
-        ShowHeader="False"
+        ShowHeader="True"
         UseModalOverlay="True"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        Width="560"
-        Height="520"
+        Width="600"
+        Height="680"
         ShowInTaskbar="False"
-        MinWidth="500"
-        MinHeight="380"
-        MaxWidth="620"
-        MaxHeight="520"
+        MinWidth="540"
+        MinHeight="560"
+        MaxWidth="720"
+        MaxHeight="900"
         ResizeMode="CanResize">
     <Grid Margin="24" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <TextBlock Grid.Row="0" Text="Impostazioni stampante" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="200"/>
-                    <ColumnDefinition Width="*" MinWidth="260"/>
-                </Grid.ColumnDefinitions>
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="200"/>
+                        <ColumnDefinition Width="*" MinWidth="260"/>
+                    </Grid.ColumnDefinitions>
 
-                <!-- Nome stampante -->
-                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Nome stampante:" FontWeight="SemiBold"/>
-                <TextBox Grid.Row="0" Grid.Column="1" Margin="12,0,0,0" MinHeight="34"
-                         Text="{Binding PrinterName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
-                <TextBlock Grid.Row="1" Grid.Column="1" Margin="12,6,0,0" Foreground="#666" FontSize="11"
-                           Text="Lascia vuoto per usare la stampante predefinita"/>
+                    <!-- Nome stampante -->
+                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Nome stampante:" FontWeight="SemiBold"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Margin="12,0,0,0" MinHeight="34"
+                             Text="{Binding PrinterName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" Margin="12,6,0,0" Foreground="#666" FontSize="11"
+                               Text="Lascia vuoto per usare la stampante predefinita"/>
 
-                <!-- Copie -->
-                <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,18,0,0" VerticalAlignment="Center" Text="Copie:" FontWeight="SemiBold"/>
-                <TextBox Grid.Row="2" Grid.Column="1" Margin="12,18,0,0" Width="100" HorizontalAlignment="Left" MinHeight="34"
-                         Text="{Binding Copies, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
-                         ToolTip="Numero di copie per ogni scontrino"/>
+                    <!-- Copie -->
+                    <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,18,0,0" VerticalAlignment="Center" Text="Copie:" FontWeight="SemiBold"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" Margin="12,18,0,0" Width="100" HorizontalAlignment="Left" MinHeight="34"
+                             Text="{Binding Copies, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
+                             ToolTip="Numero di copie per ogni scontrino"/>
 
-                <!-- Stampa automatica dopo vendita -->
-                <Border Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,20,0,0" Padding="0,12,0,12" Background="#FCFBFE" CornerRadius="8" BorderBrush="#E4DBEF" BorderThickness="1">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Stampa automatica dopo la vendita" VerticalAlignment="Center" FontSize="12"/>
-                        <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
-                                      IsChecked="{Binding AutoPrint, Mode=TwoWay}"
-                                      Margin="12,0,0,0" VerticalAlignment="Center"/>
-                    </Grid>
-                </Border>
-
-                <!-- Salva copia scontrino su file -->
-                <Border Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="0,12,0,12" Background="#FCFBFE" CornerRadius="8" BorderBrush="#E4DBEF" BorderThickness="1">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="Salva copia scontrino su file" VerticalAlignment="Center" FontSize="12"/>
-                        <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
-                                      IsChecked="{Binding SaveCopyToFile, Mode=TwoWay}"
-                                      Margin="12,0,0,0" VerticalAlignment="Center"/>
-                    </Grid>
-                </Border>
-
-                <!-- Cartella di output -->
-                <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,18,0,0" VerticalAlignment="Center" Text="Cartella di output:" FontWeight="SemiBold"/>
-                <TextBox Grid.Row="5" Grid.Column="1" Margin="12,18,0,0" MinHeight="34"
-                         Text="{Binding OutputDirectory, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
-                         ToolTip="Cartella in cui salvare le copie degli scontrini"/>
-
-                <!-- Cassetto portamonete -->
-                <Border Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,20,0,0" Padding="12,14" Background="#FCFBFE" CornerRadius="6" BorderBrush="#E4DBEF" BorderThickness="1">
-                    <StackPanel>
-                        <TextBlock Text="Cassetto portamonete" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,10"/>
-                        <Border Margin="0,0,0,10" Padding="0,10,0,10">
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="Apri cassa abilitato" VerticalAlignment="Center" FontSize="12"/>
-                                <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
-                                              IsChecked="{Binding CashDrawerEnabled, Mode=TwoWay}" VerticalAlignment="Center"/>
-                            </Grid>
-                        </Border>
-                        <TextBlock Text="Stampante e comando:" FontSize="11" Foreground="#666" Margin="0,0,0,6"/>
-                        <Grid Margin="0,0,0,8">
+                    <!-- Stampa automatica dopo vendita -->
+                    <Border Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,20,0,0" Padding="0,12,0,12" Background="#FCFBFE" CornerRadius="8" BorderBrush="#E4DBEF" BorderThickness="1">
+                        <Grid>
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="140"/>
-                                <ColumnDefinition Width="*" MinWidth="200"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Istruzione cassetto:" FontWeight="SemiBold" FontSize="11"/>
-                            <TextBox Grid.Column="1" Margin="12,0,0,0" MinHeight="34"
-                                     Text="{Binding CashDrawerCommand, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
-                                     ToolTip="Byte ESC/POS separati da virgola (es. 27,112,0,60,255)"/>
+                            <TextBlock Grid.Column="0" Text="Stampa automatica dopo la vendita" VerticalAlignment="Center" FontSize="12"/>
+                            <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
+                                          IsChecked="{Binding AutoPrint, Mode=TwoWay}"
+                                          Margin="12,0,0,0" VerticalAlignment="Center"/>
                         </Grid>
-                        <Button Margin="0,4,0,0" HorizontalAlignment="Left" MinWidth="140" Height="34" Content="Test cassetto"
-                                Command="{Binding TestCashDrawerCommand}" Style="{StaticResource OutlineButtonStyle}"
-                                ToolTip="Prova ad aprire il cassetto con le impostazioni correnti"/>
-                        <TextBlock Text="{Binding TestCashDrawerStatusMessage}" FontSize="11" Foreground="#666" Margin="0,8,0,0"
-                                   TextWrapping="Wrap" MaxWidth="400" VerticalAlignment="Top"/>
-                    </StackPanel>
-                </Border>
+                    </Border>
 
-                <!-- Pulsanti -->
-                <StackPanel Grid.Row="8" Grid.ColumnSpan="2" Margin="0,24,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-                    <Button MinWidth="120" Height="38" Margin="0,0,10,0" Content="Conferma" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
-                    <Button MinWidth="120" Height="38" Content="Annulla" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                </StackPanel>
-            </Grid>
-        </ScrollViewer>
+                    <!-- Salva copia scontrino su file -->
+                    <Border Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="0,12,0,12" Background="#FCFBFE" CornerRadius="8" BorderBrush="#E4DBEF" BorderThickness="1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Salva copia scontrino su file" VerticalAlignment="Center" FontSize="12"/>
+                            <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
+                                          IsChecked="{Binding SaveCopyToFile, Mode=TwoWay}"
+                                          Margin="12,0,0,0" VerticalAlignment="Center"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Cartella di output -->
+                    <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,18,0,0" VerticalAlignment="Center" Text="Cartella di output:" FontWeight="SemiBold"/>
+                    <TextBox Grid.Row="5" Grid.Column="1" Margin="12,18,0,0" MinHeight="34"
+                             Text="{Binding OutputDirectory, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
+                             ToolTip="Cartella in cui salvare le copie degli scontrini"/>
+
+                    <!-- Cassetto portamonete -->
+                    <Border Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,20,0,0" Padding="12,14" Background="#FCFBFE" CornerRadius="6" BorderBrush="#E4DBEF" BorderThickness="1">
+                        <StackPanel>
+                            <TextBlock Text="Cassetto portamonete" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,10"/>
+                            <Border Margin="0,0,0,10" Padding="0,10,0,10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="Apri cassa abilitato" VerticalAlignment="Center" FontSize="12"/>
+                                    <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
+                                                  IsChecked="{Binding CashDrawerEnabled, Mode=TwoWay}" VerticalAlignment="Center"/>
+                                </Grid>
+                            </Border>
+                            <TextBlock Text="Stampante e comando:" FontSize="11" Foreground="#666" Margin="0,0,0,6"/>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="140"/>
+                                    <ColumnDefinition Width="*" MinWidth="200"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="Istruzione cassetto:" FontWeight="SemiBold" FontSize="11"/>
+                                <TextBox Grid.Column="1" Margin="12,0,0,0" MinHeight="34"
+                                         Text="{Binding CashDrawerCommand, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
+                                         ToolTip="Byte ESC/POS separati da virgola (es. 27,112,0,60,255)"/>
+                            </Grid>
+                            <Button Margin="0,4,0,0" HorizontalAlignment="Left" MinWidth="140" Height="34" Content="Test cassetto"
+                                    Command="{Binding TestCashDrawerCommand}" Style="{StaticResource OutlineButtonStyle}"
+                                    ToolTip="Prova ad aprire il cassetto con le impostazioni correnti"/>
+                            <TextBlock Text="{Binding TestCashDrawerStatusMessage}" FontSize="11" Foreground="#666" Margin="0,8,0,0"
+                                       TextWrapping="Wrap" MaxWidth="400" VerticalAlignment="Top"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </ScrollViewer>
         </Border>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button MinWidth="120" Height="42" Margin="0,0,10,0" Content="Conferma" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+            <Button MinWidth="120" Height="42" Content="Annulla" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+        </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

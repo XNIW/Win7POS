@@ -49,6 +49,8 @@ namespace Win7POS.Wpf.Infrastructure
             bool allowResize = true)
         {
             if (window == null) throw new ArgumentNullException("window");
+            if (window is DialogShellWindow dlg && dlg.UseModalOverlay)
+                return;
 
             window.WindowStartupLocation = WindowStartupLocation.CenterOwner;
             window.SizeToContent = SizeToContent.WidthAndHeight;

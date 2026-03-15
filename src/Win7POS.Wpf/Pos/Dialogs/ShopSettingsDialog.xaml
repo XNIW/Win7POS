@@ -3,74 +3,73 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Impostazioni negozio"
-        ShowHeader="False"
+        ShowHeader="True"
         UseModalOverlay="True"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        Width="540"
-        Height="520"
-        MinWidth="480"
-        MinHeight="420"
+        Width="560"
+        Height="620"
+        MinWidth="500"
+        MinHeight="520"
         ResizeMode="CanResize"
         ShowInTaskbar="False">
     <Grid Margin="24" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <TextBlock Grid.Row="0" Text="Impostazioni negozio" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="120"/>
-                    <ColumnDefinition Width="*"/>
-                </Grid.ColumnDefinitions>
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Nome negozio:"/>
-                <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Nome negozio:"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Indirizzo:"/>
-                <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Indirizzo:"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Città:"/>
-                <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" Text="{Binding City, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Città:"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" Text="{Binding City, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="RUT:"/>
-                <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Rut, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="RUT:"/>
+                    <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Rut, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Telefono:"/>
-                <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Phone, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Telefono:"/>
+                    <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Phone, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Footer scontrino:"/>
-                <TextBox Grid.Row="5" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Footer, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Footer scontrino:"/>
+                    <TextBox Grid.Row="5" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Footer, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Boleta N° (fiscale):"/>
-                <TextBox Grid.Row="6" Grid.Column="1" Margin="0,0,0,8" Text="{Binding FiscalBoletaNumberText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Boleta N° (fiscale):"/>
+                    <TextBox Grid.Row="6" Grid.Column="1" Margin="0,0,0,8" Text="{Binding FiscalBoletaNumberText, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                <TextBlock Grid.Row="7" Grid.ColumnSpan="2" Margin="0,8,0,0" Foreground="Gray" Text="{Binding Status, Mode=OneWay}"/>
-
-                <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                    <Button Content="Salva" MinWidth="100" Height="42" Margin="0,0,10,0" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
-                    <Button Content="Chiudi" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
-                </StackPanel>
-            </Grid>
-        </ScrollViewer>
+                    <TextBlock Grid.Row="7" Grid.ColumnSpan="2" Margin="0,8,0,0" Foreground="Gray" Text="{Binding Status, Mode=OneWay}"/>
+                </Grid>
+            </ScrollViewer>
         </Border>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="Salva" MinWidth="100" Height="42" Margin="0,0,10,0" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+            <Button Content="Chiudi" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource OutlineButtonStyle}" Click="Close_Click"/>
+        </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

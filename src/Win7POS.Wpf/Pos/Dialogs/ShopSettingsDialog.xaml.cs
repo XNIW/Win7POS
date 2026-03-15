@@ -1,6 +1,5 @@
 using System.Windows;
 using Win7POS.Wpf.Chrome;
-using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -9,7 +8,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ShopSettingsDialog(ShopSettingsViewModel vm)
         {
             InitializeComponent();
-            WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 520, minHeight: 420, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             DataContext = vm;
             vm.RequestClose += ok =>
             {
@@ -26,6 +24,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             try { DialogResult = ok; }
             catch { Close(); }
+        }
+
+        private void Close_Click(object sender, RoutedEventArgs e)
+        {
+            CloseWithResult(false);
         }
     }
 }
