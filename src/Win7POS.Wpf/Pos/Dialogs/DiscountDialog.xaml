@@ -50,39 +50,11 @@
                     </Trigger>
                 </Style.Triggers>
             </Style>
-            <Style x:Key="KeypadBtn" TargetType="Button">
+            <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
                 <Setter Property="Height" Value="64"/>
                 <Setter Property="Margin" Value="5"/>
                 <Setter Property="FontSize" Value="22"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
-                <Setter Property="Background" Value="#FCFBFE"/>
-                <Setter Property="Foreground" Value="#5E3F86"/>
-                <Setter Property="BorderBrush" Value="#D9CEE8"/>
-                <Setter Property="BorderThickness" Value="1"/>
-                <Setter Property="Cursor" Value="Hand"/>
-                <Setter Property="Template">
-                    <Setter.Value>
-                        <ControlTemplate TargetType="Button">
-                            <Border x:Name="border"
-                                    Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="10">
-                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                            </Border>
-                            <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter TargetName="border" Property="Background" Value="#EDE5F5"/>
-                                    <Setter TargetName="border" Property="BorderBrush" Value="#C4B0DA"/>
-                                </Trigger>
-                                <Trigger Property="IsPressed" Value="True">
-                                    <Setter TargetName="border" Property="Background" Value="#DDD0EE"/>
-                                    <Setter TargetName="border" Property="BorderBrush" Value="#B09ACC"/>
-                                </Trigger>
-                            </ControlTemplate.Triggers>
-                        </ControlTemplate>
-                    </Setter.Value>
-                </Setter>
             </Style>
         </Grid.Resources>
         <Grid.RowDefinitions>
