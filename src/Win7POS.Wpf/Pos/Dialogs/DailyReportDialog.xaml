@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Chiusura cassa / Incasso giornaliero"
+        DialogBackground="#F1EDF7"
+        DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
         ResizeMode="CanResize"

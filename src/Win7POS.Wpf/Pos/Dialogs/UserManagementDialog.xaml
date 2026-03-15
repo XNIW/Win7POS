@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Utenti e ruoli"
+        DialogBackground="#F1EDF7"
+        DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="720"
@@ -28,7 +30,7 @@
             <!-- Colonna sinistra: Utenti e Ruoli in blocchi separati -->
             <StackPanel Grid.Row="1" Grid.Column="0">
                 <!-- Blocco Utenti -->
-                <Border Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,12">
+                <Border Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,12">
                     <StackPanel>
                         <TextBlock Text="Utenti" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
                         <Grid Margin="0,0,0,8">
@@ -115,7 +117,7 @@
                 </Border>
 
                 <!-- Blocco Ruoli -->
-                <Border Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="12">
+                <Border Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="12">
                     <StackPanel>
                         <TextBlock Text="Ruoli (modifica permessi)" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
                         <ListBox ItemsSource="{Binding Roles}" SelectedItem="{Binding SelectedRole, Mode=TwoWay}"
@@ -166,7 +168,7 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 <!-- Card Dettaglio utente -->
-                <Border Grid.Row="0" Visibility="{Binding IsUserSelected, Converter={StaticResource BoolToVis}}" Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14" Margin="0,0,0,12">
+                <Border Grid.Row="0" Visibility="{Binding IsUserSelected, Converter={StaticResource BoolToVis}}" Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,0,12">
                     <StackPanel>
                         <TextBlock Text="Utente selezionato" FontSize="14" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,8"/>
                         <Grid>
@@ -208,7 +210,7 @@
                 </Border>
 
                 <!-- Card Permessi ruolo: titolo + area scrollabile + pulsante -->
-                <Border Grid.Row="1" Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="14" MinHeight="200">
+                <Border Grid.Row="1" Background="{StaticResource CardBgBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="14" MinHeight="200">
                     <Grid>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
