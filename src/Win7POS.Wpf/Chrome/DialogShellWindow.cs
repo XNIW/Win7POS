@@ -248,6 +248,8 @@ namespace Win7POS.Wpf.Chrome
             }
             else
             {
+                outerBorder.Effect = null;
+                Background = cardBrush;
                 Content = outerBorder;
             }
         }

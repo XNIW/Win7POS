@@ -195,11 +195,20 @@
                         </ItemsControl>
                     </ScrollViewer>
 
-                    <!-- Footer: Stampa + Reso/Storno -->
-                    <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button Content="Stampa" MinWidth="110" Height="40" Command="{Binding PrintCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,10,0"/>
-                        <Button Content="Reso / Storno" MinWidth="140" Height="40" Command="{Binding RefundCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
-                    </StackPanel>
+                    <!-- Footer: Chiudi + Stampa + Reso/Storno -->
+                    <Grid Grid.Row="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Content="Chiudi" MinWidth="90" Height="40" HorizontalAlignment="Left"
+                                IsCancel="True" Style="{StaticResource OutlineButtonStyle}"
+                                Click="Close_Click"/>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal">
+                            <Button Content="Stampa" MinWidth="110" Height="40" Command="{Binding PrintCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,10,0"/>
+                            <Button Content="Reso / Storno" MinWidth="140" Height="40" Command="{Binding RefundCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                        </StackPanel>
+                    </Grid>
                 </Grid>
             </Border>
         </Grid>
