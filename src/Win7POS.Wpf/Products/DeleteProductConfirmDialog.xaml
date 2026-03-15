@@ -3,27 +3,35 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Conferma eliminazione"
+        ShowHeader="False"
+        UseModalOverlay="True"
+        DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="360"
         MinHeight="180"
-        ResizeMode="NoResize">
-    <Border Margin="18" Padding="18" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8">
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+    <Grid Margin="24" Background="#F1EDF7">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Text="Eliminare questo prodotto?" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
         <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
-            <TextBlock Grid.Row="0" Text="Eliminare questo prodotto?" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,16"/>
-            <TextBlock x:Name="BarcodeText" Grid.Row="1" FontSize="13" Foreground="#5C3D7A" Margin="0,0,0,4"/>
-            <TextBlock x:Name="NameText" Grid.Row="2" TextWrapping="Wrap" FontSize="13" Foreground="#333" Margin="0,0,0,12"/>
-            <TextBlock Grid.Row="3" Text="L'operazione non può essere annullata." FontSize="12" Foreground="#8A6F9B" Margin="0,0,0,20"/>
-            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+            <TextBlock x:Name="BarcodeText" Grid.Row="0" FontSize="13" Foreground="#5E3F86" Margin="0,0,0,4"/>
+            <TextBlock x:Name="NameText" Grid.Row="1" TextWrapping="Wrap" FontSize="13" Foreground="#333" Margin="0,0,0,12"/>
+            <TextBlock Grid.Row="2" Text="L'operazione non può essere annullata." FontSize="12" Foreground="#8873A4" Margin="0,0,0,20"/>
+            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Annulla" MinWidth="100" Height="38" Margin="0,0,10,0" IsCancel="True"
                         Style="{StaticResource OutlineButtonStyle}" Click="Cancel_Click"/>
                 <Button Content="Elimina" MinWidth="100" Height="38" IsDefault="True"
@@ -31,5 +39,6 @@
                         Foreground="White" Click="Elimina_Click"/>
             </StackPanel>
         </Grid>
-    </Border>
+        </Border>
+    </Grid>
 </chrome:DialogShellWindow>

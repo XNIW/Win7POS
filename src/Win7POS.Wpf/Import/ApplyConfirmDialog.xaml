@@ -3,28 +3,37 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Conferma Apply"
+        ShowHeader="False"
+        UseModalOverlay="True"
+        DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="380"
         MinHeight="160"
-        ResizeMode="NoResize">
-    <Border Margin="18" Padding="18" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8">
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+    <Grid Margin="24" Background="#F1EDF7">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock x:Name="TitleText" Grid.Row="0" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <TextBlock x:Name="TitleText" Grid.Row="0" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,12"/>
-            <TextBlock x:Name="MessageText" Grid.Row="1" TextWrapping="Wrap" FontSize="13" Foreground="#333" Margin="0,0,0,20"/>
-            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <TextBlock x:Name="MessageText" Grid.Row="0" TextWrapping="Wrap" FontSize="13" Foreground="#333" Margin="0,0,0,20"/>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Annulla" MinWidth="100" Height="36" Margin="0,0,10,0" IsCancel="True"
                         Style="{StaticResource OutlineButtonStyle}" Click="Cancel_Click"/>
                 <Button Content="Conferma" MinWidth="100" Height="36" IsDefault="True"
                         Style="{StaticResource PrimaryButtonStyle}" Click="Confirm_Click"/>
             </StackPanel>
         </Grid>
-    </Border>
+        </Border>
+    </Grid>
 </chrome:DialogShellWindow>

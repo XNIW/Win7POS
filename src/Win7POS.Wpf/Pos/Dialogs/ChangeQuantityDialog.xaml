@@ -3,15 +3,18 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Modifica quantità"
+        ShowHeader="False"
+        UseModalOverlay="True"
+        DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="360"
         MinHeight="320"
-        ResizeMode="NoResize">
-    <Border Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8" Padding="18">
-    <Grid>
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+    <Grid Margin="24" Background="#F1EDF7">
         <Grid.Resources>
             <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
                 <Setter Property="Height" Value="72"/>
@@ -26,13 +29,16 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock x:Name="ProductNameText" Grid.Row="0" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,12"/>
-        <TextBlock Grid.Row="1" Text="Quantità" Margin="0,0,0,6"/>
-        <TextBox x:Name="QtyBox" Grid.Row="2" MinHeight="52" FontSize="24" Margin="0,0,0,16"
+        <TextBlock Grid.Row="0" Text="Modifica quantità" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+        <TextBlock x:Name="ProductNameText" Grid.Row="1" FontWeight="SemiBold" FontSize="13" Foreground="#5E3F86" TextWrapping="Wrap" Margin="0,0,0,12"/>
+        <TextBlock Grid.Row="2" Text="Quantità" Foreground="#666" Margin="0,0,0,6"/>
+        <TextBox x:Name="QtyBox" Grid.Row="3" MinHeight="52" FontSize="24" Margin="0,0,0,16"
                  Style="{StaticResource ModernTextBoxStyle}"
                  KeyDown="QtyBox_KeyDown"/>
-        <UniformGrid Grid.Row="3" Rows="4" Columns="3" Margin="0,0,0,16">
+        <Border Grid.Row="4" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="14" Margin="0,0,0,16">
+        <UniformGrid Rows="4" Columns="3">
             <Button Content="7" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
             <Button Content="8" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
             <Button Content="9" Style="{StaticResource KeypadBtn}" Click="Digit_Click"/>
@@ -46,10 +52,10 @@
             <Button Content="00" Style="{StaticResource KeypadBtn}" Click="DoubleZero_Click"/>
             <Button Content="⌫" Style="{StaticResource KeypadBtn}" Click="Backspace_Click"/>
         </UniformGrid>
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Annulla" MinWidth="90" Height="38" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click" Style="{StaticResource OutlineButtonStyle}"/>
-            <Button Content="OK" MinWidth="90" Height="38" IsDefault="True" Click="Ok_Click" Style="{StaticResource PrimaryButtonStyle}"/>
+        </Border>
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,4,0,0">
+            <Button Content="Annulla" MinWidth="90" Height="42" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click" Style="{StaticResource OutlineButtonStyle}"/>
+            <Button Content="OK" MinWidth="90" Height="42" IsDefault="True" Click="Ok_Click" Style="{StaticResource PrimaryButtonStyle}"/>
         </StackPanel>
     </Grid>
-    </Border>
 </chrome:DialogShellWindow>

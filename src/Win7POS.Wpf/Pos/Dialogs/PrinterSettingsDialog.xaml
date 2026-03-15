@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Impostazioni stampante"
+        ShowHeader="False"
+        DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
@@ -14,7 +16,13 @@
         MaxWidth="620"
         MaxHeight="520"
         ResizeMode="CanResize">
-    <Border Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8" Padding="18">
+    <Grid Margin="24" Background="#F1EDF7">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Text="Impostazioni stampante" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <Grid>
                 <Grid.RowDefinitions>
@@ -47,7 +55,7 @@
                          ToolTip="Numero di copie per ogni scontrino"/>
 
                 <!-- Stampa automatica dopo vendita -->
-                <Border Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,20,0,0" Padding="0,12,0,12" Background="#F8F8F8" CornerRadius="6">
+                <Border Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,20,0,0" Padding="0,12,0,12" Background="#FCFBFE" CornerRadius="8" BorderBrush="#E4DBEF" BorderThickness="1">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -61,7 +69,7 @@
                 </Border>
 
                 <!-- Salva copia scontrino su file -->
-                <Border Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="0,12,0,12" Background="#F8F8F8" CornerRadius="6">
+                <Border Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,8,0,0" Padding="0,12,0,12" Background="#FCFBFE" CornerRadius="8" BorderBrush="#E4DBEF" BorderThickness="1">
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -121,5 +129,6 @@
                 </StackPanel>
             </Grid>
         </ScrollViewer>
-    </Border>
+        </Border>
+    </Grid>
 </chrome:DialogShellWindow>

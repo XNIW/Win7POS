@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Chiusura cassa / Incasso giornaliero"
+        ShowHeader="False"
+        DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
@@ -13,9 +15,9 @@
         MinWidth="1000"
         MinHeight="660">
     <!-- Dimensioni: 1180x760, min 1000x660, ridimensionabile (no Max). Tab Giornaliero | Storico. -->
-    <Border Padding="18">
-        <Grid>
-            <Grid.RowDefinitions>
+    <Grid Margin="24" Background="#F1EDF7">
+        <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -23,8 +25,10 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <!-- Header: sottotitolo, data evidenziata, badge stato, lucchetto vista -->
-            <Grid Grid.Row="0" Margin="0,0,0,14">
+            <!-- Header: titolo principale -->
+            <TextBlock Grid.Row="0" Text="Chiusura cassa / Incasso giornaliero" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+            <!-- Riga: sottotitolo, data evidenziata, badge stato, lucchetto vista -->
+            <Grid Grid.Row="1" Margin="0,0,0,14">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
@@ -49,7 +53,7 @@
             </Grid>
 
             <!-- Filtri rapidi (pill) -->
-            <StackPanel Grid.Row="1" Margin="0,0,0,10">
+            <StackPanel Grid.Row="2" Margin="0,0,0,10">
                 <WrapPanel>
                     <Button Content="Oggi" MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterOggiCommand}" Style="{StaticResource OutlineButtonStyle}"/>
                     <Button Content="Ieri" MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterIeriCommand}" Style="{StaticResource OutlineButtonStyle}"/>
@@ -61,7 +65,7 @@
             </StackPanel>
 
             <!-- KPI cards: dashboard-grade, numero in evidenza -->
-            <Grid Grid.Row="2" Margin="0,0,0,14">
+            <Grid Grid.Row="3" Margin="0,0,0,14">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
@@ -95,7 +99,7 @@
             </Grid>
 
             <!-- Tab Giornaliero / Storico -->
-            <TabControl Grid.Row="3" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
+            <TabControl Grid.Row="4" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
                 <TabItem Header="Giornaliero">
                     <Grid Margin="0,8,0,0">
                         <Grid.ColumnDefinitions>
@@ -464,11 +468,10 @@
             </TabControl>
 
             <!-- Footer: testo grigio piccolo, meno spazio, Chiudi a destra -->
-            <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
                 <TextBlock Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="#888" FontSize="10" Margin="0,0,10,0" MaxWidth="380" TextTrimming="CharacterEllipsis"
                            Visibility="{Binding ShowFooterStatus, Converter={StaticResource BoolToVis}}"/>
                 <Button MinWidth="100" Height="36" Content="Chiudi" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
             </StackPanel>
         </Grid>
-    </Border>
 </chrome:DialogShellWindow>

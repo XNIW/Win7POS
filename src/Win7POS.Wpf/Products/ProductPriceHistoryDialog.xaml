@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Storico prezzi"
+        ShowHeader="False"
+        DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         Width="820"
@@ -10,8 +12,9 @@
         Height="560"
         WindowStartupLocation="CenterOwner"
         ResizeMode="CanResize">
-    <Grid Margin="18">
+    <Grid Margin="24" Background="#F1EDF7">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -19,8 +22,10 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Header: Barcode, Nome, Prezzi attuali -->
-        <Border Grid.Row="0" Padding="12" Margin="0,0,0,12" Background="White" CornerRadius="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+        <!-- Header: titolo -->
+        <TextBlock Grid.Row="0" Text="Storico prezzi" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+        <!-- Card: Barcode, Nome, Prezzi attuali -->
+        <Border Grid.Row="1" Padding="12" Margin="0,0,0,12" Background="#FCFBFE" CornerRadius="10" BorderBrush="#E4DBEF" BorderThickness="1">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -49,7 +54,7 @@
         </Border>
 
         <!-- Azioni: Aggiorna + Nuovo prezzo vendita/acquisto -->
-        <Border Grid.Row="1" Padding="8" Margin="0,0,0,8" Background="#F5F5F5" CornerRadius="6">
+        <Border Grid.Row="2" Padding="8" Margin="0,0,0,8" Background="#FCFBFE" CornerRadius="8" BorderBrush="#E4DBEF" BorderThickness="1">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -68,7 +73,7 @@
         </Border>
 
         <!-- Storico vendita -->
-        <GroupBox Grid.Row="2" Header="Storico vendita" Margin="0,0,0,8" Padding="8">
+        <GroupBox Grid.Row="3" Header="Storico vendita" Margin="0,0,0,8" Padding="8">
             <DataGrid ItemsSource="{Binding RetailHistory}" AutoGenerateColumns="False" IsReadOnly="True"
                       HeadersVisibility="Column" GridLinesVisibility="Horizontal" MinHeight="120">
                 <DataGrid.RowStyle>
@@ -88,7 +93,7 @@
         </GroupBox>
 
         <!-- Storico acquisto -->
-        <GroupBox Grid.Row="3" Header="Storico acquisto" Margin="0,0,0,8" Padding="8">
+        <GroupBox Grid.Row="4" Header="Storico acquisto" Margin="0,0,0,8" Padding="8">
             <DataGrid ItemsSource="{Binding PurchaseHistory}" AutoGenerateColumns="False" IsReadOnly="True"
                       HeadersVisibility="Column" GridLinesVisibility="Horizontal" MinHeight="120">
                 <DataGrid.RowStyle>
@@ -107,7 +112,7 @@
             </DataGrid>
         </GroupBox>
 
-        <DockPanel Grid.Row="4">
+        <DockPanel Grid.Row="5">
             <Button Content="Chiudi" MinWidth="90" Height="36" HorizontalAlignment="Left" Click="Close_Click" Style="{StaticResource OutlineButtonStyle}"/>
             <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="12,0" Foreground="Gray"/>
         </DockPanel>

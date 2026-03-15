@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Utenti e ruoli"
+        ShowHeader="False"
+        DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
@@ -10,8 +12,7 @@
         MinWidth="720"
         MinHeight="480"
         ResizeMode="CanResize">
-    <Border Padding="18">
-        <Grid>
+    <Grid Margin="24" Background="#F1EDF7">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -22,9 +23,10 @@
                 <ColumnDefinition Width="*" MinWidth="320"/>
             </Grid.ColumnDefinitions>
 
-            <!-- Header: operatore corrente (titolo nella caption custom) -->
-            <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,14">
-                <TextBlock Text="{Binding CurrentOperatorDisplay, Mode=OneWay}" FontSize="12" Foreground="#6B5B73"/>
+            <!-- Header: titolo + operatore corrente -->
+            <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,16">
+                <TextBlock Text="Utenti e ruoli" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86"/>
+                <TextBlock Text="{Binding CurrentOperatorDisplay, Mode=OneWay}" FontSize="12" Foreground="#8873A4" Margin="0,4,0,0"/>
             </StackPanel>
 
             <!-- Colonna sinistra: Utenti e Ruoli in blocchi separati -->
@@ -249,5 +251,4 @@
                 <Button Content="Chiudi" MinWidth="90" Height="36" IsCancel="True" Click="OnCloseClick" Style="{StaticResource OutlineButtonStyle}"/>
             </StackPanel>
         </Grid>
-    </Border>
 </chrome:DialogShellWindow>

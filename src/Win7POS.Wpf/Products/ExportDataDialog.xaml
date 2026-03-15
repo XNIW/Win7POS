@@ -3,15 +3,25 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Esporta dati"
+        ShowHeader="False"
+        UseModalOverlay="True"
+        DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="400"
         MinHeight="260"
-        ResizeMode="NoResize">
-    <Border Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8" Padding="18">
-    <Grid>
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+    <Grid Margin="24" Background="#F1EDF7">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Text="Esporta dati" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
+        <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -19,12 +29,12 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Formato di esportazione" FontWeight="SemiBold" Margin="0,0,0,8"/>
+        <TextBlock Grid.Row="0" Text="Formato di esportazione" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,8"/>
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
             <RadioButton x:Name="RadioXlsx" Content="XLSX (un file)" IsChecked="True" Margin="0,0,16,0" Checked="Format_Changed"/>
             <RadioButton x:Name="RadioCsv" Content="CSV (cartella con più file)" Checked="Format_Changed"/>
         </StackPanel>
-        <TextBlock Grid.Row="2" Text="Destinazione" FontWeight="SemiBold" Margin="0,0,0,4"/>
+        <TextBlock Grid.Row="2" Text="Destinazione" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,4"/>
         <Grid Grid.Row="3">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
@@ -40,5 +50,6 @@
             <Button Content="Esporta" MinWidth="90" Height="36" IsDefault="True" Click="Export_Click"/>
         </StackPanel>
     </Grid>
-    </Border>
+        </Border>
+    </Grid>
 </chrome:DialogShellWindow>

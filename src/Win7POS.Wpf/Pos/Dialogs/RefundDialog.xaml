@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Reso / Storno"
+        ShowHeader="False"
+        DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
@@ -15,8 +17,13 @@
         MinHeight="700"
         MaxHeight="700"
         KeyDown="OnKeyDown">
-    <Border Padding="18">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <Grid Margin="24" Background="#F1EDF7">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Text="Reso / Storno" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <Grid Margin="0">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -28,7 +35,7 @@
         </Grid.RowDefinitions>
 
         <!-- Header: fascia informativa vendita -->
-        <Border Grid.Row="0" Background="{StaticResource BackgroundLightBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="12" CornerRadius="6" Margin="0,0,0,12">
+        <Border Grid.Row="0" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" Padding="12" CornerRadius="10" Margin="0,0,0,12">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -147,7 +154,7 @@
         </Grid>
 
         <!-- Blocco totali + motivo -->
-        <Border Grid.Row="4" Background="{StaticResource BackgroundLightBrush}" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="12" CornerRadius="6" Margin="0,0,0,10">
+        <Border Grid.Row="4" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" Padding="12" CornerRadius="10" Margin="0,0,0,10">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -189,5 +196,5 @@
         </Grid>
             </Grid>
         </ScrollViewer>
-    </Border>
+    </Grid>
 </chrome:DialogShellWindow>

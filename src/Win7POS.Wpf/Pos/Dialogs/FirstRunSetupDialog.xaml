@@ -3,6 +3,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Configurazione iniziale"
+        ShowHeader="False"
+        UseModalOverlay="True"
+        DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         Width="520"
@@ -11,9 +14,16 @@
         MinHeight="440"
         SizeToContent="Manual"
         ResizeMode="NoResize"
-        WindowStartupLocation="CenterOwner">
-    <Border Padding="0" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8">
-        <Grid Margin="18,18,18,18">
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+    <Grid Margin="24" Background="#F1EDF7">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Text="Configurazione iniziale" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
+        <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -24,7 +34,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Text="Crea il primo amministratore del sistema" FontSize="14" FontWeight="SemiBold" Foreground="#555"/>
+            <TextBlock Grid.Row="0" Text="Crea il primo amministratore del sistema" FontSize="13" FontWeight="SemiBold" Foreground="#5E3F86"/>
 
             <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
@@ -61,5 +71,6 @@
                 <Button Content="Annulla" Width="100" Height="34" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
             </StackPanel>
         </Grid>
-    </Border>
+        </Border>
+    </Grid>
 </chrome:DialogShellWindow>
