@@ -11,12 +11,12 @@
        WindowStartupLocation="CenterOwner"
        SizeToContent="Manual"
        Width="760"
-       Height="910"
+       Height="870"
        MinWidth="760"
-       MinHeight="910"
+       MinHeight="870"
        ResizeMode="NoResize"
        ShowInTaskbar="False">
-    <Grid Margin="24">
+    <Grid Margin="24" Background="#F1EDF7">
         <Grid.Resources>
             <ControlTemplate x:Key="RoundedToggleTemplate" TargetType="ToggleButton">
                 <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="12,10">
@@ -27,6 +27,16 @@
                         <Setter TargetName="border" Property="Background" Value="{StaticResource PrimaryBrush}"/>
                         <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
                     </Trigger>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter TargetName="border" Property="Background" Value="#EDE5F5"/>
+                    </Trigger>
+                    <MultiTrigger>
+                        <MultiTrigger.Conditions>
+                            <Condition Property="IsChecked" Value="True"/>
+                            <Condition Property="IsMouseOver" Value="True"/>
+                        </MultiTrigger.Conditions>
+                        <Setter TargetName="border" Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                    </MultiTrigger>
                 </ControlTemplate.Triggers>
             </ControlTemplate>
             <Style x:Key="DiscountToggleStyle" TargetType="ToggleButton">
@@ -40,15 +50,42 @@
                     </Trigger>
                 </Style.Triggers>
             </Style>
-            <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+            <Style x:Key="KeypadBtn" TargetType="Button">
                 <Setter Property="Height" Value="64"/>
                 <Setter Property="Margin" Value="5"/>
                 <Setter Property="FontSize" Value="22"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Background" Value="#FCFBFE"/>
+                <Setter Property="Foreground" Value="#5E3F86"/>
+                <Setter Property="BorderBrush" Value="#D9CEE8"/>
+                <Setter Property="BorderThickness" Value="1"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="border"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="10">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="border" Property="Background" Value="#EDE5F5"/>
+                                    <Setter TargetName="border" Property="BorderBrush" Value="#C4B0DA"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="border" Property="Background" Value="#DDD0EE"/>
+                                    <Setter TargetName="border" Property="BorderBrush" Value="#B09ACC"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
         </Grid.Resources>
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="170"/>
@@ -66,23 +103,19 @@
                    Margin="0,0,0,16"/>
 
         <!-- Row 1: Mode Toggle Buttons -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
-            <ToggleButton x:Name="PercentToggle" Content="Percentuale %" MinWidth="140" Height="36" Margin="0,0,8,0"
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
+            <ToggleButton x:Name="PercentToggle" Content="Percentuale %" MinWidth="148" Height="40" Margin="0,0,8,0"
                          IsChecked="{Binding IsPercentMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource DiscountToggleStyle}"
                          Checked="Tab_Checked"/>
-            <ToggleButton x:Name="ImportoToggle" Content="Importo $" MinWidth="140" Height="36"
+            <ToggleButton x:Name="ImportoToggle" Content="Importo $" MinWidth="148" Height="40"
                          IsChecked="{Binding IsAmountMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource DiscountToggleStyle}"
                          Checked="Tab_Checked"/>
         </StackPanel>
 
-        <!-- Row 2: Scope Text -->
-        <TextBlock Grid.Row="2" Text="{Binding ScopeText}" Margin="0,8,0,12"
-                   FontSize="13" FontWeight="SemiBold" Foreground="#5E3F86"/>
-
-        <!-- Row 3: Price Preview -->
-        <Border Grid.Row="3" Margin="0,0,0,0" Padding="14" CornerRadius="10" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1"
+        <!-- Row 2: Price Preview -->
+        <Border Grid.Row="2" Margin="0,0,0,0" Padding="14" CornerRadius="10" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1"
                 Visibility="{Binding ShowPreview, Converter={StaticResource BoolToVis}}">
             <Border.Resources>
                 <Style TargetType="TextBlock">
@@ -90,37 +123,40 @@
                 </Style>
             </Border.Resources>
             <StackPanel>
-                <TextBlock Text="{Binding ScopeText}" FontSize="13" FontWeight="SemiBold"/>
+                <TextBlock Text="{Binding ScopeText}" FontSize="13" FontWeight="SemiBold" Foreground="#5E3F86"/>
                 <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                    <TextBlock Text="{Binding OriginalPriceDisplay}" Foreground="#777" FontSize="18" TextDecorations="Strikethrough"/>
-                    <TextBlock Text="  →  " FontSize="18" Foreground="#777"/>
+                    <TextBlock Text="{Binding OriginalPriceDisplay}" Foreground="#999" FontSize="18" TextDecorations="Strikethrough"/>
+                    <TextBlock Text="  →  " FontSize="18" Foreground="#AAA"/>
                     <TextBlock Text="{Binding PreviewFinalPriceDisplay}" FontSize="28" FontWeight="Bold" Foreground="#2E2E2E"/>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
                             Visibility="{Binding HasPreviewDiscount, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="{Binding PreviewDiscountPercentDisplay}" Foreground="#8B6914" FontWeight="SemiBold"/>
                     <TextBlock Text="  "/>
-                    <TextBlock Text="{Binding PreviewDiscountAmountDisplay}" Foreground="#6F6475"/>
+                    <TextBlock Text="{Binding PreviewDiscountAmountDisplay}" Foreground="#8873A4"/>
                 </StackPanel>
             </StackPanel>
         </Border>
 
-        <!-- Row 4: Value Input -->
-        <StackPanel Grid.Row="4" Margin="0,0,0,0">
+        <!-- Row 3: Value Input -->
+        <StackPanel Grid.Row="3" Margin="0,0,0,0">
             <TextBox x:Name="ValueBox" FontSize="28" Padding="16,8" Margin="0,0,0,4"
                      Style="{StaticResource ModernTextBoxStyle}"
                      Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
                      HorizontalContentAlignment="Right" VerticalContentAlignment="Center"/>
-            <TextBlock FontSize="11" Foreground="#8873A4" Margin="0,0,0,0"
+            <TextBlock FontSize="11" Foreground="#8873A4" Margin="0,2,0,0"
                        Text="0 = rimuovi sconto · Percentuale massima: 100"
                        Visibility="{Binding IsPercentMode, Converter={StaticResource BoolToVis}}"/>
-            <TextBlock FontSize="11" Foreground="#8873A4" Margin="0,0,0,0"
+            <TextBlock FontSize="11" Foreground="#8873A4" Margin="0,2,0,0"
                        Text="Inserisci prezzo finale unitario desiderato"
                        Visibility="{Binding IsAmountMode, Converter={StaticResource BoolToVis}}"/>
         </StackPanel>
 
-        <!-- Row 5: Numeric Keypad -->
-        <Grid Grid.Row="5" Margin="0,0,0,0">
+        <!-- Separator -->
+        <Border Grid.Row="4" Height="1" Background="#E4DBEF" VerticalAlignment="Top" Margin="0,0,0,0"/>
+
+        <!-- Row 4: Numeric Keypad -->
+        <Grid Grid.Row="4" Margin="0,10,0,0">
             <UniformGrid Rows="4" Columns="3">
                 <Button Content="7" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="7"/>
@@ -149,8 +185,8 @@
             </UniformGrid>
         </Grid>
 
-        <!-- Row 6: Footer Buttons -->
-        <Grid Grid.Row="6" Margin="0,16,0,0">
+        <!-- Row 5: Footer Buttons -->
+        <Grid Grid.Row="5" Margin="0,16,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
