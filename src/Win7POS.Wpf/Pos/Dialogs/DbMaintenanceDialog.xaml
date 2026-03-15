@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Manutenzione database"
-        ShowHeader="True"
+        ShowHeader="False"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
@@ -67,7 +67,7 @@
             </ScrollViewer>
         </Border>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button MinWidth="110" Height="42" Content="Chiudi" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
+            <Button MinWidth="110" Height="42" Content="Chiudi" IsCancel="True" Style="{StaticResource OutlineButtonStyle}" Click="Close_Click"/>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

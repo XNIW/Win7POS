@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Informazioni e supporto"
-        ShowHeader="True"
+        ShowHeader="False"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"

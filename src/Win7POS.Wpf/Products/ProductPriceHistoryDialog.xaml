@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Storico prezzi"
-        ShowHeader="True"
+        ShowHeader="False"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
@@ -113,7 +113,7 @@
         </GroupBox>
 
         <DockPanel Grid.Row="5">
-            <Button Content="Chiudi" MinWidth="90" Height="36" HorizontalAlignment="Left" Click="Close_Click" Style="{StaticResource OutlineButtonStyle}"/>
+            <Button Content="Chiudi" MinWidth="90" Height="36" HorizontalAlignment="Left" IsCancel="True" Click="Close_Click" Style="{StaticResource OutlineButtonStyle}"/>
             <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="12,0" Foreground="Gray"/>
         </DockPanel>
     </Grid>

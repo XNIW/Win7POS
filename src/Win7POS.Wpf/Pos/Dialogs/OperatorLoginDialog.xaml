@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Accesso operatore"
-        ShowHeader="True"
+        ShowHeader="False"
         UseModalOverlay="False"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
@@ -38,7 +38,7 @@
             <TextBlock x:Name="ErrorText" Grid.Row="3" Grid.ColumnSpan="2" Foreground="#C62828" Margin="0,0,0,12" TextWrapping="Wrap" Visibility="Collapsed"/>
             <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
                 <Button Content="Accedi" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnLoginClick" Style="{StaticResource PrimaryButtonStyle}" IsDefault="True"/>
-                <Button Content="Annulla" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Annulla" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource OutlineButtonStyle}" Click="Cancel_Click"/>
             </StackPanel>
         </Grid>
     </Border>

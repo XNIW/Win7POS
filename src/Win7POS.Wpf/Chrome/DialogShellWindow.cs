@@ -36,7 +36,7 @@ namespace Win7POS.Wpf.Chrome
                 nameof(ShowHeader),
                 typeof(bool),
                 typeof(DialogShellWindow),
-                new PropertyMetadata(true));
+                new PropertyMetadata(false));
 
         public bool ShowHeader
         {

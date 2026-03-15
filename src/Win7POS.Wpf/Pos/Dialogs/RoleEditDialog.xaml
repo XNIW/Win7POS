@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Modifica ruolo"
-        ShowHeader="True"
+        ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
@@ -49,7 +49,7 @@
             </StackPanel>
             <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
                 <Button Content="OK" MinWidth="90" Height="36" Margin="0,0,8,0" Click="OnOkClick" Style="{StaticResource PrimaryButtonStyle}" IsDefault="True"/>
-                <Button Content="Annulla" MinWidth="90" Height="36" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button Content="Annulla" MinWidth="90" Height="36" IsCancel="True" Style="{StaticResource OutlineButtonStyle}" Click="Cancel_Click"/>
             </StackPanel>
         </Grid>
         </Border>

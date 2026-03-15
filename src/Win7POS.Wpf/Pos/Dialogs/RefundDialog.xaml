@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Reso / Storno"
-        ShowHeader="True"
+        ShowHeader="False"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
@@ -191,7 +191,7 @@
             <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button MinWidth="120" Height="40" Margin="0,0,10,0" Content="Conferma" Click="OnConfirmClick" Style="{StaticResource PrimaryButtonStyle}"
                         IsEnabled="{Binding IsValid}"/>
-                <Button MinWidth="120" Height="40" Content="Annulla" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button MinWidth="120" Height="40" Content="Annulla" IsCancel="True" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
             </StackPanel>
         </Grid>
             </Grid>

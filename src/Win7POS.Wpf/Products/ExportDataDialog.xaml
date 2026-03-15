@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Esporta dati"
-        ShowHeader="True"
+        ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"

@@ -60,6 +60,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
+        private void Cancel_Click(object sender, RoutedEventArgs e)
+        {
+            DialogResult = false;
+            Close();
+        }
+
         private void ShowError(string message)
         {
             ErrorText.Text = message;

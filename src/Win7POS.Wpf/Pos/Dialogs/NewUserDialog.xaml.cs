@@ -31,6 +31,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             RoleCombo.SelectedIndex = roles.Count > 0 ? 0 : -1;
         }
 
+        private void Cancel_Click(object sender, RoutedEventArgs e)
+        {
+            DialogResult = false;
+            Close();
+        }
+
         private void OnCreateClick(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(Username)) { ModernMessageDialog.Show(this, "Nuovo utente", "Inserire username."); return; }

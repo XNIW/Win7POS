@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Scontrini sospesi"
-        ShowHeader="True"
+        ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
@@ -154,7 +154,7 @@
                     Style="{StaticResource PrimaryButtonStyle}" Command="{Binding RecoverCommand}"/>
             <Button Grid.Column="2" Content="Elimina" MinWidth="96" Height="42" Margin="0,0,10,0"
                     Style="{StaticResource SecondaryButtonStyle}" Command="{Binding DeleteCommand}"/>
-            <Button Grid.Column="3" Content="Chiudi" MinWidth="96" Height="42"
+            <Button Grid.Column="3" Content="Chiudi" MinWidth="96" Height="42" IsCancel="True"
                     Style="{StaticResource OutlineButtonStyle}" Command="{Binding CloseCommand}"/>
         </Grid>
     </Grid>

@@ -77,6 +77,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
+        private void Close_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
+
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
             var vm = DataContext as DailyReportViewModel;

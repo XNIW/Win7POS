@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Chiusura cassa / Incasso giornaliero"
-        ShowHeader="True"
+        ShowHeader="False"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
@@ -471,7 +471,7 @@
             <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
                 <TextBlock Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="#888" FontSize="10" Margin="0,0,10,0" MaxWidth="380" TextTrimming="CharacterEllipsis"
                            Visibility="{Binding ShowFooterStatus, Converter={StaticResource BoolToVis}}"/>
-                <Button MinWidth="100" Height="36" Content="Chiudi" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button MinWidth="100" Height="36" Content="Chiudi" IsCancel="True" Style="{StaticResource OutlineButtonStyle}" Click="Close_Click"/>
             </StackPanel>
         </Grid>
 </chrome:DialogShellWindow>

@@ -18,6 +18,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (codeReadOnly && CodeRow != null) CodeRow.Visibility = Visibility.Collapsed;
         }
 
+        private void Cancel_Click(object sender, RoutedEventArgs e)
+        {
+            DialogResult = false;
+            Close();
+        }
+
         private void OnOkClick(object sender, RoutedEventArgs e)
         {
             if (string.IsNullOrWhiteSpace(RoleName))

@@ -12,5 +12,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
             WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 640, minHeight: 420, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             DataContext = vm;
         }
+
+        private void Close_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
     }
 }

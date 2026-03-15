@@ -4,7 +4,7 @@
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         xmlns:import="clr-namespace:Win7POS.Wpf.Import"
         Title="Import dati"
-        ShowHeader="True"
+        ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
