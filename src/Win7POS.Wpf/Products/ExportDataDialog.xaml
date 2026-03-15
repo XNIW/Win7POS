@@ -46,8 +46,8 @@
             <Button Grid.Column="1" Content="Sfoglia..." MinWidth="90" Height="32" Click="Browse_Click"/>
         </Grid>
         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
-            <Button Content="Annulla" MinWidth="90" Height="36" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click"/>
-            <Button Content="Esporta" MinWidth="90" Height="36" IsDefault="True" Click="Export_Click"/>
+            <Button Content="Annulla" MinWidth="100" Height="42" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click"/>
+            <Button Content="Esporta" MinWidth="100" Height="42" IsDefault="True" Click="Export_Click"/>
         </StackPanel>
     </Grid>
         </Border>

@@ -415,17 +415,7 @@ namespace Win7POS.Wpf.Products
         {
             try
             {
-                var win = new Window
-                {
-                    Title = "Import dati",
-                    Width = 900,
-                    Height = 700,
-                    WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                    Owner = Application.Current?.MainWindow,
-                    Content = new ImportView()
-                };
-                Win7POS.Wpf.Infrastructure.WindowSizingHelper.CapMaxHeightToOwner(win);
-                win.ShowDialog();
+                Win7POS.Wpf.Import.ImportDataDialog.ShowDialog(Application.Current?.MainWindow);
                 await RefreshAsync().ConfigureAwait(true);
             }
             catch (Exception ex)

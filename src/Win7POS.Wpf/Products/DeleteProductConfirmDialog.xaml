@@ -10,35 +10,35 @@
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
-        MinWidth="360"
-        MinHeight="180"
+        MinWidth="460"
+        MinHeight="260"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
-    <Grid Margin="24" Background="#F1EDF7">
+    <Grid Margin="28" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Eliminare questo prodotto?" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
-        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
-        <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-            <TextBlock x:Name="BarcodeText" Grid.Row="0" FontSize="13" Foreground="#5E3F86" Margin="0,0,0,4"/>
-            <TextBlock x:Name="NameText" Grid.Row="1" TextWrapping="Wrap" FontSize="13" Foreground="#333" Margin="0,0,0,12"/>
-            <TextBlock Grid.Row="2" Text="L'operazione non può essere annullata." FontSize="12" Foreground="#8873A4" Margin="0,0,0,20"/>
-            <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Annulla" MinWidth="100" Height="38" Margin="0,0,10,0" IsCancel="True"
-                        Style="{StaticResource OutlineButtonStyle}" Click="Cancel_Click"/>
-                <Button Content="Elimina" MinWidth="100" Height="38" IsDefault="True"
-                        Style="{StaticResource PrimaryButtonStyle}"
-                        Foreground="White" Click="Elimina_Click"/>
-            </StackPanel>
-        </Grid>
+        <TextBlock Grid.Row="0" Text="Eliminare questo prodotto?" FontSize="20" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,20"/>
+        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="22">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <TextBlock x:Name="BarcodeText" Grid.Row="0" FontSize="13" Foreground="#8873A4" Margin="0,0,0,6"/>
+                <TextBlock x:Name="NameText" Grid.Row="1" TextWrapping="Wrap" FontSize="15" FontWeight="SemiBold" Foreground="#333" Margin="0,0,0,14"/>
+                <TextBlock Grid.Row="2" Text="L'operazione non può essere annullata." FontSize="13" Foreground="#8873A4" Margin="0,0,0,24"/>
+                <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="Annulla" MinWidth="120" Height="42" Margin="0,0,12,0" IsCancel="True"
+                            Style="{StaticResource OutlineButtonStyle}" Click="Cancel_Click"/>
+                    <Button Content="Elimina" MinWidth="120" Height="42" IsDefault="True"
+                            Style="{StaticResource PrimaryButtonStyle}"
+                            Foreground="White" Click="Elimina_Click"/>
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </chrome:DialogShellWindow>

@@ -4,14 +4,18 @@
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Impostazioni negozio"
         ShowHeader="False"
+        UseModalOverlay="True"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
-        SizeToContent="WidthAndHeight"
+        SizeToContent="Manual"
+        Width="540"
+        Height="520"
         MinWidth="480"
         MinHeight="420"
-        ResizeMode="CanResize">
+        ResizeMode="CanResize"
+        ShowInTaskbar="False">
     <Grid Margin="24" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -62,8 +66,8 @@
                 <TextBlock Grid.Row="7" Grid.ColumnSpan="2" Margin="0,8,0,0" Foreground="Gray" Text="{Binding Status, Mode=OneWay}"/>
 
                 <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                    <Button Content="Salva" MinWidth="90" Height="36" Margin="0,0,8,0" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
-                    <Button Content="Chiudi" MinWidth="90" Height="36" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
+                    <Button Content="Salva" MinWidth="100" Height="42" Margin="0,0,10,0" Command="{Binding SaveCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                    <Button Content="Chiudi" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
                 </StackPanel>
             </Grid>
         </ScrollViewer>
