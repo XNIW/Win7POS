@@ -20,5 +20,10 @@ namespace Win7POS.Wpf.Import
             Win7POS.Wpf.Infrastructure.WindowSizingHelper.CapMaxHeightToOwner(dlg);
             dlg.ShowDialog();
         }
+
+        private void Annulla_Click(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
     }
 }
