@@ -1,32 +1,39 @@
 <chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.DiscountDialog"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
-        Title="Sconto"
-        WindowStartupLocation="CenterOwner"
-        SizeToContent="Manual"
-        Width="760"
-        Height="860"
-        MinWidth="760"
-        MinHeight="860"
-        ResizeMode="CanResize">
-    <Grid Margin="18">
+       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+       xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
+       Title="Sconto"
+       ShowHeader="False"
+       UseModalOverlay="True"
+       DialogCornerRadius="16"
+       DialogBackground="#F1EDF7"
+       DialogBorderBrush="#D9CEE8"
+       WindowStartupLocation="CenterOwner"
+       SizeToContent="Manual"
+       Width="760"
+       Height="910"
+       MinWidth="760"
+       MinHeight="910"
+       ResizeMode="NoResize"
+       ShowInTaskbar="False">
+    <Grid Margin="24">
         <Grid.Resources>
             <ControlTemplate x:Key="RoundedToggleTemplate" TargetType="ToggleButton">
-                <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="8" Padding="12,10">
+                <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="12,10">
                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
                 <ControlTemplate.Triggers>
                     <Trigger Property="IsChecked" Value="True">
                         <Setter TargetName="border" Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                        <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource PrimaryBrush}"/>
                     </Trigger>
                 </ControlTemplate.Triggers>
             </ControlTemplate>
             <Style x:Key="DiscountToggleStyle" TargetType="ToggleButton">
                 <Setter Property="Template" Value="{StaticResource RoundedToggleTemplate}"/>
-                <Setter Property="Background" Value="White"/>
-                <Setter Property="Foreground" Value="Gray"/>
-                <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+                <Setter Property="Background" Value="#F3EDF8"/>
+                <Setter Property="Foreground" Value="#5E3F86"/>
+                <Setter Property="BorderBrush" Value="#D9CEE8"/>
                 <Style.Triggers>
                     <Trigger Property="IsChecked" Value="True">
                         <Setter Property="Foreground" Value="White"/>
@@ -34,13 +41,14 @@
                 </Style.Triggers>
             </Style>
             <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
-                <Setter Property="Height" Value="68"/>
-                <Setter Property="Margin" Value="6"/>
+                <Setter Property="Height" Value="64"/>
+                <Setter Property="Margin" Value="5"/>
                 <Setter Property="FontSize" Value="22"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
             </Style>
         </Grid.Resources>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="170"/>
@@ -49,7 +57,16 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+        <!-- Row 0: Header -->
+        <TextBlock Grid.Row="0"
+                   Text="Sconto"
+                   FontSize="18"
+                   FontWeight="SemiBold"
+                   Foreground="#5E3F86"
+                   Margin="0,0,0,16"/>
+
+        <!-- Row 1: Mode Toggle Buttons -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
             <ToggleButton x:Name="PercentToggle" Content="Percentuale %" MinWidth="140" Height="36" Margin="0,0,8,0"
                          IsChecked="{Binding IsPercentMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource DiscountToggleStyle}"
@@ -60,11 +77,12 @@
                          Checked="Tab_Checked"/>
         </StackPanel>
 
-        <TextBlock Grid.Row="1" Text="{Binding ScopeText}" Margin="0,8,0,12"
-                   FontSize="13" FontWeight="SemiBold"/>
+        <!-- Row 2: Scope Text -->
+        <TextBlock Grid.Row="2" Text="{Binding ScopeText}" Margin="0,8,0,12"
+                   FontSize="13" FontWeight="SemiBold" Foreground="#5E3F86"/>
 
-        <!-- Anteprima prezzo: originale barrato → prezzo finale + badge sconto (altezza fissa per tab uguali) -->
-        <Border Grid.Row="2" Margin="0,0,0,0" Padding="14" CornerRadius="10" Background="White" BorderBrush="#DDD" BorderThickness="1"
+        <!-- Row 3: Price Preview -->
+        <Border Grid.Row="3" Margin="0,0,0,0" Padding="14" CornerRadius="10" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1"
                 Visibility="{Binding ShowPreview, Converter={StaticResource BoolToVis}}">
             <Border.Resources>
                 <Style TargetType="TextBlock">
@@ -87,20 +105,22 @@
             </StackPanel>
         </Border>
 
-        <StackPanel Grid.Row="3" Margin="0,0,0,0">
+        <!-- Row 4: Value Input -->
+        <StackPanel Grid.Row="4" Margin="0,0,0,0">
             <TextBox x:Name="ValueBox" FontSize="28" Padding="16,8" Margin="0,0,0,4"
                      Style="{StaticResource ModernTextBoxStyle}"
                      Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
                      HorizontalContentAlignment="Right" VerticalContentAlignment="Center"/>
-            <TextBlock FontSize="11" Foreground="Gray" Margin="0,0,0,0"
+            <TextBlock FontSize="11" Foreground="#8873A4" Margin="0,0,0,0"
                        Text="0 = rimuovi sconto · Percentuale massima: 100"
                        Visibility="{Binding IsPercentMode, Converter={StaticResource BoolToVis}}"/>
-            <TextBlock FontSize="11" Foreground="Gray" Margin="0,0,0,0"
+            <TextBlock FontSize="11" Foreground="#8873A4" Margin="0,0,0,0"
                        Text="Inserisci prezzo finale unitario desiderato"
                        Visibility="{Binding IsAmountMode, Converter={StaticResource BoolToVis}}"/>
         </StackPanel>
 
-        <Grid Grid.Row="4" Margin="0,0,0,0">
+        <!-- Row 5: Numeric Keypad -->
+        <Grid Grid.Row="5" Margin="0,0,0,0">
             <UniformGrid Rows="4" Columns="3">
                 <Button Content="7" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="7"/>
@@ -129,7 +149,8 @@
             </UniformGrid>
         </Grid>
 
-        <Grid Grid.Row="5">
+        <!-- Row 6: Footer Buttons -->
+        <Grid Grid.Row="6" Margin="0,16,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
@@ -150,13 +171,13 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Sconto intero carrello" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Grid.Column="0" Text="Sconto intero carrello" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="#5E3F86"/>
                 <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
                               IsChecked="{Binding ApplyToWholeCart, Mode=TwoWay}"
                               VerticalAlignment="Center"/>
             </Grid>
             <TextBlock Grid.Column="1" Text="{Binding ScopeText}" VerticalAlignment="Center"
-                       FontSize="13" FontWeight="SemiBold"/>
+                       FontSize="13" FontWeight="SemiBold" Foreground="#5E3F86"/>
             <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Content="Annulla" MinWidth="110" Height="42" Margin="0,0,10,0" IsCancel="True"
                         Style="{StaticResource OutlineButtonStyle}"
