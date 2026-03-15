@@ -3,12 +3,15 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Numero"
+        DialogBackground="#F1EDF7"
+        DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="360"
         MinHeight="280"
         ResizeMode="NoResize">
-    <Grid Margin="18">
+    <Border Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8" Padding="18">
+    <Grid>
         <Grid.Resources>
             <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
                 <Setter Property="Height" Value="72"/>
@@ -46,4 +49,5 @@
             <Button Content="OK" MinWidth="90" Height="38" IsDefault="True" Click="Ok_Click" Style="{StaticResource PrimaryButtonStyle}"/>
         </StackPanel>
     </Grid>
+    </Border>
 </chrome:DialogShellWindow>
