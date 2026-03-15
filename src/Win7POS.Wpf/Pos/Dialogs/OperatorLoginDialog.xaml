@@ -4,22 +4,17 @@
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Accesso operatore"
         ShowHeader="False"
-        UseModalOverlay="True"
+        UseModalOverlay="False"
         DialogCornerRadius="16"
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="320"
+        MinHeight="260"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
-    <Grid Margin="24" Background="#F1EDF7">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Accesso operatore" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
-        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
+    <Border Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
@@ -32,19 +27,19 @@
                 <ColumnDefinition Width="100"/>
                 <ColumnDefinition Width="*" MinWidth="180"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Operatore:" Foreground="#666"/>
-            <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,10">
+            <TextBlock Grid.Row="0" Text="Accesso operatore" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16" Grid.ColumnSpan="2"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Operatore:" Foreground="#666"/>
+            <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,10">
                 <ComboBox x:Name="OperatorCombo" MinHeight="34" DisplayMemberPath="DisplayText" IsEditable="False"/>
                 <TextBlock Text="Seleziona l'operatore visualizzato. Lo username è mostrato tra parentesi." FontSize="11" Foreground="#8873A4" Margin="0,4,0,0"/>
             </StackPanel>
-            <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="PIN:" Foreground="#666"/>
-            <PasswordBox x:Name="PinBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
-            <TextBlock x:Name="ErrorText" Grid.Row="2" Grid.ColumnSpan="2" Foreground="#C62828" Margin="0,0,0,12" TextWrapping="Wrap" Visibility="Collapsed"/>
-            <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="PIN:" Foreground="#666"/>
+            <PasswordBox x:Name="PinBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
+            <TextBlock x:Name="ErrorText" Grid.Row="3" Grid.ColumnSpan="2" Foreground="#C62828" Margin="0,0,0,12" TextWrapping="Wrap" Visibility="Collapsed"/>
+            <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
                 <Button Content="Accedi" MinWidth="90" Height="36" Margin="0,0,8,0" Click="OnLoginClick" Style="{StaticResource PrimaryButtonStyle}" IsDefault="True"/>
                 <Button Content="Annulla" MinWidth="90" Height="36" IsCancel="True" Style="{StaticResource OutlineButtonStyle}"/>
             </StackPanel>
         </Grid>
-        </Border>
-    </Grid>
+    </Border>
 </chrome:DialogShellWindow>
