@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Configurazione iniziale"
+        DialogBackground="#F1EDF7"
+        DialogBorderBrush="#D9CEE8"
         Width="520"
         MinWidth="520"
         Height="440"
@@ -10,7 +12,7 @@
         SizeToContent="Manual"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner">
-    <Border Padding="0" Background="{StaticResource BackgroundLightBrush}">
+    <Border Padding="0" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8">
         <Grid Margin="18,18,18,18">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>

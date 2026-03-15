@@ -3,6 +3,8 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Impostazioni stampante"
+        DialogBackground="#F1EDF7"
+        DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
         Width="560"
@@ -12,7 +14,7 @@
         MaxWidth="620"
         MaxHeight="520"
         ResizeMode="CanResize">
-    <Border Padding="18">
+    <Border Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8" Padding="18">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
             <Grid>
                 <Grid.RowDefinitions>
@@ -79,7 +81,7 @@
                          ToolTip="Cartella in cui salvare le copie degli scontrini"/>
 
                 <!-- Cassetto portamonete -->
-                <Border Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,20,0,0" Padding="12,14" Background="#F5F9FF" CornerRadius="6" BorderBrush="#D0E0F8" BorderThickness="1">
+                <Border Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,20,0,0" Padding="12,14" Background="#FCFBFE" CornerRadius="6" BorderBrush="#E4DBEF" BorderThickness="1">
                     <StackPanel>
                         <TextBlock Text="Cassetto portamonete" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,10"/>
                         <Border Margin="0,0,0,10" Padding="0,10,0,10">

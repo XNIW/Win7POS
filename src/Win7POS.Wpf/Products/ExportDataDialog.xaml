@@ -3,12 +3,15 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Esporta dati"
+        DialogBackground="#F1EDF7"
+        DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="400"
         MinHeight="260"
         ResizeMode="NoResize">
-    <Grid Margin="18">
+    <Border Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8" Padding="18">
+    <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -37,4 +40,5 @@
             <Button Content="Esporta" MinWidth="90" Height="36" IsDefault="True" Click="Export_Click"/>
         </StackPanel>
     </Grid>
+    </Border>
 </chrome:DialogShellWindow>

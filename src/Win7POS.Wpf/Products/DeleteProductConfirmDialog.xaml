@@ -3,13 +3,14 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="Conferma eliminazione"
+        DialogBackground="#F1EDF7"
+        DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="360"
         MinHeight="180"
         ResizeMode="NoResize">
-    <Border Margin="18" Padding="18" Background="{StaticResource CardBgBrush}"
-            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8">
+    <Border Margin="18" Padding="18" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
