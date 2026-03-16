@@ -53,6 +53,12 @@
             <ListBox x:Name="CartListBox" Grid.Row="1" ItemsSource="{Binding CartItems}" SelectedItem="{Binding SelectedCartItem, Mode=TwoWay}"
                      AlternationCount="2" BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                      SelectionChanged="CartListBox_SelectionChanged">
+                <ListBox.Resources>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#E9E1F2"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightBrushKey}" Color="#E9E1F2"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#222222"/>
+                    <SolidColorBrush x:Key="{x:Static SystemColors.InactiveSelectionHighlightTextBrushKey}" Color="#222222"/>
+                </ListBox.Resources>
                 <ListBox.ItemContainerStyle>
                     <Style TargetType="ListBoxItem" BasedOn="{StaticResource CartRowStyle}">
                         <Setter Property="Focusable" Value="False"/>
@@ -65,8 +71,8 @@
                                 <Setter Property="Background" Value="#F7F7F7"/>
                             </DataTrigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter Property="Background" Value="#F1E8F8"/>
-                                <Setter Property="BorderBrush" Value="#7B4FA3"/>
+                                <Setter Property="Background" Value="#E9E1F2"/>
+                                <Setter Property="BorderBrush" Value="#8B6BA3"/>
                                 <Setter Property="BorderThickness" Value="5,1,0,1"/>
                             </Trigger>
                             <MultiDataTrigger>
@@ -74,8 +80,8 @@
                                     <Condition Binding="{Binding IsSelected, RelativeSource={RelativeSource Self}}" Value="True"/>
                                     <Condition Binding="{Binding (Selector.IsSelectionActive), RelativeSource={RelativeSource AncestorType=ListBox}}" Value="False"/>
                                 </MultiDataTrigger.Conditions>
-                                <Setter Property="Background" Value="#F1E8F8"/>
-                                <Setter Property="BorderBrush" Value="#7B4FA3"/>
+                                <Setter Property="Background" Value="#E9E1F2"/>
+                                <Setter Property="BorderBrush" Value="#8B6BA3"/>
                                 <Setter Property="BorderThickness" Value="5,1,0,1"/>
                             </MultiDataTrigger>
                         </Style.Triggers>
@@ -102,9 +108,9 @@
                                         <TextBlock.Style>
                                             <Style TargetType="TextBlock">
                                                 <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
-                                                        <Setter Property="Foreground" Value="#2E1F3A"/>
-                                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                        <Setter Property="Foreground" Value="#222222"/>
+                                    </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
                                         </TextBlock.Style>

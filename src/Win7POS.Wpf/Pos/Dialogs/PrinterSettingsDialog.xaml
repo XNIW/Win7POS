@@ -18,13 +18,13 @@
         MaxWidth="720"
         MaxHeight="900"
         ResizeMode="CanResize">
-    <Grid Margin="34,2,18,4" Background="#F1EDF7">
+    <Grid Margin="40,0,16,2" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Impostazioni stampante" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,8"/>
+        <TextBlock Grid.Row="0" Text="Impostazioni stampante" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,6"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid>
@@ -125,7 +125,7 @@
                 </Grid>
             </ScrollViewer>
         </Border>
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
             <Button MinWidth="120" Height="42" Margin="0,0,10,0" Content="Conferma" Command="{Binding ConfirmCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
             <Button MinWidth="120" Height="42" Content="Annulla" IsCancel="True" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
         </StackPanel>
