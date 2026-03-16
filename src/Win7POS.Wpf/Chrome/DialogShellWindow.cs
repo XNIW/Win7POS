@@ -213,7 +213,7 @@ namespace Win7POS.Wpf.Chrome
 
             var contentHost = new ContentPresenter
             {
-                Margin = new Thickness(24, -2, 24, 0)
+                Margin = new Thickness(24, 8, 24, 8)
             };
             contentHost.SetBinding(ContentPresenter.ContentProperty, new Binding("DialogContent") { Source = this });
             Grid.SetRow(contentHost, 1);

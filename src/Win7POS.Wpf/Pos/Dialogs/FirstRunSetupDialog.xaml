@@ -21,7 +21,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Configurazione iniziale" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,4"/>
+        <TextBlock Grid.Row="0" Text="Configurazione iniziale" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,6"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
         <Grid>
             <Grid.RowDefinitions>
@@ -66,7 +66,7 @@
 
             <TextBlock x:Name="ErrorText" Grid.Row="4" Foreground="#C62828" TextWrapping="Wrap" Visibility="Collapsed" VerticalAlignment="Top" Margin="0,4,0,0"/>
 
-            <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
                 <Button Content="Conferma" Width="100" Height="34" Margin="0,0,8,0" Click="OnCreateAdminClick" Style="{StaticResource PrimaryButtonStyle}" IsDefault="True"/>
                 <Button Content="Annulla" Width="100" Height="34" IsCancel="True" Style="{StaticResource OutlineButtonStyle}" Click="Cancel_Click"/>
             </StackPanel>

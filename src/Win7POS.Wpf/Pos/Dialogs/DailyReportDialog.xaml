@@ -26,7 +26,7 @@
             </Grid.RowDefinitions>
 
             <!-- Header: titolo principale -->
-            <TextBlock Grid.Row="0" Text="Chiusura cassa / Incasso giornaliero" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,4"/>
+            <TextBlock Grid.Row="0" Text="Chiusura cassa / Incasso giornaliero" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,6"/>
             <!-- Riga: sottotitolo, data evidenziata, badge stato, lucchetto vista -->
             <Grid Grid.Row="1" Margin="0,0,0,14">
                 <Grid.ColumnDefinitions>
@@ -468,7 +468,7 @@
             </TabControl>
 
             <!-- Footer: testo grigio piccolo, Chiudi a destra -->
-            <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
                 <TextBlock Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="#888" FontSize="10" Margin="0,0,10,0" MaxWidth="380" TextTrimming="CharacterEllipsis"
                            Visibility="{Binding ShowFooterStatus, Converter={StaticResource BoolToVis}}"/>
                 <Button MinWidth="100" Height="36" Content="Chiudi" IsCancel="True" Style="{StaticResource OutlineButtonStyle}" Click="Close_Click"/>
