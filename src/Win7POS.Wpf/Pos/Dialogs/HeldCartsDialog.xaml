@@ -18,7 +18,7 @@
         MaxHeight="430"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
-    <Grid Margin="24">
+    <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -30,7 +30,7 @@
                    FontSize="18"
                    FontWeight="SemiBold"
                    Foreground="#5E3F86"
-                   Margin="0,0,0,16"/>
+                   Margin="0,0,0,4"/>
 
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>

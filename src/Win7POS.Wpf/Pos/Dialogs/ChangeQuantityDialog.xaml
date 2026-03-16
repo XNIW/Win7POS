@@ -14,7 +14,7 @@
         MinHeight="320"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
-    <Grid Margin="24" Background="#F1EDF7">
+    <Grid Margin="0" Background="#F1EDF7">
         <Grid.Resources>
             <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
                 <Setter Property="Height" Value="72"/>
@@ -31,7 +31,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Modifica quantità" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+        <TextBlock Grid.Row="0" Text="Modifica quantità" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,4"/>
         <TextBlock x:Name="ProductNameText" Grid.Row="1" FontWeight="SemiBold" FontSize="13" Foreground="#5E3F86" TextWrapping="Wrap" Margin="0,0,0,12"/>
         <TextBlock Grid.Row="2" Text="Quantità" Foreground="#666" Margin="0,0,0,6"/>
         <TextBox x:Name="QtyBox" Grid.Row="3" MinHeight="52" FontSize="24" Margin="0,0,0,16"

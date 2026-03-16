@@ -15,13 +15,13 @@
         MinWidth="560"
         MinHeight="520"
         ShowInTaskbar="False">
-    <Grid Margin="24" Background="#F1EDF7">
+    <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Informazioni e supporto" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+        <TextBlock Grid.Row="0" Text="Informazioni e supporto" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,4"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid>

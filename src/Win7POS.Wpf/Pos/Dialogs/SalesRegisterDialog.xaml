@@ -17,12 +17,12 @@
         MinWidth="900"
         MinHeight="640"
         KeyDown="OnWindowKeyDown">
-    <Grid Margin="24" Background="#F1EDF7">
+    <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Registro vendite" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,16"/>
+        <TextBlock Grid.Row="0" Text="Registro vendite" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,4"/>
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="1.35*" MinWidth="340"/>

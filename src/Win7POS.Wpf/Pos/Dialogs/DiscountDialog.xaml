@@ -16,7 +16,7 @@
        MinHeight="870"
        ResizeMode="NoResize"
        ShowInTaskbar="False">
-    <Grid Margin="24" Background="#F1EDF7">
+    <Grid Margin="0" Background="#F1EDF7">
         <Grid.Resources>
             <ControlTemplate x:Key="RoundedToggleTemplate" TargetType="ToggleButton">
                 <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="12,10">
@@ -72,7 +72,7 @@
                    FontSize="18"
                    FontWeight="SemiBold"
                    Foreground="#5E3F86"
-                   Margin="0,0,0,16"/>
+                   Margin="0,0,0,4"/>
 
         <!-- Row 1: Mode Toggle Buttons -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">

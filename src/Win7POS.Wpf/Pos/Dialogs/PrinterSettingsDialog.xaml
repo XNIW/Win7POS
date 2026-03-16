@@ -18,7 +18,7 @@
         MaxWidth="720"
         MaxHeight="900"
         ResizeMode="CanResize">
-    <Grid Margin="24,-2,24,0" Background="#F1EDF7">
+    <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
