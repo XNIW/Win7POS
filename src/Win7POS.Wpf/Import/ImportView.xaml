@@ -166,7 +166,7 @@
         <StackPanel Grid.Row="5" Margin="0,8,0,0">
             <TextBlock Foreground="Gray" Text="{Binding DbPath, StringFormat=DB: {0}}"/>
             <TextBlock Foreground="Gray"
-                       Text="Seleziona .csv o .xlsx: l'app rileva automaticamente il tipo. Analizza/Apply usa la pipeline appropriata (CSV o Excel Database)."/>
+                       Text="Seleziona .csv, .xls o .xlsx: l'app rileva automaticamente il tipo. Analizza/Apply usa la pipeline appropriata."/>
         </StackPanel>
     </Grid>
 </UserControl>

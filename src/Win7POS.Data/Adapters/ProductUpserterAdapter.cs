@@ -3,6 +3,7 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Import;
 using Win7POS.Core.Models;
+using Win7POS.Data.Import;
 using Win7POS.Data.Repositories;
 
 namespace Win7POS.Data.Adapters
@@ -12,16 +13,18 @@ namespace Win7POS.Data.Adapters
         private readonly ProductRepository _products;
         private readonly SqliteConnection _conn;
         private readonly SqliteTransaction _tx;
+        private readonly CategorySupplierResolver _resolver;
 
         public ProductUpserterAdapter(ProductRepository products)
         {
             _products = products;
         }
 
-        public ProductUpserterAdapter(SqliteConnection conn, SqliteTransaction tx)
+        public ProductUpserterAdapter(SqliteConnection conn, SqliteTransaction tx, CategorySupplierResolver resolver = null)
         {
             _conn = conn;
             _tx = tx;
+            _resolver = resolver;
         }
 
         public async Task<UpsertOutcome> UpsertAsync(Product product)
@@ -55,7 +58,7 @@ SELECT last_insert_rowid();", product, _tx).ConfigureAwait(false);
             return existing == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;
         }
 
-        /// <summary>Upsert prodotto + product_meta. Scrive: products (barcode, name, unitPrice); product_meta (article_code, name2, purchase_price, supplier_name, category_name, stock_qty). Usato da Import CSV e XLSX unificato.</summary>
+        /// <summary>Upsert prodotto + product_meta. Risolve supplier_id/category_id via resolver se presente. Usato da Import CSV e XLSX unificato.</summary>
         public async Task<UpsertOutcome> UpsertAsync(ImportRow row)
         {
             if (row == null) return UpsertOutcome.Updated;
@@ -68,9 +71,19 @@ SELECT last_insert_rowid();", product, _tx).ConfigureAwait(false);
             var supplierName = row.SupplierName ?? string.Empty;
             var categoryName = row.CategoryName ?? string.Empty;
             var stockQty = row.Stock ?? 0;
+            int? supplierId = row.SupplierId;
+            int? categoryId = row.CategoryId;
 
             if (_conn != null && _tx != null)
             {
+                if (_resolver != null)
+                {
+                    if (!supplierId.HasValue && !string.IsNullOrWhiteSpace(supplierName))
+                        supplierId = await _resolver.GetOrCreateSupplierIdAsync(supplierName).ConfigureAwait(false);
+                    if (!categoryId.HasValue && !string.IsNullOrWhiteSpace(categoryName))
+                        categoryId = await _resolver.GetOrCreateCategoryIdAsync(categoryName).ConfigureAwait(false);
+                }
+
                 var existing = await _conn.QuerySingleOrDefaultAsync<Product>(
                     "SELECT id, barcode, name, unitPrice FROM products WHERE barcode = @barcode",
                     new { barcode },
@@ -88,8 +101,8 @@ INSERT INTO products(barcode, name, unitPrice) VALUES(@barcode, @name, @unitPric
 
                 await _conn.ExecuteAsync(@"
 INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
-VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, NULL, @supplierName, NULL, @categoryName, @stockQty)",
-                    new { barcode, articleCode, name2, purchasePrice, supplierName, categoryName, stockQty }, _tx).ConfigureAwait(false);
+VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
+                    new { barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty }, _tx).ConfigureAwait(false);
 
                 return existing == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;
             }

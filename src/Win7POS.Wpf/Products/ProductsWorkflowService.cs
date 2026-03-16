@@ -109,6 +109,28 @@ namespace Win7POS.Wpf.Products
             return outPath;
         }
 
+        /// <summary>Export prodotti in un singolo file CSV: Barcode, Nome, Cod. articolo, Secondo nome, Vendita, Acquisto, Stock, Fornitore, Categoria.</summary>
+        public async Task ExportSingleCsvAsync(string csvFilePath)
+        {
+            if (string.IsNullOrWhiteSpace(csvFilePath)) throw new ArgumentException("Path is empty.");
+            var details = await _products.ListAllDetailsAsync().ConfigureAwait(false);
+            var dir = Path.GetDirectoryName(csvFilePath);
+            if (!string.IsNullOrEmpty(dir))
+                Directory.CreateDirectory(dir);
+
+            using (var sw = new StreamWriter(csvFilePath, false, Encoding.UTF8))
+            {
+                await sw.WriteLineAsync("Barcode;Nome;Cod. articolo;Secondo nome;Vendita;Acquisto;Stock;Fornitore;Categoria").ConfigureAwait(false);
+                foreach (var d in details)
+                {
+                    await sw.WriteLineAsync(
+                        Escape(d.Barcode) + ";" + Escape(d.Name) + ";" + Escape(d.ArticleCode) + ";" + Escape(d.Name2) + ";" +
+                        d.UnitPrice + ";" + d.PurchasePrice + ";" + d.StockQty + ";" + Escape(d.SupplierName) + ";" + Escape(d.CategoryName)).ConfigureAwait(false);
+                }
+            }
+            _logger.LogInfo("Export CSV single file completed: " + csvFilePath);
+        }
+
         /// <summary>Export completo in un file XLSX (Products, Suppliers, Categories, PriceHistory).</summary>
         public async Task ExportWorkbookAsync(string xlsxPath)
         {

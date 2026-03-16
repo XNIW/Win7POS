@@ -433,17 +433,16 @@ namespace Win7POS.Wpf.Products
                 var choice = ExportDataDialog.ShowDialogAndGetChoice(Application.Current?.MainWindow);
                 if (choice == null) return;
 
+                var path = choice.TargetPath;
                 if (choice.Format == ExportDataFormat.Xlsx)
                 {
-                    var path = choice.TargetPath;
                     await _service.ExportWorkbookAsync(path).ConfigureAwait(true);
                     StatusMessage = "Export XLSX completato: " + path;
                 }
                 else
                 {
-                    var folder = choice.TargetFolder;
-                    await _service.ExportCsvBundleAsync(folder).ConfigureAwait(true);
-                    StatusMessage = "Export CSV completato: " + folder;
+                    await _service.ExportSingleCsvAsync(path).ConfigureAwait(true);
+                    StatusMessage = "Export CSV completato: " + path;
                 }
             }
             catch (Exception ex)

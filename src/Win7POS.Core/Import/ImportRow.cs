@@ -11,5 +11,9 @@ namespace Win7POS.Core.Import
         public int? Stock { get; set; }
         public string SupplierName { get; set; } = string.Empty;
         public string CategoryName { get; set; } = string.Empty;
+        /// <summary>Risolto da ImportWorkflowService prima di Apply. Se null, ProductUpserterAdapter usa il resolver.</summary>
+        public int? SupplierId { get; set; }
+        /// <summary>Risolto da ImportWorkflowService prima di Apply. Se null, ProductUpserterAdapter usa il resolver.</summary>
+        public int? CategoryId { get; set; }
     }
 }

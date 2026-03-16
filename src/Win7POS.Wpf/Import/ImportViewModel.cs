@@ -12,7 +12,7 @@ using Win7POS.Data;
 
 namespace Win7POS.Wpf.Import
 {
-    public enum ImportKind { None, Csv, Xlsx }
+    public enum ImportKind { None, Csv, Xls, Xlsx }
 
     public sealed class ImportViewModel : INotifyPropertyChanged
     {
@@ -49,6 +49,7 @@ namespace Win7POS.Wpf.Import
                 var p = (SelectedPath ?? "").Trim();
                 var ext = Path.GetExtension(p).ToLowerInvariant();
                 if (ext == ".csv") return ImportKind.Csv;
+                if (ext == ".xls") return ImportKind.Xls;
                 if (ext == ".xlsx") return ImportKind.Xlsx;
                 return ImportKind.None;
             }
@@ -56,6 +57,7 @@ namespace Win7POS.Wpf.Import
 
         public bool IsCsv => Kind == ImportKind.Csv;
         public bool IsXlsx => Kind == ImportKind.Xlsx;
+        public bool IsXls => Kind == ImportKind.Xls;
 
         public string Summary
         {
@@ -117,13 +119,15 @@ namespace Win7POS.Wpf.Import
         // Cache last analyze result for Apply (unico per CSV e XLSX)
         private object _lastDiffResult;
         private object _lastParsedRows;
+        private System.Collections.Generic.IReadOnlyList<Win7POS.Core.ImportDb.SupplierRow> _lastDedicatedSuppliers;
+        private System.Collections.Generic.IReadOnlyList<Win7POS.Core.ImportDb.CategoryRow> _lastDedicatedCategories;
 
         public ImportViewModel()
         {
             BrowseCommand = new RelayCommand(_ => Browse(), _ => !IsBusy);
             AnalyzeCommand = new AsyncRelayCommand(AnalyzeAsync, _ => !IsBusy);
             ApplyCommand = new AsyncRelayCommand(ApplyAsync, _ => !IsBusy);
-            Summary = "Seleziona un file .csv o .xlsx e premi Analizza.";
+            Summary = "Seleziona un file .csv, .xls o .xlsx e premi Analizza.";
             Status = "";
         }
 
@@ -132,7 +136,7 @@ namespace Win7POS.Wpf.Import
             var dlg = new OpenFileDialog
             {
                 Title = "Seleziona file da importare",
-                Filter = "File dati (*.csv;*.xlsx)|*.csv;*.xlsx|CSV (*.csv)|*.csv|Excel (*.xlsx)|*.xlsx|Tutti (*.*)|*.*",
+                Filter = "File dati (*.csv;*.xlsx;*.xls)|*.csv;*.xlsx;*.xls|CSV (*.csv)|*.csv|Excel (*.xlsx)|*.xlsx|Excel 97-2003 (*.xls)|*.xls|Tutti (*.*)|*.*",
                 FilterIndex = 1,
                 CheckFileExists = true,
                 Multiselect = false
@@ -160,18 +164,22 @@ namespace Win7POS.Wpf.Import
             DiffItems.Clear();
             _lastDiffResult = null;
             _lastParsedRows = null;
+            _lastDedicatedSuppliers = null;
+            _lastDedicatedCategories = null;
 
             try
             {
-                if (Kind != ImportKind.Csv && Kind != ImportKind.Xlsx)
+                if (Kind != ImportKind.Csv && Kind != ImportKind.Xls && Kind != ImportKind.Xlsx)
                 {
-                    Status = "Estensione non supportata. Usa .csv o .xlsx.";
+                    Status = "Estensione non supportata. Usa .csv, .xls o .xlsx.";
                     return;
                 }
 
                 var result = await _service.AnalyzeAsync(path).ConfigureAwait(true);
                 _lastParsedRows = result.RowsModel;
                 _lastDiffResult = result.DiffModel;
+                _lastDedicatedSuppliers = result.DedicatedSuppliers;
+                _lastDedicatedCategories = result.DedicatedCategories;
 
                 Summary = result.Summary;
                 DiffItems.Clear();
@@ -198,9 +206,9 @@ namespace Win7POS.Wpf.Import
                 return;
             }
 
-            if (Kind != ImportKind.Csv && Kind != ImportKind.Xlsx)
+            if (Kind != ImportKind.Csv && Kind != ImportKind.Xls && Kind != ImportKind.Xlsx)
             {
-                Status = "Seleziona un file .csv o .xlsx.";
+                Status = "Seleziona un file .csv, .xls o .xlsx.";
                 return;
             }
 
@@ -235,12 +243,17 @@ namespace Win7POS.Wpf.Import
                     InsertNew,
                     UpdatePrice,
                     UpdateName,
-                    DryRun).ConfigureAwait(true);
+                    DryRun,
+                    "",
+                    _lastDedicatedSuppliers,
+                    _lastDedicatedCategories).ConfigureAwait(true);
 
                 Summary = result.Summary;
                 Status = result.Success
                     ? (DryRun ? "DryRun OK (nessuna scrittura DB)." : "Apply OK.")
                     : "Apply completato con errori.";
+                if (result.Success && !DryRun)
+                    Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(null);
             }
             catch (Exception ex)
             {

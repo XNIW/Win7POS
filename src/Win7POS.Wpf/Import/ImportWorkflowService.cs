@@ -4,12 +4,14 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Dapper;
 using Win7POS.Core;
 using Win7POS.Core.Audit;
 using Win7POS.Core.Import;
 using Win7POS.Core.ImportDb;
 using Win7POS.Data;
 using Win7POS.Data.Adapters;
+using Win7POS.Data.Import;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
 
@@ -25,7 +27,7 @@ namespace Win7POS.Wpf.Import
             _logger.LogInfo("Analyze start: " + filePath);
             try
             {
-                var parse = await LoadParseResultAsync(filePath).ConfigureAwait(false);
+                var (parse, dedicatedSuppliers, dedicatedCategories) = await LoadParseResultAsync(filePath).ConfigureAwait(false);
                 var analysis = ImportAnalyzer.Analyze(parse);
                 var rows = UniqueRows(parse.Rows);
 
@@ -40,9 +42,11 @@ namespace Win7POS.Wpf.Import
                     UpdateCount = diff.Summary.UpdatePrice + diff.Summary.UpdateName + diff.Summary.UpdateBoth,
                     UnchangedCount = diff.Summary.NoChange,
                     ErrorCount = analysis.ErrorRows + diff.Summary.InvalidRow,
-                    Summary = BuildAnalyzeSummary(filePath, opt.DbPath, parse, analysis, diff),
+                    Summary = BuildAnalyzeSummary(filePath, opt.DbPath, parse, analysis, diff, dedicatedSuppliers, dedicatedCategories),
                     RowsModel = rows,
-                    DiffModel = diff
+                    DiffModel = diff,
+                    DedicatedSuppliers = dedicatedSuppliers ?? Array.Empty<Core.ImportDb.SupplierRow>(),
+                    DedicatedCategories = dedicatedCategories ?? Array.Empty<Core.ImportDb.CategoryRow>()
                 };
 
                 foreach (var item in diff.Items)
@@ -65,7 +69,9 @@ namespace Win7POS.Wpf.Import
             bool updatePrice,
             bool updateName,
             bool dryRun,
-            string dbPath = "")
+            string dbPath = "",
+            IReadOnlyList<Core.ImportDb.SupplierRow> dedicatedSuppliers = null,
+            IReadOnlyList<Core.ImportDb.CategoryRow> dedicatedCategories = null)
         {
             _logger.LogInfo("Apply start");
             try
@@ -89,7 +95,7 @@ namespace Win7POS.Wpf.Import
                 if (!options.DryRun)
                     backupPath = await CreateBackupBeforeApplyAsync(opt.DbPath).ConfigureAwait(false);
 
-                var apply = await ApplyWithTransactionAsync(new SqliteConnectionFactory(opt), rows, options).ConfigureAwait(false);
+                var apply = await ApplyWithTransactionAsync(new SqliteConnectionFactory(opt), rows, options, dedicatedSuppliers, dedicatedCategories).ConfigureAwait(false);
                 if (apply.ErrorsCount > 0)
                     throw new InvalidOperationException("Apply failed with row errors.");
 
@@ -126,8 +132,8 @@ namespace Win7POS.Wpf.Import
             }
         }
 
-        /// <summary>Carica CSV o XLSX e restituisce un CsvParseResult (stesso modello ImportRow per entrambi).</summary>
-        private static async Task<CsvParseResult> LoadParseResultAsync(string filePath)
+        /// <summary>Carica CSV o XLSX e restituisce parse + fogli dedicati (per XLSX).</summary>
+        private static async Task<(CsvParseResult parse, IReadOnlyList<Core.ImportDb.SupplierRow> suppliers, IReadOnlyList<Core.ImportDb.CategoryRow> categories)> LoadParseResultAsync(string filePath)
         {
             if (string.IsNullOrWhiteSpace(filePath))
                 throw new InvalidOperationException("Missing file path.");
@@ -138,17 +144,20 @@ namespace Win7POS.Wpf.Import
             if (ext == ".csv")
             {
                 var content = await ReadAllTextCompatAsync(filePath).ConfigureAwait(false);
-                return CsvImportParser.Parse(content);
+                var parse = CsvImportParser.Parse(content);
+                return (parse, Array.Empty<Core.ImportDb.SupplierRow>(), Array.Empty<Core.ImportDb.CategoryRow>());
             }
-            if (ext == ".xlsx")
+            if (ext == ".xlsx" || ext == ".xls")
             {
                 var workbook = ProductDbExcelReader.Read(filePath);
                 var rows = ConvertProductRowsToImportRows(workbook?.Products ?? Array.Empty<ProductRow>());
                 var parse = new CsvParseResult { TotalRows = rows.Count };
                 FillParseResultRows(parse, rows);
-                return parse;
+                var suppliers = workbook?.Suppliers?.ToList() ?? new List<Core.ImportDb.SupplierRow>();
+                var categories = workbook?.Categories?.ToList() ?? new List<Core.ImportDb.CategoryRow>();
+                return (parse, suppliers, categories);
             }
-            throw new NotSupportedException("Formato non supportato. Usa .csv o .xlsx.");
+            throw new NotSupportedException("Formato non supportato. Usa .csv, .xls o .xlsx.");
         }
 
         private static void FillParseResultRows(CsvParseResult parse, List<ImportRow> rows)
@@ -219,14 +228,37 @@ namespace Win7POS.Wpf.Import
             return list;
         }
 
-        private static async Task<ImportApplyResult> ApplyWithTransactionAsync(SqliteConnectionFactory factory, IReadOnlyList<ImportRow> rows, ImportApplyOptions options)
+        private static async Task<ImportApplyResult> ApplyWithTransactionAsync(
+            SqliteConnectionFactory factory,
+            IReadOnlyList<ImportRow> rows,
+            ImportApplyOptions options,
+            IReadOnlyList<Core.ImportDb.SupplierRow> dedicatedSuppliers,
+            IReadOnlyList<Core.ImportDb.CategoryRow> dedicatedCategories)
         {
             using (var conn = factory.Open())
             using (var tx = conn.BeginTransaction())
             {
                 try
                 {
-                    IProductUpserter upserter = new ProductUpserterAdapter(conn, tx);
+                    if (!options.DryRun && dedicatedSuppliers != null && dedicatedSuppliers.Count > 0)
+                    {
+                        foreach (var r in dedicatedSuppliers)
+                        {
+                            if (string.IsNullOrWhiteSpace(r?.Name)) continue;
+                            await conn.ExecuteAsync("INSERT OR REPLACE INTO suppliers(id, name) VALUES(@Id, @Name)", new { r.Id, r.Name }, tx).ConfigureAwait(false);
+                        }
+                    }
+                    if (!options.DryRun && dedicatedCategories != null && dedicatedCategories.Count > 0)
+                    {
+                        foreach (var r in dedicatedCategories)
+                        {
+                            if (string.IsNullOrWhiteSpace(r?.Name)) continue;
+                            await conn.ExecuteAsync("INSERT OR REPLACE INTO categories(id, name) VALUES(@Id, @Name)", new { r.Id, r.Name }, tx).ConfigureAwait(false);
+                        }
+                    }
+
+                    var resolver = new CategorySupplierResolver(conn, tx, dedicatedSuppliers, dedicatedCategories);
+                    IProductUpserter upserter = new ProductUpserterAdapter(conn, tx, resolver);
                     var lookup = new ProductSnapshotLookupAdapter(conn, tx);
                     var applier = new ImportApplier(upserter, lookup);
                     var result = await applier.ApplyAsync(rows, options).ConfigureAwait(false);
@@ -266,20 +298,46 @@ namespace Win7POS.Wpf.Import
             return backupPath;
         }
 
-        private static string BuildAnalyzeSummary(string filePath, string dbPath, CsvParseResult parse, ImportAnalysis analysis, ImportDiffResult diff)
+        private static string BuildAnalyzeSummary(
+            string filePath,
+            string dbPath,
+            CsvParseResult parse,
+            ImportAnalysis analysis,
+            ImportDiffResult diff,
+            IReadOnlyList<Core.ImportDb.SupplierRow> dedicatedSuppliers,
+            IReadOnlyList<Core.ImportDb.CategoryRow> dedicatedCategories)
         {
             var s = diff.Summary;
             var fileName = Path.GetFileName(filePath ?? string.Empty);
-            return
-                "Import Analyze + Diff (CSV/XLSX)" + Environment.NewLine +
-                "File: " + fileName + Environment.NewLine +
-                "Path: " + filePath + Environment.NewLine +
-                "DB path: " + dbPath + Environment.NewLine +
-                "Rows(parsed/valid/errors/duplicates): " + parse.TotalRows + "/" + analysis.ValidRows + "/" + analysis.ErrorRows + "/" + analysis.Duplicates + Environment.NewLine +
-                "Errors(missingBarcode/invalidPrice): " + analysis.MissingBarcode + "/" + analysis.InvalidPrice + Environment.NewLine +
-                "Diff(new/updatePrice/updateName/updateBoth/noChange/invalid): " +
-                s.NewProduct + "/" + s.UpdatePrice + "/" + s.UpdateName + "/" + s.UpdateBoth + "/" + s.NoChange + "/" + s.InvalidRow + Environment.NewLine +
-                "Preview items: " + diff.Items.Count;
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("Import Analyze + Diff (CSV/XLSX)");
+            sb.AppendLine("File: " + fileName);
+            sb.AppendLine("Path: " + filePath);
+            sb.AppendLine("DB path: " + dbPath);
+            sb.AppendLine("Rows(parsed/valid/errors/duplicates): " + parse.TotalRows + "/" + analysis.ValidRows + "/" + analysis.ErrorRows + "/" + analysis.Duplicates);
+            sb.AppendLine("Errors(missingBarcode/invalidPrice): " + analysis.MissingBarcode + "/" + analysis.InvalidPrice);
+            sb.AppendLine("Diff(new/updatePrice/updateName/updateBoth/noChange/invalid): " +
+                s.NewProduct + "/" + s.UpdatePrice + "/" + s.UpdateName + "/" + s.UpdateBoth + "/" + s.NoChange + "/" + s.InvalidRow);
+            sb.AppendLine("Preview items: " + diff.Items.Count);
+            var hasDedicatedSheets = (dedicatedSuppliers?.Count ?? 0) > 0 || (dedicatedCategories?.Count ?? 0) > 0;
+            if (hasDedicatedSheets)
+            {
+                sb.AppendLine("Fogli dedicati: Fornitori=" + (dedicatedSuppliers?.Count ?? 0) + ", Categorie=" + (dedicatedCategories?.Count ?? 0));
+            }
+            else
+            {
+                var uniqueSuppliers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var uniqueCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in parse.Rows)
+                {
+                    var sn = CategorySupplierResolver.Normalize(row?.SupplierName);
+                    if (sn.Length > 0) uniqueSuppliers.Add(sn);
+                    var cn = CategorySupplierResolver.Normalize(row?.CategoryName);
+                    if (cn.Length > 0) uniqueCategories.Add(cn);
+                }
+                sb.AppendLine("Fogli Suppliers/Categories assenti: usato fallback da righe prodotti (fornitori=" + uniqueSuppliers.Count + ", categorie=" + uniqueCategories.Count + ")");
+            }
+            return sb.ToString();
         }
 
         private static string BuildApplySummary(string dbPath, ImportApplyOptions options, ImportDiffResult diff, ImportApplyResult apply)
@@ -308,6 +366,8 @@ namespace Win7POS.Wpf.Import
         public List<object> Items { get; } = new List<object>();
         public object RowsModel { get; set; }
         public object DiffModel { get; set; }
+        public IReadOnlyList<Core.ImportDb.SupplierRow> DedicatedSuppliers { get; set; }
+        public IReadOnlyList<Core.ImportDb.CategoryRow> DedicatedCategories { get; set; }
     }
 
     public sealed class ImportApplyUiResult

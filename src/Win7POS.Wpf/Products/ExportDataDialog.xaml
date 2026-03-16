@@ -32,7 +32,7 @@
         <TextBlock Grid.Row="0" Text="Formato di esportazione" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,8"/>
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
             <RadioButton x:Name="RadioXlsx" Content="XLSX (un file)" IsChecked="True" Margin="0,0,16,0" Checked="Format_Changed"/>
-            <RadioButton x:Name="RadioCsv" Content="CSV (cartella con più file)" Checked="Format_Changed"/>
+            <RadioButton x:Name="RadioCsv" Content="CSV (un file)" Checked="Format_Changed"/>
         </StackPanel>
         <TextBlock Grid.Row="2" Text="Destinazione" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,4"/>
         <Grid Grid.Row="3">

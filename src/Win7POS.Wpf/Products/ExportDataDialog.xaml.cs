@@ -1,7 +1,7 @@
 using System;
 using System.Windows;
-using System.Windows.Forms;
 using Microsoft.Win32;
+using Win7POS.Core;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
 
@@ -27,11 +27,13 @@ namespace Win7POS.Wpf.Products
         {
             if (RadioXlsx.IsChecked == true)
             {
-                var dlg = new Microsoft.Win32.SaveFileDialog
+                AppPaths.EnsureCreated();
+                var dlg = new SaveFileDialog
                 {
                     Title = "Salva export XLSX",
                     Filter = "Excel (*.xlsx)|*.xlsx|Tutti i file (*.*)|*.*",
                     DefaultExt = "xlsx",
+                    InitialDirectory = AppPaths.ExportsDirectory,
                     FileName = "export_prodotti_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".xlsx"
                 };
                 if (dlg.ShowDialog() == true)
@@ -41,13 +43,18 @@ namespace Win7POS.Wpf.Products
             }
             else
             {
-                using var dlg = new FolderBrowserDialog
+                AppPaths.EnsureCreated();
+                var dlg = new SaveFileDialog
                 {
-                    Description = "Seleziona la cartella per i file CSV (Products.csv, Suppliers.csv, ...)"
+                    Title = "Salva export CSV",
+                    Filter = "CSV (*.csv)|*.csv|Tutti i file (*.*)|*.*",
+                    DefaultExt = "csv",
+                    InitialDirectory = AppPaths.ExportsDirectory,
+                    FileName = "prodotti_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv"
                 };
-                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+                if (dlg.ShowDialog() == true)
                 {
-                    PathBox.Text = dlg.SelectedPath;
+                    PathBox.Text = dlg.FileName;
                 }
             }
         }
@@ -67,19 +74,11 @@ namespace Win7POS.Wpf.Products
                 Win7POS.Wpf.Import.ModernMessageDialog.Show(
                     this,
                     "Esporta dati",
-                    RadioXlsx.IsChecked == true ? "Seleziona un file di destinazione." : "Seleziona una cartella di destinazione.");
+                    "Seleziona un file di destinazione.");
                 return;
             }
 
-            if (RadioXlsx.IsChecked == true)
-            {
-                Result = new ExportDataChoice(ExportDataFormat.Xlsx, path, null);
-            }
-            else
-            {
-                Result = new ExportDataChoice(ExportDataFormat.Csv, null, path);
-            }
-
+            Result = new ExportDataChoice(RadioXlsx.IsChecked == true ? ExportDataFormat.Xlsx : ExportDataFormat.Csv, path);
             DialogResult = true;
             Close();
         }
@@ -98,13 +97,11 @@ namespace Win7POS.Wpf.Products
     {
         public ExportDataFormat Format { get; }
         public string TargetPath { get; }
-        public string TargetFolder { get; }
 
-        public ExportDataChoice(ExportDataFormat format, string targetPath, string targetFolder)
+        public ExportDataChoice(ExportDataFormat format, string targetPath)
         {
             Format = format;
             TargetPath = targetPath ?? "";
-            TargetFolder = targetFolder ?? "";
         }
     }
 }

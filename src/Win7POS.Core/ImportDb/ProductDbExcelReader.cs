@@ -1,23 +1,33 @@
 using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using ClosedXML.Excel;
+using ExcelDataReader;
 
 namespace Win7POS.Core.ImportDb
 {
     public static class ProductDbExcelReader
     {
         private const string SheetProducts = "Products";
+        private const string SheetProductos = "Productos";
         private const string SheetSuppliers = "Suppliers";
+        private const string SheetProveedores = "Proveedores";
         private const string SheetCategories = "Categories";
+        private const string SheetCategorias = "Categorías";
         private const string SheetPriceHistory = "PriceHistory";
 
+        /// <summary>Legge file Excel .xlsx (usa ClosedXML).</summary>
         public static ProductDbWorkbook Read(string xlsxPath)
         {
             if (string.IsNullOrWhiteSpace(xlsxPath) || !File.Exists(xlsxPath))
                 throw new FileNotFoundException("Excel file not found.", xlsxPath);
+
+            var ext = Path.GetExtension(xlsxPath).ToLowerInvariant();
+            if (ext == ".xls")
+                return ReadWithExcelDataReader(xlsxPath);
 
             using (var workbook = new XLWorkbook(xlsxPath))
             {
@@ -30,6 +40,176 @@ namespace Win7POS.Core.ImportDb
                 };
                 return result;
             }
+        }
+
+        /// <summary>Legge file Excel .xls e .xlsx con ExcelDataReader (supporta Excel 97-2003).</summary>
+        public static ProductDbWorkbook ReadWithExcelDataReader(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+                throw new FileNotFoundException("Excel file not found.", path);
+
+            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
+            using (var stream = File.Open(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            using (var reader = ExcelReaderFactory.CreateReader(stream))
+            {
+                var conf = new ExcelDataSetConfiguration
+                {
+                    ConfigureDataTable = _ => new ExcelDataTableConfiguration { UseHeaderRow = true }
+                };
+                var dataSet = reader.AsDataSet(conf);
+
+                var products = ReadProductsFromDataTable(GetSheet(dataSet, SheetProducts, SheetProductos, 0));
+                var suppliers = ReadSuppliersFromDataTable(GetSheet(dataSet, SheetSuppliers, SheetProveedores, null));
+                var categories = ReadCategoriesFromDataTable(GetSheet(dataSet, SheetCategories, SheetCategorias, null));
+                var history = ReadPriceHistoryFromDataTable(GetSheet(dataSet, SheetPriceHistory, null, null));
+
+                return new ProductDbWorkbook
+                {
+                    Products = products,
+                    Suppliers = suppliers,
+                    Categories = categories,
+                    PriceHistory = history
+                };
+            }
+        }
+
+        private static DataTable GetSheet(DataSet ds, string name1, string name2, int? fallbackIndex)
+        {
+            if (ds.Tables.Contains(name1)) return ds.Tables[name1];
+            if (!string.IsNullOrEmpty(name2) && ds.Tables.Contains(name2)) return ds.Tables[name2];
+            if (fallbackIndex.HasValue && ds.Tables.Count > fallbackIndex.Value)
+                return ds.Tables[fallbackIndex.Value];
+            return null;
+        }
+
+        private static IReadOnlyList<ProductRow> ReadProductsFromDataTable(DataTable dt)
+        {
+            if (dt == null || dt.Rows.Count == 0) return Array.Empty<ProductRow>();
+            var rows = new List<ProductRow>();
+            var barcodeCol = FindColumn(dt, "Código de barras", "Barcode", "A");
+            var articleCol = FindColumn(dt, "Código del artículo", "Codice articolo", "货号", "ArticleCode", "B");
+            var nameCol = FindColumn(dt, "Nombre del producto", "Name", "C");
+            var name2Col = FindColumn(dt, "Segundo nombre", "Nome 2", "Secondo nome", "D");
+            var purchaseCol = FindColumn(dt, "Precio de compra", "E");
+            var retailCol = FindColumn(dt, "Precio de venta", "Precio venta", "F");
+            var supplierCol = FindColumn(dt, "Proveedor", "Supplier", "I");
+            var categoryCol = FindColumn(dt, "Categoría", "Category", "J");
+            var stockCol = FindColumn(dt, "Existencias", "Stock", "K");
+            var purchaseOldCol = FindColumn(dt, "Compra (Antiguo)", "G");
+            var retailOldCol = FindColumn(dt, "Venta (Antiguo)", "H");
+
+            for (var r = 0; r < dt.Rows.Count; r++)
+            {
+                var row = dt.Rows[r];
+                var barcode = NormalizeBarcode(GetCell(row, barcodeCol));
+                if (string.IsNullOrEmpty(barcode)) continue;
+
+                var purchasePrice = NormalizeMoneyClp(GetCell(row, purchaseCol));
+                var retailPrice = NormalizeMoneyClp(GetCell(row, retailCol));
+                if (retailPrice < 0) retailPrice = 0;
+
+                rows.Add(new ProductRow
+                {
+                    Barcode = barcode,
+                    ArticleCode = ToString(GetCell(row, articleCol)),
+                    Name = ToString(GetCell(row, nameCol)),
+                    Name2 = ToString(GetCell(row, name2Col)),
+                    PurchasePrice = purchasePrice,
+                    RetailPrice = retailPrice,
+                    PurchaseOld = NormalizeMoneyClp(GetCell(row, purchaseOldCol)),
+                    RetailOld = NormalizeMoneyClp(GetCell(row, retailOldCol)),
+                    SupplierName = ToString(GetCell(row, supplierCol)),
+                    CategoryName = ToString(GetCell(row, categoryCol)),
+                    StockQty = NormalizeInt(GetCell(row, stockCol))
+                });
+            }
+            return rows;
+        }
+
+        private static int FindColumn(DataTable dt, params string[] names)
+        {
+            if (dt == null) return -1;
+            foreach (var n in names ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrEmpty(n)) continue;
+                if (dt.Columns.Contains(n)) return dt.Columns.IndexOf(n);
+                var col = dt.Columns.Cast<DataColumn>().FirstOrDefault(c =>
+                    string.Equals(c.ColumnName, n, StringComparison.OrdinalIgnoreCase));
+                if (col != null) return col.Ordinal;
+            }
+            if (names != null && names.Length > 0 && names[names.Length - 1].Length == 1)
+            {
+                var c = names[names.Length - 1][0];
+                if (c >= 'A' && c <= 'Z') return c - 'A';
+            }
+            return -1;
+        }
+
+        private static object GetCell(DataRow row, int col)
+        {
+            if (col < 0 || row == null || col >= row.ItemArray.Length) return null;
+            return row[col];
+        }
+
+        private static IReadOnlyList<SupplierRow> ReadSuppliersFromDataTable(DataTable dt)
+        {
+            if (dt == null || dt.Rows.Count == 0) return Array.Empty<SupplierRow>();
+            var rows = new List<SupplierRow>();
+            var idCol = FindColumn(dt, "id", "Id", "A");
+            var nameCol = FindColumn(dt, "name", "Name", "B");
+            for (var r = 0; r < dt.Rows.Count; r++)
+            {
+                var row = dt.Rows[r];
+                var name = ToString(GetCell(row, nameCol));
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                rows.Add(new SupplierRow { Id = NormalizeInt(GetCell(row, idCol)), Name = name });
+            }
+            return rows;
+        }
+
+        private static IReadOnlyList<CategoryRow> ReadCategoriesFromDataTable(DataTable dt)
+        {
+            if (dt == null || dt.Rows.Count == 0) return Array.Empty<CategoryRow>();
+            var rows = new List<CategoryRow>();
+            var idCol = FindColumn(dt, "id", "Id", "A");
+            var nameCol = FindColumn(dt, "name", "Name", "B");
+            for (var r = 0; r < dt.Rows.Count; r++)
+            {
+                var row = dt.Rows[r];
+                var name = ToString(GetCell(row, nameCol));
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                rows.Add(new CategoryRow { Id = NormalizeInt(GetCell(row, idCol)), Name = name });
+            }
+            return rows;
+        }
+
+        private static IReadOnlyList<PriceHistoryRow> ReadPriceHistoryFromDataTable(DataTable dt)
+        {
+            if (dt == null || dt.Rows.Count == 0) return Array.Empty<PriceHistoryRow>();
+            var rows = new List<PriceHistoryRow>();
+            var barcodeCol = FindColumn(dt, "productBarcode", "barcode", "A");
+            var tsCol = FindColumn(dt, "timestamp", "B");
+            var typeCol = FindColumn(dt, "type", "C");
+            var newPriceCol = FindColumn(dt, "newPrice", "E");
+            for (var r = 0; r < dt.Rows.Count; r++)
+            {
+                var row = dt.Rows[r];
+                var barcode = NormalizeBarcode(GetCell(row, barcodeCol));
+                if (string.IsNullOrEmpty(barcode)) continue;
+                var type = ToString(GetCell(row, typeCol));
+                if (string.IsNullOrEmpty(type)) type = "retail";
+                rows.Add(new PriceHistoryRow
+                {
+                    ProductBarcode = barcode,
+                    Timestamp = NormalizeTimestamp(GetCell(row, tsCol)),
+                    Type = type.ToLowerInvariant(),
+                    OldPrice = NormalizeNullableInt(GetCell(row, FindColumn(dt, "oldPrice", "D"))),
+                    NewPrice = NormalizeMoneyClp(GetCell(row, newPriceCol)),
+                    Source = ToString(GetCell(row, FindColumn(dt, "source", "F"))) ?? string.Empty
+                });
+            }
+            return rows;
         }
 
         private static string CellText(IXLCell cell)
