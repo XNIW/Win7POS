@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -232,11 +233,6 @@ namespace Win7POS.Wpf.Chrome
                 if (double.IsNaN(cardW) || cardW <= 0) cardW = 760;
                 if (double.IsNaN(cardH) || cardH <= 0) cardH = 430;
 
-                Left = Owner.Left;
-                Top = Owner.Top;
-                Width = Owner.ActualWidth;
-                Height = Owner.ActualHeight;
-
                 outerBorder.HorizontalAlignment = HorizontalAlignment.Center;
                 outerBorder.VerticalAlignment = VerticalAlignment.Center;
                 outerBorder.Width = cardW;
@@ -245,6 +241,31 @@ namespace Win7POS.Wpf.Chrome
                 var fullGrid = new Grid { Background = Brushes.Transparent };
                 fullGrid.Children.Add(outerBorder);
                 Content = fullGrid;
+
+                // Defer positioning so Owner dimensions are valid; fallback to WorkArea if maximized
+                void ApplyOverlayPosition()
+                {
+                    if (Owner == null) return;
+                    var w = Owner.ActualWidth;
+                    var h = Owner.ActualHeight;
+                    if (w <= 0 || h <= 0)
+                    {
+                        var work = SystemParameters.WorkArea;
+                        Left = work.Left;
+                        Top = work.Top;
+                        Width = work.Width;
+                        Height = work.Height;
+                    }
+                    else
+                    {
+                        Left = Owner.Left;
+                        Top = Owner.Top;
+                        Width = w;
+                        Height = h;
+                    }
+                }
+                ApplyOverlayPosition();
+                Dispatcher.BeginInvoke(new Action(ApplyOverlayPosition), System.Windows.Threading.DispatcherPriority.Loaded);
             }
             else
             {
