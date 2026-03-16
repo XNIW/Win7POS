@@ -27,7 +27,7 @@
                 <ColumnDefinition Width="100"/>
                 <ColumnDefinition Width="*" MinWidth="180"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Row="0" Text="Accesso operatore" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,6" Grid.ColumnSpan="2"/>
+            <TextBlock Grid.Row="0" Text="Accesso operatore" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,10" Grid.ColumnSpan="2"/>
             <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Operatore:" Foreground="#666"/>
             <StackPanel Grid.Row="1" Grid.Column="1" Margin="0,0,0,10">
                 <ComboBox x:Name="OperatorCombo" MinHeight="34" DisplayMemberPath="DisplayText" IsEditable="False"/>
@@ -36,7 +36,7 @@
             <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="PIN:" Foreground="#666"/>
             <PasswordBox x:Name="PinBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
             <TextBlock x:Name="ErrorText" Grid.Row="3" Grid.ColumnSpan="2" Foreground="#C62828" Margin="0,0,0,12" TextWrapping="Wrap" Visibility="Collapsed"/>
-            <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+            <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
                 <Button Content="Accedi" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnLoginClick" Style="{StaticResource PrimaryButtonStyle}" IsDefault="True"/>
                 <Button Content="Annulla" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource OutlineButtonStyle}" Click="Cancel_Click"/>
             </StackPanel>

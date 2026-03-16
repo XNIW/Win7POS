@@ -21,7 +21,7 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Informazioni e supporto" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,6"/>
+        <TextBlock Grid.Row="0" Text="Informazioni e supporto" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,10"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid>
@@ -65,7 +65,7 @@
                 </Grid>
             </ScrollViewer>
         </Border>
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
             <Button MinWidth="110" Height="42" Margin="0,0,8,0" Content="Apri cartella dati" Command="{Binding OpenDataFolderCommand}" Style="{StaticResource OutlineButtonStyle}"/>
             <Button MinWidth="110" Height="42" Margin="0,0,8,0" Content="Apri cartella log" Command="{Binding OpenLogFolderCommand}" Style="{StaticResource OutlineButtonStyle}"/>
             <Button MinWidth="88" Height="42" Margin="0,0,8,0" Content="Copia info" Command="{Binding CopyInfoCommand}" Style="{StaticResource OutlineButtonStyle}"/>
