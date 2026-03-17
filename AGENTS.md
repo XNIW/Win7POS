@@ -27,6 +27,14 @@ Prima di toccare uno di questi file o pattern, leggere `docs/DIALOG_STANDARD.md`
 - Clamp hook solo nella base class.
 - Footer buttons/title con le shared resources dialog.
 
+## Docs
+
+- `docs/DIALOG_STANDARD.md` – standard dialog WPF (leggere prima di toccare dialog).
+- `docs/FORMATO_LOG_DEBUG.md` – formato log e guida al debug.
+- `docs/AI_WORKLOG.md` – cronologia sintetica sessioni AI.
+- `docs/reports/` – report storici (analisi, cleanup, revert).
+- `docs/plans/_archive/` – piani eseguiti.
+
 ## Validation
 
 - `pwsh -File scripts/check-dialog-standards.ps1`
