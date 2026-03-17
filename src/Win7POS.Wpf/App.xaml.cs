@@ -47,7 +47,7 @@ namespace Win7POS.Wpf
                 _logger.LogError(ex, "App.OnStartup: EnsureCreated/avvio fallito");
                 try
                 {
-                    ModernMessageDialog.Show(Application.Current?.MainWindow, "Errore avvio Win7POS",
+                    ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Errore avvio Win7POS",
                         "Impossibile creare le directory dati. L'app verrà chiusa.\n\n" + ex.Message);
                 }
                 catch { }
@@ -81,7 +81,7 @@ namespace Win7POS.Wpf
             _logger.LogError(e.Exception, "DispatcherUnhandledException [UI thread]");
             try
             {
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Errore",
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Errore",
                     "Si è verificato un errore.\n\n" + e.Exception?.Message + "\n\nDettagli in: " + AppPaths.LogPath);
             }
             catch (Exception showEx)

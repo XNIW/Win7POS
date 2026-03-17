@@ -1,5 +1,6 @@
 using System.Windows;
 using Win7POS.Wpf.Chrome;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Import
 {
@@ -15,9 +16,9 @@ namespace Win7POS.Wpf.Import
         {
             var dlg = new ImportDataDialog
             {
-                Owner = owner ?? Application.Current?.MainWindow
+                Owner = DialogOwnerHelper.GetSafeOwner(owner)
             };
-            Win7POS.Wpf.Infrastructure.WindowSizingHelper.CapMaxHeightToOwner(dlg);
+            WindowSizingHelper.CapMaxHeightToOwner(dlg);
             dlg.ShowDialog();
         }
 

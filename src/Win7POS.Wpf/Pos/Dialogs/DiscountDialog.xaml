@@ -69,10 +69,7 @@
         <!-- Row 0: Header -->
         <TextBlock Grid.Row="0"
                    Text="Sconto"
-                   FontSize="18"
-                   FontWeight="SemiBold"
-                   Foreground="#5E3F86"
-                   Margin="0,0,0,8"/>
+                   Style="{StaticResource DialogTitleStyle}"/>
 
         <!-- Row 1: Mode Toggle Buttons -->
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
@@ -158,7 +155,7 @@
         </Grid>
 
         <!-- Row 5: Footer Buttons -->
-        <Grid Grid.Row="5" Margin="0,12,0,0">
+        <Grid Grid.Row="5" Margin="{StaticResource DialogFooterMargin}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
@@ -187,11 +184,11 @@
             <TextBlock Grid.Column="1" Text="{Binding ScopeText}" VerticalAlignment="Center"
                        FontSize="13" FontWeight="SemiBold" Foreground="#5E3F86"/>
             <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Annulla" MinWidth="90" Height="36" Margin="0,0,8,0" IsCancel="True"
-                        Style="{StaticResource OutlineButtonStyle}"
+                <Button Content="Annulla" Margin="0,0,8,0" IsCancel="True"
+                        Style="{StaticResource DialogCancelButtonStyle}"
                         Command="{Binding CancelCommand}"/>
-                <Button Content="Conferma" MinWidth="90" Height="36" IsDefault="True"
-                        Style="{StaticResource PrimaryButtonStyle}"
+                <Button Content="Conferma" IsDefault="True"
+                        Style="{StaticResource DialogActionButtonStyle}"
                         Command="{Binding ConfirmCommand}"/>
             </StackPanel>
         </Grid>

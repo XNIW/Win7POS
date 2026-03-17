@@ -1,5 +1,6 @@
 using System.Windows;
 using Win7POS.Wpf.Chrome;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Import
 {
@@ -18,7 +19,7 @@ namespace Win7POS.Wpf.Import
         {
             var dlg = new ModernMessageDialog(title ?? "Win7POS", message ?? "")
             {
-                Owner = owner ?? Application.Current?.MainWindow
+                Owner = DialogOwnerHelper.GetSafeOwner(owner)
             };
             dlg.ShowDialog();
         }

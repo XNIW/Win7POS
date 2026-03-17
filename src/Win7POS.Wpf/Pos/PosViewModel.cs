@@ -331,7 +331,7 @@ namespace Win7POS.Wpf.Pos
         private async Task AddBarcodeAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosSell, "Vendita"); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message); return; }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message); return; }
             var input = (BarcodeInput ?? string.Empty).Trim();
             if (input.Length == 0)
                 return;
@@ -572,7 +572,7 @@ namespace Win7POS.Wpf.Pos
         private async Task PayAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosPay, "Pagamento"); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message); return; }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message); return; }
             if (CartItems.Count == 0)
             {
                 StatusMessage = "Carrello vuoto";
@@ -608,7 +608,7 @@ namespace Win7POS.Wpf.Pos
             bool ok;
             try
             {
-                var mainWindow = Application.Current?.MainWindow as MainWindow;
+                var mainWindow = DialogOwnerHelper.GetSafeOwner() as MainWindow;
                 if (mainWindow == null)
                 {
                     _logger.LogError(null, "MainWindow not available for payment screen.");
@@ -621,7 +621,7 @@ namespace Win7POS.Wpf.Pos
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Payment screen failed.");
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Pay error", "Errore Pay.\n\n" + ex.Message);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Pay error", "Errore Pay.\n\n" + ex.Message);
                 StatusMessage = "Errore Pay.";
                 RequestFocusBarcode();
                 return;
@@ -666,7 +666,7 @@ namespace Win7POS.Wpf.Pos
                     var printed = await PrintReceiptAsync(ReceiptPreview, result.SaleCode).ConfigureAwait(true);
                     if (!printed)
                     {
-                        ModernMessageDialog.Show(Application.Current?.MainWindow, "Stampa fallita",
+                        ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Stampa fallita",
                             "Ricevuta non stampata.\nControlla impostazioni stampante e log.");
                     }
                 }
@@ -784,7 +784,7 @@ namespace Win7POS.Wpf.Pos
         private async Task ReprintPreviewAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, "Ristampa ricevuta"); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message); return; }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message); return; }
             if (SelectedRecentSale == null) return;
 
             IsBusy = true;
@@ -814,7 +814,7 @@ namespace Win7POS.Wpf.Pos
         private async Task PrintSelectedReceiptAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, "Stampa ricevuta"); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message); return; }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message); return; }
             if (SelectedRecentSale == null)
             {
                 StatusMessage = "Seleziona una vendita.";
@@ -1007,7 +1007,7 @@ namespace Win7POS.Wpf.Pos
         private async Task BackupDbAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.DbBackup, "Backup database"); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message); return; }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message); return; }
             IsBusy = true;
             try
             {
@@ -1050,13 +1050,13 @@ namespace Win7POS.Wpf.Pos
                 catch (Exception ex)
                 {
                     StatusMessage = "Errore test cassetto: " + ex.Message;
-                    ModernMessageDialog.Show(Application.Current?.MainWindow, "Test cassetto", ex.Message);
+                    ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Test cassetto", ex.Message);
                 }
             };
 
             var dlg = new PrinterSettingsDialog(vm)
             {
-                Owner = Application.Current?.MainWindow
+                Owner = DialogOwnerHelper.GetSafeOwner()
             };
             WindowSizingHelper.CapMaxHeightToOwner(dlg);
             var ok = dlg.ShowDialog() == true;
@@ -1101,7 +1101,7 @@ namespace Win7POS.Wpf.Pos
         private async Task PrintLastReceiptAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, "Stampa ultima ricevuta"); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message); return; }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message); return; }
             IsBusy = true;
             try
             {
@@ -1171,7 +1171,7 @@ namespace Win7POS.Wpf.Pos
                 var vm = new DailyReportViewModel(_service, _overrideAuthService);
                 var dlg = new DailyReportDialog(vm)
                 {
-                    Owner = Application.Current?.MainWindow
+                    Owner = DialogOwnerHelper.GetSafeOwner()
                 };
                 WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
@@ -1179,13 +1179,13 @@ namespace Win7POS.Wpf.Pos
             catch (InvalidOperationException ex)
             {
                 StatusMessage = ex.Message;
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Daily report dialog failed (XAML/binding).");
                 StatusMessage = "Errore apertura Incasso giornaliero.";
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Daily report", "Errore apertura Incasso giornaliero.\n\n" + ex.Message);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Daily report", "Errore apertura Incasso giornaliero.\n\n" + ex.Message);
             }
             RequestFocusBarcode();
             return Task.CompletedTask;
@@ -1194,11 +1194,11 @@ namespace Win7POS.Wpf.Pos
         private Task OpenDbMaintenanceAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.DbMaintenance, "Manutenzione database"); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message); RequestFocusBarcode(); return Task.CompletedTask; }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message); RequestFocusBarcode(); return Task.CompletedTask; }
             var vm = new DbMaintenanceViewModel(_service, async () => await TryDemandOrOverrideAsync(PermissionCodes.DbRestore, "Restore DB").ConfigureAwait(true));
             var dlg = new DbMaintenanceDialog(vm)
             {
-                Owner = Application.Current?.MainWindow
+                Owner = DialogOwnerHelper.GetSafeOwner()
             };
             WindowSizingHelper.CapMaxHeightToOwner(dlg);
             dlg.ShowDialog();
@@ -1213,7 +1213,7 @@ namespace Win7POS.Wpf.Pos
                 var vm = new AboutSupportViewModel(_service);
                 var dlg = new AboutSupportDialog(vm)
                 {
-                    Owner = Application.Current?.MainWindow
+                    Owner = DialogOwnerHelper.GetSafeOwner()
                 };
                 WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
@@ -1222,7 +1222,7 @@ namespace Win7POS.Wpf.Pos
             {
                 _logger.LogError(ex, "About/Support dialog failed (XAML/binding).");
                 StatusMessage = "Errore apertura About/Support.";
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "About", "Errore apertura About/Support.\n\n" + ex.Message);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "About", "Errore apertura About/Support.\n\n" + ex.Message);
             }
             RequestFocusBarcode();
             return Task.CompletedTask;
@@ -1237,8 +1237,8 @@ namespace Win7POS.Wpf.Pos
             }
             catch (InvalidOperationException)
             {
-                if (_overrideAuthService == null) { StatusMessage = "Permesso negato: " + operationText; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", "Permesso negato: " + operationText); return false; }
-                if (!ApplyConfirmDialog.ShowConfirm(Application.Current?.MainWindow, operationText, "Operazione riservata a Supervisore o superiore. Vuoi richiedere autorizzazione?")) { _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideDenied, "permission=" + permissionCode + " op=" + operationText + " reason=user_declined"); return false; }
+                if (_overrideAuthService == null) { StatusMessage = "Permesso negato: " + operationText; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", "Permesso negato: " + operationText); return false; }
+                if (!ApplyConfirmDialog.ShowConfirm(DialogOwnerHelper.GetSafeOwner(), operationText, "Operazione riservata a Supervisore o superiore. Vuoi richiedere autorizzazione?")) { _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideDenied, "permission=" + permissionCode + " op=" + operationText + " reason=user_declined"); return false; }
                 _operatorSession?.LogSecurityEvent(SecurityEventCodes.OverrideRequested, "permission=" + permissionCode + " op=" + operationText);
                 var (ok, authorizerId) = await _overrideAuthService.RequestOverrideAsync(operationText, permissionCode).ConfigureAwait(true);
                 if (!ok || !authorizerId.HasValue)
@@ -1275,7 +1275,7 @@ namespace Win7POS.Wpf.Pos
                 var vm = new RefundViewModel(preview);
                 var dlg = new RefundDialog(vm)
                 {
-                    Owner = Application.Current?.MainWindow
+                    Owner = DialogOwnerHelper.GetSafeOwner()
                 };
                 WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 var ok = dlg.ShowDialog() == true;
@@ -1342,7 +1342,7 @@ namespace Win7POS.Wpf.Pos
                 }, isRefundScanMode, operators, canViewAll: canViewAll, forceOperatorId: canViewAll ? null : currentUserId, overrideAuthService: _overrideAuthService);
                 var dlg = new Dialogs.SalesRegisterDialog(registerVm)
                 {
-                    Owner = Application.Current?.MainWindow
+                    Owner = DialogOwnerHelper.GetSafeOwner()
                 };
                 WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
@@ -1350,13 +1350,13 @@ namespace Win7POS.Wpf.Pos
             catch (InvalidOperationException ex)
             {
                 StatusMessage = ex.Message;
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Sales register dialog failed (XAML/binding).");
                 StatusMessage = isRefundScanMode ? "Errore apertura Reso." : "Errore apertura Registro vendite.";
-                ModernMessageDialog.Show(Application.Current?.MainWindow, isRefundScanMode ? "Reso" : "Registro vendite", "Errore apertura " + (isRefundScanMode ? "Reso" : "Registro vendite") + ".\n\n" + ex.Message);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), isRefundScanMode ? "Reso" : "Registro vendite", "Errore apertura " + (isRefundScanMode ? "Reso" : "Registro vendite") + ".\n\n" + ex.Message);
             }
             RequestFocusBarcode();
         }
@@ -1387,7 +1387,7 @@ namespace Win7POS.Wpf.Pos
                 var vm = CreateUserManagementViewModel();
                 var dlg = new Dialogs.UserManagementDialog(vm)
                 {
-                    Owner = Application.Current?.MainWindow
+                    Owner = DialogOwnerHelper.GetSafeOwner()
                 };
                 WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
@@ -1395,13 +1395,13 @@ namespace Win7POS.Wpf.Pos
             catch (InvalidOperationException ex)
             {
                 StatusMessage = ex.Message;
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "User management dialog failed");
                 StatusMessage = "Errore apertura Utenti e ruoli.";
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Utenti e ruoli", "Errore apertura Utenti e ruoli.\n\n" + ex.Message);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Utenti e ruoli", "Errore apertura Utenti e ruoli.\n\n" + ex.Message);
             }
             RequestFocusBarcode();
         }
@@ -1414,7 +1414,7 @@ namespace Win7POS.Wpf.Pos
                 var vm = new Dialogs.ShopSettingsViewModel(_service);
                 var dlg = new Dialogs.ShopSettingsDialog(vm)
                 {
-                    Owner = Application.Current?.MainWindow
+                    Owner = DialogOwnerHelper.GetSafeOwner()
                 };
                 WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();
@@ -1422,13 +1422,13 @@ namespace Win7POS.Wpf.Pos
             catch (InvalidOperationException ex)
             {
                 StatusMessage = ex.Message;
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Shop settings dialog failed (XAML/binding).");
                 StatusMessage = "Errore apertura Impostazioni negozio.";
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Impostazioni negozio", "Errore apertura Impostazioni negozio.\n\n" + ex.Message);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Impostazioni negozio", "Errore apertura Impostazioni negozio.\n\n" + ex.Message);
             }
             RequestFocusBarcode();
         }
@@ -1436,7 +1436,7 @@ namespace Win7POS.Wpf.Pos
         private async Task SuspendCartAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosSuspendCart, "Sospendi carrello"); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message); return; }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message); return; }
             IsBusy = true;
             try
             {
@@ -1466,13 +1466,13 @@ namespace Win7POS.Wpf.Pos
         private async Task RecoverCartAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosRecoverCart, "Recupera carrello"); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message); return; }
+            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message); return; }
             var vm = new Dialogs.HeldCartsViewModel(_service, snapshot =>
             {
                 ApplySnapshot(snapshot);
                 StatusMessage = snapshot?.Status ?? "Carrello recuperato.";
             });
-            var dlg = new Dialogs.HeldCartsDialog(vm) { Owner = Application.Current?.MainWindow };
+            var dlg = new Dialogs.HeldCartsDialog(vm) { Owner = DialogOwnerHelper.GetSafeOwner() };
             WindowSizingHelper.CapMaxHeightToOwner(dlg);
 
             try
@@ -1522,7 +1522,7 @@ namespace Win7POS.Wpf.Pos
             catch (InvalidOperationException ex)
             {
                 StatusMessage = ex.Message;
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Permesso negato", ex.Message);
             }
             catch (Exception ex)
             {
@@ -1542,7 +1542,7 @@ namespace Win7POS.Wpf.Pos
             if (SelectedCartItem == null || SelectedCartItem.IsDiscountLine) return;
             var dlg = new Dialogs.ChangeQuantityDialog(SelectedCartItem.Name ?? "", SelectedCartItem.Quantity)
             {
-                Owner = Application.Current?.MainWindow
+                Owner = DialogOwnerHelper.GetSafeOwner()
             };
             WindowSizingHelper.CapMaxHeightToOwner(dlg);
             if (dlg.ShowDialog() == true)
@@ -1606,7 +1606,7 @@ namespace Win7POS.Wpf.Pos
                 }
                 var dlg = new Dialogs.DiscountDialog(selectedBarcode ?? string.Empty, hasCart, _service, this, previewContext)
                 {
-                    Owner = Application.Current?.MainWindow
+                    Owner = DialogOwnerHelper.GetSafeOwner()
                 };
                 WindowSizingHelper.CapMaxHeightToOwner(dlg);
                 dlg.ShowDialog();

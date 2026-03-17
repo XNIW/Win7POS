@@ -13,6 +13,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             InitializeComponent();
             WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 720, minHeight: 480, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
+            vm.OwnerWindow = this;
             DataContext = vm;
             Loaded += OnLoaded;
             vm.RequestClose += ok =>

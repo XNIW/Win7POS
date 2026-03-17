@@ -11,14 +11,13 @@
         SizeToContent="WidthAndHeight"
         MinWidth="560"
         MinHeight="480"
-        ResizeMode="CanResize"
-        Loaded="Window_Loaded">
+        ResizeMode="CanResize">
     <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="{Binding DialogTitle}" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,10"/>
+        <TextBlock Grid.Row="0" Text="{Binding DialogTitle}" Style="{StaticResource DialogTitleStyle}"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
     <Grid>
         <Grid.RowDefinitions>
@@ -103,11 +102,11 @@
                  Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
 
         <!-- Pulsanti: ultima riga sempre visibile -->
-        <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button Content="Annulla" MinWidth="100" Height="36" Margin="0,0,10,0" IsCancel="True"
-                    Style="{StaticResource OutlineButtonStyle}" Command="{Binding CancelCommand}"/>
-            <Button Content="Salva" MinWidth="100" Height="36" IsDefault="True"
-                    Style="{StaticResource PrimaryButtonStyle}" Command="{Binding ConfirmCommand}"/>
+        <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+            <Button Content="Annulla" MinWidth="100" Margin="0,0,10,0" IsCancel="True"
+                    Style="{StaticResource DialogCancelButtonStyle}" Command="{Binding CancelCommand}"/>
+            <Button Content="Salva" MinWidth="100" IsDefault="True"
+                    Style="{StaticResource DialogActionButtonStyle}" Command="{Binding ConfirmCommand}"/>
         </StackPanel>
     </Grid>
         </Border>

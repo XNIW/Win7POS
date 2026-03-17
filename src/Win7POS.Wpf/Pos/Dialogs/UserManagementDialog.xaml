@@ -25,7 +25,7 @@
 
             <!-- Header: titolo + operatore corrente -->
             <StackPanel Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,10">
-                <TextBlock Text="Utenti e ruoli" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86"/>
+                <TextBlock Text="Utenti e ruoli" Style="{StaticResource DialogTitleStyle}" Margin="0"/>
                 <TextBlock Text="{Binding CurrentOperatorDisplay, Mode=OneWay}" FontSize="12" Foreground="#8873A4" Margin="0,4,0,0"/>
             </StackPanel>
 
@@ -246,9 +246,9 @@
                 </Border>
             </Grid>
 
-            <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,18,0,0" Foreground="Gray" FontSize="11" Text="{Binding Status, Mode=OneWay}"/>
-            <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-                <Button Content="Chiudi" MinWidth="90" Height="36" IsCancel="True" Click="OnCloseClick" Style="{StaticResource OutlineButtonStyle}"/>
+            <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="{StaticResource DialogFooterMargin}" Foreground="Gray" FontSize="11" Text="{Binding Status, Mode=OneWay}"/>
+            <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+                <Button Content="Chiudi" IsCancel="True" Click="OnCloseClick" Style="{StaticResource DialogCancelButtonStyle}"/>
             </StackPanel>
         </Grid>
 </chrome:DialogShellWindow>

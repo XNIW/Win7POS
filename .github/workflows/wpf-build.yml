@@ -19,6 +19,9 @@ jobs:
           dotnet-version: "8.0.x"
       - run: dotnet --info
       - run: dotnet restore src/Win7POS.Wpf/Win7POS.Wpf.csproj
+      - name: Dialog standards check
+        shell: pwsh
+        run: pwsh -File scripts/check-dialog-standards.ps1
       - run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
       - name: List WPF bin output
         run: Get-ChildItem -Path "src/Win7POS.Wpf/bin" -Recurse | Select-Object FullName

@@ -1,4 +1,3 @@
-using System;
 using System.Windows;
 using System.Windows.Input;
 using Win7POS.Wpf.Chrome;
@@ -19,13 +18,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 DialogResult = recovered;
                 Close();
             };
-            Loaded += OnLoaded;
             PreviewKeyDown += OnPreviewKeyDown;
-        }
-
-        private void OnLoaded(object sender, RoutedEventArgs e)
-        {
-            CenterToOwner();
         }
 
         private void OnPreviewKeyDown(object sender, KeyEventArgs e)
@@ -36,13 +29,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Close();
                 e.Handled = true;
             }
-        }
-
-        private void CenterToOwner()
-        {
-            if (Owner == null) return;
-            Left = Owner.Left + Math.Max(0, (Owner.ActualWidth - ActualWidth) / 2);
-            Top = Owner.Top + Math.Max(0, (Owner.ActualHeight - ActualHeight) / 2);
         }
     }
 }

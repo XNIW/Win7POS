@@ -11,6 +11,10 @@ dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release
 
 Il progetto è configurato con `PlatformTarget=x86` e `TargetFramework=net48`. L’eseguibile si trova in `src/Win7POS.Wpf/bin/Release/net48/`.
 
+## Dialog WPF
+
+Per architettura, standard e checklist dei dialog WPF vedi `docs/DIALOG_STANDARD.md`.
+
 ## Dati e log in produzione
 
 In ambiente Windows l’applicazione usa la cartella comune:

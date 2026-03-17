@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -8,6 +9,7 @@ using System.Windows.Markup;
 using System.Windows.Media;
 using System.Windows.Media.Effects;
 using System.Windows.Shell;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Chrome
 {
@@ -111,19 +113,29 @@ namespace Win7POS.Wpf.Chrome
             Background = Brushes.Transparent;
             AllowsTransparency = false;
 
-            Loaded += OnLoaded;
+            SourceInitialized += OnSourceInitialized;
         }
 
-        private void OnLoaded(object sender, RoutedEventArgs e)
+        private void OnSourceInitialized(object sender, EventArgs e)
         {
-            Loaded -= OnLoaded;
+            SourceInitialized -= OnSourceInitialized;
             BuildChrome();
+
+            if (!UseModalOverlay)
+                MonitorHelper.AddWorkAreaClampHook(this);
         }
 
         private void BuildChrome()
         {
             var showHeader = ShowHeader;
             var radius = DialogCornerRadius;
+            var originalSizeToContent = SizeToContent;
+            var originalWidth = Width;
+            var originalHeight = Height;
+            var originalMinWidth = MinWidth;
+            var originalMinHeight = MinHeight;
+            var originalMaxWidth = MaxWidth;
+            var originalMaxHeight = MaxHeight;
 
             WindowChrome.SetWindowChrome(this, new WindowChrome
             {
@@ -226,46 +238,16 @@ namespace Win7POS.Wpf.Chrome
 
             outerBorder.Child = mainGrid;
 
-            if (UseModalOverlay && Owner != null)
+            if (UseModalOverlay)
             {
-                var cardW = Width;
-                var cardH = Height;
-                if (double.IsNaN(cardW) || cardW <= 0) cardW = 760;
-                if (double.IsNaN(cardH) || cardH <= 0) cardH = 430;
-
                 outerBorder.HorizontalAlignment = HorizontalAlignment.Center;
                 outerBorder.VerticalAlignment = VerticalAlignment.Center;
-                outerBorder.Width = cardW;
-                outerBorder.Height = cardH;
 
                 var fullGrid = new Grid { Background = Brushes.Transparent };
                 fullGrid.Children.Add(outerBorder);
                 Content = fullGrid;
-
-                // Defer positioning so Owner dimensions are valid; fallback to WorkArea if maximized
-                void ApplyOverlayPosition()
-                {
-                    if (Owner == null) return;
-                    var w = Owner.ActualWidth;
-                    var h = Owner.ActualHeight;
-                    if (w <= 0 || h <= 0)
-                    {
-                        var work = SystemParameters.WorkArea;
-                        Left = work.Left;
-                        Top = work.Top;
-                        Width = work.Width;
-                        Height = work.Height;
-                    }
-                    else
-                    {
-                        Left = Owner.Left;
-                        Top = Owner.Top;
-                        Width = w;
-                        Height = h;
-                    }
-                }
+                ConfigureOverlayHost(originalSizeToContent, originalWidth, originalHeight, originalMinWidth, originalMinHeight, originalMaxWidth, originalMaxHeight, outerBorder);
                 ApplyOverlayPosition();
-                Dispatcher.BeginInvoke(new Action(ApplyOverlayPosition), System.Windows.Threading.DispatcherPriority.Loaded);
             }
             else
             {
@@ -310,6 +292,97 @@ namespace Win7POS.Wpf.Chrome
         private void Close_Click(object sender, RoutedEventArgs e)
         {
             Close();
+        }
+
+        private void ConfigureOverlayHost(
+            SizeToContent originalSizeToContent,
+            double originalWidth,
+            double originalHeight,
+            double originalMinWidth,
+            double originalMinHeight,
+            double originalMaxWidth,
+            double originalMaxHeight,
+            Border outerBorder)
+        {
+            var cardWorkArea = Owner != null
+                ? MonitorHelper.GetWorkAreaForExactWindowOrPrimary(Owner)
+                : MonitorHelper.GetWorkAreaOrPrimary(this);
+
+            var cardMaxWidth = ClampToFiniteMax(Math.Max(200, cardWorkArea.Width - 48), originalMaxWidth);
+            var cardMaxHeight = ClampToFiniteMax(Math.Max(200, cardWorkArea.Height - 48), originalMaxHeight);
+
+            outerBorder.MaxWidth = cardMaxWidth;
+            outerBorder.MaxHeight = cardMaxHeight;
+
+            var boundedMinWidth = ClampToFiniteMax(originalMinWidth, cardMaxWidth);
+            var boundedMinHeight = ClampToFiniteMax(originalMinHeight, cardMaxHeight);
+            if (boundedMinWidth > 0)
+                outerBorder.MinWidth = boundedMinWidth;
+            if (boundedMinHeight > 0)
+                outerBorder.MinHeight = boundedMinHeight;
+
+            if (originalSizeToContent == SizeToContent.Manual)
+            {
+                outerBorder.Width = ClampToFiniteMax(GetPreferredLength(originalWidth, originalMinWidth, 760), cardMaxWidth);
+                outerBorder.Height = ClampToFiniteMax(GetPreferredLength(originalHeight, originalMinHeight, 430), cardMaxHeight);
+            }
+
+            SizeToContent = SizeToContent.Manual;
+            MinWidth = 0;
+            MinHeight = 0;
+            MaxWidth = double.PositiveInfinity;
+            MaxHeight = double.PositiveInfinity;
+        }
+
+        private void ApplyOverlayPosition()
+        {
+            Rect bounds;
+
+            if (Owner == null)
+            {
+#if DEBUG
+                Debug.WriteLine("[DialogShellWindow] Overlay without owner, using work area fallback.");
+#endif
+                bounds = MonitorHelper.GetWorkAreaOrPrimary(this);
+            }
+            else if (Owner.ActualWidth <= 0 || Owner.ActualHeight <= 0)
+            {
+#if DEBUG
+                Debug.WriteLine("[DialogShellWindow] Overlay owner has invalid size, using exact-owner monitor work area.");
+#endif
+                bounds = MonitorHelper.GetWorkAreaForExactWindowOrPrimary(Owner);
+            }
+            else
+            {
+                bounds = new Rect(Owner.Left, Owner.Top, Owner.ActualWidth, Owner.ActualHeight);
+            }
+
+            Left = bounds.Left;
+            Top = bounds.Top;
+            Width = Math.Max(1, bounds.Width);
+            Height = Math.Max(1, bounds.Height);
+        }
+
+        private static double ClampToFiniteMax(double value, double max)
+        {
+            if (double.IsNaN(value) || value <= 0)
+                return 0;
+
+            if (double.IsNaN(max) || double.IsInfinity(max) || max <= 0)
+                return value;
+
+            return Math.Min(value, max);
+        }
+
+        private static double GetPreferredLength(double explicitLength, double minLength, double fallbackLength)
+        {
+            if (!double.IsNaN(explicitLength) && explicitLength > 0)
+                return explicitLength;
+
+            if (!double.IsNaN(minLength) && minLength > 0)
+                return minLength;
+
+            return fallbackLength;
         }
     }
 }

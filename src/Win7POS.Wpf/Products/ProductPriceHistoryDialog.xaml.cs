@@ -26,7 +26,7 @@ namespace Win7POS.Wpf.Products
             var vm = new ProductPriceHistoryViewModel(productId, barcode, name, currentRetail, currentPurchase, service);
             var dlg = new ProductPriceHistoryDialog(vm)
             {
-                Owner = owner
+                Owner = owner ?? DialogOwnerHelper.GetSafeOwner()
             };
             WindowSizingHelper.CapMaxHeightToOwner(dlg);
             dlg.ShowDialog();

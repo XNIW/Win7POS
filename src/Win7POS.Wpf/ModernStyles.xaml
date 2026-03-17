@@ -1,6 +1,7 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:conv="clr-namespace:Win7POS.Wpf.Converters">
+                    xmlns:conv="clr-namespace:Win7POS.Wpf.Converters"
+                    xmlns:system="clr-namespace:System;assembly=mscorlib">
 
     <!-- Converters condivisi (evitare duplicazioni nei XAML) -->
     <BooleanToVisibilityConverter x:Key="BoolToVis"/>
@@ -30,6 +31,16 @@
     <SolidColorBrush x:Key="SelectionBackgroundBrush" Color="#F1E8F8"/>
     <SolidColorBrush x:Key="SelectionBorderBrush" Color="#7B4FA3"/>
     <SolidColorBrush x:Key="SelectionHoverBrush" Color="#F3ECF8"/>
+    <Thickness x:Key="DialogFooterMargin">0,18,0,0</Thickness>
+    <Thickness x:Key="DialogTitleMargin">0,0,0,10</Thickness>
+    <system:Double x:Key="DialogActionButtonHeight">42</system:Double>
+
+    <Style x:Key="DialogTitleStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="18"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="#5E3F86"/>
+        <Setter Property="Margin" Value="{StaticResource DialogTitleMargin}"/>
+    </Style>
 
     <!-- Stili riusabili per righe/celle selezionabili (evitare duplicazioni nelle viste) -->
     <Style x:Key="SelectableDataGridRowStyle" TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
@@ -133,6 +144,16 @@
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="Cursor" Value="Hand"/>
+    </Style>
+
+    <Style x:Key="DialogActionButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
+        <Setter Property="Height" Value="{StaticResource DialogActionButtonHeight}"/>
+        <Setter Property="MinWidth" Value="90"/>
+    </Style>
+
+    <Style x:Key="DialogCancelButtonStyle" TargetType="Button" BasedOn="{StaticResource OutlineButtonStyle}">
+        <Setter Property="Height" Value="{StaticResource DialogActionButtonHeight}"/>
+        <Setter Property="MinWidth" Value="90"/>
     </Style>
 
     <!-- Small icon/quantity button for cart (+ -) -->

@@ -390,7 +390,7 @@ namespace Win7POS.Wpf.Products
             if (SelectedProduct == null) return;
 
             var okToDelete = DeleteProductConfirmDialog.ShowDialog(
-                Application.Current?.MainWindow,
+                DialogOwnerHelper.GetSafeOwner(),
                 SelectedProduct.Barcode,
                 SelectedProduct.Name);
 
@@ -415,7 +415,7 @@ namespace Win7POS.Wpf.Products
         {
             try
             {
-                Win7POS.Wpf.Import.ImportDataDialog.ShowDialog(Application.Current?.MainWindow);
+                ImportDataDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner());
                 await RefreshAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
@@ -430,7 +430,7 @@ namespace Win7POS.Wpf.Products
             IsBusy = true;
             try
             {
-                var choice = ExportDataDialog.ShowDialogAndGetChoice(Application.Current?.MainWindow);
+                var choice = ExportDataDialog.ShowDialogAndGetChoice(DialogOwnerHelper.GetSafeOwner());
                 if (choice == null) return;
 
                 var path = choice.TargetPath;
@@ -467,7 +467,7 @@ namespace Win7POS.Wpf.Products
                     StatusMessage = "Prodotto non trovato.";
                     return;
                 }
-                ProductPriceHistoryDialog.ShowDialog(Application.Current?.MainWindow, full.Id, full.Barcode ?? "", full.Name ?? "", (int)full.UnitPrice, full.PurchasePrice);
+                ProductPriceHistoryDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner(), full.Id, full.Barcode ?? "", full.Name ?? "", (int)full.UnitPrice, full.PurchasePrice);
             }
             catch (Exception ex)
             {

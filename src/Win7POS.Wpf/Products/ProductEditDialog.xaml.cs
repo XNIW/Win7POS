@@ -40,20 +40,14 @@ namespace Win7POS.Wpf.Products
 
             var dlg = new ProductEditDialog(vm)
             {
-                Owner = Application.Current?.MainWindow
+                Owner = DialogOwnerHelper.GetSafeOwner()
             };
             WindowSizingHelper.CapMaxHeightToOwner(dlg);
             return dlg.ShowDialog() == true;
         }
 
-        private void Window_Loaded(object sender, RoutedEventArgs e)
+        private void FocusPriceBox()
         {
-            if (Owner != null)
-            {
-                MaxHeight = Math.Max(520, Owner.ActualHeight - 60);
-                MaxWidth = Math.Max(700, Owner.ActualWidth - 60);
-            }
-            UpdateLayout();
             if (PriceBox != null)
             {
                 Dispatcher.BeginInvoke(new Action(() =>
@@ -63,6 +57,12 @@ namespace Win7POS.Wpf.Products
                     PriceBox.SelectAll();
                 }), DispatcherPriority.Input);
             }
+        }
+
+        protected override void OnContentRendered(EventArgs e)
+        {
+            base.OnContentRendered(e);
+            FocusPriceBox();
         }
 
         private void PriceBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)

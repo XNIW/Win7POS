@@ -10,6 +10,7 @@ using System.Windows.Input;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.ViewModels;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -33,6 +34,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _currentOperatorDisplay = "—";
         private string _currentOperatorUsername = "";
         private bool _isDirty;
+
+        internal Window OwnerWindow { get; set; }
 
         public UserManagementViewModel()
         {
@@ -70,7 +73,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task ReloadWithConfirmAsync()
         {
-            if (IsDirty && !Win7POS.Wpf.Import.ApplyConfirmDialog.ShowConfirm(System.Windows.Application.Current?.MainWindow, "Utenti e ruoli", "Modifiche non salvate. Ricaricare comunque?"))
+            if (IsDirty && !Win7POS.Wpf.Import.ApplyConfirmDialog.ShowConfirm(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(), "Utenti e ruoli", "Modifiche non salvate. Ricaricare comunque?"))
                 return;
             await LoadAsync().ConfigureAwait(true);
         }
@@ -500,7 +503,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task NewRoleAsync()
         {
-            var dlg = new RoleEditDialog("Nuovo ruolo", "", "") { Owner = System.Windows.Application.Current?.MainWindow };
+            var dlg = new RoleEditDialog("Nuovo ruolo", "", "") { Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner() };
             if (dlg.ShowDialog() != true) return;
             var code = dlg.RoleCode.Trim().ToLowerInvariant();
             var name = dlg.RoleName.Trim();
@@ -527,7 +530,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (SelectedRole == null) return;
             var suggestedCode = "copy_" + (SelectedRole.Code ?? "").Trim().ToLowerInvariant();
             var suggestedName = "Copia di " + (SelectedRole.Name ?? "").Trim();
-            var dlg = new RoleEditDialog("Duplica ruolo", suggestedCode, suggestedName) { Owner = System.Windows.Application.Current?.MainWindow };
+            var dlg = new RoleEditDialog("Duplica ruolo", suggestedCode, suggestedName) { Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner() };
             if (dlg.ShowDialog() != true) return;
             var code = dlg.RoleCode.Trim().ToLowerInvariant();
             var name = dlg.RoleName.Trim();
@@ -552,7 +555,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private async Task RenameRoleAsync()
         {
             if (SelectedRole == null || SelectedRole.IsSystem) return;
-            var dlg = new RoleEditDialog("Rinomina ruolo", SelectedRole.Code, SelectedRole.Name, codeReadOnly: true) { Owner = System.Windows.Application.Current?.MainWindow };
+            var dlg = new RoleEditDialog("Rinomina ruolo", SelectedRole.Code, SelectedRole.Name, codeReadOnly: true) { Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner() };
             if (dlg.ShowDialog() != true) return;
             var name = dlg.RoleName.Trim();
             IsBusy = true;
@@ -576,7 +579,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private async Task DeleteRoleAsync()
         {
             if (SelectedRole == null || SelectedRole.IsSystem) return;
-            if (!Win7POS.Wpf.Import.ApplyConfirmDialog.ShowConfirm(System.Windows.Application.Current?.MainWindow, "Conferma eliminazione", "Eliminare il ruolo \"" + SelectedRole.Name + "\"? Gli utenti non devono averlo assegnato."))
+            if (!Win7POS.Wpf.Import.ApplyConfirmDialog.ShowConfirm(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(), "Conferma eliminazione", "Eliminare il ruolo \"" + SelectedRole.Name + "\"? Gli utenti non devono averlo assegnato."))
                 return;
             IsBusy = true;
             try
@@ -599,7 +602,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task NewUserAsync()
         {
-            var dlg = new NewUserDialog { Owner = System.Windows.Application.Current?.MainWindow };
+            var dlg = new NewUserDialog { Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner() };
             if (dlg.ShowDialog() != true) return;
             IsBusy = true;
             try

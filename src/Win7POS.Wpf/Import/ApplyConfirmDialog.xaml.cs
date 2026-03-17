@@ -1,5 +1,6 @@
 using System.Windows;
 using Win7POS.Wpf.Chrome;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Import
 {
@@ -17,7 +18,7 @@ namespace Win7POS.Wpf.Import
         {
             var dlg = new ApplyConfirmDialog(title ?? "Conferma", message ?? "")
             {
-                Owner = owner ?? Application.Current?.MainWindow
+                Owner = DialogOwnerHelper.GetSafeOwner(owner)
             };
             return dlg.ShowDialog() == true;
         }

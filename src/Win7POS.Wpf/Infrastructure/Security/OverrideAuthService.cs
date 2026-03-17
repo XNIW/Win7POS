@@ -24,7 +24,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
             var authorizableUsers = await _userRepo.ListUsersWithPermissionAsync(requiredPermissionCode).ConfigureAwait(true);
             if (authorizableUsers == null || authorizableUsers.Count == 0)
             {
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Autorizzazione",
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Autorizzazione",
                     "Nessun operatore con permessi adeguati configurato. Impossibile proseguire.");
                 return (false, null);
             }
@@ -53,7 +53,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
 
             var dlg = new OverrideAuthorizationDialog(operationText, items, VerifyAsync)
             {
-                Owner = Application.Current?.MainWindow
+                Owner = DialogOwnerHelper.GetSafeOwner()
             };
             var ok = dlg.ShowDialog() == true;
             return ok ? (true, dlg.AuthorizerUserId) : (false, null);
@@ -64,7 +64,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
             var authorizableUsers = await _userRepo.ListAdminUsersAsync().ConfigureAwait(true);
             if (authorizableUsers == null || authorizableUsers.Count == 0)
             {
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Autorizzazione",
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Autorizzazione",
                     "Nessun amministratore configurato. Impossibile proseguire.");
                 return (false, null);
             }
@@ -90,7 +90,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
 
             var dlg = new OverrideAuthorizationDialog(operationText, items, VerifyAsync, isAdminOnly: true)
             {
-                Owner = Application.Current?.MainWindow
+                Owner = DialogOwnerHelper.GetSafeOwner()
             };
             var ok = dlg.ShowDialog() == true;
             return ok ? (true, dlg.AuthorizerUserId) : (false, null);

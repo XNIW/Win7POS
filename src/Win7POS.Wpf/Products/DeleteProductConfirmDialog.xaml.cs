@@ -17,7 +17,7 @@ namespace Win7POS.Wpf.Products
         {
             var dlg = new DeleteProductConfirmDialog(barcode ?? "", name ?? "")
             {
-                Owner = owner
+                Owner = owner ?? DialogOwnerHelper.GetSafeOwner()
             };
             WindowSizingHelper.CapMaxHeightToOwner(dlg);
             return dlg.ShowDialog() == true;
