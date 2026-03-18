@@ -121,6 +121,7 @@ namespace Win7POS.Wpf.Import
         private object _lastParsedRows;
         private System.Collections.Generic.IReadOnlyList<Win7POS.Core.ImportDb.SupplierRow> _lastDedicatedSuppliers;
         private System.Collections.Generic.IReadOnlyList<Win7POS.Core.ImportDb.CategoryRow> _lastDedicatedCategories;
+        private System.Collections.Generic.IReadOnlyList<Win7POS.Core.ImportDb.PriceHistoryRow> _lastPriceHistoryRows;
 
         public ImportViewModel()
         {
@@ -166,6 +167,7 @@ namespace Win7POS.Wpf.Import
             _lastParsedRows = null;
             _lastDedicatedSuppliers = null;
             _lastDedicatedCategories = null;
+            _lastPriceHistoryRows = null;
 
             try
             {
@@ -180,6 +182,7 @@ namespace Win7POS.Wpf.Import
                 _lastDiffResult = result.DiffModel;
                 _lastDedicatedSuppliers = result.DedicatedSuppliers;
                 _lastDedicatedCategories = result.DedicatedCategories;
+                _lastPriceHistoryRows = result.PriceHistoryRows;
 
                 Summary = result.Summary;
                 DiffItems.Clear();
@@ -246,7 +249,8 @@ namespace Win7POS.Wpf.Import
                     DryRun,
                     "",
                     _lastDedicatedSuppliers,
-                    _lastDedicatedCategories).ConfigureAwait(true);
+                    _lastDedicatedCategories,
+                    _lastPriceHistoryRows).ConfigureAwait(true);
 
                 Summary = result.Summary;
                 Status = result.Success

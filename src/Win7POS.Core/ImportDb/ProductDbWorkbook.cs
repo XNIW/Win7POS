@@ -5,6 +5,9 @@ namespace Win7POS.Core.ImportDb
 {
     public sealed class ProductDbWorkbook
     {
+        public bool HasSuppliersSheet { get; set; }
+        public bool HasCategoriesSheet { get; set; }
+        public bool HasPriceHistorySheet { get; set; }
         public IReadOnlyList<ProductRow> Products { get; set; } = Array.Empty<ProductRow>();
         public IReadOnlyList<SupplierRow> Suppliers { get; set; } = Array.Empty<SupplierRow>();
         public IReadOnlyList<CategoryRow> Categories { get; set; } = Array.Empty<CategoryRow>();

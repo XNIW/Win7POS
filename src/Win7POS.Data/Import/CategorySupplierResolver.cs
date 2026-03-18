@@ -17,6 +17,13 @@ namespace Win7POS.Data.Import
         private readonly IReadOnlyDictionary<string, int> _initialSuppliers;
         private readonly IReadOnlyDictionary<string, int> _initialCategories;
 
+        public int SuppliersFromSheet { get; private set; }
+        public int SuppliersFromDb { get; private set; }
+        public int SuppliersCreated { get; private set; }
+        public int CategoriesFromSheet { get; private set; }
+        public int CategoriesFromDb { get; private set; }
+        public int CategoriesCreated { get; private set; }
+
         public CategorySupplierResolver(
             SqliteConnection conn,
             SqliteTransaction tx,
@@ -72,6 +79,7 @@ namespace Win7POS.Data.Import
             if (_supplierCache.TryGetValue(key, out var cached)) return cached;
             if (_initialSuppliers != null && _initialSuppliers.TryGetValue(key, out var fromSheet))
             {
+                SuppliersFromSheet++;
                 _supplierCache[key] = fromSheet;
                 return fromSheet;
             }
@@ -81,12 +89,14 @@ namespace Win7POS.Data.Import
                 new { key }, _tx).ConfigureAwait(false);
             if (existing.HasValue)
             {
+                SuppliersFromDb++;
                 _supplierCache[key] = existing.Value;
                 return existing.Value;
             }
 
             var nextId = await _conn.ExecuteScalarAsync<int>("SELECT COALESCE(MAX(id),0)+1 FROM suppliers", null, _tx).ConfigureAwait(false);
             await _conn.ExecuteAsync("INSERT INTO suppliers(id, name) VALUES(@id, @name)", new { id = nextId, name = key }, _tx).ConfigureAwait(false);
+            SuppliersCreated++;
             _supplierCache[key] = nextId;
             return nextId;
         }
@@ -99,6 +109,7 @@ namespace Win7POS.Data.Import
             if (_categoryCache.TryGetValue(key, out var cached)) return cached;
             if (_initialCategories != null && _initialCategories.TryGetValue(key, out var fromSheet))
             {
+                CategoriesFromSheet++;
                 _categoryCache[key] = fromSheet;
                 return fromSheet;
             }
@@ -108,12 +119,14 @@ namespace Win7POS.Data.Import
                 new { key }, _tx).ConfigureAwait(false);
             if (existing.HasValue)
             {
+                CategoriesFromDb++;
                 _categoryCache[key] = existing.Value;
                 return existing.Value;
             }
 
             var nextId = await _conn.ExecuteScalarAsync<int>("SELECT COALESCE(MAX(id),0)+1 FROM categories", null, _tx).ConfigureAwait(false);
             await _conn.ExecuteAsync("INSERT INTO categories(id, name) VALUES(@id, @name)", new { id = nextId, name = key }, _tx).ConfigureAwait(false);
+            CategoriesCreated++;
             _categoryCache[key] = nextId;
             return nextId;
         }

@@ -162,7 +162,7 @@ namespace Win7POS.Wpf.Import
                 else
                 {
                     Summary = "Products upserted: " + result.ProductsUpserted +
-                        "\nPriceHistory inserted: " + result.PriceHistoryInserted;
+                        "\nPriceHistory inserted/skipped: " + result.PriceHistoryInserted + "/" + result.PriceHistorySkipped;
                     Status = DryRun ? "DryRun OK (nessuna scrittura DB)." : "Apply OK.";
                 }
             }

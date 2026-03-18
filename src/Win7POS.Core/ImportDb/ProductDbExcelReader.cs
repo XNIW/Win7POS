@@ -33,6 +33,9 @@ namespace Win7POS.Core.ImportDb
             {
                 var result = new ProductDbWorkbook
                 {
+                    HasSuppliersSheet = FindWorksheet(workbook, null, SheetSuppliers, SheetProveedores) != null,
+                    HasCategoriesSheet = FindWorksheet(workbook, null, SheetCategories, SheetCategorias) != null,
+                    HasPriceHistorySheet = FindWorksheet(workbook, null, SheetPriceHistory) != null,
                     Products = ReadProducts(workbook),
                     Suppliers = ReadSuppliers(workbook),
                     Categories = ReadCategories(workbook),
@@ -58,20 +61,44 @@ namespace Win7POS.Core.ImportDb
                     ConfigureDataTable = _ => new ExcelDataTableConfiguration { UseHeaderRow = true }
                 };
                 var dataSet = reader.AsDataSet(conf);
+                var suppliersSheet = GetSheet(dataSet, SheetSuppliers, SheetProveedores, null);
+                var categoriesSheet = GetSheet(dataSet, SheetCategories, SheetCategorias, null);
+                var historySheet = GetSheet(dataSet, SheetPriceHistory, null, null);
 
                 var products = ReadProductsFromDataTable(GetSheet(dataSet, SheetProducts, SheetProductos, 0));
-                var suppliers = ReadSuppliersFromDataTable(GetSheet(dataSet, SheetSuppliers, SheetProveedores, null));
-                var categories = ReadCategoriesFromDataTable(GetSheet(dataSet, SheetCategories, SheetCategorias, null));
-                var history = ReadPriceHistoryFromDataTable(GetSheet(dataSet, SheetPriceHistory, null, null));
+                var suppliers = ReadSuppliersFromDataTable(suppliersSheet);
+                var categories = ReadCategoriesFromDataTable(categoriesSheet);
+                var history = ReadPriceHistoryFromDataTable(historySheet);
 
                 return new ProductDbWorkbook
                 {
+                    HasSuppliersSheet = suppliersSheet != null,
+                    HasCategoriesSheet = categoriesSheet != null,
+                    HasPriceHistorySheet = historySheet != null,
                     Products = products,
                     Suppliers = suppliers,
                     Categories = categories,
                     PriceHistory = history
                 };
             }
+        }
+
+        private static IXLWorksheet FindWorksheet(XLWorkbook workbook, int? fallbackIndex, params string[] names)
+        {
+            if (workbook == null) return null;
+
+            foreach (var name in names ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(name)) continue;
+                var sheet = workbook.Worksheets.FirstOrDefault(ws =>
+                    string.Equals(ws.Name, name, StringComparison.OrdinalIgnoreCase));
+                if (sheet != null) return sheet;
+            }
+
+            if (fallbackIndex.HasValue && fallbackIndex.Value >= 1 && workbook.Worksheets.Count >= fallbackIndex.Value)
+                return workbook.Worksheet(fallbackIndex.Value);
+
+            return null;
         }
 
         private static DataTable GetSheet(DataSet ds, string name1, string name2, int? fallbackIndex)
@@ -90,12 +117,12 @@ namespace Win7POS.Core.ImportDb
             var barcodeCol = FindColumn(dt, "Código de barras", "Barcode", "A");
             var articleCol = FindColumn(dt, "Código del artículo", "Codice articolo", "货号", "ArticleCode", "B");
             var nameCol = FindColumn(dt, "Nombre del producto", "Name", "C");
-            var name2Col = FindColumn(dt, "Segundo nombre", "Nome 2", "Secondo nome", "D");
-            var purchaseCol = FindColumn(dt, "Precio de compra", "E");
-            var retailCol = FindColumn(dt, "Precio de venta", "Precio venta", "F");
-            var supplierCol = FindColumn(dt, "Proveedor", "Supplier", "I");
-            var categoryCol = FindColumn(dt, "Categoría", "Category", "J");
-            var stockCol = FindColumn(dt, "Existencias", "Stock", "K");
+            var name2Col = FindColumn(dt, "Segundo nombre", "Nome 2", "Secondo nome", "Name2", "D");
+            var purchaseCol = FindColumn(dt, "Precio de compra", "PurchasePrice", "E");
+            var retailCol = FindColumn(dt, "Precio de venta", "Precio venta", "RetailPrice", "F");
+            var supplierCol = FindColumn(dt, "Proveedor", "Supplier", "SupplierName", "I");
+            var categoryCol = FindColumn(dt, "Categoría", "Category", "CategoryName", "J");
+            var stockCol = FindColumn(dt, "Existencias", "Stock", "StockQty", "K");
             var purchaseOldCol = FindColumn(dt, "Compra (Antiguo)", "G");
             var retailOldCol = FindColumn(dt, "Venta (Antiguo)", "H");
 
@@ -119,8 +146,8 @@ namespace Win7POS.Core.ImportDb
                     RetailPrice = retailPrice,
                     PurchaseOld = NormalizeMoneyClp(GetCell(row, purchaseOldCol)),
                     RetailOld = NormalizeMoneyClp(GetCell(row, retailOldCol)),
-                    SupplierName = ToString(GetCell(row, supplierCol)),
-                    CategoryName = ToString(GetCell(row, categoryCol)),
+                    SupplierName = NormalizeName(ToString(GetCell(row, supplierCol))),
+                    CategoryName = NormalizeName(ToString(GetCell(row, categoryCol))),
                     StockQty = NormalizeInt(GetCell(row, stockCol))
                 });
             }
@@ -152,6 +179,14 @@ namespace Win7POS.Core.ImportDb
             return row[col];
         }
 
+        private static string NormalizeName(string s)
+        {
+            if (s == null) return string.Empty;
+            var t = s.Trim();
+            if (t.Length == 0) return string.Empty;
+            return string.Join(" ", t.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+        }
+
         private static IReadOnlyList<SupplierRow> ReadSuppliersFromDataTable(DataTable dt)
         {
             if (dt == null || dt.Rows.Count == 0) return Array.Empty<SupplierRow>();
@@ -161,7 +196,7 @@ namespace Win7POS.Core.ImportDb
             for (var r = 0; r < dt.Rows.Count; r++)
             {
                 var row = dt.Rows[r];
-                var name = ToString(GetCell(row, nameCol));
+                var name = NormalizeName(ToString(GetCell(row, nameCol)));
                 if (string.IsNullOrWhiteSpace(name)) continue;
                 rows.Add(new SupplierRow { Id = NormalizeInt(GetCell(row, idCol)), Name = name });
             }
@@ -177,7 +212,7 @@ namespace Win7POS.Core.ImportDb
             for (var r = 0; r < dt.Rows.Count; r++)
             {
                 var row = dt.Rows[r];
-                var name = ToString(GetCell(row, nameCol));
+                var name = NormalizeName(ToString(GetCell(row, nameCol)));
                 if (string.IsNullOrWhiteSpace(name)) continue;
                 rows.Add(new CategoryRow { Id = NormalizeInt(GetCell(row, idCol)), Name = name });
             }
@@ -221,33 +256,34 @@ namespace Win7POS.Core.ImportDb
 
         private static IReadOnlyList<ProductRow> ReadProducts(XLWorkbook workbook)
         {
-            var ws = workbook.Worksheet(SheetProducts) ?? workbook.Worksheet("Productos") ?? workbook.Worksheet(1);
+            var ws = FindWorksheet(workbook, 1, SheetProducts, SheetProductos);
+            if (ws == null) return Array.Empty<ProductRow>();
             var rows = new List<ProductRow>();
             var headerMap = GetHeaderMap(ws, 1);
             var lastRow = ws.LastRowUsed()?.RowNumber() ?? 1;
 
             for (var r = 2; r <= lastRow; r++)
             {
-                var barcode = NormalizeBarcode(GetCellValue(ws, r, headerMap, "Código de barras", "A", 0));
+                var barcode = NormalizeBarcode(GetCellValueWithFallback(ws, r, headerMap, "A", 0, "Código de barras", "Barcode"));
                 if (string.IsNullOrEmpty(barcode)) continue;
 
-                var purchasePrice = NormalizeMoneyClp(GetCellValue(ws, r, headerMap, "Precio de compra", "E", 4));
-                var retailPrice = NormalizeMoneyClp(GetCellValue(ws, r, headerMap, "Precio de venta", "F", 5));
+                var purchasePrice = NormalizeMoneyClp(GetCellValueWithFallback(ws, r, headerMap, "E", 4, "Precio de compra", "PurchasePrice"));
+                var retailPrice = NormalizeMoneyClp(GetCellValueWithFallback(ws, r, headerMap, "F", 5, "Precio de venta", "Precio venta", "RetailPrice"));
                 if (retailPrice < 0) retailPrice = 0;
 
                 rows.Add(new ProductRow
                 {
                     Barcode = barcode,
-                    ArticleCode = ToString(GetCellValueWithFallback(ws, r, headerMap, "B", 1, "货号", "Código del artículo", "Codice articolo")),
-                    Name = ToString(GetCellValue(ws, r, headerMap, "Nombre del producto", "C", 2)),
-                    Name2 = ToString(GetCellValueWithFallback(ws, r, headerMap, "D", 3, "Segundo nombre", "Segundo nombre del producto", "Nome 2", "Secondo nome")),
+                    ArticleCode = ToString(GetCellValueWithFallback(ws, r, headerMap, "B", 1, "货号", "Código del artículo", "Codice articolo", "ArticleCode")),
+                    Name = ToString(GetCellValueWithFallback(ws, r, headerMap, "C", 2, "Nombre del producto", "Name")),
+                    Name2 = ToString(GetCellValueWithFallback(ws, r, headerMap, "D", 3, "Segundo nombre", "Segundo nombre del producto", "Nome 2", "Secondo nome", "Name2")),
                     PurchasePrice = purchasePrice,
                     RetailPrice = retailPrice,
                     PurchaseOld = NormalizeMoneyClp(GetCellValue(ws, r, headerMap, "Compra (Antiguo)", "G", 6)),
                     RetailOld = NormalizeMoneyClp(GetCellValue(ws, r, headerMap, "Venta (Antiguo)", "H", 7)),
-                    SupplierName = ToString(GetCellValue(ws, r, headerMap, "Proveedor", "I", 8)),
-                    CategoryName = ToString(GetCellValue(ws, r, headerMap, "Categoría", "J", 9)),
-                    StockQty = NormalizeInt(GetCellValue(ws, r, headerMap, "Existencias", "K", 10))
+                    SupplierName = NormalizeName(ToString(GetCellValueWithFallback(ws, r, headerMap, "I", 8, "Proveedor", "Supplier", "SupplierName"))),
+                    CategoryName = NormalizeName(ToString(GetCellValueWithFallback(ws, r, headerMap, "J", 9, "Categoría", "Category", "CategoryName"))),
+                    StockQty = NormalizeInt(GetCellValueWithFallback(ws, r, headerMap, "K", 10, "Existencias", "Stock", "StockQty"))
                 });
             }
             return rows;
@@ -255,7 +291,7 @@ namespace Win7POS.Core.ImportDb
 
         private static IReadOnlyList<SupplierRow> ReadSuppliers(XLWorkbook workbook)
         {
-            var ws = workbook.Worksheet(SheetSuppliers) ?? workbook.Worksheet("Proveedores");
+            var ws = FindWorksheet(workbook, null, SheetSuppliers, SheetProveedores);
             if (ws == null) return Array.Empty<SupplierRow>();
 
             var rows = new List<SupplierRow>();
@@ -265,7 +301,8 @@ namespace Win7POS.Core.ImportDb
             for (var r = 2; r <= lastRow; r++)
             {
                 var id = NormalizeInt(GetCellValue(ws, r, headerMap, "id", "A", 0));
-                var name = ToString(GetCellValue(ws, r, headerMap, "name", "B", 1));
+                var name = NormalizeName(ToString(GetCellValue(ws, r, headerMap, "name", "B", 1)));
+                if (string.IsNullOrWhiteSpace(name)) continue;
                 rows.Add(new SupplierRow { Id = id, Name = name ?? string.Empty });
             }
             return rows;
@@ -273,7 +310,7 @@ namespace Win7POS.Core.ImportDb
 
         private static IReadOnlyList<CategoryRow> ReadCategories(XLWorkbook workbook)
         {
-            var ws = workbook.Worksheet(SheetCategories) ?? workbook.Worksheet("Categorías");
+            var ws = FindWorksheet(workbook, null, SheetCategories, SheetCategorias);
             if (ws == null) return Array.Empty<CategoryRow>();
 
             var rows = new List<CategoryRow>();
@@ -283,7 +320,8 @@ namespace Win7POS.Core.ImportDb
             for (var r = 2; r <= lastRow; r++)
             {
                 var id = NormalizeInt(GetCellValue(ws, r, headerMap, "id", "A", 0));
-                var name = ToString(GetCellValue(ws, r, headerMap, "name", "B", 1));
+                var name = NormalizeName(ToString(GetCellValue(ws, r, headerMap, "name", "B", 1)));
+                if (string.IsNullOrWhiteSpace(name)) continue;
                 rows.Add(new CategoryRow { Id = id, Name = name ?? string.Empty });
             }
             return rows;
@@ -291,7 +329,7 @@ namespace Win7POS.Core.ImportDb
 
         private static IReadOnlyList<PriceHistoryRow> ReadPriceHistory(XLWorkbook workbook)
         {
-            var ws = workbook.Worksheet(SheetPriceHistory);
+            var ws = FindWorksheet(workbook, null, SheetPriceHistory);
             if (ws == null) return Array.Empty<PriceHistoryRow>();
 
             var rows = new List<PriceHistoryRow>();

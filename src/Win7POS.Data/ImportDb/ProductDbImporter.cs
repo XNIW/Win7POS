@@ -7,6 +7,7 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.ImportDb;
 using Win7POS.Core.Models;
+using Win7POS.Data.Import;
 using Win7POS.Data.Repositories;
 
 namespace Win7POS.Data.ImportDb
@@ -42,7 +43,9 @@ namespace Win7POS.Data.ImportDb
                     dryRun).ConfigureAwait(false);
                 result.ProductsUpserted = productMap.Count;
 
-                result.PriceHistoryInserted = await InsertPriceHistoryAsync(conn, tx, workbook.PriceHistory ?? Array.Empty<PriceHistoryRow>(), productMap, dryRun).ConfigureAwait(false);
+                var (inserted, skipped) = await InsertPriceHistoryAsync(conn, tx, workbook.PriceHistory ?? Array.Empty<PriceHistoryRow>(), productMap, dryRun).ConfigureAwait(false);
+                result.PriceHistoryInserted = inserted;
+                result.PriceHistorySkipped = skipped;
 
                 if (dryRun)
                     tx.Rollback();
@@ -88,7 +91,7 @@ namespace Win7POS.Data.ImportDb
             foreach (var s in suppliers ?? Array.Empty<SupplierRow>())
             {
                 if (string.IsNullOrWhiteSpace(s.Name)) continue;
-                var key = s.Name.Trim();
+                var key = CategorySupplierResolver.Normalize(s.Name);
                 if (!map.ContainsKey(key))
                     map[key] = s.Id;
             }
@@ -101,7 +104,7 @@ namespace Win7POS.Data.ImportDb
             foreach (var c in categories ?? Array.Empty<CategoryRow>())
             {
                 if (string.IsNullOrWhiteSpace(c.Name)) continue;
-                var key = c.Name.Trim();
+                var key = CategorySupplierResolver.Normalize(c.Name);
                 if (!map.ContainsKey(key))
                     map[key] = c.Id;
             }
@@ -126,14 +129,14 @@ namespace Win7POS.Data.ImportDb
                 var supplierId = r.SupplierId;
                 if (!supplierId.HasValue && !string.IsNullOrWhiteSpace(r.SupplierName))
                 {
-                    if (supplierByName.TryGetValue(r.SupplierName.Trim(), out var sid))
+                    if (supplierByName.TryGetValue(CategorySupplierResolver.Normalize(r.SupplierName), out var sid))
                         supplierId = sid;
                 }
 
                 var categoryId = r.CategoryId;
                 if (!categoryId.HasValue && !string.IsNullOrWhiteSpace(r.CategoryName))
                 {
-                    if (categoryByName.TryGetValue(r.CategoryName.Trim(), out var cid))
+                    if (categoryByName.TryGetValue(CategorySupplierResolver.Normalize(r.CategoryName), out var cid))
                         categoryId = cid;
                 }
 
@@ -189,18 +192,23 @@ VALUES(@Barcode, @ArticleCode, @Name2, @PurchasePrice, @PurchaseOld, @RetailOld,
             return await conn.ExecuteScalarAsync<long>("SELECT last_insert_rowid()", null, tx).ConfigureAwait(false);
         }
 
-        private static async Task<int> InsertPriceHistoryAsync(SqliteConnection conn, SqliteTransaction tx, IReadOnlyList<PriceHistoryRow> rows, Dictionary<string, long> productMap, bool dryRun)
+        private static async Task<(int inserted, int skipped)> InsertPriceHistoryAsync(SqliteConnection conn, SqliteTransaction tx, IReadOnlyList<PriceHistoryRow> rows, Dictionary<string, long> productMap, bool dryRun)
         {
-            if (dryRun || rows == null || rows.Count == 0) return 0;
+            if (dryRun || rows == null || rows.Count == 0) return (0, 0);
 
-            var count = 0;
+            var inserted = 0;
+            var skipped = 0;
             foreach (var r in rows)
             {
-                if (string.IsNullOrWhiteSpace(r.ProductBarcode) || string.IsNullOrWhiteSpace(r.Timestamp)) continue;
+                if (string.IsNullOrWhiteSpace(r.ProductBarcode) || string.IsNullOrWhiteSpace(r.Timestamp))
+                {
+                    skipped++;
+                    continue;
+                }
 
                 try
                 {
-                    await conn.ExecuteAsync(@"
+                    var affected = await conn.ExecuteAsync(@"
 INSERT OR IGNORE INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
 VALUES(@Barcode, @Timestamp, @Type, @OldPrice, @NewPrice, @Source)",
                         new
@@ -212,13 +220,15 @@ VALUES(@Barcode, @Timestamp, @Type, @OldPrice, @NewPrice, @Source)",
                             NewPrice = r.NewPrice,
                             Source = r.Source ?? string.Empty
                         }, tx).ConfigureAwait(false);
-                    count++;
+                    if (affected > 0) inserted++;
+                    else skipped++;
                 }
                 catch
                 {
+                    skipped++;
                 }
             }
-            return count;
+            return (inserted, skipped);
         }
     }
 
@@ -226,6 +236,7 @@ VALUES(@Barcode, @Timestamp, @Type, @OldPrice, @NewPrice, @Source)",
     {
         public int ProductsUpserted { get; set; }
         public int PriceHistoryInserted { get; set; }
+        public int PriceHistorySkipped { get; set; }
         public List<string> Errors { get; } = new List<string>();
     }
 

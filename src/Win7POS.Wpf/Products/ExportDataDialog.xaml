@@ -19,7 +19,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Esporta dati" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,10"/>
+        <TextBlock Grid.Row="0" Text="Esporta dati" Style="{StaticResource DialogTitleStyle}" Margin="0,0,0,10"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
         <Grid>
         <Grid.RowDefinitions>
@@ -32,7 +32,7 @@
         <TextBlock Grid.Row="0" Text="Formato di esportazione" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,8"/>
         <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
             <RadioButton x:Name="RadioXlsx" Content="XLSX (un file)" IsChecked="True" Margin="0,0,16,0" Checked="Format_Changed"/>
-            <RadioButton x:Name="RadioCsv" Content="CSV (un file)" Checked="Format_Changed"/>
+            <RadioButton x:Name="RadioCsv" Content="CSV (solo prodotti)" Checked="Format_Changed"/>
         </StackPanel>
         <TextBlock Grid.Row="2" Text="Destinazione" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,4"/>
         <Grid Grid.Row="3">
@@ -45,9 +45,9 @@
                      IsReadOnly="True"/>
             <Button Grid.Column="1" Content="Sfoglia..." MinWidth="90" Height="32" Click="Browse_Click"/>
         </Grid>
-        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button Content="Annulla" MinWidth="100" Height="42" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click"/>
-            <Button Content="Esporta" MinWidth="100" Height="42" IsDefault="True" Click="Export_Click"/>
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+            <Button Content="Annulla" MinWidth="100" Height="42" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click" Style="{StaticResource DialogCancelButtonStyle}"/>
+            <Button Content="Esporta" MinWidth="100" Height="42" IsDefault="True" Click="Export_Click" Style="{StaticResource DialogActionButtonStyle}"/>
         </StackPanel>
     </Grid>
         </Border>

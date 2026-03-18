@@ -86,3 +86,46 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   - fare smoke test `RoleEditDialog`: `Nuovo`, `Duplica`, `Rinomina`, focus iniziale, caret visibile e ritorno focus reale dopo popup di validazione
   - verificare duplica ruolo ripetuta: `*_copia`, `*_copia_2`, `*_copia_3`, e fallback oltre `_99` solo come safety net rara
   - fare smoke test `OperatorLoginDialog`: focus su combo con N>1 operatori, focus diretto su `PinBox` con N=1, e refocus sul PIN dopo selezione o login fallito
+
+## 2026-03-18 – Import/Export Prodotti: audit completo + patch minima
+- Data: `2026-03-18`.
+- Obiettivo: correggere i bug di normalizzazione supplier/category nell'import Excel multi-sheet, rafforzare diagnostica e summary, garantire round-trip export XLSX -> reimport, migliorare il feedback UX della schermata Prodotti e allineare la policy `PriceHistory` orphan/backup al workflow WPF reale.
+- File modificati:
+  - `src/Win7POS.Core/ImportDb/ProductDbWorkbook.cs`
+  - `src/Win7POS.Core/ImportDb/ProductDbExcelReader.cs`
+  - `src/Win7POS.Core/ImportDb/ProductDbAnalysis.cs`
+  - `src/Win7POS.Data/Import/CategorySupplierResolver.cs`
+  - `src/Win7POS.Data/ImportDb/ProductDbImporter.cs`
+  - `src/Win7POS.Core/Import/ImportApplyResult.cs`
+  - `src/Win7POS.Wpf/Import/ImportWorkflowService.cs`
+  - `src/Win7POS.Wpf/Import/ImportViewModel.cs`
+  - `src/Win7POS.Wpf/Import/ProductDbImportViewModel.cs`
+  - `src/Win7POS.Wpf/Products/ProductsViewModel.cs`
+  - `src/Win7POS.Wpf/Products/ExportDataDialog.xaml`
+- Fix applicati:
+  - reader Excel: introdotta normalizzazione `trim + collapse whitespace` per supplier/category e aggiunti alias header inglesi del writer (`Name2`, `PurchasePrice`, `RetailPrice`, `SupplierName`, `CategoryName`, `StockQty`) per rendere robusto il reimport XLSX anche senza fallback posizionale.
+  - workbook analysis: aggiunti conteggi e warning classificati per duplicati supplier/category, righe inutilizzate/non risolte, `PriceHistory` orphan e cap a 10 warning dettagliati; tracciato anche se i fogli dedicati sono assenti o presenti ma funzionalmente vuoti/sporchi.
+  - importer legacy DB: lookup supplier/category allineati a `CategorySupplierResolver.Normalize()` e `PriceHistorySkipped` non piu` silenzioso.
+  - resolver/import apply: aggiunti contatori `fromSheet/fromDb/created` per supplier/category e propagati nel risultato apply.
+  - workflow import WPF: `LoadParseResultAsync` ora wrappa la lettura Excel in `Task.Run`, conserva `PriceHistoryRows`, separa chiaramente analysis summary vs apply summary, importa `PriceHistory` con policy `keep with warning`, e rende il backup pre-apply best-effort invece che bloccante.
+  - overwrite per ID storico: documentata la precedenza dei fogli dedicati e aggiunto summary apply per i casi in cui `INSERT OR REPLACE` sovrascrive un nome supplier/category esistente sullo stesso ID.
+  - Products UI: aggiunti `StatusMessage` espliciti per apertura/export annullato/progresso/refresh post-import, errori export distinti per `IOException` e `UnauthorizedAccessException`, e reset di `SelectedProduct` durante `SearchAsync`.
+  - dialog export: label CSV chiarita a `CSV (solo prodotti)` e footer/title riallineati agli shared dialog resources.
+  - scope boundary esplicitato nel codice: deduplica/migrazione dei duplicati storici gia` presenti nel DB e retention automatica dei backup restano fuori scope di questo batch.
+- Verifiche eseguite:
+  - `dotnet build src/Win7POS.Core/Win7POS.Core.csproj -c Release` -> PASS.
+  - `dotnet build src/Win7POS.Data/Win7POS.Data.csproj -c Release` -> PASS.
+  - `pwsh -File scripts/check-dialog-standards.ps1` -> `ALL PASS`.
+  - `git diff --check` -> nessun whitespace/error di patch.
+  - review mirata dei diff e dei call-site del workflow import/apply/export prodotti.
+- Verifiche non concluse:
+  - `dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86` non concluso su host macOS/sandbox: il target `net48` WindowsDesktop resta bloccato senza output finale in questo ambiente.
+  - smoke test manuali WPF non eseguibili qui: import XLSX con 4 fogli, fogli dedicati vuoti/sporchi, duplicati supplier/category, `PriceHistory` orphan, export XLSX -> reimport, export CSV solo prodotti.
+  - verifica DB reale su Windows non eseguibile qui: summary apply, overwrite per stesso ID, backup creato/non creato, refresh catalogo e combo dopo import.
+- Prossimi passi su Windows:
+  - eseguire `dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86`.
+  - rieseguire `pwsh -File scripts/check-dialog-standards.ps1`.
+  - fare smoke test della schermata Prodotti: export annullato, export file aperto in Excel, export CSV/XLSX riuscito, refresh catalogo e reset `SelectedProduct`.
+  - eseguire i test manuali del batch import: workbook 4 fogli completo, foglio `Suppliers`/`Categories` assente, foglio presente ma solo header o righe sporche, duplicati sporchi supplier/category, `PriceHistory` orphan mantenuto con warning, round-trip export XLSX -> reimport.
+  - validare su DB Windows reale il summary apply: `Products(...)`, `Suppliers(fromSheet/fromDb/created)`, `Categories(fromSheet/fromDb/created)`, `PriceHistory(inserted/skipped)` e `Dedicated sheet overwrites(...)`.
+  - follow-up fuori scope: valutare una migrazione separata per duplicati storici supplier/category nel DB e una retention automatica della cartella backup.

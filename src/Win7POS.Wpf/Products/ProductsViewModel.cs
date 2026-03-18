@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -261,6 +262,7 @@ namespace Win7POS.Wpf.Products
         private async Task SearchAsync()
         {
             PageIndex = 1;
+            SelectedProduct = null;
             await LoadPageAsync().ConfigureAwait(false);
         }
 
@@ -416,6 +418,7 @@ namespace Win7POS.Wpf.Products
             try
             {
                 ImportDataDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner());
+                StatusMessage = "Aggiornamento catalogo...";
                 await RefreshAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
@@ -430,10 +433,16 @@ namespace Win7POS.Wpf.Products
             IsBusy = true;
             try
             {
+                StatusMessage = "Apertura finestra export...";
                 var choice = ExportDataDialog.ShowDialogAndGetChoice(DialogOwnerHelper.GetSafeOwner());
-                if (choice == null) return;
+                if (choice == null)
+                {
+                    StatusMessage = "Export annullato.";
+                    return;
+                }
 
                 var path = choice.TargetPath;
+                StatusMessage = "Esportazione in corso...";
                 if (choice.Format == ExportDataFormat.Xlsx)
                 {
                     await _service.ExportWorkbookAsync(path).ConfigureAwait(true);
@@ -444,6 +453,16 @@ namespace Win7POS.Wpf.Products
                     await _service.ExportSingleCsvAsync(path).ConfigureAwait(true);
                     StatusMessage = "Export CSV completato: " + path;
                 }
+            }
+            catch (IOException ioEx)
+            {
+                StatusMessage = "Impossibile salvare il file. Verifica che non sia aperto in un altro programma.";
+                _logger.LogError(ioEx, "Products export I/O error");
+            }
+            catch (UnauthorizedAccessException uaEx)
+            {
+                StatusMessage = "Permessi insufficienti per salvare il file.";
+                _logger.LogError(uaEx, "Products export permission error");
             }
             catch (Exception ex)
             {
