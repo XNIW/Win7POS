@@ -56,13 +56,15 @@ $windowSizingHelperPath = Join-Path $base "Infrastructure/WindowSizingHelper.cs"
 $dialogShellWindowPath = Join-Path $base "Chrome/DialogShellWindow.cs"
 $monitorHelperPath = Join-Path $base "Infrastructure/MonitorHelper.cs"
 
+$positionAssignmentPattern = '\b(Left|Top)\s*=|SetCurrentValue\s*\(\s*Window\.(Left|Top)Property\b'
+
 Check-Absent "1a. WindowSizingHelper no Left/Top" (
-    Select-String -Path $windowSizingHelperPath -Pattern 'window\.(Left|Top)\s*='
+    Select-String -Path $windowSizingHelperPath -Pattern $positionAssignmentPattern -CaseSensitive
 )
 
 $singleDialogPositionHits = $allCs |
     Where-Object { $_.Name -notmatch 'DialogShellWindow\.cs|MonitorHelper\.cs' } |
-    Select-String -Pattern '\b(Left|Top)\s*=' |
+    Select-String -Pattern $positionAssignmentPattern -CaseSensitive |
     Where-Object {
         $_.Line -notmatch '//|ActualWidth|ActualHeight|work\.|windowPos\.|RECT|rcWork|rcMonitor'
     }
