@@ -41,7 +41,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (string.IsNullOrWhiteSpace(Username)) { ModernMessageDialog.Show(this, "Nuovo utente", "Inserire username."); return; }
             if (string.IsNullOrWhiteSpace(DisplayName)) { ModernMessageDialog.Show(this, "Nuovo utente", "Inserire nome visualizzato."); return; }
-            if (Pin.Length < 4 || Pin.Length > 6) { ModernMessageDialog.Show(this, "Nuovo utente", "PIN 4-6 cifre."); return; }
+            if (Pin.Length < 4 || Pin.Length > 6 || !Pin.All(char.IsDigit)) { ModernMessageDialog.Show(this, "Nuovo utente", "Il PIN deve essere di 4-6 cifre numeriche."); return; }
             if (RoleCombo.SelectedItem is UserRole r)
                 RoleId = r.Id;
             else

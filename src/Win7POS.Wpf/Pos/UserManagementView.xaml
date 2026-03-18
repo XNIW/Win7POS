@@ -255,7 +255,7 @@
                             <TextBlock Text="Ruolo di sistema" FontSize="11" FontWeight="SemiBold" Foreground="#4B2E67"/>
                         </Border>
                     </StackPanel>
-                    <WrapPanel Grid.Row="3">
+                    <WrapPanel Grid.Row="3" Visibility="{Binding CanManageRoles, Converter={StaticResource BoolToVis}}">
                         <Button Content="Nuovo ruolo" Command="{Binding NewRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8"/>
                         <Button Content="Duplica ruolo" Command="{Binding DuplicateRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="Duplica il ruolo selezionato con gli stessi permessi."/>
                         <Button Content="Rinomina" Command="{Binding RenameRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="{Binding RenameRoleToolTip}"/>
@@ -294,7 +294,7 @@
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
                     </ScrollViewer>
-                    <Button Grid.Row="2" Visibility="{Binding CanEditSelectedRole, Converter={StaticResource BoolToVis}}" Content="Salva permessi ruolo" Command="{Binding SaveRolePermissionsCommand}" Style="{StaticResource OutlineButtonStyle}" HorizontalAlignment="Left" Margin="0,8,0,0" ToolTip="{Binding SaveRolePermissionsToolTip}"/>
+                    <Button Grid.Row="2" Visibility="{Binding CanSaveSelectedRolePermissions, Converter={StaticResource BoolToVis}}" Content="Salva permessi ruolo" Command="{Binding SaveRolePermissionsCommand}" Style="{StaticResource OutlineButtonStyle}" HorizontalAlignment="Left" Margin="0,8,0,0" ToolTip="{Binding SaveRolePermissionsToolTip}"/>
                 </Grid>
             </Border>
         </Grid>

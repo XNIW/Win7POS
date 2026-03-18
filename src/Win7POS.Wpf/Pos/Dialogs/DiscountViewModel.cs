@@ -30,10 +30,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private readonly string _selectedLineBarcode;
         private readonly bool _hasCartItems;
-        private readonly Func<int, long, bool, string, Task> _onApplyAsync; // percentOrZero, finalPriceMinor (solo amount), isPercent, lineBarcodeOrNull
+        private readonly Func<int, long, bool, string, Task<bool>> _onApplyAsync; // percentOrZero, finalPriceMinor (solo amount), isPercent, lineBarcodeOrNull
         private readonly DiscountPreviewContext _previewContext;
 
-        public DiscountViewModel(string selectedLineBarcode, bool hasCartItems, Func<int, long, bool, string, Task> onApplyAsync, DiscountPreviewContext previewContext = null)
+        public DiscountViewModel(string selectedLineBarcode, bool hasCartItems, Func<int, long, bool, string, Task<bool>> onApplyAsync, DiscountPreviewContext previewContext = null)
         {
             _selectedLineBarcode = selectedLineBarcode?.Trim();
             _hasCartItems = hasCartItems;
@@ -298,14 +298,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
             IsBusy = true;
             try
             {
+                bool applied;
                 if (IsPercentMode && ApplyToWholeCart)
-                    await _onApplyAsync(ValueInt, 0L, true, null).ConfigureAwait(true);
+                    applied = await _onApplyAsync(ValueInt, 0L, true, null).ConfigureAwait(true);
                 else if (IsPercentMode && HasLineSelected)
-                    await _onApplyAsync(ValueInt, 0L, true, _selectedLineBarcode).ConfigureAwait(true);
+                    applied = await _onApplyAsync(ValueInt, 0L, true, _selectedLineBarcode).ConfigureAwait(true);
                 else if (IsAmountMode && HasLineSelected)
-                    await _onApplyAsync(0, ValueLong, false, _selectedLineBarcode).ConfigureAwait(true);
+                    applied = await _onApplyAsync(0, ValueLong, false, _selectedLineBarcode).ConfigureAwait(true);
                 else return;
-                RequestClose?.Invoke(true);
+                if (applied)
+                    RequestClose?.Invoke(true);
             }
             finally { IsBusy = false; }
         }

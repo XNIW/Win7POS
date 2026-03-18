@@ -1366,6 +1366,7 @@ namespace Win7POS.Wpf.Pos
         {
             _permissionService?.Demand(PermissionCodes.UsersManage, "Utenti e ruoli");
             var vm = new Dialogs.UserManagementViewModel();
+            vm.CanManageRoles = _permissionService?.Has(PermissionCodes.RolesManage) == true;
             if (_operatorSession != null && _operatorSession.IsLoggedIn)
             {
                 vm.CurrentOperatorDisplay = "Operatore: " + _operatorSession.CurrentDisplayName + " (" + _operatorSession.CurrentRoleName + ")";
@@ -1604,7 +1605,15 @@ namespace Win7POS.Wpf.Pos
                         CurrentDiscountPercent = currentPct
                     };
                 }
-                var dlg = new Dialogs.DiscountDialog(selectedBarcode ?? string.Empty, hasCart, _service, this, previewContext)
+                var maxDiscountPercent = _operatorSession?.CurrentUser?.MaxDiscountPercent ?? 0;
+                var dlg = new Dialogs.DiscountDialog(
+                    selectedBarcode ?? string.Empty,
+                    hasCart,
+                    _service,
+                    this,
+                    maxDiscountPercent,
+                    () => TryDemandOrOverrideAsync(PermissionCodes.PosDiscountOverLimit, "Sconto oltre limite"),
+                    previewContext)
                 {
                     Owner = DialogOwnerHelper.GetSafeOwner()
                 };

@@ -49,12 +49,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             if (pin.Length < 4 || pin.Length > 6 || !pin.All(char.IsDigit))
             {
-                ShowError("Il PIN deve avere 4-6 cifre.");
+                ShowError("Il PIN deve essere di 4-6 cifre numeriche.");
                 return;
             }
             if (pin != confirm)
             {
-                ShowError("La conferma PIN non corrisponde.");
+                ShowError("I PIN non coincidono.");
                 return;
             }
 

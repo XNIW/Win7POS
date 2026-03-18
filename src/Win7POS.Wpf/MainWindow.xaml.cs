@@ -154,15 +154,29 @@ namespace Win7POS.Wpf
             posVm?.RaiseCanExecuteChanged();
             System.Windows.Input.CommandManager.InvalidateRequerySuggested();
 
+            var currentUsername = session?.CurrentUser?.Username ?? "";
+            if (UserManagementViewControl?.DataContext is UserManagementViewModel existingVm &&
+                !string.Equals(existingVm.CurrentOperatorUsername, currentUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                UserManagementViewControl.DataContext = null;
+            }
+
             if (session?.CurrentUser == null) return;
             var hasUsersManage = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.UsersManage) == true);
             var hasDailyCloseView = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.DailyCloseView) == true);
 
-            if (MainTabControl?.SelectedItem == UsersRolesTab && !hasUsersManage)
+            if (MainTabControl?.SelectedItem == UsersRolesTab)
             {
-                UserManagementViewControl.DataContext = null;
-                MainTabControl.SelectedIndex = 0;
-                CurrentMenuKey = "Pos";
+                if (!hasUsersManage)
+                {
+                    UserManagementViewControl.DataContext = null;
+                    MainTabControl.SelectedIndex = 0;
+                    CurrentMenuKey = "Pos";
+                }
+                else if (UserManagementViewControl?.DataContext == null)
+                {
+                    UserManagementViewControl.DataContext = posVm?.CreateUserManagementViewModel();
+                }
             }
             else if (MainTabControl?.SelectedItem == DailyReportTab && !hasDailyCloseView)
             {
@@ -184,7 +198,9 @@ namespace Win7POS.Wpf
                 SideMenuOverlay.Visibility = Visibility.Collapsed;
                 return;
             }
-            if (UserManagementViewControl.DataContext is Pos.Dialogs.UserManagementViewModel)
+            var currentUsername = session?.CurrentUser?.Username ?? "";
+            if (UserManagementViewControl.DataContext is Pos.Dialogs.UserManagementViewModel existingVm &&
+                string.Equals(existingVm.CurrentOperatorUsername, currentUsername, StringComparison.OrdinalIgnoreCase))
             {
                 CurrentMenuKey = "UsersRoles";
                 MainTabControl.SelectedItem = UsersRolesTab;

@@ -3,6 +3,13 @@ using Win7POS.Core.Security;
 
 namespace Win7POS.Wpf.Infrastructure.Security
 {
+    public enum LoginResult
+    {
+        Success,
+        Failed,
+        LockedOut
+    }
+
     public interface IOperatorSession
     {
         UserAccount CurrentUser { get; }
@@ -11,8 +18,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
         string CurrentDisplayName { get; }
         string CurrentRoleName { get; }
 
-        /// <summary>Esegue login con username e PIN. Ritorna true se OK.</summary>
-        Task<bool> LoginAsync(string username, string pin);
+        /// <summary>Esegue login con username e PIN. Ritorna l'esito dell'autenticazione.</summary>
+        Task<LoginResult> LoginAsync(string username, string pin);
 
         void Logout();
 

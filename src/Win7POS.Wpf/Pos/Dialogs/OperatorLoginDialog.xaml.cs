@@ -76,34 +76,42 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
-            if (await session.LoginAsync(username, pin).ConfigureAwait(true))
+            var loginResult = await session.LoginAsync(username, pin).ConfigureAwait(true);
+            switch (loginResult)
             {
-                if (session.CurrentUser != null && session.CurrentUser.RequirePinChange)
+                case LoginResult.LockedOut:
+                    ShowError("Account temporaneamente bloccato. Riprova tra qualche minuto.");
+                    PinBox.Clear();
+                    PinBox.Focus();
+                    return;
+                case LoginResult.Failed:
+                    ShowError("Operatore o PIN non validi.");
+                    PinBox.Clear();
+                    PinBox.Focus();
+                    return;
+                case LoginResult.Success:
+                    break;
+            }
+
+            if (session.CurrentUser != null && session.CurrentUser.RequirePinChange)
+            {
+                session.LogSecurityEvent(SecurityEventCodes.RequirePinChangeEnforced, "userId=" + session.CurrentUser.Id);
+                var changePinDlg = new ChangePinDialog(session.CurrentUser.Id, session.CurrentUser.Username)
                 {
-                    session.LogSecurityEvent(SecurityEventCodes.RequirePinChangeEnforced, "userId=" + session.CurrentUser.Id);
-                    var changePinDlg = new ChangePinDialog(session.CurrentUser.Id, session.CurrentUser.Username)
-                    {
-                        Owner = this
-                    };
-                    if (changePinDlg.ShowDialog() != true)
-                    {
-                        session.LogoutForced();
-                        ShowError("È obbligatorio cambiare il PIN per accedere.");
-                        PinBox.Clear();
-                        PinBox.Focus();
-                        return;
-                    }
+                    Owner = this
+                };
+                if (changePinDlg.ShowDialog() != true)
+                {
+                    session.LogoutForced();
+                    ShowError("È obbligatorio cambiare il PIN per accedere.");
+                    PinBox.Clear();
+                    PinBox.Focus();
+                    return;
                 }
-                ErrorText.Visibility = Visibility.Collapsed;
-                DialogResult = true;
-                Close();
             }
-            else
-            {
-                ShowError("Operatore o PIN non validi.");
-                PinBox.Clear();
-                PinBox.Focus();
-            }
+            ErrorText.Visibility = Visibility.Collapsed;
+            DialogResult = true;
+            Close();
         }
 
         private sealed class OperatorLoginItem

@@ -33,6 +33,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _permissionEditMode; // true = editing role permissions, false = viewing user's role (read-only)
         private string _currentOperatorDisplay = "—";
         private string _currentOperatorUsername = "";
+        private bool _canManageRoles;
         private bool _isDirty;
 
         internal Window OwnerWindow { get; set; }
@@ -56,11 +57,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             CancelUserChangesCommand = new RelayCommand(() => _ = CancelUserChangesAsync(), () => !IsBusy && SelectedUser != null);
             NewUserCommand = new RelayCommand(() => _ = NewUserAsync(), () => !IsBusy);
             ResetPinCommand = new RelayCommand(() => _ = ResetPinAsync(), () => !IsBusy && SelectedUser != null && !string.IsNullOrWhiteSpace(NewPin));
-            SaveRolePermissionsCommand = new RelayCommand(() => _ = SaveSelectedRolePermissionsAsync(), () => !IsBusy && CanEditSelectedRole);
-            NewRoleCommand = new RelayCommand(() => _ = NewRoleAsync(), () => !IsBusy);
-            DuplicateRoleCommand = new RelayCommand(() => _ = DuplicateRoleAsync(), () => !IsBusy && SelectedRole != null);
-            RenameRoleCommand = new RelayCommand(() => _ = RenameRoleAsync(), () => !IsBusy && CanEditSelectedRole);
-            DeleteRoleCommand = new RelayCommand(() => _ = DeleteRoleAsync(), () => !IsBusy && CanEditSelectedRole);
+            SaveRolePermissionsCommand = new RelayCommand(() => _ = SaveSelectedRolePermissionsAsync(), () => !IsBusy && CanSaveSelectedRolePermissions);
+            NewRoleCommand = new RelayCommand(() => _ = NewRoleAsync(), () => !IsBusy && CanManageRoles);
+            DuplicateRoleCommand = new RelayCommand(() => _ = DuplicateRoleAsync(), () => !IsBusy && SelectedRole != null && CanManageRoles);
+            RenameRoleCommand = new RelayCommand(() => _ = RenameRoleAsync(), () => !IsBusy && CanManageSelectedRole);
+            DeleteRoleCommand = new RelayCommand(() => _ = DeleteRoleAsync(), () => !IsBusy && CanManageSelectedRole);
             ClearFilterCommand = new RelayCommand(ClearFilter, () => !string.IsNullOrWhiteSpace(Filter));
             ReloadCommand = new RelayCommand(() => _ = ReloadWithConfirmAsync(), () => !IsBusy);
             CancelCommand = CancelUserChangesCommand;
@@ -124,6 +125,24 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         /// <summary>Username dell'operatore loggato, per evidenziare "utente attuale" in lista.</summary>
         public string CurrentOperatorUsername { get => _currentOperatorUsername; set { _currentOperatorUsername = value ?? ""; OnPropertyChanged(); } }
+        public bool CanManageRoles
+        {
+            get => _canManageRoles;
+            set
+            {
+                if (_canManageRoles == value) return;
+                _canManageRoles = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanManageSelectedRole));
+                OnPropertyChanged(nameof(CanSaveSelectedRolePermissions));
+                OnPropertyChanged(nameof(PermissionsSectionTitle));
+                OnPropertyChanged(nameof(SaveRolePermissionsToolTip));
+                OnPropertyChanged(nameof(RenameRoleToolTip));
+                OnPropertyChanged(nameof(DeleteRoleToolTip));
+                UpdatePermissionItemEditability();
+                RaiseRoleCommandsCanExecuteChanged();
+            }
+        }
 
         public bool IsFilterActive => !string.IsNullOrWhiteSpace(Filter?.Trim());
         public bool IsUsersListEmpty => FilteredUsers.Count == 0;
@@ -181,6 +200,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(IsRoleSelected));
                 OnPropertyChanged(nameof(CanEditSelectedRole));
+                OnPropertyChanged(nameof(CanManageSelectedRole));
+                OnPropertyChanged(nameof(CanSaveSelectedRolePermissions));
                 OnPropertyChanged(nameof(HasSelection));
                 OnPropertyChanged(nameof(SelectedRoleSystemInfo));
                 OnPropertyChanged(nameof(PermissionsRoleTitle));
@@ -196,18 +217,35 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 OnPropertyChanged(nameof(IsSelectedRoleSystem));
                 OnPropertyChanged(nameof(PermessiRoleSystemMessage));
                 OnPropertyChanged(nameof(PermessiRoleSystemMessageVisibility));
+                UpdatePermissionItemEditability();
                 _ = LoadSelectedRolePermissionsAsync();
             }
         }
 
         public bool IsRoleSelected => SelectedRole != null;
         public bool CanEditSelectedRole => SelectedRole != null && !SelectedRole.IsSystem;
+        public bool CanManageSelectedRole => CanManageRoles && CanEditSelectedRole;
+        public bool CanSaveSelectedRolePermissions => _permissionEditMode && CanManageSelectedRole;
         public bool PermissionEditMode => _permissionEditMode;
         public bool HasSelection => IsUserSelected || IsRoleSelected;
-        public string PermissionsSectionTitle => _permissionEditMode ? "Permessi ruolo (modificabili)" : "Permessi (dal ruolo, sola lettura)";
-        public string SaveRolePermissionsToolTip => CanEditSelectedRole ? "Salva le modifiche ai permessi del ruolo selezionato." : (SelectedRole != null && SelectedRole.IsSystem ? "I ruoli di sistema non sono modificabili." : "Seleziona un ruolo per modificare i permessi.");
-        public string RenameRoleToolTip => CanEditSelectedRole ? "Rinomina il ruolo selezionato." : "Seleziona un ruolo custom (non di sistema) per rinominarlo.";
-        public string DeleteRoleToolTip => CanEditSelectedRole ? "Elimina il ruolo selezionato (nessun utente deve averlo assegnato)." : "Seleziona un ruolo custom non assegnato per eliminarlo.";
+        public string PermissionsSectionTitle => _permissionEditMode
+            ? (CanManageRoles ? "Permessi ruolo (modificabili)" : "Permessi ruolo (sola lettura)")
+            : "Permessi (dal ruolo, sola lettura)";
+        public string SaveRolePermissionsToolTip => !CanManageRoles
+            ? "Non hai il permesso di gestire i ruoli."
+            : CanEditSelectedRole
+                ? "Salva le modifiche ai permessi del ruolo selezionato."
+                : (SelectedRole != null && SelectedRole.IsSystem ? "I ruoli di sistema non sono modificabili." : "Seleziona un ruolo per modificare i permessi.");
+        public string RenameRoleToolTip => !CanManageRoles
+            ? "Non hai il permesso di gestire i ruoli."
+            : CanEditSelectedRole
+                ? "Rinomina il ruolo selezionato."
+                : "Seleziona un ruolo custom (non di sistema) per rinominarlo.";
+        public string DeleteRoleToolTip => !CanManageRoles
+            ? "Non hai il permesso di gestire i ruoli."
+            : CanEditSelectedRole
+                ? "Elimina il ruolo selezionato (nessun utente deve averlo assegnato)."
+                : "Seleziona un ruolo custom non assegnato per eliminarlo.";
 
 #pragma warning disable CS0067 // Usato da UserManagementDialog che si sottoscrive a RequestClose
         public event Action<bool> RequestClose;
@@ -274,7 +312,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 IsDirty = false;
                 OnPropertyChanged(nameof(PermissionEditMode));
                 OnPropertyChanged(nameof(PermissionsSectionTitle));
+                OnPropertyChanged(nameof(CanSaveSelectedRolePermissions));
                 OnPropertyChanged(nameof(HasSelection));
+                RaiseRoleCommandsCanExecuteChanged();
                 return;
             }
             OnPropertyChanged(nameof(HasSelection));
@@ -283,10 +323,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             IsActive = SelectedUser.IsActive;
             NewPin = "";
             IsDirty = false;
-            await LoadRolePermissionsAsync(SelectedUser.RoleId, isEditable: false).ConfigureAwait(true);
             _permissionEditMode = false;
             OnPropertyChanged(nameof(PermissionEditMode));
             OnPropertyChanged(nameof(PermissionsSectionTitle));
+            OnPropertyChanged(nameof(CanSaveSelectedRolePermissions));
+            RaiseRoleCommandsCanExecuteChanged();
+            await LoadRolePermissionsAsync(SelectedUser.RoleId, isEditable: false).ConfigureAwait(true);
         }
 
         private async Task CancelUserChangesAsync()
@@ -306,10 +348,28 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (SelectedRole == null)
                 return;
-            await LoadRolePermissionsAsync(SelectedRole.Id, CanEditSelectedRole).ConfigureAwait(true);
             _permissionEditMode = true;
+            await LoadRolePermissionsAsync(SelectedRole.Id, CanManageSelectedRole).ConfigureAwait(true);
             OnPropertyChanged(nameof(PermissionEditMode));
             OnPropertyChanged(nameof(PermissionsSectionTitle));
+            OnPropertyChanged(nameof(CanSaveSelectedRolePermissions));
+            RaiseRoleCommandsCanExecuteChanged();
+        }
+
+        private void RaiseRoleCommandsCanExecuteChanged()
+        {
+            (SaveRolePermissionsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (NewRoleCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (DuplicateRoleCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (RenameRoleCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (DeleteRoleCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private void UpdatePermissionItemEditability()
+        {
+            var isEditable = _permissionEditMode && CanManageSelectedRole;
+            foreach (var item in PermissionItems)
+                item.IsEditable = isEditable;
         }
 
         private async Task LoadRolePermissionsAsync(int roleId, bool isEditable)
@@ -476,6 +536,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task SaveSelectedRolePermissionsAsync()
         {
+            if (!CanManageRoles)
+            {
+                Status = "Permesso negato: gestione ruoli.";
+                return;
+            }
             if (SelectedRole == null || SelectedRole.IsSystem)
             {
                 Status = "I ruoli di sistema non sono modificabili.";
@@ -503,6 +568,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task NewRoleAsync()
         {
+            if (!CanManageRoles)
+            {
+                Status = "Permesso negato: gestione ruoli.";
+                return;
+            }
             var dlg = new RoleEditDialog("Nuovo ruolo", "", "") { Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner() };
             if (dlg.ShowDialog() != true) return;
             var code = dlg.RoleCode.Trim().ToLowerInvariant();
@@ -527,6 +597,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task DuplicateRoleAsync()
         {
+            if (!CanManageRoles)
+            {
+                Status = "Permesso negato: gestione ruoli.";
+                return;
+            }
             if (SelectedRole == null) return;
             var suggestedCode = "copy_" + (SelectedRole.Code ?? "").Trim().ToLowerInvariant();
             var suggestedName = "Copia di " + (SelectedRole.Name ?? "").Trim();
@@ -554,6 +629,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task RenameRoleAsync()
         {
+            if (!CanManageRoles)
+            {
+                Status = "Permesso negato: gestione ruoli.";
+                return;
+            }
             if (SelectedRole == null || SelectedRole.IsSystem) return;
             var dlg = new RoleEditDialog("Rinomina ruolo", SelectedRole.Code, SelectedRole.Name, codeReadOnly: true) { Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner() };
             if (dlg.ShowDialog() != true) return;
@@ -578,6 +658,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task DeleteRoleAsync()
         {
+            if (!CanManageRoles)
+            {
+                Status = "Permesso negato: gestione ruoli.";
+                return;
+            }
             if (SelectedRole == null || SelectedRole.IsSystem) return;
             if (!Win7POS.Wpf.Import.ApplyConfirmDialog.ShowConfirm(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(), "Conferma eliminazione", "Eliminare il ruolo \"" + SelectedRole.Name + "\"? Gli utenti non devono averlo assegnato."))
                 return;
@@ -627,7 +712,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private async Task ResetPinAsync()
         {
             if (SelectedUser == null || string.IsNullOrWhiteSpace(NewPin)) return;
-            if (NewPin.Length < 4 || NewPin.Length > 6) { Status = "PIN 4-6 cifre."; return; }
+            if (NewPin.Length < 4 || NewPin.Length > 6 || !NewPin.All(char.IsDigit)) { Status = "Il PIN deve essere di 4-6 cifre numeriche."; return; }
             IsBusy = true;
             try
             {

@@ -174,6 +174,10 @@ CREATE INDEX IF NOT EXISTS idx_security_events_ts ON security_events(ts);
 
         private static void EnsureMigrations(Microsoft.Data.Sqlite.SqliteConnection conn)
         {
+            EnsureColumn(conn, "users", "require_pin_change", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(conn, "users", "max_discount_percent", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(conn, "users", "failed_attempts", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(conn, "users", "lockout_until", "INTEGER NULL");
             EnsureColumn(conn, "sales", "kind", "INTEGER NOT NULL DEFAULT 0");
             EnsureColumn(conn, "sales", "related_sale_id", "INTEGER NULL");
             EnsureColumn(conn, "sales", "voided_by_sale_id", "INTEGER NULL");

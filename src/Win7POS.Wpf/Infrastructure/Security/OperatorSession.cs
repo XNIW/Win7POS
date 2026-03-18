@@ -30,26 +30,29 @@ namespace Win7POS.Wpf.Infrastructure.Security
         public event Action SessionChanged;
         public event PropertyChangedEventHandler PropertyChanged;
 
-        public async Task<bool> LoginAsync(string username, string pin)
+        public async Task<LoginResult> LoginAsync(string username, string pin)
         {
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(pin))
-                return false;
+                return LoginResult.Failed;
 
             var result = await _userRepo.VerifyPinAsync(username, pin).ConfigureAwait(true);
             if (result.User == null)
             {
                 if (result.WasLockedOut)
+                {
                     _ = _securityRepo.LogEventAsync(Sec.LoginLocked, "username=" + username);
+                    return LoginResult.LockedOut;
+                }
                 else
                     _ = _securityRepo.LogEventAsync(Sec.LoginFailed, "username=" + username);
-                return false;
+                return LoginResult.Failed;
             }
 
             _currentUser = result.User;
             _ = _userRepo.SetLastLoginAsync(result.User.Id);
             _ = _securityRepo.LogEventAsync(Sec.LoginSuccess, "userId=" + result.User.Id + ", username=" + result.User.Username);
             RaiseSessionChanged();
-            return true;
+            return LoginResult.Success;
         }
 
         public void Logout()

@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Windows;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Core.Security;
@@ -30,14 +31,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             var newPin = NewPinBox?.Password ?? "";
             var confirm = ConfirmPinBox?.Password ?? "";
-            if (newPin.Length < 4 || newPin.Length > 6)
+            if (newPin.Length < 4 || newPin.Length > 6 || !newPin.All(char.IsDigit))
             {
-                ShowError("Il PIN deve essere di 4-6 cifre.");
+                ShowError("Il PIN deve essere di 4-6 cifre numeriche.");
                 return;
             }
             if (newPin != confirm)
             {
-                ShowError("I due PIN non coincidono.");
+                ShowError("I PIN non coincidono.");
                 ConfirmPinBox.Clear();
                 return;
             }
