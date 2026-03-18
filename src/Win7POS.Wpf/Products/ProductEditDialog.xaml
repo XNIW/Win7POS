@@ -8,107 +8,107 @@
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
-        SizeToContent="WidthAndHeight"
+        SizeToContent="Width"
         MinWidth="560"
         MinHeight="480"
         ResizeMode="CanResize">
     <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <TextBlock Grid.Row="0" Text="{Binding DialogTitle}" Style="{StaticResource DialogTitleStyle}"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-        </Grid.RowDefinitions>
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="150"/>
-            <ColumnDefinition Width="*"/>
-        </Grid.ColumnDefinitions>
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-        <!-- Barcode -->
-        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Barcode:"/>
-        <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0"
-                 Text="{Binding Barcode, UpdateSourceTrigger=PropertyChanged}"
-                 Style="{StaticResource ModernTextBoxStyle}"
-                 IsReadOnly="{Binding IsBarcodeReadOnly}"/>
+                    <!-- Barcode -->
+                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Barcode:"/>
+                    <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0"
+                             Text="{Binding Barcode, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource ModernTextBoxStyle}"
+                             IsReadOnly="{Binding IsBarcodeReadOnly}"/>
 
-        <!-- Nome -->
-        <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Nome:"/>
-        <TextBox Grid.Row="1" Grid.Column="1" Margin="8,10,0,0"
-                 Text="{Binding ProductName, UpdateSourceTrigger=PropertyChanged}"
-                 Style="{StaticResource ModernTextBoxStyle}"/>
+                    <!-- Nome -->
+                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Nome:"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" Margin="8,10,0,0"
+                             Text="{Binding ProductName, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource ModernTextBoxStyle}"/>
 
-        <!-- Prezzo vendita -->
-        <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Prezzo vendita (CLP):"/>
-        <TextBox x:Name="PriceBox" Grid.Row="2" Grid.Column="1" Margin="8,10,0,0"
-                 Text="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}"
-                 Style="{StaticResource ModernTextBoxStyle}"
-                 KeyDown="PriceBox_KeyDown"
-                 GotKeyboardFocus="PriceBox_GotKeyboardFocus"/>
+                    <!-- Prezzo vendita -->
+                    <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Prezzo vendita (CLP):"/>
+                    <TextBox x:Name="PriceBox" Grid.Row="2" Grid.Column="1" Margin="8,10,0,0"
+                             Text="{Binding PriceText, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource ModernTextBoxStyle}"
+                             KeyDown="PriceBox_KeyDown"
+                             GotKeyboardFocus="PriceBox_GotKeyboardFocus"/>
 
-        <!-- Prezzo acquisto -->
-        <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Prezzo acquisto:"/>
-        <TextBox Grid.Row="3" Grid.Column="1" Margin="8,10,0,0"
-                 Text="{Binding PurchasePriceText, UpdateSourceTrigger=PropertyChanged}"
-                 Style="{StaticResource ModernTextBoxStyle}"/>
+                    <!-- Prezzo acquisto -->
+                    <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Prezzo acquisto:"/>
+                    <TextBox Grid.Row="3" Grid.Column="1" Margin="8,10,0,0"
+                             Text="{Binding PurchasePriceText, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource ModernTextBoxStyle}"/>
 
-        <!-- Fornitore -->
-        <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Fornitore:"/>
-        <ComboBox Grid.Row="4" Grid.Column="1" Margin="8,10,0,0" MinHeight="34"
-                  Style="{StaticResource ModernComboBoxStyle}"
-                  ItemsSource="{Binding Suppliers}"
-                  DisplayMemberPath="Name"
-                  SelectedItem="{Binding SelectedSupplier}"/>
+                    <!-- Fornitore -->
+                    <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Fornitore:"/>
+                    <ComboBox Grid.Row="4" Grid.Column="1" Margin="8,10,0,0" MinHeight="34"
+                              Style="{StaticResource ModernComboBoxStyle}"
+                              ItemsSource="{Binding Suppliers}"
+                              DisplayMemberPath="Name"
+                              SelectedItem="{Binding SelectedSupplier}"/>
 
-        <!-- Categoria -->
-        <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Categoria:"/>
-        <ComboBox Grid.Row="5" Grid.Column="1" Margin="8,10,0,0" MinHeight="34"
-                  Style="{StaticResource ModernComboBoxStyle}"
-                  ItemsSource="{Binding Categories}"
-                  DisplayMemberPath="Name"
-                  SelectedItem="{Binding SelectedCategory}"/>
+                    <!-- Categoria -->
+                    <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Categoria:"/>
+                    <ComboBox Grid.Row="5" Grid.Column="1" Margin="8,10,0,0" MinHeight="34"
+                              Style="{StaticResource ModernComboBoxStyle}"
+                              ItemsSource="{Binding Categories}"
+                              DisplayMemberPath="Name"
+                              SelectedItem="{Binding SelectedCategory}"/>
 
-        <!-- Stock -->
-        <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{Binding StockLabel, Mode=OneWay}"/>
-        <TextBox Grid.Row="6" Grid.Column="1" Margin="8,10,0,0" MinHeight="32"
-                 VerticalAlignment="Center"
-                 Text="{Binding StockText, UpdateSourceTrigger=PropertyChanged}"
-                 IsReadOnly="False"
-                 IsEnabled="True"
-                 Style="{StaticResource ModernTextBoxStyle}"/>
+                    <!-- Stock -->
+                    <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{Binding StockLabel, Mode=OneWay}"/>
+                    <TextBox Grid.Row="6" Grid.Column="1" Margin="8,10,0,0" MinHeight="32"
+                             VerticalAlignment="Center"
+                             Text="{Binding StockText, UpdateSourceTrigger=PropertyChanged}"
+                             IsReadOnly="False"
+                             IsEnabled="True"
+                             Style="{StaticResource ModernTextBoxStyle}"/>
 
-        <!-- Cod. articolo -->
-        <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Cod. articolo:"/>
-        <TextBox Grid.Row="7" Grid.Column="1" Margin="8,10,0,0"
-                 Text="{Binding ArticleCode, UpdateSourceTrigger=PropertyChanged}"
-                 Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
+                    <!-- Cod. articolo -->
+                    <TextBlock Grid.Row="7" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Cod. articolo:"/>
+                    <TextBox Grid.Row="7" Grid.Column="1" Margin="8,10,0,0"
+                             Text="{Binding ArticleCode, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
 
-        <!-- Secondo nome -->
-        <TextBlock Grid.Row="8" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Secondo nome:"/>
-        <TextBox Grid.Row="8" Grid.Column="1" Margin="8,10,0,0"
-                 Text="{Binding Name2, UpdateSourceTrigger=PropertyChanged}"
-                 Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
-
-        <!-- Pulsanti: ultima riga sempre visibile -->
-        <StackPanel Grid.Row="9" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+                    <!-- Secondo nome -->
+                    <TextBlock Grid.Row="8" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Secondo nome:"/>
+                    <TextBox Grid.Row="8" Grid.Column="1" Margin="8,10,0,0"
+                             Text="{Binding Name2, UpdateSourceTrigger=PropertyChanged}"
+                             Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
+                </Grid>
+            </ScrollViewer>
+        </Border>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
             <Button Content="Annulla" MinWidth="100" Margin="0,0,10,0" IsCancel="True"
                     Style="{StaticResource DialogCancelButtonStyle}" Command="{Binding CancelCommand}"/>
             <Button Content="Salva" MinWidth="100" IsDefault="True"
                     Style="{StaticResource DialogActionButtonStyle}" Command="{Binding ConfirmCommand}"/>
         </StackPanel>
-    </Grid>
-        </Border>
     </Grid>
 </chrome:DialogShellWindow>

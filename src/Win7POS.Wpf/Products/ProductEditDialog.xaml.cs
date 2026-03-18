@@ -19,6 +19,7 @@ namespace Win7POS.Wpf.Products
         {
             InitializeComponent();
             WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 560, minHeight: 480, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
+            SizeToContent = SizeToContent.Width;
             DataContext = vm;
             vm.RequestClose += OnRequestClose;
         }

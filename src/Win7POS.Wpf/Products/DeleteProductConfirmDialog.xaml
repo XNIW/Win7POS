@@ -20,7 +20,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Eliminare questo prodotto?" FontSize="20" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,10"/>
+        <TextBlock Grid.Row="0" Text="Eliminare questo prodotto?" Style="{StaticResource DialogTitleStyle}"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="22">
             <Grid>
                 <Grid.RowDefinitions>
@@ -33,12 +33,11 @@
                 <TextBlock Grid.Row="2" Text="L'operazione non può essere annullata." FontSize="13" Foreground="#8873A4" Margin="0,0,0,0"/>
             </Grid>
         </Border>
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
             <Button Content="Annulla" MinWidth="120" Height="42" Margin="0,0,12,0" IsCancel="True"
-                    Style="{StaticResource OutlineButtonStyle}" Click="Cancel_Click"/>
+                    Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
             <Button Content="Elimina" MinWidth="120" Height="42" IsDefault="True"
-                    Style="{StaticResource PrimaryButtonStyle}"
-                    Foreground="White" Click="Elimina_Click"/>
+                    Style="{StaticResource DialogActionButtonStyle}" Click="Elimina_Click"/>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>
