@@ -34,7 +34,7 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Operatore:" Foreground="#666"/>
                 <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,10">
-                    <ComboBox x:Name="OperatorCombo" MinHeight="34" DisplayMemberPath="DisplayText" IsEditable="False"/>
+                    <ComboBox x:Name="OperatorCombo" MinHeight="34" DisplayMemberPath="DisplayText" IsEditable="False" SelectionChanged="OperatorCombo_SelectionChanged"/>
                     <TextBlock Text="Seleziona l'operatore visualizzato. Lo username è mostrato tra parentesi." FontSize="11" Foreground="#8873A4" Margin="0,4,0,0"/>
                 </StackPanel>
                 <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="PIN:" Foreground="#666"/>

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Core.Security;
 using Win7POS.Data;
@@ -51,8 +52,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
 
             if (_operators.Count == 1)
+            {
                 OperatorCombo.SelectedIndex = 0;
+                PinBox.Focus();
+                return;
+            }
+
             OperatorCombo.Focus();
+        }
+
+        private void OperatorCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (OperatorCombo.SelectedItem != null)
+                PinBox.Focus();
         }
 
         private async void OnLoginClick(object sender, RoutedEventArgs e)

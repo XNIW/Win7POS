@@ -573,7 +573,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Status = "Permesso negato: gestione ruoli.";
                 return;
             }
-            var dlg = new RoleEditDialog("Nuovo ruolo", "", "") { Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner() };
+            var dlg = new RoleEditDialog("Nuovo ruolo", "", "")
+            {
+                Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
+                ValidateCode = ValidateUniqueRoleCode
+            };
             if (dlg.ShowDialog() != true) return;
             var code = dlg.RoleCode.Trim().ToLowerInvariant();
             var name = dlg.RoleName.Trim();
@@ -587,12 +591,30 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = GetRoleMutationErrorMessage(ex);
             }
             finally
             {
                 IsBusy = false;
             }
+        }
+
+        private async Task<string> GenerateUniqueRoleCodeAsync(string baseCode)
+        {
+            var normalizedBaseCode = (baseCode ?? "").Trim().ToLowerInvariant();
+            var candidate = normalizedBaseCode + "_copia";
+            if (await _roleRepo.GetByCodeAsync(candidate).ConfigureAwait(true) == null)
+                return candidate;
+
+            for (int i = 2; i <= 99; i++)
+            {
+                var numbered = candidate + "_" + i;
+                if (await _roleRepo.GetByCodeAsync(numbered).ConfigureAwait(true) == null)
+                    return numbered;
+            }
+
+            // Safety net rara oltre _99: un suffisso a tick evita di bloccare il flusso.
+            return candidate + "_" + DateTime.Now.Ticks;
         }
 
         private async Task DuplicateRoleAsync()
@@ -603,9 +625,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
             if (SelectedRole == null) return;
-            var suggestedCode = "copy_" + (SelectedRole.Code ?? "").Trim().ToLowerInvariant();
+            var originalCode = (SelectedRole.Code ?? "").Trim().ToLowerInvariant();
+            var suggestedCode = await GenerateUniqueRoleCodeAsync(originalCode).ConfigureAwait(true);
             var suggestedName = "Copia di " + (SelectedRole.Name ?? "").Trim();
-            var dlg = new RoleEditDialog("Duplica ruolo", suggestedCode, suggestedName) { Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner() };
+            var dlg = new RoleEditDialog("Duplica ruolo", suggestedCode, suggestedName)
+            {
+                Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
+                ValidateCode = ValidateUniqueRoleCode
+            };
             if (dlg.ShowDialog() != true) return;
             var code = dlg.RoleCode.Trim().ToLowerInvariant();
             var name = dlg.RoleName.Trim();
@@ -619,7 +646,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = GetRoleMutationErrorMessage(ex);
             }
             finally
             {
@@ -654,6 +681,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 IsBusy = false;
             }
+        }
+
+        private string ValidateUniqueRoleCode(string code)
+        {
+            var normalizedCode = (code ?? "").Trim();
+            return Roles.Any(r => string.Equals((r.Code ?? "").Trim(), normalizedCode, StringComparison.OrdinalIgnoreCase))
+                ? "Il codice ruolo '" + normalizedCode + "' è già in uso. Scegliere un codice diverso."
+                : null;
+        }
+
+        private static string GetRoleMutationErrorMessage(Exception ex)
+        {
+            var message = ex?.Message ?? "";
+            if (message.IndexOf("UNIQUE", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "Errore: il codice ruolo è già in uso. Scegliere un codice diverso.";
+            return "Errore: " + message;
         }
 
         private async Task DeleteRoleAsync()
