@@ -11,9 +11,9 @@
        WindowStartupLocation="CenterOwner"
        SizeToContent="Manual"
        Width="420"
-       Height="528"
+       Height="576"
        MinWidth="420"
-       MinHeight="528"
+       MinHeight="576"
        ResizeMode="NoResize"
        ShowInTaskbar="False">
     <Grid Margin="0" Background="#F1EDF7">
@@ -156,7 +156,7 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <Grid Grid.Row="0" Margin="0,0,0,10">
+            <Grid Grid.Row="0" Margin="0,0,0,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
@@ -164,8 +164,8 @@
                 <TextBlock Grid.Column="0"
                            Text="{Binding ScopeText}"
                            VerticalAlignment="Center"
-                           Margin="0,0,12,0"
-                           FontSize="13"
+                           Margin="0,0,8,0"
+                           FontSize="12"
                            FontWeight="SemiBold"
                            Foreground="#5E3F86"
                            TextWrapping="Wrap"/>
@@ -184,7 +184,8 @@
                     </StackPanel.Style>
                     <TextBlock Text="Intero carrello"
                                VerticalAlignment="Center"
-                               Margin="0,0,10,0"
+                               Margin="0,0,8,0"
+                               FontSize="12"
                                Foreground="#5E3F86"/>
                     <ToggleButton Style="{StaticResource TinyToggleSwitchStyle}"
                                   IsChecked="{Binding ApplyToWholeCart, Mode=TwoWay}"
