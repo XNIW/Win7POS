@@ -11,6 +11,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 {
     public partial class DiscountDialog : DialogShellWindow
     {
+        private bool _contentRendered;
+
         public DiscountViewModel ViewModel { get; }
 
         public DiscountDialog(string selectedLineBarcode, bool hasCartItems, PosWorkflowService service, PosViewModel posViewModel, int maxDiscountPercent, Func<System.Threading.Tasks.Task<bool>> overrideLimitCheck, DiscountPreviewContext previewContext = null)
@@ -24,28 +26,31 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _maxDiscountPercent = Math.Max(0, maxDiscountPercent);
             _overrideLimitCheck = overrideLimitCheck;
             _previewContext = previewContext;
-            Loaded += DiscountDialog_Loaded;
         }
 
-        private void DiscountDialog_Loaded(object sender, RoutedEventArgs e)
+        protected override void OnContentRendered(EventArgs e)
         {
-            FocusAndSelectAll(ValueBox);
+            base.OnContentRendered(e);
+            _contentRendered = true;
+            FocusAndSelectAll();
         }
 
         private void Tab_Checked(object sender, RoutedEventArgs e)
         {
-            FocusAndSelectAll(ValueBox);
+            if (!_contentRendered)
+                return;
+
+            Dispatcher.BeginInvoke(new Action(FocusAndSelectAll), DispatcherPriority.Input);
         }
 
-        private void FocusAndSelectAll(TextBox tb)
+        private void FocusAndSelectAll()
         {
-            if (tb == null) return;
-            Dispatcher.BeginInvoke(new Action(() =>
-            {
-                tb.Focus();
-                tb.SelectAll();
-                Keyboard.Focus(tb);
-            }), DispatcherPriority.Input);
+            if (ValueBox == null)
+                return;
+
+            ValueBox.Focus();
+            Keyboard.Focus(ValueBox);
+            ValueBox.SelectAll();
         }
 
         private readonly PosWorkflowService _service;

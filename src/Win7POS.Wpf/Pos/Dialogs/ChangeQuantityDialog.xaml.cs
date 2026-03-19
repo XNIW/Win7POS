@@ -17,11 +17,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 360, minHeight: 320, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: false);
             ProductNameText.Text = productName ?? "";
             QtyBox.Text = currentQuantity.ToString();
-            Loaded += (s, ev) =>
-            {
-                QtyBox.Focus();
-                QtyBox.SelectAll();
-            };
+        }
+
+        protected override void OnContentRendered(EventArgs e)
+        {
+            base.OnContentRendered(e);
+            FocusQtyBoxSelectAll();
         }
 
         private void Digit_Click(object sender, RoutedEventArgs e)
@@ -29,36 +30,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var digit = (sender as Button)?.Content?.ToString();
             if (string.IsNullOrWhiteSpace(digit)) return;
 
-            var old = QtyBox.Text ?? string.Empty;
-            if (old == "0")
-                old = string.Empty;
-
-            QtyBox.Text = old + digit;
-            QtyBox.CaretIndex = QtyBox.Text.Length;
-            QtyBox.Focus();
+            ReplaceSelectionOrAppend(digit);
         }
 
         private void DoubleZero_Click(object sender, RoutedEventArgs e)
         {
-            var old = QtyBox.Text ?? string.Empty;
-            if (old == "0")
-                old = string.Empty;
-            QtyBox.Text = old + "00";
-            QtyBox.CaretIndex = QtyBox.Text.Length;
-            QtyBox.Focus();
+            ReplaceSelectionOrAppend("00");
         }
 
         private void Backspace_Click(object sender, RoutedEventArgs e)
         {
-            var text = QtyBox.Text ?? string.Empty;
-            if (text.Length > 0)
-                QtyBox.Text = text.Substring(0, text.Length - 1);
-
-            if (string.IsNullOrWhiteSpace(QtyBox.Text))
-                QtyBox.Text = "0";
-
-            QtyBox.CaretIndex = QtyBox.Text.Length;
-            QtyBox.Focus();
+            RemoveSelectionOrBackspace();
         }
 
         private void Ok_Click(object sender, RoutedEventArgs e)
@@ -93,6 +75,84 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Cancel_Click(sender, e);
                 e.Handled = true;
             }
+        }
+
+        private void FocusQtyBoxSelectAll()
+        {
+            if (QtyBox == null)
+                return;
+
+            QtyBox.Focus();
+            Keyboard.Focus(QtyBox);
+            QtyBox.SelectAll();
+        }
+
+        private void ReplaceSelectionOrAppend(string textToInsert)
+        {
+            if (QtyBox == null || string.IsNullOrEmpty(textToInsert))
+                return;
+
+            var text = QtyBox.Text ?? string.Empty;
+            var selectionStart = Math.Max(0, Math.Min(QtyBox.SelectionStart, text.Length));
+            var selectionLength = Math.Max(0, Math.Min(QtyBox.SelectionLength, text.Length - selectionStart));
+
+            if (selectionLength > 0)
+            {
+                text = text.Remove(selectionStart, selectionLength).Insert(selectionStart, textToInsert);
+                QtyBox.Text = text;
+                RestoreQtyBoxFocus(selectionStart + textToInsert.Length);
+                return;
+            }
+
+            if (text == "0")
+                text = string.Empty;
+
+            text += textToInsert;
+            QtyBox.Text = text;
+            RestoreQtyBoxFocus(text.Length);
+        }
+
+        private void RemoveSelectionOrBackspace()
+        {
+            if (QtyBox == null)
+                return;
+
+            var text = QtyBox.Text ?? string.Empty;
+            var selectionStart = Math.Max(0, Math.Min(QtyBox.SelectionStart, text.Length));
+            var selectionLength = Math.Max(0, Math.Min(QtyBox.SelectionLength, text.Length - selectionStart));
+
+            if (selectionLength > 0)
+            {
+                text = text.Remove(selectionStart, selectionLength);
+                if (string.IsNullOrWhiteSpace(text))
+                    text = "0";
+
+                QtyBox.Text = text;
+                RestoreQtyBoxFocus(Math.Min(selectionStart, text.Length));
+                return;
+            }
+
+            if (text.Length > 0)
+                text = text.Substring(0, text.Length - 1);
+
+            if (string.IsNullOrWhiteSpace(text))
+                text = "0";
+
+            QtyBox.Text = text;
+            RestoreQtyBoxFocus(text.Length);
+        }
+
+        private void RestoreQtyBoxFocus(int caretIndex)
+        {
+            if (QtyBox == null)
+                return;
+
+            var clampedCaretIndex = Math.Max(0, Math.Min(caretIndex, (QtyBox.Text ?? string.Empty).Length));
+            QtyBox.Focus();
+            Keyboard.Focus(QtyBox);
+            QtyBox.SelectionStart = clampedCaretIndex;
+            QtyBox.SelectionLength = 0;
+            QtyBox.CaretIndex = clampedCaretIndex;
         }
     }
 }

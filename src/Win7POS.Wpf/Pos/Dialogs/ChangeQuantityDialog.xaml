@@ -21,6 +21,8 @@
                 <Setter Property="Margin" Value="6"/>
                 <Setter Property="FontSize" Value="24"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Focusable" Value="False"/>
+                <Setter Property="IsTabStop" Value="False"/>
             </Style>
         </Grid.Resources>
         <Grid.RowDefinitions>

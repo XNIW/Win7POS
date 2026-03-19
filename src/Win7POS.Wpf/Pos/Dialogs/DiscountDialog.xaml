@@ -11,15 +11,15 @@
        WindowStartupLocation="CenterOwner"
        SizeToContent="Manual"
        Width="420"
-       Height="460"
+       Height="528"
        MinWidth="420"
-       MinHeight="460"
+       MinHeight="528"
        ResizeMode="NoResize"
        ShowInTaskbar="False">
     <Grid Margin="0" Background="#F1EDF7">
         <Grid.Resources>
             <ControlTemplate x:Key="RoundedToggleTemplate" TargetType="ToggleButton">
-                <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="12,10">
+                <Border x:Name="border" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="10" Padding="12,9">
                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
                 </Border>
                 <ControlTemplate.Triggers>
@@ -51,40 +51,40 @@
                 </Style.Triggers>
             </Style>
             <Style x:Key="KeypadBtn" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
-                <Setter Property="Height" Value="44"/>
-                <Setter Property="Margin" Value="3"/>
-                <Setter Property="FontSize" Value="18"/>
+                <Setter Property="Height" Value="40"/>
+                <Setter Property="Margin" Value="2"/>
+                <Setter Property="FontSize" Value="17"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
+                <Setter Property="Focusable" Value="False"/>
+                <Setter Property="IsTabStop" Value="False"/>
             </Style>
         </Grid.Resources>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="95"/>
-            <RowDefinition Height="85"/>
-            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Row 0: Header -->
         <TextBlock Grid.Row="0"
                    Text="Sconto"
                    Style="{StaticResource DialogTitleStyle}"/>
 
-        <!-- Row 1: Mode Toggle Buttons -->
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,8">
-            <ToggleButton x:Name="PercentToggle" Content="Percentuale %" MinWidth="120" Height="34" Margin="0,0,6,0"
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+            <ToggleButton x:Name="PercentToggle" Content="Percentuale %" MinWidth="120" Height="32" Margin="0,0,6,0"
                          IsChecked="{Binding IsPercentMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource DiscountToggleStyle}"
                          Checked="Tab_Checked"/>
-            <ToggleButton x:Name="ImportoToggle" Content="Importo $" MinWidth="120" Height="34"
+            <ToggleButton x:Name="ImportoToggle" Content="Importo $" MinWidth="120" Height="32"
                          IsChecked="{Binding IsAmountMode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                          Style="{StaticResource DiscountToggleStyle}"
                          Checked="Tab_Checked"/>
         </StackPanel>
 
-        <!-- Row 2: Price Preview -->
-        <Border Grid.Row="2" Margin="0,0,0,0" Padding="10" CornerRadius="8" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1"
+        <Border Grid.Row="2" Margin="0,0,0,10" Padding="12" CornerRadius="8" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1"
                 Visibility="{Binding ShowPreview, Converter={StaticResource BoolToVis}}">
             <Border.Resources>
                 <Style TargetType="TextBlock">
@@ -93,12 +93,12 @@
             </Border.Resources>
             <StackPanel>
                 <TextBlock Text="{Binding ScopeText}" FontSize="13" FontWeight="SemiBold" Foreground="#5E3F86"/>
-                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
                     <TextBlock Text="{Binding OriginalPriceDisplay}" Foreground="#999" FontSize="14" TextDecorations="Strikethrough"/>
                     <TextBlock Text="  →  " FontSize="14" Foreground="#AAA"/>
                     <TextBlock Text="{Binding PreviewFinalPriceDisplay}" FontSize="20" FontWeight="Bold" Foreground="#2E2E2E"/>
                 </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
+                <StackPanel Orientation="Horizontal" Margin="0,4,0,0"
                             Visibility="{Binding HasPreviewDiscount, Converter={StaticResource BoolToVis}}">
                     <TextBlock Text="{Binding PreviewDiscountPercentDisplay}" Foreground="#8B6914" FontWeight="SemiBold"/>
                     <TextBlock Text="  "/>
@@ -107,25 +107,22 @@
             </StackPanel>
         </Border>
 
-        <!-- Row 3: Value Input -->
-        <StackPanel Grid.Row="3" Margin="0,0,0,0">
-            <TextBox x:Name="ValueBox" FontSize="22" Padding="12,6" Margin="0,0,0,2"
+        <StackPanel Grid.Row="3" Margin="0,0,0,10">
+            <TextBox x:Name="ValueBox" MinHeight="50" FontSize="22" Padding="12,6" Margin="0,0,0,4"
                      Style="{StaticResource ModernTextBoxStyle}"
                      Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
                      HorizontalContentAlignment="Right" VerticalContentAlignment="Center"/>
-            <TextBlock FontSize="11" Foreground="#8873A4" Margin="0,2,0,0"
+            <TextBlock FontSize="11" Foreground="#8873A4"
                        Text="0 = rimuovi sconto · Percentuale massima: 100"
                        Visibility="{Binding IsPercentMode, Converter={StaticResource BoolToVis}}"/>
-            <TextBlock FontSize="11" Foreground="#8873A4" Margin="0,2,0,0"
+            <TextBlock FontSize="11" Foreground="#8873A4"
                        Text="Inserisci prezzo finale unitario desiderato"
                        Visibility="{Binding IsAmountMode, Converter={StaticResource BoolToVis}}"/>
         </StackPanel>
 
-        <!-- Separator -->
-        <Border Grid.Row="4" Height="1" Background="#E4DBEF" VerticalAlignment="Top" Margin="0,0,0,0"/>
+        <Border Grid.Row="4" Height="1" Background="#E4DBEF" Margin="0,0,0,10"/>
 
-        <!-- Row 4: Numeric Keypad -->
-        <Grid Grid.Row="4" Margin="0,6,0,0">
+        <Grid Grid.Row="5">
             <UniformGrid Rows="4" Columns="3">
                 <Button Content="7" Style="{StaticResource KeypadBtn}"
                     Command="{Binding DigitCommand}" CommandParameter="7"/>
@@ -154,36 +151,49 @@
             </UniformGrid>
         </Grid>
 
-        <!-- Row 5: Footer Buttons -->
-        <Grid Grid.Row="5" Margin="{StaticResource DialogFooterMargin}">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-            <Grid Grid.Column="0" MinHeight="36" Margin="0,0,12,0" VerticalAlignment="Center">
-                <Grid.Style>
-                    <Style TargetType="Grid">
-                        <Setter Property="Visibility" Value="Collapsed"/>
-                        <Style.Triggers>
-                            <DataTrigger Binding="{Binding IsPercentMode}" Value="True">
-                                <Setter Property="Visibility" Value="Visible"/>
-                            </DataTrigger>
-                        </Style.Triggers>
-                    </Style>
-                </Grid.Style>
+        <Grid Grid.Row="6" Margin="{StaticResource DialogFooterMargin}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+            <Grid Grid.Row="0" Margin="0,0,0,10">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="Sconto intero carrello" VerticalAlignment="Center" Margin="0,0,10,0" Foreground="#5E3F86"/>
-                <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
-                              IsChecked="{Binding ApplyToWholeCart, Mode=TwoWay}"
-                              VerticalAlignment="Center"/>
+                <TextBlock Grid.Column="0"
+                           Text="{Binding ScopeText}"
+                           VerticalAlignment="Center"
+                           Margin="0,0,12,0"
+                           FontSize="13"
+                           FontWeight="SemiBold"
+                           Foreground="#5E3F86"
+                           TextWrapping="Wrap"/>
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPercentMode}" Value="True">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <TextBlock Text="Intero carrello"
+                               VerticalAlignment="Center"
+                               Margin="0,0,10,0"
+                               Foreground="#5E3F86"/>
+                    <ToggleButton Style="{StaticResource TinyToggleSwitchStyle}"
+                                  IsChecked="{Binding ApplyToWholeCart, Mode=TwoWay}"
+                                  VerticalAlignment="Center"/>
+                </StackPanel>
             </Grid>
-            <TextBlock Grid.Column="1" Text="{Binding ScopeText}" VerticalAlignment="Center"
-                       FontSize="13" FontWeight="SemiBold" Foreground="#5E3F86"/>
-            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+            <StackPanel Grid.Row="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Right">
                 <Button Content="Annulla" Margin="0,0,8,0" IsCancel="True"
                         Style="{StaticResource DialogCancelButtonStyle}"
                         Command="{Binding CancelCommand}"/>
