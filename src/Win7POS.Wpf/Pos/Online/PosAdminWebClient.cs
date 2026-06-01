@@ -260,6 +260,12 @@ namespace Win7POS.Wpf.Pos.Online
 
         [DataMember(Name = "shopDeviceId")]
         public string ShopDeviceId { get; set; }
+
+        [DataMember(Name = "syncCursor", EmitDefaultValue = false)]
+        public string SyncCursor { get; set; }
+
+        [DataMember(Name = "updated_since", EmitDefaultValue = false)]
+        public string UpdatedSince { get; set; }
     }
 
     [DataContract]
@@ -300,17 +306,26 @@ namespace Win7POS.Wpf.Pos.Online
         [DataMember(Name = "catalog")]
         public PosCatalogPayload Catalog { get; set; }
 
+        [DataMember(Name = "catalogVersion")]
+        public string CatalogVersion { get; set; }
+
         [DataMember(Name = "code")]
         public string Code { get; set; }
 
         [DataMember(Name = "generatedAt")]
         public string GeneratedAt { get; set; }
 
+        [DataMember(Name = "hasMore")]
+        public bool HasMore { get; set; }
+
         [DataMember(Name = "ok")]
         public bool Ok { get; set; }
 
         [DataMember(Name = "schemaVersion")]
         public int SchemaVersion { get; set; }
+
+        [DataMember(Name = "serverTime")]
+        public string ServerTime { get; set; }
 
         [DataMember(Name = "shop")]
         public PosShopResponse Shop { get; set; }
@@ -336,6 +351,61 @@ namespace Win7POS.Wpf.Pos.Online
 
         [DataMember(Name = "suppliers")]
         public PosCatalogSupplierResponse[] Suppliers { get; set; }
+
+        [DataMember(Name = "tombstones")]
+        public PosCatalogTombstonesResponse Tombstones { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogTombstonesResponse
+    {
+        [DataMember(Name = "categories")]
+        public PosCatalogCategoryTombstoneResponse[] Categories { get; set; }
+
+        [DataMember(Name = "products")]
+        public PosCatalogProductTombstoneResponse[] Products { get; set; }
+
+        [DataMember(Name = "suppliers")]
+        public PosCatalogSupplierTombstoneResponse[] Suppliers { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogProductTombstoneResponse
+    {
+        [DataMember(Name = "deletedAt")]
+        public string DeletedAt { get; set; }
+
+        [DataMember(Name = "productId")]
+        public string ProductId { get; set; }
+
+        [DataMember(Name = "updatedAt")]
+        public string UpdatedAt { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogCategoryTombstoneResponse
+    {
+        [DataMember(Name = "categoryId")]
+        public string CategoryId { get; set; }
+
+        [DataMember(Name = "deletedAt")]
+        public string DeletedAt { get; set; }
+
+        [DataMember(Name = "updatedAt")]
+        public string UpdatedAt { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogSupplierTombstoneResponse
+    {
+        [DataMember(Name = "deletedAt")]
+        public string DeletedAt { get; set; }
+
+        [DataMember(Name = "supplierId")]
+        public string SupplierId { get; set; }
+
+        [DataMember(Name = "updatedAt")]
+        public string UpdatedAt { get; set; }
     }
 
     [DataContract]

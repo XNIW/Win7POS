@@ -47,6 +47,11 @@ if ($service -notmatch "PosTrustedDeviceStore") { Fail "trusted device store not
 if ($service -notmatch "ProductRepository") { Fail "local product repository not used" } else { Pass "local product repository used" }
 if ($service -notmatch "UpsertProductAndMetaInTransactionAsync") { Fail "catalog rows are not persisted locally" } else { Pass "catalog rows persisted locally" }
 if ($service -notmatch "pos.catalog.last_sync_at") { Fail "last catalog sync setting missing" } else { Pass "last catalog sync setting present" }
+if ($service -notmatch "pos.catalog.last_sync_cursor") { Fail "last catalog sync cursor setting missing" } else { Pass "last catalog sync cursor setting present" }
+if ($service -notmatch "CatalogPullWithRetryAsync") { Fail "catalog pull retry helper missing" } else { Pass "catalog pull retry helper present" }
+if ($service -notmatch "Task.Delay") { Fail "catalog pull backoff missing" } else { Pass "catalog pull backoff present" }
+if ($service -notmatch "SyncCursor = await LoadLastCursorAsync") { Fail "catalog pull syncCursor request missing" } else { Pass "catalog pull syncCursor request present" }
+if ($client -notmatch 'DataMember\(Name = "syncCursor"') { Fail "catalog pull syncCursor wire field missing" } else { Pass "catalog pull syncCursor wire field present" }
 if ($mainWindow -notmatch "TryPullCatalogAsync") { Fail "startup catalog pull foundation missing" } else { Pass "startup catalog pull foundation present" }
 
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }
