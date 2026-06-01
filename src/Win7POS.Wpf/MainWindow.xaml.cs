@@ -161,6 +161,7 @@ namespace Win7POS.Wpf
                     if (result.Success && result.Value != null)
                     {
                         store.SaveHeartbeat(trustedSession, result.Value);
+                        await TryPullCatalogAsync(options).ConfigureAwait(true);
                         return;
                     }
 
@@ -181,7 +182,22 @@ namespace Win7POS.Wpf
                 ModernMessageDialog.Show(
                     this,
                     "POS online",
-                    "Admin Web POS non e raggiungibile. Il collegamento online resta da verificare.");
+                "Admin Web POS non e raggiungibile. Il collegamento online resta da verificare.");
+            }
+        }
+
+        private async Task TryPullCatalogAsync(PosAdminWebOptions options)
+        {
+            try
+            {
+                var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+                var catalogPull = new PosCatalogPullService(factory);
+                await catalogPull.TryPullCatalogAsync(options, System.Threading.CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("TryPullCatalogAsync: aggiornamento catalogo non completato", ex);
             }
         }
 

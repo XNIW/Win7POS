@@ -14,6 +14,7 @@ namespace Win7POS.Wpf.Pos.Online
     {
         private const string FirstLoginPath = "/api/pos/auth/first-login";
         private const string HeartbeatPath = "/api/pos/session/heartbeat";
+        private const string CatalogPullPath = "/api/pos/catalog/pull";
         private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
 
         private readonly HttpClient _httpClient;
@@ -46,6 +47,16 @@ namespace Win7POS.Wpf.Pos.Online
         {
             return await PostJsonAsync<PosHeartbeatRequest, PosHeartbeatResponse>(
                 HeartbeatPath,
+                request,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<PosOnlineResult<PosCatalogPullResponse>> CatalogPullAsync(
+            PosCatalogPullRequest request,
+            CancellationToken cancellationToken)
+        {
+            return await PostJsonAsync<PosCatalogPullRequest, PosCatalogPullResponse>(
+                CatalogPullPath,
                 request,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -233,6 +244,25 @@ namespace Win7POS.Wpf.Pos.Online
     }
 
     [DataContract]
+    public sealed class PosCatalogPullRequest
+    {
+        [DataMember(Name = "appVersion", EmitDefaultValue = false)]
+        public string AppVersion { get; set; }
+
+        [DataMember(Name = "deviceToken")]
+        public string DeviceToken { get; set; }
+
+        [DataMember(Name = "posSessionId")]
+        public string PosSessionId { get; set; }
+
+        [DataMember(Name = "sessionToken")]
+        public string SessionToken { get; set; }
+
+        [DataMember(Name = "shopDeviceId")]
+        public string ShopDeviceId { get; set; }
+    }
+
+    [DataContract]
     public sealed class PosFirstLoginResponse
     {
         [DataMember(Name = "device")]
@@ -262,6 +292,135 @@ namespace Win7POS.Wpf.Pos.Online
 
         [DataMember(Name = "session")]
         public PosSessionResponse Session { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogPullResponse
+    {
+        [DataMember(Name = "catalog")]
+        public PosCatalogPayload Catalog { get; set; }
+
+        [DataMember(Name = "code")]
+        public string Code { get; set; }
+
+        [DataMember(Name = "generatedAt")]
+        public string GeneratedAt { get; set; }
+
+        [DataMember(Name = "ok")]
+        public bool Ok { get; set; }
+
+        [DataMember(Name = "schemaVersion")]
+        public int SchemaVersion { get; set; }
+
+        [DataMember(Name = "shop")]
+        public PosShopResponse Shop { get; set; }
+
+        [DataMember(Name = "syncCursor")]
+        public string SyncCursor { get; set; }
+
+        [DataMember(Name = "syncMode")]
+        public string SyncMode { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogPayload
+    {
+        [DataMember(Name = "categories")]
+        public PosCatalogCategoryResponse[] Categories { get; set; }
+
+        [DataMember(Name = "prices")]
+        public PosCatalogPriceResponse[] Prices { get; set; }
+
+        [DataMember(Name = "products")]
+        public PosCatalogProductResponse[] Products { get; set; }
+
+        [DataMember(Name = "suppliers")]
+        public PosCatalogSupplierResponse[] Suppliers { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogProductResponse
+    {
+        [DataMember(Name = "barcode")]
+        public string Barcode { get; set; }
+
+        [DataMember(Name = "categoryId")]
+        public string CategoryId { get; set; }
+
+        [DataMember(Name = "itemNumber")]
+        public string ItemNumber { get; set; }
+
+        [DataMember(Name = "productId")]
+        public string ProductId { get; set; }
+
+        [DataMember(Name = "productName")]
+        public string ProductName { get; set; }
+
+        [DataMember(Name = "purchasePrice")]
+        public double? PurchasePrice { get; set; }
+
+        [DataMember(Name = "retailPrice")]
+        public double? RetailPrice { get; set; }
+
+        [DataMember(Name = "secondProductName")]
+        public string SecondProductName { get; set; }
+
+        [DataMember(Name = "stockQuantity")]
+        public double? StockQuantity { get; set; }
+
+        [DataMember(Name = "supplierId")]
+        public string SupplierId { get; set; }
+
+        [DataMember(Name = "updatedAt")]
+        public string UpdatedAt { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogCategoryResponse
+    {
+        [DataMember(Name = "categoryId")]
+        public string CategoryId { get; set; }
+
+        [DataMember(Name = "name")]
+        public string Name { get; set; }
+
+        [DataMember(Name = "updatedAt")]
+        public string UpdatedAt { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogSupplierResponse
+    {
+        [DataMember(Name = "name")]
+        public string Name { get; set; }
+
+        [DataMember(Name = "supplierId")]
+        public string SupplierId { get; set; }
+
+        [DataMember(Name = "updatedAt")]
+        public string UpdatedAt { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogPriceResponse
+    {
+        [DataMember(Name = "effectiveAt")]
+        public string EffectiveAt { get; set; }
+
+        [DataMember(Name = "price")]
+        public double Price { get; set; }
+
+        [DataMember(Name = "priceId")]
+        public string PriceId { get; set; }
+
+        [DataMember(Name = "productId")]
+        public string ProductId { get; set; }
+
+        [DataMember(Name = "source")]
+        public string Source { get; set; }
+
+        [DataMember(Name = "type")]
+        public string Type { get; set; }
     }
 
     [DataContract]
