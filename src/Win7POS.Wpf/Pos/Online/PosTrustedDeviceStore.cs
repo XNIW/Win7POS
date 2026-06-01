@@ -1,0 +1,217 @@
+using System;
+using System.IO;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
+using System.Security.Cryptography;
+using System.Text;
+using Win7POS.Core;
+
+namespace Win7POS.Wpf.Pos.Online
+{
+    public sealed class PosTrustedDeviceStore
+    {
+        private const int CurrentFormatVersion = 1;
+        private const DataProtectionScope ProtectionScope = DataProtectionScope.CurrentUser;
+
+        public string TrustedDeviceFilePath => Path.Combine(AppPaths.DataDirectory, "pos-trusted-device.json");
+
+        public bool HasStoredState()
+        {
+            return File.Exists(TrustedDeviceFilePath);
+        }
+
+        public bool TryRead(out PosTrustedDeviceSession session)
+        {
+            session = null;
+
+            try
+            {
+                if (!File.Exists(TrustedDeviceFilePath))
+                {
+                    return false;
+                }
+
+                var state = Deserialize<StoredTrustedDeviceState>(
+                    File.ReadAllText(TrustedDeviceFilePath, Encoding.UTF8));
+
+                if (state == null ||
+                    state.FormatVersion != CurrentFormatVersion ||
+                    string.IsNullOrWhiteSpace(state.ShopDeviceId) ||
+                    string.IsNullOrWhiteSpace(state.PosSessionId) ||
+                    string.IsNullOrWhiteSpace(state.ProtectedDeviceSecret) ||
+                    string.IsNullOrWhiteSpace(state.ProtectedSessionSecret))
+                {
+                    return false;
+                }
+
+                session = new PosTrustedDeviceSession
+                {
+                    DeviceToken = UnprotectToString(state.ProtectedDeviceSecret),
+                    LastOkServerAt = state.LastOkServerAt,
+                    PosSessionId = state.PosSessionId,
+                    SessionExpiresAt = state.SessionExpiresAt,
+                    SessionToken = UnprotectToString(state.ProtectedSessionSecret),
+                    ShopCode = state.ShopCode,
+                    ShopDeviceId = state.ShopDeviceId,
+                    StaffCode = state.StaffCode,
+                };
+
+                return !string.IsNullOrWhiteSpace(session.DeviceToken) &&
+                       !string.IsNullOrWhiteSpace(session.SessionToken);
+            }
+            catch
+            {
+                session = null;
+                return false;
+            }
+        }
+
+        public void SaveFirstLogin(PosFirstLoginResponse response)
+        {
+            if (response == null || response.Device == null || response.Session == null)
+            {
+                throw new ArgumentNullException(nameof(response));
+            }
+
+            var state = new StoredTrustedDeviceState
+            {
+                FormatVersion = CurrentFormatVersion,
+                LastOkServerAt = DateTimeOffset.UtcNow.ToString("O"),
+                PosSessionId = response.Session.PosSessionId,
+                ProtectedDeviceSecret = ProtectString(response.TrustedDeviceToken),
+                ProtectedSessionSecret = ProtectString(response.Session.SessionToken),
+                SessionExpiresAt = response.Session.ExpiresAt,
+                ShopCode = response.Shop?.ShopCode,
+                ShopDeviceId = response.Device.ShopDeviceId,
+                StaffCode = response.Staff?.StaffCode,
+            };
+
+            SaveState(state);
+        }
+
+        public void SaveHeartbeat(PosTrustedDeviceSession session, PosHeartbeatResponse response)
+        {
+            if (session == null || response == null || response.Session == null)
+            {
+                throw new ArgumentNullException(nameof(response));
+            }
+
+            var state = new StoredTrustedDeviceState
+            {
+                FormatVersion = CurrentFormatVersion,
+                LastOkServerAt = DateTimeOffset.UtcNow.ToString("O"),
+                PosSessionId = response.Session.PosSessionId,
+                ProtectedDeviceSecret = ProtectString(session.DeviceToken),
+                ProtectedSessionSecret = ProtectString(session.SessionToken),
+                SessionExpiresAt = response.Session.ExpiresAt,
+                ShopCode = session.ShopCode,
+                ShopDeviceId = session.ShopDeviceId,
+                StaffCode = session.StaffCode,
+            };
+
+            SaveState(state);
+        }
+
+        public void Clear()
+        {
+            try
+            {
+                if (File.Exists(TrustedDeviceFilePath))
+                {
+                    File.Delete(TrustedDeviceFilePath);
+                }
+            }
+            catch
+            {
+                // Removing local trust is best-effort; caller will deny online state if read fails.
+            }
+        }
+
+        private void SaveState(StoredTrustedDeviceState state)
+        {
+            AppPaths.EnsureDataDirectories();
+            File.WriteAllText(TrustedDeviceFilePath, Serialize(state), Encoding.UTF8);
+        }
+
+        private static string ProtectString(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                throw new ArgumentException("Secret is empty.");
+            }
+
+            var bytes = Encoding.UTF8.GetBytes(value);
+            var protectedBytes = ProtectedData.Protect(bytes, null, ProtectionScope);
+            return Convert.ToBase64String(protectedBytes);
+        }
+
+        private static string UnprotectToString(string protectedValue)
+        {
+            var protectedBytes = Convert.FromBase64String(protectedValue);
+            var bytes = ProtectedData.Unprotect(protectedBytes, null, ProtectionScope);
+            return Encoding.UTF8.GetString(bytes);
+        }
+
+        private static string Serialize<T>(T value)
+        {
+            var serializer = new DataContractJsonSerializer(typeof(T));
+            using (var stream = new MemoryStream())
+            {
+                serializer.WriteObject(stream, value);
+                return Encoding.UTF8.GetString(stream.ToArray());
+            }
+        }
+
+        private static T Deserialize<T>(string json)
+        {
+            var serializer = new DataContractJsonSerializer(typeof(T));
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(json ?? string.Empty)))
+            {
+                return (T)serializer.ReadObject(stream);
+            }
+        }
+
+        [DataContract]
+        private sealed class StoredTrustedDeviceState
+        {
+            [DataMember(Name = "formatVersion")]
+            public int FormatVersion { get; set; }
+
+            [DataMember(Name = "lastOkServerAt")]
+            public string LastOkServerAt { get; set; }
+
+            [DataMember(Name = "posSessionId")]
+            public string PosSessionId { get; set; }
+
+            [DataMember(Name = "protectedDeviceSecret")]
+            public string ProtectedDeviceSecret { get; set; }
+
+            [DataMember(Name = "protectedSessionSecret")]
+            public string ProtectedSessionSecret { get; set; }
+
+            [DataMember(Name = "sessionExpiresAt")]
+            public string SessionExpiresAt { get; set; }
+
+            [DataMember(Name = "shopCode")]
+            public string ShopCode { get; set; }
+
+            [DataMember(Name = "shopDeviceId")]
+            public string ShopDeviceId { get; set; }
+
+            [DataMember(Name = "staffCode")]
+            public string StaffCode { get; set; }
+        }
+    }
+
+    public sealed class PosTrustedDeviceSession
+    {
+        public string DeviceToken { get; set; }
+        public string LastOkServerAt { get; set; }
+        public string PosSessionId { get; set; }
+        public string SessionExpiresAt { get; set; }
+        public string SessionToken { get; set; }
+        public string ShopCode { get; set; }
+        public string ShopDeviceId { get; set; }
+        public string StaffCode { get; set; }
+    }
+}

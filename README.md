@@ -25,6 +25,7 @@ In ambiente Windows l’applicazione usa la cartella comune:
 - **Backup:** `C:\ProgramData\Win7POS\backups`
 - **Export:** `C:\ProgramData\Win7POS\exports`
 - **Ricevute (PDF/copie):** `C:\ProgramData\Win7POS\receipts` (se abilitato)
+- **Config Admin Web POS:** `C:\ProgramData\Win7POS\pos-admin-web.config` (se usato)
 
 In caso di errore, controllare i log in `C:\ProgramData\Win7POS\logs\app.log`.
 
@@ -40,7 +41,16 @@ Per usare una directory dati diversa (es. test senza toccare i dati reali):
   Esempio (PowerShell, dati in `C:\POSData\TestRun1`):  
   `Remove-Item -Force "C:\POSData\TestRun1\pos.db" -ErrorAction SilentlyContinue`  
   **Attenzione:** non eliminare il DB in produzione; usare solo per ambienti di test.  
-  In repository è disponibile lo script `scripts/reset-test-db.ps1` (usa `WIN7POS_DATA_DIR` o `-DataDir`).
+In repository è disponibile lo script `scripts/reset-test-db.ps1` (usa `WIN7POS_DATA_DIR` o `-DataDir`).
+
+## Collegamento Admin Web POS
+
+Il collegamento online è opzionale e non sostituisce il login locale esistente. Per abilitarlo configurare l'URL base di Admin Web in uno di questi modi:
+
+- variabile ambiente `WIN7POS_ADMIN_WEB_BASE_URL`;
+- file dati `pos-admin-web.config` con una riga `AdminWebBaseUrl=<url-base-admin-web>`.
+
+Il primo collegamento si avvia da **Accesso operatore** → **Collega POS online** e richiede `shop_code`, `staff_code` e PIN/password. Il token trusted device e il token sessione vengono salvati protetti con DPAPI dell'utente Windows. PIN/password non vengono salvati.
 
 ## Stampante
 

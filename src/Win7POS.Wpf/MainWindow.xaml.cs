@@ -14,6 +14,7 @@ using Win7POS.Data.Repositories;
 using Win7POS.Core;
 using Win7POS.Core.Security;
 using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf
 {
@@ -97,6 +98,8 @@ namespace Win7POS.Wpf
                     OperatorSessionHolder.Current = operatorSession;
                 }
 
+                await TryRefreshTrustedPosSessionAsync().ConfigureAwait(true);
+
                 var login = new OperatorLoginDialog(factory) { Owner = this };
                 if (login.ShowDialog() != true)
                 {
@@ -126,6 +129,59 @@ namespace Win7POS.Wpf
                 }
                 catch { }
                 Close();
+            }
+        }
+
+        private async Task TryRefreshTrustedPosSessionAsync()
+        {
+            if (!PosAdminWebOptions.TryLoad(out var options, out _))
+            {
+                return;
+            }
+
+            var store = new PosTrustedDeviceStore();
+            if (!store.TryRead(out var trustedSession))
+            {
+                return;
+            }
+
+            try
+            {
+                using (var client = new PosAdminWebClient(options))
+                {
+                    var result = await client.HeartbeatAsync(new PosHeartbeatRequest
+                    {
+                        AppVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(),
+                        DeviceToken = trustedSession.DeviceToken,
+                        PosSessionId = trustedSession.PosSessionId,
+                        SessionToken = trustedSession.SessionToken,
+                        ShopDeviceId = trustedSession.ShopDeviceId,
+                    }, System.Threading.CancellationToken.None).ConfigureAwait(true);
+
+                    if (result.Success && result.Value != null)
+                    {
+                        store.SaveHeartbeat(trustedSession, result.Value);
+                        return;
+                    }
+
+                    if (result.Denied)
+                    {
+                        store.Clear();
+                    }
+
+                    ModernMessageDialog.Show(
+                        this,
+                        "POS online",
+                        "Sessione POS online non verificata. Ricollega il dispositivo se le funzioni online sono richieste.");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("TryRefreshTrustedPosSessionAsync: refresh online non completato", ex);
+                ModernMessageDialog.Show(
+                    this,
+                    "POS online",
+                    "Admin Web POS non e raggiungibile. Il collegamento online resta da verificare.");
             }
         }
 

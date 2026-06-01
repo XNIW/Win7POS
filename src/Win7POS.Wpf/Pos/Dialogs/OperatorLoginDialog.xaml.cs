@@ -8,6 +8,7 @@ using Win7POS.Wpf.Chrome;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure.Security;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -124,6 +125,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
             ErrorText.Visibility = Visibility.Collapsed;
             DialogResult = true;
             Close();
+        }
+
+        private void OnOnlineFirstLoginClick(object sender, RoutedEventArgs e)
+        {
+            var dialog = new PosOnlineFirstLoginDialog
+            {
+                Owner = this
+            };
+
+            if (dialog.ShowDialog() == true)
+            {
+                ModernMessageDialog.Show(
+                    this,
+                    "POS online",
+                    "Dispositivo collegato. La sessione online verra verificata all'avvio.");
+            }
         }
 
         private sealed class OperatorLoginItem

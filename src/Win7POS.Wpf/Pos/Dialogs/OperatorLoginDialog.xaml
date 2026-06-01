@@ -42,9 +42,16 @@
                 <TextBlock x:Name="ErrorText" Grid.Row="2" Grid.ColumnSpan="2" Foreground="#C62828" TextWrapping="Wrap" Visibility="Collapsed"/>
             </Grid>
         </Border>
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+        <Grid Grid.Row="2" Margin="{StaticResource DialogFooterMargin}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Button Grid.Column="0" Content="Collega POS online" MinWidth="150" Height="42" HorizontalAlignment="Left" Click="OnOnlineFirstLoginClick" Style="{StaticResource DialogCancelButtonStyle}"/>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
             <Button Content="Accedi" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnLoginClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
             <Button Content="Annulla" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
-        </StackPanel>
+            </StackPanel>
+        </Grid>
     </Grid>
 </chrome:DialogShellWindow>
