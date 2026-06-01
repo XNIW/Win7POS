@@ -18,7 +18,10 @@ namespace Win7POS.Data.Repositories
         {
             using var conn = _factory.Open();
             return await conn.QuerySingleOrDefaultAsync<Product>(
-                "SELECT id, barcode, name, unitPrice FROM products WHERE barcode = @barcode",
+                @"SELECT id, barcode, name, unitPrice
+FROM products
+WHERE barcode = @barcode
+  AND COALESCE(is_active, 1) = 1",
                 new { barcode }
             ).ConfigureAwait(false);
         }
@@ -44,7 +47,10 @@ namespace Win7POS.Data.Repositories
                 var batch = list.Skip(i).Take(GetByBarcodesChunkSize).ToArray();
                 if (batch.Length == 0) break;
                 var rows = await conn.QueryAsync<Product>(
-                    "SELECT id, barcode, name, unitPrice FROM products WHERE barcode IN @barcodes",
+                    @"SELECT id, barcode, name, unitPrice
+FROM products
+WHERE COALESCE(is_active, 1) = 1
+  AND barcode IN @barcodes",
                     new { barcodes = batch }
                 ).ConfigureAwait(false);
                 foreach (var p in rows ?? Array.Empty<Product>())
@@ -57,7 +63,10 @@ namespace Win7POS.Data.Repositories
         {
             using var conn = _factory.Open();
             return await conn.QuerySingleOrDefaultAsync<Product>(
-                "SELECT id, barcode, name, unitPrice FROM products WHERE id = @id",
+                @"SELECT id, barcode, name, unitPrice
+FROM products
+WHERE id = @id
+  AND COALESCE(is_active, 1) = 1",
                 new { id }).ConfigureAwait(false);
         }
 
@@ -78,14 +87,14 @@ namespace Win7POS.Data.Repositories
 
             var updated = await conn.ExecuteAsync(@"
 UPDATE products
-SET name = @Name, unitPrice = @UnitPrice
+SET name = @Name, unitPrice = @UnitPrice, is_active = 1, remote_deleted_at = NULL
 WHERE barcode = @Barcode", p).ConfigureAwait(false);
 
             if (updated == 0)
             {
                 return await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO products(barcode, name, unitPrice)
-VALUES(@Barcode, @Name, @UnitPrice);
+INSERT INTO products(barcode, name, unitPrice, is_active, remote_deleted_at)
+VALUES(@Barcode, @Name, @UnitPrice, 1, NULL);
 SELECT last_insert_rowid();", p).ConfigureAwait(false);
             }
 
@@ -99,7 +108,10 @@ SELECT last_insert_rowid();", p).ConfigureAwait(false);
         {
             using var conn = _factory.Open();
             var rows = await conn.QueryAsync<Product>(
-                "SELECT id, barcode, name, unitPrice FROM products ORDER BY barcode ASC").ConfigureAwait(false);
+                @"SELECT id, barcode, name, unitPrice
+FROM products
+WHERE COALESCE(is_active, 1) = 1
+ORDER BY barcode ASC").ConfigureAwait(false);
             return rows.ToList();
         }
 
@@ -111,7 +123,10 @@ SELECT last_insert_rowid();", p).ConfigureAwait(false);
             if (q.Length == 0)
             {
                 var all = await conn.QueryAsync<Product>(
-                    "SELECT id, barcode, name, unitPrice FROM products ORDER BY barcode ASC LIMIT @limit",
+                    @"SELECT id, barcode, name, unitPrice
+FROM products
+WHERE COALESCE(is_active, 1) = 1
+ORDER BY barcode ASC LIMIT @limit",
                     new { limit }).ConfigureAwait(false);
                 return all.ToList();
             }
@@ -120,7 +135,8 @@ SELECT last_insert_rowid();", p).ConfigureAwait(false);
             var rows = await conn.QueryAsync<Product>(
                 @"SELECT id, barcode, name, unitPrice
                   FROM products
-                  WHERE barcode = @q OR name LIKE @like
+                  WHERE COALESCE(is_active, 1) = 1
+                    AND (barcode = @q OR name LIKE @like)
                   ORDER BY CASE WHEN barcode = @q THEN 0 ELSE 1 END, barcode ASC
                   LIMIT @limit",
                 new { q, like, limit }).ConfigureAwait(false);
@@ -159,13 +175,13 @@ LEFT JOIN product_meta m ON m.barcode = p.barcode";
             if (q.Length == 0)
             {
                 var allSql = categoryId.HasValue && categoryId.Value != 0
-                    ? sql + " WHERE m.category_id = @categoryId ORDER BY p.barcode ASC LIMIT @limit"
-                    : sql + " ORDER BY p.barcode ASC LIMIT @limit";
+                    ? sql + " WHERE COALESCE(p.is_active, 1) = 1 AND m.category_id = @categoryId ORDER BY p.barcode ASC LIMIT @limit"
+                    : sql + " WHERE COALESCE(p.is_active, 1) = 1 ORDER BY p.barcode ASC LIMIT @limit";
                 var all = await conn.QueryAsync<ProductDetailsRow>(allSql, prm).ConfigureAwait(false);
                 return all.ToList();
             }
 
-            var whereQuery = "WHERE (p.barcode = @q OR p.name LIKE @like)" + whereCategory;
+            var whereQuery = "WHERE COALESCE(p.is_active, 1) = 1 AND (p.barcode = @q OR p.name LIKE @like)" + whereCategory;
             var rows = await conn.QueryAsync<ProductDetailsRow>(
                 sql + " " + whereQuery + @"
 ORDER BY CASE WHEN p.barcode = @q THEN 0 ELSE 1 END, p.barcode ASC
@@ -180,7 +196,7 @@ LIMIT @limit",
             var q = (query ?? string.Empty).Trim();
             var like = q.Length == 0 ? "%" : "%" + q.Replace("%", "[%]").Replace("_", "[_]") + "%";
 
-            var where = "WHERE ( @q = '' OR p.barcode = @q OR p.name LIKE @like )";
+            var where = "WHERE COALESCE(p.is_active, 1) = 1 AND ( @q = '' OR p.barcode = @q OR p.name LIKE @like )";
             if (categoryId.HasValue && categoryId.Value != 0)
                 where += " AND m.category_id = @categoryId";
             if (supplierId.HasValue && supplierId.Value != 0)
@@ -204,7 +220,7 @@ LEFT JOIN product_meta m ON m.barcode = p.barcode
             var q = (query ?? string.Empty).Trim();
             var like = q.Length == 0 ? "%" : "%" + q.Replace("%", "[%]").Replace("_", "[_]") + "%";
 
-            var where = "WHERE ( @q = '' OR p.barcode = @q OR p.name LIKE @like )";
+            var where = "WHERE COALESCE(p.is_active, 1) = 1 AND ( @q = '' OR p.barcode = @q OR p.name LIKE @like )";
             if (categoryId.HasValue && categoryId.Value != 0)
                 where += " AND m.category_id = @categoryId";
             if (supplierId.HasValue && supplierId.Value != 0)
@@ -255,6 +271,7 @@ SELECT
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.id = @productId
+  AND COALESCE(p.is_active, 1) = 1
 LIMIT 1";
             return await conn.QueryFirstOrDefaultAsync<ProductDetailsRow>(sql, new { productId }).ConfigureAwait(false);
         }
@@ -280,6 +297,7 @@ SELECT
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.barcode = @barcode
+  AND COALESCE(p.is_active, 1) = 1
 LIMIT 1";
             return await conn.QueryFirstOrDefaultAsync<ProductDetailsRow>(sql, new { barcode = barcode.Trim() }).ConfigureAwait(false);
         }
@@ -322,6 +340,28 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
                 }).ConfigureAwait(false);
         }
 
+        public async Task<bool> ApplyRemoteProductTombstoneAsync(string remoteProductId, string remoteDeletedAt)
+        {
+            if (string.IsNullOrWhiteSpace(remoteProductId)) return false;
+
+            using var conn = _factory.Open();
+            var rows = await conn.ExecuteAsync(@"
+UPDATE products
+SET is_active = 0,
+    remote_deleted_at = @remoteDeletedAt
+WHERE remote_product_id = @remoteProductId
+  AND COALESCE(is_active, 1) = 1",
+                new
+                {
+                    remoteProductId = remoteProductId.Trim(),
+                    remoteDeletedAt = string.IsNullOrWhiteSpace(remoteDeletedAt)
+                        ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                        : remoteDeletedAt.Trim()
+                }).ConfigureAwait(false);
+
+            return rows > 0;
+        }
+
         public async Task<bool> DeleteByBarcodeAsync(string barcode)
         {
             if (string.IsNullOrWhiteSpace(barcode)) return false;
@@ -332,7 +372,7 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
         }
 
         /// <summary>Upsert prodotto + meta in una transazione (robustezza negozio).</summary>
-        public async Task<long> UpsertProductAndMetaInTransactionAsync(Product p, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty)
+        public async Task<long> UpsertProductAndMetaInTransactionAsync(Product p, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string remoteProductId = null)
         {
             if (p == null) throw new ArgumentNullException(nameof(p));
             if (IsReservedBarcode(p.Barcode))
@@ -342,13 +382,32 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
             try
             {
                 var updated = await conn.ExecuteAsync(@"
-UPDATE products SET name = @Name, unitPrice = @UnitPrice WHERE barcode = @Barcode", p, tx).ConfigureAwait(false);
+UPDATE products
+SET name = @Name,
+    unitPrice = @UnitPrice,
+    remote_product_id = COALESCE(NULLIF(@RemoteProductId, ''), remote_product_id),
+    remote_deleted_at = NULL,
+    is_active = 1
+WHERE barcode = @Barcode", new
+                {
+                    p.Barcode,
+                    p.Name,
+                    p.UnitPrice,
+                    RemoteProductId = remoteProductId ?? string.Empty
+                }, tx).ConfigureAwait(false);
                 long id;
                 if (updated == 0)
                 {
                     id = await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO products(barcode, name, unitPrice) VALUES(@Barcode, @Name, @UnitPrice);
-SELECT last_insert_rowid();", p, tx).ConfigureAwait(false);
+INSERT INTO products(barcode, name, unitPrice, remote_product_id, remote_deleted_at, is_active)
+VALUES(@Barcode, @Name, @UnitPrice, NULLIF(@RemoteProductId, ''), NULL, 1);
+SELECT last_insert_rowid();", new
+                    {
+                        p.Barcode,
+                        p.Name,
+                        p.UnitPrice,
+                        RemoteProductId = remoteProductId ?? string.Empty
+                    }, tx).ConfigureAwait(false);
                 }
                 else
                 {
@@ -511,6 +570,7 @@ SELECT p.id AS Id, p.barcode AS Barcode, p.name AS Name, p.unitPrice AS UnitPric
   m.category_id AS CategoryId, COALESCE(m.category_name, '') AS CategoryName
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
+WHERE COALESCE(p.is_active, 1) = 1
 ORDER BY p.barcode ASC";
             var rows = await conn.QueryAsync<ProductDetailsRow>(sql).ConfigureAwait(false);
             return rows?.ToList() ?? new List<ProductDetailsRow>();

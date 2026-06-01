@@ -14,6 +14,12 @@ namespace Win7POS.Wpf.Pos.Online
     {
         private const string LastCatalogSyncSettingKey = "pos.catalog.last_sync_at";
         private const string LastCatalogSyncCursorSettingKey = "pos.catalog.last_sync_cursor";
+        private const string LastCatalogErrorSettingKey = "pos.catalog.last_error";
+        private const string LastCatalogUpdatedProductsSettingKey = "pos.catalog.last_updated_products";
+        private const string LastCatalogTombstonesReceivedSettingKey = "pos.catalog.last_tombstones_received";
+        private const string LastCatalogTombstonesAppliedSettingKey = "pos.catalog.last_tombstones_applied";
+        private const string LastCatalogHasMoreSettingKey = "pos.catalog.last_has_more";
+        private const string LastCatalogVersionSettingKey = "pos.catalog.last_catalog_version";
         private const int MaxCatalogPullAttempts = 3;
 
         private readonly SqliteConnectionFactory _factory;
@@ -70,15 +76,16 @@ namespace Win7POS.Wpf.Pos.Online
                             _store.Clear();
                         }
 
+                        await StoreCatalogFailureAsync(result.Code).ConfigureAwait(false);
                         _logger.LogWarning("Catalog pull skipped: " + (result.Code ?? "failure"));
                         return false;
                     }
 
-                    await ApplyCatalogAsync(result.Value).ConfigureAwait(false);
-                    await StoreLastSyncAsync(result.Value.SyncCursor, result.Value.GeneratedAt).ConfigureAwait(false);
+                    var applyStats = await ApplyCatalogAsync(result.Value).ConfigureAwait(false);
+                    await StoreCatalogDiagnosticsAsync(result.Value, applyStats).ConfigureAwait(false);
 
                     var products = result.Value.Catalog.Products ?? Array.Empty<PosCatalogProductResponse>();
-                    _logger.LogInfo("Catalog pull completed: products=" + products.Length.ToString() + ", hasMore=" + result.Value.HasMore.ToString());
+                    _logger.LogInfo("Catalog pull completed: products=" + products.Length.ToString() + ", hasMore=" + result.Value.HasMore.ToString() + ", catalogVersion=" + (result.Value.CatalogVersion ?? string.Empty));
                     return true;
                 }
             }
@@ -88,6 +95,7 @@ namespace Win7POS.Wpf.Pos.Online
             }
             catch (Exception ex)
             {
+                await StoreCatalogFailureAsync("exception").ConfigureAwait(false);
                 _logger.LogWarning("Catalog pull skipped.", ex);
                 return false;
             }
@@ -119,7 +127,14 @@ namespace Win7POS.Wpf.Pos.Online
                 false);
         }
 
-        private async Task ApplyCatalogAsync(PosCatalogPullResponse response)
+        private sealed class CatalogApplyStats
+        {
+            public int TombstonesApplied { get; set; }
+            public int TombstonesReceived { get; set; }
+            public int UpdatedProducts { get; set; }
+        }
+
+        private async Task<CatalogApplyStats> ApplyCatalogAsync(PosCatalogPullResponse response)
         {
             var catalog = response.Catalog;
             var products = catalog.Products ?? Array.Empty<PosCatalogProductResponse>();
@@ -157,18 +172,37 @@ namespace Win7POS.Wpf.Pos.Online
                     supplierName,
                     null,
                     categoryName,
-                    ToInt(remoteProduct.StockQuantity)).ConfigureAwait(false);
+                    ToInt(remoteProduct.StockQuantity),
+                    Normalize(remoteProduct.ProductId)).ConfigureAwait(false);
             }
 
             var tombstones =
                 (catalog.Tombstones?.Products?.Length ?? 0) +
                 (catalog.Tombstones?.Categories?.Length ?? 0) +
                 (catalog.Tombstones?.Suppliers?.Length ?? 0);
+            var appliedProductTombstones = 0;
+
+            foreach (var tombstone in catalog.Tombstones?.Products ?? Array.Empty<PosCatalogProductTombstoneResponse>())
+            {
+                if (await productRepository.ApplyRemoteProductTombstoneAsync(
+                    Normalize(tombstone.ProductId),
+                    Normalize(tombstone.DeletedAt)).ConfigureAwait(false))
+                {
+                    appliedProductTombstones += 1;
+                }
+            }
 
             if (tombstones > 0)
             {
-                _logger.LogInfo("Catalog tombstones received: count=" + tombstones.ToString() + "; local purge disabled.");
+                _logger.LogInfo("Catalog tombstones received: count=" + tombstones.ToString() + ", applied=" + appliedProductTombstones.ToString() + "; local purge disabled.");
             }
+
+            return new CatalogApplyStats
+            {
+                TombstonesApplied = appliedProductTombstones,
+                TombstonesReceived = tombstones,
+                UpdatedProducts = products.Length
+            };
         }
 
         private async Task<string> LoadLastCursorAsync()
@@ -187,6 +221,39 @@ namespace Win7POS.Wpf.Pos.Online
 
             await settings.SetStringAsync(LastCatalogSyncSettingKey, value).ConfigureAwait(false);
             await settings.SetStringAsync(LastCatalogSyncCursorSettingKey, cursor).ConfigureAwait(false);
+        }
+
+        private async Task StoreCatalogFailureAsync(string code)
+        {
+            var settings = new SettingsRepository(_factory);
+            await settings.SetStringAsync(
+                LastCatalogErrorSettingKey,
+                string.IsNullOrWhiteSpace(code) ? "failure" : code.Trim()).ConfigureAwait(false);
+        }
+
+        private async Task StoreCatalogDiagnosticsAsync(
+            PosCatalogPullResponse response,
+            CatalogApplyStats stats)
+        {
+            var settings = new SettingsRepository(_factory);
+
+            await StoreLastSyncAsync(response.SyncCursor, response.GeneratedAt).ConfigureAwait(false);
+            await settings.SetStringAsync(LastCatalogErrorSettingKey, string.Empty).ConfigureAwait(false);
+            await settings.SetIntAsync(
+                LastCatalogUpdatedProductsSettingKey,
+                stats?.UpdatedProducts ?? 0).ConfigureAwait(false);
+            await settings.SetIntAsync(
+                LastCatalogTombstonesReceivedSettingKey,
+                stats?.TombstonesReceived ?? 0).ConfigureAwait(false);
+            await settings.SetIntAsync(
+                LastCatalogTombstonesAppliedSettingKey,
+                stats?.TombstonesApplied ?? 0).ConfigureAwait(false);
+            await settings.SetBoolAsync(
+                LastCatalogHasMoreSettingKey,
+                response != null && response.HasMore).ConfigureAwait(false);
+            await settings.SetStringAsync(
+                LastCatalogVersionSettingKey,
+                response?.CatalogVersion ?? string.Empty).ConfigureAwait(false);
         }
 
         private static TimeSpan CatalogPullBackoff(int attempt)

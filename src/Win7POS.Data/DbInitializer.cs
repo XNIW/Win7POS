@@ -22,7 +22,10 @@ CREATE TABLE IF NOT EXISTS products (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   barcode   TEXT NOT NULL UNIQUE,
   name      TEXT NOT NULL,
-  unitPrice INTEGER NOT NULL
+  unitPrice INTEGER NOT NULL,
+  remote_product_id TEXT NULL,
+  remote_deleted_at TEXT NULL,
+  is_active INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS sales (
@@ -186,6 +189,12 @@ CREATE INDEX IF NOT EXISTS idx_security_events_ts ON security_events(ts);
             EnsureColumn(conn, "sale_lines", "related_original_line_id", "INTEGER NULL");
             EnsureColumn(conn, "sales", "operator_id", "INTEGER NULL");
             EnsureColumn(conn, "sales", "pdf_printed", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(conn, "products", "remote_product_id", "TEXT NULL");
+            EnsureColumn(conn, "products", "remote_deleted_at", "TEXT NULL");
+            EnsureColumn(conn, "products", "is_active", "INTEGER NOT NULL DEFAULT 1");
+            conn.Execute("CREATE INDEX IF NOT EXISTS idx_products_remote_product_id ON products(remote_product_id);");
+            conn.Execute("CREATE INDEX IF NOT EXISTS idx_products_active_barcode ON products(is_active, barcode);");
+            conn.Execute("CREATE INDEX IF NOT EXISTS idx_products_active_remote_product_id ON products(remote_product_id) WHERE COALESCE(is_active, 1) = 1;");
         }
 
         private static void SeedSecurity(Microsoft.Data.Sqlite.SqliteConnection conn)
