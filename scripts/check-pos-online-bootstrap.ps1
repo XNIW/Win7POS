@@ -66,6 +66,15 @@ if ($bootstrap -notmatch "FirstLoginAsync") { Fail "bootstrap does not call firs
 if ($bootstrap -match "shop code|staff code") { Fail "bootstrap service error copy must be operator-facing Italian" } else { Pass "bootstrap service error copy is operator-facing" }
 if ($bootstrap -notmatch "SaveFirstLogin") { Fail "bootstrap does not save trusted device with DPAPI store" } else { Pass "trusted device save present" }
 if ($bootstrap -notmatch "UpsertRemoteStaffMirrorAsync") { Fail "bootstrap does not create/sync local staff mirror" } else { Pass "local staff mirror present" }
+$validationIndex = $bootstrap.IndexOf("ValidateFirstLoginResponse(")
+$mirrorIndex = $bootstrap.IndexOf("UpsertRemoteStaffMirrorAsync")
+if ($validationIndex -lt 0 -or $mirrorIndex -lt 0 -or $validationIndex -gt $mirrorIndex) {
+    Fail "bootstrap must validate first-login trusted/session payload before local staff mirror"
+} else {
+    Pass "bootstrap validates trusted/session payload before local staff mirror"
+}
+$validationPattern = "ValidateFirstLoginResponse[\s\S]*TrustedDeviceToken[\s\S]*Session[\s\S]*SessionToken[\s\S]*PosSessionId[\s\S]*ShopDeviceId[\s\S]*StaffId[\s\S]*StaffCode[\s\S]*ShopCode"
+if ($bootstrap -notmatch $validationPattern) { Fail "bootstrap first-login validation must cover tokens, session, device, staff and shop fields" } else { Pass "bootstrap first-login validation covers required fields" }
 if ($bootstrap -notmatch "PosCatalogPullService") { Fail "bootstrap does not attempt initial catalog pull" } else { Pass "initial catalog pull present" }
 if ($userRepo -notmatch "UpsertRemoteStaffMirrorAsync") { Fail "UserRepository remote staff upsert missing" } else { Pass "UserRepository remote staff upsert present" }
 if ($initializer -notmatch "remote_staff_id") { Fail "remote staff id column missing" } else { Pass "remote staff id column present" }

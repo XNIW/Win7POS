@@ -66,7 +66,7 @@ namespace Win7POS.Wpf.Pos.Online
                 }
 
                 var response = result.Value;
-                if (response.Staff == null || response.Shop == null || response.Device == null)
+                if (!ValidateFirstLoginResponse(response))
                 {
                     return PosOnlineBootstrapResult.Failure("invalid_response", "Risposta Admin Web POS non valida.", false);
                 }
@@ -128,6 +128,22 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             return normalized;
+        }
+
+        private static bool ValidateFirstLoginResponse(PosFirstLoginResponse response)
+        {
+            return response != null &&
+                   !string.IsNullOrWhiteSpace(response.TrustedDeviceToken) &&
+                   response.Session != null &&
+                   !string.IsNullOrWhiteSpace(response.Session.SessionToken) &&
+                   !string.IsNullOrWhiteSpace(response.Session.PosSessionId) &&
+                   response.Device != null &&
+                   !string.IsNullOrWhiteSpace(response.Device.ShopDeviceId) &&
+                   response.Staff != null &&
+                   !string.IsNullOrWhiteSpace(response.Staff.StaffId) &&
+                   !string.IsNullOrWhiteSpace(response.Staff.StaffCode) &&
+                   response.Shop != null &&
+                   !string.IsNullOrWhiteSpace(response.Shop.ShopCode);
         }
     }
 
