@@ -76,6 +76,14 @@ namespace Win7POS.Wpf
                 var needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
                 if (needFirstRun)
                 {
+                    if (await TryOnlineBootstrapFirstRunAsync(factory).ConfigureAwait(true))
+                    {
+                        needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
+                    }
+                }
+
+                if (needFirstRun)
+                {
                     var wizard = new FirstRunSetupDialog(options) { Owner = this };
                     var ok = wizard.ShowDialog() == true;
 
@@ -125,11 +133,26 @@ namespace Win7POS.Wpf
                 try
                 {
                     ModernMessageDialog.Show(this, "Win7POS",
-                        "Errore in avvio.\nLog: " + AppPaths.LogPath + "\n\n" + ex.Message);
+                        "Errore in avvio.\nControlla il log applicativo: " + AppPaths.LogPath);
                 }
                 catch { }
                 Close();
             }
+        }
+
+        private async Task<bool> TryOnlineBootstrapFirstRunAsync(SqliteConnectionFactory factory)
+        {
+            var dialog = new PosOnlineFirstLoginDialog(factory)
+            {
+                Owner = this
+            };
+
+            if (dialog.ShowDialog() != true)
+            {
+                return false;
+            }
+
+            return !await RequiresFirstRunAsync(factory).ConfigureAwait(true);
         }
 
         private async Task TryRefreshTrustedPosSessionAsync()
@@ -290,12 +313,12 @@ namespace Win7POS.Wpf
             catch (InvalidOperationException ex)
             {
                 _logger.LogWarning("OnMenuUsersClick: permesso negato - " + ex.Message, null);
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", ex.Message);
+                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", "Non hai il permesso di accedere a Utenti e ruoli.");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "MainWindow.OnMenuUsersClick: errore apertura Utenti e ruoli");
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Utenti e ruoli", "Errore apertura Utenti e ruoli.\n\n" + ex.Message);
+                ModernMessageDialog.Show(Application.Current?.MainWindow, "Utenti e ruoli", "Errore apertura Utenti e ruoli. Controlla il log applicativo.");
             }
             SideMenuOverlay.Visibility = Visibility.Collapsed;
         }

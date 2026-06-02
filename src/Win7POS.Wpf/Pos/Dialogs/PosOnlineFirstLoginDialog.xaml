@@ -39,22 +39,22 @@
                     <ColumnDefinition Width="*" MinWidth="260"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Admin Web:" Foreground="#666"/>
-                <TextBlock x:Name="BaseUrlText" Grid.Row="0" Grid.Column="1" Margin="0,0,0,10" TextWrapping="Wrap" Foreground="#5E3F86"/>
+                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Indirizzo pannello:" Foreground="#666"/>
+                <TextBox x:Name="BaseUrlBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Shop code:" Foreground="#666"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Codice negozio:" Foreground="#666"/>
                 <TextBox x:Name="ShopCodeBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Staff code:" Foreground="#666"/>
+                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Codice staff:" Foreground="#666"/>
                 <TextBox x:Name="StaffCodeBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
                 <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="PIN/password:" Foreground="#666"/>
                 <PasswordBox x:Name="CredentialBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
-                <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Nome device:" Foreground="#666"/>
+                <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Nome dispositivo:" Foreground="#666"/>
                 <TextBox x:Name="DeviceNameBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
-                <TextBlock Grid.Row="5" Grid.ColumnSpan="2" TextWrapping="Wrap" Foreground="#8873A4" Text="Il token trusted device viene salvato localmente con protezione Windows. PIN/password non vengono salvati."/>
+                <TextBlock Grid.Row="5" Grid.ColumnSpan="2" TextWrapping="Wrap" Foreground="#8873A4" Text="La sessione del dispositivo viene protetta localmente da Windows. PIN/password non vengono salvati."/>
 
                 <TextBlock x:Name="StatusText" Grid.Row="6" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="#C62828" TextWrapping="Wrap" Visibility="Collapsed"/>
             </Grid>

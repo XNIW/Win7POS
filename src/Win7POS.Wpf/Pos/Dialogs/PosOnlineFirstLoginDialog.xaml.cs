@@ -3,18 +3,25 @@ using System.Reflection;
 using System.Threading;
 using System.Windows;
 using Win7POS.Wpf.Chrome;
+using Win7POS.Data;
 using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public partial class PosOnlineFirstLoginDialog : DialogShellWindow
     {
+        private readonly SqliteConnectionFactory _factory;
         private readonly PosTrustedDeviceStore _trustedDeviceStore = new PosTrustedDeviceStore();
-        private PosAdminWebOptions _options;
 
         public PosOnlineFirstLoginDialog()
+            : this(new SqliteConnectionFactory(PosDbOptions.Default()))
+        {
+        }
+
+        public PosOnlineFirstLoginDialog(SqliteConnectionFactory factory)
         {
             InitializeComponent();
+            _factory = factory ?? throw new ArgumentNullException(nameof(factory));
             Loaded += OnLoaded;
         }
 
@@ -22,23 +29,23 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             DeviceNameBox.Text = Environment.MachineName;
 
-            if (PosAdminWebOptions.TryLoad(out _options, out var reason))
+            if (PosAdminWebOptions.TryLoad(out var options, out _))
             {
-                BaseUrlText.Text = _options.BaseUri.ToString();
+                BaseUrlBox.Text = options.BaseUri.ToString().TrimEnd('/');
                 ShopCodeBox.Focus();
                 return;
             }
 
-            BaseUrlText.Text = "Non configurato";
-            ShowError(reason);
-            ConnectButton.IsEnabled = false;
+            BaseUrlBox.Text = string.Empty;
+            ShowInfo("Inserisci l'indirizzo del pannello Admin Web per collegare questo POS.");
+            BaseUrlBox.Focus();
         }
 
         private async void OnConnectClick(object sender, RoutedEventArgs e)
         {
-            if (_options == null)
+            if (!PosAdminWebOptions.TryCreate(BaseUrlBox.Text, out var options, out var reason))
             {
-                ShowError("Configura Admin Web POS prima di collegare il dispositivo.");
+                ShowError(reason);
                 return;
             }
 
@@ -49,7 +56,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (shopCode.Length == 0 || staffCode.Length == 0 || credential.Length == 0)
             {
-                ShowError("Inserisci shop code, staff code e PIN/password.");
+                ShowError("Inserisci codice negozio, codice staff e PIN/password.");
                 return;
             }
 
@@ -73,29 +80,39 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             try
             {
-                using (var client = new PosAdminWebClient(_options))
-                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15)))
-                {
-                    var result = await client.FirstLoginAsync(request, cts.Token).ConfigureAwait(true);
-                    CredentialBox.Clear();
+                PosAdminWebOptions.SaveBaseUrl(options.BaseUri);
 
-                    if (!result.Success || result.Value == null)
+                var bootstrap = new PosOnlineBootstrapService(
+                    _factory,
+                    _trustedDeviceStore);
+                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20)))
+                {
+                    var result = await bootstrap.BootstrapAsync(
+                        options,
+                        request,
+                        credential,
+                        cts.Token).ConfigureAwait(true);
+                    if (!result.Success)
                     {
                         ShowError(result.Message);
                         ConnectButton.IsEnabled = true;
                         return;
                     }
 
-                    _trustedDeviceStore.SaveFirstLogin(result.Value);
                     DialogResult = true;
                     Close();
                 }
             }
             catch
             {
-                CredentialBox.Clear();
                 ShowError("Collegamento POS online non completato.");
                 ConnectButton.IsEnabled = true;
+            }
+            finally
+            {
+                request.Credential = string.Empty;
+                credential = string.Empty;
+                CredentialBox.Clear();
             }
         }
 

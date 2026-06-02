@@ -189,6 +189,172 @@ VALUES(@username, @displayName, @pinHash, @pinSalt, @roleId, 1, @requirePinChang
             return await conn.ExecuteScalarAsync<int>("SELECT last_insert_rowid()").ConfigureAwait(false);
         }
 
+        public async Task<int> UpsertRemoteStaffMirrorAsync(RemoteStaffMirrorInput input)
+        {
+            if (input == null) throw new ArgumentNullException(nameof(input));
+            if (string.IsNullOrWhiteSpace(input.Credential)) throw new ArgumentException("Credential is empty.");
+            if (string.IsNullOrWhiteSpace(input.RemoteStaffId)) throw new ArgumentException("Remote staff id is empty.");
+            if (string.IsNullOrWhiteSpace(input.StaffCode)) throw new ArgumentException("Staff code is empty.");
+
+            var now = UnixTime.NowSeconds();
+            var username = BuildRemoteStaffUsername(input.ShopCode, input.StaffCode);
+            var displayName = Normalize(input.DisplayName);
+            if (displayName.Length == 0) displayName = Normalize(input.StaffCode);
+
+            var salt = PinHelper.GenerateSalt();
+            var hash = PinHelper.HashPin(input.Credential, salt);
+            var roleCode = MapRemoteRoleKey(input.RemoteRoleKey);
+
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction();
+            try
+            {
+                var roleId = await conn.ExecuteScalarAsync<int?>(
+                    "SELECT id FROM roles WHERE LOWER(code) = @code LIMIT 1",
+                    new { code = roleCode },
+                    tx).ConfigureAwait(false);
+
+                if (!roleId.HasValue)
+                {
+                    roleId = await conn.ExecuteScalarAsync<int?>(
+                        "SELECT id FROM roles WHERE LOWER(code) = 'cashier' LIMIT 1",
+                        transaction: tx).ConfigureAwait(false);
+                }
+
+                if (!roleId.HasValue)
+                {
+                    throw new InvalidOperationException("Ruolo locale cashier non trovato.");
+                }
+
+                var existingId = await conn.ExecuteScalarAsync<int?>(
+                    @"SELECT id
+                      FROM users
+                      WHERE remote_staff_id = @remoteStaffId OR username = @username
+                      ORDER BY CASE WHEN remote_staff_id = @remoteStaffId THEN 0 ELSE 1 END
+                      LIMIT 1",
+                    new
+                    {
+                        remoteStaffId = Normalize(input.RemoteStaffId),
+                        username
+                    },
+                    tx).ConfigureAwait(false);
+
+                if (existingId.HasValue)
+                {
+                    await conn.ExecuteAsync(@"
+UPDATE users
+SET username = @username,
+    display_name = @displayName,
+    pin_hash = @pinHash,
+    pin_salt = @pinSalt,
+    role_id = @roleId,
+    is_active = 1,
+    require_pin_change = 0,
+    failed_attempts = 0,
+    lockout_until = NULL,
+    remote_staff_id = @remoteStaffId,
+    remote_staff_code = @remoteStaffCode,
+    remote_shop_id = @remoteShopId,
+    remote_shop_code = @remoteShopCode,
+    remote_role_key = @remoteRoleKey,
+    remote_credential_version = @remoteCredentialVersion,
+    remote_synced_at = @now,
+    updated_at = @now
+WHERE id = @id",
+                        new
+                        {
+                            id = existingId.Value,
+                            username,
+                            displayName,
+                            pinHash = hash,
+                            pinSalt = salt,
+                            roleId = roleId.Value,
+                            remoteStaffId = Normalize(input.RemoteStaffId),
+                            remoteStaffCode = Normalize(input.StaffCode),
+                            remoteShopId = Normalize(input.RemoteShopId),
+                            remoteShopCode = Normalize(input.ShopCode),
+                            remoteRoleKey = Normalize(input.RemoteRoleKey),
+                            remoteCredentialVersion = input.CredentialVersion,
+                            now
+                        },
+                        tx).ConfigureAwait(false);
+
+                    tx.Commit();
+                    return existingId.Value;
+                }
+
+                await conn.ExecuteAsync(@"
+INSERT INTO users(
+    username,
+    display_name,
+    pin_hash,
+    pin_salt,
+    role_id,
+    is_active,
+    require_pin_change,
+    max_discount_percent,
+    created_at,
+    updated_at,
+    failed_attempts,
+    lockout_until,
+    remote_staff_id,
+    remote_staff_code,
+    remote_shop_id,
+    remote_shop_code,
+    remote_role_key,
+    remote_credential_version,
+    remote_synced_at)
+VALUES(
+    @username,
+    @displayName,
+    @pinHash,
+    @pinSalt,
+    @roleId,
+    1,
+    0,
+    0,
+    @now,
+    @now,
+    0,
+    NULL,
+    @remoteStaffId,
+    @remoteStaffCode,
+    @remoteShopId,
+    @remoteShopCode,
+    @remoteRoleKey,
+    @remoteCredentialVersion,
+    @now)",
+                    new
+                    {
+                        username,
+                        displayName,
+                        pinHash = hash,
+                        pinSalt = salt,
+                        roleId = roleId.Value,
+                        remoteStaffId = Normalize(input.RemoteStaffId),
+                        remoteStaffCode = Normalize(input.StaffCode),
+                        remoteShopId = Normalize(input.RemoteShopId),
+                        remoteShopCode = Normalize(input.ShopCode),
+                        remoteRoleKey = Normalize(input.RemoteRoleKey),
+                        remoteCredentialVersion = input.CredentialVersion,
+                        now
+                    },
+                    tx).ConfigureAwait(false);
+
+                var createdId = await conn.ExecuteScalarAsync<int>(
+                    "SELECT last_insert_rowid()",
+                    transaction: tx).ConfigureAwait(false);
+
+                tx.Commit();
+                return createdId;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
         public async Task<int> CountActiveAdminsAsync()
         {
             using var conn = _factory.Open();
@@ -266,6 +432,54 @@ UPDATE users SET pin_hash = @pinHash, pin_salt = @pinSalt, require_pin_change = 
             };
         }
 
+        private static string BuildRemoteStaffUsername(string shopCode, string staffCode)
+        {
+            var shop = NormalizeForUsername(shopCode);
+            var staff = NormalizeForUsername(staffCode);
+
+            if (shop.Length == 0) shop = "shop";
+            if (staff.Length == 0) staff = "staff";
+
+            return ("pos_" + shop + "_" + staff).ToLowerInvariant();
+        }
+
+        private static string MapRemoteRoleKey(string roleKey)
+        {
+            var normalized = Normalize(roleKey).ToLowerInvariant();
+
+            switch (normalized)
+            {
+                case "admin":
+                case "shop_owner":
+                    return "admin";
+                case "manager":
+                case "shop_manager":
+                    return "manager";
+                case "supervisor":
+                    return "supervisor";
+                case "cashier":
+                    return "cashier";
+                default:
+                    return "cashier";
+            }
+        }
+
+        private static string Normalize(string value)
+        {
+            return (value ?? string.Empty).Trim();
+        }
+
+        private static string NormalizeForUsername(string value)
+        {
+            var normalized = Normalize(value);
+            var chars = normalized
+                .Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-')
+                .Take(48)
+                .ToArray();
+
+            return new string(chars);
+        }
+
         private sealed class UserRow
         {
             public int Id { get; set; }
@@ -299,5 +513,17 @@ UPDATE users SET pin_hash = @pinHash, pin_salt = @pinSalt, require_pin_change = 
             public string Code { get; set; }
             public string Name { get; set; }
         }
+    }
+
+    public sealed class RemoteStaffMirrorInput
+    {
+        public string Credential { get; set; }
+        public int CredentialVersion { get; set; }
+        public string DisplayName { get; set; }
+        public string RemoteRoleKey { get; set; }
+        public string RemoteShopId { get; set; }
+        public string RemoteStaffId { get; set; }
+        public string ShopCode { get; set; }
+        public string StaffCode { get; set; }
     }
 }

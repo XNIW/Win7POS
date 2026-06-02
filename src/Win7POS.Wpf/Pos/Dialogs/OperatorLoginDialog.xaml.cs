@@ -129,7 +129,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void OnOnlineFirstLoginClick(object sender, RoutedEventArgs e)
         {
-            var dialog = new PosOnlineFirstLoginDialog
+            var dialog = new PosOnlineFirstLoginDialog(_factory)
             {
                 Owner = this
             };

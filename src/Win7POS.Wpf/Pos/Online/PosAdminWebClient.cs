@@ -15,6 +15,7 @@ namespace Win7POS.Wpf.Pos.Online
         private const string FirstLoginPath = "/api/pos/auth/first-login";
         private const string HeartbeatPath = "/api/pos/session/heartbeat";
         private const string CatalogPullPath = "/api/pos/catalog/pull";
+        private const int MaxResponseBodyBytes = 8 * 1024 * 1024;
         private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
 
         private readonly HttpClient _httpClient;
@@ -86,7 +87,17 @@ namespace Win7POS.Wpf.Pos.Online
                     .PostAsync(relativePath.TrimStart('/'), content, cancellationToken)
                     .ConfigureAwait(false))
                 {
-                    var responseJson = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    var responseJson = await ReadResponseBodyAsync(
+                        response.Content,
+                        cancellationToken).ConfigureAwait(false);
+
+                    if (responseJson == null)
+                    {
+                        return PosOnlineResult<TResponse>.Failure(
+                            "response_too_large",
+                            "Risposta Admin Web POS troppo grande.",
+                            false);
+                    }
 
                     if (!response.IsSuccessStatusCode)
                     {
@@ -147,6 +158,51 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 serializer.WriteObject(stream, value);
                 return Encoding.UTF8.GetString(stream.ToArray());
+            }
+        }
+
+        private static async Task<string> ReadResponseBodyAsync(
+            HttpContent content,
+            CancellationToken cancellationToken)
+        {
+            if (content == null)
+            {
+                return string.Empty;
+            }
+
+            var contentLength = content.Headers.ContentLength;
+            if (contentLength.HasValue && contentLength.Value > MaxResponseBodyBytes)
+            {
+                return null;
+            }
+
+            using (var stream = await content.ReadAsStreamAsync().ConfigureAwait(false))
+            using (var buffer = new MemoryStream())
+            {
+                var chunk = new byte[8192];
+                var totalBytes = 0;
+
+                while (true)
+                {
+                    var read = await stream
+                        .ReadAsync(chunk, 0, chunk.Length, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    if (read <= 0)
+                    {
+                        break;
+                    }
+
+                    totalBytes += read;
+                    if (totalBytes > MaxResponseBodyBytes)
+                    {
+                        return null;
+                    }
+
+                    buffer.Write(chunk, 0, read);
+                }
+
+                return Encoding.UTF8.GetString(buffer.ToArray());
             }
         }
 
@@ -538,6 +594,9 @@ namespace Win7POS.Wpf.Pos.Online
     [DataContract]
     public sealed class PosStaffResponse
     {
+        [DataMember(Name = "credentialVersion")]
+        public int CredentialVersion { get; set; }
+
         [DataMember(Name = "displayName")]
         public string DisplayName { get; set; }
 

@@ -150,6 +150,13 @@ CREATE TABLE IF NOT EXISTS users (
   last_login_at     INTEGER NULL,
   failed_attempts   INTEGER NOT NULL DEFAULT 0,
   lockout_until     INTEGER NULL,
+  remote_staff_id   TEXT NULL,
+  remote_staff_code TEXT NULL,
+  remote_shop_id    TEXT NULL,
+  remote_shop_code  TEXT NULL,
+  remote_role_key   TEXT NULL,
+  remote_credential_version INTEGER NULL,
+  remote_synced_at  INTEGER NULL,
   FOREIGN KEY(role_id) REFERENCES roles(id)
 );
 
@@ -181,6 +188,13 @@ CREATE INDEX IF NOT EXISTS idx_security_events_ts ON security_events(ts);
             EnsureColumn(conn, "users", "max_discount_percent", "INTEGER NOT NULL DEFAULT 0");
             EnsureColumn(conn, "users", "failed_attempts", "INTEGER NOT NULL DEFAULT 0");
             EnsureColumn(conn, "users", "lockout_until", "INTEGER NULL");
+            EnsureColumn(conn, "users", "remote_staff_id", "TEXT NULL");
+            EnsureColumn(conn, "users", "remote_staff_code", "TEXT NULL");
+            EnsureColumn(conn, "users", "remote_shop_id", "TEXT NULL");
+            EnsureColumn(conn, "users", "remote_shop_code", "TEXT NULL");
+            EnsureColumn(conn, "users", "remote_role_key", "TEXT NULL");
+            EnsureColumn(conn, "users", "remote_credential_version", "INTEGER NULL");
+            EnsureColumn(conn, "users", "remote_synced_at", "INTEGER NULL");
             EnsureColumn(conn, "sales", "kind", "INTEGER NOT NULL DEFAULT 0");
             EnsureColumn(conn, "sales", "related_sale_id", "INTEGER NULL");
             EnsureColumn(conn, "sales", "voided_by_sale_id", "INTEGER NULL");
@@ -195,6 +209,8 @@ CREATE INDEX IF NOT EXISTS idx_security_events_ts ON security_events(ts);
             conn.Execute("CREATE INDEX IF NOT EXISTS idx_products_remote_product_id ON products(remote_product_id);");
             conn.Execute("CREATE INDEX IF NOT EXISTS idx_products_active_barcode ON products(is_active, barcode);");
             conn.Execute("CREATE INDEX IF NOT EXISTS idx_products_active_remote_product_id ON products(remote_product_id) WHERE COALESCE(is_active, 1) = 1;");
+            conn.Execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_remote_staff_id ON users(remote_staff_id) WHERE remote_staff_id IS NOT NULL;");
+            conn.Execute("CREATE INDEX IF NOT EXISTS idx_users_remote_shop_staff ON users(remote_shop_code, remote_staff_code);");
         }
 
         private static void SeedSecurity(Microsoft.Data.Sqlite.SqliteConnection conn)

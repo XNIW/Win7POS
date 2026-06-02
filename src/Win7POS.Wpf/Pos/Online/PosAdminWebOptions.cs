@@ -47,6 +47,40 @@ namespace Win7POS.Wpf.Pos.Online
             return true;
         }
 
+        public static bool TryCreate(string value, out PosAdminWebOptions options, out string reason)
+        {
+            options = null;
+            reason = null;
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                reason = "Inserisci l'URL Admin Web POS.";
+                return false;
+            }
+
+            if (!TryCreateBaseUri(value, out var baseUri))
+            {
+                reason = "L'URL Admin Web POS non e valido.";
+                return false;
+            }
+
+            options = new PosAdminWebOptions(baseUri);
+            return true;
+        }
+
+        public static void SaveBaseUrl(Uri baseUri)
+        {
+            if (baseUri == null)
+            {
+                throw new ArgumentNullException(nameof(baseUri));
+            }
+
+            AppPaths.EnsureDataDirectories();
+            File.WriteAllText(
+                ConfigFilePath,
+                ConfigBaseUrlKey + "=" + baseUri.ToString().TrimEnd('/') + Environment.NewLine);
+        }
+
         private static bool TryCreateBaseUri(string value, out Uri uri)
         {
             uri = null;

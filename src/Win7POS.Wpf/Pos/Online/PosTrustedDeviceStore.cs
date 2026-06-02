@@ -52,8 +52,14 @@ namespace Win7POS.Wpf.Pos.Online
                     SessionExpiresAt = state.SessionExpiresAt,
                     SessionToken = UnprotectToString(state.ProtectedSessionSecret),
                     ShopCode = state.ShopCode,
+                    ShopId = state.ShopId,
+                    ShopName = state.ShopName,
                     ShopDeviceId = state.ShopDeviceId,
                     StaffCode = state.StaffCode,
+                    StaffCredentialVersion = state.StaffCredentialVersion,
+                    StaffDisplayName = state.StaffDisplayName,
+                    StaffId = state.StaffId,
+                    StaffRoleKey = state.StaffRoleKey,
                 };
 
                 return !string.IsNullOrWhiteSpace(session.DeviceToken) &&
@@ -82,8 +88,14 @@ namespace Win7POS.Wpf.Pos.Online
                 ProtectedSessionSecret = ProtectString(response.Session.SessionToken),
                 SessionExpiresAt = response.Session.ExpiresAt,
                 ShopCode = response.Shop?.ShopCode,
+                ShopId = response.Shop?.ShopId,
+                ShopName = response.Shop?.ShopName,
                 ShopDeviceId = response.Device.ShopDeviceId,
+                StaffCredentialVersion = response.Staff?.CredentialVersion ?? 0,
                 StaffCode = response.Staff?.StaffCode,
+                StaffDisplayName = response.Staff?.DisplayName,
+                StaffId = response.Staff?.StaffId,
+                StaffRoleKey = response.Staff?.RoleKey,
             };
 
             SaveState(state);
@@ -105,8 +117,14 @@ namespace Win7POS.Wpf.Pos.Online
                 ProtectedSessionSecret = ProtectString(session.SessionToken),
                 SessionExpiresAt = response.Session.ExpiresAt,
                 ShopCode = session.ShopCode,
+                ShopId = session.ShopId,
+                ShopName = session.ShopName,
                 ShopDeviceId = session.ShopDeviceId,
                 StaffCode = session.StaffCode,
+                StaffCredentialVersion = session.StaffCredentialVersion,
+                StaffDisplayName = session.StaffDisplayName,
+                StaffId = session.StaffId,
+                StaffRoleKey = session.StaffRoleKey,
             };
 
             SaveState(state);
@@ -195,11 +213,29 @@ namespace Win7POS.Wpf.Pos.Online
             [DataMember(Name = "shopCode")]
             public string ShopCode { get; set; }
 
+            [DataMember(Name = "shopId", EmitDefaultValue = false)]
+            public string ShopId { get; set; }
+
+            [DataMember(Name = "shopName", EmitDefaultValue = false)]
+            public string ShopName { get; set; }
+
             [DataMember(Name = "shopDeviceId")]
             public string ShopDeviceId { get; set; }
 
             [DataMember(Name = "staffCode")]
             public string StaffCode { get; set; }
+
+            [DataMember(Name = "staffCredentialVersion", EmitDefaultValue = false)]
+            public int StaffCredentialVersion { get; set; }
+
+            [DataMember(Name = "staffDisplayName", EmitDefaultValue = false)]
+            public string StaffDisplayName { get; set; }
+
+            [DataMember(Name = "staffId", EmitDefaultValue = false)]
+            public string StaffId { get; set; }
+
+            [DataMember(Name = "staffRoleKey", EmitDefaultValue = false)]
+            public string StaffRoleKey { get; set; }
         }
     }
 
@@ -211,7 +247,13 @@ namespace Win7POS.Wpf.Pos.Online
         public string SessionExpiresAt { get; set; }
         public string SessionToken { get; set; }
         public string ShopCode { get; set; }
+        public string ShopId { get; set; }
+        public string ShopName { get; set; }
         public string ShopDeviceId { get; set; }
         public string StaffCode { get; set; }
+        public int StaffCredentialVersion { get; set; }
+        public string StaffDisplayName { get; set; }
+        public string StaffId { get; set; }
+        public string StaffRoleKey { get; set; }
     }
 }

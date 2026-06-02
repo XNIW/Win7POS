@@ -6,11 +6,13 @@ using Win7POS.Wpf.Chrome;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public partial class FirstRunSetupDialog : DialogShellWindow
     {
+        private static readonly FileLogger _logger = new FileLogger("FirstRunSetupDialog");
         private readonly SqliteConnectionFactory _factory;
         private readonly UserRepository _userRepo;
         private readonly RoleRepository _roleRepo;
@@ -105,8 +107,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var msg = ex.Message ?? "";
                 if (msg.IndexOf("UNIQUE", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     msg.IndexOf("username", StringComparison.OrdinalIgnoreCase) >= 0)
-                    msg = "Username già in uso. Scegline un altro.";
-                ShowError(msg);
+                {
+                    ShowError("Username già in uso. Scegline un altro.");
+                }
+                else
+                {
+                    _logger.LogError(ex, "FirstRunSetupDialog.OnCreateAdminClick");
+                    ShowError("Configurazione locale non completata. Controlla il log applicativo.");
+                }
+            }
+            finally
+            {
+                PinBox.Clear();
+                ConfirmPinBox.Clear();
             }
         }
 

@@ -45,12 +45,12 @@ In repository è disponibile lo script `scripts/reset-test-db.ps1` (usa `WIN7POS
 
 ## Collegamento Admin Web POS
 
-Il collegamento online è opzionale e non sostituisce il login locale esistente. Per abilitarlo configurare l'URL base di Admin Web in uno di questi modi:
+Il collegamento online passa sempre da Admin Web POS API e non comunica direttamente con Supabase. Su installazione nuova con DB SQLite vuoto, l'app propone il bootstrap online prima del wizard locale di recovery/dev. Per abilitarlo configurare l'URL base di Admin Web in uno di questi modi:
 
 - variabile ambiente `WIN7POS_ADMIN_WEB_BASE_URL`;
 - file dati `pos-admin-web.config` con una riga `AdminWebBaseUrl=<url-base-admin-web>`.
 
-Il primo collegamento si avvia da **Accesso operatore** → **Collega POS online** e richiede `shop_code`, `staff_code` e PIN/password. Il token trusted device e il token sessione vengono salvati protetti con DPAPI dell'utente Windows. PIN/password non vengono salvati.
+Il primo collegamento richiede codice negozio (`shop_code`), codice staff (`staff_code`), PIN/password e nome dispositivo. Se il DB locale è già configurato, si può avviare da **Accesso operatore** → **Collega POS online**. I token del dispositivo e della sessione vengono salvati protetti con DPAPI dell'utente Windows. PIN/password non vengono salvati in chiaro; dopo un first-login riuscito vengono usati solo per creare hash/salt locale dell'operatore mirror, così il POS può lavorare offline.
 
 ## Stampante
 
