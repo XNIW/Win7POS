@@ -6,6 +6,10 @@
 # dotenv files
 .env
 
+# Local Win7 VM test artifacts
+.win7pos-vm/
+.win7pos-physical/
+
 # User-specific files
 *.rsuser
 *.suo

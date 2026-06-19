@@ -21,6 +21,8 @@ namespace Win7POS.Wpf.Products
         private string _stockText = "0";
         private string _articleCode = string.Empty;
         private string _name2 = string.Empty;
+        private string _categoryText = string.Empty;
+        private string _supplierText = string.Empty;
         private CategoryListItem _selectedCategory;
         private SupplierListItem _selectedSupplier;
 
@@ -67,10 +69,8 @@ namespace Win7POS.Wpf.Products
                 finalPurchasePrice = PurchasePriceMinor;
             try
             {
-                var catId = SelectedCategory?.Id == 0 ? (int?)null : SelectedCategory?.Id;
-                var supId = SelectedSupplier?.Id == 0 ? (int?)null : SelectedSupplier?.Id;
-                var catName = SelectedCategory?.Name ?? string.Empty;
-                var supName = SelectedSupplier?.Name ?? string.Empty;
+                BuildCategorySelection(out var catId, out var catName);
+                BuildSupplierSelection(out var supId, out var supName);
 
                 if (Mode == ProductEditMode.New || Mode == ProductEditMode.Duplicate)
                     await _service.CreateProductAsync(Barcode, finalName, UnitPriceMinor, finalPurchasePrice, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2);
@@ -152,13 +152,55 @@ namespace Win7POS.Wpf.Products
         public CategoryListItem SelectedCategory
         {
             get => _selectedCategory;
-            set { _selectedCategory = value; OnPropertyChanged(); }
+            set
+            {
+                _selectedCategory = value;
+                OnPropertyChanged();
+                if (value != null)
+                    CategoryText = value.Name ?? string.Empty;
+            }
         }
 
         public SupplierListItem SelectedSupplier
         {
             get => _selectedSupplier;
-            set { _selectedSupplier = value; OnPropertyChanged(); }
+            set
+            {
+                _selectedSupplier = value;
+                OnPropertyChanged();
+                if (value != null)
+                    SupplierText = value.Name ?? string.Empty;
+            }
+        }
+
+        public string CategoryText
+        {
+            get => _categoryText;
+            set
+            {
+                _categoryText = value ?? string.Empty;
+                if (_selectedCategory != null && !TextMatchesSelection(_categoryText, _selectedCategory.Name))
+                {
+                    _selectedCategory = null;
+                    OnPropertyChanged(nameof(SelectedCategory));
+                }
+                OnPropertyChanged();
+            }
+        }
+
+        public string SupplierText
+        {
+            get => _supplierText;
+            set
+            {
+                _supplierText = value ?? string.Empty;
+                if (_selectedSupplier != null && !TextMatchesSelection(_supplierText, _selectedSupplier.Name))
+                {
+                    _selectedSupplier = null;
+                    OnPropertyChanged(nameof(SelectedSupplier));
+                }
+                OnPropertyChanged();
+            }
         }
 
         public long UnitPriceMinor => MoneyClp.Parse(PriceText);
@@ -177,6 +219,69 @@ namespace Win7POS.Wpf.Products
         public event PropertyChangedEventHandler PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+        private void BuildSupplierSelection(out int? supplierId, out string supplierName)
+        {
+            supplierName = NormalizeChoiceText(SupplierText);
+            supplierId = null;
+
+            if (IsEmptyChoice(supplierName))
+            {
+                supplierName = string.Empty;
+                return;
+            }
+
+            if (SelectedSupplier != null &&
+                SelectedSupplier.Id != 0 &&
+                TextMatchesSelection(supplierName, SelectedSupplier.Name))
+            {
+                supplierId = SelectedSupplier.Id;
+                supplierName = NormalizeChoiceText(SelectedSupplier.Name);
+            }
+        }
+
+        private void BuildCategorySelection(out int? categoryId, out string categoryName)
+        {
+            categoryName = NormalizeChoiceText(CategoryText);
+            categoryId = null;
+
+            if (IsEmptyChoice(categoryName))
+            {
+                categoryName = string.Empty;
+                return;
+            }
+
+            if (SelectedCategory != null &&
+                SelectedCategory.Id != 0 &&
+                TextMatchesSelection(categoryName, SelectedCategory.Name))
+            {
+                categoryId = SelectedCategory.Id;
+                categoryName = NormalizeChoiceText(SelectedCategory.Name);
+            }
+        }
+
+        private static bool TextMatchesSelection(string text, string selectedName)
+        {
+            return string.Equals(
+                NormalizeChoiceText(text),
+                NormalizeChoiceText(selectedName),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsEmptyChoice(string text)
+        {
+            var normalized = NormalizeChoiceText(text);
+            return normalized.Length == 0 ||
+                string.Equals(normalized, "(Nessuno)", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "(Nessuna)", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeChoiceText(string text)
+        {
+            var value = (text ?? string.Empty).Trim();
+            if (value.Length == 0) return string.Empty;
+            return string.Join(" ", value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+        }
 
         private sealed class RelayCommand : ICommand
         {

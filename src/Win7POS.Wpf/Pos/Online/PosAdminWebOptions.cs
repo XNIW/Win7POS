@@ -96,6 +96,11 @@ namespace Win7POS.Wpf.Pos.Online
                 return false;
             }
 
+            if (parsed.Scheme == Uri.UriSchemeHttp && !parsed.IsLoopback)
+            {
+                return false;
+            }
+
             uri = parsed;
             return true;
         }

@@ -68,16 +68,24 @@
                     <!-- Fornitore -->
                     <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Fornitore:"/>
                     <ComboBox Grid.Row="4" Grid.Column="1" Margin="8,10,0,0" MinHeight="34"
-                              Style="{StaticResource ModernComboBoxStyle}"
                               ItemsSource="{Binding Suppliers}"
+                              IsEditable="True"
+                              IsTextSearchEnabled="True"
+                              StaysOpenOnEdit="True"
+                              Text="{Binding SupplierText, UpdateSourceTrigger=PropertyChanged}"
+                              Style="{StaticResource ModernComboBoxStyle}"
                               DisplayMemberPath="Name"
                               SelectedItem="{Binding SelectedSupplier}"/>
 
                     <!-- Categoria -->
                     <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="Categoria:"/>
                     <ComboBox Grid.Row="5" Grid.Column="1" Margin="8,10,0,0" MinHeight="34"
-                              Style="{StaticResource ModernComboBoxStyle}"
                               ItemsSource="{Binding Categories}"
+                              IsEditable="True"
+                              IsTextSearchEnabled="True"
+                              StaysOpenOnEdit="True"
+                              Text="{Binding CategoryText, UpdateSourceTrigger=PropertyChanged}"
+                              Style="{StaticResource ModernComboBoxStyle}"
                               DisplayMemberPath="Name"
                               SelectedItem="{Binding SelectedCategory}"/>
 

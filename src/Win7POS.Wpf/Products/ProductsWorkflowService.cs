@@ -238,7 +238,34 @@ namespace Win7POS.Wpf.Products
 
         private static string Escape(string s)
         {
-            return (s ?? string.Empty).Replace(";", ",").Replace("\r", "").Replace("\n", " ");
+            var value = SanitizeCsvFormula(s ?? string.Empty);
+            return value.Replace(";", ",");
+        }
+
+        private static string SanitizeCsvFormula(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return string.Empty;
+
+            var normalized = value.Replace("\r", "").Replace("\n", " ");
+            var index = 0;
+            while (index < normalized.Length && IsCsvLeadingPadding(normalized[index]))
+                index++;
+
+            if (index < normalized.Length && IsCsvFormulaPrefix(normalized[index]))
+                return "'" + normalized;
+
+            return normalized;
+        }
+
+        private static bool IsCsvLeadingPadding(char value)
+        {
+            return value == ' ' || value == '\u00A0';
+        }
+
+        private static bool IsCsvFormulaPrefix(char value)
+        {
+            return value == '=' || value == '+' || value == '-' || value == '@' || value == '\t';
         }
 
         public async Task CreateProductAsync(string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)

@@ -259,6 +259,7 @@ namespace Win7POS.Wpf
             if (session?.CurrentUser == null) return;
             var hasUsersManage = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.UsersManage) == true);
             var hasDailyCloseView = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.DailyCloseView) == true);
+            var hasCatalogView = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.CatalogView) == true);
 
             if (MainTabControl?.SelectedItem == UsersRolesTab)
             {
@@ -276,6 +277,11 @@ namespace Win7POS.Wpf
             else if (MainTabControl?.SelectedItem == DailyReportTab && !hasDailyCloseView)
             {
                 DailyReportViewControl.DataContext = null;
+                MainTabControl.SelectedIndex = 0;
+                CurrentMenuKey = "Pos";
+            }
+            else if (MainTabControl?.SelectedItem == ProductsTab && !hasCatalogView)
+            {
                 MainTabControl.SelectedIndex = 0;
                 CurrentMenuKey = "Pos";
             }
@@ -436,6 +442,16 @@ namespace Win7POS.Wpf
 
         private void OnMenuProdottiClick(object sender, RoutedEventArgs e)
         {
+            var session = OperatorSessionHolder.Current;
+            var hasCatalogView = session?.CurrentUser != null &&
+                (session.CurrentUser.IsAdmin || session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.CatalogView) == true);
+            if (!hasCatalogView)
+            {
+                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", "Non hai il permesso di accedere ai prodotti.");
+                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                return;
+            }
+
             CurrentMenuKey = "Prodotti";
             MainTabControl.SelectedIndex = 1;
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;

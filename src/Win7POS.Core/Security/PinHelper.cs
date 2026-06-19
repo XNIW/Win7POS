@@ -40,7 +40,28 @@ namespace Win7POS.Core.Security
         {
             if (string.IsNullOrEmpty(storedHashBase64)) return false;
             var computed = HashPin(pin, saltBase64);
-            return string.Equals(computed, storedHashBase64, StringComparison.Ordinal);
+            try
+            {
+                return FixedTimeEquals(
+                    Convert.FromBase64String(computed),
+                    Convert.FromBase64String(storedHashBase64));
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+        }
+
+        private static bool FixedTimeEquals(byte[] left, byte[] right)
+        {
+            if (left == null || right == null) return false;
+
+            var diff = left.Length ^ right.Length;
+            var length = Math.Min(left.Length, right.Length);
+            for (var i = 0; i < length; i++)
+                diff |= left[i] ^ right[i];
+
+            return diff == 0;
         }
     }
 }

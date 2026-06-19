@@ -15,6 +15,7 @@ namespace Win7POS.Wpf.Products
         private static readonly FileLogger _logger = new FileLogger("ProductPriceHistoryViewModel");
         private readonly long _productId;
         private readonly ProductsWorkflowService _service;
+        private readonly bool _canEditPrices;
         private string _currentRetail;
         private string _currentPurchase;
         private string _newRetailText = "";
@@ -22,10 +23,11 @@ namespace Win7POS.Wpf.Products
         private string _statusMessage = "";
         private bool _isBusy;
 
-        public ProductPriceHistoryViewModel(long productId, string barcode, string name, int currentRetail, int currentPurchase, ProductsWorkflowService service)
+        public ProductPriceHistoryViewModel(long productId, string barcode, string name, int currentRetail, int currentPurchase, ProductsWorkflowService service, bool canEditPrices)
         {
             _productId = productId;
             _service = service ?? throw new ArgumentNullException(nameof(service));
+            _canEditPrices = canEditPrices;
             Barcode = barcode ?? "";
             ProductName = name ?? "";
             _currentRetail = currentRetail.ToString();
@@ -35,7 +37,7 @@ namespace Win7POS.Wpf.Products
             PurchaseHistory = new ObservableCollection<ProductPriceHistoryRow>();
 
             RefreshCommand = new AsyncRelayCommand(RefreshAsync, _ => !IsBusy);
-            ApplyNewPricesCommand = new AsyncRelayCommand(ApplyNewPricesAsync, _ => !IsBusy && (HasNewRetail || HasNewPurchase));
+            ApplyNewPricesCommand = new AsyncRelayCommand(ApplyNewPricesAsync, _ => CanApplyNewPrices);
         }
 
         public string Barcode { get; }
@@ -67,6 +69,8 @@ namespace Win7POS.Wpf.Products
 
         public bool HasNewRetail => int.TryParse(NewRetailText?.Trim().Replace(".", "").Replace(",", ""), out var v) && v >= 0;
         public bool HasNewPurchase => int.TryParse(NewPurchaseText?.Trim().Replace(".", "").Replace(",", ""), out var v) && v >= 0;
+        public bool CanEditPrices => _canEditPrices;
+        public bool CanApplyNewPrices => CanEditPrices && !IsBusy && (HasNewRetail || HasNewPurchase);
 
         public string StatusMessage
         {
@@ -135,6 +139,11 @@ namespace Win7POS.Wpf.Products
 
         private async Task ApplyNewPricesAsync()
         {
+            if (!CanEditPrices)
+            {
+                StatusMessage = "Permesso negato: modifica prezzi.";
+                return;
+            }
             var retail = ParseClp(NewRetailText);
             var purchase = ParseClp(NewPurchaseText);
             var details = await _service.GetDetailsByIdAsync(_productId).ConfigureAwait(true);

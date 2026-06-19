@@ -8,9 +8,11 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using Win7POS.Core.Models;
+using Win7POS.Core.Security;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Infrastructure.Security;
 
 namespace Win7POS.Wpf.Products
 {
@@ -18,6 +20,7 @@ namespace Win7POS.Wpf.Products
     {
         private readonly ProductsWorkflowService _service = new ProductsWorkflowService();
         private readonly FileLogger _logger = new FileLogger("ProductsViewModel");
+        private readonly IPermissionService _permissionService;
 
         private string _searchText = string.Empty;
         private string _statusMessage = "Pronto.";
@@ -138,15 +141,16 @@ namespace Win7POS.Wpf.Products
         public ICommand GoToPageCommand { get; }
         public ICommand ClearFiltersCommand { get; }
 
-        public ProductsViewModel()
+        public ProductsViewModel(IPermissionService permissionService = null)
         {
+            _permissionService = permissionService ?? CreatePermissionService();
             SearchCommand = new AsyncRelayCommand(SearchAsync, _ => !IsBusy, _logger);
             RefreshCommand = new AsyncRelayCommand(RefreshAsync, _ => !IsBusy, _logger);
-            NewProductCommand = new AsyncRelayCommand(NewProductAsync, _ => !IsBusy, _logger);
-            EditProductCommand = new AsyncRelayCommand(EditProductAsync, _ => !IsBusy && SelectedProduct != null, _logger);
-            CopyNewCommand = new AsyncRelayCommand(CopyNewAsync, _ => !IsBusy && SelectedProduct != null, _logger);
-            DeleteCommand = new AsyncRelayCommand(DeleteAsync, _ => !IsBusy && SelectedProduct != null, _logger);
-            ImportCommand = new AsyncRelayCommand(ImportAsync, _ => !IsBusy, _logger);
+            NewProductCommand = new AsyncRelayCommand(NewProductAsync, _ => CanEditCatalog, _logger);
+            EditProductCommand = new AsyncRelayCommand(EditProductAsync, _ => CanEditSelectedProduct, _logger);
+            CopyNewCommand = new AsyncRelayCommand(CopyNewAsync, _ => CanEditSelectedProduct, _logger);
+            DeleteCommand = new AsyncRelayCommand(DeleteAsync, _ => CanEditSelectedProduct, _logger);
+            ImportCommand = new AsyncRelayCommand(ImportAsync, _ => CanImportCatalog, _logger);
             ExportDataCommand = new AsyncRelayCommand(ExportDataAsync, _ => !IsBusy, _logger);
             OpenPriceHistoryCommand = new AsyncRelayCommand(OpenPriceHistoryAsync, _ => !IsBusy && SelectedProduct != null, _logger);
             PrevPageCommand = new AsyncRelayCommand(PrevPageAsync, _ => !IsBusy && PageIndex > 1, _logger);
@@ -154,6 +158,37 @@ namespace Win7POS.Wpf.Products
             GoToPageCommand = new AsyncRelayCommand(GoToPageAsync, _ => !IsBusy, _logger);
             ClearFiltersCommand = new AsyncRelayCommand(ClearFiltersAsync, _ => !IsBusy && HasActiveFilters, _logger);
             _ = LoadCategoriesAndSearchAsync();
+        }
+
+        private static IPermissionService CreatePermissionService()
+        {
+            var session = OperatorSessionHolder.Current;
+            return session == null ? null : new PermissionService(session);
+        }
+
+        private bool HasPermission(string permissionCode)
+        {
+            if (_permissionService != null)
+                return _permissionService.Has(permissionCode);
+
+            var user = OperatorSessionHolder.Current?.CurrentUser;
+            if (user == null) return false;
+            if (user.IsAdmin) return true;
+            return user.PermissionCodes?.Contains(permissionCode) == true;
+        }
+
+        private bool CanEditCatalog => !IsBusy && HasPermission(PermissionCodes.CatalogEdit);
+        private bool CanEditSelectedProduct => CanEditCatalog && SelectedProduct != null;
+        private bool CanImportCatalog => !IsBusy && HasPermission(PermissionCodes.CatalogImport);
+        private bool CanEditPrices => !IsBusy && HasPermission(PermissionCodes.CatalogPriceEdit);
+
+        private bool DemandProductPermission(string permissionCode, string operation)
+        {
+            if (HasPermission(permissionCode))
+                return true;
+
+            StatusMessage = "Permesso negato: " + operation + ".";
+            return false;
         }
 
         private async Task LoadCategoriesAndSearchAsync()
@@ -333,6 +368,7 @@ namespace Win7POS.Wpf.Products
 
         private async Task NewProductAsync()
         {
+            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "modifica catalogo")) return;
             try
             {
                 var ok = await ProductEditDialog.ShowAsync(ProductEditMode.New, null, _service).ConfigureAwait(true);
@@ -348,6 +384,7 @@ namespace Win7POS.Wpf.Products
         private async Task EditProductAsync()
         {
             if (SelectedProduct == null) return;
+            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "modifica catalogo")) return;
             try
             {
                 var full = await _service.GetDetailsByIdAsync(SelectedProduct.Id).ConfigureAwait(true);
@@ -369,6 +406,7 @@ namespace Win7POS.Wpf.Products
         private async Task CopyNewAsync()
         {
             if (SelectedProduct == null) return;
+            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "modifica catalogo")) return;
             try
             {
                 var full = await _service.GetDetailsByIdAsync(SelectedProduct.Id).ConfigureAwait(true);
@@ -390,6 +428,7 @@ namespace Win7POS.Wpf.Products
         private async Task DeleteAsync()
         {
             if (SelectedProduct == null) return;
+            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "modifica catalogo")) return;
 
             var okToDelete = DeleteProductConfirmDialog.ShowDialog(
                 DialogOwnerHelper.GetSafeOwner(),
@@ -415,6 +454,7 @@ namespace Win7POS.Wpf.Products
 
         private async Task ImportAsync()
         {
+            if (!DemandProductPermission(PermissionCodes.CatalogImport, "import catalogo")) return;
             try
             {
                 ImportDataDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner());
@@ -486,7 +526,7 @@ namespace Win7POS.Wpf.Products
                     StatusMessage = "Prodotto non trovato.";
                     return;
                 }
-                ProductPriceHistoryDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner(), full.Id, full.Barcode ?? "", full.Name ?? "", (int)full.UnitPrice, full.PurchasePrice);
+                ProductPriceHistoryDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner(), full.Id, full.Barcode ?? "", full.Name ?? "", (int)full.UnitPrice, full.PurchasePrice, CanEditPrices);
             }
             catch (Exception ex)
             {

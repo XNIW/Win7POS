@@ -64,9 +64,9 @@
                 <Button Grid.Column="0" Content="Aggiorna" MinWidth="100" Height="32" Command="{Binding RefreshCommand}" Style="{StaticResource SecondaryButtonStyle}"/>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0">
                     <TextBlock Text="Nuovo prezzo vendita (CLP):" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBox Text="{Binding NewRetailText, UpdateSourceTrigger=PropertyChanged}" Width="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBox Text="{Binding NewRetailText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditPrices}" Width="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
                     <TextBlock Text="Nuovo prezzo acquisto:" VerticalAlignment="Center" Margin="16,0,8,0"/>
-                    <TextBox Text="{Binding NewPurchaseText, UpdateSourceTrigger=PropertyChanged}" Width="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBox Text="{Binding NewPurchaseText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditPrices}" Width="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
                 </StackPanel>
                 <Button Grid.Column="2" Content="Applica prezzi" MinWidth="120" Height="32" Command="{Binding ApplyNewPricesCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
             </Grid>

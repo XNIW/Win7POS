@@ -20,10 +20,10 @@ namespace Win7POS.Wpf.Products
             };
         }
 
-        public static void ShowDialog(Window owner, long productId, string barcode, string name, int currentRetail, int currentPurchase)
+        public static void ShowDialog(Window owner, long productId, string barcode, string name, int currentRetail, int currentPurchase, bool canEditPrices)
         {
             var service = new ProductsWorkflowService();
-            var vm = new ProductPriceHistoryViewModel(productId, barcode, name, currentRetail, currentPurchase, service);
+            var vm = new ProductPriceHistoryViewModel(productId, barcode, name, currentRetail, currentPurchase, service, canEditPrices);
             var dlg = new ProductPriceHistoryDialog(vm)
             {
                 Owner = owner ?? DialogOwnerHelper.GetSafeOwner()

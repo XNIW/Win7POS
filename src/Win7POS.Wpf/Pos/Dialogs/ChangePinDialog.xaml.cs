@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Windows;
 using Win7POS.Wpf.Chrome;
@@ -43,12 +44,24 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
-            var salt = PinHelper.GenerateSalt();
-            var hash = PinHelper.HashPin(newPin, salt);
-            await _userRepo.UpdatePinAsync(_userId, hash, salt, requirePinChange: false).ConfigureAwait(true);
-            await _securityRepo.LogEventAsync(SecurityEventCodes.PinChanged, "userId=" + _userId).ConfigureAwait(true);
-            DialogResult = true;
-            Close();
+            try
+            {
+                var salt = PinHelper.GenerateSalt();
+                var hash = PinHelper.HashPin(newPin, salt);
+                await _userRepo.UpdatePinAsync(_userId, hash, salt, requirePinChange: false).ConfigureAwait(true);
+                await _securityRepo.LogEventAsync(SecurityEventCodes.PinChanged, "userId=" + _userId).ConfigureAwait(true);
+                DialogResult = true;
+                Close();
+            }
+            catch (Exception ex)
+            {
+                ShowError("Impossibile aggiornare il PIN: " + ex.Message);
+            }
+            finally
+            {
+                NewPinBox.Clear();
+                ConfirmPinBox.Clear();
+            }
         }
 
         private void ShowError(string message)

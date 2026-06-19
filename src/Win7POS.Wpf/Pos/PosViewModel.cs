@@ -412,6 +412,9 @@ namespace Win7POS.Wpf.Pos
             {
                 StatusMessage = "Prodotto non trovato: " + input + " (creazione rapida)";
 
+                if (!(await TryDemandOrOverrideAsync(PermissionCodes.CatalogEdit, "Creazione rapida prodotto").ConfigureAwait(true)))
+                    return;
+
                 var productsService = new ProductsWorkflowService();
                 var draft = new ProductDetailsRow { Barcode = input };
                 var ok = await ProductEditDialog.ShowAsync(ProductEditMode.New, draft, productsService).ConfigureAwait(true);
