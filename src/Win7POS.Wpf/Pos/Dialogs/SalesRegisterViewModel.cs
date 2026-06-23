@@ -367,7 +367,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 DetailSummary = $"Totale: {MoneyClp.Format(detail.Sale.Total)}  |  " +
                     $"Contanti: {MoneyClp.Format(detail.Sale.PaidCash)}  |  " +
                     $"Carta: {MoneyClp.Format(detail.Sale.PaidCard)}  |  " +
-                    $"Resto: {MoneyClp.Format(detail.Sale.Change)}";
+                    $"Resto (solo contanti): {MoneyClp.Format(detail.Sale.Change)}  |  " +
+                    DocumentStatusText(detail.Sale);
 
                 var preview = await _service.GetReceiptPreviewBySaleIdAsync(SelectedSale.SaleId, _useReceipt42).ConfigureAwait(true);
                 DetailReceiptPreview = preview ?? "";
@@ -377,6 +378,23 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 DetailSummary = "Errore caricamento dettagli.";
                 DetailReceiptPreview = "";
             }
+        }
+
+        private static string DocumentStatusText(Sale sale)
+        {
+            if (sale == null)
+            {
+                return "Documento: non disponibile";
+            }
+
+            if (sale.PdfPrinted)
+            {
+                return "Documento: Boleta PDF stampata";
+            }
+
+            return sale.PaidCash > 0
+                ? "Documento: Non stampata (contanti)"
+                : "Documento: Non stampata (policy carta)";
         }
 
         private async Task PrintAsync()

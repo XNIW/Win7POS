@@ -370,6 +370,39 @@ WHERE remote_product_id = @remoteProductId
             return rows > 0;
         }
 
+        public async Task<bool> UpsertRemotePriceHistoryAsync(string remoteProductId, string type, int price, string timestamp, string source)
+        {
+            if (string.IsNullOrWhiteSpace(remoteProductId) || string.IsNullOrWhiteSpace(type) || price < 0)
+                return false;
+
+            using var conn = _factory.Open();
+            var barcode = await conn.QuerySingleOrDefaultAsync<string>(
+                "SELECT barcode FROM products WHERE remote_product_id = @remoteProductId LIMIT 1",
+                new { remoteProductId = remoteProductId.Trim() }).ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(barcode))
+                return false;
+
+            var normalizedTimestamp = string.IsNullOrWhiteSpace(timestamp)
+                ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                : timestamp.Trim();
+            var normalizedType = type.Trim().ToUpperInvariant();
+
+            var rows = await conn.ExecuteAsync(@"
+INSERT OR IGNORE INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
+VALUES(@barcode, @timestamp, @type, NULL, @price, @source)",
+                new
+                {
+                    barcode,
+                    timestamp = normalizedTimestamp,
+                    type = normalizedType,
+                    price,
+                    source = string.IsNullOrWhiteSpace(source) ? "remote_catalog" : source.Trim()
+                }).ConfigureAwait(false);
+
+            return rows > 0;
+        }
+
         public async Task<bool> DeleteByBarcodeAsync(string barcode)
         {
             if (string.IsNullOrWhiteSpace(barcode)) return false;
@@ -428,10 +461,10 @@ SELECT last_insert_rowid();", new
                 var categoryRef = await ResolveCategoryReferenceAsync(conn, tx, categoryId, categoryName).ConfigureAwait(false);
                 var hasPendingLocalStock = await conn.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1)
-FROM sales_sync_outbox o
-JOIN local_stock_movements m ON m.sale_id = o.sale_id
-WHERE m.barcode = @Barcode
-  AND o.status IN ('pending', 'retry')",
+	FROM sales_sync_outbox o
+	JOIN local_stock_movements m ON m.sale_id = o.sale_id
+	WHERE m.barcode = @Barcode
+	  AND (o.status IN ('pending', 'retry') OR o.status = 'failed_blocked')",
                     new { p.Barcode }, tx).ConfigureAwait(false) > 0;
                 var stockQtyToWrite = stockQty;
                 if (hasPendingLocalStock)

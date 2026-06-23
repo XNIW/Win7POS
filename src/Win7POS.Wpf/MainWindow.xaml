@@ -26,7 +26,17 @@
                         <Path Stroke="White" StrokeThickness="2" Data="M 6,8 L 26,8 M 6,14 L 26,14 M 6,20 L 26,20"/>
                     </Button.Content>
                 </Button>
-                <TextBlock Grid.Column="1" VerticalAlignment="Center" Foreground="White" FontSize="18" FontWeight="SemiBold" Text="Win7POS"/>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Foreground="White" FontSize="18" FontWeight="SemiBold" Text="Win7POS"/>
+                    <Border x:Name="SyncStatusPill" Margin="0,4,16,0" Padding="8,3" CornerRadius="7" Background="#26FFFFFF" BorderBrush="#66FFFFFF" BorderThickness="1" HorizontalAlignment="Left">
+                        <TextBlock x:Name="SyncStatusText"
+                                   Foreground="White"
+                                   FontSize="11"
+                                   Text="Sync: Non collegato | Ultimo catalogo: mai | Ultima vendita inviata: mai | Vendite in coda: 0"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="540"/>
+                    </Border>
+                </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <Border Background="#33FFFFFF" CornerRadius="8" Padding="12,6" Margin="0,0,10,0" BorderBrush="White" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
@@ -95,7 +105,7 @@
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
                         <TextBlock Text="Impostazioni" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="Impostazioni negozio" Tag="ShopSettings" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuShopSettingsClick"/>
+                        <Button Content="Dati negozio ufficiali" Tag="ShopSettings" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuShopSettingsClick"/>
                         <Button Content="Impostazioni stampante" Tag="Printer" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPrinterClick"/>
                         <Button Content="Utenti e ruoli" Tag="UsersRoles" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuUsersClick"/>
 

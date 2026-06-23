@@ -8,9 +8,6 @@ namespace Win7POS.Wpf.Pos
 {
     public partial class PaymentView
     {
-        // SII Web: area fiscale temporaneamente disattivata (placeholder in XAML); Navigate non usato
-        // private const string SiiLoginUrl = "https://clave.w.sii.cl/...";
-
         public PaymentView()
         {
             InitializeComponent();

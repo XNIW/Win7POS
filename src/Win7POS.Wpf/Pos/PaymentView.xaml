@@ -52,7 +52,7 @@
                         <Button x:Name="BoletaNumberButton"
                                 MinWidth="72" MinHeight="26" Padding="4,2" Margin="0,0,0,6"
                                 HorizontalAlignment="Left"
-                                Content="{Binding NextBoletaNumberText}"
+                                Content="{Binding NextBoletaNumberText, StringFormat=Prossima boleta PDF: {0}}"
                                 FontWeight="SemiBold" FontSize="11"
                                 Cursor="Hand" Click="BoletaNumberButton_Click" Focusable="False"/>
                         <Grid Margin="0,2,0,0">
@@ -60,7 +60,7 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="Stampa automatica" FontSize="13" FontWeight="SemiBold" Foreground="#2E2236" VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="0" Text="Stampa automatica boleta solo con contanti" FontSize="13" FontWeight="SemiBold" Foreground="#2E2236" VerticalAlignment="Center" TextWrapping="Wrap"/>
                             <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
                                           IsChecked="{Binding AutoPrintPdfSii, Mode=TwoWay}"
                                           Margin="6,0,0,0" VerticalAlignment="Center"/>
@@ -70,7 +70,7 @@
             </Grid>
         </Border>
 
-        <!-- Col 1: Fiscale (SII Web) - più spazio, area pulita -->
+        <!-- Col 1: Boleta/PDF locale - più spazio, area pulita -->
         <Border Grid.Row="0" Grid.Column="1"
                 BorderBrush="#E0E0E0"
                 BorderThickness="1"
@@ -83,9 +83,9 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="Fiscale (SII Web)" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,10"/>
+                <TextBlock Grid.Row="0" Text="Boleta/PDF locale" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,10"/>
                 <Border Grid.Row="1" Background="#FAFAFA" CornerRadius="6" BorderBrush="#E5E5E5" BorderThickness="1" Padding="12">
-                    <TextBlock Text="Area fiscale temporaneamente disattivata"
+                    <TextBlock Text="{Binding FiscalStatus, Mode=OneWay, FallbackValue=In attesa}"
                                Foreground="#888" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"/>
                 </Border>
             </Grid>

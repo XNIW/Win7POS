@@ -100,7 +100,11 @@ namespace Win7POS.Data.Online
                             DocumentNumber = sale.Code,
                             DocumentType = "boleta",
                             PrintedAt = occurredAt,
-                            Status = sale.PdfPrinted ? "printed_local_pdf" : "not_reported",
+                            Status = sale.PdfPrinted
+                                ? "printed_local_pdf"
+                                : sale.PaidCard > 0 && sale.PaidCash == 0
+                                    ? "not_printed_card_policy"
+                                    : "not_reported",
                         },
                         IdempotencyKey = item.IdempotencyKey,
                         Kind = saleKind,

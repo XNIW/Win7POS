@@ -684,8 +684,9 @@ namespace Win7POS.Wpf.Pos
                 }
 
                 if (!fiscalPrinted && vm.AutoPrintPdfSii && vm.CardAmountMinor > 0 && vm.CashAmountMinor == 0)
-                    StatusMessage = "Pagamento OK: " + result.SaleCode + " (PDF SII non stampato: pagamento con carta)";
+                    StatusMessage = "Pagamento OK: " + result.SaleCode + " (boleta non stampata: pagamento solo carta)";
 
+                await _service.TrySyncPendingSalesAsync().ConfigureAwait(true);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }
             catch (PosException ex)
@@ -1414,7 +1415,7 @@ namespace Win7POS.Wpf.Pos
         {
             try
             {
-                if (!(await TryDemandOrOverrideAsync(PermissionCodes.SettingsShop, "Impostazioni negozio").ConfigureAwait(true))) { RequestFocusBarcode(); return; }
+                if (!(await TryDemandOrOverrideAsync(PermissionCodes.SettingsShop, "Dati negozio ufficiali").ConfigureAwait(true))) { RequestFocusBarcode(); return; }
                 var vm = new Dialogs.ShopSettingsViewModel(_service);
                 var dlg = new Dialogs.ShopSettingsDialog(vm)
                 {
@@ -1431,7 +1432,7 @@ namespace Win7POS.Wpf.Pos
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Shop settings dialog failed (XAML/binding).");
-                StatusMessage = "Errore apertura Impostazioni negozio.";
+                StatusMessage = "Errore apertura Dati negozio ufficiali.";
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Impostazioni negozio", "Errore apertura Impostazioni negozio.\n\n" + ex.Message);
             }
             RequestFocusBarcode();

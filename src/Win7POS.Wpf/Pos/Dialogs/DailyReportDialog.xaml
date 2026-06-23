@@ -47,7 +47,7 @@
                 </Border>
                 <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0"
                             Visibility="{Binding HasLockFeature, Converter={StaticResource BoolToVis}}">
-                    <Button Content="{Binding LockGlyph, Mode=OneWay}" Command="{Binding ToggleFiscalPrintedModeCommand}" ToolTip="Aggiorna vista completa (solo Admin)"
+                    <Button Content="{Binding LockGlyph, Mode=OneWay}" Command="{Binding ToggleFiscalPrintedModeCommand}" ToolTip="Sblocca funzioni admin della chiusura"
                             Style="{StaticResource OutlineButtonStyle}" Width="36" Height="36" Padding="0" FontSize="15"/>
                 </StackPanel>
             </Grid>

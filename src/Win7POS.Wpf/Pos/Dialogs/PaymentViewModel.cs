@@ -30,7 +30,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _receiptPreviewRest = "";
         private int _nextBoletaNumber;
         private string _fiscalPreviewText = "";
-        private string _fiscalStatus = "";
+        private string _fiscalStatus = "In attesa.";
         private bool _autoPrintPdfSii;
         private bool _openDrawerForCurrentPayment;
 
@@ -169,10 +169,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         public string ChangeDueText => MoneyClp.Format(ChangeDueMinor);
-        public string MissingAmountText => IsValid ? string.Empty : "Manca: " + MoneyClp.Format(MissingAmountMinor);
-        public string RestoOrMissingDisplay => IsValid ? "Resto: " + ChangeDueText : MissingAmountText;
+        public string MissingAmountText => IsCardOverBalance
+            ? "La carta non può superare il saldo da pagare. Riduci carta o sposta l'eccedenza su contanti."
+            : IsValid ? string.Empty : "Manca: " + MoneyClp.Format(MissingAmountMinor);
+        public string RestoOrMissingDisplay => IsValid ? "Resto (solo contanti): " + ChangeDueText : MissingAmountText;
 
-        public bool IsValid => CashAmountMinor >= 0 && CardAmountMinor >= 0 && (long)CashAmountMinor + (long)CardAmountMinor >= _totalDueMinor;
+        public bool IsCardOverBalance => CardAmountMinor > Math.Max(0, _totalDueMinor - CashAmountMinor);
+        public bool IsValid => CashAmountMinor >= 0 &&
+            CardAmountMinor >= 0 &&
+            !IsCardOverBalance &&
+            (long)CashAmountMinor + (long)CardAmountMinor >= _totalDueMinor;
 
         /// <summary>True se il pagamento include contanti (solo in quel caso si stampa automaticamente il PDF SII).</summary>
         public bool IsCashPayment => CashAmountMinor > 0;
@@ -185,7 +191,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             get
             {
                 if (!IsValid) return 0;
-                return (long)CashAmountMinor + (long)CardAmountMinor - _totalDueMinor;
+                var balanceAfterCard = Math.Max(0, _totalDueMinor - CardAmountMinor);
+                return Math.Max(0, (long)CashAmountMinor - balanceAfterCard);
             }
         }
 
@@ -241,6 +248,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void NotifyDerived()
         {
             OnPropertyChanged(nameof(ChangeDueText));
+            OnPropertyChanged(nameof(IsCardOverBalance));
             OnPropertyChanged(nameof(MissingAmountText));
             OnPropertyChanged(nameof(RestoOrMissingDisplay));
             OnPropertyChanged(nameof(IsValid));
@@ -263,22 +271,28 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var formattedAmount = Fmt(venta);
             var formattedIVA = Fmt(iva);
             var formattedNum = Fmt(NextBoletaNumber);
+            var giro = string.IsNullOrWhiteSpace(shop.BusinessGiro)
+                ? "Giro: no informado"
+                : "Giro: " + shop.BusinessGiro.Trim();
+            var legalRepresentative = string.IsNullOrWhiteSpace(shop.LegalRepresentativeRut)
+                ? "Representante legal: no informado"
+                : "Representante legal: " + shop.LegalRepresentativeRut.Trim();
+            var address = string.IsNullOrWhiteSpace(shop.Address) ? "Dirección: no informada" : shop.Address.Trim();
+            var city = string.IsNullOrWhiteSpace(shop.City)
+                ? "Ciudad: no informada"
+                : System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(shop.City.Trim().ToLowerInvariant());
 
             var lines = new List<string>
             {
                 "",
                 shop.Name ?? "",
                 shop.Rut ?? "",
-                "Giro: VENTA PRENDAS DE",
-                "VESTIR,CALZADO,FERRETERIA,MENAJE,AR",
-                "T.EN GENERAL",
-                shop.Address ?? "",
-                string.IsNullOrWhiteSpace(shop.City) ? "" : System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(shop.City.Trim().ToLowerInvariant()),
+                giro,
+                legalRepresentative,
+                address,
+                city,
                 $"BOLETA ELECTRÓNICA NUMERO: {formattedNum}",
-                "REF. VENDEDOR: 24231788-2",
                 $"Fecha: {currentDate}",
-                "",
-                "Dirección: Santiago",
                 "",
                 "Venta",
                 $"                           $ {formattedAmount}",
@@ -313,7 +327,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (CashAmountMinor <= 0)
             {
-                FiscalStatus = "PDF SII non stampato: pagamento con carta.";
+                FiscalStatus = "Non stampata: pagamento solo carta.";
                 return false;
             }
 
@@ -326,7 +340,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (_generateFiscalPdf == null)
                 return false;
 
-            FiscalStatus = "Generazione PDF...";
+            FiscalStatus = "Generazione boleta PDF...";
             string path = null;
             try
             {
@@ -334,7 +348,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
                 if (_printFiscalToThermal != null)
                 {
-                    FiscalStatus = "Invio a stampante...";
+                    FiscalStatus = "Invio boleta a stampante...";
                     await _printFiscalToThermal(FiscalPreviewText, SaleCode).ConfigureAwait(true);
 
                     if (!string.IsNullOrEmpty(path))
@@ -354,16 +368,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         });
                     }
 
-                    FiscalStatus = "Stampato.";
+                    FiscalStatus = "Stampata.";
                     return true;
                 }
 
-                FiscalStatus = "PDF salvato: " + path;
+                FiscalStatus = "Boleta PDF generata nella cartella export locale.";
                 return false;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                FiscalStatus = "Errore: " + ex.Message;
+                FiscalStatus = "Boleta non stampata. Controlla il log applicativo.";
                 return false;
             }
         }

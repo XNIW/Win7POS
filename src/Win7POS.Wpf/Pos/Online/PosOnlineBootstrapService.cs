@@ -85,6 +85,7 @@ namespace Win7POS.Wpf.Pos.Online
                 }).ConfigureAwait(false);
 
                 _trustedDeviceStore.SaveFirstLogin(response);
+                await PosOnlineShopSnapshot.SaveAsync(_factory, response.Shop).ConfigureAwait(false);
 
                 var security = new SecurityRepository(_factory);
                 await security.LogEventAsync(
@@ -94,6 +95,16 @@ namespace Win7POS.Wpf.Pos.Online
                     ", role_key=" + SafeAuditValue(response.Staff.RoleKey) +
                     ", remote_staff_id=" + SafeAuditValue(response.Staff.StaffId))
                     .ConfigureAwait(false);
+
+                try
+                {
+                    var salesSync = new PosSalesSyncService(_factory);
+                    await salesSync.TrySyncPendingAsync(options, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("Bootstrap sales sync skipped.", ex);
+                }
 
                 try
                 {

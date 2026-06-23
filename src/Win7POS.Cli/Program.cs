@@ -22,6 +22,8 @@ using Win7POS.Wpf.Pos.Online;
 
 internal static class Program
 {
+    private static string LastTask081CatalogDiagnostics = string.Empty;
+
     private sealed class DiffParams
     {
         public string CsvPath = string.Empty;
@@ -43,6 +45,23 @@ internal static class Program
     private sealed class Task081HttpHarnessParams
     {
         public string BaseUrl = string.Empty;
+        public bool KeepDb;
+        public string SessionJsonPath = string.Empty;
+    }
+
+    private sealed class Task081CatalogPriceHarnessParams
+    {
+        public string BaseUrl = string.Empty;
+        public string DbPath = string.Empty;
+        public string ExpectedBarcode = string.Empty;
+        public string ExpectedCategoryName = string.Empty;
+        public string ExpectedItemNumber = string.Empty;
+        public string ExpectedProductName = string.Empty;
+        public int ExpectedPurchasePrice = 100;
+        public int ExpectedRetailPrice = 1000;
+        public string ExpectedSupplierName = string.Empty;
+        public int ExpectedStock = 10;
+        public bool ExpectTombstone;
         public bool KeepDb;
         public string SessionJsonPath = string.Empty;
     }
@@ -117,9 +136,27 @@ internal static class Program
                 return;
             }
 
+            if (TryParseTask081ShopCacheHarnessArgs(args, out var keepTask081ShopCacheDb))
+            {
+                await RunTask081ShopCacheHarnessAsync(keepTask081ShopCacheDb);
+                return;
+            }
+
             if (TryParseTask081SalesSyncHttpHarnessArgs(args, out var task081HttpParams))
             {
                 await RunTask081SalesSyncHttpHarnessAsync(task081HttpParams);
+                return;
+            }
+
+            if (TryParseTask081CatalogPriceSyncHarnessArgs(args, out var task081CatalogParams))
+            {
+                await RunTask081CatalogPriceSyncHarnessAsync(task081CatalogParams);
+                return;
+            }
+
+            if (TryParseTask081OfflineReconnectHarnessArgs(args, out var task081OfflineParams))
+            {
+                await RunTask081OfflineReconnectHarnessAsync(task081OfflineParams);
                 return;
             }
 
@@ -145,7 +182,10 @@ internal static class Program
         Console.WriteLine("Usage:");
         Console.WriteLine("  --selftest [--keepdb]");
         Console.WriteLine("  --task081-sales-sync-harness [--keepdb]");
+        Console.WriteLine("  --task081-shop-cache-harness [--keepdb]");
         Console.WriteLine("  --task081-sales-sync-http-harness --base-url <AdminWebUrl> --session-json <path> [--keepdb]");
+        Console.WriteLine("  --task081-catalog-price-sync-harness --base-url <AdminWebUrl> --session-json <path> [--db <path>] [--expected-*] [--expect-tombstone] [--keepdb]");
+        Console.WriteLine("  --task081-offline-reconnect-harness --base-url <AdminWebUrl> --session-json <path> [--keepdb]");
         Console.WriteLine("  --daily yyyy-MM-dd [--db <path>]");
         Console.WriteLine("  --analyze-csv <path>");
             Console.WriteLine("  --diff-csv <path> [--db <path>] [--max-items N] [--format text|json]");
@@ -187,6 +227,21 @@ internal static class Program
         return hasHarness;
     }
 
+    private static bool TryParseTask081ShopCacheHarnessArgs(string[] args, out bool keepDb)
+    {
+        keepDb = false;
+        var hasHarness = false;
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--task081-shop-cache-harness", StringComparison.OrdinalIgnoreCase))
+                hasHarness = true;
+            if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase))
+                keepDb = true;
+        }
+
+        return hasHarness;
+    }
+
     private static bool TryParseTask081SalesSyncHttpHarnessArgs(
         string[] args,
         out Task081HttpHarnessParams parameters)
@@ -216,6 +271,163 @@ internal static class Program
                 if (i + 1 >= args.Length) return false;
                 parameters.SessionJsonPath = args[i + 1];
                 i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase))
+            {
+                parameters.KeepDb = true;
+            }
+        }
+
+        return hasHarness;
+    }
+
+    private static bool TryParseTask081OfflineReconnectHarnessArgs(
+        string[] args,
+        out Task081HttpHarnessParams parameters)
+    {
+        parameters = new Task081HttpHarnessParams();
+        var hasHarness = false;
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (string.Equals(arg, "--task081-offline-reconnect-harness", StringComparison.OrdinalIgnoreCase))
+            {
+                hasHarness = true;
+                continue;
+            }
+
+            if (string.Equals(arg, "--base-url", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.BaseUrl = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--session-json", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.SessionJsonPath = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase))
+            {
+                parameters.KeepDb = true;
+            }
+        }
+
+        return hasHarness;
+    }
+
+    private static bool TryParseTask081CatalogPriceSyncHarnessArgs(
+        string[] args,
+        out Task081CatalogPriceHarnessParams parameters)
+    {
+        parameters = new Task081CatalogPriceHarnessParams();
+        var hasHarness = false;
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (string.Equals(arg, "--task081-catalog-price-sync-harness", StringComparison.OrdinalIgnoreCase))
+            {
+                hasHarness = true;
+                continue;
+            }
+
+            if (string.Equals(arg, "--base-url", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.BaseUrl = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--session-json", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.SessionJsonPath = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--db", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.DbPath = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--expected-barcode", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.ExpectedBarcode = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--expected-product-name", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.ExpectedProductName = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--expected-item-number", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.ExpectedItemNumber = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--expected-supplier-name", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.ExpectedSupplierName = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--expected-category-name", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.ExpectedCategoryName = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--expected-purchase-price", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length || !int.TryParse(args[i + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out parameters.ExpectedPurchasePrice)) return false;
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--expected-retail-price", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length || !int.TryParse(args[i + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out parameters.ExpectedRetailPrice)) return false;
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--expected-stock", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length || !int.TryParse(args[i + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out parameters.ExpectedStock)) return false;
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--expect-tombstone", StringComparison.OrdinalIgnoreCase))
+            {
+                parameters.ExpectTombstone = true;
                 continue;
             }
 
@@ -647,6 +859,85 @@ internal static class Program
         }
     }
 
+    private static async Task RunTask081ShopCacheHarnessAsync(bool keepDb)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var dbPath = Path.Combine(tempRoot, $"task081_shop_cache_{Guid.NewGuid():N}.db");
+        var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
+
+        Console.WriteLine("TASK-081 shop cache harness");
+        Console.WriteLine($"DB path: {opt.DbPath}");
+
+        try
+        {
+            DbInitializer.EnsureCreated(opt);
+            var factory = new SqliteConnectionFactory(opt);
+            var repository = new ShopOfficialSnapshotRepository(factory);
+
+            await repository.SaveAsync(new OfficialShopSnapshot
+            {
+                BusinessAddress = "Av. Admin Web 123",
+                BusinessCity = "Santiago",
+                BusinessGiro = "VENTA MINORISTA",
+                CompanyRut = "12345678-9",
+                FiscalIdentityLockedByPlatform = true,
+                LegalRepresentativeRut = "9876543-2",
+                ShopCode = "TASK081SHOP",
+                ShopId = "11111111-1111-4111-8111-111111111111",
+                ShopName = "TASK081 Tienda Oficial",
+                ShopStatus = "active",
+                Source = "supabase_admin_server",
+                SyncedAtUtc = "2026-06-23T10:00:00Z",
+                UpdatedAt = "2026-06-23T09:55:00Z"
+            }).ConfigureAwait(false);
+
+            var firstRead = await repository.GetAsync().ConfigureAwait(false);
+            Assert(firstRead.HasOfficialData, "Official shop snapshot was not persisted.");
+            Assert(firstRead.ShopName == "TASK081 Tienda Oficial", "Official shop name mismatch.");
+            Assert(firstRead.CompanyRut == "12345678-9", "Official company RUT mismatch.");
+            Assert(firstRead.ToReceiptShopInfo().BusinessGiro == "VENTA MINORISTA", "Receipt shop giro mismatch.");
+
+            await repository.SaveAsync(new OfficialShopSnapshot
+            {
+                BusinessAddress = "Av. Admin Web 456",
+                BusinessCity = "Valparaiso",
+                BusinessGiro = "VENTA ACTUALIZADA",
+                CompanyRut = "12345678-9",
+                FiscalIdentityLockedByPlatform = true,
+                LegalRepresentativeRut = "9876543-2",
+                ShopCode = "TASK081SHOP",
+                ShopId = "11111111-1111-4111-8111-111111111111",
+                ShopName = "TASK081 Tienda Actualizada",
+                ShopStatus = "active",
+                Source = "supabase_admin_server",
+                SyncedAtUtc = "2026-06-23T11:00:00Z",
+                UpdatedAt = "2026-06-23T10:59:00Z"
+            }).ConfigureAwait(false);
+
+            var refreshed = await repository.GetAsync().ConfigureAwait(false);
+            Assert(refreshed.ShopName == "TASK081 Tienda Actualizada", "Official shop refresh did not update cache.");
+            Assert(refreshed.BusinessAddress == "Av. Admin Web 456", "Official shop address refresh mismatch.");
+            Assert(refreshed.ToReceiptShopInfo().Rut == "12345678-9", "Receipt shop RUT should use official snapshot.");
+
+            var settings = new SettingsRepository(factory);
+            Assert(string.IsNullOrWhiteSpace(await settings.GetStringAsync("shop.name").ConfigureAwait(false)), "Legacy local shop.name should not be written by official cache harness.");
+
+            Console.WriteLine("CACHE CHECK: official shop snapshot persisted, refreshed, and read offline.");
+            Console.WriteLine("TEST PASS");
+        }
+        finally
+        {
+            if (!keepDb && File.Exists(opt.DbPath))
+            {
+                File.Delete(opt.DbPath);
+            }
+            else if (keepDb)
+            {
+                Console.WriteLine($"KEEPDB: {opt.DbPath}");
+            }
+        }
+    }
+
     private static async Task RunTask081SalesSyncHttpHarnessAsync(Task081HttpHarnessParams parameters)
     {
         if (parameters == null)
@@ -664,8 +955,8 @@ internal static class Program
         var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
         var dbPath = Path.Combine(tempRoot, $"task081_sales_sync_http_{runId}_{Guid.NewGuid():N}.db");
         var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
-        var barcode = "TASK081_WIN7HTTP_BARCODE_" + runId;
-        var productName = "TASK081_WIN7HTTP_PRODUCT_" + runId;
+        var barcode = "TASK081Z_WIN7HTTP_BARCODE_" + runId;
+        var productName = "TASK081Z_WIN7HTTP_PRODUCT_" + runId;
         var now = DateTimeOffset.UtcNow;
         var nowMs = now.ToUnixTimeMilliseconds();
         var previousMonthMs = now.AddMonths(-1).ToUnixTimeMilliseconds();
@@ -925,6 +1216,288 @@ internal static class Program
 
             Console.WriteLine("TASK-081 Win7POS HTTP sales sync harness: PASS");
             Console.WriteLine("accepted=6 pending_after_accept=0 duplicate=ok conflict=ok auth_denied_retry=1 local_stock_after_accept=7");
+        }
+        finally
+        {
+            if (!parameters.KeepDb && File.Exists(opt.DbPath))
+            {
+                File.Delete(opt.DbPath);
+            }
+        }
+    }
+
+    private static async Task RunTask081CatalogPriceSyncHarnessAsync(Task081CatalogPriceHarnessParams parameters)
+    {
+        if (parameters == null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (!PosAdminWebOptions.TryCreate(parameters.BaseUrl, out var options, out var optionsReason))
+        {
+            throw new InvalidOperationException(optionsReason ?? "Admin Web base URL is invalid.");
+        }
+
+        var harnessSession = ReadTask081HttpHarnessSession(parameters.SessionJsonPath);
+        var runId = NormalizeTask081RunId(harnessSession.RunId);
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var ownsDb = string.IsNullOrWhiteSpace(parameters.DbPath);
+        var dbPath = ownsDb
+            ? Path.Combine(tempRoot, $"task081_catalog_price_{runId}_{Guid.NewGuid():N}.db")
+            : parameters.DbPath;
+        var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
+        var expectedBarcode = FirstNonEmpty(parameters.ExpectedBarcode, "TASK081Z_WIN7HTTP_BARCODE_" + runId);
+        var expectedProductName = FirstNonEmpty(parameters.ExpectedProductName, "TASK081Z_WIN7HTTP_PRODUCT_" + runId);
+        var expectedItemNumber = FirstNonEmpty(parameters.ExpectedItemNumber, "TASK081Z_WIN7HTTP_ITEM_" + runId);
+        var expectedSupplierName = FirstNonEmpty(parameters.ExpectedSupplierName, "TASK081Z_WIN7HTTP_SUPPLIER_" + runId);
+        var expectedCategoryName = FirstNonEmpty(parameters.ExpectedCategoryName, "TASK081Z_WIN7HTTP_CATEGORY_" + runId);
+
+        Console.WriteLine("TASK-081Z catalog price sync harness");
+        Console.WriteLine($"Base URL: {options.BaseUri}");
+        Console.WriteLine($"Run ID: {runId}");
+        Console.WriteLine($"DB path: {opt.DbPath}");
+
+        try
+        {
+            DbInitializer.EnsureCreated(opt);
+            var factory = new SqliteConnectionFactory(opt);
+            await PullAndApplyCatalogAsync(
+                options,
+                ToTrustedSession(harnessSession),
+                factory).ConfigureAwait(false);
+
+            if (parameters.ExpectTombstone)
+            {
+                Assert(await ReadProductIsActiveAsync(factory, expectedBarcode).ConfigureAwait(false) == 0, "Expected remote tombstone to mark product inactive.");
+                Assert(!string.IsNullOrWhiteSpace(await ReadRemoteDeletedAtAsync(factory, expectedBarcode).ConfigureAwait(false)), "Expected remote_deleted_at after tombstone.");
+                Console.WriteLine("TASK-081Z catalog price sync harness: PASS");
+                Console.WriteLine($"PASS_CATALOG_PRICE_SYNC_RUNTIME tombstone=applied barcode={expectedBarcode}");
+                return;
+            }
+
+            var product = await new ProductRepository(factory)
+                .GetDetailsByBarcodeAsync(expectedBarcode)
+                .ConfigureAwait(false);
+            if (product == null)
+            {
+                throw new InvalidOperationException("Expected catalog product in local SQLite.");
+            }
+            Assert(string.Equals(product.Barcode, expectedBarcode, StringComparison.Ordinal), "Catalog barcode mismatch.");
+            Assert(string.Equals(product.Name, expectedProductName, StringComparison.Ordinal), "Catalog product name mismatch.");
+            Assert(string.Equals(product.ArticleCode, expectedItemNumber, StringComparison.Ordinal), "Catalog item number mismatch.");
+            Assert(
+                string.Equals(product.SupplierName, expectedSupplierName, StringComparison.Ordinal),
+                "Catalog supplier mismatch. expected=" + expectedSupplierName + " actual=" + (product.SupplierName ?? string.Empty) + " remote=" + (LastTask081CatalogDiagnostics ?? string.Empty));
+            Assert(
+                string.Equals(product.CategoryName, expectedCategoryName, StringComparison.Ordinal),
+                "Catalog category mismatch. expected=" + expectedCategoryName + " actual=" + (product.CategoryName ?? string.Empty) + " remote=" + (LastTask081CatalogDiagnostics ?? string.Empty));
+            Assert(product.PurchasePrice == parameters.ExpectedPurchasePrice, "Catalog purchase price mismatch.");
+            Assert(product.UnitPrice == parameters.ExpectedRetailPrice, "Catalog retail price mismatch.");
+            Assert(product.StockQty == parameters.ExpectedStock, "Catalog stock mismatch.");
+            Assert(await ReadPriceHistoryCountAsync(factory, expectedBarcode).ConfigureAwait(false) >= 2, "Catalog price history rows missing.");
+            Assert(!string.IsNullOrWhiteSpace(await ReadSettingStringAsync(factory, "pos.catalog.last_sync_cursor").ConfigureAwait(false)), "Catalog sync cursor missing.");
+            Assert(!string.IsNullOrWhiteSpace(await ReadSettingStringAsync(factory, "pos.catalog.last_catalog_version").ConfigureAwait(false)), "Catalog version missing.");
+
+            Console.WriteLine("TASK-081Z catalog price sync harness: PASS");
+            Console.WriteLine($"PASS_CATALOG_PRICE_SYNC_RUNTIME barcode={expectedBarcode} retail={product.UnitPrice} purchase={product.PurchasePrice} stock={product.StockQty} price_history=ok cursor=ok");
+        }
+        finally
+        {
+            if (ownsDb && !parameters.KeepDb && File.Exists(opt.DbPath))
+            {
+                File.Delete(opt.DbPath);
+            }
+        }
+    }
+
+    private static async Task RunTask081OfflineReconnectHarnessAsync(Task081HttpHarnessParams parameters)
+    {
+        if (parameters == null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (!PosAdminWebOptions.TryCreate(parameters.BaseUrl, out var options, out var optionsReason))
+        {
+            throw new InvalidOperationException(optionsReason ?? "Admin Web base URL is invalid.");
+        }
+
+        var harnessSession = ReadTask081HttpHarnessSession(parameters.SessionJsonPath);
+        var runId = NormalizeTask081RunId(harnessSession.RunId);
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var dbPath = Path.Combine(tempRoot, $"task081_offline_reconnect_{runId}_{Guid.NewGuid():N}.db");
+        var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
+        var barcode = "TASK081Z_WIN7HTTP_BARCODE_" + runId;
+        var productName = "TASK081Z_WIN7HTTP_PRODUCT_" + runId;
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        Console.WriteLine("TASK-081Z offline reconnect harness");
+        Console.WriteLine($"Base URL: {options.BaseUri}");
+        Console.WriteLine($"Run ID: {runId}");
+        Console.WriteLine($"DB path: {opt.DbPath}");
+
+        try
+        {
+            DbInitializer.EnsureCreated(opt);
+            var factory = new SqliteConnectionFactory(opt);
+            var sales = new SaleRepository(factory);
+
+            using (var conn = factory.Open())
+            {
+                await ExecuteSqliteAsync(
+                    conn,
+                    null,
+                    @"INSERT INTO products(barcode, name, unitPrice, remote_product_id)
+                      VALUES(@barcode, @name, @unitPrice, @remoteProductId);",
+                    "@barcode", barcode,
+                    "@name", productName,
+                    "@unitPrice", 1000,
+                    "@remoteProductId", harnessSession.RemoteProductId).ConfigureAwait(false);
+                await ExecuteSqliteAsync(
+                    conn,
+                    null,
+                    @"INSERT INTO product_meta(barcode, stock_qty)
+                      VALUES(@barcode, @stockQty);",
+                    "@barcode", barcode,
+                    "@stockQty", 10).ConfigureAwait(false);
+            }
+
+            var productId = await ReadProductIdAsync(factory, barcode).ConfigureAwait(false);
+            Assert(productId > 0, "Offline reconnect product was not inserted.");
+            var saleId = await InsertTask081HttpSaleAsync(
+                sales,
+                "TASK081-OFFLINE-" + runId + "-SALE",
+                nowMs,
+                SaleKind.Sale,
+                null,
+                null,
+                1000,
+                1000,
+                0,
+                barcode,
+                productName,
+                productId,
+                1,
+                1000,
+                true).ConfigureAwait(false);
+            var offlineClientSaleId = "TASK081-OFFLINE-" + runId + "-SALE";
+
+            using (var conn = factory.Open())
+            {
+                await ExecuteSqliteAsync(
+                    conn,
+                    null,
+                    @"UPDATE sales
+                      SET client_sale_id = @clientSaleId
+                      WHERE id = @saleId;
+
+                      UPDATE sales_sync_outbox
+                      SET client_sale_id = @clientSaleId,
+                          idempotency_key = @idempotencyKey,
+                          updated_at = @nowMs
+                      WHERE sale_id = @saleId;",
+                    "@clientSaleId", offlineClientSaleId,
+                    "@idempotencyKey", offlineClientSaleId + ":pos-sales-ledger-v2",
+                    "@nowMs", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    "@saleId", saleId).ConfigureAwait(false);
+            }
+
+            Assert(await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 9, "Offline local sale did not decrement stock.");
+            var pending = await sales
+                .GetPendingSalesSyncOutboxAsync(10, nowMs + 1000)
+                .ConfigureAwait(false);
+            Assert(pending.Count == 1 && pending[0].SaleId == saleId, "Offline sale did not remain pending.");
+
+            var trustedSession = ToTrustedSession(harnessSession);
+            var sale = await sales.GetByIdAsync(saleId).ConfigureAwait(false);
+            var lines = await sales.GetLinesBySaleIdAsync(saleId).ConfigureAwait(false);
+            var offlineRequest = await PosSalesSyncRequestBuilder.BuildAsync(
+                trustedSession,
+                pending[0],
+                sale,
+                lines,
+                sales,
+                "TASK081Z-Offline-Reconnect-Harness").ConfigureAwait(false);
+            var offlinePayload = PosSalesSyncRequestBuilder.SerializeRedacted(offlineRequest);
+            await sales.PrepareSalesSyncAttemptAsync(
+                pending[0].Id,
+                offlineRequest.Batch.ClientBatchId,
+                offlinePayload,
+                PosSalesSyncRequestBuilder.Sha256Hex(offlinePayload),
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+
+            if (!PosAdminWebOptions.TryCreate("http://127.0.0.1:9", out var offlineOptions, out _))
+            {
+                throw new InvalidOperationException("Offline probe URL is invalid.");
+            }
+
+            using (var offlineClient = new PosAdminWebClient(offlineOptions))
+            {
+                var offlineResult = await offlineClient
+                    .SalesSyncAsync(offlineRequest, CancellationToken.None)
+                    .ConfigureAwait(false);
+                Assert(!offlineResult.Success, "Offline probe unexpectedly reached Admin Web.");
+                await sales.MarkSalesSyncRetryAsync(
+                    pending[0].Id,
+                    saleId,
+                    offlineResult.Code ?? "network_error",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 1,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+            }
+
+            Assert(await ReadOutboxStatusAsync(factory, pending[0].Id).ConfigureAwait(false) == "retry", "Offline outbox did not move to retry.");
+            Assert(await ReadSaleSyncStatusAsync(factory, saleId).ConfigureAwait(false) == "retry", "Offline sale did not move to retry.");
+
+            var retryPending = await sales
+                .GetPendingSalesSyncOutboxAsync(10, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 1000)
+                .ConfigureAwait(false);
+            Assert(retryPending.Count == 1 && retryPending[0].SaleId == saleId, "Retry row was not eligible for reconnect.");
+
+            using (var client = new PosAdminWebClient(options))
+            {
+                var reconnectRequest = await PosSalesSyncRequestBuilder.BuildAsync(
+                    trustedSession,
+                    retryPending[0],
+                    sale,
+                    lines,
+                    sales,
+                    "TASK081Z-Offline-Reconnect-Harness").ConfigureAwait(false);
+                var reconnectPayload = PosSalesSyncRequestBuilder.SerializeRedacted(reconnectRequest);
+                await sales.PrepareSalesSyncAttemptAsync(
+                    retryPending[0].Id,
+                    reconnectRequest.Batch.ClientBatchId,
+                    reconnectPayload,
+                    PosSalesSyncRequestBuilder.Sha256Hex(reconnectPayload),
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+
+                var accepted = await client.SalesSyncAsync(reconnectRequest, CancellationToken.None).ConfigureAwait(false);
+                Assert(
+                    accepted.Success && accepted.Value != null && accepted.Value.Ok,
+                    "Reconnect sync was not accepted. code=" + (accepted.Code ?? string.Empty) + " message=" + (accepted.Message ?? string.Empty));
+                var acceptedValue = accepted.Value ?? throw new InvalidOperationException("Reconnect sync response missing.");
+                var ack = (acceptedValue.Sales ?? Array.Empty<PosSalesSyncSaleAck>())
+                    .FirstOrDefault(row => string.Equals(row.ClientSaleId, reconnectRequest.Sales[0].ClientSaleId, StringComparison.Ordinal));
+                Assert(ack != null && string.Equals(ack.Status, "accepted", StringComparison.OrdinalIgnoreCase), "Reconnect sale ack missing.");
+                await sales.MarkSalesSyncAckedAsync(
+                    retryPending[0].Id,
+                    saleId,
+                    acceptedValue.Batch?.PosSalesSyncBatchId,
+                    ack?.PosSaleId,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+
+                var duplicate = await client.SalesSyncAsync(reconnectRequest, CancellationToken.None).ConfigureAwait(false);
+                Assert(duplicate.Success && duplicate.Value != null && duplicate.Value.Ok, "Reconnect duplicate retry was not idempotent.");
+            }
+
+            var pendingAfter = await sales
+                .GetPendingSalesSyncOutboxAsync(10, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 1000)
+                .ConfigureAwait(false);
+            Assert(pendingAfter.Count == 0, "Expected empty outbox after reconnect ack.");
+            Assert(await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 9, "Reconnect changed local stock twice.");
+            Assert(await ReadOutboxAttemptCountAsync(factory, pending[0].Id).ConfigureAwait(false) >= 2, "Expected offline and reconnect attempts.");
+
+            Console.WriteLine("TASK-081Z offline reconnect harness: PASS");
+            Console.WriteLine("PASS_OFFLINE_RECONNECT_RUNTIME pending=1 retry=1 accepted=1 pending_final=0 duplicate=ok local_stock=9");
         }
         finally
         {
@@ -1969,6 +2542,181 @@ SELECT last_insert_rowid();";
         };
     }
 
+    private static string FirstNonEmpty(params string[] values)
+    {
+        foreach (var value in values ?? Array.Empty<string>())
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static async Task PullAndApplyCatalogAsync(
+        PosAdminWebOptions options,
+        PosTrustedDeviceSession trustedSession,
+        SqliteConnectionFactory factory)
+    {
+        var settings = new SettingsRepository(factory);
+        var cursor = await settings.GetStringAsync("pos.catalog.last_sync_cursor").ConfigureAwait(false);
+
+        using (var client = new PosAdminWebClient(options))
+        {
+            for (var page = 1; page <= 10; page++)
+            {
+                var result = await client.CatalogPullAsync(new PosCatalogPullRequest
+                {
+                    AppVersion = "TASK081Z-Catalog-Price-Harness",
+                    DeviceToken = trustedSession.DeviceToken,
+                    PosSessionId = trustedSession.PosSessionId,
+                    SessionToken = trustedSession.SessionToken,
+                    ShopDeviceId = trustedSession.ShopDeviceId,
+                    SyncCursor = cursor,
+                }, CancellationToken.None).ConfigureAwait(false);
+
+                Assert(result.Success && result.Value != null && result.Value.Ok, "Catalog pull request was not accepted.");
+                var response = result.Value ?? throw new InvalidOperationException("Catalog response missing.");
+                LastTask081CatalogDiagnostics =
+                    "products=" + (response.Catalog?.Products?.Length ?? 0).ToString(CultureInfo.InvariantCulture) +
+                    ",categories=" + (response.Catalog?.Categories?.Length ?? 0).ToString(CultureInfo.InvariantCulture) +
+                    ",suppliers=" + (response.Catalog?.Suppliers?.Length ?? 0).ToString(CultureInfo.InvariantCulture) +
+                    ",prices=" + (response.Catalog?.Prices?.Length ?? 0).ToString(CultureInfo.InvariantCulture) +
+                    ",hasMore=" + response.HasMore.ToString() +
+                    ",productRefs=" + string.Join(
+                        "|",
+                        (response.Catalog?.Products ?? Array.Empty<PosCatalogProductResponse>())
+                            .Select(product => Normalize(product.ProductId) + ":" + Normalize(product.SupplierId) + ":" + Normalize(product.CategoryId))
+                            .Take(5));
+                await ApplyTask081CatalogResponseAsync(factory, response).ConfigureAwait(false);
+                await settings.SetStringAsync("pos.catalog.last_sync_at", FirstNonEmpty(response.GeneratedAt, DateTimeOffset.UtcNow.ToString("O"))).ConfigureAwait(false);
+                await settings.SetStringAsync("pos.catalog.last_sync_cursor", FirstNonEmpty(response.SyncCursor, response.GeneratedAt)).ConfigureAwait(false);
+                await settings.SetStringAsync("pos.catalog.last_catalog_version", response.CatalogVersion ?? string.Empty).ConfigureAwait(false);
+                await settings.SetBoolAsync("pos.catalog.last_has_more", response.HasMore).ConfigureAwait(false);
+                cursor = response.SyncCursor;
+
+                if (!response.HasMore)
+                {
+                    return;
+                }
+            }
+        }
+
+        throw new InvalidOperationException("Catalog pull did not drain hasMore within 10 pages.");
+    }
+
+    private static async Task ApplyTask081CatalogResponseAsync(
+        SqliteConnectionFactory factory,
+        PosCatalogPullResponse response)
+    {
+        var catalog = response.Catalog ?? throw new InvalidOperationException("Catalog payload missing.");
+        var categories = BuildCatalogNameMap(catalog.Categories, row => row.CategoryId, row => row.Name);
+        var suppliers = BuildCatalogNameMap(catalog.Suppliers, row => row.SupplierId, row => row.Name);
+        var products = new ProductRepository(factory);
+
+        foreach (var remoteProduct in catalog.Products ?? Array.Empty<PosCatalogProductResponse>())
+        {
+            var barcode = Normalize(remoteProduct.Barcode);
+            if (barcode.Length == 0)
+            {
+                continue;
+            }
+
+            await products.UpsertProductAndMetaInTransactionAsync(
+                new Product
+                {
+                    Barcode = barcode,
+                    Name = FirstNonEmpty(
+                        remoteProduct.ProductName,
+                        remoteProduct.SecondProductName,
+                        barcode),
+                    UnitPrice = ToLong(remoteProduct.RetailPrice),
+                },
+                Normalize(remoteProduct.ItemNumber),
+                Normalize(remoteProduct.SecondProductName),
+                ToInt(remoteProduct.PurchasePrice),
+                null,
+                NameFor(suppliers, remoteProduct.SupplierId),
+                null,
+                NameFor(categories, remoteProduct.CategoryId),
+                ToInt(remoteProduct.StockQuantity),
+                Normalize(remoteProduct.ProductId)).ConfigureAwait(false);
+        }
+
+        foreach (var tombstone in catalog.Tombstones?.Products ?? Array.Empty<PosCatalogProductTombstoneResponse>())
+        {
+            await products.ApplyRemoteProductTombstoneAsync(
+                Normalize(tombstone.ProductId),
+                Normalize(tombstone.DeletedAt)).ConfigureAwait(false);
+        }
+
+        foreach (var price in catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>())
+        {
+            await products.UpsertRemotePriceHistoryAsync(
+                Normalize(price.ProductId),
+                Normalize(price.Type),
+                ToInt(price.Price),
+                Normalize(price.EffectiveAt),
+                Normalize(price.Source)).ConfigureAwait(false);
+        }
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildCatalogNameMap<TRow>(
+        TRow[] rows,
+        Func<TRow, string> id,
+        Func<TRow, string> name)
+    {
+        return (rows ?? Array.Empty<TRow>())
+            .Where(row => Normalize(id(row)).Length > 0)
+            .GroupBy(row => Normalize(id(row)), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                group => group.Key,
+                group => Normalize(name(group.First())),
+                StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static string NameFor(IReadOnlyDictionary<string, string> rows, string id)
+    {
+        var normalizedId = Normalize(id);
+        return normalizedId.Length > 0 && rows.TryGetValue(normalizedId, out var name)
+            ? name
+            : string.Empty;
+    }
+
+    private static string Normalize(string value)
+    {
+        return (value ?? string.Empty).Trim();
+    }
+
+    private static int ToInt(double? value)
+    {
+        var rounded = ToLong(value);
+
+        if (rounded > int.MaxValue)
+        {
+            return int.MaxValue;
+        }
+
+        return (int)rounded;
+    }
+
+    private static long ToLong(double? value)
+    {
+        if (!value.HasValue || value.Value <= 0)
+        {
+            return 0;
+        }
+
+        if (value.Value >= long.MaxValue)
+        {
+            return long.MaxValue;
+        }
+
+        return (long)Math.Round(value.Value, MidpointRounding.AwayFromZero);
+    }
+
     private static async Task<long> InsertTask081HttpSaleAsync(
         SaleRepository sales,
         string code,
@@ -2116,6 +2864,46 @@ SELECT last_insert_rowid();";
             conn,
             null,
             "SELECT stock_qty FROM product_meta WHERE barcode = @barcode",
+            "@barcode", barcode).ConfigureAwait(false);
+    }
+
+    private static async Task<long> ReadProductIsActiveAsync(SqliteConnectionFactory factory, string barcode)
+    {
+        using var conn = factory.Open();
+        return await ScalarLongAsync(
+            conn,
+            null,
+            "SELECT COALESCE(is_active, 1) FROM products WHERE barcode = @barcode",
+            "@barcode", barcode).ConfigureAwait(false);
+    }
+
+    private static async Task<string> ReadRemoteDeletedAtAsync(SqliteConnectionFactory factory, string barcode)
+    {
+        using var conn = factory.Open();
+        return await ScalarStringAsync(
+            conn,
+            null,
+            "SELECT remote_deleted_at FROM products WHERE barcode = @barcode",
+            "@barcode", barcode).ConfigureAwait(false);
+    }
+
+    private static async Task<string> ReadSettingStringAsync(SqliteConnectionFactory factory, string key)
+    {
+        using var conn = factory.Open();
+        return await ScalarStringAsync(
+            conn,
+            null,
+            "SELECT value FROM app_settings WHERE key = @key",
+            "@key", key).ConfigureAwait(false);
+    }
+
+    private static async Task<long> ReadPriceHistoryCountAsync(SqliteConnectionFactory factory, string barcode)
+    {
+        using var conn = factory.Open();
+        return await ScalarLongAsync(
+            conn,
+            null,
+            "SELECT COUNT(1) FROM product_price_history WHERE barcode = @barcode",
             "@barcode", barcode).ConfigureAwait(false);
     }
 

@@ -21,6 +21,7 @@ namespace Win7POS.Wpf
     public partial class MainWindow : Window
     {
         private static readonly Infrastructure.FileLogger _logger = new Infrastructure.FileLogger("MainWindow");
+        private DispatcherTimer _syncStatusTimer;
         public static readonly DependencyProperty CurrentMenuKeyProperty = DependencyProperty.Register(
             nameof(CurrentMenuKey), typeof(string), typeof(MainWindow), new PropertyMetadata("Pos", OnCurrentMenuKeyChanged));
 
@@ -72,6 +73,8 @@ namespace Win7POS.Wpf
                 DbInitializer.EnsureCreated(options);
 
                 var factory = new SqliteConnectionFactory(options);
+                await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
+                StartSyncStatusTimer(factory);
 
                 var needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
                 if (needFirstRun)
@@ -184,7 +187,9 @@ namespace Win7POS.Wpf
                     if (result.Success && result.Value != null)
                     {
                         store.SaveHeartbeat(trustedSession, result.Value);
+                        await TrySyncSalesOutboxAsync(options).ConfigureAwait(true);
                         await TryPullCatalogAsync(options).ConfigureAwait(true);
+                        await RefreshSyncStatusStripAsync().ConfigureAwait(true);
                         return;
                     }
 
@@ -217,10 +222,27 @@ namespace Win7POS.Wpf
                 var catalogPull = new PosCatalogPullService(factory);
                 await catalogPull.TryPullCatalogAsync(options, System.Threading.CancellationToken.None)
                     .ConfigureAwait(true);
+                await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning("TryPullCatalogAsync: aggiornamento catalogo non completato", ex);
+            }
+        }
+
+        private async Task TrySyncSalesOutboxAsync(PosAdminWebOptions options)
+        {
+            try
+            {
+                var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+                var salesSync = new PosSalesSyncService(factory);
+                await salesSync.TrySyncPendingAsync(options, System.Threading.CancellationToken.None)
+                    .ConfigureAwait(true);
+                await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("TrySyncSalesOutboxAsync: sales sync non completato", ex);
             }
         }
 
@@ -230,6 +252,71 @@ namespace Win7POS.Wpf
                 OperatorDisplayText.Text = session != null && session.IsLoggedIn ? session.CurrentDisplayName : "—";
             if (OperatorRoleText != null)
                 OperatorRoleText.Text = session != null && session.IsLoggedIn ? "(" + session.CurrentRoleName + ")" : "";
+        }
+
+        private void StartSyncStatusTimer(SqliteConnectionFactory factory)
+        {
+            if (_syncStatusTimer != null)
+            {
+                return;
+            }
+
+            _syncStatusTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(30)
+            };
+            _syncStatusTimer.Tick += async (_, __) =>
+            {
+                await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
+            };
+            _syncStatusTimer.Start();
+        }
+
+        private async Task RefreshSyncStatusStripAsync(SqliteConnectionFactory factory = null)
+        {
+            try
+            {
+                factory = factory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+                var status = await new PosSyncStatusReader(factory).ReadAsync().ConfigureAwait(true);
+                if (SyncStatusText != null)
+                {
+                    SyncStatusText.Text = "Sync: " + status.SummaryText;
+                    SyncStatusText.ToolTip = status.DeviceText + "\n" +
+                        status.StaffText + "\n" +
+                        status.LastOnlineText + "\n" +
+                        status.PendingSalesText + "\n" +
+                        status.CatalogErrorText + "\n" +
+                        status.SalesErrorText;
+                }
+
+                if (SyncStatusPill != null)
+                {
+                    SyncStatusPill.Background = StatusBrush(status.ConnectivityText);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("RefreshSyncStatusStripAsync non completato", ex);
+                if (SyncStatusText != null)
+                {
+                    SyncStatusText.Text = "Sync: stato non disponibile";
+                }
+            }
+        }
+
+        private static Brush StatusBrush(string connectivityText)
+        {
+            if (string.Equals(connectivityText, "Online", StringComparison.OrdinalIgnoreCase))
+            {
+                return new SolidColorBrush(Color.FromRgb(42, 111, 72));
+            }
+
+            if (string.Equals(connectivityText, "Non collegato", StringComparison.OrdinalIgnoreCase))
+            {
+                return new SolidColorBrush(Color.FromRgb(109, 85, 132));
+            }
+
+            return new SolidColorBrush(Color.FromRgb(146, 88, 36));
         }
 
         private void OnChangeOperatorClick(object sender, RoutedEventArgs e)

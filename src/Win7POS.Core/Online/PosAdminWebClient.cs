@@ -815,6 +815,24 @@ namespace Win7POS.Wpf.Pos.Online
     [DataContract]
     public sealed class PosShopResponse
     {
+        [DataMember(Name = "businessAddress", EmitDefaultValue = false)]
+        public string BusinessAddress { get; set; }
+
+        [DataMember(Name = "businessCity", EmitDefaultValue = false)]
+        public string BusinessCity { get; set; }
+
+        [DataMember(Name = "businessGiro", EmitDefaultValue = false)]
+        public string BusinessGiro { get; set; }
+
+        [DataMember(Name = "companyRut", EmitDefaultValue = false)]
+        public string CompanyRut { get; set; }
+
+        [DataMember(Name = "fiscalIdentityLockedByPlatform", EmitDefaultValue = false)]
+        public bool FiscalIdentityLockedByPlatform { get; set; }
+
+        [DataMember(Name = "legalRepresentativeRut", EmitDefaultValue = false)]
+        public string LegalRepresentativeRut { get; set; }
+
         [DataMember(Name = "shopCode")]
         public string ShopCode { get; set; }
 
@@ -823,6 +841,15 @@ namespace Win7POS.Wpf.Pos.Online
 
         [DataMember(Name = "shopName")]
         public string ShopName { get; set; }
+
+        [DataMember(Name = "shopStatus", EmitDefaultValue = false)]
+        public string ShopStatus { get; set; }
+
+        [DataMember(Name = "source", EmitDefaultValue = false)]
+        public string Source { get; set; }
+
+        [DataMember(Name = "updatedAt", EmitDefaultValue = false)]
+        public string UpdatedAt { get; set; }
     }
 
     [DataContract]

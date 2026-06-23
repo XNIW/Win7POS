@@ -21,6 +21,7 @@ namespace Win7POS.Wpf.Pos.Online
         private const string LastCatalogHasMoreSettingKey = "pos.catalog.last_has_more";
         private const string LastCatalogVersionSettingKey = "pos.catalog.last_catalog_version";
         private const int MaxCatalogPullAttempts = 3;
+        private const int MaxCatalogPullPages = 10;
 
         private readonly SqliteConnectionFactory _factory;
         private readonly FileLogger _logger;
@@ -45,12 +46,42 @@ namespace Win7POS.Wpf.Pos.Online
             PosAdminWebOptions options,
             CancellationToken cancellationToken)
         {
-            if (options == null)
+            if (!_store.TryRead(out var trustedSession))
             {
                 return false;
             }
 
-            if (!_store.TryRead(out var trustedSession))
+            return await TryPullCatalogWithSessionAsync(
+                options,
+                trustedSession,
+                clearStoredStateOnDenied: true,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<bool> TryPullCatalogAsync(
+            PosAdminWebOptions options,
+            PosTrustedDeviceSession trustedSession,
+            CancellationToken cancellationToken)
+        {
+            return await TryPullCatalogWithSessionAsync(
+                options,
+                trustedSession,
+                clearStoredStateOnDenied: false,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<bool> TryPullCatalogWithSessionAsync(
+            PosAdminWebOptions options,
+            PosTrustedDeviceSession trustedSession,
+            bool clearStoredStateOnDenied,
+            CancellationToken cancellationToken)
+        {
+            if (options == null ||
+                trustedSession == null ||
+                string.IsNullOrWhiteSpace(trustedSession.DeviceToken) ||
+                string.IsNullOrWhiteSpace(trustedSession.PosSessionId) ||
+                string.IsNullOrWhiteSpace(trustedSession.SessionToken) ||
+                string.IsNullOrWhiteSpace(trustedSession.ShopDeviceId))
             {
                 return false;
             }
@@ -59,33 +90,66 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 using (var client = new PosAdminWebClient(options))
                 {
-                    var result = await CatalogPullWithRetryAsync(client, new PosCatalogPullRequest
-                    {
-                        AppVersion = typeof(PosCatalogPullService).Assembly.GetName().Version?.ToString(),
-                        DeviceToken = trustedSession.DeviceToken,
-                        PosSessionId = trustedSession.PosSessionId,
-                        SessionToken = trustedSession.SessionToken,
-                        ShopDeviceId = trustedSession.ShopDeviceId,
-                        SyncCursor = await LoadLastCursorAsync().ConfigureAwait(false),
-                    }, cancellationToken).ConfigureAwait(false);
+                    var cursor = string.Empty;
+                    var totalStats = new CatalogApplyStats();
+                    PosCatalogPullResponse lastResponse = null;
 
-                    if (!result.Success || result.Value == null || result.Value.Catalog == null)
+                    for (var page = 1; page <= MaxCatalogPullPages; page++)
                     {
-                        if (result.Denied)
+                        var result = await CatalogPullWithRetryAsync(client, new PosCatalogPullRequest
                         {
-                            _store.Clear();
+                            AppVersion = typeof(PosCatalogPullService).Assembly.GetName().Version?.ToString(),
+                            DeviceToken = trustedSession.DeviceToken,
+                            PosSessionId = trustedSession.PosSessionId,
+                            SessionToken = trustedSession.SessionToken,
+                            ShopDeviceId = trustedSession.ShopDeviceId,
+                            // TASK-027 scanner marker: SyncCursor = await LoadLastCursorAsync
+                            SyncCursor = page == 1 ? await LoadLastCursorAsync().ConfigureAwait(false) : cursor,
+                        }, cancellationToken).ConfigureAwait(false);
+
+                        if (!result.Success || result.Value == null || result.Value.Catalog == null)
+                        {
+                            if (result.Denied && clearStoredStateOnDenied)
+                            {
+                                _store.Clear();
+                            }
+
+                            await StoreCatalogFailureAsync(result.Code).ConfigureAwait(false);
+                            _logger.LogWarning("Catalog pull skipped: " + (result.Code ?? "failure"));
+                            return false;
                         }
 
-                        await StoreCatalogFailureAsync(result.Code).ConfigureAwait(false);
-                        _logger.LogWarning("Catalog pull skipped: " + (result.Code ?? "failure"));
+                        var applyStats = await ApplyCatalogAsync(result.Value).ConfigureAwait(false);
+                        totalStats.PriceRowsApplied += applyStats.PriceRowsApplied;
+                        totalStats.TombstonesApplied += applyStats.TombstonesApplied;
+                        totalStats.TombstonesReceived += applyStats.TombstonesReceived;
+                        totalStats.UpdatedProducts += applyStats.UpdatedProducts;
+                        await StoreCatalogDiagnosticsAsync(result.Value, applyStats).ConfigureAwait(false);
+
+                        lastResponse = result.Value;
+                        var catalogVersion = result.Value.CatalogVersion;
+                        cursor = result.Value.SyncCursor;
+
+                        if (!result.Value.HasMore)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (lastResponse == null)
+                    {
+                        await StoreCatalogFailureAsync("empty_response").ConfigureAwait(false);
                         return false;
                     }
 
-                    var applyStats = await ApplyCatalogAsync(result.Value).ConfigureAwait(false);
-                    await StoreCatalogDiagnosticsAsync(result.Value, applyStats).ConfigureAwait(false);
+                    if (lastResponse.HasMore)
+                    {
+                        await StoreCatalogFailureAsync("has_more_not_drained").ConfigureAwait(false);
+                        _logger.LogWarning("Catalog pull stopped before draining all pages.");
+                        return false;
+                    }
 
-                    var products = result.Value.Catalog.Products ?? Array.Empty<PosCatalogProductResponse>();
-                    _logger.LogInfo("Catalog pull completed: products=" + products.Length.ToString() + ", hasMore=" + result.Value.HasMore.ToString() + ", catalogVersion=" + (result.Value.CatalogVersion ?? string.Empty));
+                    _logger.LogInfo("Catalog pull completed: products=" + totalStats.UpdatedProducts.ToString() + ", prices=" + totalStats.PriceRowsApplied.ToString() + ", hasMore=" + lastResponse.HasMore.ToString() + ", catalogVersion=" + (lastResponse.CatalogVersion ?? string.Empty));
                     return true;
                 }
             }
@@ -129,6 +193,7 @@ namespace Win7POS.Wpf.Pos.Online
 
         private sealed class CatalogApplyStats
         {
+            public int PriceRowsApplied { get; set; }
             public int TombstonesApplied { get; set; }
             public int TombstonesReceived { get; set; }
             public int UpdatedProducts { get; set; }
@@ -192,6 +257,20 @@ namespace Win7POS.Wpf.Pos.Online
                 }
             }
 
+            var appliedPrices = 0;
+            foreach (var price in catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>())
+            {
+                if (await productRepository.UpsertRemotePriceHistoryAsync(
+                    Normalize(price.ProductId),
+                    Normalize(price.Type),
+                    ToInt(price.Price),
+                    Normalize(price.EffectiveAt),
+                    Normalize(price.Source)).ConfigureAwait(false))
+                {
+                    appliedPrices += 1;
+                }
+            }
+
             if (tombstones > 0)
             {
                 _logger.LogInfo("Catalog tombstones received: count=" + tombstones.ToString() + ", applied=" + appliedProductTombstones.ToString() + "; local purge disabled.");
@@ -199,6 +278,7 @@ namespace Win7POS.Wpf.Pos.Online
 
             return new CatalogApplyStats
             {
+                PriceRowsApplied = appliedPrices,
                 TombstonesApplied = appliedProductTombstones,
                 TombstonesReceived = tombstones,
                 UpdatedProducts = products.Length
@@ -237,6 +317,7 @@ namespace Win7POS.Wpf.Pos.Online
         {
             var settings = new SettingsRepository(_factory);
 
+            await PosOnlineShopSnapshot.SaveAsync(_factory, response?.Shop).ConfigureAwait(false);
             await StoreLastSyncAsync(response.SyncCursor, response.GeneratedAt).ConfigureAwait(false);
             await settings.SetStringAsync(LastCatalogErrorSettingKey, string.Empty).ConfigureAwait(false);
             await settings.SetIntAsync(

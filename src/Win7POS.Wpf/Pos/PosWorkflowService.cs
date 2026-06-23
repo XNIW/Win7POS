@@ -50,6 +50,7 @@ namespace Win7POS.Wpf.Pos
         private readonly SupplierRepository _suppliers;
         private readonly CategoryRepository _categories;
         private readonly HeldCartRepository _heldCarts;
+        private readonly ShopOfficialSnapshotRepository _officialShopSnapshots;
         private readonly AuditLogRepository _audit = new AuditLogRepository();
         private readonly PosSession _session;
         private readonly PosDbOptions _options;
@@ -71,6 +72,7 @@ namespace Win7POS.Wpf.Pos
             _suppliers = new SupplierRepository(_factory);
             _categories = new CategoryRepository(_factory);
             _heldCarts = new HeldCartRepository(_factory);
+            _officialShopSnapshots = new ShopOfficialSnapshotRepository(_factory);
             _session = new PosSession(new DataProductLookup(_products), new DataSalesStore(_sales));
         }
 
@@ -268,6 +270,11 @@ namespace Win7POS.Wpf.Pos
             return _sales.MarkPdfPrintedAsync(saleId);
         }
 
+        public Task TrySyncPendingSalesAsync()
+        {
+            return TrySyncSalesOutboxNoThrowAsync();
+        }
+
         public async Task<string> ExportDailyCsvAsync(DateTime date)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
@@ -322,7 +329,7 @@ namespace Win7POS.Wpf.Pos
         public async Task<string> GetDaysCsvContentAsync(IReadOnlyList<DateTime> dates, bool includeFiscalPrinted = true)
         {
             if (dates == null || dates.Count == 0)
-                return "saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change" + Environment.NewLine;
+                return SalesCsvHeader() + Environment.NewLine;
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
@@ -334,7 +341,7 @@ namespace Win7POS.Wpf.Pos
                     if (rows.Count == 0) continue;
                     if (!headerDone)
                     {
-                        sb.AppendLine("saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change");
+                        sb.AppendLine(SalesCsvHeader());
                         headerDone = true;
                     }
                     foreach (var s in rows)
@@ -347,11 +354,13 @@ namespace Win7POS.Wpf.Pos
                             .Append(s.Total).Append(';')
                             .Append(s.PaidCash).Append(';')
                             .Append(s.PaidCard).Append(';')
-                            .Append(s.Change).AppendLine();
+                            .Append(s.Change).Append(';')
+                            .Append(s.PdfPrinted ? "1" : "0").Append(';')
+                            .Append(DocumentStatusForSale(s)).AppendLine();
                     }
                 }
                 if (!headerDone)
-                    sb.AppendLine("saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change");
+                    sb.AppendLine(SalesCsvHeader());
                 return sb.ToString();
             }
             finally
@@ -363,7 +372,7 @@ namespace Win7POS.Wpf.Pos
         private static string BuildSalesCsvContent(IReadOnlyList<Sale> rows)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change");
+            sb.AppendLine(SalesCsvHeader());
             foreach (var s in rows)
             {
                 sb.Append(s.Id).Append(';')
@@ -374,9 +383,31 @@ namespace Win7POS.Wpf.Pos
                     .Append(s.Total).Append(';')
                     .Append(s.PaidCash).Append(';')
                     .Append(s.PaidCard).Append(';')
-                    .Append(s.Change).AppendLine();
+                    .Append(s.Change).Append(';')
+                    .Append(s.PdfPrinted ? "1" : "0").Append(';')
+                    .Append(DocumentStatusForSale(s)).AppendLine();
             }
             return sb.ToString();
+        }
+
+        private static string SalesCsvHeader()
+        {
+            return "saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change;pdf_printed;document_status";
+        }
+
+        private static string DocumentStatusForSale(Sale sale)
+        {
+            if (sale == null)
+            {
+                return "non_disponibile";
+            }
+
+            if (sale.PdfPrinted)
+            {
+                return "boleta_pdf_stampata";
+            }
+
+            return sale.PaidCash > 0 ? "non_stampata_contanti" : "non_stampata_policy_carta";
         }
 
         public async Task<string> BackupDbAsync()
@@ -674,7 +705,6 @@ namespace Win7POS.Wpf.Pos
                 var completed = new SaleCompleted(sale, saleLines);
                 _lastCompletedSale = completed;
                 _session.Clear();
-                await TrySyncSalesOutboxNoThrowAsync().ConfigureAwait(false);
                 var snapshot = await BuildSnapshotAsync("Vendita completata.");
                 var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
 
@@ -1242,6 +1272,12 @@ namespace Win7POS.Wpf.Pos
 
         private async Task<ReceiptShopInfo> GetShopInfoNoLockAsync()
         {
+            var officialSnapshot = await _officialShopSnapshots.GetAsync().ConfigureAwait(false);
+            if (officialSnapshot.HasOfficialData)
+            {
+                return officialSnapshot.ToReceiptShopInfo();
+            }
+
             var name = await _settings.GetStringAsync(KeyShopName).ConfigureAwait(false);
             var address = await _settings.GetStringAsync(KeyShopAddress).ConfigureAwait(false);
             var city = await _settings.GetStringAsync(KeyShopCity).ConfigureAwait(false);
@@ -1259,18 +1295,25 @@ namespace Win7POS.Wpf.Pos
             };
         }
 
-        public async Task SaveShopInfoAsync(ReceiptShopInfo shop)
+        public async Task<OfficialShopSnapshot> GetOfficialShopSnapshotAsync()
         {
-            if (shop == null) return;
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                await _settings.SetStringAsync(KeyShopName, shop.Name ?? "").ConfigureAwait(false);
-                await _settings.SetStringAsync(KeyShopAddress, shop.Address ?? "").ConfigureAwait(false);
-                await _settings.SetStringAsync(KeyShopCity, shop.City ?? "").ConfigureAwait(false);
-                await _settings.SetStringAsync(KeyShopRut, shop.Rut ?? "").ConfigureAwait(false);
-                await _settings.SetStringAsync(KeyShopPhone, shop.Phone ?? "").ConfigureAwait(false);
-                await _settings.SetStringAsync(KeyShopFooter, shop.Footer ?? "").ConfigureAwait(false);
+                return await _officialShopSnapshots.GetAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<PosSyncStatusSnapshot> GetPosSyncStatusAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                return await new PosSyncStatusReader(_factory).ReadAsync().ConfigureAwait(false);
             }
             finally
             {
@@ -1795,13 +1838,15 @@ SELECT last_insert_rowid();";
         public bool IsValid(long totalMinor)
         {
             if (CashAmountMinor < 0 || CardAmountMinor < 0) return false;
+            if (CardAmountMinor > Math.Max(0, totalMinor - CashAmountMinor)) return false;
             return CashAmountMinor + CardAmountMinor >= totalMinor;
         }
 
         public long GetChangeMinor(long totalMinor)
         {
             if (!IsValid(totalMinor)) return 0;
-            return CashAmountMinor + CardAmountMinor - totalMinor;
+            var balanceAfterCard = Math.Max(0, totalMinor - CardAmountMinor);
+            return Math.Max(0, CashAmountMinor - balanceAfterCard);
         }
     }
 

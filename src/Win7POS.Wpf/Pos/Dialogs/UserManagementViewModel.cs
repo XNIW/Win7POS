@@ -446,7 +446,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 case PermissionCodes.DailyCloseView: return "Visualizza chiusura cassa";
                 case PermissionCodes.DailyCloseRun: return "Esegui chiusura cassa";
                 case PermissionCodes.DailyClosePrint: return "Stampa chiusura cassa";
-                case PermissionCodes.SettingsShop: return "Impostazioni negozio";
+                case PermissionCodes.SettingsShop: return "Dati negozio ufficiali";
                 case PermissionCodes.SettingsPrinter: return "Impostazioni stampante";
                 case PermissionCodes.DbBackup: return "Backup database";
                 case PermissionCodes.DbRestore: return "Ripristino database";

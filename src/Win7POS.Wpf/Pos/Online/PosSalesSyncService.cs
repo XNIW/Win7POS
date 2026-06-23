@@ -14,6 +14,8 @@ namespace Win7POS.Wpf.Pos.Online
     {
         private const int MaxOutboxItemsPerRun = 25;
         private const int MaxAttemptsBeforeBlocked = 12;
+        private const string LastSalesErrorSettingKey = "pos.sales_sync.last_error";
+        private const string LastSalesSyncSettingKey = "pos.sales_sync.last_success_at";
 
         private readonly SqliteConnectionFactory _factory;
         private readonly FileLogger _logger;
@@ -148,17 +150,20 @@ namespace Win7POS.Wpf.Pos.Online
                 if (result.Denied)
                 {
                     _store.Clear();
+                    await StoreSalesSyncFailureAsync("auth_denied").ConfigureAwait(false);
                     await MarkRetryAsync(item, "auth_denied").ConfigureAwait(false);
                     return false;
                 }
 
                 if (IsBlockedFailure(result.Code))
                 {
+                    await StoreSalesSyncFailureAsync(result.Code).ConfigureAwait(false);
                     await MarkBlockedAsync(item, result.Code, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
                         .ConfigureAwait(false);
                     return false;
                 }
 
+                await StoreSalesSyncFailureAsync(result.Code).ConfigureAwait(false);
                 await MarkRetryAsync(item, result.Code).ConfigureAwait(false);
                 return false;
             }
@@ -182,6 +187,8 @@ namespace Win7POS.Wpf.Pos.Online
                 result.Value.Batch?.PosSalesSyncBatchId,
                 ack.PosSaleId,
                 nowMs).ConfigureAwait(false);
+            await PosOnlineShopSnapshot.SaveAsync(_factory, result.Value.Shop).ConfigureAwait(false);
+            await StoreSalesSyncSuccessAsync(result.Value.ServerTime).ConfigureAwait(false);
             _logger.LogInfo("Sales sync acked: " + item.ClientSaleId);
             return true;
         }
@@ -189,6 +196,7 @@ namespace Win7POS.Wpf.Pos.Online
         private async Task MarkRetryAsync(SalesSyncOutboxItem item, string errorCode)
         {
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            await StoreSalesSyncFailureAsync(errorCode).ConfigureAwait(false);
             var attempts = Math.Max(1, item.AttemptCount + 1);
             if (attempts >= MaxAttemptsBeforeBlocked)
             {
@@ -207,11 +215,28 @@ namespace Win7POS.Wpf.Pos.Online
 
         private async Task MarkBlockedAsync(SalesSyncOutboxItem item, string errorCode, long nowMs)
         {
+            await StoreSalesSyncFailureAsync(errorCode).ConfigureAwait(false);
             await _sales.MarkSalesSyncBlockedAsync(
                 item.Id,
                 item.SaleId,
                 SafeCode(errorCode),
                 nowMs).ConfigureAwait(false);
+        }
+
+        private async Task StoreSalesSyncSuccessAsync(string serverTime)
+        {
+            var settings = new SettingsRepository(_factory);
+            var value = string.IsNullOrWhiteSpace(serverTime)
+                ? DateTimeOffset.UtcNow.ToString("O")
+                : serverTime.Trim();
+            await settings.SetStringAsync(LastSalesSyncSettingKey, value).ConfigureAwait(false);
+            await settings.SetStringAsync(LastSalesErrorSettingKey, string.Empty).ConfigureAwait(false);
+        }
+
+        private async Task StoreSalesSyncFailureAsync(string code)
+        {
+            var settings = new SettingsRepository(_factory);
+            await settings.SetStringAsync(LastSalesErrorSettingKey, SafeCode(code)).ConfigureAwait(false);
         }
 
         private static bool IsBlockedFailure(string code)

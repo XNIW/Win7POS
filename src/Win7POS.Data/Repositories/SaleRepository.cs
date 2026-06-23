@@ -525,6 +525,40 @@ LIMIT @take",
             return rows.ToList();
         }
 
+        public async Task<SalesSyncOutboxSummary> GetSalesSyncOutboxSummaryAsync()
+        {
+            using var conn = _factory.Open();
+            var rows = (await conn.QueryAsync<SalesSyncStatusCount>(@"
+SELECT status AS Status, COUNT(1) AS Count
+FROM sales_sync_outbox
+GROUP BY status;").ConfigureAwait(false)).ToList();
+
+            var lastAckedAt = await conn.ExecuteScalarAsync<long?>(@"
+SELECT updated_at
+FROM sales_sync_outbox
+WHERE status = 'acked'
+ORDER BY updated_at DESC
+LIMIT 1;").ConfigureAwait(false);
+
+            long CountFor(string status)
+            {
+                return rows
+                    .Where(row => string.Equals(row.Status, status, StringComparison.OrdinalIgnoreCase))
+                    .Select(row => row.Count)
+                    .DefaultIfEmpty(0)
+                    .Sum();
+            }
+
+            return new SalesSyncOutboxSummary
+            {
+                Acked = CountFor("acked"),
+                Blocked = CountFor("failed_blocked"),
+                LastAckedAt = lastAckedAt,
+                Pending = CountFor("pending"),
+                Retry = CountFor("retry")
+            };
+        }
+
         public async Task<IReadOnlyDictionary<long, string>> GetRemoteProductIdsAsync(IEnumerable<long> productIds)
         {
             var ids = (productIds ?? Enumerable.Empty<long>())
@@ -689,6 +723,22 @@ SELECT last_insert_rowid();", line, tx).ConfigureAwait(false);
         public long GrossSalesAmount { get; set; }
         public long RefundsAmount { get; set; }
         public long NetAmount { get; set; }
+    }
+
+    public sealed class SalesSyncOutboxSummary
+    {
+        public long Acked { get; set; }
+        public long Blocked { get; set; }
+        public long? LastAckedAt { get; set; }
+        public long Pending { get; set; }
+        public long Retry { get; set; }
+        public long PendingOrRetry => Pending + Retry;
+    }
+
+    internal sealed class SalesSyncStatusCount
+    {
+        public long Count { get; set; }
+        public string Status { get; set; }
     }
 
     public sealed class SaleLineReturnableDto
