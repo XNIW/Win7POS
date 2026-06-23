@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -14,6 +15,7 @@ using Win7POS.Data.Repositories;
 using Win7POS.Core;
 using Win7POS.Core.Security;
 using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf
@@ -21,7 +23,17 @@ namespace Win7POS.Wpf
     public partial class MainWindow : Window
     {
         private static readonly Infrastructure.FileLogger _logger = new Infrastructure.FileLogger("MainWindow");
+        private static readonly TimeSpan StartupHeartbeatTimeout = TimeSpan.FromSeconds(3);
+        private static readonly TimeSpan StartupSalesSyncTimeout = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan StartupCatalogPullTimeout = TimeSpan.FromSeconds(8);
+        private static readonly TimeSpan StartupWatchdogTimeout = TimeSpan.FromSeconds(5);
+        private const string LastCatalogErrorSettingKey = "pos.catalog.last_error";
+        private const string LastSalesErrorSettingKey = "pos.sales_sync.last_error";
+        private readonly TaskCompletionSource<bool> _contentRendered = new TaskCompletionSource<bool>();
         private DispatcherTimer _syncStatusTimer;
+        private bool _backgroundOnlineRefreshQueued;
+        private bool _operatorLoginReached;
+        private string _startupPhase = "constructed";
         public static readonly DependencyProperty CurrentMenuKeyProperty = DependencyProperty.Register(
             nameof(CurrentMenuKey), typeof(string), typeof(MainWindow), new PropertyMetadata("Pos", OnCurrentMenuKeyChanged));
 
@@ -40,7 +52,12 @@ namespace Win7POS.Wpf
 
         public MainWindow()
         {
+            Application.Current.MainWindow = this;
+            StartupTrace.Write("MainWindow constructor start");
+            _logger.LogInfo("MainWindow constructor entered");
             InitializeComponent();
+            StartupTrace.Write("MainWindow constructor end");
+            _logger.LogInfo("MainWindow constructor done");
 
             MainTabControl.SelectedIndex = 0;
 
@@ -65,24 +82,54 @@ namespace Win7POS.Wpf
 
         private async void OnLoadedAsync(object sender, RoutedEventArgs e)
         {
+            _startupPhase = "Loaded entered";
+            StartupTrace.Write("MainWindow Loaded entered");
+            _logger.LogInfo("MainWindow Loaded entered");
+            StartStartupWatchdog();
             UpdateMenuSelectionVisual();
 
             try
             {
                 var options = PosDbOptions.Default();
+                _startupPhase = "DbInitializer start";
+                StartupTrace.Write("DB init start");
+                _logger.LogInfo("DbInitializer start");
                 DbInitializer.EnsureCreated(options);
+                StartupTrace.Write("DB init end");
+                _logger.LogInfo("DbInitializer done");
 
                 var factory = new SqliteConnectionFactory(options);
-                await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
-                StartSyncStatusTimer(factory);
+                if (App.IsSafeStart)
+                {
+                    ApplySafeStartStatus();
+                }
+                else
+                {
+                    await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
+                    StartSyncStatusTimer(factory);
+                }
 
+                _startupPhase = "FirstRun check start";
+                StartupTrace.Write("first-run check start");
+                _logger.LogInfo("FirstRun check start");
                 var needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
-                if (needFirstRun)
+                StartupTrace.Write("first-run check end: required=" + needFirstRun.ToString());
+                _logger.LogInfo("FirstRun check done: required=" + needFirstRun.ToString());
+                await WaitForContentRenderedOrTimeoutAsync().ConfigureAwait(true);
+
+                if (needFirstRun && !App.IsSafeStart)
                 {
                     if (await TryOnlineBootstrapFirstRunAsync(factory).ConfigureAwait(true))
                     {
+                        _logger.LogInfo("FirstRun online bootstrap completed; rechecking local operators");
                         needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
+                        _logger.LogInfo("FirstRun check done: required=" + needFirstRun.ToString());
                     }
+                }
+
+                if (needFirstRun && App.IsSafeStart)
+                {
+                    StartupTrace.Write("first-run online bootstrap skipped: safe-start");
                 }
 
                 if (needFirstRun)
@@ -93,9 +140,8 @@ namespace Win7POS.Wpf
                     needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
                     if (!ok || needFirstRun)
                     {
-                        var dbPathInfo = " DB: " + options.DbPath;
                         ModernMessageDialog.Show(this, "Win7POS",
-                            "Configurazione iniziale non completata." + dbPathInfo);
+                            "Configurazione iniziale non completata.");
                         Close();
                         return;
                     }
@@ -109,14 +155,22 @@ namespace Win7POS.Wpf
                     OperatorSessionHolder.Current = operatorSession;
                 }
 
-                await TryRefreshTrustedPosSessionAsync().ConfigureAwait(true);
-
+                _logger.LogInfo("OperatorLogin dialog opening");
+                _startupPhase = "OperatorLogin opening";
+                StartupTrace.Write("operator login dialog about to open");
                 var login = new OperatorLoginDialog(factory) { Owner = this };
+                login.ShowActivated = true;
+                Activate();
+                _operatorLoginReached = true;
+                _startupPhase = "OperatorLogin shown";
+                StartupTrace.Write("operator login dialog shown");
                 if (login.ShowDialog() != true)
                 {
+                    _logger.LogInfo("OperatorLogin dialog cancelled");
                     Close();
                     return;
                 }
+                _logger.LogInfo("OperatorLogin dialog accepted");
 
                 var session = OperatorSessionHolder.Current;
                 if (session != null)
@@ -129,14 +183,26 @@ namespace Win7POS.Wpf
                         RefreshShellAfterOperatorChange(session);
                     }));
                 }
+
+                if (App.IsSafeStart)
+                {
+                    StartupTrace.Write("online refresh skipped: safe-start");
+                    _logger.LogInfo("BackgroundOnlineRefresh skipped: safe-start");
+                    ApplySafeStartStatus();
+                }
+                else
+                {
+                    QueueBackgroundOnlineRefresh(factory);
+                }
             }
             catch (Exception ex)
             {
+                StartupTrace.Write("MainWindow startup failed", ex);
                 _logger.LogError(ex, "MainWindow.OnLoadedAsync: avvio fallito (DB/FirstRun/Login)");
                 try
                 {
                     ModernMessageDialog.Show(this, "Win7POS",
-                        "Errore in avvio.\nControlla il log applicativo: " + AppPaths.LogPath);
+                        "Errore in avvio. Controlla il log applicativo.");
                 }
                 catch { }
                 Close();
@@ -158,23 +224,77 @@ namespace Win7POS.Wpf
             return !await RequiresFirstRunAsync(factory).ConfigureAwait(true);
         }
 
-        private async Task TryRefreshTrustedPosSessionAsync()
+        private void QueueBackgroundOnlineRefresh(SqliteConnectionFactory factory)
+        {
+            if (App.IsSafeStart)
+            {
+                StartupTrace.Write("online refresh skipped: safe-start");
+                ApplySafeStartStatus();
+                return;
+            }
+
+            if (_backgroundOnlineRefreshQueued)
+            {
+                return;
+            }
+
+            _backgroundOnlineRefreshQueued = true;
+            StartupTrace.Write("online refresh queued");
+            _logger.LogInfo("BackgroundOnlineRefresh queued");
+            Task.Run(async () => await RunBackgroundOnlineRefreshAsync(factory).ConfigureAwait(false));
+        }
+
+        private async Task RunBackgroundOnlineRefreshAsync(SqliteConnectionFactory factory)
+        {
+            StartupTrace.Write("online refresh start");
+            _logger.LogInfo("BackgroundOnlineRefresh start");
+
+            try
+            {
+                await TryRefreshTrustedPosSessionAsync(factory).ConfigureAwait(false);
+                StartupTrace.Write("online refresh done");
+                _logger.LogInfo("BackgroundOnlineRefresh done");
+            }
+            catch (OperationCanceledException)
+            {
+                StartupTrace.Write("online refresh timeout");
+                _logger.LogWarning("BackgroundOnlineRefresh timeout");
+            }
+            catch (Exception ex)
+            {
+                StartupTrace.Write("online refresh failed", ex);
+                _logger.LogWarning("BackgroundOnlineRefresh not completed.", ex);
+            }
+            finally
+            {
+                QueueSyncStatusRefresh(factory);
+            }
+        }
+
+        private async Task TryRefreshTrustedPosSessionAsync(SqliteConnectionFactory factory)
         {
             if (!PosAdminWebOptions.TryLoad(out var options, out _))
             {
+                StartupTrace.Write("online refresh skipped: Admin Web config missing");
+                _logger.LogInfo("BackgroundOnlineRefresh skipped: Admin Web config missing");
                 return;
             }
 
             var store = new PosTrustedDeviceStore();
             if (!store.TryRead(out var trustedSession))
             {
+                StartupTrace.Write("online refresh skipped: trusted session missing");
+                _logger.LogInfo("BackgroundOnlineRefresh skipped: trusted session missing");
                 return;
             }
 
             try
             {
                 using (var client = new PosAdminWebClient(options))
+                using (var heartbeatCts = new CancellationTokenSource(StartupHeartbeatTimeout))
                 {
+                    StartupTrace.Write("online heartbeat start");
+                    _logger.LogInfo("BackgroundOnlineRefresh heartbeat start");
                     var result = await client.HeartbeatAsync(new PosHeartbeatRequest
                     {
                         AppVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(),
@@ -182,14 +302,16 @@ namespace Win7POS.Wpf
                         PosSessionId = trustedSession.PosSessionId,
                         SessionToken = trustedSession.SessionToken,
                         ShopDeviceId = trustedSession.ShopDeviceId,
-                    }, System.Threading.CancellationToken.None).ConfigureAwait(true);
+                    }, heartbeatCts.Token).ConfigureAwait(false);
 
                     if (result.Success && result.Value != null)
                     {
                         store.SaveHeartbeat(trustedSession, result.Value);
-                        await TrySyncSalesOutboxAsync(options).ConfigureAwait(true);
-                        await TryPullCatalogAsync(options).ConfigureAwait(true);
-                        await RefreshSyncStatusStripAsync().ConfigureAwait(true);
+                        StartupTrace.Write("online heartbeat done");
+                        _logger.LogInfo("BackgroundOnlineRefresh heartbeat done");
+                        QueueSyncStatusRefresh(factory);
+                        await TrySyncSalesOutboxAsync(options, factory).ConfigureAwait(false);
+                        await TryPullCatalogAsync(options, factory).ConfigureAwait(false);
                         return;
                     }
 
@@ -198,51 +320,174 @@ namespace Win7POS.Wpf
                         store.Clear();
                     }
 
-                    ModernMessageDialog.Show(
-                        this,
-                        "POS online",
-                        "Sessione POS online non verificata. Ricollega il dispositivo se le funzioni online sono richieste.");
+                    _logger.LogWarning("BackgroundOnlineRefresh heartbeat skipped: " + SafeOnlineCode(result.Code));
                 }
             }
+            catch (OperationCanceledException)
+            {
+                StartupTrace.Write("online heartbeat timeout");
+                _logger.LogWarning("BackgroundOnlineRefresh heartbeat timeout");
+            }
             catch (Exception ex)
             {
+                StartupTrace.Write("online heartbeat failed", ex);
                 _logger.LogWarning("TryRefreshTrustedPosSessionAsync: refresh online non completato", ex);
-                ModernMessageDialog.Show(
-                    this,
-                    "POS online",
-                "Admin Web POS non e raggiungibile. Il collegamento online resta da verificare.");
             }
         }
 
-        private async Task TryPullCatalogAsync(PosAdminWebOptions options)
+        private async Task TryPullCatalogAsync(PosAdminWebOptions options, SqliteConnectionFactory factory)
         {
             try
             {
-                var factory = new SqliteConnectionFactory(PosDbOptions.Default());
                 var catalogPull = new PosCatalogPullService(factory);
-                await catalogPull.TryPullCatalogAsync(options, System.Threading.CancellationToken.None)
-                    .ConfigureAwait(true);
-                await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
+                using (var cts = new CancellationTokenSource(StartupCatalogPullTimeout))
+                {
+                    var completed = await catalogPull.TryPullCatalogAsync(options, cts.Token)
+                        .ConfigureAwait(false);
+                    if (cts.IsCancellationRequested && !completed)
+                    {
+                        await StoreStartupSettingAsync(factory, LastCatalogErrorSettingKey, "timeout")
+                            .ConfigureAwait(false);
+                        StartupTrace.Write("online catalog pull timeout");
+                        _logger.LogWarning("BackgroundOnlineRefresh catalog pull timeout");
+                    }
+                    else
+                    {
+                        _logger.LogInfo("BackgroundOnlineRefresh catalog pull done: completed=" + completed.ToString());
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                await StoreStartupSettingAsync(factory, LastCatalogErrorSettingKey, "timeout")
+                    .ConfigureAwait(false);
+                StartupTrace.Write("online catalog pull timeout");
+                _logger.LogWarning("BackgroundOnlineRefresh catalog pull timeout");
             }
             catch (Exception ex)
             {
+                StartupTrace.Write("online catalog pull failed", ex);
                 _logger.LogWarning("TryPullCatalogAsync: aggiornamento catalogo non completato", ex);
             }
+            finally
+            {
+                QueueSyncStatusRefresh(factory);
+            }
         }
 
-        private async Task TrySyncSalesOutboxAsync(PosAdminWebOptions options)
+        private async Task TrySyncSalesOutboxAsync(PosAdminWebOptions options, SqliteConnectionFactory factory)
         {
             try
             {
-                var factory = new SqliteConnectionFactory(PosDbOptions.Default());
                 var salesSync = new PosSalesSyncService(factory);
-                await salesSync.TrySyncPendingAsync(options, System.Threading.CancellationToken.None)
-                    .ConfigureAwait(true);
-                await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
+                using (var cts = new CancellationTokenSource(StartupSalesSyncTimeout))
+                {
+                    var completed = await salesSync.TrySyncPendingAsync(options, cts.Token)
+                        .ConfigureAwait(false);
+                    _logger.LogInfo("BackgroundOnlineRefresh sales sync done: completed=" + completed.ToString());
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                await StoreStartupSettingAsync(factory, LastSalesErrorSettingKey, "timeout")
+                    .ConfigureAwait(false);
+                StartupTrace.Write("online sales sync timeout");
+                _logger.LogWarning("BackgroundOnlineRefresh sales sync timeout");
             }
             catch (Exception ex)
             {
+                StartupTrace.Write("online sales sync failed", ex);
                 _logger.LogWarning("TrySyncSalesOutboxAsync: sales sync non completato", ex);
+            }
+            finally
+            {
+                QueueSyncStatusRefresh(factory);
+            }
+        }
+
+        private void QueueSyncStatusRefresh(SqliteConnectionFactory factory)
+        {
+            try
+            {
+                if (Dispatcher == null || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+                {
+                    return;
+                }
+
+                Dispatcher.BeginInvoke(new Action(async () =>
+                {
+                    await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
+                }), DispatcherPriority.Background);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("QueueSyncStatusRefresh skipped.", ex);
+            }
+        }
+
+        private static async Task StoreStartupSettingAsync(
+            SqliteConnectionFactory factory,
+            string key,
+            string value)
+        {
+            var settings = new SettingsRepository(factory);
+            await settings.SetStringAsync(key, SafeOnlineCode(value)).ConfigureAwait(false);
+        }
+
+        private static string SafeOnlineCode(string code)
+        {
+            var normalized = (code ?? string.Empty).Trim();
+            if (normalized.Length == 0)
+            {
+                return "failure";
+            }
+
+            var safe = new string(normalized
+                .Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' || ch == '.')
+                .Take(60)
+                .ToArray());
+            return safe.Length == 0 ? "failure" : safe;
+        }
+
+        private void ApplySafeStartStatus()
+        {
+            if (SyncStatusText != null)
+            {
+                SyncStatusText.Text = "Sync: Safe start: online sync disabled for this launch";
+                SyncStatusText.ToolTip = "Safe start: heartbeat, sales sync, catalog pull and trusted-session refresh are disabled for this launch.";
+            }
+
+            if (SyncStatusPill != null)
+            {
+                SyncStatusPill.Background = new SolidColorBrush(Color.FromRgb(109, 85, 132));
+            }
+        }
+
+        private void StartStartupWatchdog()
+        {
+            var startedAt = DateTimeOffset.UtcNow;
+            Task.Delay(StartupWatchdogTimeout).ContinueWith(_ =>
+            {
+                if (!_operatorLoginReached)
+                {
+                    StartupTrace.Write("startup watchdog warning: operator login not reached within 5s; phase=" + _startupPhase + "; elapsed_ms=" + (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds.ToString("0"));
+                }
+            });
+        }
+
+        private async Task WaitForContentRenderedOrTimeoutAsync()
+        {
+            if (_contentRendered.Task.IsCompleted)
+            {
+                return;
+            }
+
+            var completed = await Task.WhenAny(
+                _contentRendered.Task,
+                Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(true);
+            if (completed != _contentRendered.Task)
+            {
+                StartupTrace.Write("ContentRendered wait timeout; opening operator login");
             }
         }
 
@@ -454,6 +699,8 @@ namespace Win7POS.Wpf
 
         private void OnContentRendered(object sender, EventArgs e)
         {
+            StartupTrace.Write("ContentRendered fired");
+            _contentRendered.TrySetResult(true);
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 MainTabControl.SelectedIndex = 0;

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Text.RegularExpressions;
 using Win7POS.Core;
 
 namespace Win7POS.Wpf.Infrastructure
@@ -85,7 +86,7 @@ namespace Win7POS.Wpf.Infrastructure
                 var prefix = string.IsNullOrEmpty(source)
                     ? $"[{level}]"
                     : $"[{level}][{source}]";
-                var line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " " + prefix + " " + message + Environment.NewLine;
+                var line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " " + prefix + " " + Sanitize(message) + Environment.NewLine;
                 lock (_writeLock)
                 {
                     File.AppendAllText(AppPaths.LogPath, line, Encoding.UTF8);
@@ -95,6 +96,18 @@ namespace Win7POS.Wpf.Infrastructure
             {
                 // Logging must never break POS flow.
             }
+        }
+
+        private static string Sanitize(string value)
+        {
+            var sanitized = value ?? string.Empty;
+            sanitized = Regex.Replace(
+                sanitized,
+                @"(?i)(sessionToken|deviceToken|trustedDeviceToken|pin|password|credential)\s*[:=]\s*\S+",
+                "$1=[redacted]");
+            sanitized = Regex.Replace(sanitized, @"[A-Za-z]:\\[^\s|]+", "[path]");
+            sanitized = Regex.Replace(sanitized, @"/(?:Users|private|tmp|var)/[^\s|]+", "[path]");
+            return sanitized;
         }
     }
 }

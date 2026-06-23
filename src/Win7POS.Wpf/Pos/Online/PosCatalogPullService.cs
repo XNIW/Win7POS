@@ -155,6 +155,8 @@ namespace Win7POS.Wpf.Pos.Online
             }
             catch (OperationCanceledException)
             {
+                await StoreCatalogFailureAsync("timeout").ConfigureAwait(false);
+                _logger.LogWarning("Catalog pull timeout.");
                 return false;
             }
             catch (Exception ex)

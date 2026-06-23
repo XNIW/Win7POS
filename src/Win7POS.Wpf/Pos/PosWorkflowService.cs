@@ -1612,7 +1612,14 @@ namespace Win7POS.Wpf.Pos
                 }
 
                 var syncService = new PosSalesSyncService(_factory);
-                await syncService.TrySyncPendingAsync(options, CancellationToken.None).ConfigureAwait(false);
+                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
+                {
+                    await syncService.TrySyncPendingAsync(options, cts.Token).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _logger.LogWarning("POS sales sync skipped: timeout.");
             }
             catch (Exception ex)
             {

@@ -120,11 +120,17 @@ jobs:
           "@
           Set-Content -Path "dist/Win7POS/VERSION.txt" -Value $versionInfo -Encoding UTF8
 
+          pwsh -NoProfile -File scripts/check-release-pack-completeness.ps1 -ReleasePackSource dist/Win7POS -WriteManifests
+
           $stamp = Get-Date -Format "yyyyMMdd_HHmm"
           $zip = "dist/Win7POS_$stamp.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path "dist/Win7POS/*" -DestinationPath $zip -Force
           Write-Host "Created package: $zip"
+
+      - name: Validate Win7 startup safety
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-pos-startup-win7-safe.ps1
 
       - name: Install Inno Setup
         shell: pwsh
