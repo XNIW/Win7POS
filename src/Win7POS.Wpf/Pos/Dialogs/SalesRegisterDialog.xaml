@@ -157,7 +157,7 @@
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
-                    <!-- Header dettaglio + lucchetto vista -->
+                    <!-- Header dettaglio + refresh admin -->
                     <Grid Grid.Row="0" Margin="0,0,0,14">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
@@ -168,7 +168,7 @@
                             <TextBlock Text="{Binding DetailSummary, Mode=OneWay}" TextWrapping="Wrap" FontSize="12" Foreground="#444" LineHeight="18"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Top" Visibility="{Binding HasLockFeature, Converter={StaticResource BoolToVis}}">
-                            <Button Content="{Binding LockGlyph, Mode=OneWay}" Command="{Binding ToggleHiddenModeCommand}" ToolTip="Sblocca/Blocca vista completa (solo Admin)"
+                            <Button Content="{Binding LockGlyph, Mode=OneWay}" Command="{Binding ToggleFiscalPrintedModeCommand}" ToolTip="Aggiorna vista completa (solo Admin)"
                                     Style="{StaticResource OutlineButtonStyle}" Width="36" Height="36" Padding="0" FontSize="15"/>
                         </StackPanel>
                     </Grid>

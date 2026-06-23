@@ -426,6 +426,27 @@ SELECT last_insert_rowid();", new
                 }
                 var supplierRef = await ResolveSupplierReferenceAsync(conn, tx, supplierId, supplierName).ConfigureAwait(false);
                 var categoryRef = await ResolveCategoryReferenceAsync(conn, tx, categoryId, categoryName).ConfigureAwait(false);
+                var hasPendingLocalStock = await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM sales_sync_outbox o
+JOIN local_stock_movements m ON m.sale_id = o.sale_id
+WHERE m.barcode = @Barcode
+  AND o.status IN ('pending', 'retry')",
+                    new { p.Barcode }, tx).ConfigureAwait(false) > 0;
+                var stockQtyToWrite = stockQty;
+                if (hasPendingLocalStock)
+                {
+                    var existingStock = await conn.ExecuteScalarAsync<int?>(@"
+SELECT stock_qty
+FROM product_meta
+WHERE barcode = @Barcode",
+                        new { p.Barcode }, tx).ConfigureAwait(false);
+                    if (existingStock.HasValue)
+                    {
+                        stockQtyToWrite = existingStock.Value;
+                    }
+                }
+
                 await conn.ExecuteAsync(@"
 INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
 VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
@@ -439,7 +460,7 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
                         supplierName = supplierRef.Name,
                         categoryId = categoryRef.Id,
                         categoryName = categoryRef.Name,
-                        stockQty
+                        stockQty = stockQtyToWrite
                     }, tx).ConfigureAwait(false);
                 tx.Commit();
                 return id;

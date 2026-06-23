@@ -6,6 +6,7 @@ using System;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
+using Win7POS.Core.Pos;
 
 namespace Win7POS.Data.Repositories
 {
@@ -29,16 +30,18 @@ namespace Win7POS.Data.Repositories
 INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change, operator_id)
 VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @VoidedBySaleId, @VoidedAt, @Reason, @Total, @PaidCash, @PaidCard, @Change, @OperatorId);
 SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
+                sale.Id = saleId;
+                sale.ClientSaleId = await EnsureClientSaleIdAsync(conn, tx, saleId).ConfigureAwait(false);
 
-                foreach (var l in lines)
+                foreach (var l in lines.Select((line, index) => new { line, index }))
                 {
-                    l.SaleId = saleId;
-                    l.LineTotal = l.Quantity * l.UnitPrice;
+                    l.line.SaleId = saleId;
+                    l.line.LineTotal = l.line.Quantity * l.line.UnitPrice;
+                    l.line.Id = await InsertSaleLineAsync(conn, tx, l.line).ConfigureAwait(false);
                 }
 
-                await conn.ExecuteAsync(@"
-INSERT INTO sale_lines(saleId, productId, barcode, name, quantity, unitPrice, lineTotal, related_original_line_id)
-VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, @RelatedOriginalLineId);", lines, tx).ConfigureAwait(false);
+                await ApplyLocalStockMovementsAsync(conn, tx, sale, lines).ConfigureAwait(false);
+                await EnqueueSalesSyncOutboxAsync(conn, tx, saleId, sale.ClientSaleId).ConfigureAwait(false);
 
                 tx.Commit();
                 return saleId;
@@ -54,7 +57,7 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
         {
             using var conn = _factory.Open();
             var rows = await conn.QueryAsync<Sale>(
-                @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted
+                @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus
                   FROM sales
                   ORDER BY id DESC LIMIT @take",
                 new { take }
@@ -62,50 +65,47 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
             return rows.ToList();
         }
 
-        public async Task<IReadOnlyList<Sale>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null, bool includePdfHidden = false)
+        public async Task<IReadOnlyList<Sale>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null, bool includeFiscalPrinted = true)
         {
             using var conn = _factory.Open();
-            var sql = @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted
+            var sql = @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus
                   FROM sales
                   WHERE createdAt >= @fromMs AND createdAt < @toMs";
             if (operatorId.HasValue)
                 sql += " AND (operator_id IS NULL OR operator_id = @operatorId)";
-            if (!includePdfHidden)
-                sql += " AND COALESCE(pdf_printed, 0) = 0";
             sql += " ORDER BY createdAt ASC, id ASC";
             var rows = await conn.QueryAsync<Sale>(sql, new { fromMs, toMs, operatorId }).ConfigureAwait(false);
             return rows.ToList();
         }
 
-        public async Task<DailySalesSummary> GetDailySummaryAsync(DateTime date, bool includePdfHidden = false)
+        public async Task<DailySalesSummary> GetDailySummaryAsync(DateTime date, bool includeFiscalPrinted = true)
         {
             var from = new DateTimeOffset(date.Date).ToUnixTimeMilliseconds();
             var to = new DateTimeOffset(date.Date.AddDays(1)).ToUnixTimeMilliseconds();
             using var conn = _factory.Open();
-            var filterPdf = includePdfHidden ? "" : " AND COALESCE(pdf_printed, 0) = 0";
             var row = await conn.QuerySingleAsync<DailySalesSummary>($@"
-SELECT
-  COUNT(CASE WHEN kind = 0 THEN 1 END) AS SalesCount,
-  COALESCE(SUM(total), 0) AS TotalAmount,
-  COALESCE(SUM(paidCash), 0) AS CashAmount,
-  COALESCE(SUM(paidCard), 0) AS CardAmount,
-  COALESCE(SUM(CASE WHEN kind = 0 THEN total ELSE 0 END), 0) AS GrossSalesAmount,
-  COALESCE(SUM(CASE WHEN kind = 1 THEN ABS(total) ELSE 0 END), 0) AS RefundsAmount
-FROM sales
-WHERE createdAt >= @from AND createdAt < @to{filterPdf}",
+	SELECT
+	  COUNT(CASE WHEN kind = 0 THEN 1 END) AS SalesCount,
+	  COALESCE(SUM(total), 0) AS TotalAmount,
+	  COALESCE(SUM(paidCash), 0) AS CashAmount,
+	  COALESCE(SUM(paidCard), 0) AS CardAmount,
+	  COALESCE(SUM(CASE WHEN kind = 0 THEN total ELSE 0 END), 0) AS GrossSalesAmount,
+	  COALESCE(SUM(CASE WHEN kind IN (1, 2) THEN ABS(total) ELSE 0 END), 0) AS RefundsAmount
+	FROM sales
+	WHERE createdAt >= @from AND createdAt < @to",
                 new { from, to }).ConfigureAwait(false);
             row.NetAmount = row.TotalAmount;
             row.Date = date.Date;
             return row;
         }
 
-        public Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate, bool includePdfHidden = false)
+        public Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate, bool includeFiscalPrinted = true)
         {
-            return GetDailySummariesRangeAsync(fromDate, toDate, includePdfHidden);
+            return GetDailySummariesRangeAsync(fromDate, toDate, includeFiscalPrinted);
         }
 
         /// <summary>Report range veloce: una sola query aggregata + riempimento giorni mancanti.</summary>
-        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesRangeAsync(DateTime fromDate, DateTime toDate, bool includePdfHidden = false)
+        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesRangeAsync(DateTime fromDate, DateTime toDate, bool includeFiscalPrinted = true)
         {
             var start = fromDate.Date;
             var end = toDate.Date;
@@ -115,19 +115,18 @@ WHERE createdAt >= @from AND createdAt < @to{filterPdf}",
             var toMs = new DateTimeOffset(end.AddDays(1)).ToUnixTimeMilliseconds();
 
             using var conn = _factory.Open();
-            var filterPdf = includePdfHidden ? "" : " AND COALESCE(pdf_printed, 0) = 0";
             var rows = (await conn.QueryAsync<DailySummaryRow>($@"
-SELECT
-  date(createdAt/1000, 'unixepoch', 'localtime') AS DayStr,
-  COUNT(CASE WHEN kind = 0 THEN 1 END) AS SalesCount,
-  COALESCE(SUM(total), 0) AS TotalAmount,
-  COALESCE(SUM(paidCash), 0) AS CashAmount,
-  COALESCE(SUM(paidCard), 0) AS CardAmount,
-  COALESCE(SUM(CASE WHEN kind = 0 THEN total ELSE 0 END), 0) AS GrossSalesAmount,
-  COALESCE(SUM(CASE WHEN kind = 1 THEN ABS(total) ELSE 0 END), 0) AS RefundsAmount
-FROM sales
-WHERE createdAt >= @fromMs AND createdAt < @toMs{filterPdf}
-GROUP BY DayStr",
+	SELECT
+	  date(createdAt/1000, 'unixepoch', 'localtime') AS DayStr,
+	  COUNT(CASE WHEN kind = 0 THEN 1 END) AS SalesCount,
+	  COALESCE(SUM(total), 0) AS TotalAmount,
+	  COALESCE(SUM(paidCash), 0) AS CashAmount,
+	  COALESCE(SUM(paidCard), 0) AS CardAmount,
+	  COALESCE(SUM(CASE WHEN kind = 0 THEN total ELSE 0 END), 0) AS GrossSalesAmount,
+	  COALESCE(SUM(CASE WHEN kind IN (1, 2) THEN ABS(total) ELSE 0 END), 0) AS RefundsAmount
+	FROM sales
+	WHERE createdAt >= @fromMs AND createdAt < @toMs
+	GROUP BY DayStr",
                 new { fromMs, toMs }).ConfigureAwait(false)).ToList();
 
             var byDay = new Dictionary<string, DailySummaryRow>(StringComparer.Ordinal);
@@ -171,27 +170,26 @@ GROUP BY DayStr",
             return result;
         }
 
-        public Task<IReadOnlyList<Sale>> GetSalesForDateAsync(DateTime date, bool includePdfHidden = false)
+        public Task<IReadOnlyList<Sale>> GetSalesForDateAsync(DateTime date, bool includeFiscalPrinted = true)
         {
             var from = new DateTimeOffset(date.Date).ToUnixTimeMilliseconds();
             var to = new DateTimeOffset(date.Date.AddDays(1)).ToUnixTimeMilliseconds();
-            return GetSalesBetweenAsync(from, to, null, includePdfHidden);
+            return GetSalesBetweenAsync(from, to, null, includeFiscalPrinted);
         }
 
         /// <summary>Vendite per fascia oraria (0-23) del giorno, solo vendite (kind=0).</summary>
-        public async Task<IReadOnlyList<long>> GetHourlySalesAsync(DateTime date, bool includePdfHidden = false)
+        public async Task<IReadOnlyList<long>> GetHourlySalesAsync(DateTime date, bool includeFiscalPrinted = true)
         {
             var from = new DateTimeOffset(date.Date).ToUnixTimeMilliseconds();
             var to = new DateTimeOffset(date.Date.AddDays(1)).ToUnixTimeMilliseconds();
             using var conn = _factory.Open();
-            var filterPdf = includePdfHidden ? "" : " AND COALESCE(pdf_printed, 0) = 0";
             var rows = await conn.QueryAsync<(int Hour, long Amount)>($@"
-SELECT CAST(strftime('%H', datetime(createdAt/1000, 'unixepoch', 'localtime')) AS INTEGER) AS Hour,
-       COALESCE(SUM(CASE WHEN kind = 0 THEN total ELSE 0 END), 0) AS Amount
-FROM sales
-WHERE createdAt >= @from AND createdAt < @to{filterPdf}
-GROUP BY strftime('%H', datetime(createdAt/1000, 'unixepoch', 'localtime'))
-ORDER BY Hour", new { from, to }).ConfigureAwait(false);
+	SELECT CAST(strftime('%H', datetime(createdAt/1000, 'unixepoch', 'localtime')) AS INTEGER) AS Hour,
+	       COALESCE(SUM(CASE WHEN kind = 0 THEN total ELSE 0 END), 0) AS Amount
+	FROM sales
+	WHERE createdAt >= @from AND createdAt < @to
+	GROUP BY strftime('%H', datetime(createdAt/1000, 'unixepoch', 'localtime'))
+	ORDER BY Hour", new { from, to }).ConfigureAwait(false);
             var result = new long[24];
             foreach (var r in rows)
                 if (r.Hour >= 0 && r.Hour < 24)
@@ -203,12 +201,12 @@ ORDER BY Hour", new { from, to }).ConfigureAwait(false);
         {
             using var conn = _factory.Open();
             return await conn.QuerySingleOrDefaultAsync<Sale>(
-                @"SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted
+                @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus
                   FROM sales WHERE id = @saleId",
                 new { saleId }).ConfigureAwait(false);
         }
 
-        /// <summary>Imposta pdf_printed=1 per la vendita (nascosta nella vista apparente).</summary>
+        /// <summary>Imposta pdf_printed=1 come stato documentale locale senza rimuovere la vendita da report o sync.</summary>
         public Task MarkPdfPrintedAsync(long saleId)
         {
             using var conn = _factory.Open();
@@ -217,19 +215,18 @@ ORDER BY Hour", new { from, to }).ConfigureAwait(false);
                 new { saleId });
         }
 
-        public async Task<IReadOnlyList<Sale>> GetByCodeLikeAsync(string codeFilter, bool includePdfHidden = false)
+        public async Task<IReadOnlyList<Sale>> GetByCodeLikeAsync(string codeFilter, bool includeFiscalPrinted = true)
         {
             if (string.IsNullOrWhiteSpace(codeFilter))
                 return new List<Sale>();
             using var conn = _factory.Open();
             var pattern = "%" + codeFilter.Trim() + "%";
-            var filterPdf = includePdfHidden ? "" : " AND COALESCE(pdf_printed, 0) = 0";
             var rows = await conn.QueryAsync<Sale>($@"
-SELECT id, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted
-FROM sales
-WHERE code LIKE @pattern{filterPdf}
-ORDER BY createdAt DESC, id DESC
-LIMIT 200",
+	SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus
+	FROM sales
+	WHERE code LIKE @pattern
+	ORDER BY createdAt DESC, id DESC
+	LIMIT 200",
                 new { pattern }).ConfigureAwait(false);
             return rows.ToList();
         }
@@ -369,9 +366,295 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         public async Task InsertSaleLinesAsync(SqliteConnection conn, SqliteTransaction tx, IReadOnlyList<SaleLine> lines)
         {
             if (lines == null || lines.Count == 0) return;
+            foreach (var line in lines)
+            {
+                line.Id = await InsertSaleLineAsync(conn, tx, line).ConfigureAwait(false);
+            }
+        }
+
+        public async Task<string> EnsureClientSaleIdAsync(SqliteConnection conn, SqliteTransaction tx, long saleId)
+        {
+            var existing = await conn.QuerySingleOrDefaultAsync<string>(
+                "SELECT client_sale_id FROM sales WHERE id = @saleId",
+                new { saleId }, tx).ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(existing))
+            {
+                return existing;
+            }
+
+            var clientSaleId = BuildClientSaleId(saleId);
+            await conn.ExecuteAsync(
+                "UPDATE sales SET client_sale_id = @clientSaleId WHERE id = @saleId",
+                new { clientSaleId, saleId }, tx).ConfigureAwait(false);
+            return clientSaleId;
+        }
+
+        public async Task ApplyLocalStockMovementsAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            Sale sale,
+            IReadOnlyList<SaleLine> lines)
+        {
+            if (sale == null || lines == null || lines.Count == 0)
+            {
+                return;
+            }
+
+            var clientSaleId = sale.ClientSaleId;
+            if (string.IsNullOrWhiteSpace(clientSaleId))
+            {
+                clientSaleId = await EnsureClientSaleIdAsync(conn, tx, sale.Id).ConfigureAwait(false);
+                sale.ClientSaleId = clientSaleId;
+            }
+
+            foreach (var line in lines)
+            {
+                var barcode = (line.Barcode ?? string.Empty).Trim();
+                if (barcode.Length == 0 ||
+                    line.Quantity == 0 ||
+                    DiscountKeys.IsDiscount(barcode) ||
+                    barcode.StartsWith(DiscountKeys.ManualPrefix, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var quantityDelta = sale.Kind == (int)SaleKind.Refund || sale.Kind == (int)SaleKind.Void
+                    ? Math.Abs(line.Quantity)
+                    : -Math.Abs(line.Quantity);
+                var movementKind = sale.Kind == (int)SaleKind.Refund
+                    ? "refund_increment"
+                    : sale.Kind == (int)SaleKind.Void
+                        ? "void_reverse"
+                        : "sale_decrement";
+                var movementKey = clientSaleId + ":" +
+                    line.Id.ToString(CultureInfo.InvariantCulture) + ":" +
+                    movementKind;
+
+                var inserted = await conn.ExecuteAsync(@"
+INSERT OR IGNORE INTO local_stock_movements(
+  movement_key, sale_id, sale_line_id, barcode, quantity_delta, movement_kind, created_at)
+VALUES(
+  @movementKey, @saleId, @saleLineId, @barcode, @quantityDelta, @movementKind, @createdAt);",
+                    new
+                    {
+                        movementKey,
+                        saleId = sale.Id,
+                        saleLineId = line.Id == 0 ? (long?)null : line.Id,
+                        barcode,
+                        quantityDelta,
+                        movementKind,
+                        createdAt = sale.CreatedAt
+                    }, tx).ConfigureAwait(false);
+
+                if (inserted == 0)
+                {
+                    continue;
+                }
+
+                await conn.ExecuteAsync(@"
+UPDATE product_meta
+SET stock_qty =
+  CASE
+    WHEN stock_qty + @quantityDelta < 0 THEN 0
+    ELSE stock_qty + @quantityDelta
+  END
+WHERE barcode = @barcode;",
+                    new { barcode, quantityDelta }, tx).ConfigureAwait(false);
+            }
+        }
+
+        public async Task EnqueueSalesSyncOutboxAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            long saleId,
+            string clientSaleId)
+        {
+            var normalizedClientSaleId = string.IsNullOrWhiteSpace(clientSaleId)
+                ? BuildClientSaleId(saleId)
+                : clientSaleId.Trim();
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var idempotencyKey = normalizedClientSaleId + ":pos-sales-ledger-v2";
+
             await conn.ExecuteAsync(@"
+INSERT OR IGNORE INTO sales_sync_outbox(
+  sale_id, client_sale_id, idempotency_key, status, created_at, updated_at)
+VALUES(
+  @saleId, @clientSaleId, @idempotencyKey, 'pending', @nowMs, @nowMs);
+
+UPDATE sales
+SET sync_status = CASE
+    WHEN sync_status = 'acked' THEN sync_status
+    ELSE 'pending'
+  END,
+  client_sale_id = COALESCE(client_sale_id, @clientSaleId)
+WHERE id = @saleId;",
+                new
+                {
+                    saleId,
+                    clientSaleId = normalizedClientSaleId,
+                    idempotencyKey,
+                    nowMs
+                }, tx).ConfigureAwait(false);
+        }
+
+        public async Task<IReadOnlyList<SalesSyncOutboxItem>> GetPendingSalesSyncOutboxAsync(int take, long nowMs)
+        {
+            if (take <= 0) take = 1;
+            if (take > 50) take = 50;
+
+            using var conn = _factory.Open();
+            var rows = await conn.QueryAsync<SalesSyncOutboxItem>(@"
+SELECT
+  id AS Id,
+  sale_id AS SaleId,
+  client_sale_id AS ClientSaleId,
+  client_batch_id AS ClientBatchId,
+  idempotency_key AS IdempotencyKey,
+  payload_hash AS PayloadHash,
+  status AS Status,
+  attempt_count AS AttemptCount,
+  next_retry_at AS NextRetryAt,
+  last_error_code AS LastErrorCode
+FROM sales_sync_outbox
+WHERE status IN ('pending', 'retry')
+  AND next_retry_at <= @nowMs
+ORDER BY id ASC
+LIMIT @take",
+                new { take, nowMs }).ConfigureAwait(false);
+            return rows.ToList();
+        }
+
+        public async Task<IReadOnlyDictionary<long, string>> GetRemoteProductIdsAsync(IEnumerable<long> productIds)
+        {
+            var ids = (productIds ?? Enumerable.Empty<long>())
+                .Where(id => id > 0)
+                .Distinct()
+                .ToArray();
+
+            if (ids.Length == 0)
+            {
+                return new Dictionary<long, string>();
+            }
+
+            using var conn = _factory.Open();
+            var rows = await conn.QueryAsync<RemoteProductIdRow>(
+                "SELECT id AS ProductId, remote_product_id AS RemoteProductId FROM products WHERE id IN @ids",
+                new { ids }).ConfigureAwait(false);
+            return rows
+                .Where(row => !string.IsNullOrWhiteSpace(row.RemoteProductId))
+                .ToDictionary(row => row.ProductId, row => row.RemoteProductId);
+        }
+
+        public async Task PrepareSalesSyncAttemptAsync(
+            long outboxId,
+            string clientBatchId,
+            string payloadJson,
+            string payloadHash,
+            long nowMs)
+        {
+            using var conn = _factory.Open();
+            await conn.ExecuteAsync(@"
+UPDATE sales_sync_outbox
+SET client_batch_id = @clientBatchId,
+    payload_json = @payloadJson,
+    payload_hash = @payloadHash,
+    attempt_count = attempt_count + 1,
+    last_attempt_at = @nowMs,
+    updated_at = @nowMs
+WHERE id = @outboxId
+  AND status IN ('pending', 'retry');",
+                new { outboxId, clientBatchId, payloadJson, payloadHash, nowMs }).ConfigureAwait(false);
+        }
+
+        public async Task MarkSalesSyncAckedAsync(
+            long outboxId,
+            long saleId,
+            string serverBatchId,
+            string serverSaleId,
+            long nowMs)
+        {
+            using var conn = await _factory.OpenAsync().ConfigureAwait(false);
+            using var tx = conn.BeginTransaction();
+            await conn.ExecuteAsync(@"
+UPDATE sales_sync_outbox
+SET status = 'acked',
+    server_batch_id = @serverBatchId,
+    server_sale_id = @serverSaleId,
+    last_error_code = NULL,
+    last_error_at = NULL,
+    updated_at = @nowMs
+WHERE id = @outboxId;
+
+UPDATE sales
+SET sync_status = 'acked'
+WHERE id = @saleId;",
+                new { outboxId, saleId, serverBatchId, serverSaleId, nowMs }, tx).ConfigureAwait(false);
+            tx.Commit();
+        }
+
+        public async Task MarkSalesSyncRetryAsync(
+            long outboxId,
+            long saleId,
+            string errorCode,
+            long nextRetryAt,
+            long nowMs)
+        {
+            using var conn = await _factory.OpenAsync().ConfigureAwait(false);
+            using var tx = conn.BeginTransaction();
+            await conn.ExecuteAsync(@"
+UPDATE sales_sync_outbox
+SET status = 'retry',
+    next_retry_at = @nextRetryAt,
+    last_error_code = @errorCode,
+    last_error_at = @nowMs,
+    updated_at = @nowMs
+WHERE id = @outboxId;
+
+UPDATE sales
+SET sync_status = 'retry'
+WHERE id = @saleId;",
+                new { outboxId, saleId, errorCode, nextRetryAt, nowMs }, tx).ConfigureAwait(false);
+            tx.Commit();
+        }
+
+        public async Task MarkSalesSyncBlockedAsync(
+            long outboxId,
+            long saleId,
+            string errorCode,
+            long nowMs)
+        {
+            using var conn = await _factory.OpenAsync().ConfigureAwait(false);
+            using var tx = conn.BeginTransaction();
+            await conn.ExecuteAsync(@"
+UPDATE sales_sync_outbox
+	SET status = 'failed_blocked',
+    last_error_code = @errorCode,
+    last_error_at = @nowMs,
+    updated_at = @nowMs
+WHERE id = @outboxId;
+
+UPDATE sales
+SET sync_status = 'blocked'
+WHERE id = @saleId;",
+                new { outboxId, saleId, errorCode, nowMs }, tx).ConfigureAwait(false);
+            tx.Commit();
+        }
+
+        private static string BuildClientSaleId(long saleId)
+        {
+            return "win7pos-sale-" + saleId.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static async Task<long> InsertSaleLineAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            SaleLine line)
+        {
+            return await conn.ExecuteScalarAsync<long>(@"
 INSERT INTO sale_lines(saleId, productId, barcode, name, quantity, unitPrice, lineTotal, related_original_line_id)
-VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, @RelatedOriginalLineId);", lines, tx).ConfigureAwait(false);
+VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, @RelatedOriginalLineId);
+SELECT last_insert_rowid();", line, tx).ConfigureAwait(false);
         }
 
         public async Task MarkSaleVoidedAsync(SqliteConnection conn, SqliteTransaction tx, long originalSaleId, long refundSaleId, long nowMs)
@@ -419,5 +702,25 @@ VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, 
         public int SoldQty { get; set; }
         public int RefundedQty { get; set; }
         public int RemainingQty { get; set; }
+    }
+
+    public sealed class SalesSyncOutboxItem
+    {
+        public long Id { get; set; }
+        public long SaleId { get; set; }
+        public string ClientSaleId { get; set; }
+        public string ClientBatchId { get; set; }
+        public string IdempotencyKey { get; set; }
+        public string PayloadHash { get; set; }
+        public string Status { get; set; }
+        public int AttemptCount { get; set; }
+        public long NextRetryAt { get; set; }
+        public string LastErrorCode { get; set; }
+    }
+
+    internal sealed class RemoteProductIdRow
+    {
+        public long ProductId { get; set; }
+        public string RemoteProductId { get; set; }
     }
 }

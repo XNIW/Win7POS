@@ -3,10 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
-using System.Windows.Input;
-using Win7POS.Core.Receipt;
 using Win7POS.Wpf.Pos;
-using Win7POS.Wpf.ViewModels;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -26,7 +23,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ShopSettingsViewModel(PosWorkflowService service)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
-            SaveCommand = new RelayCommand(() => _ = SaveAsync(), () => !IsBusy);
             _ = LoadAsync();
         }
 
@@ -39,9 +35,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string FiscalBoletaNumberText { get => _fiscalBoletaNumberText; set { _fiscalBoletaNumberText = value ?? ""; OnPropertyChanged(); } }
         public string Status { get => _status; set { _status = value ?? ""; OnPropertyChanged(); } }
         public bool IsBusy { get => _isBusy; set { _isBusy = value; OnPropertyChanged(); } }
+        public bool IsReadOnly => true;
 
-        public ICommand SaveCommand { get; }
-        public event Action<bool> RequestClose;
         public event PropertyChangedEventHandler PropertyChanged;
 
         private async Task LoadAsync()
@@ -57,40 +52,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Phone = shop.Phone ?? "";
                 Footer = shop.Footer ?? "";
                 FiscalBoletaNumberText = (await _service.GetFiscalBoletaNumberAsync().ConfigureAwait(true)).ToString(CultureInfo.InvariantCulture);
-                Status = "Dati caricati.";
+                Status = "Dati ufficiali caricati. Modifica disponibile solo in Admin Web.";
             }
             catch (Exception ex)
             {
                 Status = "Errore: " + ex.Message;
-            }
-            finally
-            {
-                IsBusy = false;
-            }
-        }
-
-        private async Task SaveAsync()
-        {
-            IsBusy = true;
-            try
-            {
-                await _service.SaveShopInfoAsync(new ReceiptShopInfo
-                {
-                    Name = Name,
-                    Address = Address,
-                    City = City,
-                    Rut = Rut,
-                    Phone = Phone,
-                    Footer = Footer
-                }).ConfigureAwait(true);
-                var boleta = int.TryParse(FiscalBoletaNumberText?.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : 0;
-                await _service.SetFiscalBoletaNumberAsync(boleta).ConfigureAwait(true);
-                Status = "Salvato.";
-                RequestClose?.Invoke(true);
-            }
-            catch (Exception ex)
-            {
-                Status = "Errore salvataggio: " + ex.Message;
             }
             finally
             {

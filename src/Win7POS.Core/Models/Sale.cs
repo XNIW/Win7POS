@@ -3,6 +3,7 @@ namespace Win7POS.Core.Models
     public sealed class Sale
     {
         public long Id { get; set; }
+        public string ClientSaleId { get; set; }
         public string Code { get; set; }
         public long CreatedAt { get; set; }   // unix ms
         public int Kind { get; set; } = (int)SaleKind.Sale;
@@ -16,7 +17,8 @@ namespace Win7POS.Core.Models
         public long Change { get; set; }
         /// <summary>Utente operatore che ha effettuato la vendita (nullable per compatibilità).</summary>
         public int? OperatorId { get; set; }
-        /// <summary>True se il PDF SII è stato effettivamente stampato. Le vendite con PdfPrinted=1 sono nascoste nella vista apparente (Registro/Chiusura).</summary>
+        /// <summary>True se il documento locale e stato stampato; non esclude mai la vendita da registro, chiusura o sync.</summary>
         public bool PdfPrinted { get; set; }
+        public string SyncStatus { get; set; }
     }
 }

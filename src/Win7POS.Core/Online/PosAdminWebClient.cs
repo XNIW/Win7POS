@@ -15,6 +15,7 @@ namespace Win7POS.Wpf.Pos.Online
         private const string FirstLoginPath = "/api/pos/auth/first-login";
         private const string HeartbeatPath = "/api/pos/session/heartbeat";
         private const string CatalogPullPath = "/api/pos/catalog/pull";
+        private const string SalesSyncPath = "/api/pos/sales/sync";
         private const int MaxResponseBodyBytes = 8 * 1024 * 1024;
         private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
 
@@ -58,6 +59,16 @@ namespace Win7POS.Wpf.Pos.Online
         {
             return await PostJsonAsync<PosCatalogPullRequest, PosCatalogPullResponse>(
                 CatalogPullPath,
+                request,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<PosOnlineResult<PosSalesSyncResponse>> SalesSyncAsync(
+            PosSalesSyncRequest request,
+            CancellationToken cancellationToken)
+        {
+            return await PostJsonAsync<PosSalesSyncRequest, PosSalesSyncResponse>(
+                SalesSyncPath,
                 request,
                 cancellationToken).ConfigureAwait(false);
         }
@@ -325,6 +336,181 @@ namespace Win7POS.Wpf.Pos.Online
     }
 
     [DataContract]
+    public sealed class PosSalesSyncRequest
+    {
+        [DataMember(Name = "appVersion", EmitDefaultValue = false)]
+        public string AppVersion { get; set; }
+
+        [DataMember(Name = "batch")]
+        public PosSalesSyncBatchRequest Batch { get; set; }
+
+        [DataMember(Name = "deviceToken")]
+        public string DeviceToken { get; set; }
+
+        [DataMember(Name = "posSessionId")]
+        public string PosSessionId { get; set; }
+
+        [DataMember(Name = "sales")]
+        public PosSalesSyncSaleRequest[] Sales { get; set; }
+
+        [DataMember(Name = "schemaVersion")]
+        public string SchemaVersion { get; set; }
+
+        [DataMember(Name = "sessionToken")]
+        public string SessionToken { get; set; }
+
+        [DataMember(Name = "shopCode", EmitDefaultValue = false)]
+        public string ShopCode { get; set; }
+
+        [DataMember(Name = "shopDeviceId")]
+        public string ShopDeviceId { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosSalesSyncBatchRequest
+    {
+        [DataMember(Name = "clientBatchId")]
+        public string ClientBatchId { get; set; }
+
+        [DataMember(Name = "idempotencyKey")]
+        public string IdempotencyKey { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosSalesSyncSaleRequest
+    {
+        [DataMember(Name = "amounts")]
+        public PosSalesSyncAmounts Amounts { get; set; }
+
+        [DataMember(Name = "businessDate")]
+        public string BusinessDate { get; set; }
+
+        [DataMember(Name = "clientOriginalSaleId", EmitDefaultValue = false)]
+        public string ClientOriginalSaleId { get; set; }
+
+        [DataMember(Name = "clientSaleId")]
+        public string ClientSaleId { get; set; }
+
+        [DataMember(Name = "currency")]
+        public string Currency { get; set; }
+
+        [DataMember(Name = "fiscal")]
+        public PosSalesSyncFiscal Fiscal { get; set; }
+
+        [DataMember(Name = "idempotencyKey")]
+        public string IdempotencyKey { get; set; }
+
+        [DataMember(Name = "kind")]
+        public string Kind { get; set; }
+
+        [DataMember(Name = "lines")]
+        public PosSalesSyncLine[] Lines { get; set; }
+
+        [DataMember(Name = "occurredAt")]
+        public string OccurredAt { get; set; }
+
+        [DataMember(Name = "payments")]
+        public PosSalesSyncPayment[] Payments { get; set; }
+
+        [DataMember(Name = "reversalReason", EmitDefaultValue = false)]
+        public string ReversalReason { get; set; }
+
+        [DataMember(Name = "saleNumber")]
+        public string SaleNumber { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosSalesSyncAmounts
+    {
+        [DataMember(Name = "changeClp")]
+        public long ChangeClp { get; set; }
+
+        [DataMember(Name = "discountClp")]
+        public long DiscountClp { get; set; }
+
+        [DataMember(Name = "grossClp")]
+        public long GrossClp { get; set; }
+
+        [DataMember(Name = "netClp")]
+        public long NetClp { get; set; }
+
+        [DataMember(Name = "paidClp")]
+        public long PaidClp { get; set; }
+
+        [DataMember(Name = "taxClp")]
+        public long TaxClp { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosSalesSyncLine
+    {
+        [DataMember(Name = "amountClp")]
+        public long AmountClp { get; set; }
+
+        [DataMember(Name = "barcode", EmitDefaultValue = false)]
+        public string Barcode { get; set; }
+
+        [DataMember(Name = "clientLineId")]
+        public string ClientLineId { get; set; }
+
+        [DataMember(Name = "linePosition")]
+        public int LinePosition { get; set; }
+
+        [DataMember(Name = "lineType")]
+        public string LineType { get; set; }
+
+        [DataMember(Name = "localProductId", EmitDefaultValue = false)]
+        public string LocalProductId { get; set; }
+
+        [DataMember(Name = "productId", EmitDefaultValue = false)]
+        public string ProductId { get; set; }
+
+        [DataMember(Name = "productName", EmitDefaultValue = false)]
+        public string ProductName { get; set; }
+
+        [DataMember(Name = "quantity")]
+        public int Quantity { get; set; }
+
+        [DataMember(Name = "stockQuantityDelta")]
+        public int StockQuantityDelta { get; set; }
+
+        [DataMember(Name = "unitAmountClp")]
+        public long UnitAmountClp { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosSalesSyncPayment
+    {
+        [DataMember(Name = "amountClp")]
+        public long AmountClp { get; set; }
+
+        [DataMember(Name = "changeClp")]
+        public long ChangeClp { get; set; }
+
+        [DataMember(Name = "clientPaymentId")]
+        public string ClientPaymentId { get; set; }
+
+        [DataMember(Name = "method")]
+        public string Method { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosSalesSyncFiscal
+    {
+        [DataMember(Name = "documentNumber", EmitDefaultValue = false)]
+        public string DocumentNumber { get; set; }
+
+        [DataMember(Name = "documentType")]
+        public string DocumentType { get; set; }
+
+        [DataMember(Name = "printedAt")]
+        public string PrintedAt { get; set; }
+
+        [DataMember(Name = "status")]
+        public string Status { get; set; }
+    }
+
+    [DataContract]
     public sealed class PosFirstLoginResponse
     {
         [DataMember(Name = "device")]
@@ -391,6 +577,54 @@ namespace Win7POS.Wpf.Pos.Online
 
         [DataMember(Name = "syncMode")]
         public string SyncMode { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosSalesSyncResponse
+    {
+        [DataMember(Name = "batch")]
+        public PosSalesSyncBatchResponse Batch { get; set; }
+
+        [DataMember(Name = "code")]
+        public string Code { get; set; }
+
+        [DataMember(Name = "ok")]
+        public bool Ok { get; set; }
+
+        [DataMember(Name = "sales")]
+        public PosSalesSyncSaleAck[] Sales { get; set; }
+
+        [DataMember(Name = "serverTime")]
+        public string ServerTime { get; set; }
+
+        [DataMember(Name = "shop")]
+        public PosShopResponse Shop { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosSalesSyncBatchResponse
+    {
+        [DataMember(Name = "clientBatchId")]
+        public string ClientBatchId { get; set; }
+
+        [DataMember(Name = "posSalesSyncBatchId")]
+        public string PosSalesSyncBatchId { get; set; }
+
+        [DataMember(Name = "status")]
+        public string Status { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosSalesSyncSaleAck
+    {
+        [DataMember(Name = "clientSaleId")]
+        public string ClientSaleId { get; set; }
+
+        [DataMember(Name = "posSaleId")]
+        public string PosSaleId { get; set; }
+
+        [DataMember(Name = "status")]
+        public string Status { get; set; }
     }
 
     [DataContract]

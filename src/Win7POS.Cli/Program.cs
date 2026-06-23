@@ -4,6 +4,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Data.Sqlite;
@@ -14,7 +16,9 @@ using Win7POS.Core.Reports;
 using Win7POS.Core.Receipt;
 using Win7POS.Data;
 using Win7POS.Data.Adapters;
+using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Pos.Online;
 
 internal static class Program
 {
@@ -34,6 +38,37 @@ internal static class Program
         public int FailAfter;
         public int MaxItems = 20;
         public string Format = "text";
+    }
+
+    private sealed class Task081HttpHarnessParams
+    {
+        public string BaseUrl = string.Empty;
+        public bool KeepDb;
+        public string SessionJsonPath = string.Empty;
+    }
+
+    private sealed class Task081HttpHarnessSession
+    {
+        [JsonPropertyName("deviceToken")]
+        public string DeviceToken { get; set; } = string.Empty;
+
+        [JsonPropertyName("posSessionId")]
+        public string PosSessionId { get; set; } = string.Empty;
+
+        [JsonPropertyName("remoteProductId")]
+        public string RemoteProductId { get; set; } = string.Empty;
+
+        [JsonPropertyName("runId")]
+        public string RunId { get; set; } = string.Empty;
+
+        [JsonPropertyName("sessionToken")]
+        public string SessionToken { get; set; } = string.Empty;
+
+        [JsonPropertyName("shopCode")]
+        public string ShopCode { get; set; } = string.Empty;
+
+        [JsonPropertyName("shopDeviceId")]
+        public string ShopDeviceId { get; set; } = string.Empty;
     }
 
     private static async Task Main(string[] args)
@@ -76,6 +111,18 @@ internal static class Program
                 return;
             }
 
+            if (TryParseTask081SalesSyncHarnessArgs(args, out var keepTask081Db))
+            {
+                await RunTask081SalesSyncHarnessAsync(keepTask081Db);
+                return;
+            }
+
+            if (TryParseTask081SalesSyncHttpHarnessArgs(args, out var task081HttpParams))
+            {
+                await RunTask081SalesSyncHttpHarnessAsync(task081HttpParams);
+                return;
+            }
+
             if (TryParseSelfTestArgs(args, out var keepDb))
             {
                 await RunSelfTest(keepDb);
@@ -97,6 +144,8 @@ internal static class Program
         Console.WriteLine("Unknown args.");
         Console.WriteLine("Usage:");
         Console.WriteLine("  --selftest [--keepdb]");
+        Console.WriteLine("  --task081-sales-sync-harness [--keepdb]");
+        Console.WriteLine("  --task081-sales-sync-http-harness --base-url <AdminWebUrl> --session-json <path> [--keepdb]");
         Console.WriteLine("  --daily yyyy-MM-dd [--db <path>]");
         Console.WriteLine("  --analyze-csv <path>");
             Console.WriteLine("  --diff-csv <path> [--db <path>] [--max-items N] [--format text|json]");
@@ -121,6 +170,62 @@ internal static class Program
         }
 
         return hasSelfTest;
+    }
+
+    private static bool TryParseTask081SalesSyncHarnessArgs(string[] args, out bool keepDb)
+    {
+        keepDb = false;
+        var hasHarness = false;
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--task081-sales-sync-harness", StringComparison.OrdinalIgnoreCase))
+                hasHarness = true;
+            if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase))
+                keepDb = true;
+        }
+
+        return hasHarness;
+    }
+
+    private static bool TryParseTask081SalesSyncHttpHarnessArgs(
+        string[] args,
+        out Task081HttpHarnessParams parameters)
+    {
+        parameters = new Task081HttpHarnessParams();
+        var hasHarness = false;
+
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (string.Equals(arg, "--task081-sales-sync-http-harness", StringComparison.OrdinalIgnoreCase))
+            {
+                hasHarness = true;
+                continue;
+            }
+
+            if (string.Equals(arg, "--base-url", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.BaseUrl = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--session-json", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.SessionJsonPath = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase))
+            {
+                parameters.KeepDb = true;
+            }
+        }
+
+        return hasHarness;
     }
 
     private static bool TryParseDailyArgs(string[] args, out string dateArg, out string dbPath)
@@ -335,6 +440,499 @@ internal static class Program
         }
 
         return outputPath.Length > 0;
+    }
+
+    private static async Task RunTask081SalesSyncHarnessAsync(bool keepDb)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var dbPath = Path.Combine(tempRoot, $"task081_sales_sync_{Guid.NewGuid():N}.db");
+        var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
+        var barcode = "TASK081000001";
+        var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+        Console.WriteLine("TASK-081 sales sync harness");
+        Console.WriteLine($"DB path: {opt.DbPath}");
+
+        try
+        {
+            DbInitializer.EnsureCreated(opt);
+            var factory = new SqliteConnectionFactory(opt);
+            var sales = new SaleRepository(factory);
+
+            using (var conn = factory.Open())
+            {
+                await ExecuteSqliteAsync(
+                    conn,
+                    null,
+                    @"INSERT INTO products(barcode, name, unitPrice, remote_product_id)
+                      VALUES(@barcode, @name, @unitPrice, @remoteProductId);",
+                    "@barcode", barcode,
+                    "@name", "TASK081 Runtime Product",
+                    "@unitPrice", 1000,
+                    "@remoteProductId", "11111111-1111-4111-8111-111111111111").ConfigureAwait(false);
+                await ExecuteSqliteAsync(
+                    conn,
+                    null,
+                    @"INSERT INTO product_meta(barcode, stock_qty)
+                      VALUES(@barcode, @stockQty);",
+                    "@barcode", barcode,
+                    "@stockQty", 10).ConfigureAwait(false);
+            }
+
+            var productId = await ReadProductIdAsync(factory, barcode).ConfigureAwait(false);
+            Assert(productId > 0, "Harness product was not inserted.");
+
+            var saleId = await sales.InsertSaleAsync(
+                new Sale
+                {
+                    Code = "TASK081-SALE",
+                    CreatedAt = nowMs,
+                    Kind = (int)SaleKind.Sale,
+                    Total = 2000,
+                    PaidCash = 2000,
+                    PaidCard = 0,
+                    Change = 0,
+                },
+                new[]
+                {
+                    new SaleLine
+                    {
+                        Barcode = barcode,
+                        Name = "TASK081 Runtime Product",
+                        ProductId = productId,
+                        Quantity = 2,
+                        UnitPrice = 1000,
+                    },
+                }).ConfigureAwait(false);
+            Assert(await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 8, "Sale decrement did not update stock to 8.");
+            Assert(await ReadMovementKindAsync(factory, saleId).ConfigureAwait(false) == "sale_decrement", "Sale movement kind mismatch.");
+            Assert(await ReadMovementDeltaAsync(factory, saleId).ConfigureAwait(false) == -2, "Sale movement quantity mismatch.");
+
+            var refundId = await sales.InsertSaleAsync(
+                new Sale
+                {
+                    Code = "TASK081-REFUND",
+                    CreatedAt = nowMs + 1000,
+                    Kind = (int)SaleKind.Refund,
+                    RelatedSaleId = saleId,
+                    Reason = "TASK081 refund",
+                    Total = -1000,
+                    PaidCash = -1000,
+                    PaidCard = 0,
+                    Change = 0,
+                },
+                new[]
+                {
+                    new SaleLine
+                    {
+                        Barcode = barcode,
+                        Name = "TASK081 Runtime Product",
+                        ProductId = productId,
+                        Quantity = 1,
+                        UnitPrice = 1000,
+                    },
+                }).ConfigureAwait(false);
+            Assert(await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 9, "Refund increment did not update stock to 9.");
+            Assert(await ReadMovementKindAsync(factory, refundId).ConfigureAwait(false) == "refund_increment", "Refund movement kind mismatch.");
+            Assert(await ReadMovementDeltaAsync(factory, refundId).ConfigureAwait(false) == 1, "Refund movement quantity mismatch.");
+
+            var voidId = await sales.InsertSaleAsync(
+                new Sale
+                {
+                    Code = "TASK081-VOID",
+                    CreatedAt = nowMs + 2000,
+                    Kind = (int)SaleKind.Void,
+                    RelatedSaleId = saleId,
+                    Reason = "TASK081 void",
+                    Total = -1000,
+                    PaidCash = -1000,
+                    PaidCard = 0,
+                    Change = 0,
+                },
+                new[]
+                {
+                    new SaleLine
+                    {
+                        Barcode = barcode,
+                        Name = "TASK081 Runtime Product",
+                        ProductId = productId,
+                        Quantity = 1,
+                        UnitPrice = 1000,
+                    },
+                }).ConfigureAwait(false);
+            Assert(await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 10, "Void reverse did not restore stock to 10.");
+            Assert(await ReadMovementKindAsync(factory, voidId).ConfigureAwait(false) == "void_reverse", "Void movement kind mismatch.");
+            Assert(await ReadMovementDeltaAsync(factory, voidId).ConfigureAwait(false) == 1, "Void movement quantity mismatch.");
+
+            var pending = await sales
+                .GetPendingSalesSyncOutboxAsync(10, nowMs + 3000)
+                .ConfigureAwait(false);
+            Assert(pending.Count == 3, "Expected three pending outbox rows.");
+            Assert(pending.All(row => row.Status == "pending"), "Expected pending outbox status.");
+            Assert(pending.All(row => row.ClientSaleId.StartsWith("win7pos-sale-", StringComparison.Ordinal)), "Expected generated client sale ids.");
+
+            var products = new ProductRepository(factory);
+            await products.UpsertProductAndMetaInTransactionAsync(
+                new Product
+                {
+                    Barcode = barcode,
+                    Name = "TASK081 Runtime Product Remote",
+                    UnitPrice = 1200,
+                },
+                "TASK081-ARTICLE",
+                "TASK081 second name",
+                700,
+                null,
+                "TASK081 Supplier",
+                null,
+                "TASK081 Category",
+                99,
+                "11111111-1111-4111-8111-111111111111").ConfigureAwait(false);
+            Assert(
+                await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 10,
+                "Catalog pull should preserve local stock while sales sync outbox is pending.");
+
+            var redactedPayload = "{\"schemaVersion\":\"pos-sales-ledger-v2\",\"deviceToken\":null,\"sessionToken\":null}";
+            await sales.PrepareSalesSyncAttemptAsync(
+                pending[0].Id,
+                "task081-batch-acked",
+                redactedPayload,
+                "sha256:task081",
+                nowMs + 4000).ConfigureAwait(false);
+            Assert(await ReadOutboxAttemptCountAsync(factory, pending[0].Id).ConfigureAwait(false) == 1, "Outbox attempt was not incremented.");
+            Assert(
+                !(await ReadOutboxPayloadAsync(factory, pending[0].Id).ConfigureAwait(false)).Contains("secret", StringComparison.OrdinalIgnoreCase),
+                "Outbox payload should remain redacted.");
+
+            await sales.MarkSalesSyncAckedAsync(
+                pending[0].Id,
+                pending[0].SaleId,
+                "server-batch-task081",
+                "server-sale-task081",
+                nowMs + 5000).ConfigureAwait(false);
+            Assert(await ReadOutboxStatusAsync(factory, pending[0].Id).ConfigureAwait(false) == "acked", "Ack did not update outbox status.");
+            Assert(await ReadSaleSyncStatusAsync(factory, pending[0].SaleId).ConfigureAwait(false) == "acked", "Ack did not update sale sync status.");
+
+            await sales.MarkSalesSyncRetryAsync(
+                pending[1].Id,
+                pending[1].SaleId,
+                "transient_network",
+                nowMs + 6000,
+                nowMs + 5000).ConfigureAwait(false);
+            Assert(await ReadOutboxStatusAsync(factory, pending[1].Id).ConfigureAwait(false) == "retry", "Retry did not update outbox status.");
+            Assert(await ReadSaleSyncStatusAsync(factory, pending[1].SaleId).ConfigureAwait(false) == "retry", "Retry did not update sale sync status.");
+
+            await sales.MarkSalesSyncBlockedAsync(
+                pending[2].Id,
+                pending[2].SaleId,
+                "validation_failed",
+                nowMs + 5000).ConfigureAwait(false);
+            Assert(await ReadOutboxStatusAsync(factory, pending[2].Id).ConfigureAwait(false) == "failed_blocked", "Blocked did not update outbox status.");
+            Assert(await ReadSaleSyncStatusAsync(factory, pending[2].SaleId).ConfigureAwait(false) == "blocked", "Blocked did not update sale sync status.");
+
+            var retryOnly = await sales
+                .GetPendingSalesSyncOutboxAsync(10, nowMs + 7000)
+                .ConfigureAwait(false);
+            Assert(retryOnly.Count == 1 && retryOnly[0].Id == pending[1].Id, "Only retry row should remain sync-pending.");
+
+            Console.WriteLine("TASK-081 sales sync harness: PASS");
+            Console.WriteLine("sales=3 stock=10 outbox=acked/retry/failed_blocked");
+        }
+        finally
+        {
+            if (!keepDb && File.Exists(opt.DbPath))
+            {
+                File.Delete(opt.DbPath);
+            }
+        }
+    }
+
+    private static async Task RunTask081SalesSyncHttpHarnessAsync(Task081HttpHarnessParams parameters)
+    {
+        if (parameters == null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (!PosAdminWebOptions.TryCreate(parameters.BaseUrl, out var options, out var optionsReason))
+        {
+            throw new InvalidOperationException(optionsReason ?? "Admin Web base URL is invalid.");
+        }
+
+        var harnessSession = ReadTask081HttpHarnessSession(parameters.SessionJsonPath);
+        var runId = NormalizeTask081RunId(harnessSession.RunId);
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var dbPath = Path.Combine(tempRoot, $"task081_sales_sync_http_{runId}_{Guid.NewGuid():N}.db");
+        var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
+        var barcode = "TASK081_WIN7HTTP_BARCODE_" + runId;
+        var productName = "TASK081_WIN7HTTP_PRODUCT_" + runId;
+        var now = DateTimeOffset.UtcNow;
+        var nowMs = now.ToUnixTimeMilliseconds();
+        var previousMonthMs = now.AddMonths(-1).ToUnixTimeMilliseconds();
+
+        Console.WriteLine("TASK-081 Win7POS HTTP sales sync harness");
+        Console.WriteLine($"Base URL: {options.BaseUri}");
+        Console.WriteLine($"Run ID: {runId}");
+        Console.WriteLine($"DB path: {opt.DbPath}");
+
+        try
+        {
+            DbInitializer.EnsureCreated(opt);
+            var factory = new SqliteConnectionFactory(opt);
+            var sales = new SaleRepository(factory);
+
+            using (var conn = factory.Open())
+            {
+                await ExecuteSqliteAsync(
+                    conn,
+                    null,
+                    @"INSERT INTO products(barcode, name, unitPrice, remote_product_id)
+                      VALUES(@barcode, @name, @unitPrice, @remoteProductId);",
+                    "@barcode", barcode,
+                    "@name", productName,
+                    "@unitPrice", 1000,
+                    "@remoteProductId", harnessSession.RemoteProductId).ConfigureAwait(false);
+                await ExecuteSqliteAsync(
+                    conn,
+                    null,
+                    @"INSERT INTO product_meta(barcode, stock_qty)
+                      VALUES(@barcode, @stockQty);",
+                    "@barcode", barcode,
+                    "@stockQty", 10).ConfigureAwait(false);
+            }
+
+            var productId = await ReadProductIdAsync(factory, barcode).ConfigureAwait(false);
+            Assert(productId > 0, "HTTP harness product was not inserted.");
+
+            var docSaleId = await InsertTask081HttpSaleAsync(
+                sales,
+                "TASK081-WIN7HTTP-" + runId + "-DOC",
+                nowMs,
+                SaleKind.Sale,
+                null,
+                null,
+                2000,
+                2000,
+                0,
+                barcode,
+                productName,
+                productId,
+                2,
+                1000,
+                true).ConfigureAwait(false);
+            await InsertTask081HttpSaleAsync(
+                sales,
+                "TASK081-WIN7HTTP-" + runId + "-NODOC",
+                nowMs + 1000,
+                SaleKind.Sale,
+                null,
+                null,
+                1500,
+                1500,
+                0,
+                barcode,
+                productName,
+                productId,
+                1,
+                1500,
+                false).ConfigureAwait(false);
+            await InsertTask081HttpSaleAsync(
+                sales,
+                "TASK081-WIN7HTTP-" + runId + "-CARD",
+                nowMs + 2000,
+                SaleKind.Sale,
+                null,
+                null,
+                750,
+                0,
+                750,
+                barcode,
+                productName,
+                productId,
+                1,
+                750,
+                true).ConfigureAwait(false);
+            await InsertTask081HttpSaleAsync(
+                sales,
+                "TASK081-WIN7HTTP-" + runId + "-REFUND",
+                nowMs + 3000,
+                SaleKind.Refund,
+                docSaleId,
+                "TASK081 Win7POS HTTP refund",
+                -1000,
+                -1000,
+                0,
+                barcode,
+                productName,
+                productId,
+                1,
+                1000,
+                true).ConfigureAwait(false);
+            await InsertTask081HttpSaleAsync(
+                sales,
+                "TASK081-WIN7HTTP-" + runId + "-VOID",
+                nowMs + 4000,
+                SaleKind.Void,
+                docSaleId,
+                "TASK081 Win7POS HTTP void",
+                -1000,
+                -1000,
+                0,
+                barcode,
+                productName,
+                productId,
+                1,
+                1000,
+                true).ConfigureAwait(false);
+            await InsertTask081HttpSaleAsync(
+                sales,
+                "TASK081-WIN7HTTP-" + runId + "-OTHERPAST",
+                previousMonthMs,
+                SaleKind.Sale,
+                null,
+                null,
+                300,
+                0,
+                0,
+                barcode,
+                productName,
+                productId,
+                1,
+                300,
+                true).ConfigureAwait(false);
+
+            Assert(await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 7, "Expected local stock 7 after six HTTP harness sales.");
+
+            var trustedSession = ToTrustedSession(harnessSession);
+            var pendingBefore = await sales
+                .GetPendingSalesSyncOutboxAsync(25, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 1000)
+                .ConfigureAwait(false);
+            Assert(pendingBefore.Count == 6, "Expected six pending sales sync outbox rows.");
+
+            PosSalesSyncRequest? firstRequest = null;
+            using (var client = new PosAdminWebClient(options))
+            {
+                foreach (var item in pendingBefore)
+                {
+                    var sale = await sales.GetByIdAsync(item.SaleId).ConfigureAwait(false);
+                    var lines = await sales.GetLinesBySaleIdAsync(item.SaleId).ConfigureAwait(false);
+                    Assert(sale != null, "Pending outbox sale is missing.");
+                    Assert(lines.Count > 0, "Pending outbox sale lines are missing.");
+
+                    var request = await PosSalesSyncRequestBuilder.BuildAsync(
+                        trustedSession,
+                        item,
+                        sale,
+                        lines,
+                        sales,
+                        "TASK081-Win7POS-HTTP-Harness").ConfigureAwait(false);
+                    firstRequest ??= request;
+
+                    var payloadJson = PosSalesSyncRequestBuilder.SerializeRedacted(request);
+                    await sales.PrepareSalesSyncAttemptAsync(
+                        item.Id,
+                        request.Batch.ClientBatchId,
+                        payloadJson,
+                        PosSalesSyncRequestBuilder.Sha256Hex(payloadJson),
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+
+                    var result = await client.SalesSyncAsync(request, CancellationToken.None).ConfigureAwait(false);
+                    Assert(result.Success && result.Value != null && result.Value.Ok, "Expected Admin Web to accept Win7POS HTTP sale sync.");
+                    var accepted = result.Value ?? throw new InvalidOperationException("Missing accepted sales sync response.");
+                    var ack = (accepted.Sales ?? Array.Empty<PosSalesSyncSaleAck>())
+                        .FirstOrDefault(row => string.Equals(row.ClientSaleId, request.Sales[0].ClientSaleId, StringComparison.Ordinal));
+                    Assert(ack != null && string.Equals(ack.Status, "accepted", StringComparison.OrdinalIgnoreCase), "Expected accepted sale ack.");
+                    if (ack == null)
+                    {
+                        throw new InvalidOperationException("Accepted sale ack is missing.");
+                    }
+
+                    await sales.MarkSalesSyncAckedAsync(
+                        item.Id,
+                        item.SaleId,
+                        accepted.Batch?.PosSalesSyncBatchId,
+                        ack.PosSaleId,
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                }
+
+                var pendingAfterAccepted = await sales
+                    .GetPendingSalesSyncOutboxAsync(25, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 1000)
+                    .ConfigureAwait(false);
+                Assert(pendingAfterAccepted.Count == 0, "Expected accepted outbox queue to be empty.");
+                var acceptedFirstRequest = firstRequest ?? throw new InvalidOperationException("No accepted request was captured.");
+
+                var duplicate = await client.SalesSyncAsync(acceptedFirstRequest, CancellationToken.None).ConfigureAwait(false);
+                Assert(duplicate.Success && duplicate.Value != null && duplicate.Value.Ok, "Expected duplicate HTTP sale sync to succeed.");
+                var duplicateValue = duplicate.Value ?? throw new InvalidOperationException("Missing duplicate sales sync response.");
+                Assert(
+                    string.Equals(duplicateValue.Batch?.Status, "duplicate", StringComparison.OrdinalIgnoreCase) ||
+                    (duplicateValue.Sales ?? Array.Empty<PosSalesSyncSaleAck>()).All(row => string.Equals(row.Status, "duplicate", StringComparison.OrdinalIgnoreCase)),
+                    "Expected duplicate sale/batch response.");
+                Assert(await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 7, "Duplicate sync changed local stock.");
+
+                var conflict = await client.SalesSyncAsync(
+                    CreateTask081ConflictRequest(acceptedFirstRequest),
+                    CancellationToken.None).ConfigureAwait(false);
+                Assert(!conflict.Success && string.Equals(conflict.Code, "conflict", StringComparison.OrdinalIgnoreCase), "Expected conflict response for changed duplicate payload.");
+
+                var deniedSaleId = await InsertTask081HttpSaleAsync(
+                    sales,
+                    "TASK081-WIN7HTTP-" + runId + "-AUTHDENIED",
+                    nowMs + 5000,
+                    SaleKind.Sale,
+                    null,
+                    null,
+                    100,
+                    100,
+                    0,
+                    barcode,
+                    productName,
+                    productId,
+                    1,
+                    100,
+                    false).ConfigureAwait(false);
+                var deniedOutbox = (await sales
+                    .GetPendingSalesSyncOutboxAsync(25, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 1000)
+                    .ConfigureAwait(false))
+                    .Single(row => row.SaleId == deniedSaleId);
+                var deniedSale = await sales.GetByIdAsync(deniedSaleId).ConfigureAwait(false);
+                var deniedLines = await sales.GetLinesBySaleIdAsync(deniedSaleId).ConfigureAwait(false);
+                var deniedRequest = await PosSalesSyncRequestBuilder.BuildAsync(
+                    ToDeniedTrustedSession(harnessSession),
+                    deniedOutbox,
+                    deniedSale,
+                    deniedLines,
+                    sales,
+                    "TASK081-Win7POS-HTTP-Harness").ConfigureAwait(false);
+                var deniedPayload = PosSalesSyncRequestBuilder.SerializeRedacted(deniedRequest);
+                await sales.PrepareSalesSyncAttemptAsync(
+                    deniedOutbox.Id,
+                    deniedRequest.Batch.ClientBatchId,
+                    deniedPayload,
+                    PosSalesSyncRequestBuilder.Sha256Hex(deniedPayload),
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                var denied = await client.SalesSyncAsync(deniedRequest, CancellationToken.None).ConfigureAwait(false);
+                Assert(!denied.Success && denied.Denied, "Expected denied auth response for bad trusted device token.");
+                await sales.MarkSalesSyncRetryAsync(
+                    deniedOutbox.Id,
+                    deniedOutbox.SaleId,
+                    "auth_denied",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                Assert(await ReadSaleSyncStatusAsync(factory, deniedSaleId).ConfigureAwait(false) == "retry", "Denied sale did not remain retryable.");
+                Assert(await ReadOutboxStatusAsync(factory, deniedOutbox.Id).ConfigureAwait(false) == "retry", "Denied outbox did not remain retryable.");
+            }
+
+            Console.WriteLine("TASK-081 Win7POS HTTP sales sync harness: PASS");
+            Console.WriteLine("accepted=6 pending_after_accept=0 duplicate=ok conflict=ok auth_denied_retry=1 local_stock_after_accept=7");
+        }
+        finally
+        {
+            if (!parameters.KeepDb && File.Exists(opt.DbPath))
+            {
+                File.Delete(opt.DbPath);
+            }
+        }
     }
 
     private static async Task RunSelfTest(bool keepDb)
@@ -1304,9 +1902,301 @@ SELECT last_insert_rowid();";
         return (text ?? string.Empty).Replace(";", ",").Replace("\n", " ").Replace("\r", " ");
     }
 
+    private static Task081HttpHarnessSession ReadTask081HttpHarnessSession(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new InvalidOperationException("--session-json is required.");
+        }
+
+        if (!File.Exists(path))
+        {
+            throw new InvalidOperationException("Session JSON file was not found.");
+        }
+
+        var session = JsonSerializer.Deserialize<Task081HttpHarnessSession>(
+            File.ReadAllText(path),
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (session == null ||
+            string.IsNullOrWhiteSpace(session.DeviceToken) ||
+            string.IsNullOrWhiteSpace(session.PosSessionId) ||
+            string.IsNullOrWhiteSpace(session.RemoteProductId) ||
+            string.IsNullOrWhiteSpace(session.RunId) ||
+            string.IsNullOrWhiteSpace(session.SessionToken) ||
+            string.IsNullOrWhiteSpace(session.ShopCode) ||
+            string.IsNullOrWhiteSpace(session.ShopDeviceId))
+        {
+            throw new InvalidOperationException("Session JSON is missing required Win7POS HTTP harness fields.");
+        }
+
+        return session;
+    }
+
+    private static string NormalizeTask081RunId(string value)
+    {
+        var safe = new string((value ?? string.Empty)
+            .Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-')
+            .ToArray());
+        if (safe.Length == 0)
+        {
+            safe = Guid.NewGuid().ToString("N").Substring(0, 8);
+        }
+
+        return safe.Length > 24 ? safe.Substring(0, 24) : safe;
+    }
+
+    private static PosTrustedDeviceSession ToTrustedSession(Task081HttpHarnessSession session)
+    {
+        return new PosTrustedDeviceSession
+        {
+            DeviceToken = session.DeviceToken,
+            PosSessionId = session.PosSessionId,
+            SessionToken = session.SessionToken,
+            ShopCode = session.ShopCode,
+            ShopDeviceId = session.ShopDeviceId,
+        };
+    }
+
+    private static PosTrustedDeviceSession ToDeniedTrustedSession(Task081HttpHarnessSession session)
+    {
+        return new PosTrustedDeviceSession
+        {
+            DeviceToken = session.DeviceToken + "-TASK081-DENIED",
+            PosSessionId = session.PosSessionId,
+            SessionToken = session.SessionToken,
+            ShopCode = session.ShopCode,
+            ShopDeviceId = session.ShopDeviceId,
+        };
+    }
+
+    private static async Task<long> InsertTask081HttpSaleAsync(
+        SaleRepository sales,
+        string code,
+        long createdAt,
+        SaleKind kind,
+        long? relatedSaleId,
+        string? reason,
+        long total,
+        long paidCash,
+        long paidCard,
+        string barcode,
+        string productName,
+        long productId,
+        int quantity,
+        long unitPrice,
+        bool markPdfPrinted)
+    {
+        var saleId = await sales.InsertSaleAsync(
+            new Sale
+            {
+                Code = code,
+                CreatedAt = createdAt,
+                Kind = (int)kind,
+                PaidCard = paidCard,
+                PaidCash = paidCash,
+                Reason = reason,
+                RelatedSaleId = relatedSaleId,
+                Total = total,
+            },
+            new[]
+            {
+                new SaleLine
+                {
+                    Barcode = barcode,
+                    Name = productName,
+                    ProductId = productId,
+                    Quantity = quantity,
+                    UnitPrice = unitPrice,
+                },
+            }).ConfigureAwait(false);
+
+        if (markPdfPrinted)
+        {
+            await sales.MarkPdfPrintedAsync(saleId).ConfigureAwait(false);
+        }
+
+        return saleId;
+    }
+
+    private static PosSalesSyncRequest CreateTask081ConflictRequest(PosSalesSyncRequest original)
+    {
+        if (original == null || original.Batch == null || original.Sales == null || original.Sales.Length == 0)
+        {
+            throw new InvalidOperationException("Cannot create conflict request without a source sale.");
+        }
+
+        var sale = original.Sales[0];
+        var line = sale.Lines[0];
+        var payment = sale.Payments[0];
+        var adjustedNet = sale.Amounts.NetClp + 100;
+
+        return new PosSalesSyncRequest
+        {
+            AppVersion = original.AppVersion,
+            Batch = new PosSalesSyncBatchRequest
+            {
+                ClientBatchId = original.Batch.ClientBatchId,
+                IdempotencyKey = original.Batch.IdempotencyKey,
+            },
+            DeviceToken = original.DeviceToken,
+            PosSessionId = original.PosSessionId,
+            Sales = new[]
+            {
+                new PosSalesSyncSaleRequest
+                {
+                    Amounts = new PosSalesSyncAmounts
+                    {
+                        ChangeClp = sale.Amounts.ChangeClp,
+                        DiscountClp = sale.Amounts.DiscountClp,
+                        GrossClp = sale.Amounts.GrossClp + 100,
+                        NetClp = adjustedNet,
+                        PaidClp = sale.Amounts.PaidClp + 100,
+                        TaxClp = sale.Amounts.TaxClp,
+                    },
+                    BusinessDate = sale.BusinessDate,
+                    ClientOriginalSaleId = sale.ClientOriginalSaleId,
+                    ClientSaleId = sale.ClientSaleId,
+                    Currency = sale.Currency,
+                    Fiscal = sale.Fiscal,
+                    IdempotencyKey = sale.IdempotencyKey,
+                    Kind = sale.Kind,
+                    Lines = new[]
+                    {
+                        new PosSalesSyncLine
+                        {
+                            AmountClp = line.AmountClp + 100,
+                            Barcode = line.Barcode,
+                            ClientLineId = line.ClientLineId,
+                            LinePosition = line.LinePosition,
+                            LineType = line.LineType,
+                            LocalProductId = line.LocalProductId,
+                            ProductId = line.ProductId,
+                            ProductName = line.ProductName,
+                            Quantity = line.Quantity,
+                            StockQuantityDelta = line.StockQuantityDelta,
+                            UnitAmountClp = line.UnitAmountClp + 50,
+                        },
+                    },
+                    OccurredAt = sale.OccurredAt,
+                    Payments = new[]
+                    {
+                        new PosSalesSyncPayment
+                        {
+                            AmountClp = payment.AmountClp + 100,
+                            ChangeClp = payment.ChangeClp,
+                            ClientPaymentId = payment.ClientPaymentId,
+                            Method = payment.Method,
+                        },
+                    },
+                    ReversalReason = sale.ReversalReason,
+                    SaleNumber = sale.SaleNumber,
+                },
+            },
+            SchemaVersion = original.SchemaVersion,
+            SessionToken = original.SessionToken,
+            ShopCode = original.ShopCode,
+            ShopDeviceId = original.ShopDeviceId,
+        };
+    }
+
+    private static async Task<long> ReadProductIdAsync(SqliteConnectionFactory factory, string barcode)
+    {
+        using var conn = factory.Open();
+        return await ScalarLongAsync(
+            conn,
+            null,
+            "SELECT id FROM products WHERE barcode = @barcode",
+            "@barcode", barcode).ConfigureAwait(false);
+    }
+
+    private static async Task<long> ReadStockAsync(SqliteConnectionFactory factory, string barcode)
+    {
+        using var conn = factory.Open();
+        return await ScalarLongAsync(
+            conn,
+            null,
+            "SELECT stock_qty FROM product_meta WHERE barcode = @barcode",
+            "@barcode", barcode).ConfigureAwait(false);
+    }
+
+    private static async Task<string> ReadMovementKindAsync(SqliteConnectionFactory factory, long saleId)
+    {
+        using var conn = factory.Open();
+        return await ScalarStringAsync(
+            conn,
+            null,
+            "SELECT movement_kind FROM local_stock_movements WHERE sale_id = @saleId ORDER BY id LIMIT 1",
+            "@saleId", saleId).ConfigureAwait(false);
+    }
+
+    private static async Task<long> ReadMovementDeltaAsync(SqliteConnectionFactory factory, long saleId)
+    {
+        using var conn = factory.Open();
+        return await ScalarLongAsync(
+            conn,
+            null,
+            "SELECT quantity_delta FROM local_stock_movements WHERE sale_id = @saleId ORDER BY id LIMIT 1",
+            "@saleId", saleId).ConfigureAwait(false);
+    }
+
+    private static async Task<long> ReadOutboxAttemptCountAsync(SqliteConnectionFactory factory, long outboxId)
+    {
+        using var conn = factory.Open();
+        return await ScalarLongAsync(
+            conn,
+            null,
+            "SELECT attempt_count FROM sales_sync_outbox WHERE id = @outboxId",
+            "@outboxId", outboxId).ConfigureAwait(false);
+    }
+
+    private static async Task<string> ReadOutboxPayloadAsync(SqliteConnectionFactory factory, long outboxId)
+    {
+        using var conn = factory.Open();
+        return await ScalarStringAsync(
+            conn,
+            null,
+            "SELECT payload_json FROM sales_sync_outbox WHERE id = @outboxId",
+            "@outboxId", outboxId).ConfigureAwait(false);
+    }
+
+    private static async Task<string> ReadOutboxStatusAsync(SqliteConnectionFactory factory, long outboxId)
+    {
+        using var conn = factory.Open();
+        return await ScalarStringAsync(
+            conn,
+            null,
+            "SELECT status FROM sales_sync_outbox WHERE id = @outboxId",
+            "@outboxId", outboxId).ConfigureAwait(false);
+    }
+
+    private static async Task<string> ReadSaleSyncStatusAsync(SqliteConnectionFactory factory, long saleId)
+    {
+        using var conn = factory.Open();
+        return await ScalarStringAsync(
+            conn,
+            null,
+            "SELECT sync_status FROM sales WHERE id = @saleId",
+            "@saleId", saleId).ConfigureAwait(false);
+    }
+
     private static void Assert(bool condition, string message)
     {
         if (!condition) throw new InvalidOperationException(message);
+    }
+
+    private static async Task ExecuteSqliteAsync(SqliteConnection conn, SqliteTransaction? tx, string sql, params object[] args)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = sql;
+        for (var i = 0; i < args.Length; i += 2)
+        {
+            var name = (string)args[i];
+            var value = args[i + 1];
+            cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        }
+
+        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
     }
 
     private static async Task<long> ScalarLongAsync(SqliteConnection conn, SqliteTransaction? tx, string sql, params object[] args)
@@ -1323,6 +2213,23 @@ SELECT last_insert_rowid();";
         var obj = await cmd.ExecuteScalarAsync().ConfigureAwait(false);
         if (obj == null || obj == DBNull.Value) return 0;
         return Convert.ToInt64(obj, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<string> ScalarStringAsync(SqliteConnection conn, SqliteTransaction? tx, string sql, params object[] args)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = sql;
+        for (var i = 0; i < args.Length; i += 2)
+        {
+            var name = (string)args[i];
+            var value = args[i + 1];
+            cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+        }
+
+        var obj = await cmd.ExecuteScalarAsync().ConfigureAwait(false);
+        if (obj == null || obj == DBNull.Value) return string.Empty;
+        return Convert.ToString(obj, CultureInfo.InvariantCulture) ?? string.Empty;
     }
 
     private static async Task LogSaleDiagnosticsAsync(SqliteConnectionFactory factory, long saleId)

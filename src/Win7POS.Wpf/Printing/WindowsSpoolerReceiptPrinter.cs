@@ -218,7 +218,7 @@ namespace Win7POS.Wpf.Printing
                                 if (y + headerLineHeight > bottom)
                                     break;
                                 e.Graphics.DrawString(text, headerFont, Brushes.Black, hx, y);
-                                e.Graphics.DrawString(text, headerFont, Brushes.Black, hx + 0.6f, y); // fake bold
+                                e.Graphics.DrawString(text, headerFont, Brushes.Black, hx + 0.6f, y); // simulated bold
                                 y += headerLineHeight;
                                 headerDone = true;
                                 lineIndex++;

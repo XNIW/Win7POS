@@ -17,6 +17,7 @@ using Win7POS.Data;
 using Win7POS.Data.Adapters;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Pos.Online;
 using Win7POS.Wpf.Printing;
 
 namespace Win7POS.Wpf.Pos
@@ -221,12 +222,12 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<DailySalesSummary> GetDailySummaryAsync(DateTime date, bool includePdfHidden = false)
+        public async Task<DailySalesSummary> GetDailySummaryAsync(DateTime date, bool includeFiscalPrinted = true)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await _sales.GetDailySummaryAsync(date, includePdfHidden).ConfigureAwait(false);
+                return await _sales.GetDailySummaryAsync(date, includeFiscalPrinted).ConfigureAwait(false);
             }
             finally
             {
@@ -234,12 +235,12 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate, bool includePdfHidden = false)
+        public async Task<IReadOnlyList<DailySalesSummary>> GetDailySummariesAsync(DateTime fromDate, DateTime toDate, bool includeFiscalPrinted = true)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await _sales.GetDailySummariesAsync(fromDate, toDate, includePdfHidden).ConfigureAwait(false);
+                return await _sales.GetDailySummariesAsync(fromDate, toDate, includeFiscalPrinted).ConfigureAwait(false);
             }
             finally
             {
@@ -248,12 +249,12 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Vendite per ora (0-23) del giorno, per grafico orario.</summary>
-        public async Task<IReadOnlyList<long>> GetHourlySalesAsync(DateTime date, bool includePdfHidden = false)
+        public async Task<IReadOnlyList<long>> GetHourlySalesAsync(DateTime date, bool includeFiscalPrinted = true)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await _sales.GetHourlySalesAsync(date, includePdfHidden).ConfigureAwait(false);
+                return await _sales.GetHourlySalesAsync(date, includeFiscalPrinted).ConfigureAwait(false);
             }
             finally
             {
@@ -261,7 +262,7 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        /// <summary>Marca la vendita come pdf_printed=1 (nascosta nella vista apparente).</summary>
+        /// <summary>Marca la vendita come documento locale stampato senza rimuoverla da registro o chiusura.</summary>
         public Task MarkPdfPrintedAsync(long saleId)
         {
             return _sales.MarkPdfPrintedAsync(saleId);
@@ -286,12 +287,12 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Restituisce il contenuto CSV per un giorno (per Salva con nome).</summary>
-        public async Task<string> GetDailyCsvContentAsync(DateTime date, bool includePdfHidden = false)
+        public async Task<string> GetDailyCsvContentAsync(DateTime date, bool includeFiscalPrinted = true)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var rows = await _sales.GetSalesForDateAsync(date, includePdfHidden).ConfigureAwait(false);
+                var rows = await _sales.GetSalesForDateAsync(date, includeFiscalPrinted).ConfigureAwait(false);
                 return BuildSalesCsvContent(rows);
             }
             finally
@@ -301,14 +302,14 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Restituisce il contenuto CSV per un periodo (per Salva con nome).</summary>
-        public async Task<string> GetPeriodCsvContentAsync(DateTime fromDate, DateTime toDate, bool includePdfHidden = false)
+        public async Task<string> GetPeriodCsvContentAsync(DateTime fromDate, DateTime toDate, bool includeFiscalPrinted = true)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
                 var from = new DateTimeOffset(fromDate.Date).ToUnixTimeMilliseconds();
                 var to = new DateTimeOffset(toDate.Date.AddDays(1)).ToUnixTimeMilliseconds();
-                var rows = await _sales.GetSalesBetweenAsync(from, to, null, includePdfHidden).ConfigureAwait(false);
+                var rows = await _sales.GetSalesBetweenAsync(from, to, null, includeFiscalPrinted).ConfigureAwait(false);
                 return BuildSalesCsvContent(rows);
             }
             finally
@@ -318,7 +319,7 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Restituisce CSV per un elenco di date (es. giorni selezionati nello storico).</summary>
-        public async Task<string> GetDaysCsvContentAsync(IReadOnlyList<DateTime> dates, bool includePdfHidden = false)
+        public async Task<string> GetDaysCsvContentAsync(IReadOnlyList<DateTime> dates, bool includeFiscalPrinted = true)
         {
             if (dates == null || dates.Count == 0)
                 return "saleId;code;kind;related_sale_id;createdAt;total;paidCash;paidCard;change" + Environment.NewLine;
@@ -329,7 +330,7 @@ namespace Win7POS.Wpf.Pos
                 var headerDone = false;
                 foreach (var date in dates)
                 {
-                    var rows = await _sales.GetSalesForDateAsync(date.Date, includePdfHidden).ConfigureAwait(false);
+                    var rows = await _sales.GetSalesForDateAsync(date.Date, includeFiscalPrinted).ConfigureAwait(false);
                     if (rows.Count == 0) continue;
                     if (!headerDone)
                     {
@@ -673,6 +674,7 @@ namespace Win7POS.Wpf.Pos
                 var completed = new SaleCompleted(sale, saleLines);
                 _lastCompletedSale = completed;
                 _session.Clear();
+                await TrySyncSalesOutboxNoThrowAsync().ConfigureAwait(false);
                 var snapshot = await BuildSnapshotAsync("Vendita completata.");
                 var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
 
@@ -714,6 +716,7 @@ namespace Win7POS.Wpf.Pos
                 var rows = lines.Select(x => new RefundPreviewLine
                 {
                     OriginalLineId = x.OriginalLineId,
+                    ProductId = x.ProductId,
                     Barcode = x.Barcode ?? string.Empty,
                     Name = x.Name ?? string.Empty,
                     UnitPriceMinor = x.UnitPrice,
@@ -771,6 +774,7 @@ namespace Win7POS.Wpf.Pos
                         selected.Add(new RefundLineRequest
                         {
                             OriginalLineId = x.OriginalLineId,
+                            ProductId = x.ProductId,
                             Barcode = x.Barcode ?? string.Empty,
                             Name = x.Name ?? string.Empty,
                             UnitPriceMinor = x.UnitPrice,
@@ -791,6 +795,7 @@ namespace Win7POS.Wpf.Pos
                         selected.Add(new RefundLineRequest
                         {
                             OriginalLineId = source.OriginalLineId,
+                            ProductId = source.ProductId,
                             Barcode = source.Barcode ?? string.Empty,
                             Name = source.Name ?? string.Empty,
                             UnitPriceMinor = source.UnitPrice,
@@ -817,7 +822,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     Code = SaleCodeGenerator.NewCode("R"),
                     CreatedAt = UnixTime.NowMs(),
-                    Kind = (int)SaleKind.Refund,
+                    Kind = req.IsFullVoid ? (int)SaleKind.Void : (int)SaleKind.Refund,
                     RelatedSaleId = original.Id,
                     Reason = (req.Reason ?? string.Empty).Trim(),
                     Total = -Math.Abs(refundPositiveTotal),
@@ -828,7 +833,7 @@ namespace Win7POS.Wpf.Pos
 
                 var refundLines = selected.Select(x => new SaleLine
                 {
-                    ProductId = null,
+                    ProductId = x.ProductId,
                     Barcode = x.Barcode ?? string.Empty,
                     Name = x.Name ?? string.Empty,
                     Quantity = x.QtyToRefund,
@@ -844,20 +849,25 @@ namespace Win7POS.Wpf.Pos
                     {
                         var refundSaleId = await ExecuteInsertRefundSaleIdAsync(conn, tx, refundSale).ConfigureAwait(false);
                         refundSale.Id = refundSaleId;
+                        refundSale.ClientSaleId = await _sales.EnsureClientSaleIdAsync(conn, tx, refundSaleId).ConfigureAwait(false);
 
                         foreach (var line in refundLines)
                             line.SaleId = refundSaleId;
 
                         await _sales.InsertSaleLinesAsync(conn, tx, refundLines).ConfigureAwait(false);
+                        await _sales.ApplyLocalStockMovementsAsync(conn, tx, refundSale, refundLines).ConfigureAwait(false);
+                        await _sales.EnqueueSalesSyncOutboxAsync(conn, tx, refundSaleId, refundSale.ClientSaleId).ConfigureAwait(false);
 
                         var voided = req.IsFullVoid ? "true" : "false";
-                        var details = AuditDetails.Kv(
+                        var details = AuditDetails.Kv(new (string k, string v)[]
+                        {
                             ("originalSaleId", original.Id.ToString()),
                             ("refundSaleId", refundSaleId.ToString()),
                             ("isFullVoid", req.IsFullVoid.ToString()),
                             ("voided", voided),
                             ("totalMinor", refundSale.Total.ToString()),
-                            ("lines", refundLines.Count.ToString()));
+                            ("lines", refundLines.Count.ToString())
+                        });
                         await _audit.AppendAsync(conn, tx, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.RefundCreate, details).ConfigureAwait(false);
 
                         if (req.IsFullVoid)
@@ -873,6 +883,7 @@ namespace Win7POS.Wpf.Pos
                 }
 
                 var completed = new SaleCompleted(refundSale, refundLines);
+                await TrySyncSalesOutboxNoThrowAsync().ConfigureAwait(false);
                 var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
                 var receipt42 = BuildRefundReceiptPreview(completed, true, shop);
                 var receipt32 = BuildRefundReceiptPreview(completed, false, shop);
@@ -1105,12 +1116,12 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null, bool includePdfHidden = false)
+        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null, bool includeFiscalPrinted = true)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var rows = await _sales.GetSalesBetweenAsync(fromMs, toMs, operatorId, includePdfHidden).ConfigureAwait(false);
+                var rows = await _sales.GetSalesBetweenAsync(fromMs, toMs, operatorId, includeFiscalPrinted).ConfigureAwait(false);
                 return rows.Select(x => new RecentSaleItem
                 {
                     SaleId = x.Id,
@@ -1128,14 +1139,14 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesByCodeFilterAsync(string codeFilter, bool includePdfHidden = false)
+        public async Task<IReadOnlyList<RecentSaleItem>> GetSalesByCodeFilterAsync(string codeFilter, bool includeFiscalPrinted = true)
         {
             if (string.IsNullOrWhiteSpace(codeFilter))
                 return Array.Empty<RecentSaleItem>();
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                var rows = await _sales.GetByCodeLikeAsync(codeFilter, includePdfHidden).ConfigureAwait(false);
+                var rows = await _sales.GetByCodeLikeAsync(codeFilter, includeFiscalPrinted).ConfigureAwait(false);
                 return rows.Select(x => new RecentSaleItem
                 {
                     SaleId = x.Id,
@@ -1548,6 +1559,24 @@ namespace Win7POS.Wpf.Pos
             return "RESO/STORNO" + Environment.NewLine + baseText;
         }
 
+        private async Task TrySyncSalesOutboxNoThrowAsync()
+        {
+            try
+            {
+                if (!PosAdminWebOptions.TryLoad(out var options, out _))
+                {
+                    return;
+                }
+
+                var syncService = new PosSalesSyncService(_factory);
+                await syncService.TrySyncPendingAsync(options, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("POS sales sync skipped.", ex);
+            }
+        }
+
         private static async Task<long> ExecuteInsertRefundSaleIdAsync(SqliteConnection conn, SqliteTransaction tx, Sale refundSale)
         {
             using (var cmd = conn.CreateCommand())
@@ -1710,6 +1739,7 @@ SELECT last_insert_rowid();";
     public sealed class RefundPreviewLine
     {
         public long OriginalLineId { get; set; }
+        public long? ProductId { get; set; }
         public string Barcode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public long UnitPriceMinor { get; set; }

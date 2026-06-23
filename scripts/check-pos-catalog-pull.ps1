@@ -18,7 +18,7 @@ function Read-Text([string]$relativePath) {
 }
 
 $required = @(
-    "src/Win7POS.Wpf/Pos/Online/PosAdminWebClient.cs",
+    "src/Win7POS.Core/Online/PosAdminWebClient.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs"
 )
@@ -33,7 +33,7 @@ if ($fail) {
     exit 1
 }
 
-$client = Read-Text "src/Win7POS.Wpf/Pos/Online/PosAdminWebClient.cs"
+$client = Read-Text "src/Win7POS.Core/Online/PosAdminWebClient.cs"
 $service = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $repository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
 $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
@@ -73,7 +73,7 @@ if ($mainWindow -notmatch "TryPullCatalogAsync") { Fail "startup catalog pull fo
 
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }
 if ($combined -match "mcpos_(device|session)_[A-Za-z0-9_-]+") { Fail "literal POS token found" }
-if ($combined -match "pos_sales|sales_sync|sync_batch|payment_sync|cash_close") { Fail "sales/payment sync scope detected" }
+if ($combined -match "payment_sync|cash_close") { Fail "payment sync/cash close scope detected" } else { Pass "TASK-081 sales sync scope allowed" }
 $sensitiveLogPattern = "(?i)Log(?:Info|Warning|Error)\s*\([^\r\n)]*(trustedDeviceToken|sessionToken|deviceToken|CredentialBox|PinBox|credential|pin|password)"
 if ($combined -match $sensitiveLogPattern) { Fail "sensitive POS online value may be logged" } else { Pass "no sensitive POS online logs" }
 

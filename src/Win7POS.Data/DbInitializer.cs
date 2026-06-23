@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS products (
 
 CREATE TABLE IF NOT EXISTS sales (
   id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  client_sale_id TEXT NULL UNIQUE,
   code      TEXT NOT NULL UNIQUE,
   createdAt INTEGER NOT NULL,
   kind      INTEGER NOT NULL DEFAULT 0,
@@ -56,6 +57,38 @@ CREATE TABLE IF NOT EXISTS sale_lines (
   FOREIGN KEY(saleId) REFERENCES sales(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS local_stock_movements (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  movement_key TEXT NOT NULL UNIQUE,
+  sale_id   INTEGER NOT NULL,
+  sale_line_id INTEGER NULL,
+  barcode   TEXT NOT NULL,
+  quantity_delta INTEGER NOT NULL,
+  movement_kind TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sales_sync_outbox (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  sale_id   INTEGER NOT NULL UNIQUE,
+  client_sale_id TEXT NOT NULL UNIQUE,
+  client_batch_id TEXT NULL,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  payload_json TEXT NULL,
+  payload_hash TEXT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_retry_at INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at INTEGER NULL,
+  last_error_code TEXT NULL,
+  last_error_at INTEGER NULL,
+  server_batch_id TEXT NULL,
+  server_sale_id TEXT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS app_settings (
   key   TEXT PRIMARY KEY NOT NULL,
   value TEXT NOT NULL
@@ -71,6 +104,12 @@ CREATE TABLE IF NOT EXISTS audit_log (
 CREATE INDEX IF NOT EXISTS idx_sale_lines_saleId ON sale_lines(saleId);
 CREATE INDEX IF NOT EXISTS idx_sale_lines_barcode ON sale_lines(barcode);
 CREATE INDEX IF NOT EXISTS idx_sales_createdAt ON sales(createdAt);
+CREATE INDEX IF NOT EXISTS idx_sales_client_sale_id ON sales(client_sale_id);
+CREATE INDEX IF NOT EXISTS idx_local_stock_movements_sale ON local_stock_movements(sale_id);
+CREATE INDEX IF NOT EXISTS idx_local_stock_movements_barcode ON local_stock_movements(barcode);
+CREATE INDEX IF NOT EXISTS idx_sales_sync_outbox_status_next ON sales_sync_outbox(status, next_retry_at, id);
+CREATE INDEX IF NOT EXISTS idx_sales_sync_outbox_sale ON sales_sync_outbox(sale_id);
+CREATE INDEX IF NOT EXISTS idx_sales_sync_outbox_last_attempt ON sales_sync_outbox(last_attempt_at);
 CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
 
 CREATE TABLE IF NOT EXISTS suppliers (
@@ -203,9 +242,13 @@ CREATE INDEX IF NOT EXISTS idx_security_events_ts ON security_events(ts);
             EnsureColumn(conn, "sale_lines", "related_original_line_id", "INTEGER NULL");
             EnsureColumn(conn, "sales", "operator_id", "INTEGER NULL");
             EnsureColumn(conn, "sales", "pdf_printed", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(conn, "sales", "client_sale_id", "TEXT NULL");
+            EnsureColumn(conn, "sales", "sync_status", "TEXT NOT NULL DEFAULT 'pending'");
             EnsureColumn(conn, "products", "remote_product_id", "TEXT NULL");
             EnsureColumn(conn, "products", "remote_deleted_at", "TEXT NULL");
             EnsureColumn(conn, "products", "is_active", "INTEGER NOT NULL DEFAULT 1");
+            conn.Execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_sales_client_sale_id_unique ON sales(client_sale_id) WHERE client_sale_id IS NOT NULL;");
+            conn.Execute("CREATE INDEX IF NOT EXISTS idx_sales_sync_status ON sales(sync_status, createdAt);");
             conn.Execute("CREATE INDEX IF NOT EXISTS idx_products_remote_product_id ON products(remote_product_id);");
             conn.Execute("CREATE INDEX IF NOT EXISTS idx_products_active_barcode ON products(is_active, barcode);");
             conn.Execute("CREATE INDEX IF NOT EXISTS idx_products_active_remote_product_id ON products(remote_product_id) WHERE COALESCE(is_active, 1) = 1;");

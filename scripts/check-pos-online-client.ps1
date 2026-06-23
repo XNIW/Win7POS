@@ -18,9 +18,9 @@ function Read-Text([string]$relativePath) {
 }
 
 $required = @(
-    "src/Win7POS.Wpf/Pos/Online/PosAdminWebClient.cs",
+    "src/Win7POS.Core/Online/PosAdminWebClient.cs",
     "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs",
-    "src/Win7POS.Wpf/Pos/Online/PosAdminWebOptions.cs",
+    "src/Win7POS.Core/Online/PosAdminWebOptions.cs",
     "src/Win7POS.Wpf/Pos/Online/PosDeviceIdentity.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml",
@@ -38,9 +38,9 @@ if ($fail) {
     exit 1
 }
 
-$client = Read-Text "src/Win7POS.Wpf/Pos/Online/PosAdminWebClient.cs"
+$client = Read-Text "src/Win7POS.Core/Online/PosAdminWebClient.cs"
 $store = Read-Text "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs"
-$options = Read-Text "src/Win7POS.Wpf/Pos/Online/PosAdminWebOptions.cs"
+$options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
 $operatorDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorLoginDialog.xaml.cs"
@@ -90,7 +90,7 @@ if ($mainWindow -notmatch "TryRefreshTrustedPosSessionAsync") { Fail "startup he
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }
 if ($combined -match "mcpos_(device|session)_[A-Za-z0-9_-]+") { Fail "literal POS token found" }
 if ($baseUrlScope -match "https?://(?!(localhost|127\.0\.0\.1|::1))") { Fail "production-like Admin Web URL hardcoded" } else { Pass "no production Admin Web URL hardcoded" }
-if ($combined -match "pos_sales|sales_sync|sync_batch") { Fail "sales sync scope detected" }
+if ($combined -match "sync_batch") { Fail "legacy sync batch marker detected" } else { Pass "TASK-081 sales sync scope allowed" }
 $sensitiveLogPattern = "(?i)Log(?:Info|Warning|Error)\s*\([^\r\n)]*(trustedDeviceToken|sessionToken|deviceToken|CredentialBox|PinBox|credential|pin|password)"
 if ($taskCombined -match $sensitiveLogPattern) { Fail "sensitive POS online value may be logged" } else { Pass "no sensitive POS online logs" }
 

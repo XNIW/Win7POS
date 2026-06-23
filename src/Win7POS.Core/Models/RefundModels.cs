@@ -5,6 +5,7 @@ namespace Win7POS.Core.Models
     public sealed class RefundLineRequest
     {
         public long OriginalLineId { get; set; }
+        public long? ProductId { get; set; }
         public string Barcode { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
         public long UnitPriceMinor { get; set; }

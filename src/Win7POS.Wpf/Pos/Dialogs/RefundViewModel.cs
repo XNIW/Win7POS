@@ -26,6 +26,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var row = new RefundLineRow
                 {
                     OriginalLineId = x.OriginalLineId,
+                    ProductId = x.ProductId,
                     Barcode = x.Barcode ?? string.Empty,
                     Name = x.Name ?? string.Empty,
                     UnitPriceMinor = x.UnitPriceMinor,
@@ -222,6 +223,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     request.Lines.Add(new RefundLineRequest
                     {
                         OriginalLineId = line.OriginalLineId,
+                        ProductId = line.ProductId,
                         Barcode = line.Barcode ?? string.Empty,
                         Name = line.Name ?? string.Empty,
                         UnitPriceMinor = line.UnitPriceMinor,
@@ -234,6 +236,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 request.Lines.Add(new RefundLineRequest
                 {
                     OriginalLineId = line.OriginalLineId,
+                    ProductId = line.ProductId,
                     Barcode = line.Barcode ?? string.Empty,
                     Name = line.Name ?? string.Empty,
                     UnitPriceMinor = line.UnitPriceMinor,
@@ -265,6 +268,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             private int _qtyToRefund;
 
             public long OriginalLineId { get; set; }
+            public long? ProductId { get; set; }
             public string Barcode { get; set; } = string.Empty;
             public string Name { get; set; } = string.Empty;
             public long UnitPriceMinor { get; set; }

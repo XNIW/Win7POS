@@ -52,7 +52,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _overrideAuthService = overrideAuthService;
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
-            ToggleHiddenModeCommand = new AsyncRelayCommand(ToggleHiddenModeAsync, _ => !IsBusy && _overrideAuthService != null);
+            ToggleFiscalPrintedModeCommand = new AsyncRelayCommand(ToggleFiscalPrintedModeAsync, _ => !IsBusy && _overrideAuthService != null);
             PrintSummaryCommand = new AsyncRelayCommand(PrintSummaryAsync, _ => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview));
             PrintSelectedHistoryCommand = new AsyncRelayCommand(PrintStampaRiepilogoAsync, _ => !IsBusy && CanPrintStampaRiepilogo());
             LoadHistoryCommand = new AsyncRelayCommand(LoadHistoryAsync, _ => !IsBusy && CanLoadHistory());
@@ -225,7 +225,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>True per mostrare placeholder "Seleziona una data..." nello storico (evita converter inverso).</summary>
         public bool ShowPlaceholder => !HasHistorySelection;
 
-        /// <summary>True se sbloccata con auth admin: mostra vendite con PDF stampato.</summary>
+        /// <summary>True se sbloccata con auth admin per refresh completo; le vendite stampate restano sempre incluse.</summary>
         public bool IsUnlocked
         {
             get => _isUnlocked;
@@ -236,7 +236,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool HasLockFeature => _overrideAuthService != null;
 
         public ICommand LoadCommand { get; }
-        public ICommand ToggleHiddenModeCommand { get; }
+        public ICommand ToggleFiscalPrintedModeCommand { get; }
         public ICommand FilterOggiCommand { get; }
         public ICommand FilterIeriCommand { get; }
         public ICommand FilterQuestaSettimanaCommand { get; }
@@ -375,8 +375,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             IsBusy = true;
             try
             {
-                var includePdfHidden = IsUnlocked;
-                DailySalesSummary summary = await _service.GetDailySummaryAsync(date, includePdfHidden).ConfigureAwait(true);
+                var includeFiscalPrinted = true;
+                DailySalesSummary summary = await _service.GetDailySummaryAsync(date, includeFiscalPrinted).ConfigureAwait(true);
                 SalesCount = summary.SalesCount;
                 TotalAmount = summary.TotalAmount;
                 CashAmount = summary.CashAmount;
@@ -388,7 +388,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 UpdateSummaryReceiptPreview(date, summary, shop);
                 _reportLoaded = true;
                 RefreshHeaderSummary();
-                _ = LoadHourlySalesAsync(date, includePdfHidden);
+                _ = LoadHourlySalesAsync(date, includeFiscalPrinted);
                 OnPropertyChanged(nameof(StatusBadgeText));
                 OnPropertyChanged(nameof(ShowStatusBadge));
                 Status = "Report caricato.";
@@ -403,11 +403,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        private async Task LoadHourlySalesAsync(DateTime date, bool includePdfHidden = false)
+        private async Task LoadHourlySalesAsync(DateTime date, bool includeFiscalPrinted = true)
         {
             try
             {
-                var amounts = await _service.GetHourlySalesAsync(date, includePdfHidden).ConfigureAwait(true);
+                var amounts = await _service.GetHourlySalesAsync(date, includeFiscalPrinted).ConfigureAwait(true);
                 if (amounts == null || amounts.Count < 24) return;
                 long max = 0;
                 int peakHour = 0;
@@ -527,16 +527,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public async Task<string> GetExportCsvContentAsync(ExportRequest request)
         {
             if (request == null) throw new ArgumentNullException(nameof(request));
-                var includePdfHidden = IsUnlocked;
+                var includeFiscalPrinted = true;
                 switch (request.Scope)
             {
                 case ExportScope.Daily:
                 case ExportScope.Day:
-                    return await _service.GetDailyCsvContentAsync(request.Date.Value, includePdfHidden).ConfigureAwait(true);
+                    return await _service.GetDailyCsvContentAsync(request.Date.Value, includeFiscalPrinted).ConfigureAwait(true);
                 case ExportScope.Period:
-                    return await _service.GetPeriodCsvContentAsync(request.From.Value, request.To.Value, includePdfHidden).ConfigureAwait(true);
+                    return await _service.GetPeriodCsvContentAsync(request.From.Value, request.To.Value, includeFiscalPrinted).ConfigureAwait(true);
                 case ExportScope.Marked:
-                    return await _service.GetDaysCsvContentAsync(request.Dates ?? Array.Empty<DateTime>(), includePdfHidden).ConfigureAwait(true);
+                    return await _service.GetDaysCsvContentAsync(request.Dates ?? Array.Empty<DateTime>(), includeFiscalPrinted).ConfigureAwait(true);
                 default:
                     throw new ArgumentOutOfRangeException(nameof(request));
             }
@@ -696,8 +696,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             IsBusy = true;
             try
             {
-                var includePdfHidden = IsUnlocked;
-                var summaries = await _service.GetDailySummariesAsync(from, to, includePdfHidden).ConfigureAwait(true);
+                var includeFiscalPrinted = true;
+                var summaries = await _service.GetDailySummariesAsync(from, to, includeFiscalPrinted).ConfigureAwait(true);
                 foreach (var row in HistoryRows)
                     row.PropertyChanged -= OnHistoryRowPropertyChanged;
                 HistoryRows.Clear();
@@ -1089,7 +1089,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             await LoadHistoryAsync().ConfigureAwait(true);
         }
 
-        private async Task ToggleHiddenModeAsync()
+        private async Task ToggleFiscalPrintedModeAsync()
         {
             if (_overrideAuthService == null) return;
             if (IsUnlocked)
@@ -1121,7 +1121,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void RaiseCanExecuteChanged()
         {
             (LoadCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-            (ToggleHiddenModeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ToggleFiscalPrintedModeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintSummaryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintSelectedHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();

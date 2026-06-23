@@ -58,7 +58,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
             PrintCommand = new AsyncRelayCommand(PrintAsync, _ => !IsBusy && SelectedSale != null);
             RefundCommand = new AsyncRelayCommand(RefundAsync, _ => !IsBusy && SelectedSale != null && SelectedSale.Kind == (int)SaleKind.Sale && !SelectedSale.IsVoided);
-            ToggleHiddenModeCommand = new AsyncRelayCommand(ToggleHiddenModeAsync, _ => !IsBusy && _overrideAuthService != null);
+            ToggleFiscalPrintedModeCommand = new AsyncRelayCommand(ToggleFiscalPrintedModeAsync, _ => !IsBusy && _overrideAuthService != null);
 
             _onRequestRefund = onRequestRefund;
 
@@ -69,7 +69,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             };
         }
 
-        /// <summary>True se sbloccata con auth admin: mostra vendite con PDF stampato.</summary>
+        /// <summary>True se sbloccata con auth admin per refresh completo; le vendite stampate restano sempre incluse.</summary>
         public bool IsUnlocked
         {
             get => _isUnlocked;
@@ -81,7 +81,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>True se il lucchetto è disponibile (overrideAuthService configurato).</summary>
         public bool HasLockFeature => _overrideAuthService != null;
 
-        public ICommand ToggleHiddenModeCommand { get; }
+        public ICommand ToggleFiscalPrintedModeCommand { get; }
 
         private readonly Action<long, SalesRegisterViewModel> _onRequestRefund;
         private readonly bool _isRefundScanMode;
@@ -260,11 +260,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 DetailSummary = "";
                 DetailReceiptPreview = "";
 
-                var includePdfHidden = IsUnlocked;
+                var includeFiscalPrinted = true;
                 System.Collections.Generic.IReadOnlyList<RecentSaleItem> items;
                 if (!string.IsNullOrWhiteSpace(CodeSearch))
                 {
-                    items = await _service.GetSalesByCodeFilterAsync(CodeSearch, includePdfHidden).ConfigureAwait(true);
+                    items = await _service.GetSalesByCodeFilterAsync(CodeSearch, includeFiscalPrinted).ConfigureAwait(true);
                     Status = items.Count + " vendite (ricerca codice).";
                 }
                 else
@@ -280,14 +280,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     }
                     else
                         operatorId = _forceOperatorId;
-                    items = await _service.GetSalesBetweenAsync(fromMs, toMs, operatorId, includePdfHidden).ConfigureAwait(true);
+                    items = await _service.GetSalesBetweenAsync(fromMs, toMs, operatorId, includeFiscalPrinted).ConfigureAwait(true);
 
                     var countVendite = items.Count(i => i.Kind == (int)SaleKind.Sale && !i.VoidedBySaleId.HasValue);
                     var countResi = items.Count(i => i.Kind == (int)SaleKind.Refund);
+                    var countStorni = items.Count(i => i.Kind == (int)SaleKind.Void);
                     var totalVendite = items.Where(i => i.Kind == (int)SaleKind.Sale && !i.VoidedBySaleId.HasValue).Sum(i => i.TotalMinor);
                     var totalResi = items.Where(i => i.Kind == (int)SaleKind.Refund).Sum(i => Math.Abs(i.TotalMinor));
-                    var netto = totalVendite - totalResi;
-                    Status = $"{items.Count} operazioni  ·  Vendite: {countVendite} ({MoneyClp.Format(totalVendite)})  ·  Resi: {countResi} ({MoneyClp.Format(totalResi)})  ·  Netto: {MoneyClp.Format(netto)}";
+                    var totalStorni = items.Where(i => i.Kind == (int)SaleKind.Void).Sum(i => Math.Abs(i.TotalMinor));
+                    var netto = totalVendite - totalResi - totalStorni;
+                    Status = $"{items.Count} operazioni  ·  Vendite: {countVendite} ({MoneyClp.Format(totalVendite)})  ·  Resi: {countResi} ({MoneyClp.Format(totalResi)})  ·  Storni: {countStorni} ({MoneyClp.Format(totalStorni)})  ·  Netto: {MoneyClp.Format(netto)}";
                 }
 
                 foreach (var x in items)
@@ -298,6 +300,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     string kindText;
                     if (isVoided) kindText = "Storno";
                     else if (kind == (int)SaleKind.Refund) kindText = "Reso";
+                    else if (kind == (int)SaleKind.Void) kindText = "Storno";
                     else kindText = "Vendita";
                     SalesList.Add(new SaleRow
                     {
@@ -402,7 +405,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             return Task.CompletedTask;
         }
 
-        private async Task ToggleHiddenModeAsync()
+        private async Task ToggleFiscalPrintedModeAsync()
         {
             if (_overrideAuthService == null) return;
             if (IsUnlocked)
@@ -424,7 +427,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (LoadCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrintCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (RefundCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
-            (ToggleHiddenModeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ToggleFiscalPrintedModeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
@@ -442,7 +445,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             public bool IsVoided { get; set; }
             public string VoidedText => IsVoided ? "Annullata" : "";
             /// <summary>Vendita verde, Reso arancione, Storno rosso.</summary>
-            public string BadgeBrush => IsVoided ? "#B71C1C" : (Kind == (int)SaleKind.Refund ? "#FF9800" : "#4CAF50");
+            public string BadgeBrush => IsVoided || Kind == (int)SaleKind.Void ? "#B71C1C" : (Kind == (int)SaleKind.Refund ? "#FF9800" : "#4CAF50");
         }
 
         public sealed class DetailLineRow
