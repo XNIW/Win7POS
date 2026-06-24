@@ -31,6 +31,12 @@ jobs:
       - name: Selftest (keepdb)
         run: dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build -- --selftest --keepdb
 
+      - name: Validate TASK-083 legacy startup hotfix
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/check-win7pos-legacy-db-migrations.ps1
+          pwsh -NoProfile -File scripts/check-win7pos-startup-no-eager-db.ps1
+
       - name: Build WPF Release x86
         run: dotnet restore src/Win7POS.Wpf/Win7POS.Wpf.csproj && dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
 

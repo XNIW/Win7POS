@@ -9,7 +9,6 @@ namespace Win7POS.Wpf.Products
         public ProductsView()
         {
             InitializeComponent();
-            DataContext = new ProductsViewModel();
         }
 
         private void ProductsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)

@@ -160,6 +160,12 @@ internal static class Program
                 return;
             }
 
+            if (TryParseTask083LegacyDbStartupHarnessArgs(args, out var keepTask083Db))
+            {
+                await RunTask083LegacyDbStartupHarnessAsync(keepTask083Db);
+                return;
+            }
+
             if (TryParseSelfTestArgs(args, out var keepDb))
             {
                 await RunSelfTest(keepDb);
@@ -186,6 +192,7 @@ internal static class Program
         Console.WriteLine("  --task081-sales-sync-http-harness --base-url <AdminWebUrl> --session-json <path> [--keepdb]");
         Console.WriteLine("  --task081-catalog-price-sync-harness --base-url <AdminWebUrl> --session-json <path> [--db <path>] [--expected-*] [--expect-tombstone] [--keepdb]");
         Console.WriteLine("  --task081-offline-reconnect-harness --base-url <AdminWebUrl> --session-json <path> [--keepdb]");
+        Console.WriteLine("  --task083-legacy-db-startup-harness [--keepdb]");
         Console.WriteLine("  --daily yyyy-MM-dd [--db <path>]");
         Console.WriteLine("  --analyze-csv <path>");
             Console.WriteLine("  --diff-csv <path> [--db <path>] [--max-items N] [--format text|json]");
@@ -435,6 +442,21 @@ internal static class Program
             {
                 parameters.KeepDb = true;
             }
+        }
+
+        return hasHarness;
+    }
+
+    private static bool TryParseTask083LegacyDbStartupHarnessArgs(string[] args, out bool keepDb)
+    {
+        keepDb = false;
+        var hasHarness = false;
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--task083-legacy-db-startup-harness", StringComparison.OrdinalIgnoreCase))
+                hasHarness = true;
+            if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase))
+                keepDb = true;
         }
 
         return hasHarness;
@@ -1505,6 +1527,225 @@ internal static class Program
             {
                 File.Delete(opt.DbPath);
             }
+        }
+    }
+
+    private static async Task RunTask083LegacyDbStartupHarnessAsync(bool keepDb)
+    {
+        var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
+        var dbPath = Path.Combine(tempRoot, $"task083_legacy_startup_{Guid.NewGuid():N}.db");
+        var opt = PosDbOptions.ForPath(dbPath, isDemo: true);
+
+        Console.WriteLine("TASK-083 legacy DB startup harness");
+        Console.WriteLine($"DB path: {opt.DbPath}");
+
+        try
+        {
+            await CreateTask083LegacyDbAsync(opt.DbPath).ConfigureAwait(false);
+
+            DbInitializer.EnsureCreated(opt);
+
+            var factory = new SqliteConnectionFactory(opt);
+            using (var conn = factory.Open())
+            {
+                Assert(await TableExistsAsync(conn, "sales_sync_outbox").ConfigureAwait(false), "sales_sync_outbox table missing.");
+                Assert(await TableExistsAsync(conn, "local_stock_movements").ConfigureAwait(false), "local_stock_movements table missing.");
+                Assert(await ColumnExistsAsync(conn, "sales", "client_sale_id").ConfigureAwait(false), "sales.client_sale_id missing.");
+                Assert(await ColumnExistsAsync(conn, "sales", "sync_status").ConfigureAwait(false), "sales.sync_status missing.");
+                Assert(await ColumnExistsAsync(conn, "sales", "operator_id").ConfigureAwait(false), "sales.operator_id missing.");
+                Assert(await ColumnExistsAsync(conn, "sales", "pdf_printed").ConfigureAwait(false), "sales.pdf_printed missing.");
+                Assert(await ColumnExistsAsync(conn, "sale_lines", "related_original_line_id").ConfigureAwait(false), "sale_lines.related_original_line_id missing.");
+                Assert(await ColumnExistsAsync(conn, "products", "remote_product_id").ConfigureAwait(false), "products.remote_product_id missing.");
+                Assert(await ColumnExistsAsync(conn, "products", "remote_deleted_at").ConfigureAwait(false), "products.remote_deleted_at missing.");
+                Assert(await ColumnExistsAsync(conn, "products", "is_active").ConfigureAwait(false), "products.is_active missing.");
+                Assert(await ColumnExistsAsync(conn, "users", "remote_staff_id").ConfigureAwait(false), "users.remote_staff_id missing.");
+                Assert(await ColumnExistsAsync(conn, "users", "remote_credential_version").ConfigureAwait(false), "users.remote_credential_version missing.");
+                Assert(await IndexExistsAsync(conn, "idx_sales_client_sale_id").ConfigureAwait(false), "idx_sales_client_sale_id missing.");
+                Assert(await IndexExistsAsync(conn, "idx_sales_client_sale_id_unique").ConfigureAwait(false), "idx_sales_client_sale_id_unique missing.");
+                Assert(await IndexExistsAsync(conn, "idx_sales_sync_status").ConfigureAwait(false), "idx_sales_sync_status missing.");
+                Assert(await CountRowsAsync(conn, "sales").ConfigureAwait(false) == 1, "legacy sale row was not preserved.");
+                Assert(await CountRowsAsync(conn, "products").ConfigureAwait(false) == 1, "legacy product row was not preserved.");
+            }
+
+            Console.WriteLine("TASK-083 legacy DB startup harness: PASS");
+            Console.WriteLine("TEST PASS");
+        }
+        finally
+        {
+            if (!keepDb && File.Exists(opt.DbPath))
+            {
+                SqliteConnection.ClearAllPools();
+                await DeleteFileWithRetryAsync(opt.DbPath, maxAttempts: 10, delayMs: 200).ConfigureAwait(false);
+            }
+            else if (keepDb)
+            {
+                Console.WriteLine($"DB kept at: {opt.DbPath}");
+            }
+        }
+    }
+
+    private static async Task CreateTask083LegacyDbAsync(string dbPath)
+    {
+        var dir = Path.GetDirectoryName(dbPath);
+        if (!string.IsNullOrWhiteSpace(dir))
+            Directory.CreateDirectory(dir);
+
+        if (File.Exists(dbPath))
+            File.Delete(dbPath);
+
+        var cs = new SqliteConnectionStringBuilder
+        {
+            DataSource = dbPath,
+            ForeignKeys = true
+        }.ToString();
+
+        using (var conn = new SqliteConnection(cs))
+        {
+            await conn.OpenAsync().ConfigureAwait(false);
+            using (var tx = conn.BeginTransaction())
+            {
+                try
+                {
+                    await ExecuteSqliteAsync(conn, tx, @"
+CREATE TABLE products (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  barcode   TEXT NOT NULL UNIQUE,
+  name      TEXT NOT NULL,
+  unitPrice INTEGER NOT NULL
+);").ConfigureAwait(false);
+                    await ExecuteSqliteAsync(conn, tx, @"
+CREATE TABLE sales (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  code      TEXT NOT NULL UNIQUE,
+  createdAt INTEGER NOT NULL,
+  total     INTEGER NOT NULL,
+  paidCash  INTEGER NOT NULL,
+  paidCard  INTEGER NOT NULL,
+  change    INTEGER NOT NULL
+);").ConfigureAwait(false);
+                    await ExecuteSqliteAsync(conn, tx, @"
+CREATE TABLE sale_lines (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  saleId    INTEGER NOT NULL,
+  productId INTEGER,
+  barcode   TEXT NOT NULL,
+  name      TEXT NOT NULL,
+  quantity  INTEGER NOT NULL,
+  unitPrice INTEGER NOT NULL,
+  lineTotal INTEGER NOT NULL,
+  FOREIGN KEY(saleId) REFERENCES sales(id) ON DELETE CASCADE
+);").ConfigureAwait(false);
+                    await ExecuteSqliteAsync(conn, tx, @"
+CREATE TABLE roles (
+  id   INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,
+  name TEXT NOT NULL,
+  is_system INTEGER NOT NULL DEFAULT 0
+);").ConfigureAwait(false);
+                    await ExecuteSqliteAsync(conn, tx, @"
+CREATE TABLE users (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  username          TEXT NOT NULL UNIQUE,
+  display_name      TEXT NOT NULL,
+  pin_hash          TEXT NOT NULL,
+  pin_salt          TEXT NOT NULL,
+  role_id           INTEGER NOT NULL,
+  is_active         INTEGER NOT NULL DEFAULT 1,
+  created_at        INTEGER NOT NULL,
+  updated_at        INTEGER NOT NULL,
+  last_login_at     INTEGER NULL,
+  FOREIGN KEY(role_id) REFERENCES roles(id)
+);").ConfigureAwait(false);
+                    await ExecuteSqliteAsync(
+                        conn,
+                        tx,
+                        "INSERT INTO products(barcode, name, unitPrice) VALUES(@barcode, @name, @unitPrice);",
+                        "@barcode", "TASK083-LEGACY",
+                        "@name", "Legacy Product",
+                        "@unitPrice", 1000).ConfigureAwait(false);
+                    await ExecuteSqliteAsync(
+                        conn,
+                        tx,
+                        "INSERT INTO sales(code, createdAt, total, paidCash, paidCard, change) VALUES(@code, @createdAt, @total, @paidCash, @paidCard, @change);",
+                        "@code", "TASK083-SALE",
+                        "@createdAt", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        "@total", 1000,
+                        "@paidCash", 1000,
+                        "@paidCard", 0,
+                        "@change", 0).ConfigureAwait(false);
+                    await ExecuteSqliteAsync(
+                        conn,
+                        tx,
+                        "INSERT INTO sale_lines(saleId, productId, barcode, name, quantity, unitPrice, lineTotal) VALUES(1, 1, @barcode, @name, 1, 1000, 1000);",
+                        "@barcode", "TASK083-LEGACY",
+                        "@name", "Legacy Product").ConfigureAwait(false);
+                    await ExecuteSqliteAsync(
+                        conn,
+                        tx,
+                        "INSERT INTO roles(code, name, is_system) VALUES('cashier', 'Cassiere', 1);").ConfigureAwait(false);
+                    await ExecuteSqliteAsync(
+                        conn,
+                        tx,
+                        "INSERT INTO users(username, display_name, pin_hash, pin_salt, role_id, is_active, created_at, updated_at) VALUES('legacy_cashier', 'Legacy Cashier', 'redacted_hash', 'redacted_salt', 1, 1, @createdAt, @updatedAt);",
+                        "@createdAt", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        "@updatedAt", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+
+                    tx.Commit();
+                }
+                catch
+                {
+                    try { tx.Rollback(); } catch { }
+                    throw;
+                }
+            }
+        }
+    }
+
+    private static async Task<bool> TableExistsAsync(SqliteConnection conn, string tableName)
+    {
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(1) FROM sqlite_master WHERE type = 'table' AND name = @name;";
+            cmd.Parameters.AddWithValue("@name", tableName);
+            return Convert.ToInt64(await cmd.ExecuteScalarAsync().ConfigureAwait(false), CultureInfo.InvariantCulture) > 0;
+        }
+    }
+
+    private static async Task<bool> ColumnExistsAsync(SqliteConnection conn, string tableName, string columnName)
+    {
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA table_info(" + tableName + ");";
+            using (var reader = await cmd.ExecuteReaderAsync().ConfigureAwait(false))
+            {
+                while (await reader.ReadAsync().ConfigureAwait(false))
+                {
+                    var name = reader["name"] as string;
+                    if (string.Equals(name, columnName, StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task<bool> IndexExistsAsync(SqliteConnection conn, string indexName)
+    {
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(1) FROM sqlite_master WHERE type = 'index' AND name = @name;";
+            cmd.Parameters.AddWithValue("@name", indexName);
+            return Convert.ToInt64(await cmd.ExecuteScalarAsync().ConfigureAwait(false), CultureInfo.InvariantCulture) > 0;
+        }
+    }
+
+    private static async Task<long> CountRowsAsync(SqliteConnection conn, string tableName)
+    {
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "SELECT COUNT(1) FROM " + tableName + ";";
+            return Convert.ToInt64(await cmd.ExecuteScalarAsync().ConfigureAwait(false), CultureInfo.InvariantCulture);
         }
     }
 

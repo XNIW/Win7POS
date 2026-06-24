@@ -83,6 +83,7 @@ namespace Win7POS.Wpf
             }
             catch (Exception ex)
             {
+                StartupTrace.Write("App.OnStartup startup failed", ex);
                 _logger.LogError(ex, "App.OnStartup: EnsureCreated/avvio fallito");
                 try
                 {

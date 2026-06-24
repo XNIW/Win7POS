@@ -17,6 +17,7 @@ using Win7POS.Core.Security;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos.Online;
+using Win7POS.Wpf.Products;
 
 namespace Win7POS.Wpf
 {
@@ -34,6 +35,7 @@ namespace Win7POS.Wpf
         private bool _backgroundOnlineRefreshQueued;
         private bool _operatorLoginReached;
         private string _startupPhase = "constructed";
+        private string _productsDataContextOperatorUsername;
         public static readonly DependencyProperty CurrentMenuKeyProperty = DependencyProperty.Register(
             nameof(CurrentMenuKey), typeof(string), typeof(MainWindow), new PropertyMetadata("Pos", OnCurrentMenuKeyChanged));
 
@@ -593,6 +595,12 @@ namespace Win7POS.Wpf
             var hasDailyCloseView = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.DailyCloseView) == true);
             var hasCatalogView = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.CatalogView) == true);
 
+            if (!hasCatalogView ||
+                !string.Equals(_productsDataContextOperatorUsername ?? "", currentUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                ClearProductsViewModel();
+            }
+
             if (MainTabControl?.SelectedItem == UsersRolesTab)
             {
                 if (!hasUsersManage)
@@ -614,6 +622,7 @@ namespace Win7POS.Wpf
             }
             else if (MainTabControl?.SelectedItem == ProductsTab && !hasCatalogView)
             {
+                ClearProductsViewModel();
                 MainTabControl.SelectedIndex = 0;
                 CurrentMenuKey = "Pos";
             }
@@ -774,7 +783,7 @@ namespace Win7POS.Wpf
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
-        private void OnMenuProdottiClick(object sender, RoutedEventArgs e)
+        private async void OnMenuProdottiClick(object sender, RoutedEventArgs e)
         {
             var session = OperatorSessionHolder.Current;
             var hasCatalogView = session?.CurrentUser != null &&
@@ -786,9 +795,42 @@ namespace Win7POS.Wpf
                 return;
             }
 
-            CurrentMenuKey = "Prodotti";
-            MainTabControl.SelectedIndex = 1;
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            try
+            {
+                var vm = EnsureProductsViewModel(session);
+                await vm.LoadAsync().ConfigureAwait(true);
+                CurrentMenuKey = "Prodotti";
+                MainTabControl.SelectedItem = ProductsTab;
+                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "MainWindow.OnMenuProdottiClick: errore apertura Prodotti");
+                ModernMessageDialog.Show(Application.Current?.MainWindow, "Prodotti", "Errore apertura Prodotti. Controlla il log applicativo.");
+                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            }
+        }
+
+        private ProductsViewModel EnsureProductsViewModel(IOperatorSession session)
+        {
+            var currentUsername = session?.CurrentUser?.Username ?? "";
+            if (ProductsViewControl?.DataContext is ProductsViewModel existing &&
+                string.Equals(_productsDataContextOperatorUsername ?? "", currentUsername, StringComparison.OrdinalIgnoreCase))
+            {
+                return existing;
+            }
+
+            var vm = new ProductsViewModel();
+            ProductsViewControl.DataContext = vm;
+            _productsDataContextOperatorUsername = currentUsername;
+            return vm;
+        }
+
+        private void ClearProductsViewModel()
+        {
+            if (ProductsViewControl != null)
+                ProductsViewControl.DataContext = null;
+            _productsDataContextOperatorUsername = null;
         }
 
         private PosViewModel GetPosViewModel()

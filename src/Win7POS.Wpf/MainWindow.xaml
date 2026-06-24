@@ -73,7 +73,7 @@
                 <pos:PosView x:Name="PosViewControl"/>
             </TabItem>
             <TabItem x:Name="ProductsTab" Header="Prodotti">
-                <prod:ProductsView/>
+                <prod:ProductsView x:Name="ProductsViewControl"/>
             </TabItem>
             <TabItem x:Name="DailyReportTab" Header="Chiusura cassa">
                 <pos:DailyReportView x:Name="DailyReportViewControl"/>

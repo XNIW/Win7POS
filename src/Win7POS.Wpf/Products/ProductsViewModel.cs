@@ -18,7 +18,7 @@ namespace Win7POS.Wpf.Products
 {
     public sealed class ProductsViewModel : INotifyPropertyChanged
     {
-        private readonly ProductsWorkflowService _service = new ProductsWorkflowService();
+        private readonly ProductsWorkflowService _service;
         private readonly FileLogger _logger = new FileLogger("ProductsViewModel");
         private readonly IPermissionService _permissionService;
 
@@ -30,6 +30,7 @@ namespace Win7POS.Wpf.Products
         private SupplierListItem _selectedSupplier;
         private bool _suppressCategoryRefresh;
         private bool _suppressSupplierRefresh;
+        private bool _loaded;
         private int _pageIndex = 1;
         private int _totalCount;
         private const int PageSize = 200;
@@ -141,8 +142,9 @@ namespace Win7POS.Wpf.Products
         public ICommand GoToPageCommand { get; }
         public ICommand ClearFiltersCommand { get; }
 
-        public ProductsViewModel(IPermissionService permissionService = null)
+        public ProductsViewModel(IPermissionService permissionService = null, ProductsWorkflowService service = null)
         {
+            _service = service ?? ProductsWorkflowService.CreateDefault();
             _permissionService = permissionService ?? CreatePermissionService();
             SearchCommand = new AsyncRelayCommand(SearchAsync, _ => !IsBusy, _logger);
             RefreshCommand = new AsyncRelayCommand(RefreshAsync, _ => !IsBusy, _logger);
@@ -157,7 +159,15 @@ namespace Win7POS.Wpf.Products
             NextPageCommand = new AsyncRelayCommand(NextPageAsync, _ => !IsBusy && PageIndex < TotalPages, _logger);
             GoToPageCommand = new AsyncRelayCommand(GoToPageAsync, _ => !IsBusy, _logger);
             ClearFiltersCommand = new AsyncRelayCommand(ClearFiltersAsync, _ => !IsBusy && HasActiveFilters, _logger);
-            _ = LoadCategoriesAndSearchAsync();
+        }
+
+        public async Task LoadAsync()
+        {
+            if (_loaded)
+                return;
+
+            await LoadCategoriesAndSearchAsync().ConfigureAwait(true);
+            _loaded = true;
         }
 
         private static IPermissionService CreatePermissionService()

@@ -23,10 +23,14 @@ namespace Win7POS.Wpf.Products
         private readonly AuditLogRepository _audit = new AuditLogRepository();
         private readonly PosDbOptions _options;
 
+        public static ProductsWorkflowService CreateDefault()
+        {
+            return new ProductsWorkflowService();
+        }
+
         public ProductsWorkflowService()
         {
             _options = PosDbOptions.Default();
-            DbInitializer.EnsureCreated(_options);
             var factory = new SqliteConnectionFactory(_options);
             _products = new ProductRepository(factory);
             _categories = new CategoryRepository(factory);
