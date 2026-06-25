@@ -57,7 +57,8 @@ $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.c
 if ($mainWindow -notmatch "TryOnlineBootstrapFirstRunAsync") { Fail "fresh install does not try online bootstrap before recovery wizard" } else { Pass "fresh install online bootstrap present" }
 if ($mainWindow -notmatch "FirstRunSetupDialog") { Fail "recovery/dev first-run wizard removed" } else { Pass "recovery/dev first-run wizard retained" }
 if ($firstRun -notmatch "Recovery/dev") { Fail "FirstRunSetupDialog is not labelled as recovery/dev" } else { Pass "FirstRunSetupDialog labelled recovery/dev" }
-if ($dialogXaml -notmatch "Indirizzo pannello") { Fail "online bootstrap should label the Admin Web URL as an operator-facing panel address" } else { Pass "panel address field present" }
+if ($dialogXaml -match "Indirizzo pannello") { Fail "online bootstrap must not expose the panel URL in the normal operator flow" } else { Pass "panel URL removed from normal operator flow" }
+if ($dialogXaml -notmatch "AdvancedExpander" -or $dialogXaml -notmatch "Impostazioni avanzate / Server" -or $dialogXaml -notmatch "Server Admin Web configurato") { Fail "online bootstrap must keep Admin Web URL under advanced server settings" } else { Pass "advanced server settings present" }
 if ($dialogXaml -match "Shop code|Staff code|Nome device") { Fail "online bootstrap still exposes technical/English labels" } else { Pass "online bootstrap labels are operator-facing" }
 if ($dialog -notmatch "PosOnlineBootstrapService") { Fail "online dialog does not use bootstrap service" } else { Pass "online dialog uses bootstrap service" }
 if ($dialog -notmatch "finally[\s\S]*CredentialBox\.Clear\(\)") { Fail "online dialog must clear PIN/password in a finally block" } else { Pass "online dialog clears PIN/password in finally" }

@@ -43,6 +43,7 @@ $store = Read-Text "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs"
 $options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
+$dialogXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml"
 $operatorDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorLoginDialog.xaml.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $userRepo = Read-Text "src/Win7POS.Data/Repositories/UserRepository.cs"
@@ -52,7 +53,7 @@ $taskCombined = @(
     $options,
     $bootstrap,
     (Read-Text "src/Win7POS.Wpf/Pos/Online/PosDeviceIdentity.cs"),
-    (Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml"),
+    $dialogXaml,
     $dialog,
     (Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorLoginDialog.xaml"),
     $operatorDialog,
@@ -78,6 +79,10 @@ if ($client -notmatch "/api/pos/auth/first-login") { Fail "first-login path miss
 if ($client -notmatch "/api/pos/session/heartbeat") { Fail "heartbeat path missing" } else { Pass "heartbeat path present" }
 if ($store -notmatch "ProtectedData\.Protect" -or $store -notmatch "ProtectedData\.Unprotect") { Fail "DPAPI storage missing" } else { Pass "DPAPI storage present" }
 if ($options -notmatch "WIN7POS_ADMIN_WEB_BASE_URL" -or $options -notmatch "pos-admin-web\.config") { Fail "base URL config sources missing" } else { Pass "base URL config present" }
+if ($options -notmatch "WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB" -or $options -notmatch "AllowInsecureLanAdminWeb") { Fail "insecure LAN override guard missing" } else { Pass "insecure LAN override guard present" }
+if ($dialogXaml -match "Indirizzo pannello") { Fail "normal online link dialog still exposes URL field copy" } else { Pass "normal online link dialog hides URL field copy" }
+if ($dialogXaml -notmatch "Impostazioni avanzate / Server" -or $dialogXaml -notmatch "URL Admin Web") { Fail "advanced server URL settings missing" } else { Pass "advanced server URL settings present" }
+if ($dialog -notmatch "PosDeviceIdentity\.GetStableDisplayName") { Fail "device display name is not generated automatically" } else { Pass "device display name generated automatically" }
 if ($dialog -notmatch "PosOnlineBootstrapService") { Fail "first-login dialog does not use bootstrap service" } else { Pass "first-login dialog uses bootstrap service" }
 if ($dialog -notmatch "finally[\s\S]*request\.Credential\s*=\s*string\.Empty[\s\S]*credential\s*=\s*string\.Empty[\s\S]*CredentialBox\.Clear\(\)") { Fail "first-login dialog does not clear PIN/password in finally" } else { Pass "first-login dialog clears PIN/password in finally" }
 if ($bootstrap -notmatch "new\s+PosAdminWebClient" -or $bootstrap -notmatch "FirstLoginAsync") { Fail "bootstrap service does not call first-login through online client" } else { Pass "bootstrap service calls first-login through online client" }
@@ -89,7 +94,7 @@ if ($mainWindow -notmatch "TryRefreshTrustedPosSessionAsync") { Fail "startup he
 
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }
 if ($combined -match "mcpos_(device|session)_[A-Za-z0-9_-]+") { Fail "literal POS token found" }
-if ($baseUrlScope -match "https?://(?!(localhost|127\.0\.0\.1|::1))") { Fail "production-like Admin Web URL hardcoded" } else { Pass "no production Admin Web URL hardcoded" }
+if ($baseUrlScope -match "https?://(?!(localhost|127\.0\.0\.1|::1|\.\.\.))") { Fail "production-like Admin Web URL hardcoded" } else { Pass "no production Admin Web URL hardcoded" }
 if ($combined -match "sync_batch") { Fail "legacy sync batch marker detected" } else { Pass "TASK-081 sales sync scope allowed" }
 $sensitiveLogPattern = "(?i)Log(?:Info|Warning|Error)\s*\([^\r\n)]*(trustedDeviceToken|sessionToken|deviceToken|CredentialBox|PinBox|credential|pin|password)"
 if ($taskCombined -match $sensitiveLogPattern) { Fail "sensitive POS online value may be logged" } else { Pass "no sensitive POS online logs" }

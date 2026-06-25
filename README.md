@@ -50,7 +50,11 @@ Il collegamento online passa sempre da Admin Web POS API e non comunica direttam
 - variabile ambiente `WIN7POS_ADMIN_WEB_BASE_URL`;
 - file dati `pos-admin-web.config` con una riga `AdminWebBaseUrl=<url-base-admin-web>`.
 
-Il primo collegamento richiede codice negozio (`shop_code`), codice staff (`staff_code`), PIN/password e nome dispositivo. Se il DB locale è già configurato, si può avviare da **Accesso operatore** → **Collega POS online**. I token del dispositivo e della sessione vengono salvati protetti con DPAPI dell'utente Windows. PIN/password non vengono salvati in chiaro; dopo un first-login riuscito vengono usati solo per creare hash/salt locale dell'operatore mirror, così il POS può lavorare offline.
+Il collegamento normale richiede solo codice negozio (`shop_code`), codice staff (`staff_code`) e PIN/password. L'URL Admin Web e una configurazione tecnica da impostare una volta con `WIN7POS_ADMIN_WEB_BASE_URL` oppure con `C:\ProgramData\Win7POS\pos-admin-web.config`; nella finestra **Collega POS online** resta disponibile solo in **Impostazioni avanzate / Server** per manutenzione. Inserire solo l'URL base HTTPS del pannello, per esempio `https://<workers-dev-host>`, senza `/auth/login`, `/shop`, query string o hash. Il nome dispositivo viene generato automaticamente dal nome PC sanitizzato, senza username, path, MAC address o seriali hardware. Se il DB locale è già configurato, si può avviare da **Accesso operatore** → **Collega POS online**. I token del dispositivo e della sessione vengono salvati protetti con DPAPI dell'utente Windows. PIN/password non vengono salvati in chiaro; dopo un first-login riuscito vengono usati solo per creare hash/salt locale dell'operatore mirror, così il POS può lavorare offline.
+
+Il ReleasePack per staging pubblica include `set-admin-web-staging-url.bat`, che scrive `AdminWebBaseUrl=https://merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev` in `C:\ProgramData\Win7POS\pos-admin-web.config`. Lo script non imposta override HTTP LAN.
+
+Per test locale manuale e non release, `WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB=1` consente HTTP non-loopback; non abilitarlo nei pacchetti distribuiti. Per workers.dev/staging usare sempre HTTPS.
 
 ## Stampante
 

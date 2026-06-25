@@ -36,6 +36,7 @@ jobs:
         run: |
           pwsh -NoProfile -File scripts/check-win7pos-legacy-db-migrations.ps1
           pwsh -NoProfile -File scripts/check-win7pos-startup-no-eager-db.ps1
+          pwsh -NoProfile -File scripts/check-pos-online-linking-task084b.ps1
 
       - name: Build WPF Release x86
         run: dotnet restore src/Win7POS.Wpf/Win7POS.Wpf.csproj && dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
@@ -60,6 +61,8 @@ jobs:
             Copy-Item -Path (Join-Path $cliOutput.FullName "*") -Destination "dist/Win7POS/cli" -Recurse -Force
           }
 
+          Copy-Item -Path "scripts/set-admin-web-staging-url.bat" -Destination "dist/Win7POS/set-admin-web-staging-url.bat" -Force
+
           $readme = @"
           Win7POS Release Pack
 
@@ -72,6 +75,19 @@ jobs:
           - Backups: %ProgramData%\Win7POS\backups
           - Exports: %ProgramData%\Win7POS\exports
           - Receipts: %ProgramData%\Win7POS\receipts
+          - Admin Web config: %ProgramData%\Win7POS\pos-admin-web.config
+
+          Admin Web online linking:
+          - Public staging helper: run set-admin-web-staging-url.bat to write:
+            %ProgramData%\Win7POS\pos-admin-web.config
+            with:
+            AdminWebBaseUrl=https://merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev
+          - Configure WIN7POS_ADMIN_WEB_BASE_URL=https://<workers-dev-host>
+            or create %ProgramData%\Win7POS\pos-admin-web.config with:
+            AdminWebBaseUrl=https://<workers-dev-host>
+          - Operators enter only shop code, staff code and PIN/password.
+          - Do not configure /auth/login, /shop, query strings or hashes.
+          - Use HTTPS for workers.dev/staging. Do not enable WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB in release use.
 
           Notes:
           - WPF executable: Win7POS.Wpf.exe
@@ -113,7 +129,11 @@ jobs:
           [ ] README_RUN.txt includes .NET Framework 4.8 note
           [ ] README_RUN.txt includes ProgramData paths:
               %ProgramData%\Win7POS\...
+          [ ] set-admin-web-staging-url.bat writes %ProgramData%\Win7POS\pos-admin-web.config
           [ ] README_RUN.txt includes logs/backups/exports/receipts paths
+          [ ] README_RUN.txt explains WIN7POS_ADMIN_WEB_BASE_URL or pos-admin-web.config
+          [ ] README_RUN.txt explains normal linking needs only shop code, staff code and PIN/password
+          [ ] README_RUN.txt does not enable WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB
           "@
           Set-Content -Path "dist/Win7POS/RELEASE_CHECKLIST.txt" -Value $checklist -Encoding UTF8
 

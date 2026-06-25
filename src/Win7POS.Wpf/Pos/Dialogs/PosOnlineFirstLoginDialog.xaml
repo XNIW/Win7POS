@@ -11,7 +11,7 @@
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
         MinWidth="500"
-        MinHeight="360"
+        MinHeight="430"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
     <Grid Background="#F1EDF7">
@@ -33,14 +33,14 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="130"/>
                     <ColumnDefinition Width="*" MinWidth="260"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Indirizzo pannello:" Foreground="#666"/>
-                <TextBox x:Name="BaseUrlBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
+                <TextBlock x:Name="ServerStatusText" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,12" TextWrapping="Wrap" Foreground="#2E7D32" Text="Server Admin Web configurato."/>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Codice negozio:" Foreground="#666"/>
                 <TextBox x:Name="ShopCodeBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
@@ -52,11 +52,29 @@
                 <PasswordBox x:Name="CredentialBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
                 <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Nome dispositivo:" Foreground="#666"/>
-                <TextBox x:Name="DeviceNameBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
+                <TextBlock x:Name="DeviceNameText" Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,10" Padding="0,6" Foreground="#555" TextWrapping="Wrap"/>
 
                 <TextBlock Grid.Row="5" Grid.ColumnSpan="2" TextWrapping="Wrap" Foreground="#8873A4" Text="La sessione del dispositivo viene protetta localmente da Windows. PIN/password non vengono salvati."/>
 
-                <TextBlock x:Name="StatusText" Grid.Row="6" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="#C62828" TextWrapping="Wrap" Visibility="Collapsed"/>
+                <Expander x:Name="AdvancedExpander" Grid.Row="6" Grid.ColumnSpan="2" Margin="0,12,0,0" Header="Impostazioni avanzate / Server">
+                    <Grid Margin="0,10,0,0">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="Auto"/>
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="130"/>
+                            <ColumnDefinition Width="*" MinWidth="260"/>
+                        </Grid.ColumnDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,8" Text="URL Admin Web:" Foreground="#666"/>
+                        <TextBox x:Name="BaseUrlBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" MinHeight="34" Padding="8,6" TextChanged="OnBaseUrlChanged"/>
+
+                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" TextWrapping="Wrap" Foreground="#8873A4" Text="Inserisci solo l'URL base HTTPS del pannello, senza /auth/login, /shop, query string o hash."/>
+                    </Grid>
+                </Expander>
+
+                <TextBlock x:Name="StatusText" Grid.Row="7" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="#C62828" TextWrapping="Wrap" Visibility="Collapsed"/>
             </Grid>
         </Border>
 

@@ -8,6 +8,7 @@ namespace Win7POS.Wpf.Pos.Online
     public sealed class PosAdminWebOptions
     {
         public const string BaseUrlEnvironmentVariable = "WIN7POS_ADMIN_WEB_BASE_URL";
+        public const string AllowInsecureLanEnvironmentVariable = "WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB";
         public const string ConfigFileName = "pos-admin-web.config";
         public const string ConfigBaseUrlKey = "AdminWebBaseUrl";
 
@@ -33,13 +34,12 @@ namespace Win7POS.Wpf.Pos.Online
 
             if (string.IsNullOrWhiteSpace(rawBaseUrl))
             {
-                reason = "Configura " + BaseUrlEnvironmentVariable + " oppure " + ConfigFilePath + ".";
+                reason = "URL Admin Web non configurato. Configura il server nelle impostazioni avanzate o tramite " + BaseUrlEnvironmentVariable + ".";
                 return false;
             }
 
-            if (!TryCreateBaseUri(rawBaseUrl, out var baseUri))
+            if (!TryCreateBaseUri(rawBaseUrl, out var baseUri, out reason))
             {
-                reason = "La configurazione Admin Web POS non contiene un URL valido.";
                 return false;
             }
 
@@ -54,13 +54,12 @@ namespace Win7POS.Wpf.Pos.Online
 
             if (string.IsNullOrWhiteSpace(value))
             {
-                reason = "Inserisci l'URL Admin Web POS.";
+                reason = "URL Admin Web non configurato. Configura il server nelle impostazioni avanzate o tramite " + BaseUrlEnvironmentVariable + ".";
                 return false;
             }
 
-            if (!TryCreateBaseUri(value, out var baseUri))
+            if (!TryCreateBaseUri(value, out var baseUri, out reason))
             {
-                reason = "L'URL Admin Web POS non e valido.";
                 return false;
             }
 
@@ -81,28 +80,53 @@ namespace Win7POS.Wpf.Pos.Online
                 ConfigBaseUrlKey + "=" + baseUri.ToString().TrimEnd('/') + Environment.NewLine);
         }
 
-        private static bool TryCreateBaseUri(string value, out Uri uri)
+        public static bool TryCreateBaseUri(string value, out Uri uri, out string reason)
         {
             uri = null;
+            reason = null;
             var normalized = (value ?? string.Empty).Trim().TrimEnd('/');
 
             if (!Uri.TryCreate(normalized + "/", UriKind.Absolute, out var parsed))
             {
+                reason = "L'URL Admin Web POS non e valido.";
                 return false;
             }
 
             if (parsed.Scheme != Uri.UriSchemeHttp && parsed.Scheme != Uri.UriSchemeHttps)
             {
+                reason = "L'URL Admin Web POS deve usare HTTPS oppure HTTP loopback.";
                 return false;
             }
 
-            if (parsed.Scheme == Uri.UriSchemeHttp && !parsed.IsLoopback)
+            if (!string.IsNullOrWhiteSpace(parsed.Query) || !string.IsNullOrWhiteSpace(parsed.Fragment))
             {
+                reason = "Inserisci solo l'URL base HTTPS del pannello senza /auth/login o /shop.";
+                return false;
+            }
+
+            var path = parsed.AbsolutePath ?? "/";
+            if (path != "/")
+            {
+                reason = "Inserisci solo l'URL base HTTPS del pannello senza /auth/login o /shop.";
+                return false;
+            }
+
+            if (parsed.Scheme == Uri.UriSchemeHttp && !parsed.IsLoopback && !AllowInsecureLanAdminWeb())
+            {
+                reason = "HTTP e consentito solo per localhost/127.0.0.1. Usa HTTPS per workers.dev/staging.";
                 return false;
             }
 
             uri = parsed;
             return true;
+        }
+
+        public static bool AllowInsecureLanAdminWeb()
+        {
+            return string.Equals(
+                Environment.GetEnvironmentVariable(AllowInsecureLanEnvironmentVariable),
+                "1",
+                StringComparison.Ordinal);
         }
 
         private static string TryReadBaseUrlFromConfig()

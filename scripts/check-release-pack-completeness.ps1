@@ -41,7 +41,9 @@ $requiredFiles = @(
     "e_sqlite3.dll",
     "SQLitePCLRaw.provider.e_sqlite3.dll",
     "VERSION.txt",
-    "README_RUN.txt"
+    "README_RUN.txt",
+    "RELEASE_CHECKLIST.txt",
+    "set-admin-web-staging-url.bat"
 )
 
 if ([string]::IsNullOrWhiteSpace($ReleasePackSource)) {

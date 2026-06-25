@@ -12,6 +12,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         private readonly SqliteConnectionFactory _factory;
         private readonly PosTrustedDeviceStore _trustedDeviceStore = new PosTrustedDeviceStore();
+        private bool _baseUrlEditedByUser;
+        private bool _initializing;
 
         public PosOnlineFirstLoginDialog()
             : this(new SqliteConnectionFactory(PosDbOptions.Default()))
@@ -27,18 +29,28 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
-            DeviceNameBox.Text = Environment.MachineName;
+            _initializing = true;
+            DeviceNameText.Text = PosDeviceIdentity.GetStableDisplayName();
 
             if (PosAdminWebOptions.TryLoad(out var options, out _))
             {
                 BaseUrlBox.Text = options.BaseUri.ToString().TrimEnd('/');
+                ServerStatusText.Text = "Server Admin Web configurato.";
+                ServerStatusText.Foreground = System.Windows.Media.Brushes.DarkGreen;
+                ShowInsecureLanWarningIfNeeded(options);
+                ConnectButton.IsEnabled = true;
                 ShopCodeBox.Focus();
+                _initializing = false;
                 return;
             }
 
             BaseUrlBox.Text = string.Empty;
-            ShowInfo("Inserisci l'indirizzo del pannello Admin Web per collegare questo POS.");
-            BaseUrlBox.Focus();
+            ServerStatusText.Text = "URL Admin Web non configurato. Configura il server nelle impostazioni avanzate o tramite WIN7POS_ADMIN_WEB_BASE_URL.";
+            ServerStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            AdvancedExpander.IsExpanded = true;
+            ConnectButton.IsEnabled = false;
+            ShowInfo("Il collegamento richiede prima la configurazione del server Admin Web.");
+            _initializing = false;
         }
 
         private async void OnConnectClick(object sender, RoutedEventArgs e)
@@ -52,7 +64,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var shopCode = (ShopCodeBox.Text ?? string.Empty).Trim().ToUpperInvariant();
             var staffCode = (StaffCodeBox.Text ?? string.Empty).Trim().ToUpperInvariant();
             var credential = CredentialBox.Password ?? string.Empty;
-            var displayName = (DeviceNameBox.Text ?? string.Empty).Trim();
+            var displayName = PosDeviceIdentity.GetStableDisplayName();
 
             if (shopCode.Length == 0 || staffCode.Length == 0 || credential.Length == 0)
             {
@@ -70,9 +82,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 {
                     AppVersion = GetAppVersion(),
                     DeviceIdentifier = PosDeviceIdentity.GetOrCreateDeviceIdentifier(),
-                    DisplayName = string.IsNullOrWhiteSpace(displayName)
-                        ? Environment.MachineName
-                        : displayName,
+                    DisplayName = displayName,
                 },
                 ShopCode = shopCode,
                 StaffCode = staffCode,
@@ -80,7 +90,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             try
             {
-                PosAdminWebOptions.SaveBaseUrl(options.BaseUri);
+                if (_baseUrlEditedByUser)
+                {
+                    PosAdminWebOptions.SaveBaseUrl(options.BaseUri);
+                }
 
                 var bootstrap = new PosOnlineBootstrapService(
                     _factory,
@@ -134,6 +147,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
             Close();
         }
 
+        private void OnBaseUrlChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+        {
+            if (_initializing)
+            {
+                return;
+            }
+
+            _baseUrlEditedByUser = true;
+
+            if (PosAdminWebOptions.TryCreate(BaseUrlBox.Text, out var options, out var reason))
+            {
+                ServerStatusText.Text = "Server Admin Web configurato.";
+                ServerStatusText.Foreground = System.Windows.Media.Brushes.DarkGreen;
+                ConnectButton.IsEnabled = true;
+                ShowInsecureLanWarningIfNeeded(options);
+                return;
+            }
+
+            ServerStatusText.Text = reason;
+            ServerStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
+            ConnectButton.IsEnabled = false;
+        }
+
         private void ShowInfo(string message)
         {
             StatusText.Foreground = System.Windows.Media.Brushes.DarkSlateBlue;
@@ -146,6 +182,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
             StatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
             StatusText.Text = message ?? string.Empty;
             StatusText.Visibility = Visibility.Visible;
+        }
+
+        private void ShowInsecureLanWarningIfNeeded(PosAdminWebOptions options)
+        {
+            if (options != null &&
+                options.BaseUri.Scheme == Uri.UriSchemeHttp &&
+                !options.BaseUri.IsLoopback &&
+                PosAdminWebOptions.AllowInsecureLanAdminWeb())
+            {
+                ShowInfo("Attenzione: HTTP LAN abilitato solo per test manuale locale. Per workers.dev/staging usa HTTPS.");
+                return;
+            }
+
+            StatusText.Text = string.Empty;
+            StatusText.Visibility = Visibility.Collapsed;
         }
     }
 }
