@@ -43,6 +43,19 @@ yyyy-MM-dd HH:mm:ss.fff [LEVEL][Source] Messaggio | Dettaglio eccezione (se pres
 | `PaymentViewModel` | Schermata pagamento, PDF SII |
 | `UiErrorHandler` | Errori generici da command/async |
 
+### Categorie sync online
+
+| Categoria | Significato | ID utili |
+|-----------|-------------|----------|
+| `category=online.bootstrap` | First-login e collegamento Admin Web | `clientRequestId`, `serverRequestId` |
+| `category=online.heartbeat` | Verifica sessione/device all'avvio | `clientRequestId`, `serverRequestId`, `cfRay` |
+| `category=catalog.pull` | Pull catalogo/policy/tombstone | `clientRequestId`, `serverRequestId`, `cfRay` |
+| `category=sales.sync` | Sync outbox vendite | `syncAttemptId`, `clientRequestId`, `serverRequestId`, `clientBatchId`, `clientSaleId` |
+
+Questi ID non sono secret e possono essere passati allo sviluppatore o al
+manager Admin Web. Non condividere token dispositivo/sessione, PIN/password,
+credential raw, service-role key o dump SQLite completi.
+
 ## Come individuare la causa di un crash/errore
 
 1. **Apri `app.log`** e vai alla fine (ultimi eventi).
@@ -88,10 +101,16 @@ grep "\[ERROR\]" app.log | tail -50
 # Cercare per messaggio eccezione
 grep "SqliteException" app.log
 grep "FileNotFoundException" app.log
+
+# Sync online
+grep "category=sales.sync" app.log
+grep "serverRequestId=" app.log
+grep "clientBatchId=" app.log
 ```
 
 ## Note
 
-- Il log **non viene mai rimosso** automaticamente; ruota manualmente se diventa troppo grande.
+- Il log ruota automaticamente quando `app.log` supera circa 5 MB; conserva fino a 5 archivi (`app.log.1`, `app.log.2`, ...).
 - Il logging **non può provocare crash** – se scrivere nel log fallisce, l’errore viene ignorato.
 - Per **test o ambienti diversi**, usa `WIN7POS_DATA_DIR` per avere un log separato.
+- Eseguire `pwsh -File scripts/check-pos-debug-logging.ps1` prima di preparare un release pack.

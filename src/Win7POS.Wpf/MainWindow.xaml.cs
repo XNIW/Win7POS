@@ -310,7 +310,10 @@ namespace Win7POS.Wpf
                     {
                         store.SaveHeartbeat(trustedSession, result.Value);
                         StartupTrace.Write("online heartbeat done");
-                        _logger.LogInfo("BackgroundOnlineRefresh heartbeat done");
+                        _logger.LogInfo(
+                            "BackgroundOnlineRefresh heartbeat done: category=online.heartbeat clientRequestId=" +
+                            SafeOnlineId(result.ClientRequestId) +
+                            " serverRequestId=" + SafeOnlineId(result.ServerRequestId));
                         QueueSyncStatusRefresh(factory);
                         await TrySyncSalesOutboxAsync(options, factory).ConfigureAwait(false);
                         await TryPullCatalogAsync(options, factory).ConfigureAwait(false);
@@ -322,7 +325,12 @@ namespace Win7POS.Wpf
                         store.Clear();
                     }
 
-                    _logger.LogWarning("BackgroundOnlineRefresh heartbeat skipped: " + SafeOnlineCode(result.Code));
+                    _logger.LogWarning(
+                        "BackgroundOnlineRefresh heartbeat skipped: category=online.heartbeat code=" +
+                        SafeOnlineCode(result.Code) +
+                        " clientRequestId=" + SafeOnlineId(result.ClientRequestId) +
+                        " serverRequestId=" + SafeOnlineId(result.ServerRequestId) +
+                        " cfRay=" + SafeOnlineId(result.CfRay));
                 }
             }
             catch (OperationCanceledException)
@@ -451,6 +459,21 @@ namespace Win7POS.Wpf
             return safe.Length == 0 ? "failure" : safe;
         }
 
+        private static string SafeOnlineId(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (normalized.Length == 0)
+            {
+                return "";
+            }
+
+            var safe = new string(normalized
+                .Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' || ch == '.')
+                .Take(120)
+                .ToArray());
+            return safe;
+        }
+
         private void ApplySafeStartStatus()
         {
             if (SyncStatusText != null)
@@ -532,13 +555,16 @@ namespace Win7POS.Wpf
                         status.StaffText + "\n" +
                         status.LastOnlineText + "\n" +
                         status.PendingSalesText + "\n" +
+                        status.PolicyText + "\n" +
+                        status.SalesAttentionText + "\n" +
+                        status.RestoreReviewText + "\n" +
                         status.CatalogErrorText + "\n" +
                         status.SalesErrorText;
                 }
 
                 if (SyncStatusPill != null)
                 {
-                    SyncStatusPill.Background = StatusBrush(status.ConnectivityText);
+                    SyncStatusPill.Background = StatusBrush(status.ConnectivityText, status.RequiresAttention);
                 }
             }
             catch (Exception ex)
@@ -551,8 +577,13 @@ namespace Win7POS.Wpf
             }
         }
 
-        private static Brush StatusBrush(string connectivityText)
+        private static Brush StatusBrush(string connectivityText, bool requiresAttention)
         {
+            if (requiresAttention)
+            {
+                return new SolidColorBrush(Color.FromRgb(126, 62, 23));
+            }
+
             if (string.Equals(connectivityText, "Online", StringComparison.OrdinalIgnoreCase))
             {
                 return new SolidColorBrush(Color.FromRgb(42, 111, 72));

@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
@@ -93,10 +94,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
             IsBusy = true;
             try
             {
-                await _service.RestoreDbAsync(dlg.FileName).ConfigureAwait(true);
-                OperatorSessionHolder.Current?.LogSecurityEvent(SecurityEventCodes.DbRestore, "path=" + (dlg.FileName ?? ""));
-                Append("Ripristino completato da: " + dlg.FileName);
-                Win7POS.Wpf.Import.ModernMessageDialog.Show(System.Windows.Application.Current?.MainWindow, "Gestione DB", "Ripristino completato. Riavvia l'app.");
+                var result = await _service.RestoreDbAsync(dlg.FileName).ConfigureAwait(true);
+                OperatorSessionHolder.Current?.LogSecurityEvent(SecurityEventCodes.DbRestore, "backupFile=" + (Path.GetFileName(dlg.FileName) ?? ""));
+                Append("Ripristino completato da: " + (Path.GetFileName(dlg.FileName) ?? "backup.db"));
+                Append("Backup prima del ripristino: " + (Path.GetFileName(result.PreRestoreBackupPath) ?? "n/a"));
+                Append("Integrity check: " + result.IntegrityCheck);
+                Append("Stato sync: restore consentito solo dopo verifica che non esistano vendite outbox non sincronizzate; rivedere sincronizzazione prima di nuove vendite.");
+                Win7POS.Wpf.Import.ModernMessageDialog.Show(
+                    System.Windows.Application.Current?.MainWindow,
+                    "Gestione DB",
+                    "Ripristino completato. E stato creato un backup prima del ripristino. Verificare stato sincronizzazione e riavviare l'app.");
             }
             catch (Exception ex)
             {

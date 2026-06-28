@@ -686,7 +686,7 @@ namespace Win7POS.Wpf.Pos
                 if (!fiscalPrinted && vm.AutoPrintPdfSii && vm.CardAmountMinor > 0 && vm.CashAmountMinor == 0)
                     StatusMessage = "Pagamento OK: " + result.SaleCode + " (boleta non stampata: pagamento solo carta)";
 
-                await _service.TrySyncPendingSalesAsync().ConfigureAwait(true);
+                QueueSalesSyncAfterPayment();
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }
             catch (PosException ex)
@@ -703,6 +703,21 @@ namespace Win7POS.Wpf.Pos
                 IsBusy = false;
                 RequestFocusBarcode();
             }
+        }
+
+        private void QueueSalesSyncAfterPayment()
+        {
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await _service.TrySyncPendingSalesAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("POS sales sync after payment skipped.", ex);
+                }
+            });
         }
 
         private async Task TryAutoOpenDrawerAfterPaymentAsync(PaymentViewModel vm)

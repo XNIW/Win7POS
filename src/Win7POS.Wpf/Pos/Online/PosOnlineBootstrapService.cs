@@ -62,6 +62,11 @@ namespace Win7POS.Wpf.Pos.Online
 
                 if (!result.Success || result.Value == null)
                 {
+                    _logger.LogWarning(
+                        "POS online bootstrap failed: category=online.bootstrap code=" + SafeAuditValue(result.Code) +
+                        ", clientRequestId=" + SafeAuditValue(result.ClientRequestId) +
+                        ", serverRequestId=" + SafeAuditValue(result.ServerRequestId) +
+                        ", cfRay=" + SafeAuditValue(result.CfRay));
                     return PosOnlineBootstrapResult.Failure(result.Code, result.Message, result.Denied);
                 }
 
@@ -86,6 +91,13 @@ namespace Win7POS.Wpf.Pos.Online
 
                 _trustedDeviceStore.SaveFirstLogin(response);
                 await PosOnlineShopSnapshot.SaveAsync(_factory, response.Shop).ConfigureAwait(false);
+                await PosOnlinePolicySnapshot.SaveAsync(_factory, response.Policy).ConfigureAwait(false);
+                _logger.LogInfo(
+                    "POS online bootstrap success: category=online.bootstrap clientRequestId=" +
+                    SafeAuditValue(result.ClientRequestId) +
+                    ", serverRequestId=" + SafeAuditValue(result.ServerRequestId) +
+                    ", shopCode=" + SafeAuditValue(response.Shop.ShopCode) +
+                    ", staffCode=" + SafeAuditValue(response.Staff.StaffCode));
 
                 var security = new SecurityRepository(_factory);
                 await security.LogEventAsync(

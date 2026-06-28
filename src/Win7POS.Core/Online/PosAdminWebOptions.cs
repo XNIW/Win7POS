@@ -98,6 +98,12 @@ namespace Win7POS.Wpf.Pos.Online
                 return false;
             }
 
+            if (!string.IsNullOrWhiteSpace(parsed.UserInfo))
+            {
+                reason = "Inserisci solo l'URL base HTTPS del pannello, senza username o password nell'indirizzo.";
+                return false;
+            }
+
             if (!string.IsNullOrWhiteSpace(parsed.Query) || !string.IsNullOrWhiteSpace(parsed.Fragment))
             {
                 reason = "Inserisci solo l'URL base HTTPS del pannello senza /auth/login o /shop.";

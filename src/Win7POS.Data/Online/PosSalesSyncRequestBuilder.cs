@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Core.Pos;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Pos.Online;
@@ -16,7 +17,7 @@ namespace Win7POS.Data.Online
 {
     public static class PosSalesSyncRequestBuilder
     {
-        private const string SchemaVersion = "pos-sales-ledger-v2";
+        private const string SchemaVersion = PosOnlineContract.SalesSchemaVersion;
 
         public static async Task<PosSalesSyncRequest> BuildAsync(
             PosTrustedDeviceSession trustedSession,
@@ -233,8 +234,8 @@ namespace Win7POS.Data.Online
                 {
                     AmountClp = sale.PaidCash,
                     ChangeClp = Math.Abs(sale.Change),
-                    ClientPaymentId = "cash",
-                    Method = "cash",
+                    ClientPaymentId = PosOnlineContract.PaymentCash,
+                    Method = PosOnlineContract.PaymentCash,
                 });
             }
 
@@ -244,8 +245,8 @@ namespace Win7POS.Data.Online
                 {
                     AmountClp = sale.PaidCard,
                     ChangeClp = 0,
-                    ClientPaymentId = "card",
-                    Method = "card",
+                    ClientPaymentId = PosOnlineContract.PaymentCard,
+                    Method = PosOnlineContract.PaymentCard,
                 });
             }
 
@@ -255,8 +256,8 @@ namespace Win7POS.Data.Online
                 {
                     AmountClp = sale.Total,
                     ChangeClp = 0,
-                    ClientPaymentId = "other",
-                    Method = "other",
+                    ClientPaymentId = PosOnlineContract.PaymentOther,
+                    Method = PosOnlineContract.PaymentOther,
                 });
             }
 

@@ -93,6 +93,7 @@ namespace Win7POS.Wpf.Pos.Online
                     var cursor = string.Empty;
                     var totalStats = new CatalogApplyStats();
                     PosCatalogPullResponse lastResponse = null;
+                    PosOnlineResult<PosCatalogPullResponse> lastResult = null;
 
                     for (var page = 1; page <= MaxCatalogPullPages; page++)
                     {
@@ -115,7 +116,11 @@ namespace Win7POS.Wpf.Pos.Online
                             }
 
                             await StoreCatalogFailureAsync(result.Code).ConfigureAwait(false);
-                            _logger.LogWarning("Catalog pull skipped: " + (result.Code ?? "failure"));
+                            _logger.LogWarning(
+                                "Catalog pull skipped: category=catalog.pull code=" + SafeCode(result.Code) +
+                                " clientRequestId=" + SafeId(result.ClientRequestId) +
+                                " serverRequestId=" + SafeId(result.ServerRequestId) +
+                                " cfRay=" + SafeId(result.CfRay));
                             return false;
                         }
 
@@ -127,6 +132,7 @@ namespace Win7POS.Wpf.Pos.Online
                         await StoreCatalogDiagnosticsAsync(result.Value, applyStats).ConfigureAwait(false);
 
                         lastResponse = result.Value;
+                        lastResult = result;
                         var catalogVersion = result.Value.CatalogVersion;
                         cursor = result.Value.SyncCursor;
 
@@ -149,7 +155,14 @@ namespace Win7POS.Wpf.Pos.Online
                         return false;
                     }
 
-                    _logger.LogInfo("Catalog pull completed: products=" + totalStats.UpdatedProducts.ToString() + ", prices=" + totalStats.PriceRowsApplied.ToString() + ", hasMore=" + lastResponse.HasMore.ToString() + ", catalogVersion=" + (lastResponse.CatalogVersion ?? string.Empty));
+                    _logger.LogInfo(
+                        "Catalog pull completed: category=catalog.pull products=" + totalStats.UpdatedProducts.ToString() +
+                        ", prices=" + totalStats.PriceRowsApplied.ToString() +
+                        ", hasMore=" + lastResponse.HasMore.ToString() +
+                        ", catalogVersion=" + (lastResponse.CatalogVersion ?? string.Empty) +
+                        " clientRequestId=" + SafeId(lastResult?.ClientRequestId) +
+                        " serverRequestId=" + SafeId(lastResult?.ServerRequestId) +
+                        " cfRay=" + SafeId(lastResult?.CfRay));
                     return true;
                 }
             }
@@ -320,6 +333,7 @@ namespace Win7POS.Wpf.Pos.Online
             var settings = new SettingsRepository(_factory);
 
             await PosOnlineShopSnapshot.SaveAsync(_factory, response?.Shop).ConfigureAwait(false);
+            await PosOnlinePolicySnapshot.SaveAsync(_factory, response?.Policy).ConfigureAwait(false);
             await StoreLastSyncAsync(response.SyncCursor, response.GeneratedAt).ConfigureAwait(false);
             await settings.SetStringAsync(LastCatalogErrorSettingKey, string.Empty).ConfigureAwait(false);
             await settings.SetIntAsync(
@@ -350,6 +364,23 @@ namespace Win7POS.Wpf.Pos.Online
                 string.Equals(code, "network_error", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(code, "io_error", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(code, "db_failure", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string SafeCode(string code)
+        {
+            var normalized = SafeId(code);
+            return normalized == "none" ? "failure" : normalized;
+        }
+
+        private static string SafeId(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (normalized.Length == 0)
+            {
+                return "none";
+            }
+
+            return normalized.Length > 80 ? normalized.Substring(0, 80) : normalized;
         }
 
         private static IReadOnlyDictionary<string, string> BuildCategoryMap(

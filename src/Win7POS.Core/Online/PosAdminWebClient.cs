@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -90,14 +91,25 @@ namespace Win7POS.Wpf.Pos.Online
             CancellationToken cancellationToken)
             where TResponse : class
         {
+            var clientRequestId = CreateClientRequestId(relativePath);
             try
             {
                 var json = Serialize(request);
                 using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
-                using (var response = await _httpClient
-                    .PostAsync(relativePath.TrimStart('/'), content, cancellationToken)
-                    .ConfigureAwait(false))
+                using (var requestMessage = new HttpRequestMessage(
+                    HttpMethod.Post,
+                    relativePath.TrimStart('/')))
                 {
+                    requestMessage.Content = content;
+                    requestMessage.Headers.TryAddWithoutValidation("X-Client-Request-Id", clientRequestId);
+                    requestMessage.Headers.TryAddWithoutValidation("User-Agent", "Win7POS/online-client");
+
+                    using (var response = await _httpClient
+                        .SendAsync(requestMessage, cancellationToken)
+                        .ConfigureAwait(false))
+                    {
+                    var serverRequestId = FirstHeaderValue(response, "X-Request-Id");
+                    var cfRay = FirstHeaderValue(response, "CF-Ray");
                     var responseJson = await ReadResponseBodyAsync(
                         response.Content,
                         cancellationToken).ConfigureAwait(false);
@@ -107,7 +119,10 @@ namespace Win7POS.Wpf.Pos.Online
                         return PosOnlineResult<TResponse>.Failure(
                             "response_too_large",
                             "Risposta Admin Web POS troppo grande.",
-                            false);
+                            false,
+                            clientRequestId,
+                            serverRequestId,
+                            cfRay);
                     }
 
                     if (!response.IsSuccessStatusCode)
@@ -115,9 +130,14 @@ namespace Win7POS.Wpf.Pos.Online
                         var error = TryDeserialize<PosErrorResponse>(responseJson);
                         return PosOnlineResult<TResponse>.Failure(
                             error?.Code,
-                            "Autorizzazione POS online non riuscita.",
+                            string.IsNullOrWhiteSpace(error?.Message)
+                                ? "Autorizzazione POS online non riuscita."
+                                : error.Message,
                             response.StatusCode == HttpStatusCode.Unauthorized ||
-                            response.StatusCode == HttpStatusCode.Forbidden);
+                            response.StatusCode == HttpStatusCode.Forbidden,
+                            clientRequestId,
+                            FirstNonEmpty(serverRequestId, error?.RequestId),
+                            cfRay);
                     }
 
                     var parsed = TryDeserialize<TResponse>(responseJson);
@@ -126,10 +146,18 @@ namespace Win7POS.Wpf.Pos.Online
                         return PosOnlineResult<TResponse>.Failure(
                             "invalid_response",
                             "Risposta Admin Web POS non valida.",
-                            false);
+                            false,
+                            clientRequestId,
+                            serverRequestId,
+                            cfRay);
                     }
 
-                    return PosOnlineResult<TResponse>.Ok(parsed);
+                    return PosOnlineResult<TResponse>.Ok(
+                        parsed,
+                        clientRequestId,
+                        serverRequestId,
+                        cfRay);
+                    }
                 }
             }
             catch (TaskCanceledException)
@@ -137,29 +165,88 @@ namespace Win7POS.Wpf.Pos.Online
                 return PosOnlineResult<TResponse>.Failure(
                     "timeout",
                     "Admin Web POS non ha risposto entro il timeout.",
-                    false);
+                    false,
+                    clientRequestId);
             }
             catch (HttpRequestException)
             {
                 return PosOnlineResult<TResponse>.Failure(
                     "network_error",
                     "Admin Web POS non e raggiungibile.",
-                    false);
+                    false,
+                    clientRequestId);
             }
             catch (IOException)
             {
                 return PosOnlineResult<TResponse>.Failure(
                     "io_error",
                     "Errore locale durante la richiesta POS online.",
-                    false);
+                    false,
+                    clientRequestId);
             }
             catch (InvalidOperationException)
             {
                 return PosOnlineResult<TResponse>.Failure(
                     "invalid_operation",
                     "Configurazione Admin Web POS non valida.",
-                    false);
+                    false,
+                    clientRequestId);
             }
+        }
+
+        private static string CreateClientRequestId(string relativePath)
+        {
+            var route = (relativePath ?? "pos")
+                .Trim('/')
+                .Replace('/', '-')
+                .Replace('_', '-');
+            if (route.Length > 32)
+            {
+                route = route.Substring(route.Length - 32);
+            }
+
+            return "win7pos-" + route + "-" + Guid.NewGuid().ToString("N").Substring(0, 12);
+        }
+
+        private static string FirstHeaderValue(HttpResponseMessage response, string name)
+        {
+            if (response == null || string.IsNullOrWhiteSpace(name))
+            {
+                return null;
+            }
+
+            IEnumerable<string> values;
+            if (!response.Headers.TryGetValues(name, out values))
+            {
+                return null;
+            }
+
+            foreach (var value in values)
+            {
+                return TrimTechnicalId(value, 120);
+            }
+
+            return null;
+        }
+
+        private static string FirstNonEmpty(string left, string right)
+        {
+            return !string.IsNullOrWhiteSpace(left)
+                ? left
+                : TrimTechnicalId(right, 120);
+        }
+
+        private static string TrimTechnicalId(string value, int maxLength)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (normalized.Length == 0)
+            {
+                return null;
+            }
+
+            return normalized.Length > maxLength
+                ? normalized.Substring(0, maxLength)
+                : normalized;
         }
 
         private static string Serialize<T>(T value)
@@ -236,29 +323,69 @@ namespace Win7POS.Wpf.Pos.Online
 
     public sealed class PosOnlineResult<T> where T : class
     {
-        private PosOnlineResult(bool success, T value, string code, string message, bool denied)
+        private PosOnlineResult(
+            bool success,
+            T value,
+            string code,
+            string message,
+            bool denied,
+            string clientRequestId,
+            string serverRequestId,
+            string cfRay)
         {
             Success = success;
             Value = value;
             Code = code;
             Message = message;
             Denied = denied;
+            ClientRequestId = clientRequestId;
+            ServerRequestId = serverRequestId;
+            CfRay = cfRay;
         }
 
+        public string CfRay { get; }
+        public string ClientRequestId { get; }
         public bool Denied { get; }
         public string Code { get; }
         public string Message { get; }
+        public string ServerRequestId { get; }
         public bool Success { get; }
         public T Value { get; }
 
-        public static PosOnlineResult<T> Ok(T value)
+        public static PosOnlineResult<T> Ok(
+            T value,
+            string clientRequestId = null,
+            string serverRequestId = null,
+            string cfRay = null)
         {
-            return new PosOnlineResult<T>(true, value, "success", "", false);
+            return new PosOnlineResult<T>(
+                true,
+                value,
+                "success",
+                "",
+                false,
+                clientRequestId,
+                serverRequestId,
+                cfRay);
         }
 
-        public static PosOnlineResult<T> Failure(string code, string message, bool denied)
+        public static PosOnlineResult<T> Failure(
+            string code,
+            string message,
+            bool denied,
+            string clientRequestId = null,
+            string serverRequestId = null,
+            string cfRay = null)
         {
-            return new PosOnlineResult<T>(false, null, code ?? "failure", message ?? "Errore POS online.", denied);
+            return new PosOnlineResult<T>(
+                false,
+                null,
+                code ?? "failure",
+                message ?? "Errore POS online.",
+                denied,
+                clientRequestId,
+                serverRequestId,
+                cfRay);
         }
     }
 
@@ -519,6 +646,9 @@ namespace Win7POS.Wpf.Pos.Online
         [DataMember(Name = "ok")]
         public bool Ok { get; set; }
 
+        [DataMember(Name = "policy", EmitDefaultValue = false)]
+        public PosPolicyResponse Policy { get; set; }
+
         [DataMember(Name = "session")]
         public PosSessionResponse Session { get; set; }
 
@@ -563,6 +693,9 @@ namespace Win7POS.Wpf.Pos.Online
         [DataMember(Name = "ok")]
         public bool Ok { get; set; }
 
+        [DataMember(Name = "policy", EmitDefaultValue = false)]
+        public PosPolicyResponse Policy { get; set; }
+
         [DataMember(Name = "schemaVersion")]
         public int SchemaVersion { get; set; }
 
@@ -577,6 +710,114 @@ namespace Win7POS.Wpf.Pos.Online
 
         [DataMember(Name = "syncMode")]
         public string SyncMode { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosPolicyResponse
+    {
+        [DataMember(Name = "capabilities", EmitDefaultValue = false)]
+        public PosPolicyCapabilitiesResponse Capabilities { get; set; }
+
+        [DataMember(Name = "contractVersion", EmitDefaultValue = false)]
+        public string ContractVersion { get; set; }
+
+        [DataMember(Name = "limitations", EmitDefaultValue = false)]
+        public string[] Limitations { get; set; }
+
+        [DataMember(Name = "offlinePolicy", EmitDefaultValue = false)]
+        public PosOfflinePolicyResponse OfflinePolicy { get; set; }
+
+        [DataMember(Name = "paymentPolicy", EmitDefaultValue = false)]
+        public PosPaymentPolicyResponse PaymentPolicy { get; set; }
+
+        [DataMember(Name = "staffPolicy", EmitDefaultValue = false)]
+        public PosStaffPolicyResponse StaffPolicy { get; set; }
+
+        [DataMember(Name = "taxPolicy", EmitDefaultValue = false)]
+        public PosTaxPolicyResponse TaxPolicy { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosPolicyCapabilitiesResponse
+    {
+        [DataMember(Name = "catalogPull", EmitDefaultValue = false)]
+        public string CatalogPull { get; set; }
+
+        [DataMember(Name = "fiscalDocumentMode", EmitDefaultValue = false)]
+        public string FiscalDocumentMode { get; set; }
+
+        [DataMember(Name = "localReceiptPrinting", EmitDefaultValue = false)]
+        public bool LocalReceiptPrinting { get; set; }
+
+        [DataMember(Name = "localStaffMirror", EmitDefaultValue = false)]
+        public string LocalStaffMirror { get; set; }
+
+        [DataMember(Name = "offlineSales", EmitDefaultValue = false)]
+        public bool OfflineSales { get; set; }
+
+        [DataMember(Name = "paymentMethods", EmitDefaultValue = false)]
+        public string[] PaymentMethods { get; set; }
+
+        [DataMember(Name = "salesSync", EmitDefaultValue = false)]
+        public string SalesSync { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosOfflinePolicyResponse
+    {
+        [DataMember(Name = "firstActivationRequiresOnline", EmitDefaultValue = false)]
+        public bool FirstActivationRequiresOnline { get; set; }
+
+        [DataMember(Name = "mode", EmitDefaultValue = false)]
+        public string Mode { get; set; }
+
+        [DataMember(Name = "pendingSalesRetention", EmitDefaultValue = false)]
+        public string PendingSalesRetention { get; set; }
+
+        [DataMember(Name = "revocationEnforcement", EmitDefaultValue = false)]
+        public string RevocationEnforcement { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosPaymentPolicyResponse
+    {
+        [DataMember(Name = "currency", EmitDefaultValue = false)]
+        public string Currency { get; set; }
+
+        [DataMember(Name = "fallbackMethod", EmitDefaultValue = false)]
+        public string FallbackMethod { get; set; }
+
+        [DataMember(Name = "supportedMethods", EmitDefaultValue = false)]
+        public string[] SupportedMethods { get; set; }
+
+        [DataMember(Name = "unsupportedMethods", EmitDefaultValue = false)]
+        public string[] UnsupportedMethods { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosStaffPolicyResponse
+    {
+        [DataMember(Name = "credentialMaterial", EmitDefaultValue = false)]
+        public string CredentialMaterial { get; set; }
+
+        [DataMember(Name = "mustChangeCredential", EmitDefaultValue = false)]
+        public string MustChangeCredential { get; set; }
+
+        [DataMember(Name = "offlineMirror", EmitDefaultValue = false)]
+        public string OfflineMirror { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosTaxPolicyResponse
+    {
+        [DataMember(Name = "defaultTaxClp", EmitDefaultValue = false)]
+        public int DefaultTaxClp { get; set; }
+
+        [DataMember(Name = "fiscalAuthorityIntegration", EmitDefaultValue = false)]
+        public string FiscalAuthorityIntegration { get; set; }
+
+        [DataMember(Name = "status", EmitDefaultValue = false)]
+        public string Status { get; set; }
     }
 
     [DataContract]
@@ -874,6 +1115,9 @@ namespace Win7POS.Wpf.Pos.Online
     [DataContract]
     public sealed class PosErrorResponse
     {
+        [DataMember(Name = "clientRequestId", EmitDefaultValue = false)]
+        public string ClientRequestId { get; set; }
+
         [DataMember(Name = "code")]
         public string Code { get; set; }
 
@@ -882,5 +1126,8 @@ namespace Win7POS.Wpf.Pos.Online
 
         [DataMember(Name = "ok")]
         public bool Ok { get; set; }
+
+        [DataMember(Name = "requestId", EmitDefaultValue = false)]
+        public string RequestId { get; set; }
     }
 }

@@ -80,6 +80,7 @@ if ($client -notmatch "/api/pos/session/heartbeat") { Fail "heartbeat path missi
 if ($store -notmatch "ProtectedData\.Protect" -or $store -notmatch "ProtectedData\.Unprotect") { Fail "DPAPI storage missing" } else { Pass "DPAPI storage present" }
 if ($options -notmatch "WIN7POS_ADMIN_WEB_BASE_URL" -or $options -notmatch "pos-admin-web\.config") { Fail "base URL config sources missing" } else { Pass "base URL config present" }
 if ($options -notmatch "WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB" -or $options -notmatch "AllowInsecureLanAdminWeb") { Fail "insecure LAN override guard missing" } else { Pass "insecure LAN override guard present" }
+if ($options -notmatch "parsed\.UserInfo" -or $options -notmatch "senza username o password") { Fail "base URL credentials guard missing" } else { Pass "base URL credentials rejected" }
 if ($dialogXaml -match "Indirizzo pannello") { Fail "normal online link dialog still exposes URL field copy" } else { Pass "normal online link dialog hides URL field copy" }
 if ($dialogXaml -notmatch "Impostazioni avanzate / Server" -or $dialogXaml -notmatch "URL Admin Web") { Fail "advanced server URL settings missing" } else { Pass "advanced server URL settings present" }
 if ($dialog -notmatch "PosDeviceIdentity\.GetStableDisplayName") { Fail "device display name is not generated automatically" } else { Pass "device display name generated automatically" }

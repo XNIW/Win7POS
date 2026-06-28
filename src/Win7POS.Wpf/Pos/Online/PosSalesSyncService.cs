@@ -15,7 +15,9 @@ namespace Win7POS.Wpf.Pos.Online
         private const int MaxOutboxItemsPerRun = 25;
         private const int MaxAttemptsBeforeBlocked = 12;
         private const string LastSalesErrorSettingKey = "pos.sales_sync.last_error";
+        private const string SalesSyncInProgressSettingKey = "pos.sales_sync.in_progress";
         private const string LastSalesSyncSettingKey = "pos.sales_sync.last_success_at";
+        private static int _syncInFlight;
 
         private readonly SqliteConnectionFactory _factory;
         private readonly FileLogger _logger;
@@ -52,6 +54,16 @@ namespace Win7POS.Wpf.Pos.Online
                 return false;
             }
 
+            if (Interlocked.CompareExchange(ref _syncInFlight, 1, 0) != 0)
+            {
+                _logger.LogInfo("Sales sync skipped: already running.");
+                return false;
+            }
+
+            await StoreSalesSyncInProgressAsync(true).ConfigureAwait(false);
+
+            try
+            {
             if (!_store.TryRead(out var trustedSession))
             {
                 return false;
@@ -94,6 +106,7 @@ namespace Win7POS.Wpf.Pos.Online
                             item,
                             sale,
                             lines.ToArray()).ConfigureAwait(false);
+                        var syncAttemptId = CreateSyncAttemptId();
                         var payloadJson = PosSalesSyncRequestBuilder.SerializeRedacted(request);
                         var payloadHash = PosSalesSyncRequestBuilder.Sha256Hex(payloadJson);
 
@@ -104,8 +117,19 @@ namespace Win7POS.Wpf.Pos.Online
                             payloadHash,
                             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
 
+                        _logger.LogInfo(
+                            "Sales sync started: category=sales.sync syncAttemptId=" + syncAttemptId +
+                            " clientBatchId=" + SafeId(request.Batch?.ClientBatchId) +
+                            " clientSaleId=" + SafeId(sale.ClientSaleId ?? item.ClientSaleId) +
+                            " attempt=" + (item.AttemptCount + 1).ToString());
                         var result = await client.SalesSyncAsync(request, cancellationToken).ConfigureAwait(false);
-                        if (await ApplyResultAsync(item, sale, result).ConfigureAwait(false))
+                        _logger.LogInfo(
+                            "Sales sync response: category=sales.sync syncAttemptId=" + syncAttemptId +
+                            " code=" + SafeCode(result.Code) +
+                            " clientRequestId=" + SafeId(result.ClientRequestId) +
+                            " serverRequestId=" + SafeId(result.ServerRequestId) +
+                            " cfRay=" + SafeId(result.CfRay));
+                        if (await ApplyResultAsync(item, sale, result, syncAttemptId).ConfigureAwait(false))
                         {
                             syncedAny = true;
                         }
@@ -123,6 +147,12 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             return syncedAny;
+            }
+            finally
+            {
+                await StoreSalesSyncInProgressAsync(false).ConfigureAwait(false);
+                Interlocked.Exchange(ref _syncInFlight, 0);
+            }
         }
 
         private async Task<PosSalesSyncRequest> BuildRequestAsync(
@@ -143,7 +173,8 @@ namespace Win7POS.Wpf.Pos.Online
         private async Task<bool> ApplyResultAsync(
             SalesSyncOutboxItem item,
             Sale sale,
-            PosOnlineResult<PosSalesSyncResponse> result)
+            PosOnlineResult<PosSalesSyncResponse> result,
+            string syncAttemptId)
         {
             if (!result.Success || result.Value == null || !result.Value.Ok)
             {
@@ -152,6 +183,10 @@ namespace Win7POS.Wpf.Pos.Online
                     _store.Clear();
                     await StoreSalesSyncFailureAsync("auth_denied").ConfigureAwait(false);
                     await MarkRetryAsync(item, "auth_denied").ConfigureAwait(false);
+                    _logger.LogWarning(
+                        "Sales sync auth denied: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
+                        " clientSaleId=" + SafeId(item.ClientSaleId) +
+                        " serverRequestId=" + SafeId(result.ServerRequestId));
                     return false;
                 }
 
@@ -160,11 +195,21 @@ namespace Win7POS.Wpf.Pos.Online
                     await StoreSalesSyncFailureAsync(result.Code).ConfigureAwait(false);
                     await MarkBlockedAsync(item, result.Code, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
                         .ConfigureAwait(false);
+                    _logger.LogWarning(
+                        "Sales sync blocked: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
+                        " clientSaleId=" + SafeId(item.ClientSaleId) +
+                        " code=" + SafeCode(result.Code) +
+                        " serverRequestId=" + SafeId(result.ServerRequestId));
                     return false;
                 }
 
                 await StoreSalesSyncFailureAsync(result.Code).ConfigureAwait(false);
                 await MarkRetryAsync(item, result.Code).ConfigureAwait(false);
+                _logger.LogWarning(
+                    "Sales sync retry scheduled: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
+                    " clientSaleId=" + SafeId(item.ClientSaleId) +
+                    " code=" + SafeCode(result.Code) +
+                    " serverRequestId=" + SafeId(result.ServerRequestId));
                 return false;
             }
 
@@ -177,6 +222,34 @@ namespace Win7POS.Wpf.Pos.Online
             if (ack == null)
             {
                 await MarkRetryAsync(item, "missing_ack").ConfigureAwait(false);
+                _logger.LogWarning(
+                    "Sales sync missing ack: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
+                    " clientSaleId=" + SafeId(item.ClientSaleId) +
+                    " clientBatchId=" + SafeId(result.Value.Batch?.ClientBatchId));
+                return false;
+            }
+
+            if (!IsAcceptedAckStatus(ack.Status))
+            {
+                var ackCode = "ack_" + SafeCode(ack.Status);
+                if (IsBlockedAckStatus(ack.Status))
+                {
+                    await MarkBlockedAsync(item, ackCode, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())
+                        .ConfigureAwait(false);
+                    _logger.LogWarning(
+                        "Sales sync ack blocked: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
+                        " clientSaleId=" + SafeId(item.ClientSaleId) +
+                        " ackStatus=" + SafeCode(ack.Status) +
+                        " serverRequestId=" + SafeId(result.ServerRequestId));
+                    return false;
+                }
+
+                await MarkRetryAsync(item, ackCode).ConfigureAwait(false);
+                _logger.LogWarning(
+                    "Sales sync ack unknown: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
+                    " clientSaleId=" + SafeId(item.ClientSaleId) +
+                    " ackStatus=" + SafeCode(ack.Status) +
+                    " serverRequestId=" + SafeId(result.ServerRequestId));
                 return false;
             }
 
@@ -189,7 +262,12 @@ namespace Win7POS.Wpf.Pos.Online
                 nowMs).ConfigureAwait(false);
             await PosOnlineShopSnapshot.SaveAsync(_factory, result.Value.Shop).ConfigureAwait(false);
             await StoreSalesSyncSuccessAsync(result.Value.ServerTime).ConfigureAwait(false);
-            _logger.LogInfo("Sales sync acked: " + item.ClientSaleId);
+            _logger.LogInfo(
+                "Sales sync acked: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
+                " clientSaleId=" + SafeId(item.ClientSaleId) +
+                " clientBatchId=" + SafeId(result.Value.Batch?.ClientBatchId) +
+                " ackStatus=" + SafeCode(ack.Status) +
+                " serverRequestId=" + SafeId(result.ServerRequestId));
             return true;
         }
 
@@ -239,16 +317,57 @@ namespace Win7POS.Wpf.Pos.Online
             await settings.SetStringAsync(LastSalesErrorSettingKey, SafeCode(code)).ConfigureAwait(false);
         }
 
+        private async Task StoreSalesSyncInProgressAsync(bool inProgress)
+        {
+            try
+            {
+                var settings = new SettingsRepository(_factory);
+                await settings.SetBoolAsync(SalesSyncInProgressSettingKey, inProgress)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Sales sync in-progress state not stored.", ex);
+            }
+        }
+
         private static bool IsBlockedFailure(string code)
         {
             return string.Equals(code, "validation_failed", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(code, "conflict", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static bool IsAcceptedAckStatus(string status)
+        {
+            return string.Equals(status, "accepted", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(status, "duplicate", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(status, "acked", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(status, "synced", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(status, "idempotent", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsBlockedAckStatus(string status)
+        {
+            return string.Equals(status, "conflict", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(status, "validation_failed", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(status, "failed_blocked", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string CreateSyncAttemptId()
+        {
+            return "winsync-" + Guid.NewGuid().ToString("N").Substring(0, 12);
+        }
+
         private static string SafeCode(string code)
         {
             var normalized = TrimOrNull(code, 80);
             return string.IsNullOrWhiteSpace(normalized) ? "failure" : normalized;
+        }
+
+        private static string SafeId(string value)
+        {
+            var normalized = TrimOrNull(value, 80);
+            return string.IsNullOrWhiteSpace(normalized) ? "none" : normalized;
         }
 
         private static string TrimOrNull(string value, int maxLength)

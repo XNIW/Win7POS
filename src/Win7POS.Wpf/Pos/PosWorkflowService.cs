@@ -22,6 +22,15 @@ using Win7POS.Wpf.Printing;
 
 namespace Win7POS.Wpf.Pos
 {
+    public sealed class DbRestoreResult
+    {
+        public string IntegrityCheck { get; set; }
+        public bool IntegrityOk { get; set; }
+        public string PreRestoreBackupPath { get; set; }
+        public string RestoredFromPath { get; set; }
+        public bool SyncReviewRequired { get; set; }
+    }
+
     public sealed class PosWorkflowService
     {
         private const string KeyPrinterName = "printer.name";
@@ -39,6 +48,11 @@ namespace Win7POS.Wpf.Pos
         private const string KeyShopPhone = "shop.phone";
         private const string KeyShopFooter = "shop.footer";
         private const string KeyFiscalBoletaNumber = "fiscal.boletaNumber";
+        private const string KeyRestoreNeedsSyncReview = "pos.restore.needs_sync_review";
+        private const string KeyRestoreLastCompletedAt = "pos.restore.last_completed_at";
+        private const string KeyRestoreLastPreBackupPath = "pos.restore.last_pre_backup_path";
+        private const string KeyRestoreLastSourcePath = "pos.restore.last_source_path";
+        private const string KeyRestoreLastIntegrityCheck = "pos.restore.last_integrity_check";
 
         private readonly FileLogger _logger = new FileLogger("PosWorkflowService");
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
@@ -56,6 +70,7 @@ namespace Win7POS.Wpf.Pos
         private readonly PosDbOptions _options;
         private readonly SqliteConnectionFactory _factory;
         private readonly IReceiptPrinter _receiptPrinter = new WindowsSpoolerReceiptPrinter();
+        private int _backgroundSalesSyncQueued;
 
         private SaleCompleted _lastCompletedSale;
 
@@ -156,7 +171,7 @@ namespace Win7POS.Wpf.Pos
             await SetPrinterSettingsAsync(settings).ConfigureAwait(false);
         }
 
-        public async Task RestoreDbAsync(string backupDbPath)
+        public async Task<DbRestoreResult> RestoreDbAsync(string backupDbPath)
         {
             if (string.IsNullOrWhiteSpace(backupDbPath))
                 throw new ArgumentException("backup path is empty");
@@ -166,13 +181,39 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
+                if (await _sales.HasUnresolvedSalesSyncOutboxAsync().ConfigureAwait(false))
+                {
+                    _logger.LogWarning("POS DB restore blocked: unresolved sales sync outbox exists.");
+                    throw new InvalidOperationException("Ripristino sospeso: esistono vendite POS non sincronizzate o bloccate. Sincronizzare o far verificare l'outbox prima del restore.");
+                }
+
+                var preBackupPath = CreateDbBackupCopyNoLock("pos_pre_restore_");
+                var restoredAt = DateTimeOffset.UtcNow;
                 SqliteConnection.ClearAllPools();
                 File.Copy(backupDbPath, _options.DbPath, true);
+                DbInitializer.EnsureCreated(_options);
+                var integrity = await _dbMaintenance.IntegrityCheckAsync().ConfigureAwait(false);
+                var integrityOk = IsIntegrityOk(integrity);
+                await _settings.SetBoolAsync(KeyRestoreNeedsSyncReview, true).ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyRestoreLastCompletedAt, restoredAt.ToString("O", CultureInfo.InvariantCulture)).ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyRestoreLastPreBackupPath, preBackupPath).ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyRestoreLastSourcePath, backupDbPath).ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyRestoreLastIntegrityCheck, integrity).ConfigureAwait(false);
                 var details = AuditDetails.Kv(
-                    ("backupPath", backupDbPath),
-                    ("dbPath", _options.DbPath));
+                    ("backupFile", Path.GetFileName(backupDbPath)),
+                    ("preBackupFile", Path.GetFileName(preBackupPath)),
+                    ("integrity", integrityOk ? "ok" : "needs_review"),
+                    ("syncReview", "required"));
                 await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.DbRestore, details).ConfigureAwait(false);
-                _logger.LogInfo("POS DB restored from: " + backupDbPath);
+                _logger.LogWarning("POS DB restored; sync review required. backupFile=" + Path.GetFileName(backupDbPath) + " preBackupFile=" + Path.GetFileName(preBackupPath));
+                return new DbRestoreResult
+                {
+                    IntegrityCheck = integrity,
+                    IntegrityOk = integrityOk,
+                    PreRestoreBackupPath = preBackupPath,
+                    RestoredFromPath = backupDbPath,
+                    SyncReviewRequired = true
+                };
             }
             catch (Exception ex)
             {
@@ -437,6 +478,30 @@ namespace Win7POS.Wpf.Pos
             {
                 _gate.Release();
             }
+        }
+
+        private string CreateDbBackupCopyNoLock(string prefix)
+        {
+            AppPaths.EnsureCreated();
+
+            if (!File.Exists(_options.DbPath))
+                throw new FileNotFoundException("Current POS database not found; restore pre-backup was not created.", _options.DbPath);
+
+            var safePrefix = string.IsNullOrWhiteSpace(prefix) ? "pos_backup_" : prefix;
+            var fileName = safePrefix + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".db";
+            var outputPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
+            var outputDir = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrWhiteSpace(outputDir))
+                Directory.CreateDirectory(outputDir);
+
+            File.Copy(_options.DbPath, outputPath, true);
+            _logger.LogInfo("POS DB pre-restore backup created: " + Path.GetFileName(outputPath));
+            return outputPath;
+        }
+
+        private static bool IsIntegrityOk(string integrity)
+        {
+            return string.Equals((integrity ?? string.Empty).Trim(), "ok", StringComparison.OrdinalIgnoreCase);
         }
 
         public async Task InitializeAsync()
@@ -913,7 +978,7 @@ namespace Win7POS.Wpf.Pos
                 }
 
                 var completed = new SaleCompleted(refundSale, refundLines);
-                await TrySyncSalesOutboxNoThrowAsync().ConfigureAwait(false);
+                QueueSalesOutboxSyncNoThrow();
                 var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
                 var receipt42 = BuildRefundReceiptPreview(completed, true, shop);
                 var receipt32 = BuildRefundReceiptPreview(completed, false, shop);
@@ -1625,6 +1690,26 @@ namespace Win7POS.Wpf.Pos
             {
                 _logger.LogWarning("POS sales sync skipped.", ex);
             }
+        }
+
+        private void QueueSalesOutboxSyncNoThrow()
+        {
+            if (Interlocked.CompareExchange(ref _backgroundSalesSyncQueued, 1, 0) != 0)
+            {
+                return;
+            }
+
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await TrySyncSalesOutboxNoThrowAsync().ConfigureAwait(false);
+                }
+                finally
+                {
+                    Interlocked.Exchange(ref _backgroundSalesSyncQueued, 0);
+                }
+            });
         }
 
         private static async Task<long> ExecuteInsertRefundSaleIdAsync(SqliteConnection conn, SqliteTransaction tx, Sale refundSale)

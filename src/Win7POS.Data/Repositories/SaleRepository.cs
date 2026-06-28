@@ -6,6 +6,7 @@ using System;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Core.Pos;
 
 namespace Win7POS.Data.Repositories
@@ -474,7 +475,7 @@ WHERE barcode = @barcode;",
                 ? BuildClientSaleId(saleId)
                 : clientSaleId.Trim();
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var idempotencyKey = normalizedClientSaleId + ":pos-sales-ledger-v2";
+            var idempotencyKey = normalizedClientSaleId + ":" + PosOnlineContract.SalesSchemaVersion;
 
             await conn.ExecuteAsync(@"
 INSERT OR IGNORE INTO sales_sync_outbox(
@@ -557,6 +558,17 @@ LIMIT 1;").ConfigureAwait(false);
                 Pending = CountFor("pending"),
                 Retry = CountFor("retry")
             };
+        }
+
+        public async Task<bool> HasUnresolvedSalesSyncOutboxAsync()
+        {
+            using var conn = _factory.Open();
+            var count = await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM sales_sync_outbox
+WHERE status IN ('pending', 'retry', 'failed_blocked');").ConfigureAwait(false);
+
+            return count > 0;
         }
 
         public async Task<IReadOnlyDictionary<long, string>> GetRemoteProductIdsAsync(IEnumerable<long> productIds)

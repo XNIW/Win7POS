@@ -14,6 +14,8 @@ namespace Win7POS.Wpf.Infrastructure
     /// </summary>
     public sealed class FileLogger
     {
+        private const long MaxLogBytes = 5L * 1024L * 1024L;
+        private const int RetainedLogFiles = 5;
         private static readonly object _writeLock = new object();
         private readonly string _source;
 
@@ -89,6 +91,7 @@ namespace Win7POS.Wpf.Infrastructure
                 var line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " " + prefix + " " + Sanitize(message) + Environment.NewLine;
                 lock (_writeLock)
                 {
+                    RotateIfNeeded();
                     File.AppendAllText(AppPaths.LogPath, line, Encoding.UTF8);
                 }
             }
@@ -103,11 +106,73 @@ namespace Win7POS.Wpf.Infrastructure
             var sanitized = value ?? string.Empty;
             sanitized = Regex.Replace(
                 sanitized,
-                @"(?i)(sessionToken|deviceToken|trustedDeviceToken|pin|password|credential)\s*[:=]\s*\S+",
+                @"(?i)(sessionToken|deviceToken|trustedDeviceToken|pin|password|credential|pwd|db_password|database password)\s*[:=]\s*\S+",
                 "$1=[redacted]");
+            sanitized = Regex.Replace(
+                sanitized,
+                @"(?i)(""?(sessionToken|deviceToken|trustedDeviceToken|pin|password|credential|pwd|db_password|database password)""?\s*:\s*"")[^""]+("")",
+                "$1[redacted]$3");
+            sanitized = Regex.Replace(
+                sanitized,
+                @"(?i)(;?\s*(?:Pwd|Password|DB Password|Database Password)\s*=\s*)[^;|\s]+",
+                "$1[redacted]");
+            sanitized = Regex.Replace(
+                sanitized,
+                @"(?i)(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+/-]+=*",
+                "$1[redacted]");
+            sanitized = Regex.Replace(
+                sanitized,
+                @"(?i)mcpos_(device|session)_[A-Za-z0-9_-]+",
+                "mcpos_$1_[redacted]");
             sanitized = Regex.Replace(sanitized, @"[A-Za-z]:\\[^\s|]+", "[path]");
             sanitized = Regex.Replace(sanitized, @"/(?:Users|private|tmp|var)/[^\s|]+", "[path]");
             return sanitized;
+        }
+
+        private static void RotateIfNeeded()
+        {
+            var logPath = AppPaths.LogPath;
+            if (!File.Exists(logPath))
+            {
+                return;
+            }
+
+            var info = new FileInfo(logPath);
+            if (info.Length < MaxLogBytes)
+            {
+                return;
+            }
+
+            for (var i = RetainedLogFiles - 1; i >= 1; i--)
+            {
+                var source = RotatedPath(i);
+                var target = RotatedPath(i + 1);
+
+                if (!File.Exists(source))
+                {
+                    continue;
+                }
+
+                if (File.Exists(target))
+                {
+                    File.Delete(target);
+                }
+
+                File.Move(source, target);
+            }
+
+            var firstArchive = RotatedPath(1);
+            if (File.Exists(firstArchive))
+            {
+                File.Delete(firstArchive);
+            }
+
+            File.Move(logPath, firstArchive);
+        }
+
+        private static string RotatedPath(int index)
+        {
+            return AppPaths.LogPath + "." + index.ToString(System.Globalization.CultureInfo.InvariantCulture);
         }
     }
 }
