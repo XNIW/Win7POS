@@ -25,6 +25,46 @@ function Has-VisibleCopyOrLocKey([string]$text, [string]$visibleCopy, [string]$l
     return (Has-Literal $text $visibleCopy) -or (Has-Literal $text $locKey)
 }
 
+function Test-TranslationEntry(
+    [string]$Text,
+    [string]$Key,
+    [string[]]$RequiredFragments = @()
+) {
+    $pattern = 'new\s+TranslationEntry\("' + [regex]::Escape($Key) + '"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)'
+    $match = [regex]::Match($Text, $pattern)
+    if (-not $match.Success) {
+        return $false
+    }
+
+    $values = @(
+        $match.Groups[1].Value,
+        $match.Groups[2].Value,
+        $match.Groups[3].Value,
+        $match.Groups[4].Value
+    )
+
+    foreach ($value in $values) {
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            return $false
+        }
+    }
+
+    foreach ($fragment in $RequiredFragments) {
+        $found = $false
+        foreach ($value in $values) {
+            if ($value.Contains($fragment)) {
+                $found = $true
+                break
+            }
+        }
+        if (-not $found) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 $required = @(
     "src/Win7POS.Core/Online/PosAdminWebClient.cs",
     "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs",
@@ -91,7 +131,7 @@ if ($options -notmatch "WIN7POS_ADMIN_WEB_BASE_URL" -or $options -notmatch "pos-
 if ($options -notmatch "WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB" -or $options -notmatch "AllowInsecureLanAdminWeb") { Fail "insecure LAN override guard missing" } else { Pass "insecure LAN override guard present" }
 if ($options -notmatch "parsed\.UserInfo" -or $options -notmatch "senza username o password") { Fail "base URL credentials guard missing" } else { Pass "base URL credentials rejected" }
 if ($dialogXaml -match "Indirizzo pannello") { Fail "normal online link dialog still exposes URL field copy" } else { Pass "normal online link dialog hides URL field copy" }
-if (-not ((Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "onlineFirstLogin.advancedSettings") -and (Has-VisibleCopyOrLocKey $dialogXaml "URL Admin Web" "onlineFirstLogin.adminWebUrl") -and (Has-Literal $translations "Impostazioni avanzate / Server") -and (Has-Literal $translations "URL Admin Web"))) { Fail "advanced server URL settings missing" } else { Pass "advanced server URL settings present" }
+if (-not ((Has-Literal $dialogXaml "AdvancedExpander") -and (Has-Literal $dialogXaml 'x:Name="BaseUrlBox"') -and (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "onlineFirstLogin.advancedSettings") -and (Has-VisibleCopyOrLocKey $dialogXaml "URL Admin Web" "onlineFirstLogin.adminWebUrl") -and (Test-TranslationEntry $translations "onlineFirstLogin.advancedSettings" @("Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server")) -and (Test-TranslationEntry $translations "onlineFirstLogin.adminWebUrl" @("Admin Web URL", "URL Admin Web")))) { Fail "advanced server URL settings missing" } else { Pass "advanced server URL settings present" }
 if ($dialog -notmatch "PosDeviceIdentity\.GetStableDisplayName") { Fail "device display name is not generated automatically" } else { Pass "device display name generated automatically" }
 if ($dialog -notmatch "PosOnlineBootstrapService") { Fail "first-login dialog does not use bootstrap service" } else { Pass "first-login dialog uses bootstrap service" }
 if ($dialog -notmatch "finally[\s\S]*request\.Credential\s*=\s*string\.Empty[\s\S]*credential\s*=\s*string\.Empty[\s\S]*CredentialBox\.Clear\(\)") { Fail "first-login dialog does not clear PIN/password in finally" } else { Pass "first-login dialog clears PIN/password in finally" }

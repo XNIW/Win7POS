@@ -25,6 +25,46 @@ function Has-VisibleCopyOrLocKey([string]$text, [string]$visibleCopy, [string]$l
     return (Has-Literal $text $visibleCopy) -or (Has-Literal $text $locKey)
 }
 
+function Test-TranslationEntry(
+    [string]$Text,
+    [string]$Key,
+    [string[]]$RequiredFragments = @()
+) {
+    $pattern = 'new\s+TranslationEntry\("' + [regex]::Escape($Key) + '"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)'
+    $match = [regex]::Match($Text, $pattern)
+    if (-not $match.Success) {
+        return $false
+    }
+
+    $values = @(
+        $match.Groups[1].Value,
+        $match.Groups[2].Value,
+        $match.Groups[3].Value,
+        $match.Groups[4].Value
+    )
+
+    foreach ($value in $values) {
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            return $false
+        }
+    }
+
+    foreach ($fragment in $RequiredFragments) {
+        $found = $false
+        foreach ($value in $values) {
+            if ($value.Contains($fragment)) {
+                $found = $true
+                break
+            }
+        }
+        if (-not $found) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 $required = @(
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/FirstRunSetupDialog.xaml",
@@ -65,9 +105,9 @@ $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.c
 
 if ($mainWindow -notmatch "TryOnlineBootstrapFirstRunAsync") { Fail "fresh install does not try online bootstrap before recovery wizard" } else { Pass "fresh install online bootstrap present" }
 if ($mainWindow -notmatch "FirstRunSetupDialog") { Fail "recovery/dev first-run wizard removed" } else { Pass "recovery/dev first-run wizard retained" }
-if (-not ((Has-VisibleCopyOrLocKey $firstRun "Recovery/dev" "firstRun.title") -and (Has-Literal $translations "Recovery/dev"))) { Fail "FirstRunSetupDialog is not labelled as recovery/dev" } else { Pass "FirstRunSetupDialog labelled recovery/dev" }
+if (-not ((Has-VisibleCopyOrLocKey $firstRun "Recovery/dev" "firstRun.title") -and (Test-TranslationEntry $translations "firstRun.title" @("Recovery/dev")))) { Fail "FirstRunSetupDialog is not labelled as recovery/dev" } else { Pass "FirstRunSetupDialog labelled recovery/dev" }
 if ($dialogXaml -match "Indirizzo pannello") { Fail "online bootstrap must not expose the panel URL in the normal operator flow" } else { Pass "panel URL removed from normal operator flow" }
-if (-not ((Has-Literal $dialogXaml "AdvancedExpander") -and (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "onlineFirstLogin.advancedSettings") -and (Has-VisibleCopyOrLocKey $dialogXaml "Server Admin Web configurato" "onlineFirstLogin.serverConfigured") -and (Has-Literal $translations "Impostazioni avanzate / Server") -and (Has-Literal $translations "Server Admin Web configurato"))) { Fail "online bootstrap must keep Admin Web URL under advanced server settings" } else { Pass "advanced server settings present" }
+if (-not ((Has-Literal $dialogXaml "AdvancedExpander") -and (Has-Literal $dialogXaml 'x:Name="BaseUrlBox"') -and (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "onlineFirstLogin.advancedSettings") -and (Has-VisibleCopyOrLocKey $dialogXaml "Server Admin Web configurato" "onlineFirstLogin.serverConfigured") -and (Test-TranslationEntry $translations "onlineFirstLogin.advancedSettings" @("Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server")) -and (Test-TranslationEntry $translations "onlineFirstLogin.serverConfigured" @("Admin Web server configured", "Servidor Admin Web configurado", "Server Admin Web configurato")))) { Fail "online bootstrap must keep Admin Web URL under advanced server settings" } else { Pass "advanced server settings present" }
 if ($dialogXaml -match "Shop code|Staff code|Nome device") { Fail "online bootstrap still exposes technical/English labels" } else { Pass "online bootstrap labels are operator-facing" }
 if ($dialog -notmatch "PosOnlineBootstrapService") { Fail "online dialog does not use bootstrap service" } else { Pass "online dialog uses bootstrap service" }
 if ($dialog -notmatch "finally[\s\S]*CredentialBox\.Clear\(\)") { Fail "online dialog must clear PIN/password in a finally block" } else { Pass "online dialog clears PIN/password in finally" }

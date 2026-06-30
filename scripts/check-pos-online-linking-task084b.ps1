@@ -29,6 +29,46 @@ function Has-VisibleCopyOrLocKey([string]$text, [string]$visibleCopy, [string]$l
     return (Has-Literal $text $visibleCopy) -or (Has-Literal $text $locKey)
 }
 
+function Test-TranslationEntry(
+    [string]$Text,
+    [string]$Key,
+    [string[]]$RequiredFragments = @()
+) {
+    $pattern = 'new\s+TranslationEntry\("' + [regex]::Escape($Key) + '"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)'
+    $match = [regex]::Match($Text, $pattern)
+    if (-not $match.Success) {
+        return $false
+    }
+
+    $values = @(
+        $match.Groups[1].Value,
+        $match.Groups[2].Value,
+        $match.Groups[3].Value,
+        $match.Groups[4].Value
+    )
+
+    foreach ($value in $values) {
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            return $false
+        }
+    }
+
+    foreach ($fragment in $RequiredFragments) {
+        $found = $false
+        foreach ($value in $values) {
+            if ($value.Contains($fragment)) {
+                $found = $true
+                break
+            }
+        }
+        if (-not $found) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Resolve-Source([string]$source) {
     if ([string]::IsNullOrWhiteSpace($source)) {
         return $null
@@ -145,9 +185,12 @@ $hasCredentialFields =
     (Has-VisibleCopyOrLocKey $dialogXaml "Codice negozio" "onlineFirstLogin.shopCode") -and
     (Has-VisibleCopyOrLocKey $dialogXaml "Codice staff" "onlineFirstLogin.staffCode") -and
     (Has-VisibleCopyOrLocKey $dialogXaml "PIN/password" "onlineFirstLogin.credential") -and
-    (Has-Literal $translations "Codice negozio") -and
-    (Has-Literal $translations "Codice staff") -and
-    (Has-Literal $translations "PIN/password")
+    (Has-Literal $dialogXaml 'x:Name="ShopCodeBox"') -and
+    (Has-Literal $dialogXaml 'x:Name="StaffCodeBox"') -and
+    (Has-Literal $dialogXaml 'x:Name="CredentialBox"') -and
+    (Test-TranslationEntry $translations "onlineFirstLogin.shopCode" @("Shop code", "Codigo local", "Codice negozio")) -and
+    (Test-TranslationEntry $translations "onlineFirstLogin.staffCode" @("Staff code", "Codigo staff", "Codice staff")) -and
+    (Test-TranslationEntry $translations "onlineFirstLogin.credential" @("PIN/password"))
 if (-not $hasCredentialFields) {
     Fail "normal online linking dialog must show shop code, staff code and PIN/password"
 } else {
@@ -155,10 +198,12 @@ if (-not $hasCredentialFields) {
 }
 
 $hasAdvancedSettings =
+    (Has-Literal $dialogXaml "AdvancedExpander") -and
+    (Has-Literal $dialogXaml 'x:Name="BaseUrlBox"') -and
     (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "onlineFirstLogin.advancedSettings") -and
     (Has-VisibleCopyOrLocKey $dialogXaml "URL Admin Web" "onlineFirstLogin.adminWebUrl") -and
-    (Has-Literal $translations "Impostazioni avanzate / Server") -and
-    (Has-Literal $translations "URL Admin Web")
+    (Test-TranslationEntry $translations "onlineFirstLogin.advancedSettings" @("Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server")) -and
+    (Test-TranslationEntry $translations "onlineFirstLogin.adminWebUrl" @("Admin Web URL", "URL Admin Web"))
 if (-not $hasAdvancedSettings) {
     Fail "advanced server settings must expose Admin Web base URL for support"
 } else {
@@ -166,10 +211,11 @@ if (-not $hasAdvancedSettings) {
 }
 
 $hasServerStates =
+    (Has-Literal $dialogXaml "ServerStatusText") -and
     (Has-VisibleCopyOrLocKey $dialogXaml "Server Admin Web configurato" "onlineFirstLogin.serverConfigured") -and
     ((Has-Literal $dialogCode "URL Admin Web non configurato") -or (Has-Literal $dialogCode "onlineFirstLogin.serverNotConfigured")) -and
-    (Has-Literal $translations "Server Admin Web configurato") -and
-    (Has-Literal $translations "URL Admin Web non configurato")
+    (Test-TranslationEntry $translations "onlineFirstLogin.serverConfigured" @("Admin Web server configured", "Servidor Admin Web configurado", "Server Admin Web configurato")) -and
+    (Test-TranslationEntry $translations "onlineFirstLogin.serverNotConfigured" @("Admin Web URL is not configured", "URL Admin Web no configurada", "URL Admin Web non configurato"))
 if (-not $hasServerStates) {
     Fail "configured/missing server states are not explicit"
 } else {
@@ -209,7 +255,7 @@ if ($options -notmatch "parsed\.Scheme == Uri\.UriSchemeHttp && !parsed\.IsLoopb
 
 $hasInsecureLanWarning =
     ((Has-Literal $dialogCode "workers.dev/staging usa HTTPS") -or (Has-Literal $dialogCode "onlineFirstLogin.insecureLanWarning")) -and
-    (Has-Literal $translations "workers.dev/staging usa HTTPS")
+    (Test-TranslationEntry $translations "onlineFirstLogin.insecureLanWarning" @("Use HTTPS for workers.dev/staging", "Usa HTTPS para workers.dev/staging", "workers.dev/staging usa HTTPS"))
 if (-not $hasInsecureLanWarning) {
     Fail "visible insecure LAN warning for support/dev mode missing"
 } else {

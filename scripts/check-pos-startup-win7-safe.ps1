@@ -20,6 +20,46 @@ function Read-Text([string]$relativePath) {
     [System.IO.File]::ReadAllText((Join-Path $repoRoot $relativePath))
 }
 
+function Test-TranslationEntry(
+    [string]$Text,
+    [string]$Key,
+    [string[]]$RequiredFragments = @()
+) {
+    $pattern = 'new\s+TranslationEntry\("' + [regex]::Escape($Key) + '"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*,\s*"([^"]+)"\s*\)'
+    $match = [regex]::Match($Text, $pattern)
+    if (-not $match.Success) {
+        return $false
+    }
+
+    $values = @(
+        $match.Groups[1].Value,
+        $match.Groups[2].Value,
+        $match.Groups[3].Value,
+        $match.Groups[4].Value
+    )
+
+    foreach ($value in $values) {
+        if ([string]::IsNullOrWhiteSpace($value)) {
+            return $false
+        }
+    }
+
+    foreach ($fragment in $RequiredFragments) {
+        $found = $false
+        foreach ($value in $values) {
+            if ($value.Contains($fragment)) {
+                $found = $true
+                break
+            }
+        }
+        if (-not $found) {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Get-MethodBody([string]$Text, [string]$SignaturePattern, [string]$NextSignaturePattern) {
     $match = [regex]::Match($Text, $SignaturePattern + "[\s\S]*?" + $NextSignaturePattern)
     if (-not $match.Success) {
@@ -127,6 +167,7 @@ $appXaml = Read-Text "src/Win7POS.Wpf/App.xaml"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $startupTrace = Read-Text "src/Win7POS.Wpf/Infrastructure/StartupTrace.cs"
 $catalogPull = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
+$translations = Read-Text "src/Win7POS.Wpf/Localization/PosLocalization.cs"
 $workflow = Read-Text ".github/workflows/release-pack.yml"
 
 $loadedBody = Get-MethodBody `
@@ -249,9 +290,16 @@ else {
     Pass "WPF startup explicitly creates and shows MainWindow"
 }
 
+$hasSafeStartTranslations =
+    (Test-TranslationEntry $translations "sync.safeStart" @("Safe start: online sync disabled")) -and
+    (Test-TranslationEntry $translations "sync.safeStartTooltip" @("heartbeat", "sales sync", "catalog pull", "trusted-session refresh"))
+$hasSafeStartStatus =
+    $mainWindow -match 'PosLocalization\.Current\.Text\("sync\.safeStart"\)' -and
+    $mainWindow -match 'PosLocalization\.Current\.Text\("sync\.safeStartTooltip"\)'
 if ($app -notmatch "--safe-start" -or
     $app -notmatch "WIN7POS_SAFE_START" -or
-    $mainWindow -notmatch "Safe start: online sync disabled for this launch" -or
+    -not $hasSafeStartStatus -or
+    -not $hasSafeStartTranslations -or
     $mainWindow -notmatch "online refresh skipped: safe-start") {
     Fail "safe-start mode is missing or incomplete"
 }
