@@ -21,6 +21,14 @@ function Read-Text([string]$relativePath) {
     [System.IO.File]::ReadAllText((Join-Path $repoRoot $relativePath))
 }
 
+function Has-Literal([string]$text, [string]$literal) {
+    return $text.Contains($literal)
+}
+
+function Has-VisibleCopyOrLocKey([string]$text, [string]$visibleCopy, [string]$locKey) {
+    return (Has-Literal $text $visibleCopy) -or (Has-Literal $text $locKey)
+}
+
 function Resolve-Source([string]$source) {
     if ([string]::IsNullOrWhiteSpace($source)) {
         return $null
@@ -114,6 +122,7 @@ function Test-ReleasePackSource([string]$sourceValue) {
 
 $dialogXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml"
 $dialogCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
+$translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs"
 $options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
 $identity = Read-Text "src/Win7POS.Wpf/Pos/Online/PosDeviceIdentity.cs"
 $workflow = Read-Text ".github/workflows/release-pack.yml"
@@ -132,19 +141,36 @@ if ($dialogXaml -match "x:Name=`"DeviceNameBox`"") {
     Pass "editable device name removed"
 }
 
-if ($dialogXaml -notmatch "Codice negozio" -or $dialogXaml -notmatch "Codice staff" -or $dialogXaml -notmatch "PIN/password") {
+$hasCredentialFields =
+    (Has-VisibleCopyOrLocKey $dialogXaml "Codice negozio" "onlineFirstLogin.shopCode") -and
+    (Has-VisibleCopyOrLocKey $dialogXaml "Codice staff" "onlineFirstLogin.staffCode") -and
+    (Has-VisibleCopyOrLocKey $dialogXaml "PIN/password" "onlineFirstLogin.credential") -and
+    (Has-Literal $translations "Codice negozio") -and
+    (Has-Literal $translations "Codice staff") -and
+    (Has-Literal $translations "PIN/password")
+if (-not $hasCredentialFields) {
     Fail "normal online linking dialog must show shop code, staff code and PIN/password"
 } else {
     Pass "normal operator credentials present"
 }
 
-if ($dialogXaml -notmatch "Impostazioni avanzate / Server" -or $dialogXaml -notmatch "URL Admin Web") {
+$hasAdvancedSettings =
+    (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "onlineFirstLogin.advancedSettings") -and
+    (Has-VisibleCopyOrLocKey $dialogXaml "URL Admin Web" "onlineFirstLogin.adminWebUrl") -and
+    (Has-Literal $translations "Impostazioni avanzate / Server") -and
+    (Has-Literal $translations "URL Admin Web")
+if (-not $hasAdvancedSettings) {
     Fail "advanced server settings must expose Admin Web base URL for support"
 } else {
     Pass "advanced server settings present"
 }
 
-if ($dialogXaml -notmatch "Server Admin Web configurato" -or $dialogCode -notmatch "URL Admin Web non configurato") {
+$hasServerStates =
+    (Has-VisibleCopyOrLocKey $dialogXaml "Server Admin Web configurato" "onlineFirstLogin.serverConfigured") -and
+    ((Has-Literal $dialogCode "URL Admin Web non configurato") -or (Has-Literal $dialogCode "onlineFirstLogin.serverNotConfigured")) -and
+    (Has-Literal $translations "Server Admin Web configurato") -and
+    (Has-Literal $translations "URL Admin Web non configurato")
+if (-not $hasServerStates) {
     Fail "configured/missing server states are not explicit"
 } else {
     Pass "configured/missing server states explicit"
@@ -181,7 +207,10 @@ if ($options -notmatch "parsed\.Scheme == Uri\.UriSchemeHttp && !parsed\.IsLoopb
     Pass "non-loopback HTTP guard present"
 }
 
-if ($dialogCode -notmatch "workers\.dev/staging usa HTTPS") {
+$hasInsecureLanWarning =
+    ((Has-Literal $dialogCode "workers.dev/staging usa HTTPS") -or (Has-Literal $dialogCode "onlineFirstLogin.insecureLanWarning")) -and
+    (Has-Literal $translations "workers.dev/staging usa HTTPS")
+if (-not $hasInsecureLanWarning) {
     Fail "visible insecure LAN warning for support/dev mode missing"
 } else {
     Pass "insecure LAN warning present"
