@@ -12,6 +12,7 @@ using Win7POS.Core.Reports;
 using Win7POS.Core.Util;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure.Security;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -23,6 +24,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _dateText = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         private bool _isUnlocked;
         private string _status = string.Empty;
+        private string _statusKey;
         private int _salesCount;
         private long _totalAmount;
         private long _cashAmount;
@@ -67,6 +69,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             ClearMarkedHistoryRowsCommand = new RelayCommand(ClearMarkedHistoryRows, _ => HasMarkedRows);
             HistoryRows = new ObservableCollection<HistoryRow>();
             HourlySalesPoints = new ObservableCollection<HourlySalesPoint>();
+            PosLocalization.Current.LanguageChanged += OnLanguageChanged;
         }
 
         public string DateText
@@ -78,18 +81,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string Status
         {
             get => _status;
-            set { _status = value; OnPropertyChanged(); OnPropertyChanged(nameof(ShowFooterStatus)); }
+            set { SetStatusText(value, null); }
         }
 
         /// <summary>Consente alla View di impostare il messaggio di stato (es. dopo Salva con nome).</summary>
         public void SetStatus(string message)
         {
-            Status = message ?? string.Empty;
-            OnPropertyChanged(nameof(ShowFooterStatus));
+            SetStatusText(message, null);
         }
 
-        /// <summary>True per mostrare il messaggio di stato nel footer (evita duplicazione con badge: nasconde "Report caricato.").</summary>
-        public bool ShowFooterStatus => !string.IsNullOrEmpty(Status) && Status != "Report caricato.";
+        /// <summary>True per mostrare il messaggio di stato nel footer (evita duplicazione con badge).</summary>
+        public bool ShowFooterStatus => !string.IsNullOrEmpty(Status) && _statusKey != "reports.loaded";
 
         public int SalesCount
         {
@@ -151,7 +153,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             ? MoneyClp.FormatDisplay(_currentHeaderSummary.NetAmount / _currentHeaderSummary.SalesCount) : "0";
 
         /// <summary>Badge stato: "Report caricato" / "Nessun dato" per header.</summary>
-        public string StatusBadgeText => !_reportLoaded ? "" : (SalesCount > 0 || NetAmount != 0 ? "Report caricato" : "Nessun dato");
+        public string StatusBadgeText => !_reportLoaded ? "" : (SalesCount > 0 || NetAmount != 0 ? PosLocalization.T("reports.loaded") : PosLocalization.T("reports.noData"));
 
         /// <summary>True se il badge stato va mostrato (evita converter StringToVisibility).</summary>
         public bool ShowStatusBadge => !string.IsNullOrEmpty(StatusBadgeText);
@@ -163,7 +165,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         /// <summary>Tooltip pulsante Stampa Giornaliero: guida quando disabilitato.</summary>
-        public string PrintSummaryToolTip => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview) ? "Stampa riepilogo giornata" : "Carica prima il report";
+        public string PrintSummaryToolTip => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview) ? PosLocalization.T("reports.printReadyTooltip") : PosLocalization.T("reports.printLoadFirstTooltip");
 
         /// <summary>Anteprima ricevuta per il singolo giorno spuntato (MarkedCount==1). Usata nel pannello destro.</summary>
         public string SingleMarkedReceiptPreview
@@ -217,7 +219,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool ShowHistoryEmptyMessage => !HasHistoryRows;
 
         /// <summary>Testo placeholder quando nessuna riga storico selezionata.</summary>
-        public string PreviewPlaceholderText => HasHistorySelection ? "" : "Seleziona una data dallo storico per vedere il dettaglio.";
+        public string PreviewPlaceholderText => HasHistorySelection ? "" : PosLocalization.T("reports.selectHistoryPlaceholder");
 
         /// <summary>True per mostrare dettaglio giorno nello storico (evita converter).</summary>
         public bool ShowDetailPanel => HasHistorySelection;
@@ -232,7 +234,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _isUnlocked = value; OnPropertyChanged(); OnPropertyChanged(nameof(LockGlyph)); }
         }
 
-        public string LockGlyph => IsUnlocked ? "\uD83D\uDD13" : "\uD83D\uDD12"; // 🔓 / 🔒
+        public string LockGlyph => IsUnlocked ? PosLocalization.T("reports.fullViewShort") : PosLocalization.T("reports.limitedViewShort");
         public bool HasLockFeature => _overrideAuthService != null;
 
         public ICommand LoadCommand { get; }
@@ -300,9 +302,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>Mostra anteprima ricevuta (1 giorno spuntato oppure riga selezionata senza spunte).</summary>
         public bool ShowReceiptPreview => ShowSingleDayDetail || ShowSelectedRowDetail;
         /// <summary>Titolo pannello: Dettaglio giorno (0 o 1 spuntato) oppure Riepilogo selezione (2+).</summary>
-        public string DetailPanelTitle => MarkedCount >= 2 ? "Riepilogo selezione" : "Dettaglio giorno";
+        public string DetailPanelTitle => MarkedCount >= 2 ? PosLocalization.T("reports.selectionSummary") : PosLocalization.T("reports.detailDay");
         /// <summary>Testo bottone stampa: corto (Stampa / Stampa riepilogo).</summary>
-        public string PrintButtonText => MarkedCount >= 2 ? "Stampa riepilogo" : "Stampa";
+        public string PrintButtonText => MarkedCount >= 2 ? PosLocalization.T("reports.printSummary") : PosLocalization.T("common.print");
         /// <summary>Multi-giorno: riga 1 "Giorni selezionati: N".</summary>
         public string MarkedIntervalLine1 => GetMarkedIntervalLine1();
         /// <summary>Multi-giorno: riga 2 "Dal yyyy-MM-dd al yyyy-MM-dd".</summary>
@@ -316,9 +318,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             get
             {
-                if (HistoryRowCount == 0) return "Nessun giorno";
-                if (MarkedCount > 0) return HistoryRowCount + " giorni caricati · " + MarkedCount + " selezionati";
-                return HistoryRowCount + " giorni caricati";
+                if (HistoryRowCount == 0) return PosLocalization.T("reports.historyNone");
+                if (MarkedCount > 0) return PosLocalization.F("reports.historySelected", HistoryRowCount, MarkedCount);
+                return PosLocalization.F("reports.historyLoaded", HistoryRowCount);
             }
         }
 
@@ -360,7 +362,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>Etichetta picco orario (es. "Picco: 13h").</summary>
         public string HourlyPeakText => GetHourlyPeakText();
         /// <summary>Etichetta totale giorno sotto il grafico (es. "Totale giorno: 748.085").</summary>
-        public string HourlyDayTotalText => "Totale giorno: " + NetAmountDisplay;
+        public string HourlyDayTotalText => PosLocalization.F("reports.hourlyDayTotal", NetAmountDisplay);
 
         public event PropertyChangedEventHandler PropertyChanged;
 
@@ -368,7 +370,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (!TryParseDate(out var date))
             {
-                Status = "Data non valida. Usa yyyy-MM-dd.";
+                Status = PosLocalization.T("reports.invalidDate");
                 return;
             }
 
@@ -391,11 +393,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 _ = LoadHourlySalesAsync(date, includeFiscalPrinted);
                 OnPropertyChanged(nameof(StatusBadgeText));
                 OnPropertyChanged(nameof(ShowStatusBadge));
-                Status = "Report caricato.";
+                SetStatusKey("reports.loaded");
             }
             catch (Exception ex)
             {
-                Status = "Errore caricamento report: " + ex.Message;
+                Status = PosLocalization.F("reports.loadError", ex.Message);
             }
             finally
             {
@@ -445,7 +447,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 if (p.AmountMinor > peakAmount) { peakAmount = p.AmountMinor; peakHour = p.Hour; }
             }
-            return peakAmount > 0 ? "Picco: " + peakHour + "h" : "";
+            return peakAmount > 0 ? PosLocalization.F("reports.hourlyPeak", peakHour) : "";
         }
 
         private bool CanExport()
@@ -461,7 +463,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 if (!TryParseDate(out var date))
                 {
-                    Status = "Data non valida. Usa yyyy-MM-dd.";
+                    Status = PosLocalization.T("reports.invalidDate");
                     return;
                 }
                 var request = ExportRequest.ForDaily(date);
@@ -485,7 +487,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     ChooseExportDay();
                     return;
                 }
-                Status = "Carica lo storico, seleziona un giorno o spunta i giorni da esportare.";
+                Status = PosLocalization.T("reports.needExportSelection");
             }
         }
 
@@ -494,7 +496,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (!TryParseHistoryDates(out var from, out var to) || from > to)
             {
-                Status = "Date periodo non valide.";
+                Status = PosLocalization.T("reports.invalidPeriodDates");
                 return;
             }
             ExportRequested?.Invoke(ExportRequest.ForPeriod(from, to));
@@ -505,7 +507,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (SelectedHistoryRow == null)
             {
-                Status = "Nessun giorno selezionato.";
+                Status = PosLocalization.T("reports.noSelectedDay");
                 return;
             }
             ExportRequested?.Invoke(ExportRequest.ForDay(SelectedHistoryRow.Date));
@@ -517,7 +519,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var dates = HistoryRows.Where(r => r.IsMarked).Select(r => r.Date).ToList();
             if (dates.Count == 0)
             {
-                Status = "Nessun giorno spuntato. Usa le checkbox per includere giorni.";
+                Status = PosLocalization.T("reports.noMarkedDays");
                 return;
             }
             ExportRequested?.Invoke(ExportRequest.ForMarked(dates));
@@ -555,7 +557,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 RefundsAmount = summary.RefundsAmount,
                 NetAmount = summary.NetAmount
             };
-            var lines = DailyTakingsReceiptFormatter.Format(model, shop ?? new ReceiptShopInfo());
+            var lines = DailyTakingsReceiptFormatter.Format(
+                model,
+                shop ?? new ReceiptShopInfo(),
+                PosLocalization.CreateReceiptOptions(false, "reports.closeTitle"));
             SummaryReceiptPreview = string.Join(Environment.NewLine, lines);
         }
 
@@ -566,11 +571,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 var result = await _service.PrintReceiptTextAsync(SummaryReceiptPreview, true, "DAILY_SUMMARY_" + DateTime.Now.ToString("yyyyMMdd_HHmm", CultureInfo.InvariantCulture)).ConfigureAwait(true);
-                Status = "Stampa avviata.";
+                Status = PosLocalization.T("reports.printStarted");
             }
             catch (Exception ex)
             {
-                Status = "Errore stampa: " + ex.Message;
+                Status = PosLocalization.F("reports.printError", ex.Message);
             }
             finally
             {
@@ -617,7 +622,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         RefundsAmount = summary.RefundsAmount,
                         NetAmount = summary.NetAmount
                     };
-                    var lines = DailyTakingsReceiptFormatter.Format(model, shop ?? new ReceiptShopInfo());
+                    var lines = DailyTakingsReceiptFormatter.Format(
+                        model,
+                        shop ?? new ReceiptShopInfo(),
+                        PosLocalization.CreateReceiptOptions(false, "reports.closeTitle"));
                     textToPrint = string.Join(Environment.NewLine, lines);
                 }
             }
@@ -630,11 +638,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 await _service.PrintReceiptTextAsync(textToPrint, true, "STAMPA_RIEPILOGO_" + DateTime.Now.ToString("yyyyMMdd_HHmm", CultureInfo.InvariantCulture)).ConfigureAwait(true);
-                Status = "Stampa avviata.";
+                Status = PosLocalization.T("reports.printStarted");
             }
             catch (Exception ex)
             {
-                Status = "Errore stampa: " + ex.Message;
+                Status = PosLocalization.F("reports.printError", ex.Message);
             }
             finally
             {
@@ -657,25 +665,25 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             var sep = new string('-', ReceiptWidth);
             var lines = new List<string>();
-            lines.Add("CHIUSURA CASSA");
-            lines.Add("RIEPILOGO " + MarkedCount + " GG");
+            lines.Add(PosLocalization.T("reports.receiptTitle"));
+            lines.Add(PosLocalization.F("reports.receiptSummaryDays", MarkedCount));
             var markedRows = HistoryRows.Where(r => r.IsMarked).OrderBy(r => r.Date).ToList();
             if (markedRows.Count > 0)
-                lines.Add("Dal " + markedRows[0].DateText + " al " + markedRows[markedRows.Count - 1].DateText);
+                lines.Add(PosLocalization.F("reports.fromTo", markedRows[0].DateText, markedRows[markedRows.Count - 1].DateText));
             lines.Add(sep);
             if (PrintMarkedDaysDetail)
             {
                 foreach (var row in markedRows)
-                    lines.Add(ReceiptLine2(row.DateText, "Net " + MoneyClp.FormatDisplay(row.NetAmount)));
+                    lines.Add(ReceiptLine2(row.DateText, PosLocalization.T("reports.receiptNet") + " " + MoneyClp.FormatDisplay(row.NetAmount)));
                 lines.Add(sep);
             }
-            lines.Add(ReceiptLine2("Scontr.", MarkedSalesCount.ToString(CultureInfo.InvariantCulture)));
-            lines.Add(ReceiptLine2("Lorde", MarkedGrossDisplay));
-            lines.Add(ReceiptLine2("Resi", MarkedRefundsDisplay));
-            lines.Add(ReceiptLine2("Netto", MarkedNetDisplay));
-            lines.Add(ReceiptLine2("Cash", MarkedCashDisplay));
-            lines.Add(ReceiptLine2("Carta", MarkedCardDisplay));
-            lines.Add(ReceiptLine2("Ticket medio", MarkedTicketAverageDisplay));
+            lines.Add(ReceiptLine2(PosLocalization.T("common.receipts"), MarkedSalesCount.ToString(CultureInfo.InvariantCulture)));
+            lines.Add(ReceiptLine2(PosLocalization.T("common.gross"), MarkedGrossDisplay));
+            lines.Add(ReceiptLine2(PosLocalization.T("common.returns"), MarkedRefundsDisplay));
+            lines.Add(ReceiptLine2(PosLocalization.T("common.net"), MarkedNetDisplay));
+            lines.Add(ReceiptLine2(PosLocalization.T("common.cash"), MarkedCashDisplay));
+            lines.Add(ReceiptLine2(PosLocalization.T("common.card"), MarkedCardDisplay));
+            lines.Add(ReceiptLine2(PosLocalization.T("common.averageTicket"), MarkedTicketAverageDisplay));
             lines.Add(sep);
             return string.Join(Environment.NewLine, lines);
         }
@@ -684,12 +692,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (!TryParseHistoryDates(out var from, out var to))
             {
-                Status = "Date storico non valide. Usa yyyy-MM-dd.";
+                Status = PosLocalization.T("reports.historyDatesInvalid");
                 return;
             }
             if (from > to)
             {
-                Status = "Data da deve essere <= data a.";
+                Status = PosLocalization.T("reports.fromAfterTo");
                 return;
             }
 
@@ -752,11 +760,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
                 (MarkAllHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
                 (ClearMarkedHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
-                Status = summaries.Count + " giorni caricati · tutti selezionati.";
+                Status = PosLocalization.F("reports.historyLoadedAllSelected", summaries.Count);
             }
             catch (Exception ex)
             {
-                Status = "Errore caricamento storico: " + ex.Message;
+                Status = PosLocalization.F("reports.historyLoadError", ex.Message);
             }
             finally
             {
@@ -918,22 +926,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string GetStampaRiepilogoSubtitle()
         {
             if (SelectedTabIndex == 0)
-                return "Giorno caricato";
+                return PosLocalization.T("reports.dayLoaded");
             if (MarkedCount == 0 && SelectedHistoryRow != null)
-                return "1 giorno";
+                return PosLocalization.T("reports.oneDay");
             if (MarkedCount == 1)
-                return "1 giorno";
+                return PosLocalization.T("reports.oneDay");
             if (MarkedCount >= 2)
-                return MarkedCount + " giorni selezionati";
+                return PosLocalization.F("reports.daysSelected", MarkedCount);
             if (HasHistoryRows && TryParseHistoryDates(out var from, out var to))
-                return "Periodo " + from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " → " + to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                return PosLocalization.F("reports.periodRange", from.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), to.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
             return "";
         }
 
         private string GetMarkedIntervalLine1()
         {
             if (MarkedCount < 2) return "";
-            return "Giorni selezionati: " + MarkedCount;
+            return PosLocalization.F("reports.markedDays", MarkedCount);
         }
 
         private string GetMarkedIntervalLine2()
@@ -943,7 +951,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (dates.Count == 0) return "";
             var min = dates.Min();
             var max = dates.Max();
-            return "Dal " + min.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) + " al " + max.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            return PosLocalization.F("reports.fromTo", min.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), max.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
         }
 
         private string GetSingleMarkedDateText()
@@ -1022,7 +1030,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     RefundsAmount = summary.RefundsAmount,
                     NetAmount = summary.NetAmount
                 };
-                var lines = DailyTakingsReceiptFormatter.Format(model, shop ?? new ReceiptShopInfo());
+                var lines = DailyTakingsReceiptFormatter.Format(
+                    model,
+                    shop ?? new ReceiptShopInfo(),
+                    PosLocalization.CreateReceiptOptions(false, "reports.closeTitle"));
                 SingleMarkedReceiptPreview = string.Join(Environment.NewLine, lines);
             }
             catch { SingleMarkedReceiptPreview = ""; }
@@ -1098,7 +1109,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 await RefreshCurrentViewAsync().ConfigureAwait(true);
                 return;
             }
-            var (ok, _) = await _overrideAuthService.RequestAdminOverrideAsync("Vista completa vendite").ConfigureAwait(true);
+            var (ok, _) = await _overrideAuthService.RequestAdminOverrideAsync(PosLocalization.T("reports.fullSalesView")).ConfigureAwait(true);
             if (ok)
             {
                 IsUnlocked = true;
@@ -1134,6 +1145,48 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (FilterAnnoCorrenteCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (MarkAllHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (ClearMarkedHistoryRowsCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private void OnLanguageChanged(object sender, EventArgs e)
+        {
+            if (!string.IsNullOrEmpty(_statusKey))
+            {
+                SetStatusText(PosLocalization.T(_statusKey), _statusKey);
+            }
+            else
+            {
+                OnPropertyChanged(nameof(ShowFooterStatus));
+            }
+
+            OnPropertyChanged(nameof(StatusBadgeText));
+            OnPropertyChanged(nameof(PrintSummaryToolTip));
+            OnPropertyChanged(nameof(PreviewPlaceholderText));
+            OnPropertyChanged(nameof(LockGlyph));
+            OnPropertyChanged(nameof(DetailPanelTitle));
+            OnPropertyChanged(nameof(PrintButtonText));
+            OnPropertyChanged(nameof(MarkedIntervalLine1));
+            OnPropertyChanged(nameof(MarkedIntervalLine2));
+            OnPropertyChanged(nameof(StampaRiepilogoSubtitle));
+            OnPropertyChanged(nameof(HistoryToolbarSummary));
+            OnPropertyChanged(nameof(HourlyPeakText));
+            OnPropertyChanged(nameof(HourlyDayTotalText));
+            foreach (var point in HourlySalesPoints)
+            {
+                point.NotifyLanguageChanged();
+            }
+        }
+
+        private void SetStatusKey(string key)
+        {
+            SetStatusText(PosLocalization.T(key), key);
+        }
+
+        private void SetStatusText(string message, string key)
+        {
+            _statusKey = key;
+            _status = message ?? string.Empty;
+            OnPropertyChanged(nameof(Status));
+            OnPropertyChanged(nameof(ShowFooterStatus));
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
@@ -1199,7 +1252,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         /// <summary>Punto per grafico vendite orarie (0-23).</summary>
-        public sealed class HourlySalesPoint
+        public sealed class HourlySalesPoint : INotifyPropertyChanged
         {
             public int Hour { get; set; }
             public long AmountMinor { get; set; }
@@ -1211,7 +1264,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             /// <summary>Etichetta asse: solo per 0, 6, 12, 18, 23.</summary>
             public string TickLabel => (Hour == 0 || Hour == 6 || Hour == 12 || Hour == 18 || Hour == 23) ? Hour + "h" : "";
             /// <summary>Tooltip barra: ora e importo.</summary>
-            public string ToolTipText => $"{Hour:00}h  •  {AmountDisplay ?? ""}";
+            public string ToolTipText => string.Format(CultureInfo.CurrentCulture, "{0:00}h - {1}", Hour, AmountDisplay ?? "");
+
+            public event PropertyChangedEventHandler PropertyChanged;
+            public void NotifyLanguageChanged()
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ToolTipText)));
+            }
         }
 
         public sealed class HistoryRow : INotifyPropertyChanged

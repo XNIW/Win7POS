@@ -10,6 +10,7 @@ using Microsoft.Win32;
 using Win7POS.Core;
 using Win7POS.Core.Security;
 using Win7POS.Wpf.Infrastructure.Security;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -62,11 +63,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 var path = await _service.BackupDbAsync().ConfigureAwait(true);
-                Append("Backup creato: " + path);
+                Append(PosLocalization.F("dbMaintenance.backupCreated", path));
             }
             catch (Exception ex)
             {
-                Append("Backup fallito: " + ex.Message);
+                Append(PosLocalization.F("dbMaintenance.backupFailed", ex.Message));
             }
             finally
             {
@@ -78,13 +79,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (_demandRestorePermission != null && !(await _demandRestorePermission().ConfigureAwait(true)))
             {
-                Append("Permesso Restore DB negato.");
+                Append(PosLocalization.T("dbMaintenance.restorePermissionDenied"));
                 return;
             }
             var dlg = new OpenFileDialog
             {
-                Title = "Seleziona backup DB",
-                Filter = "Database (*.db)|*.db|All files (*.*)|*.*",
+                Title = PosLocalization.T("dbMaintenance.selectBackupTitle"),
+                Filter = PosLocalization.T("dbMaintenance.databaseFileFilter"),
                 CheckFileExists = true,
                 Multiselect = false,
                 InitialDirectory = BackupsDirectory
@@ -96,18 +97,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 var result = await _service.RestoreDbAsync(dlg.FileName).ConfigureAwait(true);
                 OperatorSessionHolder.Current?.LogSecurityEvent(SecurityEventCodes.DbRestore, "backupFile=" + (Path.GetFileName(dlg.FileName) ?? ""));
-                Append("Ripristino completato da: " + (Path.GetFileName(dlg.FileName) ?? "backup.db"));
-                Append("Backup prima del ripristino: " + (Path.GetFileName(result.PreRestoreBackupPath) ?? "n/a"));
-                Append("Integrity check: " + result.IntegrityCheck);
-                Append("Stato sync: restore consentito solo dopo verifica che non esistano vendite outbox non sincronizzate; rivedere sincronizzazione prima di nuove vendite.");
+                Append(PosLocalization.F("dbMaintenance.restoreCompletedFrom", Path.GetFileName(dlg.FileName) ?? "backup.db"));
+                Append(PosLocalization.F("dbMaintenance.preRestoreBackup", Path.GetFileName(result.PreRestoreBackupPath) ?? "n/a"));
+                Append(PosLocalization.F("dbMaintenance.integrityCheckResult", result.IntegrityCheck));
+                Append(PosLocalization.T("dbMaintenance.restoreSyncReview"));
                 Win7POS.Wpf.Import.ModernMessageDialog.Show(
                     System.Windows.Application.Current?.MainWindow,
-                    "Gestione DB",
-                    "Ripristino completato. E stato creato un backup prima del ripristino. Verificare stato sincronizzazione e riavviare l'app.");
+                    PosLocalization.T("dbMaintenance.title"),
+                    PosLocalization.T("dbMaintenance.restoreCompletedMessage"));
             }
             catch (Exception ex)
             {
-                Append("Ripristino fallito: " + ex.Message);
+                Append(PosLocalization.F("dbMaintenance.restoreFailed", ex.Message));
             }
             finally
             {
@@ -121,11 +122,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 var text = await _service.IntegrityCheckAsync().ConfigureAwait(true);
-                Append("Integrity check:" + Environment.NewLine + text);
+                Append(PosLocalization.F("dbMaintenance.integrityCheckBlock", text));
             }
             catch (Exception ex)
             {
-                Append("Integrity check fallito: " + ex.Message);
+                Append(PosLocalization.F("dbMaintenance.integrityCheckFailed", ex.Message));
             }
             finally
             {
@@ -139,11 +140,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 await _service.VacuumAsync().ConfigureAwait(true);
-                Append("VACUUM completato.");
+                Append(PosLocalization.T("dbMaintenance.vacuumCompleted"));
             }
             catch (Exception ex)
             {
-                Append("VACUUM fallito: " + ex.Message);
+                Append(PosLocalization.F("dbMaintenance.vacuumFailed", ex.Message));
             }
             finally
             {
@@ -172,7 +173,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Append("Open folder fallito: " + ex.Message);
+                Append(PosLocalization.F("dbMaintenance.openFolderFailed", ex.Message));
             }
         }
 

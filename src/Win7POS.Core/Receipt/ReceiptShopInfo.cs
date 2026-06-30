@@ -9,7 +9,7 @@ namespace Win7POS.Core.Receipt
         public string LegalRepresentativeRut { get; set; }
         public string Rut { get; set; }
         public string Phone { get; set; }
-        public string Footer { get; set; } = "Grazie e arrivederci";
+        public string Footer { get; set; } = "Thanks";
         public string ShopCode { get; set; }
         public string ShopStatus { get; set; }
         public string Source { get; set; }

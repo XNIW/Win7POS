@@ -4,6 +4,7 @@ using Microsoft.Win32;
 using Win7POS.Core;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Products
 {
@@ -30,8 +31,8 @@ namespace Win7POS.Wpf.Products
                 AppPaths.EnsureCreated();
                 var dlg = new SaveFileDialog
                 {
-                    Title = "Salva export XLSX",
-                    Filter = "Excel (*.xlsx)|*.xlsx|Tutti i file (*.*)|*.*",
+                    Title = PosLocalization.T("export.saveXlsxTitle"),
+                    Filter = PosLocalization.T("export.xlsxFilter"),
                     DefaultExt = "xlsx",
                     InitialDirectory = AppPaths.ExportsDirectory,
                     FileName = "export_prodotti_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".xlsx"
@@ -46,8 +47,8 @@ namespace Win7POS.Wpf.Products
                 AppPaths.EnsureCreated();
                 var dlg = new SaveFileDialog
                 {
-                    Title = "Salva export CSV",
-                    Filter = "CSV (*.csv)|*.csv|Tutti i file (*.*)|*.*",
+                    Title = PosLocalization.T("export.saveCsvTitle"),
+                    Filter = PosLocalization.T("export.csvFilter"),
                     DefaultExt = "csv",
                     InitialDirectory = AppPaths.ExportsDirectory,
                     FileName = "prodotti_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".csv"
@@ -73,8 +74,8 @@ namespace Win7POS.Wpf.Products
             {
                 Win7POS.Wpf.Import.ModernMessageDialog.Show(
                     this,
-                    "Esporta dati",
-                    "Seleziona un file di destinazione.");
+                    PosLocalization.T("export.title"),
+                    PosLocalization.T("export.selectDestination"));
                 return;
             }
 

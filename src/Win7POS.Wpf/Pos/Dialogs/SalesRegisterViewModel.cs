@@ -8,6 +8,7 @@ using System.Windows.Input;
 using Win7POS.Core.Models;
 using Win7POS.Core.Util;
 using Win7POS.Wpf.Infrastructure.Security;
+using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -47,7 +48,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             SalesList = new ObservableCollection<SaleRow>();
             DetailLines = new ObservableCollection<DetailLineRow>();
             OperatorFilterList = new ObservableCollection<OperatorFilterItem>();
-            OperatorFilterList.Add(new OperatorFilterItem(0, "Tutti"));
+            OperatorFilterList.Add(new OperatorFilterItem(0, string.Empty, true));
             if (operators != null)
             {
                 foreach (var o in operators)
@@ -67,6 +68,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (e.PropertyName == nameof(SelectedSale))
                     _ = LoadDetailsAsync();
             };
+            PosLocalization.Current.LanguageChanged += OnLanguageChanged;
         }
 
         /// <summary>True se sbloccata con auth admin per refresh completo; le vendite stampate restano sempre incluse.</summary>
@@ -76,7 +78,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _isUnlocked = value; OnPropertyChanged(); OnPropertyChanged(nameof(LockGlyph)); }
         }
 
-        public string LockGlyph => IsUnlocked ? "\uD83D\uDD13" : "\uD83D\uDD12"; // 🔓 / 🔒
+        public string LockGlyph => IsUnlocked ? PosLocalization.T("reports.fullViewShort") : PosLocalization.T("reports.limitedViewShort");
 
         /// <summary>True se il lucchetto è disponibile (overrideAuthService configurato).</summary>
         public bool HasLockFeature => _overrideAuthService != null;
@@ -209,11 +211,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public event PropertyChangedEventHandler PropertyChanged;
 
-        public sealed class OperatorFilterItem
+        public sealed class OperatorFilterItem : INotifyPropertyChanged
         {
             public int Id { get; }
-            public string DisplayName { get; }
-            public OperatorFilterItem(int id, string displayName) { Id = id; DisplayName = displayName ?? ""; }
+            private readonly string _displayName;
+            private readonly bool _isAll;
+            public string DisplayName => _isAll ? PosLocalization.T("common.all") : _displayName;
+            public OperatorFilterItem(int id, string displayName, bool isAll = false) { Id = id; _displayName = displayName ?? ""; _isAll = isAll; }
+
+            public event PropertyChangedEventHandler PropertyChanged;
+            public void NotifyLanguageChanged()
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayName)));
+            }
         }
 
         private void GetCurrentRange(out long fromMs, out long toMs)
@@ -265,7 +275,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (!string.IsNullOrWhiteSpace(CodeSearch))
                 {
                     items = await _service.GetSalesByCodeFilterAsync(CodeSearch, includeFiscalPrinted).ConfigureAwait(true);
-                    Status = items.Count + " vendite (ricerca codice).";
+                    Status = PosLocalization.F("sales.searchStatus", items.Count);
                 }
                 else
                 {
@@ -289,7 +299,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     var totalResi = items.Where(i => i.Kind == (int)SaleKind.Refund).Sum(i => Math.Abs(i.TotalMinor));
                     var totalStorni = items.Where(i => i.Kind == (int)SaleKind.Void).Sum(i => Math.Abs(i.TotalMinor));
                     var netto = totalVendite - totalResi - totalStorni;
-                    Status = $"{items.Count} operazioni  ·  Vendite: {countVendite} ({MoneyClp.Format(totalVendite)})  ·  Resi: {countResi} ({MoneyClp.Format(totalResi)})  ·  Storni: {countStorni} ({MoneyClp.Format(totalStorni)})  ·  Netto: {MoneyClp.Format(netto)}";
+                    Status = PosLocalization.F(
+                        "sales.summaryStatus",
+                        items.Count,
+                        countVendite,
+                        MoneyClp.Format(totalVendite),
+                        countResi,
+                        MoneyClp.Format(totalResi),
+                        countStorni,
+                        MoneyClp.Format(totalStorni),
+                        MoneyClp.Format(netto));
                 }
 
                 foreach (var x in items)
@@ -297,17 +316,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     var when = DateTimeOffset.FromUnixTimeMilliseconds(x.CreatedAtMs).ToLocalTime();
                     var isVoided = x.VoidedBySaleId.HasValue;
                     var kind = x.Kind;
-                    string kindText;
-                    if (isVoided) kindText = "Storno";
-                    else if (kind == (int)SaleKind.Refund) kindText = "Reso";
-                    else if (kind == (int)SaleKind.Void) kindText = "Storno";
-                    else kindText = "Vendita";
                     SalesList.Add(new SaleRow
                     {
                         SaleId = x.SaleId,
                         SaleCode = x.SaleCode ?? "",
                         Kind = kind,
-                        KindText = kindText,
                         Total = x.TotalMinor,
                         TimeText = when.ToString("yyyy-MM-dd HH:mm"),
                         IsVoided = isVoided
@@ -326,7 +339,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {
@@ -349,7 +362,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var detail = await _service.GetSaleDetailsAsync(SelectedSale.SaleId).ConfigureAwait(true);
                 if (detail == null)
                 {
-                    DetailSummary = "Vendita non trovata.";
+                    DetailSummary = PosLocalization.T("sales.notFound");
                     DetailReceiptPreview = "";
                     return;
                 }
@@ -364,18 +377,20 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         LineTotal = l.LineTotal
                     });
 
-                DetailSummary = $"Totale: {MoneyClp.Format(detail.Sale.Total)}  |  " +
-                    $"Contanti: {MoneyClp.Format(detail.Sale.PaidCash)}  |  " +
-                    $"Carta: {MoneyClp.Format(detail.Sale.PaidCard)}  |  " +
-                    $"Resto (solo contanti): {MoneyClp.Format(detail.Sale.Change)}  |  " +
-                    DocumentStatusText(detail.Sale);
+                DetailSummary = PosLocalization.F(
+                    "sales.detailSummary",
+                    MoneyClp.Format(detail.Sale.Total),
+                    MoneyClp.Format(detail.Sale.PaidCash),
+                    MoneyClp.Format(detail.Sale.PaidCard),
+                    MoneyClp.Format(detail.Sale.Change),
+                    DocumentStatusText(detail.Sale));
 
                 var preview = await _service.GetReceiptPreviewBySaleIdAsync(SelectedSale.SaleId, _useReceipt42).ConfigureAwait(true);
                 DetailReceiptPreview = preview ?? "";
             }
             catch
             {
-                DetailSummary = "Errore caricamento dettagli.";
+                DetailSummary = PosLocalization.T("sales.detailLoadError");
                 DetailReceiptPreview = "";
             }
         }
@@ -384,17 +399,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (sale == null)
             {
-                return "Documento: non disponibile";
+                return PosLocalization.T("sales.documentUnavailable");
             }
 
             if (sale.PdfPrinted)
             {
-                return "Documento: Boleta PDF stampata";
+                return PosLocalization.T("sales.documentPrinted");
             }
 
             return sale.PaidCash > 0
-                ? "Documento: Non stampata (contanti)"
-                : "Documento: Non stampata (policy carta)";
+                ? PosLocalization.T("sales.documentNotPrintedCash")
+                : PosLocalization.T("sales.documentNotPrintedCard");
         }
 
         private async Task PrintAsync()
@@ -404,11 +419,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 await _service.PrintReceiptBySaleIdAsync(SelectedSale.SaleId, _useReceipt42).ConfigureAwait(true);
-                Status = "Stampa avviata: " + SelectedSale.SaleCode;
+                Status = PosLocalization.F("sales.printStarted", SelectedSale.SaleCode);
             }
             catch (Exception ex)
             {
-                Status = "Stampa fallita: " + ex.Message;
+                Status = PosLocalization.F("sales.printFailed", ex.Message);
             }
             finally
             {
@@ -432,7 +447,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (LoadCommand.CanExecute(null)) LoadCommand.Execute(null);
                 return;
             }
-            var (ok, _) = await _overrideAuthService.RequestAdminOverrideAsync("Vista completa vendite").ConfigureAwait(true);
+            var (ok, _) = await _overrideAuthService.RequestAdminOverrideAsync(PosLocalization.T("reports.fullSalesView")).ConfigureAwait(true);
             if (ok)
             {
                 IsUnlocked = true;
@@ -448,22 +463,56 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (ToggleFiscalPrintedModeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
         }
 
+        private void OnLanguageChanged(object sender, EventArgs e)
+        {
+            OnPropertyChanged(nameof(LockGlyph));
+            foreach (var sale in SalesList)
+            {
+                sale.NotifyLanguageChanged();
+            }
+            foreach (var option in OperatorFilterList)
+            {
+                option.NotifyLanguageChanged();
+            }
+
+            if (SelectedSale != null)
+            {
+                _ = LoadDetailsAsync();
+            }
+
+            if (!IsBusy)
+            {
+                _ = LoadAsync();
+            }
+        }
+
         private void OnPropertyChanged([CallerMemberName] string name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 
-        public sealed class SaleRow
+        public sealed class SaleRow : INotifyPropertyChanged
         {
             public long SaleId { get; set; }
             public string SaleCode { get; set; }
             public int Kind { get; set; }
-            public string KindText { get; set; }
+            public string KindText => IsVoided || Kind == (int)SaleKind.Void
+                ? PosLocalization.T("sales.kind.void")
+                : Kind == (int)SaleKind.Refund
+                    ? PosLocalization.T("sales.kind.refund")
+                    : PosLocalization.T("sales.kind.sale");
             public long Total { get; set; }
             public string TotalDisplay => MoneyClp.Format(Total);
             public string TimeText { get; set; }
             public bool IsVoided { get; set; }
-            public string VoidedText => IsVoided ? "Annullata" : "";
+            public string VoidedText => IsVoided ? PosLocalization.T("sales.voided") : "";
             /// <summary>Vendita verde, Reso arancione, Storno rosso.</summary>
             public string BadgeBrush => IsVoided || Kind == (int)SaleKind.Void ? "#B71C1C" : (Kind == (int)SaleKind.Refund ? "#FF9800" : "#4CAF50");
+
+            public event PropertyChangedEventHandler PropertyChanged;
+            public void NotifyLanguageChanged()
+            {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(KindText)));
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(VoidedText)));
+            }
         }
 
         public sealed class DetailLineRow

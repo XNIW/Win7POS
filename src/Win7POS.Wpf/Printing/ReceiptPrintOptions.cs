@@ -11,6 +11,9 @@ namespace Win7POS.Wpf.Printing
         /// <summary>True = scontrino (prima riga nome negozio in grassetto e più grande). False = fiscale/PDF (tutto uniforme).</summary>
         public bool UseReceiptHeaderStyle { get; set; } = true;
 
+        /// <summary>Stable sale/refund code to render as Code128. Empty = no sale barcode.</summary>
+        public string SaleCodeForBarcode { get; set; } = string.Empty;
+
         /// <summary>Istruzione ESC/POS per cassetto (es. "27,112,0,60,255"). Vuoto = default da impostazioni; fallback 27,112,0,60,255.</summary>
         public string CashDrawerCommand { get; set; } = string.Empty;
     }

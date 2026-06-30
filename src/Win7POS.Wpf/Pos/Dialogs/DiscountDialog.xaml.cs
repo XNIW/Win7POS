@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -95,7 +96,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (_overrideLimitCheck == null)
             {
-                ModernMessageDialog.Show(this, "Sconto", "Sconto oltre il limite consentito per l'operatore corrente.");
+                ModernMessageDialog.Show(
+                    this,
+                    PosLocalization.T("discount.title"),
+                    PosLocalization.T("discount.overLimit"));
                 return false;
             }
 

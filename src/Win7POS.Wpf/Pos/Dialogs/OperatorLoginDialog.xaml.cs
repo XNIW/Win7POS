@@ -10,6 +10,7 @@ using Win7POS.Data;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure.Security;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -46,7 +47,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (_operators.Count == 0)
             {
                 Win7POS.Wpf.Import.ModernMessageDialog.Show(this, "Win7POS",
-                    "Non esistono operatori configurati. Verrà avviata la configurazione iniziale.");
+                    PosLocalization.Current.Text("operator.login.noOperators"));
                 DialogResult = false;
                 Close();
                 return;
@@ -78,14 +79,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (string.IsNullOrEmpty(username))
             {
-                ShowError("Seleziona un operatore dalla lista.");
+                ShowError(PosLocalization.Current.Text("operator.login.selectOperator"));
                 return;
             }
 
             var session = OperatorSessionHolder.Current;
             if (session == null)
             {
-                ShowError("Sessione non inizializzata.");
+                ShowError(PosLocalization.Current.Text("operator.login.sessionMissing"));
                 return;
             }
 
@@ -93,12 +94,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             switch (loginResult)
             {
                 case LoginResult.LockedOut:
-                    ShowError("Account temporaneamente bloccato. Riprova tra qualche minuto.");
+                    ShowError(PosLocalization.Current.Text("operator.login.locked"));
                     PinBox.Clear();
                     PinBox.Focus();
                     return;
                 case LoginResult.Failed:
-                    ShowError("Operatore o PIN non validi.");
+                    ShowError(PosLocalization.Current.Text("operator.login.invalid"));
                     PinBox.Clear();
                     PinBox.Focus();
                     return;
@@ -116,7 +117,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (changePinDlg.ShowDialog() != true)
                 {
                     session.LogoutForced();
-                    ShowError("È obbligatorio cambiare il PIN per accedere.");
+                    ShowError(PosLocalization.Current.Text("operator.login.pinChangeRequired"));
                     PinBox.Clear();
                     PinBox.Focus();
                     return;
@@ -139,7 +140,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 ModernMessageDialog.Show(
                     this,
                     "POS online",
-                    "Dispositivo collegato. La sessione online verra verificata all'avvio.");
+                    PosLocalization.Current.Text("operator.login.onlineLinked"));
             }
         }
 

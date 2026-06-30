@@ -5,6 +5,7 @@ using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Online
 {
@@ -44,12 +45,18 @@ namespace Win7POS.Wpf.Pos.Online
         {
             if (options == null)
             {
-                return PosOnlineBootstrapResult.Failure("invalid_options", "Configurazione Admin Web POS non valida.", false);
+                return PosOnlineBootstrapResult.Failure(
+                    "invalid_options",
+                    PosLocalization.T("onlineFirstLogin.invalidOptions"),
+                    false);
             }
 
             if (request == null || string.IsNullOrWhiteSpace(localCredential))
             {
-                return PosOnlineBootstrapResult.Failure("validation_failed", "Inserisci codice negozio, codice staff e PIN/password.", false);
+                return PosOnlineBootstrapResult.Failure(
+                    "validation_failed",
+                    PosLocalization.T("onlineFirstLogin.missingCredentials"),
+                    false);
             }
 
             try
@@ -67,13 +74,19 @@ namespace Win7POS.Wpf.Pos.Online
                         ", clientRequestId=" + SafeAuditValue(result.ClientRequestId) +
                         ", serverRequestId=" + SafeAuditValue(result.ServerRequestId) +
                         ", cfRay=" + SafeAuditValue(result.CfRay));
-                    return PosOnlineBootstrapResult.Failure(result.Code, result.Message, result.Denied);
+                    return PosOnlineBootstrapResult.Failure(
+                        result.Code,
+                        LocalizeOnlineResultMessage(result),
+                        result.Denied);
                 }
 
                 var response = result.Value;
                 if (!ValidateFirstLoginResponse(response))
                 {
-                    return PosOnlineBootstrapResult.Failure("invalid_response", "Risposta Admin Web POS non valida.", false);
+                    return PosOnlineBootstrapResult.Failure(
+                        "invalid_response",
+                        PosLocalization.T("onlineFirstLogin.invalidResponse"),
+                        false);
                 }
 
                 var users = new UserRepository(_factory);
@@ -132,12 +145,50 @@ namespace Win7POS.Wpf.Pos.Online
             }
             catch (OperationCanceledException)
             {
-                return PosOnlineBootstrapResult.Failure("timeout", "Admin Web POS non ha risposto entro il timeout.", false);
+                return PosOnlineBootstrapResult.Failure(
+                    "timeout",
+                    PosLocalization.T("onlineFirstLogin.timeout"),
+                    false);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning("POS online bootstrap non completato.", ex);
-                return PosOnlineBootstrapResult.Failure("failure", "Collegamento POS online non completato.", false);
+                return PosOnlineBootstrapResult.Failure(
+                    "failure",
+                    PosLocalization.T("onlineFirstLogin.connectionFailed"),
+                    false);
+            }
+        }
+
+        private static string LocalizeOnlineResultMessage<TResponse>(PosOnlineResult<TResponse> result)
+            where TResponse : class
+        {
+            if (result == null)
+            {
+                return PosLocalization.T("onlineFirstLogin.connectionFailed");
+            }
+
+            if (result.Denied)
+            {
+                return PosLocalization.T("onlineFirstLogin.authorizationFailed");
+            }
+
+            switch ((result.Code ?? string.Empty).Trim())
+            {
+                case "response_too_large":
+                    return PosLocalization.T("onlineFirstLogin.responseTooLarge");
+                case "invalid_response":
+                    return PosLocalization.T("onlineFirstLogin.invalidResponse");
+                case "timeout":
+                    return PosLocalization.T("onlineFirstLogin.timeout");
+                case "network_error":
+                    return PosLocalization.T("onlineFirstLogin.networkError");
+                case "io_error":
+                    return PosLocalization.T("onlineFirstLogin.localRequestError");
+                case "invalid_operation":
+                    return PosLocalization.T("onlineFirstLogin.invalidOptions");
+                default:
+                    return PosLocalization.T("onlineFirstLogin.connectionFailed");
             }
         }
 
@@ -195,7 +246,9 @@ namespace Win7POS.Wpf.Pos.Online
             return new PosOnlineBootstrapResult(
                 false,
                 string.IsNullOrWhiteSpace(code) ? "failure" : code,
-                string.IsNullOrWhiteSpace(message) ? "Collegamento POS online non completato." : message,
+                string.IsNullOrWhiteSpace(message)
+                    ? PosLocalization.T("onlineFirstLogin.connectionFailed")
+                    : message,
                 denied);
         }
     }

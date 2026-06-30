@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -73,7 +74,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             else
             {
-                Win7POS.Wpf.Import.ModernMessageDialog.Show(this, "Numero", "Inserire un numero Boleta valido (intero > 0).");
+                Win7POS.Wpf.Import.ModernMessageDialog.Show(
+                    this,
+                    PosLocalization.T("boleta.numberLabel"),
+                    PosLocalization.T("boleta.invalidNumber"));
             }
         }
 

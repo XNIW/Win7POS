@@ -11,6 +11,7 @@ using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.ViewModels;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -74,7 +75,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task ReloadWithConfirmAsync()
         {
-            if (IsDirty && !Win7POS.Wpf.Import.ApplyConfirmDialog.ShowConfirm(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(), "Utenti e ruoli", "Modifiche non salvate. Ricaricare comunque?"))
+            if (IsDirty && !Win7POS.Wpf.Import.ApplyConfirmDialog.ShowConfirm(
+                    OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("users.confirmReloadTitle"),
+                    PosLocalization.T("users.confirmReloadUnsaved")))
                 return;
             await LoadAsync().ConfigureAwait(true);
         }
@@ -85,11 +89,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var code = (role.Code ?? "").Trim().ToLowerInvariant();
             switch (code)
             {
-                case "admin": return "Accesso completo.";
-                case "manager": return "Vendite, report, configurazioni limitate.";
-                case "supervisor": return "Vendite e resi, chiusura cassa.";
-                case "cashier": return "POS e stampa, niente impostazioni.";
-                default: return role.IsSystem ? "Ruolo di sistema." : "Ruolo personalizzato, modificabile.";
+                case "admin": return PosLocalization.T("users.roleAdminDescription");
+                case "manager": return PosLocalization.T("users.roleManagerDescription");
+                case "supervisor": return PosLocalization.T("users.roleSupervisorDescription");
+                case "cashier": return PosLocalization.T("users.roleCashierDescription");
+                default: return PosLocalization.T(role.IsSystem ? "users.roleSystemDescription" : "users.roleCustomDescription");
             }
         }
 
@@ -146,31 +150,34 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public bool IsFilterActive => !string.IsNullOrWhiteSpace(Filter?.Trim());
         public bool IsUsersListEmpty => FilteredUsers.Count == 0;
-        public string EmptyUsersMessage => IsFilterActive ? "Nessun utente trovato." : "Nessun utente.";
+        public string EmptyUsersMessage => PosLocalization.T(IsFilterActive ? "users.noUserFound" : "users.noUsers");
         public string SelectedUserRoleDisplay => SelectedUser?.RoleName ?? "";
-        public string SelectedRoleSystemInfo => SelectedRole == null ? "" : (SelectedRole.IsSystem ? "Ruolo di sistema: alcune azioni non sono disponibili." : "Ruolo personalizzato: modificabile.");
-        public string DetailUserTitle => "Dettaglio utente selezionato";
-        public string EditingUserDisplay => SelectedUser != null ? "Stai modificando: " + SelectedUser.Username : "";
-        public string PermissionsRoleTitle => SelectedRole != null ? "Permessi del ruolo: " + SelectedRole.Name : "Permessi ruolo";
+        public string SelectedRoleSystemInfo => SelectedRole == null ? "" : PosLocalization.T(SelectedRole.IsSystem ? "users.systemRoleInfo" : "users.customRoleInfo");
+        public string DetailUserTitle => PosLocalization.T("users.detailUserTitle");
+        public string EditingUserDisplay => SelectedUser != null ? PosLocalization.F("users.editingUser", SelectedUser.Username) : "";
+        public string PermissionsRoleTitle => SelectedRole != null ? PosLocalization.F("users.permissionsForRole", SelectedRole.Name) : PosLocalization.T("users.rolePermissions");
         /// <summary>Messaggio quando il ruolo selezionato è di sistema (permessi non modificabili).</summary>
         public bool IsSelectedRoleSystem => SelectedRole != null && SelectedRole.IsSystem;
-        public string PermessiRoleSystemMessage => SelectedRole != null && SelectedRole.IsSystem ? "Ruolo predefinito di sistema: i permessi non sono modificabili." : "";
+        public string PermessiRoleSystemMessage => SelectedRole != null && SelectedRole.IsSystem ? PosLocalization.T("users.systemRoleReadonlyPermissions") : "";
 
         /// <summary>Visibility per il messaggio permessi ruolo di sistema (Visible se ruolo sistema).</summary>
         public Visibility PermessiRoleSystemMessageVisibility => string.IsNullOrEmpty(PermessiRoleSystemMessage) ? Visibility.Collapsed : Visibility.Visible;
-        public string AccountStatusText => IsActive ? "Può accedere al sistema" : "Stato: accesso bloccato";
+        public string AccountStatusText => PosLocalization.T(IsActive ? "users.accountCanAccess" : "users.accountBlocked");
 
         /// <summary>Modifiche utente non salvate (nome, ruolo, stato, PIN).</summary>
         public bool IsDirty { get => _isDirty; private set { _isDirty = value; OnPropertyChanged(); } }
 
         /// <summary>Ruolo selezionato: nome e tipo (sistema/personalizzato).</summary>
-        public string SelectedRoleDescription => SelectedRole == null ? "" : SelectedRole.Name + " — " + (SelectedRole.IsSystem ? "ruolo di sistema" : "personalizzato");
+        public string SelectedRoleDescription => SelectedRole == null ? "" : PosLocalization.F(
+            "users.roleDescription",
+            SelectedRole.Name,
+            PosLocalization.T(SelectedRole.IsSystem ? "users.systemRoleLower" : "users.customRoleLower"));
 
         /// <summary>Descrizione operativa del ruolo (es. "accesso completo", "POS e stampa").</summary>
         public string SelectedRoleOperativeDescription => GetRoleOperativeDescription(SelectedRole);
 
         /// <summary>Titolo pagina (Utenti e ruoli).</summary>
-        public string PageTitle => "Utenti e ruoli";
+        public string PageTitle => PosLocalization.T("users.title");
 
         /// <summary>Messaggio di stato per footer (alias di Status).</summary>
         public string StatusMessage => Status;
@@ -229,23 +236,23 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool PermissionEditMode => _permissionEditMode;
         public bool HasSelection => IsUserSelected || IsRoleSelected;
         public string PermissionsSectionTitle => _permissionEditMode
-            ? (CanManageRoles ? "Permessi ruolo (modificabili)" : "Permessi ruolo (sola lettura)")
-            : "Permessi (dal ruolo, sola lettura)";
+            ? PosLocalization.T(CanManageRoles ? "users.permissionsRoleEditable" : "users.permissionsRoleReadonly")
+            : PosLocalization.T("users.permissionsFromRoleReadonly");
         public string SaveRolePermissionsToolTip => !CanManageRoles
-            ? "Non hai il permesso di gestire i ruoli."
+            ? PosLocalization.T("users.manageRolesDeniedTooltip")
             : CanEditSelectedRole
-                ? "Salva le modifiche ai permessi del ruolo selezionato."
-                : (SelectedRole != null && SelectedRole.IsSystem ? "I ruoli di sistema non sono modificabili." : "Seleziona un ruolo per modificare i permessi.");
+                ? PosLocalization.T("users.saveRolePermissionsTooltip")
+                : (SelectedRole != null && SelectedRole.IsSystem ? PosLocalization.T("users.systemRolesReadOnly") : PosLocalization.T("users.selectRoleForPermissionsTooltip"));
         public string RenameRoleToolTip => !CanManageRoles
-            ? "Non hai il permesso di gestire i ruoli."
+            ? PosLocalization.T("users.manageRolesDeniedTooltip")
             : CanEditSelectedRole
-                ? "Rinomina il ruolo selezionato."
-                : "Seleziona un ruolo custom (non di sistema) per rinominarlo.";
+                ? PosLocalization.T("users.renameRoleTooltip")
+                : PosLocalization.T("users.selectCustomRoleRenameTooltip");
         public string DeleteRoleToolTip => !CanManageRoles
-            ? "Non hai il permesso di gestire i ruoli."
+            ? PosLocalization.T("users.manageRolesDeniedTooltip")
             : CanEditSelectedRole
-                ? "Elimina il ruolo selezionato (nessun utente deve averlo assegnato)."
-                : "Seleziona un ruolo custom non assegnato per eliminarlo.";
+                ? PosLocalization.T("users.deleteRoleTooltip")
+                : PosLocalization.T("users.selectCustomRoleDeleteTooltip");
 
 #pragma warning disable CS0067 // Usato da UserManagementDialog che si sottoscrive a RequestClose
         public event Action<bool> RequestClose;
@@ -271,12 +278,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     var again = Users.FirstOrDefault(x => x.Id == SelectedUser.Id);
                     SelectedUser = again;
                 }
-                Status = "Caricato.";
+                Status = PosLocalization.T("users.loaded");
                 IsDirty = false;
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {
@@ -341,7 +348,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (idx < Users.Count) Users[idx] = refreshed;
             RefreshFilteredUsers();
             SelectedUser = refreshed;
-            Status = "Modifiche annullate.";
+            Status = PosLocalization.T("users.changesCancelled");
         }
 
         private async Task LoadSelectedRolePermissionsAsync()
@@ -395,12 +402,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private static string GetPermissionToolTip(string code)
         {
             if (string.IsNullOrEmpty(code)) return null;
-            if (code == PermissionCodes.SecurityOverride) return "Autorizza operazioni riservate ad altri ruoli (override).";
-            if (code == PermissionCodes.DbRestore) return "Operazione sensibile: ripristino database.";
-            if (code == PermissionCodes.PosVoidSale) return "Storno vendita: richiede supervisore o override.";
-            if (code == PermissionCodes.PosRefund) return "Resi: richiede permesso o override.";
-            if (code == PermissionCodes.PosDiscountOverLimit) return "Sconti oltre soglia: richiede supervisore.";
-            if (code == PermissionCodes.RegisterViewAll) return "Visualizza vendite di tutti gli operatori.";
+            if (code == PermissionCodes.SecurityOverride) return PosLocalization.T("users.permissionSecurityOverride");
+            if (code == PermissionCodes.DbRestore) return PosLocalization.T("users.permissionDbRestore");
+            if (code == PermissionCodes.PosVoidSale) return PosLocalization.T("users.permissionVoidSale");
+            if (code == PermissionCodes.PosRefund) return PosLocalization.T("users.permissionRefund");
+            if (code == PermissionCodes.PosDiscountOverLimit) return PosLocalization.T("users.permissionDiscountOverLimit");
+            if (code == PermissionCodes.RegisterViewAll) return PosLocalization.T("users.permissionRegisterViewAll");
             return null;
         }
 
@@ -425,32 +432,32 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (string.IsNullOrEmpty(code)) return code;
             switch (code)
             {
-                case PermissionCodes.UsersManage: return "Gestione utenti";
-                case PermissionCodes.RolesManage: return "Gestione ruoli";
-                case PermissionCodes.SecurityOverride: return "Autorizzazioni straordinarie";
-                case PermissionCodes.RegisterViewAll: return "Vedi vendite di tutti";
-                case PermissionCodes.CatalogPriceEdit: return "Modifica prezzi";
-                case PermissionCodes.PosReprintReceipt: return "Ristampa scontrino";
-                case PermissionCodes.PosVoidSale: return "Storno vendita";
-                case PermissionCodes.PosRefund: return "Reso";
-                case PermissionCodes.PosDiscountOverLimit: return "Sconto oltre limite";
-                case PermissionCodes.PosSell: return "Vendita";
-                case PermissionCodes.PosPay: return "Pagamento";
-                case PermissionCodes.PosSuspendCart: return "Sospendi carrello";
-                case PermissionCodes.PosRecoverCart: return "Recupera carrello";
-                case PermissionCodes.PosDiscount: return "Sconto";
-                case PermissionCodes.CatalogView: return "Visualizza catalogo";
-                case PermissionCodes.CatalogEdit: return "Modifica catalogo";
-                case PermissionCodes.CatalogImport: return "Importa catalogo";
-                case PermissionCodes.RegisterView: return "Registro vendite";
-                case PermissionCodes.DailyCloseView: return "Visualizza chiusura cassa";
-                case PermissionCodes.DailyCloseRun: return "Esegui chiusura cassa";
-                case PermissionCodes.DailyClosePrint: return "Stampa chiusura cassa";
-                case PermissionCodes.SettingsShop: return "Dati negozio ufficiali";
-                case PermissionCodes.SettingsPrinter: return "Impostazioni stampante";
-                case PermissionCodes.DbBackup: return "Backup database";
-                case PermissionCodes.DbRestore: return "Ripristino database";
-                case PermissionCodes.DbMaintenance: return "Manutenzione database";
+                case PermissionCodes.UsersManage: return PosLocalization.T("users.permissionUsersManage");
+                case PermissionCodes.RolesManage: return PosLocalization.T("users.permissionRolesManage");
+                case PermissionCodes.SecurityOverride: return PosLocalization.T("users.permissionSecurityOverride");
+                case PermissionCodes.RegisterViewAll: return PosLocalization.T("users.permissionRegisterViewAll");
+                case PermissionCodes.CatalogPriceEdit: return PosLocalization.T("users.permissionCatalogPriceEdit");
+                case PermissionCodes.PosReprintReceipt: return PosLocalization.T("users.permissionReprintReceipt");
+                case PermissionCodes.PosVoidSale: return PosLocalization.T("users.permissionVoidSale");
+                case PermissionCodes.PosRefund: return PosLocalization.T("users.permissionRefund");
+                case PermissionCodes.PosDiscountOverLimit: return PosLocalization.T("users.permissionDiscountOverLimit");
+                case PermissionCodes.PosSell: return PosLocalization.T("users.permissionSell");
+                case PermissionCodes.PosPay: return PosLocalization.T("users.permissionPayment");
+                case PermissionCodes.PosSuspendCart: return PosLocalization.T("users.permissionSuspendCart");
+                case PermissionCodes.PosRecoverCart: return PosLocalization.T("users.permissionRecoverCart");
+                case PermissionCodes.PosDiscount: return PosLocalization.T("users.permissionDiscount");
+                case PermissionCodes.CatalogView: return PosLocalization.T("users.permissionCatalogView");
+                case PermissionCodes.CatalogEdit: return PosLocalization.T("users.permissionCatalogEdit");
+                case PermissionCodes.CatalogImport: return PosLocalization.T("users.permissionCatalogImport");
+                case PermissionCodes.RegisterView: return PosLocalization.T("users.permissionRegisterView");
+                case PermissionCodes.DailyCloseView: return PosLocalization.T("users.permissionDailyCloseView");
+                case PermissionCodes.DailyCloseRun: return PosLocalization.T("users.permissionDailyCloseRun");
+                case PermissionCodes.DailyClosePrint: return PosLocalization.T("users.permissionDailyClosePrint");
+                case PermissionCodes.SettingsShop: return PosLocalization.T("users.permissionSettingsShop");
+                case PermissionCodes.SettingsPrinter: return PosLocalization.T("users.permissionSettingsPrinter");
+                case PermissionCodes.DbBackup: return PosLocalization.T("users.permissionDbBackup");
+                case PermissionCodes.DbRestore: return PosLocalization.T("users.permissionDbRestore");
+                case PermissionCodes.DbMaintenance: return PosLocalization.T("users.permissionDbMaintenance");
                 default:
                     var parts = code.Split('.');
                     return parts.Length >= 2 ? parts[1] : code;
@@ -464,15 +471,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
             switch (prefix)
             {
                 case "pos": return "POS";
-                case "catalog": return "Catalogo";
-                case "register": return "Registro vendite";
-                case "daily_close": return "Chiusura cassa";
-                case "settings": return "Impostazioni";
+                case "catalog": return PosLocalization.T("users.sectionCatalog");
+                case "register": return PosLocalization.T("users.sectionRegister");
+                case "daily_close": return PosLocalization.T("users.sectionDailyClose");
+                case "settings": return PosLocalization.T("users.sectionSettings");
                 case "db": return "Database";
                 case "users":
                 case "roles":
-                case "security": return "Sicurezza / Utenti";
-                default: return "Altro";
+                case "security": return PosLocalization.T("users.sectionSecurity");
+                default: return PosLocalization.T("users.sectionOther");
             }
         }
 
@@ -491,13 +498,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     await _securityRepo.LogEventAsync(SecurityEventCodes.UserDisabled, "userId=" + SelectedUser.Id).ConfigureAwait(false);
                 if (!wasActive && IsActive)
                     await _securityRepo.LogEventAsync(SecurityEventCodes.UserEnabled, "userId=" + SelectedUser.Id).ConfigureAwait(false);
-                Status = "Salvato.";
+                Status = PosLocalization.T("users.saved");
                 IsDirty = false;
                 await LoadAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {
@@ -513,37 +520,37 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (code == "cashier")
             {
-                Require(set, PermissionCodes.PosSell, "Cassiere");
-                Require(set, PermissionCodes.PosPay, "Cassiere");
-                Require(set, PermissionCodes.RegisterView, "Cassiere");
+                Require(set, PermissionCodes.PosSell, PosLocalization.T("users.roleCashierName"));
+                Require(set, PermissionCodes.PosPay, PosLocalization.T("users.roleCashierName"));
+                Require(set, PermissionCodes.RegisterView, PosLocalization.T("users.roleCashierName"));
             }
             else if (code == "supervisor")
             {
-                Require(set, PermissionCodes.RegisterView, "Supervisore");
-                Require(set, PermissionCodes.PosRefund, "Supervisore");
+                Require(set, PermissionCodes.RegisterView, PosLocalization.T("users.roleSupervisorName"));
+                Require(set, PermissionCodes.PosRefund, PosLocalization.T("users.roleSupervisorName"));
             }
             else if (code == "manager")
             {
-                Require(set, PermissionCodes.RegisterViewAll, "Manager");
+                Require(set, PermissionCodes.RegisterViewAll, PosLocalization.T("users.roleManagerName"));
             }
         }
 
         private static void Require(HashSet<string> set, string permCode, string roleName)
         {
             if (!set.Contains(permCode))
-                throw new InvalidOperationException("Il ruolo " + roleName + " deve includere il permesso " + permCode + ".");
+                throw new InvalidOperationException(PosLocalization.F("users.roleMustIncludePermission", roleName, permCode));
         }
 
         private async Task SaveSelectedRolePermissionsAsync()
         {
             if (!CanManageRoles)
             {
-                Status = "Permesso negato: gestione ruoli.";
+                Status = PosLocalization.T("users.roleManageDenied");
                 return;
             }
             if (SelectedRole == null || SelectedRole.IsSystem)
             {
-                Status = "I ruoli di sistema non sono modificabili.";
+                Status = PosLocalization.T("users.systemRolesReadOnly");
                 return;
             }
             IsBusy = true;
@@ -553,12 +560,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 EnsureMinimalPermissionsForRole(SelectedRole, enabled);
                 await _roleRepo.SetPermissionsAsync(SelectedRole.Id, enabled).ConfigureAwait(true);
                 await _securityRepo.LogEventAsync(SecurityEventCodes.RolePermissionsChanged, "roleId=" + SelectedRole.Id + ", roleCode=" + SelectedRole.Code).ConfigureAwait(false);
-                Status = "Permessi ruolo salvati.";
+                Status = PosLocalization.T("users.rolePermissionsSaved");
                 await LoadAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {
@@ -570,10 +577,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (!CanManageRoles)
             {
-                Status = "Permesso negato: gestione ruoli.";
+                Status = PosLocalization.T("users.roleManageDenied");
                 return;
             }
-            var dlg = new RoleEditDialog("Nuovo ruolo", "", "")
+            var dlg = new RoleEditDialog(PosLocalization.T("users.roleNewTitle"), "", "")
             {
                 Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
                 ValidateCode = ValidateUniqueRoleCode
@@ -586,7 +593,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 await _roleRepo.CreateAsync(code, name).ConfigureAwait(true);
                 await _securityRepo.LogEventAsync(SecurityEventCodes.RoleCreated, "code=" + code + ", name=" + name).ConfigureAwait(false);
-                Status = "Ruolo creato. Assegna i permessi e salva.";
+                Status = PosLocalization.T("users.roleCreated");
                 await LoadAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
@@ -621,14 +628,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (!CanManageRoles)
             {
-                Status = "Permesso negato: gestione ruoli.";
+                Status = PosLocalization.T("users.roleManageDenied");
                 return;
             }
             if (SelectedRole == null) return;
             var originalCode = (SelectedRole.Code ?? "").Trim().ToLowerInvariant();
             var suggestedCode = await GenerateUniqueRoleCodeAsync(originalCode).ConfigureAwait(true);
-            var suggestedName = "Copia di " + (SelectedRole.Name ?? "").Trim();
-            var dlg = new RoleEditDialog("Duplica ruolo", suggestedCode, suggestedName)
+            var suggestedName = PosLocalization.F("users.copyOf", (SelectedRole.Name ?? "").Trim());
+            var dlg = new RoleEditDialog(PosLocalization.T("users.roleDuplicateTitle"), suggestedCode, suggestedName)
             {
                 Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
                 ValidateCode = ValidateUniqueRoleCode
@@ -641,7 +648,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 await _roleRepo.DuplicateAsync(SelectedRole.Id, code, name).ConfigureAwait(true);
                 await _securityRepo.LogEventAsync(SecurityEventCodes.RoleDuplicated, "sourceId=" + SelectedRole.Id + ", newCode=" + code).ConfigureAwait(false);
-                Status = "Ruolo duplicato. Verifica i permessi e salva se necessario.";
+                Status = PosLocalization.T("users.roleDuplicated");
                 await LoadAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
@@ -658,11 +665,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (!CanManageRoles)
             {
-                Status = "Permesso negato: gestione ruoli.";
+                Status = PosLocalization.T("users.roleManageDenied");
                 return;
             }
             if (SelectedRole == null || SelectedRole.IsSystem) return;
-            var dlg = new RoleEditDialog("Rinomina ruolo", SelectedRole.Code, SelectedRole.Name, codeReadOnly: true) { Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner() };
+            var dlg = new RoleEditDialog(PosLocalization.T("users.roleRenameTitle"), SelectedRole.Code, SelectedRole.Name, codeReadOnly: true) { Owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner() };
             if (dlg.ShowDialog() != true) return;
             var name = dlg.RoleName.Trim();
             IsBusy = true;
@@ -670,12 +677,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 await _roleRepo.UpdateNameAsync(SelectedRole.Id, name).ConfigureAwait(true);
                 await _securityRepo.LogEventAsync(SecurityEventCodes.RoleRenamed, "roleId=" + SelectedRole.Id + ", newName=" + name).ConfigureAwait(false);
-                Status = "Ruolo rinominato.";
+                Status = PosLocalization.T("users.roleRenamed");
                 await LoadAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {
@@ -687,7 +694,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             var normalizedCode = (code ?? "").Trim();
             return Roles.Any(r => string.Equals((r.Code ?? "").Trim(), normalizedCode, StringComparison.OrdinalIgnoreCase))
-                ? "Il codice ruolo '" + normalizedCode + "' è già in uso. Scegliere un codice diverso."
+                ? PosLocalization.F("users.roleCodeInUse", normalizedCode)
                 : null;
         }
 
@@ -695,19 +702,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             var message = ex?.Message ?? "";
             if (message.IndexOf("UNIQUE", StringComparison.OrdinalIgnoreCase) >= 0)
-                return "Errore: il codice ruolo è già in uso. Scegliere un codice diverso.";
-            return "Errore: " + message;
+                return PosLocalization.T("users.roleCodeUniqueError");
+            return PosLocalization.F("common.errorWithMessage", message);
         }
 
         private async Task DeleteRoleAsync()
         {
             if (!CanManageRoles)
             {
-                Status = "Permesso negato: gestione ruoli.";
+                Status = PosLocalization.T("users.roleManageDenied");
                 return;
             }
             if (SelectedRole == null || SelectedRole.IsSystem) return;
-            if (!Win7POS.Wpf.Import.ApplyConfirmDialog.ShowConfirm(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(), "Conferma eliminazione", "Eliminare il ruolo \"" + SelectedRole.Name + "\"? Gli utenti non devono averlo assegnato."))
+            if (!Win7POS.Wpf.Import.ApplyConfirmDialog.ShowConfirm(
+                    OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("users.confirmDeleteRoleTitle"),
+                    PosLocalization.F("users.confirmDeleteRoleMessage", SelectedRole.Name)))
                 return;
             IsBusy = true;
             try
@@ -715,12 +725,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 await _roleRepo.DeleteAsync(SelectedRole.Id).ConfigureAwait(true);
                 await _securityRepo.LogEventAsync(SecurityEventCodes.RoleDeleted, "roleId=" + SelectedRole.Id + ", code=" + SelectedRole.Code).ConfigureAwait(false);
                 SelectedRole = null;
-                Status = "Ruolo eliminato.";
+                Status = PosLocalization.T("users.roleDeleted");
                 await LoadAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {
@@ -739,12 +749,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var hash = PinHelper.HashPin(dlg.Pin, salt);
                 await _userRepo.CreateAsync(dlg.Username, dlg.DisplayName, hash, salt, dlg.RoleId, 0, true).ConfigureAwait(true);
                 await _securityRepo.LogEventAsync(SecurityEventCodes.UserCreated, "username=" + dlg.Username).ConfigureAwait(false);
-                Status = "Utente creato.";
+                Status = PosLocalization.T("users.userCreated");
                 await LoadAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {
@@ -755,7 +765,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private async Task ResetPinAsync()
         {
             if (SelectedUser == null || string.IsNullOrWhiteSpace(NewPin)) return;
-            if (NewPin.Length < 4 || NewPin.Length > 6 || !NewPin.All(char.IsDigit)) { Status = "Il PIN deve essere di 4-6 cifre numeriche."; return; }
+            if (NewPin.Length < 4 || NewPin.Length > 6 || !NewPin.All(char.IsDigit)) { Status = PosLocalization.T("pin.invalidDigits"); return; }
             IsBusy = true;
             try
             {
@@ -764,11 +774,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 await _userRepo.UpdatePinAsync(SelectedUser.Id, hash, salt, true).ConfigureAwait(true);
                 await _securityRepo.LogEventAsync(SecurityEventCodes.PinReset, "userId=" + SelectedUser.Id).ConfigureAwait(false);
                 NewPin = "";
-                Status = "PIN aggiornato. Cambio obbligatorio al prossimo accesso.";
+                Status = PosLocalization.T("users.pinUpdated");
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {

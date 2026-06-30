@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Input;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -46,8 +47,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (!ViewModel.IsValid) return;
             if (ViewModel.IsFullVoid)
             {
-                var msg = $"Confermi storno totale dello scontrino {ViewModel.SaleCodeText}?";
-                if (!ApplyConfirmDialog.ShowConfirm(this, "Conferma storno", msg))
+                if (!ApplyConfirmDialog.ShowConfirm(
+                    this,
+                    PosLocalization.T("refund.confirmVoidTitle"),
+                    PosLocalization.F("refund.confirmVoidMessage", ViewModel.SaleCodeText)))
                     return;
             }
             ViewModel.TryConfirm();

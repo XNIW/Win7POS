@@ -17,6 +17,7 @@ using Win7POS.Data;
 using Win7POS.Data.Adapters;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Online;
 using Win7POS.Wpf.Printing;
 
@@ -184,7 +185,7 @@ namespace Win7POS.Wpf.Pos
                 if (await _sales.HasUnresolvedSalesSyncOutboxAsync().ConfigureAwait(false))
                 {
                     _logger.LogWarning("POS DB restore blocked: unresolved sales sync outbox exists.");
-                    throw new InvalidOperationException("Ripristino sospeso: esistono vendite POS non sincronizzate o bloccate. Sincronizzare o far verificare l'outbox prima del restore.");
+                    throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedSales"));
                 }
 
                 var preBackupPath = CreateDbBackupCopyNoLock("pos_pre_restore_");
@@ -534,7 +535,7 @@ namespace Win7POS.Wpf.Pos
                 var code = (barcode ?? string.Empty).Trim();
                 _logger.LogInfo("POS add barcode: " + code);
                 await _session.AddByBarcodeAsync(code).ConfigureAwait(false);
-                return await BuildSnapshotAsync("Item aggiunto.");
+                return await BuildSnapshotAsync(PosLocalization.T("pos.status.itemAdded"));
             }
             catch (Exception ex)
             {
@@ -554,7 +555,7 @@ namespace Win7POS.Wpf.Pos
             {
                 _logger.LogInfo("POS add manual price: " + unitPriceMinor);
                 await _session.AddManualPriceAsync(unitPriceMinor).ConfigureAwait(false);
-                return await BuildSnapshotAsync("Aggiunto (senza codice).");
+                return await BuildSnapshotAsync(PosLocalization.T("pos.status.manualItemAdded"));
             }
             catch (Exception ex)
             {
@@ -572,7 +573,7 @@ namespace Win7POS.Wpf.Pos
             await CreateProductFullAsync(barcode, name, unitPriceMinor, 0, null, null, 0).ConfigureAwait(false);
         }
 
-        /// <summary>Overload con supplier/category by name (no IDs). Nome può essere vuoto: usa "Prodotto senza codice".</summary>
+        /// <summary>Overload con supplier/category by name (no IDs). Nome puo essere vuoto: usa una label localizzata.</summary>
         public async Task CreateProductFullAsync(
             string barcode,
             string name,
@@ -583,7 +584,7 @@ namespace Win7POS.Wpf.Pos
             int stockQty)
         {
             var productName = (name ?? string.Empty).Trim();
-            if (productName.Length == 0) productName = "Prodotto senza codice";
+            if (productName.Length == 0) productName = PosLocalization.T("products.productWithoutCode");
             await CreateProductFullAsync(barcode, productName, unitPriceMinor, purchasePriceMinor, null, supplierName ?? string.Empty, null, categoryName ?? string.Empty, stockQty).ConfigureAwait(false);
         }
 
@@ -603,9 +604,9 @@ namespace Win7POS.Wpf.Pos
             {
                 var code = (barcode ?? string.Empty).Trim();
                 var productName = (name ?? string.Empty).Trim();
-                if (code.Length == 0) throw new ArgumentException("barcode is empty");
-                if (productName.Length == 0) throw new ArgumentException("name is empty");
-                if (unitPriceMinor < 0) throw new ArgumentException("price is invalid");
+                if (code.Length == 0) throw new ArgumentException(PosLocalization.T("products.barcodeRequired"));
+                if (productName.Length == 0) throw new ArgumentException(PosLocalization.T("products.nameRequired"));
+                if (unitPriceMinor < 0) throw new ArgumentException(PosLocalization.T("products.priceInvalid"));
                 if (purchasePriceMinor < 0) purchasePriceMinor = 0;
                 if (stockQty < 0) stockQty = 0;
 
@@ -643,7 +644,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.SetLineUnitPrice(code, unitPriceMinor);
-                return await BuildSnapshotAsync("Prezzo aggiornato.");
+                return await BuildSnapshotAsync(PosLocalization.T("pos.status.priceUpdated"));
             }
             finally
             {
@@ -670,13 +671,13 @@ namespace Win7POS.Wpf.Pos
                 if (product == null)
                 {
                     _session.SetQuantity(code, 0);
-                    return await BuildSnapshotAsync("Prodotto rimosso dal carrello: non più presente nel database.").ConfigureAwait(false);
+                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.productRemovedFromCartMissing")).ConfigureAwait(false);
                 }
 
                 _session.SetLineUnitPrice(code, product.UnitPrice);
                 _session.SetLineName(code, product.Name ?? string.Empty);
 
-                return await BuildSnapshotAsync("Carrello sincronizzato con il catalogo.").ConfigureAwait(false);
+                return await BuildSnapshotAsync(PosLocalization.T("pos.status.catalogSynced")).ConfigureAwait(false);
             }
             finally
             {
@@ -704,7 +705,7 @@ namespace Win7POS.Wpf.Pos
                 _lastCompletedSale = completed;
                 var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
                 var preview = BuildReceiptPreview(completed, true, shop);
-                var snapshot = await BuildSnapshotAsync("Pagamento completato.");
+                var snapshot = await BuildSnapshotAsync(PosLocalization.T("pos.status.paymentCompleted"));
                 _logger.LogInfo("POS pay done: " + completed.Sale.Code);
                 return new PosPayResult
                 {
@@ -740,7 +741,7 @@ namespace Win7POS.Wpf.Pos
 
                 var total = _session.Total;
                 if (!payment.IsValid(total))
-                    throw new InvalidOperationException("Pagamento non valido.");
+                    throw new InvalidOperationException(PosLocalization.T("pos.status.invalidPayment"));
 
                 var effectiveCreated = (createdAtMs.HasValue && createdAtMs.Value != 0) ? createdAtMs.Value : (long?)null;
                 var sale = new Sale
@@ -770,7 +771,7 @@ namespace Win7POS.Wpf.Pos
                 var completed = new SaleCompleted(sale, saleLines);
                 _lastCompletedSale = completed;
                 _session.Clear();
-                var snapshot = await BuildSnapshotAsync("Vendita completata.");
+                var snapshot = await BuildSnapshotAsync(PosLocalization.T("pos.status.saleCompleted"));
                 var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
 
                 return new PosSaleResult
@@ -803,9 +804,9 @@ namespace Win7POS.Wpf.Pos
                 DbInitializer.EnsureCreated(_options);
                 var sale = await _sales.GetByIdAsync(originalSaleId).ConfigureAwait(false);
                 if (sale == null)
-                    throw new InvalidOperationException("Vendita non trovata.");
+                    throw new InvalidOperationException(PosLocalization.T("pos.status.saleNotFound"));
                 if (sale.Kind != (int)SaleKind.Sale)
-                    throw new InvalidOperationException("Solo le vendite normali possono essere rimborsate.");
+                    throw new InvalidOperationException(PosLocalization.T("refund.onlyNormalSalesRefundable"));
 
                 var lines = await _sales.GetReturnableLinesAsync(originalSaleId).ConfigureAwait(false);
                 var rows = lines.Select(x => new RefundPreviewLine
@@ -849,20 +850,20 @@ namespace Win7POS.Wpf.Pos
                 DbInitializer.EnsureCreated(_options);
                 var original = await _sales.GetByIdAsync(req.OriginalSaleId).ConfigureAwait(false);
                 if (original == null)
-                    throw new InvalidOperationException("Vendita originale non trovata.");
+                    throw new InvalidOperationException(PosLocalization.T("refund.originalSaleNotFound"));
                 if (original.Kind != (int)SaleKind.Sale)
-                    throw new InvalidOperationException("La vendita selezionata non e rimborsabile.");
+                    throw new InvalidOperationException(PosLocalization.T("refund.saleNotRefundable"));
 
                 var returnable = await _sales.GetReturnableLinesAsync(req.OriginalSaleId).ConfigureAwait(false);
                 var returnableMap = returnable.ToDictionary(x => x.OriginalLineId, x => x);
                 if (returnableMap.Count == 0)
-                    throw new InvalidOperationException("Nessuna riga rimborsabile.");
+                    throw new InvalidOperationException(PosLocalization.T("refund.noRefundableLines"));
 
                 var selected = new List<RefundLineRequest>();
                 if (req.IsFullVoid)
                 {
                     if (original.VoidedBySaleId.HasValue)
-                        throw new InvalidOperationException("Vendita gia stornata.");
+                        throw new InvalidOperationException(PosLocalization.T("refund.saleAlreadyVoided"));
                     foreach (var x in returnable)
                     {
                         if (x.RemainingQty <= 0) continue;
@@ -883,9 +884,9 @@ namespace Win7POS.Wpf.Pos
                     {
                         if (line == null || line.QtyToRefund <= 0) continue;
                         if (!returnableMap.TryGetValue(line.OriginalLineId, out var source))
-                            throw new InvalidOperationException("Riga reso non valida.");
+                            throw new InvalidOperationException(PosLocalization.T("refund.invalidRefundLine"));
                         if (line.QtyToRefund > source.RemainingQty)
-                            throw new InvalidOperationException("Quantita reso oltre il disponibile.");
+                            throw new InvalidOperationException(PosLocalization.T("refund.quantityTooHigh"));
 
                         selected.Add(new RefundLineRequest
                         {
@@ -900,18 +901,18 @@ namespace Win7POS.Wpf.Pos
                 }
 
                 if (selected.Count == 0)
-                    throw new InvalidOperationException("Nessuna riga selezionata per il reso.");
+                    throw new InvalidOperationException(PosLocalization.T("refund.noSelectedLines"));
 
                 var refundPositiveTotal = selected.Sum(x => x.QtyToRefund * x.UnitPriceMinor);
                 if (refundPositiveTotal <= 0)
-                    throw new InvalidOperationException("Totale rimborso non valido.");
+                    throw new InvalidOperationException(PosLocalization.T("refund.invalidTotal"));
 
                 var cash = req.Payment == null ? 0 : req.Payment.CashMinor;
                 var card = req.Payment == null ? 0 : req.Payment.CardMinor;
                 if (cash < 0 || card < 0)
-                    throw new InvalidOperationException("Pagamento rimborso non valido.");
+                    throw new InvalidOperationException(PosLocalization.T("refund.invalidPayment"));
                 if (cash + card != refundPositiveTotal)
-                    throw new InvalidOperationException("Cash + Card deve essere uguale al totale rimborso.");
+                    throw new InvalidOperationException(PosLocalization.T("refund.splitMismatch"));
 
                 var refundSale = new Sale
                 {
@@ -1024,7 +1025,7 @@ namespace Win7POS.Wpf.Pos
                 var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, barcode, StringComparison.Ordinal));
                 if (line == null) return await BuildSnapshotAsync(string.Empty);
                 _session.SetQuantity(line.Barcode, line.Quantity + 1);
-                return await BuildSnapshotAsync("Quantita aumentata.");
+                return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityPlus", 1));
             }
             finally
             {
@@ -1042,7 +1043,7 @@ namespace Win7POS.Wpf.Pos
                 var next = line.Quantity - 1;
                 if (next < 1) next = 1;
                 _session.SetQuantity(line.Barcode, next);
-                return await BuildSnapshotAsync("Quantita diminuita.");
+                return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityMinus", 1));
             }
             finally
             {
@@ -1061,7 +1062,7 @@ namespace Win7POS.Wpf.Pos
                 var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, code, StringComparison.Ordinal));
                 if (line == null) return await BuildSnapshotAsync(string.Empty);
                 _session.SetQuantity(code, qty <= 0 ? 0 : qty);
-                return await BuildSnapshotAsync("Quantita aggiornata.");
+                return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityUpdated", qty));
             }
             catch (Exception ex)
             {
@@ -1090,7 +1091,7 @@ namespace Win7POS.Wpf.Pos
                 if (DiscountKeys.IsDiscount(line.Barcode ?? ""))
                     return await BuildSnapshotAsync(string.Empty);
                 _session.SetQuantity(line.Barcode ?? "", qty <= 0 ? 0 : qty);
-                return await BuildSnapshotAsync("Quantita aggiornata.");
+                return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityUpdated", qty));
             }
             catch (Exception ex)
             {
@@ -1109,7 +1110,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.RemoveLine(barcode);
-                return await BuildSnapshotAsync("Riga rimossa.");
+                return await BuildSnapshotAsync(PosLocalization.T("pos.status.lineRemoved"));
             }
             finally
             {
@@ -1123,7 +1124,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyCartDiscountPercent(percent);
-                return await BuildSnapshotAsync(percent <= 0 ? "Sconto carrello rimosso." : "Sconto carrello applicato.");
+                return await BuildSnapshotAsync(percent <= 0 ? PosLocalization.T("pos.status.cartDiscountRemoved") : PosLocalization.T("pos.status.cartDiscountApplied"));
             }
             finally
             {
@@ -1137,7 +1138,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountPercent(barcode, percent);
-                return await BuildSnapshotAsync(percent <= 0 ? "Sconto rimosso." : "Sconto aggiornato.");
+                return await BuildSnapshotAsync(percent <= 0 ? PosLocalization.T("pos.status.discountRemoved") : PosLocalization.T("pos.status.discountUpdated"));
             }
             finally
             {
@@ -1151,7 +1152,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountAmount(barcode, amountMinor);
-                return await BuildSnapshotAsync("Sconto importo applicato.");
+                return await BuildSnapshotAsync(PosLocalization.T("pos.status.amountDiscountApplied"));
             }
             finally
             {
@@ -1166,7 +1167,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountByFinalUnitPrice(barcode, finalUnitPriceMinor);
-                return await BuildSnapshotAsync("Sconto aggiornato.");
+                return await BuildSnapshotAsync(PosLocalization.T("pos.status.discountUpdated"));
             }
             finally
             {
@@ -1180,7 +1181,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ClearCartDiscount();
-                return await BuildSnapshotAsync("Sconto carrello rimosso.");
+                return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartDiscountRemoved"));
             }
             finally
             {
@@ -1281,8 +1282,10 @@ namespace Win7POS.Wpf.Pos
             var preview = await GetReceiptPreviewBySaleIdAsync(saleId, use42).ConfigureAwait(true);
             if (string.IsNullOrWhiteSpace(preview))
                 return new PosPrintResult { SavedCopy = false };
-            var settings = await GetPrinterSettingsAsync().ConfigureAwait(true);
-            var fileTag = "SALE_" + saleId;
+            var detail = await GetSaleDetailsAsync(saleId).ConfigureAwait(true);
+            var fileTag = string.IsNullOrWhiteSpace(detail?.Sale?.Code)
+                ? "SALE_ID_" + saleId.ToString(CultureInfo.InvariantCulture)
+                : "SALE_" + detail.Sale.Code;
             return await PrintReceiptTextAsync(preview, use42, fileTag).ConfigureAwait(true);
         }
 
@@ -1315,6 +1318,19 @@ namespace Win7POS.Wpf.Pos
                     return string.Empty;
                 var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
                 return BuildReceiptPreview(_lastCompletedSale, use42, shop);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
+        public async Task<string> GetLastSaleCodeAsync()
+        {
+            await _gate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                return _lastCompletedSale?.Sale?.Code ?? string.Empty;
             }
             finally
             {
@@ -1356,7 +1372,7 @@ namespace Win7POS.Wpf.Pos
                 City = city?.Trim() ?? "",
                 Rut = rut?.Trim() ?? "",
                 Phone = phone?.Trim() ?? "",
-                Footer = string.IsNullOrWhiteSpace(footer) ? "Grazie e arrivederci" : footer.Trim()
+                Footer = string.IsNullOrWhiteSpace(footer) ? PosLocalization.T("receipt.thanks") : footer.Trim()
             };
         }
 
@@ -1456,7 +1472,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.Clear();
-                return await BuildSnapshotAsync("Carrello svuotato.");
+                return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartCleared"));
             }
             finally
             {
@@ -1470,7 +1486,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 if (_session.Lines.Count == 0)
-                    return new SuspendCartResult { Success = false, Message = "Carrello vuoto." };
+                    return new SuspendCartResult { Success = false, Message = PosLocalization.T("pos.status.cartEmpty") };
 
                 var lines = _session.Lines.Select(x => new Data.Repositories.HeldCartLineRow
                 {
@@ -1487,7 +1503,7 @@ namespace Win7POS.Wpf.Pos
                 await _heldCarts.CreateHoldAsync(holdId, createdAtMs, total, lines).ConfigureAwait(false);
                 _session.Clear();
 
-                return new SuspendCartResult { Success = true, HoldId = holdId, Message = "Carrello sospeso." };
+                return new SuspendCartResult { Success = true, HoldId = holdId, Message = PosLocalization.T("pos.status.cartSuspended") };
             }
             finally
             {
@@ -1533,7 +1549,7 @@ namespace Win7POS.Wpf.Pos
             {
                 var lines = await _heldCarts.LoadHoldLinesAsync(holdId).ConfigureAwait(false);
                 if (lines.Count == 0)
-                    return await BuildSnapshotAsync("Nessuna riga nel carrello sospeso.");
+                    return await BuildSnapshotAsync(PosLocalization.T("pos.status.heldCartEmpty"));
 
                 var restored = lines.Select(x => new RestoredLine
                 {
@@ -1547,7 +1563,7 @@ namespace Win7POS.Wpf.Pos
                 _session.ReplaceWithLines(restored);
                 await _heldCarts.DeleteHoldAsync(holdId).ConfigureAwait(false);
 
-                return await BuildSnapshotAsync("Carrello recuperato.");
+                return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartRecovered"));
             }
             finally
             {
@@ -1650,13 +1666,13 @@ namespace Win7POS.Wpf.Pos
             var lines = new List<string>(ReceiptFormatter.Format(
                 completed.Sale,
                 completed.Lines,
-                use42 ? ReceiptOptions.Default42Clp() : ReceiptOptions.Default32Clp(),
+                PosLocalization.CreateReceiptOptions(use42, "receipt.title"),
                 shop));
-            // Stessa struttura della stampante: "Scontrino: XXX" in fondo (sotto la stampante disegna il barcode Code128)
+            // Stessa struttura della stampante: codice vendita in fondo per barcode Code128.
             if (!string.IsNullOrEmpty(completed?.Sale?.Code))
             {
                 lines.Add("");
-                lines.Add("Scontrino: " + completed.Sale.Code);
+                lines.Add(PosLocalization.T("receipt.title") + ": " + completed.Sale.Code);
             }
             return string.Join(Environment.NewLine, lines);
         }
@@ -1664,7 +1680,7 @@ namespace Win7POS.Wpf.Pos
         private static string BuildRefundReceiptPreview(SaleCompleted completed, bool use42, ReceiptShopInfo shop = null)
         {
             var baseText = BuildReceiptPreview(completed, use42, shop);
-            return "RESO/STORNO" + Environment.NewLine + baseText;
+            return PosLocalization.T("refund.receiptHeader") + Environment.NewLine + baseText;
         }
 
         private async Task TrySyncSalesOutboxNoThrowAsync()
@@ -1769,7 +1785,7 @@ SELECT last_insert_rowid();";
         {
             var text = receiptText ?? string.Empty;
             if (string.IsNullOrWhiteSpace(text))
-                throw new InvalidOperationException("Receipt text is empty.");
+                throw new InvalidOperationException(PosLocalization.T("printer.receiptTextEmpty"));
 
             var printer = await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
             var outputDirectory = string.IsNullOrWhiteSpace(printer.OutputDirectory)
@@ -1784,6 +1800,7 @@ SELECT last_insert_rowid();";
                 CharactersPerLine = use42 ? 42 : 32,
                 SaveCopyToFile = printer.SaveCopyToFile,
                 OutputPath = outputPath,
+                SaleCodeForBarcode = ExtractSaleCodeForBarcode(fileTag),
                 UseReceiptHeaderStyle = !isFiscalPrint
             }).ConfigureAwait(false);
 
@@ -1824,7 +1841,7 @@ SELECT last_insert_rowid();";
                 : DefaultCashDrawerCommand;
 
             if (string.IsNullOrWhiteSpace(resolvedPrinter))
-                throw new InvalidOperationException("Nessuna stampante disponibile. Inserisci il nome della stampante oppure configura una stampante predefinita di Windows.");
+                throw new InvalidOperationException(PosLocalization.T("printer.noAvailablePrinter"));
 
             return _receiptPrinter.OpenCashDrawerAsync(new ReceiptPrintOptions
             {
@@ -1852,6 +1869,33 @@ SELECT last_insert_rowid();";
             foreach (var ch in Path.GetInvalidFileNameChars())
                 tag = tag.Replace(ch, '_');
             return tag;
+        }
+
+        private static string ExtractSaleCodeForBarcode(string fileTag)
+        {
+            var tag = (fileTag ?? string.Empty).Trim();
+            foreach (var prefix in new[] { "SALE_", "REFUND_", "FISCAL_", "LAST_" })
+            {
+                if (tag.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    var candidate = tag.Substring(prefix.Length).Trim();
+                    return LooksLikeSaleCode(candidate) ? candidate : string.Empty;
+                }
+            }
+
+            return LooksLikeSaleCode(tag) ? tag : string.Empty;
+        }
+
+        private static bool LooksLikeSaleCode(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (normalized.Length < 2)
+            {
+                return false;
+            }
+
+            var first = char.ToUpperInvariant(normalized[0]);
+            return (first == 'V' || first == 'R') && normalized.Skip(1).Any(char.IsDigit);
         }
 
         private static string EscapeCsv(string value)

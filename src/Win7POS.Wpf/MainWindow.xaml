@@ -1,6 +1,7 @@
 <Window x:Class="Win7POS.Wpf.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         xmlns:pos="clr-namespace:Win7POS.Wpf.Pos"
         xmlns:prod="clr-namespace:Win7POS.Wpf.Products"
         Title="Win7POS" MinWidth="1024" MinHeight="600" WindowState="Maximized">
@@ -32,7 +33,7 @@
                         <TextBlock x:Name="SyncStatusText"
                                    Foreground="White"
                                    FontSize="11"
-                                   Text="Sync: Non collegato | Ultimo catalogo: mai | Ultima vendita inviata: mai | Vendite in coda: 0"
+                                   Text="{loc:Loc shell.syncUnavailable}"
                                    TextTrimming="CharacterEllipsis"
                                    MaxWidth="540"/>
                     </Border>
@@ -40,15 +41,14 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
                     <Border Background="#33FFFFFF" CornerRadius="8" Padding="12,6" Margin="0,0,10,0" BorderBrush="White" BorderThickness="1">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock VerticalAlignment="Center" Foreground="White" FontSize="11" Margin="0,0,6,0" Text="Operatore:"/>
+                            <TextBlock VerticalAlignment="Center" Foreground="White" FontSize="11" Margin="0,0,6,0" Text="{loc:Loc shell.operator}"/>
                             <TextBlock x:Name="OperatorDisplayText" Foreground="White" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Text="—"/>
                             <TextBlock x:Name="OperatorRoleText" Foreground="#E8FFFFFF" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0" Text=""/>
                         </StackPanel>
                     </Border>
-                    <Button x:Name="ChangeOperatorButton" Style="{StaticResource HeaderActionButtonStyle}" Click="OnChangeOperatorClick" ToolTip="Cambia operatore o blocca sessione">
+                    <Button x:Name="ChangeOperatorButton" Style="{StaticResource HeaderActionButtonStyle}" Click="OnChangeOperatorClick" ToolTip="{loc:Loc shell.changeLockTooltip}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="🔐" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Text="Cambia / Blocca" VerticalAlignment="Center"/>
+                            <TextBlock Text="{loc:Loc shell.changeLock}" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
                 </StackPanel>
@@ -72,16 +72,16 @@
             <TabItem Header="POS">
                 <pos:PosView x:Name="PosViewControl"/>
             </TabItem>
-            <TabItem x:Name="ProductsTab" Header="Prodotti">
+            <TabItem x:Name="ProductsTab" Header="{loc:Loc shell.products}">
                 <prod:ProductsView x:Name="ProductsViewControl"/>
             </TabItem>
-            <TabItem x:Name="DailyReportTab" Header="Chiusura cassa">
+            <TabItem x:Name="DailyReportTab" Header="{loc:Loc shell.dailyClose}">
                 <pos:DailyReportView x:Name="DailyReportViewControl"/>
             </TabItem>
-            <TabItem x:Name="PaymentTab" Header="Pagamento">
+            <TabItem x:Name="PaymentTab" Header="{loc:Loc common.pay}">
                 <pos:PaymentView x:Name="PaymentViewControl"/>
             </TabItem>
-            <TabItem x:Name="UsersRolesTab" Header="Utenti e ruoli">
+            <TabItem x:Name="UsersRolesTab" Header="{loc:Loc shell.usersRoles}">
                 <pos:UserManagementView x:Name="UserManagementViewControl"/>
             </TabItem>
         </TabControl>
@@ -91,27 +91,32 @@
             <Border x:Name="SideMenuPanel" Width="280" HorizontalAlignment="Left" Background="{StaticResource SidebarBackgroundBrush}" BorderBrush="{StaticResource SidebarBorderBrush}" BorderThickness="0,0,1,0" CornerRadius="0,0,8,0" MouseLeftButtonDown="OnPanelClick">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="16,24,16,20">
-                        <TextBlock Text="Menu" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,20"/>
+                        <TextBlock Text="{loc:Loc shell.menu}" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,20"/>
 
-                        <TextBlock Text="Navigazione" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Loc shell.navigation}" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
                         <Button Content="POS" Tag="Pos" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPosClick"/>
-                        <Button x:Name="OpenCashDrawerMenuButton" Content="Apri cassa" Tag="OpenCash" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuOpenCashDrawerClick" ToolTip="Apre il cassetto portamonete (disabilitato se cassetto non configurato)"/>
-                        <Button Content="Prodotti" Tag="Prodotti" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuProdottiClick"/>
+                        <Button x:Name="OpenCashDrawerMenuButton" Content="{loc:Loc shell.openCashDrawer}" Tag="OpenCash" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuOpenCashDrawerClick" ToolTip="{loc:Loc shell.openCashDrawerTooltip}"/>
+                        <Button Content="{loc:Loc shell.products}" Tag="Prodotti" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuProdottiClick"/>
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
-                        <TextBlock Text="Gestione" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="Registro vendite" Tag="SalesRegister" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuSalesRegisterClick"/>
-                        <Button Content="Chiusura cassa" Tag="DailyReport" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuDailyReportClick"/>
+                        <TextBlock Text="{loc:Loc shell.management}" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Button Content="{loc:Loc shell.salesRegister}" Tag="SalesRegister" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuSalesRegisterClick"/>
+                        <Button Content="{loc:Loc shell.dailyClose}" Tag="DailyReport" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuDailyReportClick"/>
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
-                        <TextBlock Text="Impostazioni" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="Dati negozio ufficiali" Tag="ShopSettings" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuShopSettingsClick"/>
-                        <Button Content="Impostazioni stampante" Tag="Printer" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPrinterClick"/>
-                        <Button Content="Utenti e ruoli" Tag="UsersRoles" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuUsersClick"/>
+                        <TextBlock Text="{loc:Loc shell.settings}" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <TextBlock Text="{loc:Loc settings.language}" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,6"/>
+                        <ComboBox x:Name="LanguageComboBox"
+                                  MinHeight="34"
+                                  Margin="0,0,0,10"
+                                  SelectionChanged="OnLanguageSelectionChanged"/>
+                        <Button Content="{loc:Loc shell.officialShopData}" Tag="ShopSettings" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuShopSettingsClick"/>
+                        <Button Content="{loc:Loc shell.printerSettings}" Tag="Printer" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPrinterClick"/>
+                        <Button Content="{loc:Loc shell.usersRoles}" Tag="UsersRoles" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuUsersClick"/>
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
-                        <TextBlock Text="Supporto" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="About / Support" Tag="About" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuAboutClick"/>
+                        <TextBlock Text="{loc:Loc shell.support}" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                        <Button Content="{loc:Loc shell.aboutSupport}" Tag="About" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuAboutClick"/>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

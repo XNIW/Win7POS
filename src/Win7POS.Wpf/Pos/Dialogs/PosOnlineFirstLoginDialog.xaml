@@ -1,8 +1,9 @@
 <chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.PosOnlineFirstLoginDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
-        Title="Collega POS online"
+        Title="{loc:Loc onlineFirstLogin.title}"
         ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
@@ -21,7 +22,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Collega POS online" Style="{StaticResource DialogTitleStyle}"/>
+        <TextBlock Grid.Row="0" Text="{loc:Loc onlineFirstLogin.title}" Style="{StaticResource DialogTitleStyle}"/>
 
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
             <Grid>
@@ -40,23 +41,23 @@
                     <ColumnDefinition Width="*" MinWidth="260"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock x:Name="ServerStatusText" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,12" TextWrapping="Wrap" Foreground="#2E7D32" Text="Server Admin Web configurato."/>
+                <TextBlock x:Name="ServerStatusText" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,12" TextWrapping="Wrap" Foreground="#2E7D32" Text="{loc:Loc onlineFirstLogin.serverConfigured}"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Codice negozio:" Foreground="#666"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc onlineFirstLogin.shopCode}" Foreground="#666"/>
                 <TextBox x:Name="ShopCodeBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Codice staff:" Foreground="#666"/>
+                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc onlineFirstLogin.staffCode}" Foreground="#666"/>
                 <TextBox x:Name="StaffCodeBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
-                <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="PIN/password:" Foreground="#666"/>
+                <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc onlineFirstLogin.credential}" Foreground="#666"/>
                 <PasswordBox x:Name="CredentialBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
-                <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Nome dispositivo:" Foreground="#666"/>
+                <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc onlineFirstLogin.deviceName}" Foreground="#666"/>
                 <TextBlock x:Name="DeviceNameText" Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,10" Padding="0,6" Foreground="#555" TextWrapping="Wrap"/>
 
-                <TextBlock Grid.Row="5" Grid.ColumnSpan="2" TextWrapping="Wrap" Foreground="#8873A4" Text="La sessione del dispositivo viene protetta localmente da Windows. PIN/password non vengono salvati."/>
+                <TextBlock Grid.Row="5" Grid.ColumnSpan="2" TextWrapping="Wrap" Foreground="#8873A4" Text="{loc:Loc onlineFirstLogin.securityNote}"/>
 
-                <Expander x:Name="AdvancedExpander" Grid.Row="6" Grid.ColumnSpan="2" Margin="0,12,0,0" Header="Impostazioni avanzate / Server">
+                <Expander x:Name="AdvancedExpander" Grid.Row="6" Grid.ColumnSpan="2" Margin="0,12,0,0" Header="{loc:Loc onlineFirstLogin.advancedSettings}">
                     <Grid Margin="0,10,0,0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -67,10 +68,10 @@
                             <ColumnDefinition Width="*" MinWidth="260"/>
                         </Grid.ColumnDefinitions>
 
-                        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,8" Text="URL Admin Web:" Foreground="#666"/>
+                        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,8" Text="{loc:Loc onlineFirstLogin.adminWebUrl}" Foreground="#666"/>
                         <TextBox x:Name="BaseUrlBox" Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" MinHeight="34" Padding="8,6" TextChanged="OnBaseUrlChanged"/>
 
-                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" TextWrapping="Wrap" Foreground="#8873A4" Text="Inserisci solo l'URL base HTTPS del pannello, senza /auth/login, /shop, query string o hash."/>
+                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" TextWrapping="Wrap" Foreground="#8873A4" Text="{loc:Loc onlineFirstLogin.urlHint}"/>
                     </Grid>
                 </Expander>
 
@@ -79,8 +80,8 @@
         </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-            <Button x:Name="ConnectButton" Content="Collega" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnConnectClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
-            <Button Content="Annulla" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
+            <Button x:Name="ConnectButton" Content="{loc:Loc onlineFirstLogin.connect}" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnConnectClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
+            <Button Content="{loc:Loc common.cancel}" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

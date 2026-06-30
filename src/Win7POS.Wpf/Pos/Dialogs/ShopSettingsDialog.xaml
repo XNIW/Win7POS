@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
-        Title="Dati negozio ufficiali"
+        xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
+        Title="{loc:Loc settings.shopTitle}"
         ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
@@ -22,7 +23,7 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Dati negozio ufficiali" Style="{StaticResource DialogTitleStyle}" Margin="0,0,0,10"/>
+        <TextBlock Grid.Row="0" Text="{loc:Loc settings.shopTitle}" Style="{StaticResource DialogTitleStyle}" Margin="0,0,0,10"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid>
@@ -52,33 +53,33 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="Sola lettura. Le modifiche a profilo e identità fiscale si fanno in Master Console; Win7POS usa questa cache anche offline." TextWrapping="Wrap" Foreground="#5F4A71" Margin="0,0,0,12"/>
+                    <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="{loc:Loc settings.shopReadOnly}" TextWrapping="Wrap" Foreground="#5F4A71" Margin="0,0,0,12"/>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Nome negozio:"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.shopName}"/>
                     <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Name}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Codice shop:"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.shopCode}"/>
                     <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" Text="{Binding ShopCode}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                    <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Indirizzo:"/>
+                    <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.address}"/>
                     <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Address}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                    <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Città:"/>
+                    <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.city}"/>
                     <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" Text="{Binding City}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                    <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="RUT azienda:"/>
+                    <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.companyRut}"/>
                     <TextBox Grid.Row="5" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Rut}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                    <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Giro:"/>
+                    <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.businessGiro}"/>
                     <TextBox Grid.Row="6" Grid.Column="1" Margin="0,0,0,8" Text="{Binding BusinessGiro}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                    <TextBlock Grid.Row="7" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Telefono:"/>
+                    <TextBlock Grid.Row="7" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.phone}"/>
                     <TextBox Grid.Row="7" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Phone}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                    <TextBlock Grid.Row="8" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Footer ricevuta:"/>
+                    <TextBlock Grid.Row="8" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.receiptFooter}"/>
                     <TextBox Grid.Row="8" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Footer}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                    <TextBlock Grid.Row="9" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="Ultima boleta stampata:"/>
+                    <TextBlock Grid.Row="9" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.lastBoleta}"/>
                     <TextBox Grid.Row="9" Grid.Column="1" Margin="0,0,0,8" Text="{Binding FiscalBoletaNumberText}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
 
                     <TextBlock Grid.Row="10" Grid.ColumnSpan="2" Margin="0,6,0,0" Foreground="#4A3D56" Text="{Binding ShopStatusText, Mode=OneWay}"/>
@@ -94,7 +95,7 @@
             </ScrollViewer>
         </Border>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button Content="Chiudi" MinWidth="100" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Close_Click"/>
+            <Button Content="{loc:Loc common.close}" MinWidth="100" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Close_Click"/>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

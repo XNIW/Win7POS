@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Windows;
 using Win7POS.Wpf.Chrome;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -20,12 +21,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _verifyAsync = verifyAsync ?? ((_, __) => Task.FromResult((false, (int?)null)));
             if (isAdminOnly)
                 MessageText.Text = string.IsNullOrEmpty(operationText)
-                    ? "Operazione riservata ad amministratore. Inserire credenziali per autorizzare."
-                    : "Operazione riservata ad amministratore: " + operationText + ". Inserire credenziali per autorizzare.";
+                    ? PosLocalization.T("override.adminOnlyMessage")
+                    : PosLocalization.F("override.adminOnlyMessageWithOperation", operationText);
             else
                 MessageText.Text = string.IsNullOrEmpty(operationText)
-                    ? "Operazione riservata a Supervisore o superiore. Inserire credenziali per autorizzare."
-                    : "Operazione riservata a Supervisore o superiore: " + operationText + ". Inserire credenziali per autorizzare.";
+                    ? PosLocalization.T("override.supervisorMessage")
+                    : PosLocalization.F("override.supervisorMessageWithOperation", operationText);
 
             OperatorCombo.ItemsSource = authorizableUsers ?? new List<OverrideOperatorItem>();
             if (OperatorCombo.Items.Count > 0)
@@ -40,7 +41,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (string.IsNullOrEmpty(username))
             {
-                ShowError("Seleziona un operatore dalla lista.");
+                ShowError(PosLocalization.T("override.selectOperator"));
                 return;
             }
 
@@ -54,7 +55,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             else
             {
-                ShowError("Credenziali non valide o operatore senza permesso per questa operazione.");
+                ShowError(PosLocalization.T("override.invalidCredentials"));
                 PinBox.Clear();
                 PinBox.Focus();
             }

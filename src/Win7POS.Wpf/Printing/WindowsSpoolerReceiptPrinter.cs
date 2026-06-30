@@ -16,7 +16,6 @@ namespace Win7POS.Wpf.Printing
     {
         private static readonly FileLogger _logger = new FileLogger("WindowsSpoolerReceiptPrinter");
         private const string SiiMarker = "Timbre Electrónico SII";
-        private const string ScontrinoPrefix = "Scontrino:";
 
         // regolazioni richieste: spazio bianco sopra QR + QR più stretto su carta
         private const float QrWidthMm = 50f;
@@ -31,13 +30,10 @@ namespace Win7POS.Wpf.Printing
         private static bool IsCode128Placeholder(string line)
             => string.Equals((line ?? "").Trim(), Code128Placeholder, StringComparison.OrdinalIgnoreCase);
 
-        private static bool TryGetScontrinoSaleCode(string line, out string saleCode)
+        private static string NormalizeSaleCodeForBarcode(string saleCode)
         {
-            saleCode = null;
-            var t = (line ?? "").Trim();
-            if (!t.StartsWith(ScontrinoPrefix, StringComparison.OrdinalIgnoreCase)) return false;
-            saleCode = t.Substring(ScontrinoPrefix.Length).Trim();
-            return saleCode.Length > 0;
+            var normalized = (saleCode ?? string.Empty).Trim();
+            return normalized.Length == 0 ? null : normalized;
         }
 
         private static float MmToHundredthsInch(float mm) => (mm / 25.4f) * 100f;
@@ -138,12 +134,8 @@ namespace Win7POS.Wpf.Printing
         {
             var lines = receiptText.Replace("\r\n", "\n").Split('\n');
             var lineIndex = 0;
-            // Barcode solo sull'ultima riga "Scontrino: XXX" (in fondo allo scontrino)
-            int lastScontrinoIndex = -1;
-            for (int i = lines.Length - 1; i >= 0; i--)
-            {
-                if (TryGetScontrinoSaleCode(lines[i] ?? "", out _)) { lastScontrinoIndex = i; break; }
-            }
+            var saleCodeForBarcode = NormalizeSaleCodeForBarcode(opt.SaleCodeForBarcode);
+            var barcodePrinted = string.IsNullOrEmpty(saleCodeForBarcode);
 
             using (var doc = new PrintDocument())
             {
@@ -255,42 +247,6 @@ namespace Win7POS.Wpf.Printing
                                 continue;
                             }
 
-                            // Ultima riga "Scontrino: <code>" → testo + barcode Code128 (larghezza = foglio per lettura scanner)
-                            if (TryGetScontrinoSaleCode(line, out var saleCode))
-                            {
-                                if (lineIndex == lastScontrinoIndex)
-                                {
-                                    using (var barcodeBmp = Code128Renderer.Render(saleCode))
-                                    {
-                                        float barW = printableW;
-                                        float gap = MmToHundredthsInch(SaleCodeBarcodeGapMm);
-
-                                        float needH = bodyLineHeight + gap + (barcodeBmp != null ? barW * barcodeBmp.Height / (float)barcodeBmp.Width : 0f);
-                                        if (y + needH > bottom)
-                                            break;
-
-                                        e.Graphics.DrawString(line, font, Brushes.Black, x, y);
-                                        y += bodyLineHeight + gap;
-
-                                        if (barcodeBmp != null)
-                                        {
-                                            float barH = barW * barcodeBmp.Height / (float)barcodeBmp.Width;
-                                            float barX = e.PageSettings.HardMarginX + (printableW - barW) / 2f;
-                                            e.Graphics.DrawImage(barcodeBmp, barX, y, barW, barH);
-                                            y += barH;
-                                        }
-                                    }
-                                }
-                                else
-                                {
-                                    if (y + bodyLineHeight > bottom) break;
-                                    e.Graphics.DrawString(line, font, Brushes.Black, x, y);
-                                    y += bodyLineHeight;
-                                }
-                                lineIndex++;
-                                continue;
-                            }
-
                             if (y + bodyLineHeight > bottom)
                                 break;
 
@@ -306,7 +262,32 @@ namespace Win7POS.Wpf.Printing
                             lineIndex++;
                         }
 
-                        e.HasMorePages = lineIndex < lines.Length;
+                        if (lineIndex >= lines.Length && !barcodePrinted)
+                        {
+                            using (var barcodeBmp = Code128Renderer.Render(saleCodeForBarcode))
+                            {
+                                if (barcodeBmp != null)
+                                {
+                                    float barW = printableW;
+                                    float gap = MmToHundredthsInch(SaleCodeBarcodeGapMm);
+                                    float barH = barW * barcodeBmp.Height / (float)barcodeBmp.Width;
+
+                                    if (y + gap + barH > bottom)
+                                    {
+                                        e.HasMorePages = true;
+                                        return;
+                                    }
+
+                                    y += gap;
+                                    float barX = e.PageSettings.HardMarginX + (printableW - barW) / 2f;
+                                    e.Graphics.DrawImage(barcodeBmp, barX, y, barW, barH);
+                                }
+                            }
+
+                            barcodePrinted = true;
+                        }
+
+                        e.HasMorePages = lineIndex < lines.Length || !barcodePrinted;
                     };
 
                     doc.EndPrint += (s, e) =>

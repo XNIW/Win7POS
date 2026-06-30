@@ -9,6 +9,7 @@ using Microsoft.Win32;
 using Win7POS.Core;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf
 {
@@ -62,6 +63,7 @@ namespace Win7POS.Wpf
 
             EnsureTls12();
             EnsureIe11WebBrowser();
+            PosLocalization.Current.SetLanguage(PosLocalization.DefaultLanguage);
             AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
             TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
             DispatcherUnhandledException += OnDispatcherUnhandledException;
@@ -87,8 +89,10 @@ namespace Win7POS.Wpf
                 _logger.LogError(ex, "App.OnStartup: EnsureCreated/avvio fallito");
                 try
                 {
-                    ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Errore avvio Win7POS",
-                        "Impossibile preparare i dati locali. L'app verra chiusa. Controlla il log applicativo.");
+                    ModernMessageDialog.Show(
+                        DialogOwnerHelper.GetSafeOwner(),
+                        PosLocalization.T("app.startupErrorTitle"),
+                        PosLocalization.T("app.localDataPrepareFailed"));
                 }
                 catch { }
                 Shutdown(-1);
@@ -131,8 +135,10 @@ namespace Win7POS.Wpf
                 _logger.LogWarning("Single-instance guard blocked duplicate startup.");
                 try
                 {
-                    ModernMessageDialog.Show(null, "Win7POS gia aperto",
-                        "Win7POS e gia in esecuzione. Chiudi la finestra esistente prima di riavviare l'app.");
+                    ModernMessageDialog.Show(
+                        null,
+                        PosLocalization.T("app.alreadyOpenTitle"),
+                        PosLocalization.T("app.alreadyOpenMessage"));
                 }
                 catch { }
 
@@ -190,8 +196,10 @@ namespace Win7POS.Wpf
             {
                 try
                 {
-                    ModernMessageDialog.Show(null, "Errore fatale",
-                        "Errore non gestito. L'applicazione verra chiusa. Controlla il log applicativo.");
+                    ModernMessageDialog.Show(
+                        null,
+                        PosLocalization.T("app.fatalErrorTitle"),
+                        PosLocalization.T("app.unhandledErrorClose"));
                 }
                 catch { }
             }
@@ -218,8 +226,10 @@ namespace Win7POS.Wpf
 
             try
             {
-                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Errore",
-                    "Si e verificato un errore. Controlla il log applicativo.");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("app.genericErrorTitle"),
+                    PosLocalization.T("app.genericErrorCheckLog"));
             }
             catch (Exception showEx)
             {

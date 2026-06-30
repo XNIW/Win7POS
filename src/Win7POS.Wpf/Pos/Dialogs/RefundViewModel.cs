@@ -7,6 +7,7 @@ using System.Windows.Input;
 using Win7POS.Core.Models;
 using Win7POS.Core.Util;
 using Win7POS.Wpf.Pos;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -56,6 +57,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 CashRefund = MoneyClp.Format(half);
                 CardRefund = MoneyClp.Format(RefundTotalMinor - half);
             }, _ => RefundTotalMinor > 0);
+            PosLocalization.Current.LanguageChanged += (_, __) =>
+            {
+                OnAmountsChanged();
+                OnPropertyChanged(nameof(MissingText));
+            };
         }
 
         public RefundPreviewModel Preview { get; }
@@ -147,7 +153,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return delta > 0 ? delta : 0;
             }
         }
-        public string MissingText => IsValid ? string.Empty : "Manca: " + MoneyClp.Format(MissingMinor);
+        public string MissingText => IsValid
+            ? string.Empty
+            : PosLocalization.Current.Format("payment.missing", MoneyClp.Format(MissingMinor));
 
         public string ScanMessage
         {
@@ -180,7 +188,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (line.RemainingQty <= 0) continue;
                 if (line.QtyToRefund >= line.RemainingQty)
                 {
-                    ScanMessage = "Quantità massima già resa.";
+                    ScanMessage = PosLocalization.Current.Text("pos.status.maxReturned");
                     return;
                 }
                 line.QtyToRefund = line.QtyToRefund + 1;

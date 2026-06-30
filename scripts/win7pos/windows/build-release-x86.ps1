@@ -17,7 +17,8 @@ $MsBuildVersion = $null
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 $ProjectPath = Join-Path $RepoRoot "src\Win7POS.Wpf\Win7POS.Wpf.csproj"
-$OutputDir = Join-Path $RepoRoot ("src\Win7POS.Wpf\bin\{0}\net48" -f $Configuration)
+$OutputDir = Join-Path $RepoRoot ("src\Win7POS.Wpf\bin\{0}\{1}\net48" -f $Platform, $Configuration)
+$LegacyOutputDir = Join-Path $RepoRoot ("src\Win7POS.Wpf\bin\{0}\net48" -f $Configuration)
 $DistRoot = Join-Path $RepoRoot "dist"
 $DistDir = Join-Path $DistRoot "Win7POS"
 $ReportPath = Join-Path $DistRoot "Win7POS-build-report.md"
@@ -206,6 +207,7 @@ function Write-BuildReport {
     $lines.Add("- Configuration: $Configuration") | Out-Null
     $lines.Add("- Platform: $Platform") | Out-Null
     $lines.Add("- Output path: $OutputDir") | Out-Null
+    $lines.Add("- Legacy output fallback: $LegacyOutputDir") | Out-Null
     $lines.Add("- Dist path: $DistDir") | Out-Null
     $lines.Add("- Exe present: $exePresent") | Out-Null
     $lines.Add("- Config present: $(Test-Path $configPath)") | Out-Null
@@ -363,15 +365,22 @@ try {
         Write-Host "[DRY-RUN] Would copy output from: $OutputDir"
     }
     else {
-        if (-not (Test-Path $OutputDir)) {
-            throw "Build output folder not found: $OutputDir"
+        $resolvedOutputDir = $OutputDir
+        if (-not (Test-Path $resolvedOutputDir)) {
+            if (Test-Path $LegacyOutputDir) {
+                $resolvedOutputDir = $LegacyOutputDir
+                Add-WarningMessage "Platform output folder not found; using legacy output folder: $LegacyOutputDir"
+            }
+            else {
+                throw "Build output folder not found: $OutputDir"
+            }
         }
 
         if (Test-Path $DistDir) {
             Remove-Item -Path $DistDir -Recurse -Force
         }
         New-Item -ItemType Directory -Force $DistDir | Out-Null
-        Copy-Item -Path (Join-Path $OutputDir "*") -Destination $DistDir -Recurse -Force
+        Copy-Item -Path (Join-Path $resolvedOutputDir "*") -Destination $DistDir -Recurse -Force
         Write-Host "Copied build output to: $DistDir"
 
         $exe = Join-Path $DistDir "Win7POS.Wpf.exe"

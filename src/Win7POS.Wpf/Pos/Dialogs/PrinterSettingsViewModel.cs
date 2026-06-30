@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -82,8 +83,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         /// <summary>Messaggio helper sotto il bottone Test cassetto.</summary>
         public string TestCashDrawerStatusMessage => CanTestCashDrawer
-            ? "Usa la stampante indicata sopra, oppure la stampante predefinita di Windows se lasci vuoto."
-            : "Inserisci un comando cassetto (es. 27,112,0,60,255) per abilitare il test.";
+            ? PosLocalization.T("printer.testReady")
+            : PosLocalization.T("printer.testMissing");
 
         public int ParsedCopies
         {
@@ -112,6 +113,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var cmd = string.IsNullOrWhiteSpace(CashDrawerCommand) ? "27,112,0,60,255" : CashDrawerCommand.Trim();
                 TestCashDrawerRequested?.Invoke(name, cmd);
             }, _ => CanTestCashDrawer);
+            PosLocalization.Current.LanguageChanged += OnLanguageChanged;
+        }
+
+        private void OnLanguageChanged(object sender, EventArgs e)
+        {
+            OnPropertyChanged(nameof(TestCashDrawerStatusMessage));
         }
 
         private void RaiseCanExecuteChanged()

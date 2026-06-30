@@ -17,8 +17,9 @@ namespace Win7POS.Core.Receipt
         {
             if (sale == null) throw new ArgumentNullException(nameof(sale));
             options = options ?? ReceiptOptions.Default42();
+            var labels = options.Labels ?? ReceiptLabels.English;
             shop = shop ?? new ReceiptShopInfo();
-            var culture = CultureInfo.GetCultureInfo(options.CultureName ?? "it-IT");
+            var culture = CultureInfo.GetCultureInfo(options.CultureName ?? "en-US");
 
             var width = options.Width < 16 ? 16 : options.Width;
             var result = new List<string>();
@@ -50,9 +51,9 @@ namespace Win7POS.Core.Receipt
             if (!string.IsNullOrWhiteSpace(shop.Rut)) AddLine(result, width, "RUT: " + shop.Rut.Trim());
             if (!string.IsNullOrWhiteSpace(shop.Phone)) AddLine(result, width, "Tel: " + (shop.Phone ?? "").Trim());
             AddLine(result, width, new string('-', width));
-            AddLine(result, width, $"Scontrino: {sale.Code}");
+            AddLine(result, width, $"{labels.Receipt}: {sale.Code}");
             var when = DateTimeOffset.FromUnixTimeMilliseconds(sale.CreatedAt).ToLocalTime().ToString("yyyy-MM-dd HH:mm");
-            AddLine(result, width, $"Data/Ora: {when}");
+            AddLine(result, width, $"{labels.DateTime}: {when}");
             AddLine(result, width, new string('-', width));
 
             if (lines != null && lines.Count > 0)
@@ -88,8 +89,8 @@ namespace Win7POS.Core.Receipt
                         var (_, pct) = DiscountKeys.ParseLinePct(discLine.Barcode ?? "");
                         var pctStr = pct.HasValue ? pct.Value + "%" : "";
                         AddLeftRight(result, width, $"  {qty} x {unit}", origTotal);
-                        AddLeftRight(result, width, "Sconto " + pctStr, discFormatted);
-                        AddLeftRight(result, width, "Riga", netFormatted);
+                        AddLeftRight(result, width, labels.Discount + " " + pctStr, discFormatted);
+                        AddLeftRight(result, width, labels.Line, netFormatted);
                     }
                     else
                     {
@@ -103,15 +104,15 @@ namespace Win7POS.Core.Receipt
                     if (d?.LineTotal >= 0) continue;
                     if (d.Barcode != null && d.Barcode.StartsWith("DISC:CART:", StringComparison.Ordinal))
                     {
-                        AddWrappedLine(result, width, d.Name ?? "Sconto carrello");
-                        AddLeftRight(result, width, "Sconto", FormatAmount(d.LineTotal, options.Currency, culture));
+                        AddWrappedLine(result, width, d.Name ?? labels.CartDiscount);
+                        AddLeftRight(result, width, labels.Discount, FormatAmount(d.LineTotal, options.Currency, culture));
                     }
                 }
             }
 
             AddLine(result, width, new string('-', width));
             var itemCount = lines?.Count(x => x.LineTotal >= 0 && (x.Barcode == null || !x.Barcode.StartsWith("DISC:", StringComparison.Ordinal))) ?? 0;
-            AddLine(result, width, TrimToWidth("Articoli: " + itemCount, width));
+            AddLine(result, width, TrimToWidth(labels.Items + ": " + itemCount, width));
 
             long subtotale = 0;
             long scontiTotali = 0;
@@ -125,15 +126,15 @@ namespace Win7POS.Core.Receipt
                         scontiTotali += -x.LineTotal;
                 }
             }
-            AddLeftRight(result, width, "Subtotale", FormatAmount(subtotale, options.Currency, culture));
+            AddLeftRight(result, width, labels.Subtotal, FormatAmount(subtotale, options.Currency, culture));
             if (scontiTotali > 0)
-                AddLeftRight(result, width, "Sconti totali", "-" + FormatAmount(scontiTotali, options.Currency, culture));
-            AddLeftRight(result, width, "Totale", FormatAmount(sale.Total, options.Currency, culture));
+                AddLeftRight(result, width, labels.TotalDiscounts, "-" + FormatAmount(scontiTotali, options.Currency, culture));
+            AddLeftRight(result, width, labels.Total, FormatAmount(sale.Total, options.Currency, culture));
             if (sale.PaidCash > 0)
-                AddLeftRight(result, width, "Contanti", FormatAmount(sale.PaidCash, options.Currency, culture));
+                AddLeftRight(result, width, labels.Cash, FormatAmount(sale.PaidCash, options.Currency, culture));
             if (sale.PaidCard > 0)
-                AddLeftRight(result, width, "Carta", FormatAmount(sale.PaidCard, options.Currency, culture));
-            AddLeftRight(result, width, "Resto", FormatAmount(sale.Change, options.Currency, culture));
+                AddLeftRight(result, width, labels.Card, FormatAmount(sale.PaidCard, options.Currency, culture));
+            AddLeftRight(result, width, labels.Change, FormatAmount(sale.Change, options.Currency, culture));
             AddLine(result, width, new string('-', width));
             AddCentered(result, width, shop.Footer ?? "");
             return result;

@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Win7POS.Core.Util;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -44,6 +45,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             BackspaceCommand = new RelayCommand(_ => Backspace(), _ => (ValueText ?? string.Empty).Length > 0);
             ConfirmCommand = new AsyncRelayCommand(ConfirmAsync, _ => CanConfirm && !IsBusy);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
+            PosLocalization.Current.LanguageChanged += (_, __) =>
+            {
+                OnPropertyChanged(nameof(ScopeText));
+                OnPropertyChanged(nameof(ValueLabel));
+                RaisePreviewChanged();
+            };
         }
 
         public bool IsBusy
@@ -65,8 +72,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         }
 
         public string ScopeText => ApplyToWholeCart
-            ? "Applicazione: intero carrello"
-            : "Applicazione: prodotto selezionato";
+            ? PosLocalization.Current.Text("discount.scopeCart")
+            : PosLocalization.Current.Text("discount.scopeProduct");
 
         public bool IsPercentMode
         {
@@ -79,7 +86,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { if (value) Mode = DiscountMode.Amount; }
         }
 
-        public string ValueLabel => IsPercentMode ? "Sconto (%)" : "Sconto ($)";
+        public string ValueLabel => IsPercentMode
+            ? PosLocalization.Current.Text("discount.valuePercent")
+            : PosLocalization.Current.Text("discount.valueAmount");
 
         public string ValueText
         {
@@ -232,7 +241,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 if (OriginalUnitPrice <= 0 || PreviewFinalUnitPrice >= OriginalUnitPrice) return string.Empty;
                 var amount = OriginalUnitPrice - PreviewFinalUnitPrice;
-                return "Risparmio " + MoneyClp.Format(amount);
+                return PosLocalization.Current.Format("pos.status.savings", MoneyClp.Format(amount));
             }
         }
         public bool HasPreviewDiscount => OriginalUnitPrice > 0 && PreviewFinalUnitPrice < OriginalUnitPrice;

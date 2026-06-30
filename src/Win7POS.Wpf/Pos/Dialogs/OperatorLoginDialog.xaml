@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
-        Title="Accesso operatore"
+        xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
+        Title="{loc:Loc operator.login.title}"
         ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
@@ -20,7 +21,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Accesso operatore" Style="{StaticResource DialogTitleStyle}"/>
+        <TextBlock Grid.Row="0" Text="{loc:Loc operator.login.title}" Style="{StaticResource DialogTitleStyle}"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
             <Grid>
                 <Grid.RowDefinitions>
@@ -32,12 +33,12 @@
                     <ColumnDefinition Width="100"/>
                     <ColumnDefinition Width="*" MinWidth="180"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="Operatore:" Foreground="#666"/>
+                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc operator.login.operator}" Foreground="#666"/>
                 <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,10">
                     <ComboBox x:Name="OperatorCombo" MinHeight="34" DisplayMemberPath="DisplayText" IsEditable="False" SelectionChanged="OperatorCombo_SelectionChanged"/>
-                    <TextBlock Text="Seleziona l'operatore visualizzato. Lo username è mostrato tra parentesi." FontSize="11" Foreground="#8873A4" Margin="0,4,0,0"/>
+                    <TextBlock Text="{loc:Loc operator.login.helper}" FontSize="11" Foreground="#8873A4" Margin="0,4,0,0"/>
                 </StackPanel>
-                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="PIN:" Foreground="#666"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc operator.login.pin}" Foreground="#666"/>
                 <PasswordBox x:Name="PinBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
                 <TextBlock x:Name="ErrorText" Grid.Row="2" Grid.ColumnSpan="2" Foreground="#C62828" TextWrapping="Wrap" Visibility="Collapsed"/>
             </Grid>
@@ -47,10 +48,10 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <Button Grid.Column="0" Content="Collega POS online" MinWidth="150" Height="42" HorizontalAlignment="Left" Click="OnOnlineFirstLoginClick" Style="{StaticResource DialogCancelButtonStyle}"/>
+            <Button Grid.Column="0" Content="{loc:Loc operator.login.onlineConnect}" MinWidth="150" Height="42" HorizontalAlignment="Left" Click="OnOnlineFirstLoginClick" Style="{StaticResource DialogCancelButtonStyle}"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
-            <Button Content="Accedi" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnLoginClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
-            <Button Content="Annulla" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
+            <Button Content="{loc:Loc common.login}" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnLoginClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
+            <Button Content="{loc:Loc common.cancel}" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
             </StackPanel>
         </Grid>
     </Grid>

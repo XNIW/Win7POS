@@ -4,6 +4,7 @@ using System.Threading;
 using System.Windows;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Data;
+using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -35,7 +36,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (PosAdminWebOptions.TryLoad(out var options, out _))
             {
                 BaseUrlBox.Text = options.BaseUri.ToString().TrimEnd('/');
-                ServerStatusText.Text = "Server Admin Web configurato.";
+                ServerStatusText.Text = PosLocalization.T("onlineFirstLogin.serverConfigured");
                 ServerStatusText.Foreground = System.Windows.Media.Brushes.DarkGreen;
                 ShowInsecureLanWarningIfNeeded(options);
                 ConnectButton.IsEnabled = true;
@@ -45,19 +46,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
 
             BaseUrlBox.Text = string.Empty;
-            ServerStatusText.Text = "URL Admin Web non configurato. Configura il server nelle impostazioni avanzate o tramite WIN7POS_ADMIN_WEB_BASE_URL.";
+            ServerStatusText.Text = PosLocalization.T("onlineFirstLogin.serverNotConfigured");
             ServerStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
             AdvancedExpander.IsExpanded = true;
             ConnectButton.IsEnabled = false;
-            ShowInfo("Il collegamento richiede prima la configurazione del server Admin Web.");
+            ShowInfo(PosLocalization.T("onlineFirstLogin.configurationRequired"));
             _initializing = false;
         }
 
         private async void OnConnectClick(object sender, RoutedEventArgs e)
         {
-            if (!PosAdminWebOptions.TryCreate(BaseUrlBox.Text, out var options, out var reason))
+            if (!PosAdminWebOptions.TryCreate(BaseUrlBox.Text, out var options, out var reason, out var reasonCode))
             {
-                ShowError(reason);
+                ShowError(LocalizeAdminWebReason(reasonCode, reason));
                 return;
             }
 
@@ -68,12 +69,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (shopCode.Length == 0 || staffCode.Length == 0 || credential.Length == 0)
             {
-                ShowError("Inserisci codice negozio, codice staff e PIN/password.");
+                ShowError(PosLocalization.T("onlineFirstLogin.missingCredentials"));
                 return;
             }
 
             ConnectButton.IsEnabled = false;
-            ShowInfo("Collegamento in corso...");
+            ShowInfo(PosLocalization.T("onlineFirstLogin.connecting"));
 
             var request = new PosFirstLoginRequest
             {
@@ -118,7 +119,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch
             {
-                ShowError("Collegamento POS online non completato.");
+                ShowError(PosLocalization.T("onlineFirstLogin.connectionFailed"));
                 ConnectButton.IsEnabled = true;
             }
             finally
@@ -156,16 +157,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             _baseUrlEditedByUser = true;
 
-            if (PosAdminWebOptions.TryCreate(BaseUrlBox.Text, out var options, out var reason))
+            if (PosAdminWebOptions.TryCreate(BaseUrlBox.Text, out var options, out var reason, out var reasonCode))
             {
-                ServerStatusText.Text = "Server Admin Web configurato.";
+                ServerStatusText.Text = PosLocalization.T("onlineFirstLogin.serverConfigured");
                 ServerStatusText.Foreground = System.Windows.Media.Brushes.DarkGreen;
                 ConnectButton.IsEnabled = true;
                 ShowInsecureLanWarningIfNeeded(options);
                 return;
             }
 
-            ServerStatusText.Text = reason;
+            ServerStatusText.Text = LocalizeAdminWebReason(reasonCode, reason);
             ServerStatusText.Foreground = System.Windows.Media.Brushes.Firebrick;
             ConnectButton.IsEnabled = false;
         }
@@ -191,12 +192,35 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 !options.BaseUri.IsLoopback &&
                 PosAdminWebOptions.AllowInsecureLanAdminWeb())
             {
-                ShowInfo("Attenzione: HTTP LAN abilitato solo per test manuale locale. Per workers.dev/staging usa HTTPS.");
+                ShowInfo(PosLocalization.T("onlineFirstLogin.insecureLanWarning"));
                 return;
             }
 
             StatusText.Text = string.Empty;
             StatusText.Visibility = Visibility.Collapsed;
+        }
+
+        private static string LocalizeAdminWebReason(string reasonCode, string reason)
+        {
+            switch ((reasonCode ?? string.Empty).Trim())
+            {
+                case PosAdminWebOptions.ReasonMissingBaseUrl:
+                    return PosLocalization.T("onlineFirstLogin.serverNotConfigured");
+                case PosAdminWebOptions.ReasonInvalidUrl:
+                    return PosLocalization.T("onlineFirstLogin.invalidUrl");
+                case PosAdminWebOptions.ReasonInvalidScheme:
+                    return PosLocalization.T("onlineFirstLogin.invalidScheme");
+                case PosAdminWebOptions.ReasonUrlIncludesCredentials:
+                    return PosLocalization.T("onlineFirstLogin.urlNoCredentials");
+                case PosAdminWebOptions.ReasonUrlBaseOnly:
+                    return PosLocalization.T("onlineFirstLogin.urlBaseOnly");
+                case PosAdminWebOptions.ReasonHttpLoopbackOnly:
+                    return PosLocalization.T("onlineFirstLogin.httpLoopbackOnly");
+                default:
+                    return string.IsNullOrWhiteSpace(reason)
+                        ? PosLocalization.T("onlineFirstLogin.serverNotConfigured")
+                        : reason;
+            }
         }
     }
 }

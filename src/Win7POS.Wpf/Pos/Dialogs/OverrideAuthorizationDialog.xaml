@@ -1,8 +1,9 @@
 <chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.OverrideAuthorizationDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
-        Title="Autorizzazione richiesta"
+        Title="{loc:Loc override.title}"
         ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
@@ -23,7 +24,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="Autorizzazione richiesta" Style="{StaticResource DialogTitleStyle}"/>
+        <TextBlock Grid.Row="0" Text="{loc:Loc override.title}" Style="{StaticResource DialogTitleStyle}"/>
         <Border Grid.Row="1" Grid.RowSpan="6" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
         <Grid>
             <Grid.RowDefinitions>
@@ -36,14 +37,14 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             <TextBlock x:Name="MessageText" Grid.Row="0" TextWrapping="Wrap" Margin="0,0,0,16" Foreground="#5E3F86" FontWeight="SemiBold"/>
-            <TextBlock Grid.Row="1" Text="Operatore autorizzante:" Foreground="#666" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="1" Text="{loc:Loc override.authorizingOperator}" Foreground="#666" Margin="0,0,0,6"/>
             <ComboBox x:Name="OperatorCombo" Grid.Row="2" Margin="0,0,0,8" MinHeight="34" DisplayMemberPath="DisplayText" IsEditable="False"/>
-            <TextBlock Grid.Row="3" Text="PIN:" Foreground="#666" Margin="0,0,0,6"/>
+            <TextBlock Grid.Row="3" Text="{loc:Loc operator.login.pin}" Foreground="#666" Margin="0,0,0,6"/>
             <PasswordBox x:Name="PinBox" Grid.Row="4" Margin="0,0,0,16" MinHeight="34" Padding="8,6"/>
             <TextBlock x:Name="ErrorText" Grid.Row="5" Foreground="#C62828" Margin="0,0,0,12" TextWrapping="Wrap" Visibility="Collapsed"/>
             <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-                <Button Content="Autorizza" Margin="0,0,8,0" Click="OnAuthorizeClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
-                <Button Content="Annulla" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
+                <Button Content="{loc:Loc override.authorize}" Margin="0,0,8,0" Click="OnAuthorizeClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
+                <Button Content="{loc:Loc common.cancel}" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
             </StackPanel>
         </Grid>
         </Border>

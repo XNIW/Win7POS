@@ -7,6 +7,7 @@ using System.Windows.Input;
 using Win7POS.Core.Models;
 using Win7POS.Core.Util;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Products
 {
@@ -34,10 +35,16 @@ namespace Win7POS.Wpf.Products
         public ObservableCollection<CategoryListItem> Categories { get; } = new ObservableCollection<CategoryListItem>();
         public ObservableCollection<SupplierListItem> Suppliers { get; } = new ObservableCollection<SupplierListItem>();
 
-        public string Title => Mode == ProductEditMode.Edit ? "Modifica prodotto" : Mode == ProductEditMode.Duplicate ? "Duplica prodotto" : "Nuovo prodotto";
+        public string Title => Mode == ProductEditMode.Edit
+            ? PosLocalization.T("products.editTitle")
+            : Mode == ProductEditMode.Duplicate
+                ? PosLocalization.T("products.duplicateTitle")
+                : PosLocalization.T("products.newTitle");
         public string DialogTitle => Title;
         /// <summary>Nuovo/Duplica = Stock iniziale, Modifica = Stock.</summary>
-        public string StockLabel => IsEditMode ? "Stock" : "Stock iniziale";
+        public string StockLabel => IsEditMode
+            ? PosLocalization.T("products.stock")
+            : PosLocalization.T("products.initialStock");
 
         private readonly ProductsWorkflowService _service;
 
@@ -63,7 +70,9 @@ namespace Win7POS.Wpf.Products
         private async void Confirm()
         {
             if (!IsValid) return;
-            var finalName = string.IsNullOrWhiteSpace(ProductName) ? "Prodotto senza nome" : ProductName.Trim();
+            var finalName = string.IsNullOrWhiteSpace(ProductName)
+                ? PosLocalization.T("products.unnamedProduct")
+                : ProductName.Trim();
             var finalPurchasePrice = PurchasePriceMinor > 0 ? PurchasePriceMinor : (int)(UnitPriceMinor / 2);
             if (Mode == ProductEditMode.Edit)
                 finalPurchasePrice = PurchasePriceMinor;
@@ -80,14 +89,17 @@ namespace Win7POS.Wpf.Products
             }
             catch (Exception ex)
             {
-                Win7POS.Wpf.Import.ModernMessageDialog.Show(System.Windows.Application.Current?.MainWindow, "Errore salvataggio", ex.Message);
+                Win7POS.Wpf.Import.ModernMessageDialog.Show(
+                    System.Windows.Application.Current?.MainWindow,
+                    PosLocalization.T("products.saveErrorTitle"),
+                    ex.Message);
             }
         }
 
         public void SetCategories(System.Collections.Generic.IReadOnlyList<CategoryListItem> items)
         {
             Categories.Clear();
-            Categories.Add(new CategoryListItem { Id = 0, Name = "(Nessuna)" });
+            Categories.Add(new CategoryListItem { Id = 0, Name = PosLocalization.T("products.none") });
             foreach (var x in items ?? Enumerable.Empty<CategoryListItem>())
                 Categories.Add(x);
         }
@@ -95,7 +107,7 @@ namespace Win7POS.Wpf.Products
         public void SetSuppliers(System.Collections.Generic.IReadOnlyList<SupplierListItem> items)
         {
             Suppliers.Clear();
-            Suppliers.Add(new SupplierListItem { Id = 0, Name = "(Nessuno)" });
+            Suppliers.Add(new SupplierListItem { Id = 0, Name = PosLocalization.T("products.none") });
             foreach (var x in items ?? Enumerable.Empty<SupplierListItem>())
                 Suppliers.Add(x);
         }

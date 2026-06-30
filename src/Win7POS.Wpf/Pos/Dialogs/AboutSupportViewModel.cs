@@ -9,14 +9,15 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using Win7POS.Core;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public sealed class AboutSupportViewModel : INotifyPropertyChanged
     {
         private readonly Pos.PosWorkflowService _service;
-        private string _printerName = "(default)";
-        private string _autoPrintText = "true";
+        private string _printerName = PosLocalization.T("common.defaultValue");
+        private string _autoPrintText = PosLocalization.T("common.yes");
         private string _status = string.Empty;
 
         public AboutSupportViewModel(Pos.PosWorkflowService service)
@@ -64,12 +65,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 var settings = await _service.GetPrinterSettingsAsync().ConfigureAwait(true);
-                PrinterName = string.IsNullOrWhiteSpace(settings.PrinterName) ? "(default)" : settings.PrinterName;
-                AutoPrintText = settings.AutoPrint ? "true" : "false";
+                PrinterName = string.IsNullOrWhiteSpace(settings.PrinterName)
+                    ? PosLocalization.T("common.defaultValue")
+                    : settings.PrinterName;
+                AutoPrintText = PosLocalization.T(settings.AutoPrint ? "common.yes" : "common.no");
             }
             catch (Exception ex)
             {
-                Status = "Load printer settings failed: " + ex.Message;
+                Status = PosLocalization.F("support.loadPrinterFailed", ex.Message);
             }
         }
 
@@ -82,7 +85,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Status = "Open folder failed: " + ex.Message;
+                Status = PosLocalization.F("support.openFolderFailed", ex.Message);
             }
         }
 
@@ -101,11 +104,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 sb.AppendLine("Printer: " + PrinterName);
                 sb.AppendLine("AutoPrint: " + AutoPrintText);
                 Clipboard.SetText(sb.ToString());
-                Status = "Info copied to clipboard.";
+                Status = PosLocalization.T("support.infoCopied");
             }
             catch (Exception ex)
             {
-                Status = "Copy failed: " + ex.Message;
+                Status = PosLocalization.F("support.copyFailed", ex.Message);
             }
         }
 

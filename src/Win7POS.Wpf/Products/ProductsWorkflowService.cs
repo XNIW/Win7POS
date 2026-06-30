@@ -11,6 +11,7 @@ using Win7POS.Data;
 using Win7POS.Data.Repositories;
 using System.Linq;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Products
 {
@@ -72,13 +73,13 @@ namespace Win7POS.Wpf.Products
 
         public async Task UpdateAsync(long productId, string name, long priceMinor)
         {
-            if (productId <= 0) throw new ArgumentException("invalid product id");
-            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("name is empty");
-            if (priceMinor < 0) throw new ArgumentException("price is invalid");
+            if (productId <= 0) throw new ArgumentException(PosLocalization.T("products.invalidProductId"));
+            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException(PosLocalization.T("products.nameRequired"));
+            if (priceMinor < 0) throw new ArgumentException(PosLocalization.T("products.priceInvalid"));
 
             var before = await _products.GetByIdAsync(productId).ConfigureAwait(false);
             var ok = await _products.UpdateAsync(productId, name.Trim(), priceMinor).ConfigureAwait(false);
-            if (!ok) throw new InvalidOperationException("Product not found.");
+            if (!ok) throw new InvalidOperationException(PosLocalization.T("products.notFound"));
 
             var details = AuditDetails.Kv(
                 ("productId", productId.ToString()),
@@ -274,7 +275,7 @@ namespace Win7POS.Wpf.Products
 
         public async Task CreateProductAsync(string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
         {
-            if (string.IsNullOrWhiteSpace(barcode)) throw new ArgumentException("barcode is empty");
+            if (string.IsNullOrWhiteSpace(barcode)) throw new ArgumentException(PosLocalization.T("products.barcodeRequired"));
             var p = new Product { Barcode = barcode.Trim(), Name = name?.Trim() ?? string.Empty, UnitPrice = unitPriceMinor };
             await _products.UpsertProductAndMetaInTransactionAsync(p, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty).ConfigureAwait(false);
             await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductCreate, AuditDetails.Kv(("barcode", p.Barcode), ("name", p.Name))).ConfigureAwait(false);
@@ -291,9 +292,9 @@ namespace Win7POS.Wpf.Products
 
         public async Task UpdateProductFullAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
         {
-            if (productId <= 0) throw new ArgumentException("invalid product id");
+            if (productId <= 0) throw new ArgumentException(PosLocalization.T("products.invalidProductId"));
             var before = await _products.GetByIdAsync(productId).ConfigureAwait(false);
-            if (before == null) throw new InvalidOperationException("Product not found.");
+            if (before == null) throw new InvalidOperationException(PosLocalization.T("products.notFound"));
             var b = before.Barcode ?? barcode ?? "";
             await _products.UpdateProductAndMetaWithPriceHistoryAsync(productId, name?.Trim() ?? string.Empty, unitPriceMinor, b, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty, "MANUAL_EDIT").ConfigureAwait(false);
             await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductUpdate, AuditDetails.Kv(("productId", productId.ToString()), ("barcode", b))).ConfigureAwait(false);

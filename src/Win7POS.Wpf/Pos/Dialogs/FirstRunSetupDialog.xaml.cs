@@ -7,6 +7,7 @@ using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -41,36 +42,36 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (string.IsNullOrWhiteSpace(displayName))
             {
-                ShowError("Inserisci il nome operatore.");
+                ShowError(PosLocalization.T("firstRun.operatorNameRequired"));
                 return;
             }
             if (string.IsNullOrWhiteSpace(username) || username.Length < 3)
             {
-                ShowError("Username non valido (almeno 3 caratteri).");
+                ShowError(PosLocalization.T("firstRun.usernameInvalid"));
                 return;
             }
             if (pin.Length < 4 || pin.Length > 6 || !pin.All(char.IsDigit))
             {
-                ShowError("Il PIN deve essere di 4-6 cifre numeriche.");
+                ShowError(PosLocalization.T("pin.invalidDigits"));
                 return;
             }
             if (pin != confirm)
             {
-                ShowError("I PIN non coincidono.");
+                ShowError(PosLocalization.T("operator.login.pinMismatch"));
                 return;
             }
 
             var adminRole = await _roleRepo.GetByCodeAsync("admin").ConfigureAwait(true);
             if (adminRole == null)
             {
-                ShowError("Ruolo admin non trovato nel database. Verificare DbInitializer.");
+                ShowError(PosLocalization.T("firstRun.adminRoleMissing"));
                 return;
             }
 
             var existing = await _userRepo.GetByUsernameAsync(username).ConfigureAwait(true);
             if (existing != null)
             {
-                ShowError("Username già in uso.");
+                ShowError(PosLocalization.T("firstRun.usernameInUse"));
                 return;
             }
 
@@ -108,12 +109,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (msg.IndexOf("UNIQUE", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     msg.IndexOf("username", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    ShowError("Username già in uso. Scegline un altro.");
+                    ShowError(PosLocalization.T("firstRun.usernameInUseChooseAnother"));
                 }
                 else
                 {
                     _logger.LogError(ex, "FirstRunSetupDialog.OnCreateAdminClick");
-                    ShowError("Configurazione locale non completata. Controlla il log applicativo.");
+                    ShowError(PosLocalization.T("firstRun.localSetupFailed"));
                 }
             }
             finally

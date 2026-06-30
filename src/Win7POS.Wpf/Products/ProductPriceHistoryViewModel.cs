@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Windows.Input;
 using Win7POS.Core.Models;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Products
 {
@@ -125,11 +126,11 @@ namespace Win7POS.Wpf.Products
                     CurrentRetailPrice = details.UnitPrice.ToString();
                     CurrentPurchasePrice = details.PurchasePrice.ToString();
                 }
-                StatusMessage = "Storico aggiornato.";
+                StatusMessage = PosLocalization.T("priceHistory.updated");
             }
             catch (Exception ex)
             {
-                StatusMessage = "Errore: " + ex.Message;
+                StatusMessage = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {
@@ -141,13 +142,13 @@ namespace Win7POS.Wpf.Products
         {
             if (!CanEditPrices)
             {
-                StatusMessage = "Permesso negato: modifica prezzi.";
+                StatusMessage = PosLocalization.T("priceHistory.priceEditDenied");
                 return;
             }
             var retail = ParseClp(NewRetailText);
             var purchase = ParseClp(NewPurchaseText);
             var details = await _service.GetDetailsByIdAsync(_productId).ConfigureAwait(true);
-            if (details == null) { StatusMessage = "Prodotto non trovato."; return; }
+            if (details == null) { StatusMessage = PosLocalization.T("products.notFound"); return; }
             var currentRetail = (int)details.UnitPrice;
             var currentPurchase = details.PurchasePrice;
             if (retail < 0) retail = currentRetail;
@@ -162,11 +163,11 @@ namespace Win7POS.Wpf.Products
                 NewRetailText = "";
                 NewPurchaseText = "";
                 await RefreshAsync().ConfigureAwait(true);
-                StatusMessage = "Prezzi aggiornati e storico registrato.";
+                StatusMessage = PosLocalization.T("priceHistory.pricesUpdated");
             }
             catch (Exception ex)
             {
-                StatusMessage = "Errore: " + ex.Message;
+                StatusMessage = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {

@@ -14,6 +14,7 @@ using Win7POS.Data.Adapters;
 using Win7POS.Data.Import;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Import
 {
@@ -80,7 +81,7 @@ namespace Win7POS.Wpf.Import
             {
                 var rows = rowsModel as IReadOnlyList<ImportRow>;
                 if (rows == null || rows.Count == 0)
-                    throw new InvalidOperationException("Missing analyzed rows. Run Analyze first.");
+                    throw new InvalidOperationException(PosLocalization.T("import.missingAnalyzedRows"));
 
                 var options = new ImportApplyOptions
                 {

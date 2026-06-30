@@ -2,6 +2,7 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              PreviewKeyDown="OnViewPreviewKeyDown"
              mc:Ignorable="d"
@@ -43,10 +44,10 @@
                         <ColumnDefinition Width="110"/>
                         <ColumnDefinition Width="36"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Prodotto" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1" Text="Q.tà" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                    <TextBlock Grid.Column="2" Text="Prezzo" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right"/>
-                    <TextBlock Grid.Column="3" Text="Totale" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                    <TextBlock Grid.Column="0" Text="{loc:Loc pos.cart.productHeader}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Column="1" Text="{loc:Loc pos.cart.quantityHeader}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                    <TextBlock Grid.Column="2" Text="{loc:Loc pos.cart.priceHeader}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right"/>
+                    <TextBlock Grid.Column="3" Text="{loc:Loc pos.cart.totalHeader}" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Right"/>
                     <TextBlock Grid.Column="4" Width="36"/>
                 </Grid>
             </Border>
@@ -141,8 +142,8 @@
                                         </TextBlock.Style>
                                     </TextBlock>
                                 </StackPanel>
-                                <Button Grid.Column="1" Content="✎" FontSize="13" Padding="0" Focusable="False" IsTabStop="False"
-                                        ToolTip="Modifica prezzo"
+                                <Button Grid.Column="1" Padding="0" Focusable="False" IsTabStop="False"
+                                        ToolTip="{loc:Loc pos.cart.editPrice}"
                                         Command="{Binding DataContext.OpenEditProductCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}"
                                         VerticalAlignment="Center" Margin="8,0,0,0" MinWidth="36" MinHeight="36">
@@ -156,10 +157,12 @@
                                             </Style.Triggers>
                                         </Style>
                                     </Button.Style>
+                                    <Path Width="14" Height="14" Stretch="Uniform" Stroke="White" StrokeThickness="1.8"
+                                          Data="M 2 12 L 2 16 L 6 16 L 15 7 L 11 3 Z M 10 4 L 14 8"/>
                                 </Button>
                             </Grid>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
-                                <Button Content="−" FontSize="14" Padding="0" Focusable="False" IsTabStop="False"
+                                <Button Content="-" FontSize="14" Padding="0" Focusable="False" IsTabStop="False"
                                         Command="{Binding DataContext.DecreaseQtyForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                         CommandParameter="{Binding}"
                                         Style="{StaticResource SmallRoundButtonStyle}"/>
@@ -170,7 +173,7 @@
                                         Background="Transparent" BorderThickness="0"
                                         FontWeight="SemiBold" Cursor="Hand"
                                         Focusable="False" IsTabStop="False"
-                                        ToolTip="Modifica quantità">
+                                        ToolTip="{loc:Loc pos.cart.editQuantity}">
                                     <Button.Template>
                                         <ControlTemplate TargetType="Button">
                                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
@@ -201,7 +204,7 @@
                                            Foreground="#7A6F86" TextDecorations="Strikethrough" Margin="0,1,0,0"
                                            Visibility="{Binding HasDiscount, Converter={StaticResource BoolToVis}}"/>
                             </StackPanel>
-                            <Button Grid.Column="4" Content="✕" FontSize="12" Padding="0" Focusable="False" IsTabStop="False"
+                            <Button Grid.Column="4" Content="X" FontSize="12" Padding="0" Focusable="False" IsTabStop="False"
                                     Style="{StaticResource SmallRoundButtonStyle}"
                                     Foreground="White" Background="#C45C5C"
                                     Command="{Binding DataContext.RemoveLineForLineCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -215,8 +218,8 @@
         <!-- Destra: Inserimento / Scanner (solo BarcodeBox + Sconto + Add) -->
         <Border Grid.Row="0" Grid.Column="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14" Background="{StaticResource BackgroundLightBrush}" CornerRadius="8" Margin="0,0,0,0">
             <StackPanel>
-                <TextBlock Text="Inserimento / Scanner" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12"/>
-                <TextBlock Text="Codice a barre" FontSize="12" Foreground="#6B5B73" Margin="0,0,0,6"/>
+                <TextBlock Text="{loc:Loc pos.cart.scannerTitle}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12"/>
+                <TextBlock Text="{loc:Loc pos.cart.barcode}" FontSize="12" Foreground="#6B5B73" Margin="0,0,0,6"/>
                 <TextBox x:Name="BarcodeBox"
                          MinHeight="40"
                          Margin="0,0,0,6"
@@ -228,13 +231,13 @@
                            FontSize="11"
                            Foreground="#7B4FA3"
                            FontWeight="SemiBold"/>
-                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Add" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding AddBarcodeCommand}"/>
-                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Sconto  /" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenDiscountCommand}"/>
-                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Modifica quantità  +" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenChangeQuantityCommand}"/>
-                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Stampa ultima" Style="{StaticResource OutlineButtonStyle}" Command="{Binding PrintLastReceiptCommand}"/>
-                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="Apri cassa" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenCashDrawerCommand}" ToolTip="Apre il cassetto portamonete della stampante"/>
-                <Button MinWidth="120" MinHeight="38" Content="Reso (Scan scontrino)" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenResoScanCommand}"
-                        ToolTip="Scansiona il codice scontrino: se trova 1 vendita apre il reso direttamente"/>
+                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="{loc:Loc common.add}" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding AddBarcodeCommand}"/>
+                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="{loc:Loc pos.cart.discount}" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenDiscountCommand}"/>
+                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="{loc:Loc pos.cart.changeQuantity}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenChangeQuantityCommand}"/>
+                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="{loc:Loc pos.cart.printLast}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding PrintLastReceiptCommand}"/>
+                <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Content="{loc:Loc shell.openCashDrawer}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenCashDrawerCommand}" ToolTip="{loc:Loc shell.openCashDrawerTooltip}"/>
+                <Button MinWidth="120" MinHeight="38" Content="{loc:Loc pos.cart.refundScanReceipt}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenResoScanCommand}"
+                        ToolTip="{loc:Loc pos.cart.refundTooltip}"/>
             </StackPanel>
         </Border>
 
@@ -254,17 +257,19 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" Content="Sospendi" Command="{Binding SuspendCartCommand}"
+                <Button Grid.Column="0" Content="{loc:Loc pos.cart.suspend}" Command="{Binding SuspendCartCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
                         MinWidth="90" Height="42" Margin="0,0,0,0"/>
-                <Button Grid.Column="1" Content="Recupera" Command="{Binding RecoverCartCommand}"
+                <Button Grid.Column="1" Content="{loc:Loc pos.cart.recover}" Command="{Binding RecoverCartCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
                         MinWidth="90" Height="42" Margin="10,0,0,0"/>
-                <Button Grid.Column="2" Content="Svuota" Command="{Binding ClearCartCommand}"
+                <Button Grid.Column="2" Content="{loc:Loc pos.cart.clear}" Command="{Binding ClearCartCommand}"
                         Style="{StaticResource SecondaryButtonStyle}"
                         MinWidth="90" Height="42" Margin="10,0,0,0"/>
-                <TextBlock Grid.Column="3" VerticalAlignment="Center" Foreground="White" Margin="20,0,0,0" FontSize="14"
-                           Text="{Binding ItemsCount, StringFormat=Articoli: {0}}"/>
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0,0,0">
+                    <TextBlock Foreground="White" FontSize="14" Text="{loc:Loc pos.cart.itemsCountPrefix}"/>
+                    <TextBlock Foreground="White" FontSize="14" Margin="4,0,0,0" Text="{Binding ItemsCount}"/>
+                </StackPanel>
                 <Grid Grid.Column="4"
                       Width="280"
                       Margin="0,0,18,0"
@@ -281,7 +286,7 @@
                     </Grid.ColumnDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0"
-                               Text="Totale spesa"
+                               Text="{loc:Loc pos.cart.totalSpend}"
                                Foreground="#E8E0F0"
                                FontSize="14"
                                VerticalAlignment="Center"
@@ -316,9 +321,10 @@
                                    Foreground="#C8B8D0"
                                    FontSize="12"
                                    TextDecorations="Strikethrough"/>
-                        <TextBlock Text="  Sconto "
+                        <TextBlock Text="{loc:Loc pos.cart.discountLabel}"
                                    Foreground="#C8B8D0"
-                                   FontSize="12"/>
+                                   FontSize="12"
+                                   Margin="6,0,4,0"/>
                         <TextBlock Text="{Binding DiscountAmountDisplay}"
                                    Foreground="#C8B8D0"
                                    FontSize="12"
@@ -326,7 +332,7 @@
                     </StackPanel>
                 </Grid>
                 <Button Grid.Column="5" Grid.ColumnSpan="2" MinWidth="180" Height="48" FontSize="16" FontWeight="SemiBold"
-                        Content="Paga" Command="{Binding PayCommand}"
+                        Content="{loc:Loc common.pay}" Command="{Binding PayCommand}"
                         Style="{StaticResource PrimaryButtonStyle}"
                         Background="{StaticResource PrimaryLighterBrush}" Foreground="White"/>
                 <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="7"
@@ -345,7 +351,7 @@
                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <ProgressBar IsIndeterminate="True" Width="200" Height="6" Margin="0,0,0,12"/>
-                <TextBlock Text="Elaborazione in corso..." FontSize="14" Foreground="#555"/>
+                <TextBlock Text="{loc:Loc common.loading}" FontSize="14" Foreground="#555"/>
             </StackPanel>
         </Border>
     </Grid>

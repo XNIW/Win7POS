@@ -13,6 +13,7 @@ using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Infrastructure.Security;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Products
 {
@@ -23,7 +24,7 @@ namespace Win7POS.Wpf.Products
         private readonly IPermissionService _permissionService;
 
         private string _searchText = string.Empty;
-        private string _statusMessage = "Pronto.";
+        private string _statusMessage = PosLocalization.T("products.ready");
         private bool _isBusy;
         private ProductDetailsRow _selectedProduct;
         private CategoryListItem _selectedCategory;
@@ -43,7 +44,12 @@ namespace Win7POS.Wpf.Products
         public int PageIndex { get => _pageIndex; set { var v = value < 1 ? 1 : value; if (_pageIndex == v) return; _pageIndex = v; OnPropertyChanged(); RaiseCanExecuteChanged(); } }
         public int TotalCount { get => _totalCount; private set { _totalCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalPages)); OnPropertyChanged(nameof(PagingStatus)); RaiseCanExecuteChanged(); } }
         public int TotalPages => Math.Max(1, (TotalCount + PageSize - 1) / PageSize);
-        public string PagingStatus => $"Trovati: {Items.Count}/{TotalCount}  |  Pagina {PageIndex}/{TotalPages}";
+        public string PagingStatus => PosLocalization.F(
+            "products.pageStatus",
+            Items.Count,
+            TotalCount,
+            PageIndex,
+            TotalPages);
 
         private string _goPageText = "";
         public string GoPageText { get => _goPageText; set { _goPageText = value ?? ""; OnPropertyChanged(); } }
@@ -119,12 +125,12 @@ namespace Win7POS.Wpf.Products
             {
                 var parts = new System.Collections.Generic.List<string>();
                 if (SelectedCategory != null && SelectedCategory.Id != 0)
-                    parts.Add("Categoria = " + (SelectedCategory.Name ?? ""));
+                    parts.Add(PosLocalization.F("products.filterCategory", SelectedCategory.Name ?? ""));
                 if (SelectedSupplier != null && SelectedSupplier.Id != 0)
-                    parts.Add("Fornitore = " + (SelectedSupplier.Name ?? ""));
+                    parts.Add(PosLocalization.F("products.filterSupplier", SelectedSupplier.Name ?? ""));
                 if (!string.IsNullOrWhiteSpace(SearchText))
-                    parts.Add("Testo = \"" + SearchText.Trim() + "\"");
-                return parts.Count == 0 ? "" : "Filtri: " + string.Join(" | ", parts);
+                    parts.Add(PosLocalization.F("products.filterText", SearchText.Trim()));
+                return parts.Count == 0 ? "" : PosLocalization.F("products.filtersSummary", string.Join(" | ", parts));
             }
         }
 
@@ -192,12 +198,12 @@ namespace Win7POS.Wpf.Products
         private bool CanImportCatalog => !IsBusy && HasPermission(PermissionCodes.CatalogImport);
         private bool CanEditPrices => !IsBusy && HasPermission(PermissionCodes.CatalogPriceEdit);
 
-        private bool DemandProductPermission(string permissionCode, string operation)
+        private bool DemandProductPermission(string permissionCode, string operationKey)
         {
             if (HasPermission(permissionCode))
                 return true;
 
-            StatusMessage = "Permesso negato: " + operation + ".";
+            StatusMessage = PosLocalization.F("products.permissionDenied", PosLocalization.T(operationKey));
             return false;
         }
 
@@ -221,7 +227,7 @@ namespace Win7POS.Wpf.Products
             var currentId = SelectedCategory?.Id ?? 0;
             var raw = await _service.GetCategoriesAsync().ConfigureAwait(true);
             Categories.Clear();
-            Categories.Add(new CategoryListItem { Id = 0, Name = "(Tutte)" });
+            Categories.Add(new CategoryListItem { Id = 0, Name = PosLocalization.T("products.allCategories") });
             foreach (var c in (raw ?? Enumerable.Empty<CategoryListItem>())
                 .Where(x => x != null && !string.IsNullOrWhiteSpace(x.Name))
                 .GroupBy(x => x.Id)
@@ -251,7 +257,7 @@ namespace Win7POS.Wpf.Products
             var currentId = SelectedSupplier?.Id ?? 0;
             var raw = await _service.GetSuppliersAsync().ConfigureAwait(true);
             Suppliers.Clear();
-            Suppliers.Add(new SupplierListItem { Id = 0, Name = "(Tutti)" });
+            Suppliers.Add(new SupplierListItem { Id = 0, Name = PosLocalization.T("products.allSuppliers") });
             foreach (var s in (raw ?? Enumerable.Empty<SupplierListItem>())
                 .Where(x => x != null && !string.IsNullOrWhiteSpace(x.Name))
                 .GroupBy(x => x.Id)
@@ -346,7 +352,7 @@ namespace Win7POS.Wpf.Products
             }
             catch (Exception ex)
             {
-                StatusMessage = "Errore ricerca: " + ex.Message;
+                StatusMessage = PosLocalization.F("products.searchError", ex.Message);
                 _logger.LogError(ex, "Products search failed");
             }
             finally
@@ -378,7 +384,7 @@ namespace Win7POS.Wpf.Products
 
         private async Task NewProductAsync()
         {
-            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "modifica catalogo")) return;
+            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "products.operationEditCatalog")) return;
             try
             {
                 var ok = await ProductEditDialog.ShowAsync(ProductEditMode.New, null, _service).ConfigureAwait(true);
@@ -387,20 +393,20 @@ namespace Win7POS.Wpf.Products
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Products NewProduct dialog");
-                StatusMessage = "Errore apertura dialog: " + ex.GetType().Name + " (vedi app.log)";
+                StatusMessage = PosLocalization.F("products.dialogOpenError", ex.GetType().Name);
             }
         }
 
         private async Task EditProductAsync()
         {
             if (SelectedProduct == null) return;
-            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "modifica catalogo")) return;
+            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "products.operationEditCatalog")) return;
             try
             {
                 var full = await _service.GetDetailsByIdAsync(SelectedProduct.Id).ConfigureAwait(true);
                 if (full == null)
                 {
-                    StatusMessage = "Prodotto non trovato.";
+                    StatusMessage = PosLocalization.T("products.notFound");
                     return;
                 }
                 var ok = await ProductEditDialog.ShowAsync(ProductEditMode.Edit, full, _service).ConfigureAwait(true);
@@ -409,20 +415,20 @@ namespace Win7POS.Wpf.Products
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Products EditProduct dialog");
-                StatusMessage = "Errore apertura dialog: " + ex.GetType().Name + " (vedi app.log)";
+                StatusMessage = PosLocalization.F("products.dialogOpenError", ex.GetType().Name);
             }
         }
 
         private async Task CopyNewAsync()
         {
             if (SelectedProduct == null) return;
-            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "modifica catalogo")) return;
+            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "products.operationEditCatalog")) return;
             try
             {
                 var full = await _service.GetDetailsByIdAsync(SelectedProduct.Id).ConfigureAwait(true);
                 if (full == null)
                 {
-                    StatusMessage = "Prodotto non trovato.";
+                    StatusMessage = PosLocalization.T("products.notFound");
                     return;
                 }
                 var ok = await ProductEditDialog.ShowAsync(ProductEditMode.Duplicate, full, _service).ConfigureAwait(true);
@@ -430,7 +436,7 @@ namespace Win7POS.Wpf.Products
             }
             catch (Exception ex)
             {
-                StatusMessage = "Errore: " + ex.Message;
+                StatusMessage = PosLocalization.F("common.errorWithMessage", ex.Message);
                 _logger.LogError(ex, "Products Duplicate failed");
             }
         }
@@ -438,7 +444,7 @@ namespace Win7POS.Wpf.Products
         private async Task DeleteAsync()
         {
             if (SelectedProduct == null) return;
-            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "modifica catalogo")) return;
+            if (!DemandProductPermission(PermissionCodes.CatalogEdit, "products.operationEditCatalog")) return;
 
             var okToDelete = DeleteProductConfirmDialog.ShowDialog(
                 DialogOwnerHelper.GetSafeOwner(),
@@ -451,29 +457,31 @@ namespace Win7POS.Wpf.Products
             try
             {
                 var ok = await _service.DeleteProductAsync(SelectedProduct.Barcode).ConfigureAwait(true);
-                StatusMessage = ok ? "Prodotto eliminato." : "Eliminazione fallita.";
+                StatusMessage = ok
+                    ? PosLocalization.T("products.deleted")
+                    : PosLocalization.T("products.deleteFailed");
                 if (ok)
                     await RefreshAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Products Delete failed");
-                StatusMessage = "Errore eliminazione: " + ex.Message;
+                StatusMessage = PosLocalization.F("products.deleteError", ex.Message);
             }
         }
 
         private async Task ImportAsync()
         {
-            if (!DemandProductPermission(PermissionCodes.CatalogImport, "import catalogo")) return;
+            if (!DemandProductPermission(PermissionCodes.CatalogImport, "products.operationImportCatalog")) return;
             try
             {
                 ImportDataDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner());
-                StatusMessage = "Aggiornamento catalogo...";
+                StatusMessage = PosLocalization.T("products.catalogUpdating");
                 await RefreshAsync().ConfigureAwait(true);
             }
             catch (Exception ex)
             {
-                StatusMessage = "Errore: " + ex.Message;
+                StatusMessage = PosLocalization.F("common.errorWithMessage", ex.Message);
                 _logger.LogError(ex, "Products Import failed");
             }
         }
@@ -483,40 +491,40 @@ namespace Win7POS.Wpf.Products
             IsBusy = true;
             try
             {
-                StatusMessage = "Apertura finestra export...";
+                StatusMessage = PosLocalization.T("products.exportOpening");
                 var choice = ExportDataDialog.ShowDialogAndGetChoice(DialogOwnerHelper.GetSafeOwner());
                 if (choice == null)
                 {
-                    StatusMessage = "Export annullato.";
+                    StatusMessage = PosLocalization.T("products.exportCancelled");
                     return;
                 }
 
                 var path = choice.TargetPath;
-                StatusMessage = "Esportazione in corso...";
+                StatusMessage = PosLocalization.T("products.exportInProgress");
                 if (choice.Format == ExportDataFormat.Xlsx)
                 {
                     await _service.ExportWorkbookAsync(path).ConfigureAwait(true);
-                    StatusMessage = "Export XLSX completato: " + path;
+                    StatusMessage = PosLocalization.F("products.exportXlsxDone", path);
                 }
                 else
                 {
                     await _service.ExportSingleCsvAsync(path).ConfigureAwait(true);
-                    StatusMessage = "Export CSV completato: " + path;
+                    StatusMessage = PosLocalization.F("products.exportCsvDone", path);
                 }
             }
             catch (IOException ioEx)
             {
-                StatusMessage = "Impossibile salvare il file. Verifica che non sia aperto in un altro programma.";
+                StatusMessage = PosLocalization.T("products.exportFileBusy");
                 _logger.LogError(ioEx, "Products export I/O error");
             }
             catch (UnauthorizedAccessException uaEx)
             {
-                StatusMessage = "Permessi insufficienti per salvare il file.";
+                StatusMessage = PosLocalization.T("products.exportPermissionDenied");
                 _logger.LogError(uaEx, "Products export permission error");
             }
             catch (Exception ex)
             {
-                StatusMessage = "Errore export dati: " + ex.Message;
+                StatusMessage = PosLocalization.F("products.exportDataError", ex.Message);
                 _logger.LogError(ex, "Products export data failed");
             }
             finally
@@ -533,14 +541,14 @@ namespace Win7POS.Wpf.Products
                 var full = await _service.GetDetailsByIdAsync(SelectedProduct.Id).ConfigureAwait(true);
                 if (full == null)
                 {
-                    StatusMessage = "Prodotto non trovato.";
+                    StatusMessage = PosLocalization.T("products.notFound");
                     return;
                 }
                 ProductPriceHistoryDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner(), full.Id, full.Barcode ?? "", full.Name ?? "", (int)full.UnitPrice, full.PurchasePrice, CanEditPrices);
             }
             catch (Exception ex)
             {
-                StatusMessage = "Errore apertura storico prezzi: " + ex.Message;
+                StatusMessage = PosLocalization.F("products.priceHistoryOpenError", ex.Message);
                 _logger.LogError(ex, "Open price history failed");
             }
         }

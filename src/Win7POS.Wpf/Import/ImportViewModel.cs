@@ -9,6 +9,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using Win7POS.Core;
 using Win7POS.Data;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Import
 {
@@ -108,7 +109,7 @@ namespace Win7POS.Wpf.Import
 
         public string DbPath => AppPaths.DbPath;
 
-        public string ApplyModeText => DryRun ? "Mode: DryRun (no DB write)" : "Mode: Apply (write to DB)";
+        public string ApplyModeText => PosLocalization.T(DryRun ? "import.modeDryRun" : "import.modeApply");
 
         public ICommand BrowseCommand { get; }
         public ICommand AnalyzeCommand { get; }
@@ -128,7 +129,7 @@ namespace Win7POS.Wpf.Import
             BrowseCommand = new RelayCommand(_ => Browse(), _ => !IsBusy);
             AnalyzeCommand = new AsyncRelayCommand(AnalyzeAsync, _ => !IsBusy);
             ApplyCommand = new AsyncRelayCommand(ApplyAsync, _ => !IsBusy);
-            Summary = "Seleziona un file .csv, .xls o .xlsx e premi Analizza.";
+            Summary = PosLocalization.T("import.initialSummary");
             Status = "";
         }
 
@@ -136,8 +137,8 @@ namespace Win7POS.Wpf.Import
         {
             var dlg = new OpenFileDialog
             {
-                Title = "Seleziona file da importare",
-                Filter = "File dati (*.csv;*.xlsx;*.xls)|*.csv;*.xlsx;*.xls|CSV (*.csv)|*.csv|Excel (*.xlsx)|*.xlsx|Excel 97-2003 (*.xls)|*.xls|Tutti (*.*)|*.*",
+                Title = PosLocalization.T("import.selectFileTitle"),
+                Filter = PosLocalization.T("import.dataFileFilter"),
                 FilterIndex = 1,
                 CheckFileExists = true,
                 Multiselect = false
@@ -155,12 +156,12 @@ namespace Win7POS.Wpf.Import
             var path = (SelectedPath ?? "").Trim();
             if (path.Length == 0 || !File.Exists(path))
             {
-                Status = "Seleziona un file esistente.";
+                Status = PosLocalization.T("import.selectExistingFile");
                 return;
             }
 
             IsBusy = true;
-            Status = "Analisi in corso...";
+            Status = PosLocalization.T("import.analyzing");
             Summary = "";
             DiffItems.Clear();
             _lastDiffResult = null;
@@ -173,7 +174,7 @@ namespace Win7POS.Wpf.Import
             {
                 if (Kind != ImportKind.Csv && Kind != ImportKind.Xls && Kind != ImportKind.Xlsx)
                 {
-                    Status = "Estensione non supportata. Usa .csv, .xls o .xlsx.";
+                    Status = PosLocalization.T("import.unsupportedExtension");
                     return;
                 }
 
@@ -188,11 +189,16 @@ namespace Win7POS.Wpf.Import
                 DiffItems.Clear();
                 foreach (var item in result.Items)
                     DiffItems.Add(item);
-                Status = "OK N/U/NC/E: " + result.NewCount + "/" + result.UpdateCount + "/" + result.UnchangedCount + "/" + result.ErrorCount;
+                Status = PosLocalization.F(
+                    "import.analysisSummary",
+                    result.NewCount,
+                    result.UpdateCount,
+                    result.UnchangedCount,
+                    result.ErrorCount);
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
                 Summary = ex.ToString();
             }
             finally
@@ -205,13 +211,13 @@ namespace Win7POS.Wpf.Import
         {
             if (IsBusy)
             {
-                Status = "Operazione in corso...";
+                Status = PosLocalization.T("import.operationInProgress");
                 return;
             }
 
             if (Kind != ImportKind.Csv && Kind != ImportKind.Xls && Kind != ImportKind.Xlsx)
             {
-                Status = "Seleziona un file .csv, .xls o .xlsx.";
+                Status = PosLocalization.T("import.selectSupportedFile");
                 return;
             }
 
@@ -222,21 +228,24 @@ namespace Win7POS.Wpf.Import
         {
             if (_lastDiffResult == null || _lastParsedRows == null)
             {
-                Status = "Prima esegui Analizza.";
+                Status = PosLocalization.T("import.analyzeFirst");
                 return;
             }
 
             if (!DryRun)
             {
-                if (!ApplyConfirmDialog.ShowConfirm(Application.Current?.MainWindow, "Conferma Apply", "Confermi Apply? Verranno scritti dati nel DB."))
+                if (!ApplyConfirmDialog.ShowConfirm(
+                    Application.Current?.MainWindow,
+                    PosLocalization.T("import.confirmApplyTitle"),
+                    PosLocalization.T("import.confirmApplyMessage")))
                 {
-                    Status = "Apply annullato.";
+                    Status = PosLocalization.T("import.applyCancelled");
                     return;
                 }
             }
 
             IsBusy = true;
-            Status = DryRun ? "DryRun: simulazione Apply..." : "Apply in corso...";
+            Status = PosLocalization.T(DryRun ? "import.applyDryRun" : "import.applyInProgress");
 
             try
             {
@@ -254,14 +263,14 @@ namespace Win7POS.Wpf.Import
 
                 Summary = result.Summary;
                 Status = result.Success
-                    ? (DryRun ? "DryRun OK (nessuna scrittura DB)." : "Apply OK.")
-                    : "Apply completato con errori.";
+                    ? PosLocalization.T(DryRun ? "import.applyDryRunOk" : "import.applyOk")
+                    : PosLocalization.T("import.applyCompletedWithErrors");
                 if (result.Success && !DryRun)
                     Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(null);
             }
             catch (Exception ex)
             {
-                Status = "Errore Apply: " + ex.Message;
+                Status = PosLocalization.F("import.applyError", ex.Message);
             }
             finally
             {

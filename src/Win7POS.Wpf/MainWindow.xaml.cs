@@ -17,6 +17,7 @@ using Win7POS.Core.Security;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos.Online;
+using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Products;
 
 namespace Win7POS.Wpf
@@ -34,6 +35,8 @@ namespace Win7POS.Wpf
         private DispatcherTimer _syncStatusTimer;
         private bool _backgroundOnlineRefreshQueued;
         private bool _operatorLoginReached;
+        private bool _languageSelectionUpdating;
+        private SqliteConnectionFactory _languageSettingsFactory;
         private string _startupPhase = "constructed";
         private string _productsDataContextOperatorUsername;
         public static readonly DependencyProperty CurrentMenuKeyProperty = DependencyProperty.Register(
@@ -58,6 +61,7 @@ namespace Win7POS.Wpf
             StartupTrace.Write("MainWindow constructor start");
             _logger.LogInfo("MainWindow constructor entered");
             InitializeComponent();
+            InitializeLanguageSelector();
             StartupTrace.Write("MainWindow constructor end");
             _logger.LogInfo("MainWindow constructor done");
 
@@ -65,6 +69,83 @@ namespace Win7POS.Wpf
 
             Loaded += OnLoadedAsync;
             ContentRendered += OnContentRendered;
+        }
+
+        private void InitializeLanguageSelector()
+        {
+            if (LanguageComboBox == null)
+            {
+                return;
+            }
+
+            _languageSelectionUpdating = true;
+            LanguageComboBox.ItemsSource = PosLocalization.SupportedLanguages;
+            LanguageComboBox.DisplayMemberPath = "DisplayName";
+            LanguageComboBox.SelectedValuePath = "Code";
+            LanguageComboBox.SelectedValue = PosLocalization.Current.CurrentLanguage;
+            _languageSelectionUpdating = false;
+
+            PosLocalization.Current.LanguageChanged += (_, __) =>
+            {
+                UpdateLanguageSelector();
+                QueueSyncStatusRefresh(_languageSettingsFactory);
+            };
+        }
+
+        private async Task LoadLanguagePreferenceAsync(SqliteConnectionFactory factory)
+        {
+            _languageSettingsFactory = factory;
+            await PosLocalization.Current
+                .LoadAsync(new SettingsRepository(factory))
+                .ConfigureAwait(true);
+            UpdateLanguageSelector();
+        }
+
+        private void UpdateLanguageSelector()
+        {
+            if (LanguageComboBox == null)
+            {
+                return;
+            }
+
+            _languageSelectionUpdating = true;
+            LanguageComboBox.SelectedValue = PosLocalization.Current.CurrentLanguage;
+            _languageSelectionUpdating = false;
+        }
+
+        private async void OnLanguageSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_languageSelectionUpdating)
+            {
+                return;
+            }
+
+            var selected = LanguageComboBox?.SelectedValue as string;
+            if (string.IsNullOrWhiteSpace(selected))
+            {
+                return;
+            }
+
+            try
+            {
+                var factory = _languageSettingsFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+                _languageSettingsFactory = factory;
+                await PosLocalization.Current
+                    .SetLanguageAsync(new SettingsRepository(factory), selected)
+                    .ConfigureAwait(true);
+                if (GetPosViewModel() != null)
+                {
+                    GetPosViewModel().StatusMessage = PosLocalization.Current.Text("settings.languageSaved");
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("OnLanguageSelectionChanged: salvataggio lingua non completato", ex);
+                if (GetPosViewModel() != null)
+                {
+                    GetPosViewModel().StatusMessage = PosLocalization.Current.Text("settings.languageSaveError");
+                }
+            }
         }
 
         /// <summary>True se non esiste almeno un utente loggabile (attivo, con username valido). Copre DB inesistente, users vuota, solo utenti disabilitati.</summary>
@@ -101,6 +182,7 @@ namespace Win7POS.Wpf
                 _logger.LogInfo("DbInitializer done");
 
                 var factory = new SqliteConnectionFactory(options);
+                await LoadLanguagePreferenceAsync(factory).ConfigureAwait(true);
                 if (App.IsSafeStart)
                 {
                     ApplySafeStartStatus();
@@ -142,8 +224,10 @@ namespace Win7POS.Wpf
                     needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
                     if (!ok || needFirstRun)
                     {
-                        ModernMessageDialog.Show(this, "Win7POS",
-                            "Configurazione iniziale non completata.");
+                        ModernMessageDialog.Show(
+                            this,
+                            "Win7POS",
+                            PosLocalization.T("firstRun.notCompleted"));
                         Close();
                         return;
                     }
@@ -204,7 +288,7 @@ namespace Win7POS.Wpf
                 try
                 {
                     ModernMessageDialog.Show(this, "Win7POS",
-                        "Errore in avvio. Controlla il log applicativo.");
+                        PosLocalization.Current.Text("app.startupError"));
                 }
                 catch { }
                 Close();
@@ -478,8 +562,8 @@ namespace Win7POS.Wpf
         {
             if (SyncStatusText != null)
             {
-                SyncStatusText.Text = "Sync: Safe start: online sync disabled for this launch";
-                SyncStatusText.ToolTip = "Safe start: heartbeat, sales sync, catalog pull and trusted-session refresh are disabled for this launch.";
+                SyncStatusText.Text = PosLocalization.Current.Format("sync.statusPrefix", PosLocalization.Current.Text("sync.safeStart"));
+                SyncStatusText.ToolTip = PosLocalization.Current.Text("sync.safeStartTooltip");
             }
 
             if (SyncStatusPill != null)
@@ -550,7 +634,7 @@ namespace Win7POS.Wpf
                 var status = await new PosSyncStatusReader(factory).ReadAsync().ConfigureAwait(true);
                 if (SyncStatusText != null)
                 {
-                    SyncStatusText.Text = "Sync: " + status.SummaryText;
+                    SyncStatusText.Text = PosLocalization.Current.Format("sync.statusPrefix", status.SummaryText);
                     SyncStatusText.ToolTip = status.DeviceText + "\n" +
                         status.StaffText + "\n" +
                         status.LastOnlineText + "\n" +
@@ -564,7 +648,7 @@ namespace Win7POS.Wpf
 
                 if (SyncStatusPill != null)
                 {
-                    SyncStatusPill.Background = StatusBrush(status.ConnectivityText, status.RequiresAttention);
+                    SyncStatusPill.Background = StatusBrush(status.ConnectivityState, status.RequiresAttention);
                 }
             }
             catch (Exception ex)
@@ -572,24 +656,24 @@ namespace Win7POS.Wpf
                 _logger.LogWarning("RefreshSyncStatusStripAsync non completato", ex);
                 if (SyncStatusText != null)
                 {
-                    SyncStatusText.Text = "Sync: stato non disponibile";
+                    SyncStatusText.Text = PosLocalization.Current.Text("shell.syncUnavailable");
                 }
             }
         }
 
-        private static Brush StatusBrush(string connectivityText, bool requiresAttention)
+        private static Brush StatusBrush(string connectivityState, bool requiresAttention)
         {
             if (requiresAttention)
             {
                 return new SolidColorBrush(Color.FromRgb(126, 62, 23));
             }
 
-            if (string.Equals(connectivityText, "Online", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(connectivityState, "online", StringComparison.OrdinalIgnoreCase))
             {
                 return new SolidColorBrush(Color.FromRgb(42, 111, 72));
             }
 
-            if (string.Equals(connectivityText, "Non collegato", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(connectivityState, "not_connected", StringComparison.OrdinalIgnoreCase))
             {
                 return new SolidColorBrush(Color.FromRgb(109, 85, 132));
             }
@@ -667,7 +751,10 @@ namespace Win7POS.Wpf
             if (!hasUsersManage)
             {
                 UserManagementViewControl.DataContext = null;
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", "Non hai il permesso di accedere a Utenti e ruoli.");
+                ModernMessageDialog.Show(
+                    Application.Current?.MainWindow,
+                    PosLocalization.Current.Text("common.userPermissionDenied"),
+                    PosLocalization.Current.Text("shell.usersPermissionDenied"));
                 SideMenuOverlay.Visibility = Visibility.Collapsed;
                 return;
             }
@@ -691,12 +778,18 @@ namespace Win7POS.Wpf
             catch (InvalidOperationException ex)
             {
                 _logger.LogWarning("OnMenuUsersClick: permesso negato - " + ex.Message, null);
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", "Non hai il permesso di accedere a Utenti e ruoli.");
+                ModernMessageDialog.Show(
+                    Application.Current?.MainWindow,
+                    PosLocalization.Current.Text("common.userPermissionDenied"),
+                    PosLocalization.Current.Text("shell.usersPermissionDenied"));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "MainWindow.OnMenuUsersClick: errore apertura Utenti e ruoli");
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Utenti e ruoli", "Errore apertura Utenti e ruoli. Controlla il log applicativo.");
+                ModernMessageDialog.Show(
+                    Application.Current?.MainWindow,
+                    PosLocalization.Current.Text("shell.usersRoles"),
+                    PosLocalization.Current.Text("shell.usersOpenLogError"));
             }
             SideMenuOverlay.Visibility = Visibility.Collapsed;
         }
@@ -821,7 +914,10 @@ namespace Win7POS.Wpf
                 (session.CurrentUser.IsAdmin || session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.CatalogView) == true);
             if (!hasCatalogView)
             {
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Permesso negato", "Non hai il permesso di accedere ai prodotti.");
+                ModernMessageDialog.Show(
+                    Application.Current?.MainWindow,
+                    PosLocalization.Current.Text("common.userPermissionDenied"),
+                    PosLocalization.Current.Text("shell.productsPermissionDenied"));
                 SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
                 return;
             }
@@ -837,7 +933,10 @@ namespace Win7POS.Wpf
             catch (Exception ex)
             {
                 _logger.LogError(ex, "MainWindow.OnMenuProdottiClick: errore apertura Prodotti");
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Prodotti", "Errore apertura Prodotti. Controlla il log applicativo.");
+                ModernMessageDialog.Show(
+                    Application.Current?.MainWindow,
+                    PosLocalization.Current.Text("shell.products"),
+                    PosLocalization.Current.Text("shell.productsOpenLogError"));
                 SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
             }
         }

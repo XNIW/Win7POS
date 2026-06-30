@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -33,6 +34,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ShopSettingsViewModel(PosWorkflowService service)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
+            PosLocalization.Current.LanguageChanged += OnLanguageChanged;
             _ = LoadAsync();
         }
 
@@ -77,21 +79,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Footer = shop.Footer ?? "";
                 FiscalBoletaNumberText = (await _service.GetFiscalBoletaNumberAsync().ConfigureAwait(true)).ToString(CultureInfo.InvariantCulture);
                 ShopCode = Friendly(official.ShopCode);
-                ShopStatusText = "Stato negozio: " + Friendly(official.ShopStatus);
-                OfficialSourceText = "Fonte: " + FriendlySource(official.Source);
-                LastOfficialSyncText = "Snapshot ufficiale: " + FriendlyDate(official.SyncedAtUtc);
+                ShopStatusText = PosLocalization.F("settings.shopStatus", Friendly(official.ShopStatus));
+                OfficialSourceText = PosLocalization.F("settings.source", FriendlySource(official.Source));
+                LastOfficialSyncText = PosLocalization.F("settings.officialSnapshot", FriendlyDate(official.SyncedAtUtc));
                 CatalogSyncText = sync.LastCatalogSyncText + " | " + sync.CatalogVersionText;
                 SalesSyncText = sync.LastSalesSyncText;
                 PendingSalesText = sync.PendingSalesText;
                 DeviceStatusText = sync.DeviceText + " | " + sync.StaffText;
                 SyncStatusText = sync.ConnectivityText + " | " + sync.LastOnlineText;
                 Status = official.HasOfficialData
-                    ? "Sola lettura. Dati ufficiali gestiti da Master Console e disponibili offline da questa cache."
-                    : "Sola lettura. Snapshot ufficiale non ancora sincronizzato: collega POS online per aggiornare la cache.";
+                    ? PosLocalization.T("settings.shopReadOnlyOfflineCache")
+                    : PosLocalization.T("settings.shopSnapshotMissing");
             }
             catch
             {
-                Status = "Dati negozio non disponibili. Controlla il log applicativo.";
+                Status = PosLocalization.T("settings.shopDataUnavailable");
             }
             finally
             {
@@ -101,7 +103,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private static string Friendly(string value)
         {
-            return string.IsNullOrWhiteSpace(value) ? "non disponibile" : value.Trim();
+            return string.IsNullOrWhiteSpace(value) ? PosLocalization.T("sync.unavailable") : value.Trim();
         }
 
         private static string FriendlyDate(string value)
@@ -111,7 +113,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
             }
 
-            return "mai";
+            return PosLocalization.T("sync.never");
         }
 
         private static string FriendlySource(string value)
@@ -119,6 +121,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             return string.Equals(value?.Trim(), "supabase_admin_server", StringComparison.OrdinalIgnoreCase)
                 ? "Admin Web / Master Console"
                 : Friendly(value);
+        }
+
+        private void OnLanguageChanged(object sender, EventArgs e)
+        {
+            _ = LoadAsync();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)

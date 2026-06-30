@@ -5,21 +5,26 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
+using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Dialogs;
 
 namespace Win7POS.Wpf.Pos
 {
     public partial class DailyReportView : UserControl
     {
+        private bool _initialLoadRequested;
+
         public DailyReportView()
         {
             InitializeComponent();
             DataContextChanged += OnDataContextChanged;
             Loaded += OnLoaded;
+            Unloaded += OnUnloaded;
         }
 
         private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
         {
+            _initialLoadRequested = false;
             if (e.OldValue is DailyReportViewModel oldVm)
             {
                 oldVm.ExportRequested -= OnExportRequested;
@@ -29,8 +34,7 @@ namespace Win7POS.Wpf.Pos
             {
                 newVm.ExportRequested += OnExportRequested;
                 newVm.RequestExportScopeChoice += OnRequestExportScopeChoice;
-                if (newVm.LoadCommand.CanExecute(null))
-                    newVm.LoadCommand.Execute(null);
+                RequestInitialLoad(newVm);
             }
         }
 
@@ -39,15 +43,15 @@ namespace Win7POS.Wpf.Pos
             var vm = DataContext as DailyReportViewModel;
             if (vm == null) return;
             var menu = new ContextMenu();
-            var periodo = new MenuItem { Header = "Esporta periodo" };
+            var periodo = new MenuItem { Header = PosLocalization.T("reports.exportPeriod") };
             periodo.Click += (_, __) => vm.ChooseExportPeriod();
-            var giorno = new MenuItem { Header = "Esporta giorno corrente" };
+            var giorno = new MenuItem { Header = PosLocalization.T("reports.exportCurrentDay") };
             giorno.Click += (_, __) => vm.ChooseExportDay();
             menu.Items.Add(periodo);
             menu.Items.Add(giorno);
             if (vm.HasMarkedRows)
             {
-                var selezione = new MenuItem { Header = "Esporta giorni selezionati" };
+                var selezione = new MenuItem { Header = PosLocalization.T("reports.exportMarkedDays") };
                 selezione.Click += (_, __) => vm.ChooseExportMarked();
                 menu.Items.Add(selezione);
             }
@@ -62,8 +66,8 @@ namespace Win7POS.Wpf.Pos
             if (request == null) return;
             var dialog = new SaveFileDialog
             {
-                Title = "Esporta report",
-                Filter = "File Excel (*.xlsx)|*.xlsx|File CSV (*.csv)|*.csv",
+                Title = PosLocalization.T("reports.exportTitle"),
+                Filter = PosLocalization.T("reports.exportFileFilter"),
                 DefaultExt = ".csv",
                 AddExtension = true,
                 FileName = request.BaseFileName
@@ -76,24 +80,43 @@ namespace Win7POS.Wpf.Pos
             {
                 if (ext == ".xlsx")
                 {
-                    vm?.SetStatus("Export Excel (xlsx) in fase di implementazione. Usare CSV.");
+                    vm?.SetStatus(PosLocalization.T("reports.exportXlsxUnavailable"));
                     return;
                 }
                 var content = await vm.GetExportCsvContentAsync(request).ConfigureAwait(true);
                 File.WriteAllText(dialog.FileName, content, Encoding.UTF8);
-                vm?.SetStatus("File salvato: " + dialog.FileName);
+                vm?.SetStatus(PosLocalization.F("reports.fileSaved", dialog.FileName));
             }
             catch (System.Exception ex)
             {
-                vm?.SetStatus("Errore salvataggio: " + ex.Message);
+                vm?.SetStatus(PosLocalization.F("reports.saveError", ex.Message));
             }
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
             var vm = DataContext as DailyReportViewModel;
-            if (vm != null && vm.LoadCommand.CanExecute(null))
-                vm.LoadCommand.Execute(null);
+            RequestInitialLoad(vm);
+        }
+
+        private void OnUnloaded(object sender, RoutedEventArgs e)
+        {
+            var vm = DataContext as DailyReportViewModel;
+            if (vm == null) return;
+            vm.ExportRequested -= OnExportRequested;
+            vm.RequestExportScopeChoice -= OnRequestExportScopeChoice;
+            _initialLoadRequested = false;
+        }
+
+        private void RequestInitialLoad(DailyReportViewModel vm)
+        {
+            if (_initialLoadRequested || vm == null || !vm.LoadCommand.CanExecute(null))
+            {
+                return;
+            }
+
+            _initialLoadRequested = true;
+            vm.LoadCommand.Execute(null);
         }
 
         private void HistoryGrid_PreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)

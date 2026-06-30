@@ -5,6 +5,7 @@ using Win7POS.Wpf.Chrome;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -23,7 +24,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _userRepo = new UserRepository(factory);
             _securityRepo = new SecurityRepository(factory);
             if (!string.IsNullOrEmpty(username))
-                Title = "Cambio PIN – " + username;
+                Title = PosLocalization.F("pin.changeTitleForUser", username);
             NewPinBox.Focus();
             Loaded += (s, e) => NewPinBox.Focus();
         }
@@ -34,12 +35,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var confirm = ConfirmPinBox?.Password ?? "";
             if (newPin.Length < 4 || newPin.Length > 6 || !newPin.All(char.IsDigit))
             {
-                ShowError("Il PIN deve essere di 4-6 cifre numeriche.");
+                ShowError(PosLocalization.T("pin.invalidDigits"));
                 return;
             }
             if (newPin != confirm)
             {
-                ShowError("I PIN non coincidono.");
+                ShowError(PosLocalization.T("operator.login.pinMismatch"));
                 ConfirmPinBox.Clear();
                 return;
             }
@@ -55,7 +56,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                ShowError("Impossibile aggiornare il PIN: " + ex.Message);
+                ShowError(PosLocalization.F("operator.login.pinUpdateFailed", ex.Message));
             }
             finally
             {

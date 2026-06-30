@@ -5,6 +5,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Win7POS.Core.Util;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -79,11 +80,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         TotalDisplay = MoneyClp.Format(x.TotalMinor)
                     });
                 }
-                Status = Items.Count == 0 ? "Nessuno scontrino sospeso." : "Trovati: " + Items.Count;
+                Status = Items.Count == 0
+                    ? PosLocalization.T("heldCarts.none")
+                    : PosLocalization.F("heldCarts.found", Items.Count);
             }
             catch (Exception ex)
             {
-                Status = "Errore: " + ex.Message;
+                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {
@@ -133,7 +136,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Status = "Errore recupero: " + ex.Message;
+                Status = PosLocalization.F("heldCarts.recoverError", ex.Message);
             }
             finally
             {
@@ -150,11 +153,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 await _service.DeleteHeldCartAsync(SelectedHold.HoldId).ConfigureAwait(true);
                 Items.Remove(SelectedHold);
                 SelectedHold = null;
-                Status = "Sospeso eliminato.";
+                Status = PosLocalization.T("heldCarts.deleted");
             }
             catch (Exception ex)
             {
-                Status = "Errore eliminazione: " + ex.Message;
+                Status = PosLocalization.F("heldCarts.deleteError", ex.Message);
             }
             finally
             {

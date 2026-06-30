@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Threading.Tasks;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Online
 {
@@ -60,79 +61,102 @@ namespace Win7POS.Wpf.Pos.Online
             var policyTaxStatus = await settings.GetStringAsync(PolicyTaxStatusSettingKey).ConfigureAwait(false);
             var policyWarning = await settings.GetStringAsync(PolicyWarningSettingKey).ConfigureAwait(false);
             var requiresAttention = outbox.Blocked > 0 || restoreNeedsReview || !string.IsNullOrWhiteSpace(policyWarning);
+            var connectivityState = ConnectivityState(trustedSession);
 
             return new PosSyncStatusSnapshot
             {
-                CatalogErrorText = "Ultimo errore catalogo: " + SafeCode(lastCatalogError),
-                CatalogVersionText = "Catalogo: " + (string.IsNullOrWhiteSpace(lastCatalogVersion) ? "versione non disponibile" : lastCatalogVersion.Trim()),
-                ConnectivityText = ConnectivityText(trustedSession),
+                CatalogErrorText = T("sync.lastCatalogError") + ": " + SafeCode(lastCatalogError),
+                CatalogVersionText = T("sync.catalog") + ": " + (string.IsNullOrWhiteSpace(lastCatalogVersion) ? T("sync.versionUnavailable") : lastCatalogVersion.Trim()),
+                ConnectivityState = connectivityState,
+                ConnectivityText = ConnectivityText(connectivityState),
                 DeviceText = DeviceText(trustedSession),
                 IsTrusted = trustedSession != null,
                 IsSyncing = salesSyncInProgress,
-                LastCatalogSyncText = "Ultimo catalogo: " + FormatIso(lastCatalog),
-                LastOnlineText = "Sessione verificata: " + FormatIso(trustedSession?.LastOkServerAt),
-                LastSalesSyncText = "Ultima vendita inviata: " + FormatIso(lastSales),
+                LastCatalogSyncText = T("sync.lastCatalog") + ": " + FormatIso(lastCatalog),
+                LastOnlineText = T("sync.sessionVerified") + ": " + FormatIso(trustedSession?.LastOkServerAt),
+                LastSalesSyncText = T("sync.lastSaleSent") + ": " + FormatIso(lastSales),
                 RequiresAttention = requiresAttention,
-                PendingSalesText = "Vendite in coda: " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
-                    " | Da ritentare: " + outbox.Retry.ToString(CultureInfo.InvariantCulture) +
-                    " | Bloccate/attenzione: " + outbox.Blocked.ToString(CultureInfo.InvariantCulture),
+                PendingSalesText = T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
+                    " | " + T("sync.toRetry") + ": " + outbox.Retry.ToString(CultureInfo.InvariantCulture) +
+                    " | " + T("sync.blockedAttention") + ": " + outbox.Blocked.ToString(CultureInfo.InvariantCulture),
                 PolicyText = PolicyText(policyContractVersion, policyPaymentMethods, policyStaffOfflineMirror, policyTaxStatus, policyWarning),
                 RestoreReviewText = RestoreReviewText(restoreNeedsReview, restoreCompletedAt, restorePreBackupPath),
                 SalesAttentionText = SalesAttentionText(outbox, restoreNeedsReview),
-                SalesErrorText = "Ultimo errore vendite: " + SafeCode(lastSalesError),
+                SalesErrorText = T("sync.lastSalesError") + ": " + SafeCode(lastSalesError),
                 StaffText = StaffText(trustedSession),
-                SummaryText = SummaryText(trustedSession, outbox, lastCatalog, lastSales, restoreNeedsReview, salesSyncInProgress)
+                SummaryText = SummaryText(connectivityState, outbox, lastCatalog, lastSales, restoreNeedsReview, salesSyncInProgress)
             };
         }
 
-        private static string ConnectivityText(PosTrustedDeviceSession session)
+        private static string T(string key)
+        {
+            return PosLocalization.Current.Text(key);
+        }
+
+        private static string ConnectivityState(PosTrustedDeviceSession session)
         {
             if (session == null)
             {
-                return "Non collegato";
+                return "not_connected";
             }
 
             if (TryParseIso(session.SessionExpiresAt, out var expiresAt) &&
                 expiresAt <= DateTimeOffset.UtcNow)
             {
-                return "Sessione da ricollegare";
+                return "reconnect";
             }
 
             if (!TryParseIso(session.LastOkServerAt, out var lastOk) ||
                 lastOk < DateTimeOffset.UtcNow.AddMinutes(-10))
             {
-                return "Offline";
+                return "offline";
             }
 
-            return "Online";
+            return "online";
+        }
+
+        private static string ConnectivityText(string state)
+        {
+            switch (state)
+            {
+                case "online":
+                    return T("sync.online");
+                case "offline":
+                    return T("sync.offline");
+                case "reconnect":
+                    return T("sync.reconnectSession");
+                default:
+                    return T("sync.notConnected");
+            }
         }
 
         private static string DeviceText(PosTrustedDeviceSession session)
         {
             if (session == null)
             {
-                return "Negozio: non collegato | Dispositivo: non collegato";
+                return T("sync.shop") + ": " + T("sync.notConnected") +
+                    " | " + T("sync.device") + ": " + T("sync.notConnected");
             }
 
-            return "Negozio: " + SafeLabel(session.ShopCode) +
-                " | Dispositivo: " + ShortId(session.ShopDeviceId);
+            return T("sync.shop") + ": " + SafeLabel(session.ShopCode) +
+                " | " + T("sync.device") + ": " + ShortId(session.ShopDeviceId);
         }
 
         private static string StaffText(PosTrustedDeviceSession session)
         {
             if (session == null)
             {
-                return "Staff online: non collegato";
+                return T("sync.staffOnline") + ": " + T("sync.notConnected");
             }
 
             var staff = string.IsNullOrWhiteSpace(session.StaffDisplayName)
                 ? session.StaffCode
                 : session.StaffDisplayName;
-            return "Staff online: " + SafeLabel(staff);
+            return T("sync.staffOnline") + ": " + SafeLabel(staff);
         }
 
         private static string SummaryText(
-            PosTrustedDeviceSession session,
+            string connectivityState,
             SalesSyncOutboxSummary outbox,
             string lastCatalog,
             string lastSales,
@@ -141,57 +165,57 @@ namespace Win7POS.Wpf.Pos.Online
         {
             if (salesSyncInProgress)
             {
-                return "Sync in corso" +
-                    " | " + ConnectivityText(session) +
-                    " | Vendite in coda: " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
-                    " | Da ritentare: " + outbox.Retry.ToString(CultureInfo.InvariantCulture);
+                return T("sync.inProgress") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
+                    " | " + T("sync.toRetry") + ": " + outbox.Retry.ToString(CultureInfo.InvariantCulture);
             }
 
             if (outbox.Blocked > 0 || restoreNeedsReview)
             {
-                return "Richiede attenzione" +
-                    " | " + ConnectivityText(session) +
-                    " | Vendite in coda: " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
-                    " | Bloccate: " + outbox.Blocked.ToString(CultureInfo.InvariantCulture);
+                return T("sync.requiresAttention") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
+                    " | " + T("sync.blocked") + ": " + outbox.Blocked.ToString(CultureInfo.InvariantCulture);
             }
 
             if (outbox.Retry > 0)
             {
-                return "Retry sync" +
-                    " | " + ConnectivityText(session) +
-                    " | Da ritentare: " + outbox.Retry.ToString(CultureInfo.InvariantCulture) +
-                    " | Vendite in coda: " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
+                return T("sync.retrySync") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + T("sync.toRetry") + ": " + outbox.Retry.ToString(CultureInfo.InvariantCulture) +
+                    " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
             }
 
             if (outbox.PendingOrRetry > 0)
             {
-                return "Pending sync" +
-                    " | " + ConnectivityText(session) +
-                    " | Vendite in coda: " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
+                return T("sync.pendingSync") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
             }
 
-            return ConnectivityText(session) +
-                " | Ultimo catalogo: " + FormatIso(lastCatalog) +
-                " | Ultima vendita inviata: " + FormatIso(lastSales) +
-                " | Vendite in coda: " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
+            return ConnectivityText(connectivityState) +
+                " | " + T("sync.lastCatalog") + ": " + FormatIso(lastCatalog) +
+                " | " + T("sync.lastSaleSent") + ": " + FormatIso(lastSales) +
+                " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
         }
 
         private static string SalesAttentionText(SalesSyncOutboxSummary outbox, bool restoreNeedsReview)
         {
             if (outbox.Blocked <= 0 && !restoreNeedsReview)
             {
-                return "Attenzione sync: nessuna vendita bloccata.";
+                return T("sync.noBlockedSales");
             }
 
-            var text = "Attenzione sync: vendita salvata localmente; non cancellare dati.";
+            var text = T("sync.localSaleDoNotDelete");
             if (outbox.Blocked > 0)
             {
-                text += " Vendite bloccate: " + outbox.Blocked.ToString(CultureInfo.InvariantCulture) + ". Chiamare manager/assistenza.";
+                text += " " + T("sync.blockedSales") + ": " + outbox.Blocked.ToString(CultureInfo.InvariantCulture) + ". " + T("sync.callSupport");
             }
 
             if (restoreNeedsReview)
             {
-                text += " Dopo restore verificare stato sincronizzazione prima di chiudere intervento.";
+                text += " " + T("sync.restoreVerifyBeforeClose");
             }
 
             return text;
@@ -201,12 +225,12 @@ namespace Win7POS.Wpf.Pos.Online
         {
             if (!needsReview)
             {
-                return "Restore DB: nessuna revisione sync richiesta.";
+                return T("sync.restoreNoReview");
             }
 
-            return "Restore DB: verificare stato sincronizzazione. Ultimo restore: " +
+            return T("sync.restoreNeedsReview") + " " + T("sync.lastRestore") + ": " +
                 FormatIso(completedAt) +
-                " | Pre-backup: " +
+                " | " + T("sync.preBackup") + ": " +
                 SafePathLabel(preBackupPath);
         }
 
@@ -219,17 +243,17 @@ namespace Win7POS.Wpf.Pos.Online
         {
             if (string.IsNullOrWhiteSpace(contractVersion))
             {
-                return "Policy POS: non disponibile dal server.";
+                return T("sync.policyUnavailable");
             }
 
-            var text = "Policy POS: " + SafeCode(contractVersion) +
-                " | pagamenti: " + SafeCode(paymentMethods) +
-                " | staff offline: " + SafeCode(staffOfflineMirror) +
-                " | tax: " + SafeCode(taxStatus);
+            var text = T("sync.policyPos") + ": " + SafeCode(contractVersion) +
+                " | " + T("sync.payments") + ": " + SafeCode(paymentMethods) +
+                " | " + T("sync.offlineStaff") + ": " + SafeCode(staffOfflineMirror) +
+                " | " + T("sync.tax") + ": " + SafeCode(taxStatus);
 
             if (!string.IsNullOrWhiteSpace(warning))
             {
-                text += " | attenzione: " + SafeCode(warning);
+                text += " | " + T("sync.attention") + ": " + SafeCode(warning);
             }
 
             return text;
@@ -242,7 +266,7 @@ namespace Win7POS.Wpf.Pos.Online
                 return parsed.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
             }
 
-            return "mai";
+            return T("sync.never");
         }
 
         private static bool TryParseIso(string value, out DateTimeOffset parsed)
@@ -258,7 +282,7 @@ namespace Win7POS.Wpf.Pos.Online
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                return "nessuno";
+                return T("sync.none");
             }
 
             var code = value.Trim();
@@ -269,7 +293,7 @@ namespace Win7POS.Wpf.Pos.Online
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                return "non disponibile";
+                return T("sync.unavailable");
             }
 
             var label = value.Trim();
@@ -280,7 +304,7 @@ namespace Win7POS.Wpf.Pos.Online
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                return "non disponibile";
+                return T("sync.unavailable");
             }
 
             var fileName = System.IO.Path.GetFileName(value.Trim());
@@ -291,7 +315,7 @@ namespace Win7POS.Wpf.Pos.Online
         {
             if (string.IsNullOrWhiteSpace(value))
             {
-                return "non disponibile";
+                return T("sync.unavailable");
             }
 
             var normalized = value.Trim();
@@ -303,6 +327,7 @@ namespace Win7POS.Wpf.Pos.Online
     {
         public string CatalogErrorText { get; set; } = string.Empty;
         public string CatalogVersionText { get; set; } = string.Empty;
+        public string ConnectivityState { get; set; } = string.Empty;
         public string ConnectivityText { get; set; } = string.Empty;
         public string DeviceText { get; set; } = string.Empty;
         public bool IsTrusted { get; set; }

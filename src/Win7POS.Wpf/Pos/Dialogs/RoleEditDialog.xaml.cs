@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -19,7 +20,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             InitializeComponent();
             _codeReadOnly = codeReadOnly;
-            Title = title ?? "Ruolo";
+            Title = title ?? PosLocalization.T("role.defaultTitle");
             TitleText.Text = Title;
             CodeBox.Text = initialCode ?? "";
             NameBox.Text = initialName ?? "";
@@ -39,14 +40,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (string.IsNullOrWhiteSpace(RoleName))
             {
-                ModernMessageDialog.Show(this, Title ?? "Ruolo", "Inserire il nome del ruolo.");
+                ModernMessageDialog.Show(this, Title ?? PosLocalization.T("role.defaultTitle"), PosLocalization.T("users.roleNameRequired"));
                 NameBox.Focus();
                 NameBox.SelectAll();
                 return;
             }
             if (!_codeReadOnly && string.IsNullOrWhiteSpace(RoleCode))
             {
-                ModernMessageDialog.Show(this, Title ?? "Ruolo", "Inserire il codice del ruolo (es. mio_ruolo).");
+                ModernMessageDialog.Show(this, Title ?? PosLocalization.T("role.defaultTitle"), PosLocalization.T("users.roleCodeRequired"));
                 CodeBox.Focus();
                 CodeBox.SelectAll();
                 return;
@@ -56,7 +57,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var error = ValidateCode(RoleCode);
                 if (!string.IsNullOrWhiteSpace(error))
                 {
-                    ModernMessageDialog.Show(this, Title ?? "Ruolo", error);
+                    ModernMessageDialog.Show(this, Title ?? PosLocalization.T("role.defaultTitle"), error);
                     CodeBox.Focus();
                     CodeBox.SelectAll();
                     return;

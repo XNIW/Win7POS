@@ -13,26 +13,31 @@ namespace Win7POS.Core.Reports
         /// <summary>Larghezza termica conservativa (Win7 + driver).</summary>
         private const int ReceiptWidth = 32;
 
-        public static IReadOnlyList<string> Format(DailyTakingsReceiptModel model, ReceiptShopInfo shop = null)
+        public static IReadOnlyList<string> Format(
+            DailyTakingsReceiptModel model,
+            ReceiptShopInfo shop = null,
+            ReceiptOptions options = null)
         {
             if (model == null) throw new ArgumentNullException(nameof(model));
             shop = shop ?? new ReceiptShopInfo();
-            var culture = CultureInfo.GetCultureInfo("es-CL");
+            options = options ?? ReceiptOptions.Default32Clp();
+            var labels = options.Labels ?? ReceiptLabels.English;
+            var culture = CultureInfo.GetCultureInfo(options.CultureName ?? "en-US");
 
             var lines = new List<string>();
-            lines.Add("CHIUSURA CASSA");
-            lines.Add("Data: " + model.Date.ToString("yyyy-MM-dd", culture));
+            lines.Add(Fit(labels.Receipt, ReceiptWidth));
+            lines.Add(labels.DateTime + ": " + model.Date.ToString("yyyy-MM-dd", culture));
             lines.Add(new string('-', ReceiptWidth));
-            lines.Add(Line2("Scontr.", model.SalesCount.ToString(CultureInfo.InvariantCulture)));
-            lines.Add(Line2("Totale", Money(model.TotalAmount)));
-            lines.Add(Line2("Cash", Money(model.CashAmount)));
-            lines.Add(Line2("Carta", Money(model.CardAmount)));
-            lines.Add(Line2("Lorde", Money(model.GrossSalesAmount)));
-            lines.Add(Line2("Resi", Money(model.RefundsAmount)));
+            lines.Add(Line2(labels.SalesCountShort, model.SalesCount.ToString(CultureInfo.InvariantCulture)));
+            lines.Add(Line2(labels.Total, Money(model.TotalAmount, culture)));
+            lines.Add(Line2(labels.Cash, Money(model.CashAmount, culture)));
+            lines.Add(Line2(labels.Card, Money(model.CardAmount, culture)));
+            lines.Add(Line2(labels.Gross, Money(model.GrossSalesAmount, culture)));
+            lines.Add(Line2(labels.Refunds, Money(model.RefundsAmount, culture)));
             lines.Add(new string('-', ReceiptWidth));
-            lines.Add(Line2("Netto", Money(model.NetAmount)));
+            lines.Add(Line2(labels.Net, Money(model.NetAmount, culture)));
             lines.Add(new string('-', ReceiptWidth));
-            lines.Add(string.IsNullOrWhiteSpace(shop.Footer) ? "Grazie" : Fit(shop.Footer.Trim(), ReceiptWidth));
+            lines.Add(string.IsNullOrWhiteSpace(shop.Footer) ? labels.Thanks : Fit(shop.Footer.Trim(), ReceiptWidth));
 
             return lines;
         }
@@ -54,9 +59,9 @@ namespace Win7POS.Core.Reports
             return text.Length <= max ? text : text.Substring(0, max);
         }
 
-        private static string Money(long pesos)
+        private static string Money(long pesos, CultureInfo culture)
         {
-            return pesos.ToString("N0", CultureInfo.GetCultureInfo("es-CL"));
+            return pesos.ToString("N0", culture);
         }
     }
 

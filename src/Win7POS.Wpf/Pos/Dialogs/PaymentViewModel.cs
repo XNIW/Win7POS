@@ -9,6 +9,7 @@ using System.Windows.Input;
 using Win7POS.Core.Models;
 using Win7POS.Core.Receipt;
 using Win7POS.Core.Util;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -30,7 +31,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _receiptPreviewRest = "";
         private int _nextBoletaNumber;
         private string _fiscalPreviewText = "";
-        private string _fiscalStatus = "In attesa.";
+        private string _fiscalStatus = "";
+        private string _fiscalStatusKey = "payment.pending";
         private bool _autoPrintPdfSii;
         private bool _openDrawerForCurrentPayment;
 
@@ -51,6 +53,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _autoPrintPdfSii = true;
             _openDrawerForCurrentPayment = openDrawerDefault;
             _nextBoletaNumber = draft?.NextBoletaNumber ?? 0;
+            SetFiscalStatusKey("payment.pending");
 
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
@@ -68,6 +71,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             UpdateReceiptPreviewText();
             UpdateFiscalPreviewText();
+            PosLocalization.Current.LanguageChanged += (_, __) =>
+            {
+                OnPropertyChanged(nameof(NextBoletaNumberLabel));
+                OnPropertyChanged(nameof(PaidLabelPrefix));
+                SetFiscalStatusKey(_fiscalStatusKey);
+                NotifyDerived();
+            };
         }
 
         public string SaleCode => _draft?.SaleCode ?? "";
@@ -82,9 +92,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 _nextBoletaNumber = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(NextBoletaNumberText));
+                OnPropertyChanged(nameof(NextBoletaNumberLabel));
                 UpdateFiscalPreviewText();
             }
         }
+
+        public string NextBoletaNumberLabel => PosLocalization.Current.Format(
+            "payment.nextPdfNumber",
+            NextBoletaNumberText);
+
+        public string PaidLabelPrefix => PosLocalization.Current.Text("payment.paid") + " ";
 
         public string NextBoletaNumberText
         {
@@ -170,9 +187,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         public string ChangeDueText => MoneyClp.Format(ChangeDueMinor);
         public string MissingAmountText => IsCardOverBalance
-            ? "La carta non può superare il saldo da pagare. Riduci carta o sposta l'eccedenza su contanti."
-            : IsValid ? string.Empty : "Manca: " + MoneyClp.Format(MissingAmountMinor);
-        public string RestoOrMissingDisplay => IsValid ? "Resto (solo contanti): " + ChangeDueText : MissingAmountText;
+            ? PosLocalization.Current.Text("payment.cardOverBalance")
+            : IsValid ? string.Empty : PosLocalization.Current.Format("payment.missing", MoneyClp.Format(MissingAmountMinor));
+        public string RestoOrMissingDisplay => IsValid
+            ? PosLocalization.Current.Format("payment.changeCashOnly", ChangeDueText)
+            : MissingAmountText;
 
         public bool IsCardOverBalance => CardAmountMinor > Math.Max(0, _totalDueMinor - CashAmountMinor);
         public bool IsValid => CashAmountMinor >= 0 &&
@@ -327,7 +346,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (CashAmountMinor <= 0)
             {
-                FiscalStatus = "Non stampata: pagamento solo carta.";
+                SetFiscalStatusKey("payment.notPrintedCardOnly");
                 return false;
             }
 
@@ -340,7 +359,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (_generateFiscalPdf == null)
                 return false;
 
-            FiscalStatus = "Generazione boleta PDF...";
+            SetFiscalStatusKey("payment.generatingBoletaPdf");
             string path = null;
             try
             {
@@ -348,7 +367,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
                 if (_printFiscalToThermal != null)
                 {
-                    FiscalStatus = "Invio boleta a stampante...";
+                    SetFiscalStatusKey("payment.sendingBoletaPrinter");
                     await _printFiscalToThermal(FiscalPreviewText, SaleCode).ConfigureAwait(true);
 
                     if (!string.IsNullOrEmpty(path))
@@ -368,25 +387,31 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         });
                     }
 
-                    FiscalStatus = "Stampata.";
+                    SetFiscalStatusKey("payment.printed");
                     return true;
                 }
 
-                FiscalStatus = "Boleta PDF generata nella cartella export locale.";
+                SetFiscalStatusKey("payment.pdfGeneratedLocalExport");
                 return false;
             }
             catch (Exception)
             {
-                FiscalStatus = "Boleta non stampata. Controlla il log applicativo.";
+                SetFiscalStatusKey("payment.notPrintedCheckLog");
                 return false;
             }
+        }
+
+        private void SetFiscalStatusKey(string key)
+        {
+            _fiscalStatusKey = string.IsNullOrWhiteSpace(key) ? "payment.pending" : key;
+            FiscalStatus = PosLocalization.T(_fiscalStatusKey);
         }
 
         private void UpdateReceiptPreviewText()
         {
             if (_draft?.CartLines == null || _draft.CartLines.Count == 0)
             {
-                ReceiptPreviewText = "Carrello vuoto.";
+                ReceiptPreviewText = PosLocalization.Current.Text("pos.status.cartEmpty");
                 return;
             }
 
@@ -413,15 +438,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 LineTotal = x.LineTotal
             }).ToList();
 
-            var options = _draft.UseReceipt42 ? ReceiptOptions.Default42Clp() : ReceiptOptions.Default32Clp();
-            var shop = _draft?.ShopInfo ?? new ReceiptShopInfo { Name = "Win7POS", Address = "", Footer = "Grazie" };
+            var options = PosLocalization.CreateReceiptOptions(_draft.UseReceipt42, "receipt.title");
+            var shop = _draft?.ShopInfo ?? new ReceiptShopInfo { Name = "Win7POS", Address = "", Footer = PosLocalization.T("receipt.thanks") };
 
             var lines = new List<string>(ReceiptFormatter.Format(sale, saleLines, options, shop));
-            // Stessa struttura della stampante: riga "Scontrino: XXX" in fondo (sotto la stampante viene disegnato il barcode Code128)
+            // Stessa struttura della stampante: riga con codice vendita in fondo.
             if (!string.IsNullOrEmpty(sale.Code))
             {
                 lines.Add("");
-                lines.Add("Scontrino: " + sale.Code);
+                lines.Add(PosLocalization.T("receipt.title") + ": " + sale.Code);
             }
             ReceiptPreviewText = string.Join(Environment.NewLine, lines);
             // Anteprima = stampa: prima riga (nome negozio) in grassetto e più grande, resto uguale

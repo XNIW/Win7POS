@@ -2,6 +2,8 @@
 
 Questa checklist e una verifica operativa esterna. Non e considerata eseguita finche non viene completata su Windows 7 reale o VM equivalente con periferiche e rete rappresentative.
 
+Per il gate specifico i18n runtime, usare anche `docs/QA/WIN7POS-I18N-RUNTIME-VALIDATION.md` e lo script `scripts/win7pos/windows/run-i18n-runtime-validation.ps1`.
+
 ## Ambiente
 
 - [ ] Windows 7 SP1 reale o VM equivalente, preferibilmente x86/x64 con runtime legacy realistico.

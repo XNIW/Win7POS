@@ -1,8 +1,4 @@
-using System.IO;
-using System.Text;
 using System.Windows;
-using System.Windows.Controls;
-using Microsoft.Win32;
 using Win7POS.Wpf.Chrome;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -12,82 +8,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public DailyReportDialog(DailyReportViewModel vm)
         {
             InitializeComponent();
-            // Dialog category D: XAML Width=1000 Height=760 MinWidth=900 MinHeight=660.
-            // L'ingombro effettivo resta comunque vincolato alla work area via owner clamp e base shell.
             DataContext = vm;
-            Loaded += OnLoaded;
-            if (vm != null)
-            {
-                vm.ExportRequested += OnExportRequested;
-                vm.RequestExportScopeChoice += OnRequestExportScopeChoice;
-            }
-        }
-
-        private void OnRequestExportScopeChoice()
-        {
-            var vm = DataContext as DailyReportViewModel;
-            if (vm == null) return;
-            var menu = new ContextMenu();
-            var periodo = new MenuItem { Header = "Esporta periodo" };
-            periodo.Click += (_, __) => vm.ChooseExportPeriod();
-            var giorno = new MenuItem { Header = "Esporta giorno corrente" };
-            giorno.Click += (_, __) => vm.ChooseExportDay();
-            menu.Items.Add(periodo);
-            menu.Items.Add(giorno);
-            if (vm.HasMarkedRows)
-            {
-                var selezione = new MenuItem { Header = "Esporta giorni selezionati" };
-                selezione.Click += (_, __) => vm.ChooseExportMarked();
-                menu.Items.Add(selezione);
-            }
-            menu.Closed += (_, __) => menu.PlacementTarget = null;
-            menu.PlacementTarget = this;
-            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Center;
-            menu.IsOpen = true;
-        }
-
-        private async void OnExportRequested(ExportRequest request)
-        {
-            if (request == null) return;
-            var dialog = new SaveFileDialog
-            {
-                Title = "Esporta report",
-                Filter = "File Excel (*.xlsx)|*.xlsx|File CSV (*.csv)|*.csv",
-                DefaultExt = ".csv",
-                AddExtension = true,
-                FileName = request.BaseFileName
-            };
-            if (dialog.ShowDialog() != true)
-                return;
-            var vm = DataContext as DailyReportViewModel;
-            var ext = Path.GetExtension(dialog.FileName)?.ToLowerInvariant() ?? string.Empty;
-            try
-            {
-                if (ext == ".xlsx")
-                {
-                    vm?.SetStatus("Export Excel (xlsx) in fase di implementazione. Usare CSV.");
-                    return;
-                }
-                var content = await vm.GetExportCsvContentAsync(request).ConfigureAwait(true);
-                File.WriteAllText(dialog.FileName, content, Encoding.UTF8);
-                vm?.SetStatus("File salvato: " + dialog.FileName);
-            }
-            catch (System.Exception ex)
-            {
-                vm?.SetStatus("Errore salvataggio: " + ex.Message);
-            }
         }
 
         private void Close_Click(object sender, RoutedEventArgs e)
         {
             Close();
-        }
-
-        private void OnLoaded(object sender, RoutedEventArgs e)
-        {
-            var vm = DataContext as DailyReportViewModel;
-            if (vm != null && vm.LoadCommand.CanExecute(null))
-                vm.LoadCommand.Execute(null);
         }
     }
 }

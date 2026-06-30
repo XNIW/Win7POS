@@ -6,6 +6,7 @@ using System.Windows;
 using Win7POS.Core.Security;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Dialogs;
 
 namespace Win7POS.Wpf.Infrastructure.Security
@@ -24,8 +25,10 @@ namespace Win7POS.Wpf.Infrastructure.Security
             var authorizableUsers = await _userRepo.ListUsersWithPermissionAsync(requiredPermissionCode).ConfigureAwait(true);
             if (authorizableUsers == null || authorizableUsers.Count == 0)
             {
-                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Autorizzazione",
-                    "Nessun operatore con permessi adeguati configurato. Impossibile proseguire.");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("override.title"),
+                    PosLocalization.T("override.noAuthorizedOperator"));
                 return (false, null);
             }
 
@@ -64,8 +67,10 @@ namespace Win7POS.Wpf.Infrastructure.Security
             var authorizableUsers = await _userRepo.ListAdminUsersAsync().ConfigureAwait(true);
             if (authorizableUsers == null || authorizableUsers.Count == 0)
             {
-                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Autorizzazione",
-                    "Nessun amministratore configurato. Impossibile proseguire.");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("override.title"),
+                    PosLocalization.T("override.noAdminOperator"));
                 return (false, null);
             }
 
