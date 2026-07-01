@@ -183,3 +183,29 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   - Installer Inno Setup: `iscc` non disponibile su Mac; richiede Windows/ASUS o CI release workflow.
   - CI GitHub: non lanciata da questa sessione.
 - Prossima fase consigliata: nuovo giro ASUS/Windows, poi review umana prima di staging/commit; nessun commit effettuato.
+
+## 2026-07-01 - ASUS Windows printer/cash drawer hardening
+- Branch / base: `qa/asus-printer-cashdrawer-hardening-20260701`, creata da `qa/asus-win7pos-result-20260701` @ `63cdaaa`; `main` non toccato.
+- Ambiente: SDK .NET `10.0.301` da `C:\Dev\dotnet10`, `WIN7POS_DATA_DIR=C:\POSData\TestRun1`.
+- Fix applicati:
+  - aggiunta enumerazione Win7-safe delle stampanti Windows installate con rilevamento default e virtual/PDF/XPS probabile.
+  - introdotte chiavi settings dedicate per ricevuta, auto-print, default Windows, stampanti virtuali e cassetto.
+  - ampliato dialog impostazioni stampante con lista driver, selezione ricevuta, test print, configurazione cassetto e test drawer.
+  - reso il payment flow sale-safe: vendita salvata prima di cassetto/stampa; errori di stampa/cassetto diventano warning non distruttivi.
+  - rimosso fallback automatico alla stampante predefinita Windows nello spooler; `PrinterName` e' obbligatorio.
+  - cassetto disabilitato di default e apertura consentita solo con configurazione esplicita non virtuale.
+  - aggiunto `scripts/check-pos-printer-cashdrawer-safety.ps1`.
+- Smoke/QA:
+  - harness servizio: `Microsoft Print to PDF` rilevata come default+virtuale; `OneNote (Desktop)` rilevata virtuale.
+  - cash sale senza stampante configurata: vendita salvata, auto-print bloccato con warning, DB count 1.
+  - `Microsoft Print to PDF` configurata con virtuali disabilitate: vendita salvata, auto-print bloccato prima dello spooler.
+  - card sale dummy salvata con `paid_cash=0`, `paid_card=2345`.
+  - backup DB PASS e restore guard con outbox pending PASS.
+- Verifiche automatiche:
+  - build Core/Data/CLI/WPF Release x86 PASS; CLI selftest PASS.
+  - script statici richiesti PASS, incluso nuovo controllo printer/cash drawer.
+  - release pack Windows PASS, completeness PASS, avvio da `dist\Win7POS` PASS, installer Inno PASS.
+- Limiti:
+  - desktop Windows bloccato durante Computer Use: UI WPF reale non cliccabile in questa sessione.
+  - stampante POS fisica e cassetto fisico non disponibili; test hardware marcati SKIP, non dichiarati PASS.
+- Report: `docs/reports/2026-07-01_ASUS_PRINTER_CASHDRAWER_QA_RESULT.md`.

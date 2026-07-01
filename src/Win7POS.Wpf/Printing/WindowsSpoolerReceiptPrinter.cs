@@ -57,7 +57,7 @@ namespace Win7POS.Wpf.Printing
             await TryPrintWithRetryAsync(receiptText, opt).ConfigureAwait(false);
         }
 
-        private const string DefaultCashDrawerCommand = "27,112,0,60,255";
+        private const string DefaultCashDrawerCommand = "27,112,0,25,250";
 
         public Task OpenCashDrawerAsync(ReceiptPrintOptions opt)
         {
@@ -67,26 +67,14 @@ namespace Win7POS.Wpf.Printing
             return Task.Run(() => TryOpenCashDrawer(opt.PrinterName, bytes, cmd));
         }
 
-        /// <summary>ESC/POS kick drawer: ESC p m t1 t2. Se printerName è vuoto, usa stampante predefinita Windows (come Test cassetto).</summary>
+        /// <summary>ESC/POS kick drawer: ESC p m t1 t2. Non usa fallback sulla stampante predefinita Windows.</summary>
         private static void TryOpenCashDrawer(string printerName, byte[] bytes, string cmdForLog)
         {
             if (bytes == null || bytes.Length == 0) return;
 
-            var effectivePrinter = printerName;
+            var effectivePrinter = (printerName ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(effectivePrinter))
-            {
-                try
-                {
-                    using (var doc = new System.Drawing.Printing.PrintDocument())
-                        effectivePrinter = doc.PrinterSettings.PrinterName;
-                }
-                catch
-                {
-                    effectivePrinter = null;
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(effectivePrinter)) return;
+                throw new InvalidOperationException("Cash drawer printer is not configured.");
 
             var bytesStr = string.Join(",", bytes.Select(b => b.ToString()));
             _logger.LogInfo("CashDrawer: stampante=\"" + (effectivePrinter ?? "") + "\" comando=" + (cmdForLog ?? "") + " bytes=[" + bytesStr + "]");
@@ -97,12 +85,13 @@ namespace Win7POS.Wpf.Printing
             catch (Exception ex)
             {
                 _logger.LogError(ex, "CashDrawer SendBytes failed");
+                throw;
             }
         }
 
         private static byte[] ParseCashDrawerCommand(string cmd)
         {
-            if (string.IsNullOrWhiteSpace(cmd)) return new byte[] { 27, 112, 0, 60, 255 };
+            if (string.IsNullOrWhiteSpace(cmd)) return new byte[] { 27, 112, 0, 25, 250 };
             var parts = cmd.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
             var list = new List<byte>();
             foreach (var p in parts)
@@ -110,7 +99,7 @@ namespace Win7POS.Wpf.Printing
                 if (byte.TryParse(p.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var b))
                     list.Add(b);
             }
-            return list.Count > 0 ? list.ToArray() : new byte[] { 27, 112, 0, 60, 255 };
+            return list.Count > 0 ? list.ToArray() : new byte[] { 27, 112, 0, 25, 250 };
         }
 
         private const int RetryDelayMs = 300;
@@ -132,6 +121,9 @@ namespace Win7POS.Wpf.Printing
 
         private static void PrintOnce(string receiptText, ReceiptPrintOptions opt)
         {
+            if (string.IsNullOrWhiteSpace(opt.PrinterName))
+                throw new InvalidOperationException("Receipt printer is not configured.");
+
             var lines = receiptText.Replace("\r\n", "\n").Split('\n');
             var lineIndex = 0;
             var saleCodeForBarcode = NormalizeSaleCodeForBarcode(opt.SaleCodeForBarcode);
@@ -139,8 +131,7 @@ namespace Win7POS.Wpf.Printing
 
             using (var doc = new PrintDocument())
             {
-                if (!string.IsNullOrWhiteSpace(opt.PrinterName))
-                    doc.PrinterSettings.PrinterName = opt.PrinterName;
+                doc.PrinterSettings.PrinterName = opt.PrinterName;
 
                 doc.PrinterSettings.Copies = (short)Math.Max(1, opt.Copies);
 
