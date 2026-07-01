@@ -108,13 +108,17 @@ namespace Win7POS.Wpf.Pos.Online
                 throw new ArgumentNullException(nameof(response));
             }
 
+            var sessionToken = string.IsNullOrWhiteSpace(response.Session.SessionToken)
+                ? session.SessionToken
+                : response.Session.SessionToken;
+
             var state = new StoredTrustedDeviceState
             {
                 FormatVersion = CurrentFormatVersion,
                 LastOkServerAt = DateTimeOffset.UtcNow.ToString("O"),
                 PosSessionId = response.Session.PosSessionId,
                 ProtectedDeviceSecret = ProtectString(session.DeviceToken),
-                ProtectedSessionSecret = ProtectString(session.SessionToken),
+                ProtectedSessionSecret = ProtectString(sessionToken),
                 SessionExpiresAt = response.Session.ExpiresAt,
                 ShopCode = session.ShopCode,
                 ShopId = session.ShopId,

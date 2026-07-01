@@ -72,6 +72,7 @@ $required = @(
     "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs",
     "src/Win7POS.Core/Online/PosAdminWebOptions.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs",
     "src/Win7POS.Data/DbInitializer.cs",
     "src/Win7POS.Data/Repositories/UserRepository.cs"
@@ -92,9 +93,11 @@ $firstRun = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/FirstRunSetupDialog.xaml"
 $firstRunCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/FirstRunSetupDialog.xaml.cs"
 $dialogXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml"
 $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
+$wpfProject = Read-Text "src/Win7POS.Wpf/Win7POS.Wpf.csproj"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs"
 $options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
+$catalogPull = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $store = Read-Text "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs"
 $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $userRepo = Read-Text "src/Win7POS.Data/Repositories/UserRepository.cs"
@@ -102,12 +105,37 @@ $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.c
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) } |
     Out-String
+$forbiddenRuntimeUrlScope = @(
+    $mainWindow,
+    $dialogXaml,
+    $dialog,
+    $bootstrap,
+    (Read-Text "src/Win7POS.Core/Online/PosAdminWebClient.cs")
+) -join "`n"
+$defaultUrlMatch = [regex]::Match($wpfProject, '<AdminWebDefaultBaseUrl[^>]*>([^<]+)</AdminWebDefaultBaseUrl>')
 
 if ($mainWindow -notmatch "TryOnlineBootstrapFirstRunAsync") { Fail "fresh install does not try online bootstrap before recovery wizard" } else { Pass "fresh install online bootstrap present" }
 if ($mainWindow -notmatch "FirstRunSetupDialog") { Fail "recovery/dev first-run wizard removed" } else { Pass "recovery/dev first-run wizard retained" }
 if (-not ((Has-VisibleCopyOrLocKey $firstRun "Recovery/dev" "firstRun.title") -and (Test-TranslationEntry $translations "firstRun.title" @("Recovery/dev")))) { Fail "FirstRunSetupDialog is not labelled as recovery/dev" } else { Pass "FirstRunSetupDialog labelled recovery/dev" }
 if ($dialogXaml -match "Indirizzo pannello") { Fail "online bootstrap must not expose the panel URL in the normal operator flow" } else { Pass "panel URL removed from normal operator flow" }
 if (-not ((Has-Literal $dialogXaml "AdvancedExpander") -and (Has-Literal $dialogXaml 'x:Name="BaseUrlBox"') -and (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "onlineFirstLogin.advancedSettings") -and (Has-VisibleCopyOrLocKey $dialogXaml "Server Admin Web configurato" "onlineFirstLogin.serverConfigured") -and (Test-TranslationEntry $translations "onlineFirstLogin.advancedSettings" @("Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server")) -and (Test-TranslationEntry $translations "onlineFirstLogin.serverConfigured" @("Admin Web server configured", "Servidor Admin Web configurado", "Server Admin Web configurato")))) { Fail "online bootstrap must keep Admin Web URL under advanced server settings" } else { Pass "advanced server settings present" }
+if ($options -notmatch "TryLoadPackagedDefault" -or $options -notmatch "TryReadPackagedDefaultBaseUrl" -or $options -notmatch "PosAdminWebBaseUrlSource") { Fail "packaged default URL resolver/source model missing" } else { Pass "packaged default URL resolver/source model present" }
+if ($wpfProject -notmatch "AdminWebEnvironment" -or $wpfProject -notmatch "AdminWebDefaultBaseUrl" -or $wpfProject -notmatch "AssemblyMetadataAttribute") { Fail "MSBuild packaged default metadata missing" } else { Pass "MSBuild packaged default metadata present" }
+if (-not $defaultUrlMatch.Success) {
+    Fail "packaged default base URL missing"
+} else {
+    try {
+        $defaultUri = [Uri]$defaultUrlMatch.Groups[1].Value.Trim()
+        if ($defaultUri.Scheme -ne "https" -or $defaultUri.UserInfo -or $defaultUri.AbsolutePath -ne "/" -or $defaultUri.Query -or $defaultUri.Fragment) {
+            Fail "packaged default base URL must be HTTPS and base-only"
+        } else {
+            Pass "packaged default base URL is HTTPS and base-only"
+        }
+    } catch {
+        Fail "packaged default base URL is not a valid absolute URI"
+    }
+}
+if ($forbiddenRuntimeUrlScope -match "https?://(?!(localhost|127\.0\.0\.1|::1|\.\.\.|schemas\.microsoft\.com))") { Fail "Admin Web URL hardcoded outside centralized config/sample/docs" } else { Pass "no Admin Web URL hardcoded in UI/bootstrap/client runtime" }
 if ($dialogXaml -match "Shop code|Staff code|Nome device") { Fail "online bootstrap still exposes technical/English labels" } else { Pass "online bootstrap labels are operator-facing" }
 if ($dialog -notmatch "PosOnlineBootstrapService") { Fail "online dialog does not use bootstrap service" } else { Pass "online dialog uses bootstrap service" }
 if ($dialog -notmatch "finally[\s\S]*CredentialBox\.Clear\(\)") { Fail "online dialog must clear PIN/password in a finally block" } else { Pass "online dialog clears PIN/password in finally" }
@@ -125,7 +153,27 @@ if ($validationIndex -lt 0 -or $mirrorIndex -lt 0 -or $validationIndex -gt $mirr
 }
 $validationPattern = "ValidateFirstLoginResponse[\s\S]*TrustedDeviceToken[\s\S]*Session[\s\S]*SessionToken[\s\S]*PosSessionId[\s\S]*ShopDeviceId[\s\S]*StaffId[\s\S]*StaffCode[\s\S]*ShopCode"
 if ($bootstrap -notmatch $validationPattern) { Fail "bootstrap first-login validation must cover tokens, session, device, staff and shop fields" } else { Pass "bootstrap first-login validation covers required fields" }
-if ($bootstrap -notmatch "PosCatalogPullService") { Fail "bootstrap does not attempt initial catalog pull" } else { Pass "initial catalog pull present" }
+if ($bootstrap -notmatch "response\.Ok" -or $bootstrap -notmatch "Device\.Trusted" -or $bootstrap -notmatch "Device\.Status" -or $bootstrap -notmatch "Policy" -or $bootstrap -notmatch "ContractVersion") { Fail "bootstrap first-login validation must require ok, trusted active device and policy contract" } else { Pass "bootstrap validates ok/trusted device/policy contract" }
+$shopSnapshotIndex = $bootstrap.IndexOf("PosOnlineShopSnapshot.SaveAsync")
+$policySnapshotIndex = $bootstrap.IndexOf("PosOnlinePolicySnapshot.SaveAsync")
+$saveTrustIndex = $bootstrap.IndexOf("SaveFirstLogin")
+if ($shopSnapshotIndex -lt 0 -or $policySnapshotIndex -lt 0 -or $saveTrustIndex -lt 0 -or $mirrorIndex -lt 0 -or $shopSnapshotIndex -gt $saveTrustIndex -or $policySnapshotIndex -gt $saveTrustIndex -or $saveTrustIndex -gt $mirrorIndex) {
+    Fail "bootstrap must save shop/policy and trust before creating local staff mirror"
+} else {
+    Pass "bootstrap persists shop/policy/trust before local staff mirror"
+}
+if ($bootstrap -notmatch "_trustedDeviceStore\.Clear\(\)" -or $bootstrap -notmatch "local_persistence_failed") { Fail "bootstrap must clear trust when local trust/mirror persistence fails" } else { Pass "bootstrap clears trust on local persistence failure" }
+if ($bootstrap -notmatch "TryPullInitialCatalogAsync" -or $catalogPull -notmatch "TryPullInitialCatalogAsync") { Fail "bootstrap does not use initial catalog pull path" } else { Pass "initial catalog pull path used" }
+if ($catalogPull -notmatch "pos.catalog.bootstrap_status" -or $catalogPull -notmatch "partial_has_more" -or $catalogPull -notmatch "failed_auth_denied") { Fail "initial catalog pull must persist bootstrap catalog status" } else { Pass "initial catalog pull persists bootstrap catalog status" }
+if ($bootstrap -notmatch "Bootstrap catalog pull incomplete" -or $bootstrap -notmatch "catalogOutcome\.Completed") { Fail "bootstrap must log incomplete catalog pull outcome" } else { Pass "bootstrap logs incomplete catalog outcome" }
+if ($bootstrap -notmatch "CanOpenPos" -or $bootstrap -notmatch "CatalogSaleSafe" -or $bootstrap -notmatch "CatalogCompleted" -or $bootstrap -notmatch "RequiresRetry") { Fail "bootstrap result must expose catalog readiness and POS open decision" } else { Pass "bootstrap result exposes catalog readiness" }
+if ($bootstrap -notmatch "IProgress<PosCatalogPullProgress>" -or $catalogPull -notmatch "IProgress<PosCatalogPullProgress>" -or $dialog -notmatch "UpdateSetupProgress") { Fail "catalog/bootstrap progress callback missing" } else { Pass "catalog/bootstrap progress callback present" }
+if ($dialogXaml -notmatch "ProgressPanel" -or $dialogXaml -notmatch "SetupProgressBar" -or $dialogXaml -notmatch "RetryDownloadButton" -or $dialog -notmatch "RunCatalogRetryAsync") { Fail "blocking preparation progress/retry UI missing" } else { Pass "blocking preparation progress/retry UI present" }
+if ($dialog -match "result\.Success[\s\S]{0,180}DialogResult\s*=\s*true") { Fail "online dialog closes on generic Success instead of CanOpenPos/sale-safe" } else { Pass "online dialog does not close on generic Success" }
+if ($dialog -notmatch "result\.CanOpenPos[\s\S]{0,180}DialogResult\s*=\s*true") { Fail "online dialog must close only after CanOpenPos" } else { Pass "online dialog closes after CanOpenPos" }
+if ($catalogPull -notmatch "pos\.catalog\.sale_safe_at" -or $catalogPull -notmatch "pos\.catalog\.initial_completed_at") { Fail "catalog sale-safe completion settings missing" } else { Pass "catalog sale-safe completion settings present" }
+if ($catalogPull -notmatch "result\.Denied\s*&&\s*clearStoredStateOnDenied[\s\S]{0,120}_store\.Clear\(\)") { Fail "catalog trust clear must be guarded by auth denied" } else { Pass "catalog trust clear guarded by auth denied" }
+if ($dialog -match "TimeSpan\.FromSeconds\(20\)") { Fail "online first-login dialog timeout is too short for large initial catalog" } else { Pass "online first-login dialog no longer uses 20s bootstrap timeout" }
 if ($userRepo -notmatch "UpsertRemoteStaffMirrorAsync") { Fail "UserRepository remote staff upsert missing" } else { Pass "UserRepository remote staff upsert present" }
 if ($initializer -notmatch "remote_staff_id") { Fail "remote staff id column missing" } else { Pass "remote staff id column present" }
 if ($initializer -notmatch "remote_credential_version") { Fail "remote credential version column missing" } else { Pass "remote credential version column present" }

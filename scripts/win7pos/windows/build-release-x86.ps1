@@ -381,6 +381,8 @@ try {
         }
         New-Item -ItemType Directory -Force $DistDir | Out-Null
         Copy-Item -Path (Join-Path $resolvedOutputDir "*") -Destination $DistDir -Recurse -Force
+        Get-ChildItem -Path $DistDir -Recurse -File -Filter "*.pdb" |
+            Remove-Item -Force
         Write-Host "Copied build output to: $DistDir"
 
         $exe = Join-Path $DistDir "Win7POS.Wpf.exe"

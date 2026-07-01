@@ -188,6 +188,7 @@ namespace Win7POS.Wpf.Pos
                     throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedSales"));
                 }
 
+                await _dbMaintenance.WalCheckpointAsync().ConfigureAwait(false);
                 var preBackupPath = CreateDbBackupCopyNoLock("pos_pre_restore_");
                 var restoredAt = DateTimeOffset.UtcNow;
                 SqliteConnection.ClearAllPools();
@@ -466,6 +467,7 @@ namespace Win7POS.Wpf.Pos
                 if (!string.IsNullOrWhiteSpace(outputDir))
                     Directory.CreateDirectory(outputDir);
 
+                await _dbMaintenance.WalCheckpointAsync().ConfigureAwait(false);
                 File.Copy(_options.DbPath, outputPath, true);
                 _logger.LogInfo("POS DB backup created: " + outputPath);
                 return outputPath;

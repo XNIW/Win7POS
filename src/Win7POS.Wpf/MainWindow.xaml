@@ -70,7 +70,7 @@
                 </ControlTemplate>
             </TabControl.Template>
             <TabItem Header="POS">
-                <pos:PosView x:Name="PosViewControl"/>
+                <Grid x:Name="PosTabHost"/>
             </TabItem>
             <TabItem x:Name="ProductsTab" Header="{loc:Loc shell.products}">
                 <prod:ProductsView x:Name="ProductsViewControl"/>

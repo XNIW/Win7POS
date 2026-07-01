@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
@@ -11,7 +12,10 @@ namespace Win7POS.Wpf.Pos.Online
     {
         private const string LastCatalogSyncSettingKey = "pos.catalog.last_sync_at";
         private const string LastCatalogErrorSettingKey = "pos.catalog.last_error";
+        private const string LastCatalogHasMoreSettingKey = "pos.catalog.last_has_more";
         private const string LastCatalogVersionSettingKey = "pos.catalog.last_catalog_version";
+        private const string CatalogBootstrapStatusSettingKey = "pos.catalog.bootstrap_status";
+        private const string CatalogSaleSafeAtSettingKey = "pos.catalog.sale_safe_at";
         private const string LastSalesSyncSettingKey = "pos.sales_sync.last_success_at";
         private const string LastSalesErrorSettingKey = "pos.sales_sync.last_error";
         private const string SalesSyncInProgressSettingKey = "pos.sales_sync.in_progress";
@@ -48,7 +52,10 @@ namespace Win7POS.Wpf.Pos.Online
 
             var lastCatalog = await settings.GetStringAsync(LastCatalogSyncSettingKey).ConfigureAwait(false);
             var lastCatalogError = await settings.GetStringAsync(LastCatalogErrorSettingKey).ConfigureAwait(false);
+            var lastCatalogHasMore = await settings.GetBoolAsync(LastCatalogHasMoreSettingKey).ConfigureAwait(false) == true;
             var lastCatalogVersion = await settings.GetStringAsync(LastCatalogVersionSettingKey).ConfigureAwait(false);
+            var catalogBootstrapStatus = await settings.GetStringAsync(CatalogBootstrapStatusSettingKey).ConfigureAwait(false);
+            var catalogSaleSafeAt = await settings.GetStringAsync(CatalogSaleSafeAtSettingKey).ConfigureAwait(false);
             var lastSales = await settings.GetStringAsync(LastSalesSyncSettingKey).ConfigureAwait(false);
             var lastSalesError = await settings.GetStringAsync(LastSalesErrorSettingKey).ConfigureAwait(false);
             var salesSyncInProgress = await settings.GetBoolAsync(SalesSyncInProgressSettingKey).ConfigureAwait(false) == true;
@@ -60,12 +67,19 @@ namespace Win7POS.Wpf.Pos.Online
             var policyStaffOfflineMirror = await settings.GetStringAsync(PolicyStaffOfflineMirrorSettingKey).ConfigureAwait(false);
             var policyTaxStatus = await settings.GetStringAsync(PolicyTaxStatusSettingKey).ConfigureAwait(false);
             var policyWarning = await settings.GetStringAsync(PolicyWarningSettingKey).ConfigureAwait(false);
-            var requiresAttention = outbox.Blocked > 0 || restoreNeedsReview || !string.IsNullOrWhiteSpace(policyWarning);
+            var requiresAttention =
+                outbox.Blocked > 0 ||
+                restoreNeedsReview ||
+                !string.IsNullOrWhiteSpace(policyWarning) ||
+                CatalogRequiresAttention(catalogBootstrapStatus, lastCatalogError, lastCatalogHasMore) ||
+                !string.IsNullOrWhiteSpace(lastSalesError);
             var connectivityState = ConnectivityState(trustedSession);
 
             return new PosSyncStatusSnapshot
             {
+                CatalogBootstrapText = CatalogBootstrapText(catalogBootstrapStatus, lastCatalogHasMore, lastCatalogError, catalogSaleSafeAt),
                 CatalogErrorText = T("sync.lastCatalogError") + ": " + SafeCode(lastCatalogError),
+                CatalogReadinessText = CatalogReadinessText(catalogSaleSafeAt, catalogBootstrapStatus),
                 CatalogVersionText = T("sync.catalog") + ": " + (string.IsNullOrWhiteSpace(lastCatalogVersion) ? T("sync.versionUnavailable") : lastCatalogVersion.Trim()),
                 ConnectivityState = connectivityState,
                 ConnectivityText = ConnectivityText(connectivityState),
@@ -78,13 +92,24 @@ namespace Win7POS.Wpf.Pos.Online
                 RequiresAttention = requiresAttention,
                 PendingSalesText = T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
                     " | " + T("sync.toRetry") + ": " + outbox.Retry.ToString(CultureInfo.InvariantCulture) +
-                    " | " + T("sync.blockedAttention") + ": " + outbox.Blocked.ToString(CultureInfo.InvariantCulture),
+                    " | " + T("sync.blocked") + ": " + outbox.Blocked.ToString(CultureInfo.InvariantCulture),
                 PolicyText = PolicyText(policyContractVersion, policyPaymentMethods, policyStaffOfflineMirror, policyTaxStatus, policyWarning),
                 RestoreReviewText = RestoreReviewText(restoreNeedsReview, restoreCompletedAt, restorePreBackupPath),
                 SalesAttentionText = SalesAttentionText(outbox, restoreNeedsReview),
                 SalesErrorText = T("sync.lastSalesError") + ": " + SafeCode(lastSalesError),
                 StaffText = StaffText(trustedSession),
-                SummaryText = SummaryText(connectivityState, outbox, lastCatalog, lastSales, restoreNeedsReview, salesSyncInProgress)
+                SummaryText = SummaryText(
+                    connectivityState,
+                    outbox,
+                    lastCatalog,
+                    lastSales,
+                    restoreNeedsReview,
+                    salesSyncInProgress,
+                    catalogBootstrapStatus,
+                    lastCatalogError,
+                    lastCatalogHasMore,
+                    catalogSaleSafeAt,
+                    lastSalesError)
             };
         }
 
@@ -161,14 +186,17 @@ namespace Win7POS.Wpf.Pos.Online
             string lastCatalog,
             string lastSales,
             bool restoreNeedsReview,
-            bool salesSyncInProgress)
+            bool salesSyncInProgress,
+            string catalogBootstrapStatus,
+            string lastCatalogError,
+            bool lastCatalogHasMore,
+            string catalogSaleSafeAt,
+            string lastSalesError)
         {
-            if (salesSyncInProgress)
+            if (string.Equals((catalogBootstrapStatus ?? string.Empty).Trim(), "failed_auth_denied", StringComparison.OrdinalIgnoreCase))
             {
-                return T("sync.inProgress") +
-                    " | " + ConnectivityText(connectivityState) +
-                    " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
-                    " | " + T("sync.toRetry") + ": " + outbox.Retry.ToString(CultureInfo.InvariantCulture);
+                return T("sync.reconnectSession") +
+                    " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
             }
 
             if (outbox.Blocked > 0 || restoreNeedsReview)
@@ -194,10 +222,160 @@ namespace Win7POS.Wpf.Pos.Online
                     " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
             }
 
+            if (!string.IsNullOrWhiteSpace(lastSalesError))
+            {
+                return T("sync.requiresAttention") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + T("sync.lastSalesError") + ": " + SafeCode(lastSalesError);
+            }
+
+            if (string.Equals((catalogBootstrapStatus ?? string.Empty).Trim(), "in_progress", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.catalogPreparing") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (string.Equals((catalogBootstrapStatus ?? string.Empty).Trim(), "updating", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.catalogUpdating") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (CatalogRequiresAttention(catalogBootstrapStatus, lastCatalogError, lastCatalogHasMore))
+            {
+                return CatalogAttentionText(catalogBootstrapStatus, lastCatalogHasMore) +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + T("sync.lastCatalogError") + ": " + SafeCode(lastCatalogError);
+            }
+
+            if (salesSyncInProgress)
+            {
+                return T("sync.inProgress") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
+                    " | " + T("sync.toRetry") + ": " + outbox.Retry.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (string.IsNullOrWhiteSpace(lastCatalog))
+            {
+                return T("sync.catalogNeverDownloaded") +
+                    " | " + ConnectivityText(connectivityState) +
+                    " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (!string.IsNullOrWhiteSpace(catalogSaleSafeAt))
+            {
+                return ConnectivityText(connectivityState) +
+                    " | " + T("sync.catalogReady") +
+                    " | " + T("sync.lastCatalog") + ": " + FormatIso(lastCatalog) +
+                    " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
+            }
+
             return ConnectivityText(connectivityState) +
                 " | " + T("sync.lastCatalog") + ": " + FormatIso(lastCatalog) +
                 " | " + T("sync.lastSaleSent") + ": " + FormatIso(lastSales) +
                 " | " + T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static bool CatalogRequiresAttention(
+            string bootstrapStatus,
+            string lastCatalogError,
+            bool lastCatalogHasMore)
+        {
+            if (lastCatalogHasMore || !string.IsNullOrWhiteSpace(lastCatalogError))
+            {
+                return true;
+            }
+
+            var status = (bootstrapStatus ?? string.Empty).Trim();
+            return string.Equals(status, "partial_has_more", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(status, "failed_retryable", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(status, "failed_auth_denied", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string CatalogAttentionText(string bootstrapStatus, bool lastCatalogHasMore)
+        {
+            var status = (bootstrapStatus ?? string.Empty).Trim();
+            if (string.Equals(status, "failed_auth_denied", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.reconnectSession");
+            }
+
+            if (lastCatalogHasMore ||
+                string.Equals(status, "partial_has_more", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.catalogInterruptedResume");
+            }
+
+            if (string.Equals(status, "failed_retryable", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.catalogBootstrapFailed");
+            }
+
+            return T("sync.catalogPartial");
+        }
+
+        private static string CatalogBootstrapText(
+            string bootstrapStatus,
+            bool lastCatalogHasMore,
+            string lastCatalogError,
+            string catalogSaleSafeAt)
+        {
+            var status = SafeCode(bootstrapStatus);
+            if (!string.IsNullOrWhiteSpace(catalogSaleSafeAt) &&
+                string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.catalogBootstrap") + ": " + T("sync.catalogSaleSafe") +
+                    " | " + T("sync.lastCatalog") + ": " + FormatIso(catalogSaleSafeAt);
+            }
+
+            if (string.Equals(status, "in_progress", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.catalogBootstrap") + ": " + T("sync.catalogPreparing");
+            }
+
+            if (string.Equals(status, "updating", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.catalogBootstrap") + ": " + T("sync.catalogUpdating");
+            }
+
+            if (lastCatalogHasMore ||
+                string.Equals(status, "partial_has_more", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.catalogBootstrap") + ": " + T("sync.catalogInterruptedResume") +
+                    " | " + T("sync.lastCatalogError") + ": " + SafeCode(FirstNonEmpty(lastCatalogError, "has_more_not_drained"));
+            }
+
+            if (string.Equals(status, "failed_retryable", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(status, "failed_auth_denied", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.catalogBootstrap") + ": " + T("sync.catalogBootstrapFailed") +
+                    " | " + T("sync.lastCatalogError") + ": " + SafeCode(FirstNonEmpty(lastCatalogError, status));
+            }
+
+            return T("sync.catalogBootstrap") + ": " + status;
+        }
+
+        private static string CatalogReadinessText(string catalogSaleSafeAt, string bootstrapStatus)
+        {
+            if (!string.IsNullOrWhiteSpace(catalogSaleSafeAt))
+            {
+                return T("sync.catalogReady") + ": " + FormatIso(catalogSaleSafeAt);
+            }
+
+            if (string.Equals((bootstrapStatus ?? string.Empty).Trim(), "in_progress", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.catalogPreparing");
+            }
+
+            if (string.Equals((bootstrapStatus ?? string.Empty).Trim(), "updating", StringComparison.OrdinalIgnoreCase))
+            {
+                return T("sync.catalogUpdating");
+            }
+
+            return T("sync.catalogNeverDownloaded");
         }
 
         private static string SalesAttentionText(SalesSyncOutboxSummary outbox, bool restoreNeedsReview)
@@ -285,8 +463,17 @@ namespace Win7POS.Wpf.Pos.Online
                 return T("sync.none");
             }
 
-            var code = value.Trim();
-            return code.Length > 60 ? code.Substring(0, 60) : code;
+            var code = new string(value
+                .Trim()
+                .Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' || ch == '.')
+                .Take(60)
+                .ToArray());
+            return code.Length == 0 ? T("sync.none") : code;
+        }
+
+        private static string FirstNonEmpty(string left, string right)
+        {
+            return string.IsNullOrWhiteSpace(left) ? right : left;
         }
 
         private static string SafeLabel(string value)
@@ -325,7 +512,9 @@ namespace Win7POS.Wpf.Pos.Online
 
     public sealed class PosSyncStatusSnapshot
     {
+        public string CatalogBootstrapText { get; set; } = string.Empty;
         public string CatalogErrorText { get; set; } = string.Empty;
+        public string CatalogReadinessText { get; set; } = string.Empty;
         public string CatalogVersionText { get; set; } = string.Empty;
         public string ConnectivityState { get; set; } = string.Empty;
         public string ConnectivityText { get; set; } = string.Empty;

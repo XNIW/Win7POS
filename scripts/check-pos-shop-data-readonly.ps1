@@ -43,6 +43,9 @@ $catalog = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $sales = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $workflow = Read-Text "src/Win7POS.Wpf/Pos/PosWorkflowService.cs"
 $client = Read-Text "src/Win7POS.Core/Online/PosAdminWebClient.cs"
+$localization = Read-Text "src/Win7POS.Wpf/Localization/PosLocalization.cs"
+$secondaryLocalization = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs"
+$dialogCopy = $dialog + $localization + $secondaryLocalization
 $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) } |
@@ -61,9 +64,9 @@ if ($workflow -notmatch "officialSnapshot\.HasOfficialData[\s\S]*officialSnapsho
 if ($workflow -match "public\s+async\s+Task\s+SaveShopInfoAsync") { Fail "public local SaveShopInfoAsync write path must not exist" } else { Pass "public local shop save path absent" }
 if ($vm -notmatch "public bool IsReadOnly => true") { Fail "shop settings view model must stay read-only" } else { Pass "shop settings view model read-only" }
 if ($vm -match "SaveCommand|SaveAsync|SaveShopInfoAsync") { Fail "shop settings view model must not contain save command/path" } else { Pass "shop settings has no save command" }
-if ($dialog -notmatch "Dati negozio ufficiali") { Fail "shop dialog copy must be official/read-only" } else { Pass "shop dialog official copy present" }
-if ($dialog -notmatch "Master Console") { Fail "shop dialog must point edits to Master Console" } else { Pass "shop dialog Master Console boundary present" }
-if ($dialog -notmatch "cache anche offline") { Fail "shop dialog must explain offline cache" } else { Pass "shop dialog offline cache copy present" }
+if ($dialogCopy -notmatch "Dati negozio ufficiali") { Fail "shop dialog copy must be official/read-only" } else { Pass "shop dialog official copy present" }
+if ($dialogCopy -notmatch "Master Console") { Fail "shop dialog must point edits to Master Console" } else { Pass "shop dialog Master Console boundary present" }
+if ($dialogCopy -notmatch "cache anche offline") { Fail "shop dialog must explain offline cache" } else { Pass "shop dialog offline cache copy present" }
 if ($dialog -match 'Content="(Salva|Guardar|Save|Modifica|Editar|Edit|Apply)"') { Fail "shop dialog must not expose save/edit/apply button" } else { Pass "shop dialog has no save/edit/apply button" }
 $shopTextBoxes = [regex]::Matches($dialog, "<TextBox[\s\S]*?/>")
 if ($shopTextBoxes.Count -eq 0) {

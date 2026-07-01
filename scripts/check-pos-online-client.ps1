@@ -92,6 +92,7 @@ $options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
 $dialogXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml"
+$wpfProject = Read-Text "src/Win7POS.Wpf/Win7POS.Wpf.csproj"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs"
 $operatorDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorLoginDialog.xaml.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
@@ -116,10 +117,19 @@ $baseUrlScope = @(
     $operatorDialog,
     $mainWindow
 ) -join "`n"
+$forbiddenRuntimeUrlScope = @(
+    $client,
+    $bootstrap,
+    $dialog,
+    $dialogXaml,
+    $operatorDialog,
+    $mainWindow
+) -join "`n"
 $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.csproj |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) } |
     Out-String
+$defaultUrlMatch = [regex]::Match($wpfProject, '<AdminWebDefaultBaseUrl[^>]*>([^<]+)</AdminWebDefaultBaseUrl>')
 
 if ($client -notmatch "HttpClient") { Fail "HttpClient missing" } else { Pass "HttpClient present" }
 if ($client -notmatch "SecurityProtocolType\.Tls12") { Fail "TLS 1.2 enforcement missing" } else { Pass "TLS 1.2 present" }
@@ -128,6 +138,23 @@ if ($client -notmatch "/api/pos/auth/first-login") { Fail "first-login path miss
 if ($client -notmatch "/api/pos/session/heartbeat") { Fail "heartbeat path missing" } else { Pass "heartbeat path present" }
 if ($store -notmatch "ProtectedData\.Protect" -or $store -notmatch "ProtectedData\.Unprotect") { Fail "DPAPI storage missing" } else { Pass "DPAPI storage present" }
 if ($options -notmatch "WIN7POS_ADMIN_WEB_BASE_URL" -or $options -notmatch "pos-admin-web\.config") { Fail "base URL config sources missing" } else { Pass "base URL config present" }
+if ($options -notmatch "PosAdminWebBaseUrlSource" -or $options -notmatch "EnvironmentVariable" -or $options -notmatch "ConfigFile" -or $options -notmatch "PackagedDefault") { Fail "base URL source model missing" } else { Pass "base URL source model present" }
+if ($options -notmatch "TryLoadPackagedDefault" -or $options -notmatch "TryReadPackagedDefaultBaseUrl" -or $options -notmatch "AssemblyMetadataAttribute") { Fail "packaged default URL resolver missing" } else { Pass "packaged default URL resolver present" }
+if ($wpfProject -notmatch "AdminWebEnvironment" -or $wpfProject -notmatch "AdminWebDefaultBaseUrl" -or $wpfProject -notmatch "AssemblyMetadataAttribute") { Fail "MSBuild Admin Web metadata missing" } else { Pass "MSBuild Admin Web metadata present" }
+if (-not $defaultUrlMatch.Success) {
+    Fail "packaged default base URL missing"
+} else {
+    try {
+        $defaultUri = [Uri]$defaultUrlMatch.Groups[1].Value.Trim()
+        if ($defaultUri.Scheme -ne "https" -or $defaultUri.UserInfo -or $defaultUri.AbsolutePath -ne "/" -or $defaultUri.Query -or $defaultUri.Fragment) {
+            Fail "packaged default base URL must be HTTPS and base-only"
+        } else {
+            Pass "packaged default base URL is HTTPS and base-only"
+        }
+    } catch {
+        Fail "packaged default base URL is not a valid absolute URI"
+    }
+}
 if ($options -notmatch "WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB" -or $options -notmatch "AllowInsecureLanAdminWeb") { Fail "insecure LAN override guard missing" } else { Pass "insecure LAN override guard present" }
 if ($options -notmatch "parsed\.UserInfo" -or $options -notmatch "senza username o password") { Fail "base URL credentials guard missing" } else { Pass "base URL credentials rejected" }
 if ($dialogXaml -match "Indirizzo pannello") { Fail "normal online link dialog still exposes URL field copy" } else { Pass "normal online link dialog hides URL field copy" }
@@ -144,7 +171,8 @@ if ($mainWindow -notmatch "TryRefreshTrustedPosSessionAsync") { Fail "startup he
 
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }
 if ($combined -match "mcpos_(device|session)_[A-Za-z0-9_-]+") { Fail "literal POS token found" }
-if ($baseUrlScope -match "https?://(?!(localhost|127\.0\.0\.1|::1|\.\.\.))") { Fail "production-like Admin Web URL hardcoded" } else { Pass "no production Admin Web URL hardcoded" }
+if ($forbiddenRuntimeUrlScope -match "https?://(?!(localhost|127\.0\.0\.1|::1|\.\.\.|schemas\.microsoft\.com))") { Fail "Admin Web URL hardcoded outside centralized config/sample/docs" } else { Pass "no Admin Web URL hardcoded in UI/bootstrap/client runtime" }
+if ($baseUrlScope -match "https?://(?!(localhost|127\.0\.0\.1|::1|\.\.\.))") { Fail "production-like Admin Web URL hardcoded in resolver/runtime code" } else { Pass "no production Admin Web URL hardcoded in resolver/runtime code" }
 if ($combined -match "sync_batch") { Fail "legacy sync batch marker detected" } else { Pass "TASK-081 sales sync scope allowed" }
 $sensitiveLogPattern = "(?i)Log(?:Info|Warning|Error)\s*\([^\r\n)]*(trustedDeviceToken|sessionToken|deviceToken|CredentialBox|PinBox|credential|pin|password)"
 if ($taskCombined -match $sensitiveLogPattern) { Fail "sensitive POS online value may be logged" } else { Pass "no sensitive POS online logs" }

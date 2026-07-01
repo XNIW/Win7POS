@@ -19,7 +19,9 @@ function Read-Text([string]$relativePath) {
 $samplePath = "samples/pos-admin-web.config.example"
 $readme = Read-Text "README.md"
 $options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
+$wpfProject = Read-Text "src/Win7POS.Wpf/Win7POS.Wpf.csproj"
 $helper = Read-Text "scripts/set-admin-web-staging-url.bat"
+$defaultUrlMatch = [regex]::Match($wpfProject, '<AdminWebDefaultBaseUrl[^>]*>([^<]+)</AdminWebDefaultBaseUrl>')
 
 if (-not (Test-Path (Join-Path $repoRoot $samplePath))) {
     Fail "$samplePath missing"
@@ -45,10 +47,44 @@ if ($readme -notmatch [regex]::Escape($samplePath)) {
     Pass "README references safe sample config"
 }
 
+if (-not $defaultUrlMatch.Success) {
+    Fail "packaged staging default URL missing from WPF MSBuild metadata"
+} else {
+    $defaultUrl = $defaultUrlMatch.Groups[1].Value.Trim()
+    if ($defaultUrl -ne "https://merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev") {
+        Fail "packaged staging default URL must be the verified public workers.dev HTTPS base URL"
+    } else {
+        Pass "packaged staging default URL uses verified workers.dev HTTPS base URL"
+    }
+
+    try {
+        $defaultUri = [Uri]$defaultUrl
+        if ($defaultUri.Scheme -ne "https" -or $defaultUri.UserInfo -or $defaultUri.AbsolutePath -ne "/" -or $defaultUri.Query -or $defaultUri.Fragment) {
+            Fail "packaged staging default URL must be HTTPS and base-only"
+        } else {
+            Pass "packaged staging default URL is HTTPS and base-only"
+        }
+    } catch {
+        Fail "packaged staging default URL is not a valid absolute URI"
+    }
+}
+
+if ($wpfProject -notmatch "AdminWebEnvironment" -or $wpfProject -notmatch "AssemblyMetadataAttribute") {
+    Fail "WPF project must expose Admin Web packaged metadata"
+} else {
+    Pass "WPF project exposes Admin Web packaged metadata"
+}
+
 if ($readme -notmatch "HTTPS staging richiesto" -and $readme -notmatch "workers.dev/staging usare sempre HTTPS") {
     Fail "README must require HTTPS for staging"
 } else {
     Pass "README requires HTTPS for staging"
+}
+
+if ($options -notmatch "TryLoadPackagedDefault" -or $options -notmatch "TryReadPackagedDefaultBaseUrl") {
+    Fail "runtime packaged default resolver missing"
+} else {
+    Pass "runtime packaged default resolver present"
 }
 
 if ($options -notmatch "parsed\.UserInfo" -or $options -notmatch "HTTP e consentito solo per localhost/127\.0\.0\.1") {

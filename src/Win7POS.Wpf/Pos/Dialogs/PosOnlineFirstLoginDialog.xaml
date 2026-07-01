@@ -35,6 +35,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="130"/>
@@ -76,10 +77,28 @@
                 </Expander>
 
                 <TextBlock x:Name="StatusText" Grid.Row="7" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="#C62828" TextWrapping="Wrap" Visibility="Collapsed"/>
+
+                <StackPanel x:Name="ProgressPanel" Grid.Row="8" Grid.ColumnSpan="2" Margin="0,14,0,0" Visibility="Collapsed">
+                    <TextBlock Text="{loc:Loc onlineFirstLogin.setupTitle}" FontSize="18" FontWeight="SemiBold" Foreground="#3F3150"/>
+                    <TextBlock Margin="0,4,0,10" Text="{loc:Loc onlineFirstLogin.setupSubtitle}" Foreground="#665D73" TextWrapping="Wrap"/>
+
+                    <UniformGrid Columns="1" Margin="0,0,0,10">
+                        <TextBlock x:Name="StepAccessText" Margin="0,1,0,1" Foreground="#514A5E"/>
+                        <TextBlock x:Name="StepDeviceText" Margin="0,1,0,1" Foreground="#514A5E"/>
+                        <TextBlock x:Name="StepOperatorText" Margin="0,1,0,1" Foreground="#514A5E"/>
+                        <TextBlock x:Name="StepCatalogText" Margin="0,1,0,1" Foreground="#514A5E"/>
+                        <TextBlock x:Name="StepFinalizeText" Margin="0,1,0,1" Foreground="#514A5E"/>
+                    </UniformGrid>
+
+                    <ProgressBar x:Name="SetupProgressBar" Height="12" IsIndeterminate="True" Minimum="0" Maximum="100"/>
+                    <TextBlock x:Name="SetupPhaseText" Margin="0,8,0,0" Foreground="#514A5E" TextWrapping="Wrap"/>
+                    <TextBlock x:Name="SetupCountsText" Margin="0,4,0,0" Foreground="#7A6F88" TextWrapping="Wrap"/>
+                </StackPanel>
             </Grid>
         </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+            <Button x:Name="RetryDownloadButton" Content="{loc:Loc onlineFirstLogin.retryDownload}" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnRetryDownloadClick" Style="{StaticResource DialogActionButtonStyle}" Visibility="Collapsed"/>
             <Button x:Name="ConnectButton" Content="{loc:Loc onlineFirstLogin.connect}" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnConnectClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
             <Button Content="{loc:Loc common.cancel}" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
         </StackPanel>
