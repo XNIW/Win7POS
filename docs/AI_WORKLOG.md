@@ -209,3 +209,20 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   - desktop Windows bloccato durante Computer Use: UI WPF reale non cliccabile in questa sessione.
   - stampante POS fisica e cassetto fisico non disponibili; test hardware marcati SKIP, non dichiarati PASS.
 - Report: `docs/reports/2026-07-01_ASUS_PRINTER_CASHDRAWER_QA_RESULT.md`.
+
+## 2026-07-01 - Mac final ASUS review and controlled main merge
+- Branch integration: `integration/win7pos-asus-final-review-20260701`, creata da `main` aggiornato a `8c94275`.
+- Branch ASUS revisionate:
+  - `qa/asus-win7pos-result-20260701` @ `63cdaaa`.
+  - `qa/asus-printer-cashdrawer-hardening-20260701` @ `8ba8a25`.
+- Merge integration: `63501e0`; conflitto risolto in `src/Win7POS.Wpf/Localization/PosLocalization.cs` scegliendo catalogo traduzioni lazy ASUS.
+- Fix Mac applicato: `scripts/check-pos-startup-win7-safe.ps1` ora accetta la forma lazy corretta di `PosLocalization`; il comportamento runtime non e' stato cambiato.
+- Verifiche integration:
+  - build Core/Data/CLI/WPF Release x86 PASS.
+  - CLI selftest con `WIN7POS_DATA_DIR=/tmp/win7pos-final-merge-selftest` -> `自检 PASS`.
+  - tutti gli script statici richiesti, incluso `check-pos-printer-cashdrawer-safety.ps1`, -> ALL PASS.
+  - secret scan: solo falsi positivi documentali/checker; nessun secret reale.
+  - artifact scan: nessun artifact generato tracciato.
+- Evidenza ASUS usata: release pack PASS, installer Inno PASS, WPF smoke PASS con limiti hardware dichiarati, printer/cashdrawer software PASS.
+- Report finale: `docs/reports/2026-07-01_MAC_FINAL_ASUS_REVIEW_AND_MAIN_MERGE.md`.
+- Decisione Mac: `READY_FOR_MAIN_MERGE`; main merge/push da eseguire solo dopo commit report e check rapidi su main.

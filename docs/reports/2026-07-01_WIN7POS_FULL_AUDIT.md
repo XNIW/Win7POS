@@ -21,6 +21,20 @@
 - Installer Inno Setup: `RICHIEDE_WINDOWS_INNO`; `iscc` non disponibile su Mac.
 - ASUS/Windows smoke: `ASUS_NOT_RUN`; task aggiornato in `docs/reports/2026-07-01_CODEX_ASUS_WINDOWS_QA_TASK.md`.
 
+## Addendum final ASUS review
+
+- Report finale Mac: `docs/reports/2026-07-01_MAC_FINAL_ASUS_REVIEW_AND_MAIN_MERGE.md`.
+- Branch ASUS revisionate:
+  - `qa/asus-win7pos-result-20260701` / `63cdaaa`
+  - `qa/asus-printer-cashdrawer-hardening-20260701` / `8ba8a25`
+- Branch integration: `integration/win7pos-asus-final-review-20260701`.
+- Merge commit integration: `63501e0`.
+- ASUS/Windows smoke: ora ricevuto e revisionato; build Windows, WPF smoke, release pack, installer e printer/cashdrawer software PASS con limiti hardware dichiarati.
+- Fix review Mac: aggiornato `scripts/check-pos-startup-win7-safe.ps1` per accettare il catalogo traduzioni lazy corretto senza reintrodurre static constructor prematuro.
+- Gate Mac finali: build Core/Data/CLI/WPF, CLI selftest, dialog standards, startup, online/sync/restore/shop/revenue/product/printer checks tutti PASS.
+- Security/artifact scan: nessun secret reale; nessun artifact generato tracciato.
+- Decisione: `READY_FOR_MAIN_MERGE`.
+
 ## Inventario reale
 
 - `git status --short`: worktree non pulito gia prima delle patch; file modificati in README, script online, core/data/WPF online, dialog bootstrap, sync/start-of-day; file non tracciati per audit bootstrap/sync e nuovi script.

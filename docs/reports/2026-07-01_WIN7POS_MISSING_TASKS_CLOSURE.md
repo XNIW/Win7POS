@@ -9,6 +9,22 @@
 - Note su modifiche preesistenti: README, online/bootstrap/sync, catalog pull, product repository, start-of-day sync, dialog online e diversi script risultano gia sporchi/non attribuiti a questa chiusura. Non sono stati ripuliti, scartati o stashed.
 - Rerun corrente Codex Mac: check Mac e release pack fresco rieseguiti il 2026-07-01; nessun commit, reset o stash.
 
+## Addendum final ASUS review
+
+- ASUS result branch revisionata: `qa/asus-win7pos-result-20260701` / `63cdaaa`.
+- ASUS printer/cashdrawer branch revisionata: `qa/asus-printer-cashdrawer-hardening-20260701` / `8ba8a25`.
+- Branch integration Mac: `integration/win7pos-asus-final-review-20260701`.
+- Merge commit integration: `63501e0`.
+- Output ASUS ricevuto:
+  - WPF smoke reale PASS con limiti hardware.
+  - release pack Windows PASS.
+  - installer Inno Setup PASS.
+  - printer/cashdrawer software PASS; hardware fisico SKIP dichiarato.
+- Fix review Mac: `scripts/check-pos-startup-win7-safe.ps1` aggiornato per riconoscere `PosLocalization` lazy, dopo falso negativo del checker.
+- Gate finali Mac: build Core/Data/CLI/WPF, selftest CLI e tutti gli script statici richiesti PASS.
+- Security/artifact scan: nessun secret reale; nessun artifact generato tracciato.
+- Decisione: `READY_FOR_MAIN_MERGE`.
+
 ## Cose mancanti dal full audit
 
 | ID | Area | Severita | Stato precedente | Azione prevista | Stato finale | Evidenza |
@@ -178,7 +194,10 @@
 
 | ID | Severita | Stato | Fix | Check |
 |----|----------|-------|-----|-------|
-| ASUS-N/A | N/A | ASUS_NOT_RUN | Nessun output ASUS disponibile da integrare. | Task ASUS aggiornato. |
+| ASUS-001 | P0 | FIXED | `PosLocalization` startup crash risolto con catalogo lazy. | WPF smoke ASUS PASS; build WPF Mac PASS. |
+| ASUS-002 | P1 | FIXED | DB Maintenance menu/binding read-only corretto. | ASUS dialog smoke PASS_AFTER_FIX; dialog standards Mac PASS. |
+| ASUS-003 | P1 | FIXED | Release builder Windows usa SDK 10 e genera support files. | ASUS release pack PASS; installer Inno PASS. |
+| ASUS-004 | P1 | FIXED | Printer/cashdrawer hardening: no default/PDF auto fallback, sale saved before print/drawer, drawer disabled by default. | `check-pos-printer-cashdrawer-safety.ps1` PASS; ASUS software harness PASS. |
 
 ## Release pack
 

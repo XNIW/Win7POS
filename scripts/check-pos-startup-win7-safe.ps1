@@ -173,11 +173,21 @@ $workflow = Read-Text ".github/workflows/release-pack.yml"
 if ($translations -match 'private\s+static\s+readonly\s+Dictionary<[^;]+>\s+Translations\s*=\s*CreateTranslations\(\)\s*;') {
     Fail "PosLocalization translations must not be built by an eager field initializer before static entries"
 }
-elseif ($translations -notmatch 'static\s+PosLocalization\s*\(\)\s*\{[\s\S]*?Translations\s*=\s*CreateTranslations\(\);[\s\S]*?Current\s*=\s*new\s+PosLocalization\(\);[\s\S]*?\}') {
-    Fail "PosLocalization static constructor must initialize translations before Current"
-}
 else {
-    Pass "PosLocalization static initialization order is safe"
+    $hasLazyTranslationCatalog =
+        $translations -match 'private\s+static\s+readonly\s+Lazy<[\s\S]*?>\s+TranslationCatalog\s*=\s*new\s+Lazy<[\s\S]*?>\s*\(\s*CreateTranslations\s*\)\s*;' -and
+        $translations -match 'private\s+static\s+Dictionary<[\s\S]*?>\s+Translations\s*\{[\s\S]*?get\s*\{\s*return\s+TranslationCatalog\.Value\s*;?\s*\}[\s\S]*?\}' -and
+        $translations -match 'public\s+static\s+PosLocalization\s+Current\s*\{\s*get\s*;\s*\}\s*=\s*new\s+PosLocalization\(\)\s*;'
+
+    $hasOrderedStaticConstructor =
+        $translations -match 'static\s+PosLocalization\s*\(\)\s*\{[\s\S]*?Translations\s*=\s*CreateTranslations\(\);[\s\S]*?Current\s*=\s*new\s+PosLocalization\(\);[\s\S]*?\}'
+
+    if (-not $hasLazyTranslationCatalog -and -not $hasOrderedStaticConstructor) {
+        Fail "PosLocalization must initialize translations lazily or before Current"
+    }
+    else {
+        Pass "PosLocalization static initialization order is safe"
+    }
 }
 
 $loadedBody = Get-MethodBody `
