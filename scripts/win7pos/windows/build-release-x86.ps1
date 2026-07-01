@@ -14,6 +14,9 @@ $Errors = New-Object System.Collections.Generic.List[string]
 $InstallerGenerated = $false
 $MsBuildPath = $null
 $MsBuildVersion = $null
+$DotnetPath = $null
+$DotnetVersion = $null
+$UseDotnetCli = $false
 
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 $ProjectPath = Join-Path $RepoRoot "src\Win7POS.Wpf\Win7POS.Wpf.csproj"
@@ -79,6 +82,45 @@ function Find-MSBuild {
     }
 
     return $null
+}
+
+function Find-Dotnet {
+    if ($env:DOTNET_ROOT) {
+        $candidate = Join-Path $env:DOTNET_ROOT "dotnet.exe"
+        if (Test-Path $candidate) { return (Resolve-Path $candidate).Path }
+    }
+
+    $fromPath = Get-CommandPath "dotnet.exe"
+    if ($fromPath) { return $fromPath }
+
+    return $null
+}
+
+function Get-DotnetSdkVersion {
+    param([string]$DotnetExe)
+
+    if (-not $DotnetExe -or -not (Test-Path $DotnetExe)) { return "" }
+
+    try {
+        $version = & $DotnetExe --version 2>$null
+        if ($LASTEXITCODE -eq 0) { return (($version | Select-Object -First 1) -as [string]) }
+    }
+    catch { }
+    return ""
+}
+
+function Test-NeedsDotnetCli {
+    if ([string]::IsNullOrWhiteSpace($DotnetVersion) -or
+        [string]::IsNullOrWhiteSpace($MsBuildVersion)) {
+        return $false
+    }
+
+    $dotnetMajor = 0
+    $msbuildMajor = 0
+    [int]::TryParse(($DotnetVersion -split "\.")[0], [ref]$dotnetMajor) | Out-Null
+    [int]::TryParse(($MsBuildVersion -split "\.")[0], [ref]$msbuildMajor) | Out-Null
+
+    return ($dotnetMajor -ge 10 -and $msbuildMajor -lt 18)
 }
 
 function Find-ISCC {
@@ -204,6 +246,9 @@ function Write-BuildReport {
     $lines.Add("- OS: $([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)") | Out-Null
     $lines.Add("- MSBuild path: $MsBuildPath") | Out-Null
     $lines.Add("- MSBuild version: $MsBuildVersion") | Out-Null
+    $lines.Add("- dotnet path: $DotnetPath") | Out-Null
+    $lines.Add("- dotnet SDK version: $DotnetVersion") | Out-Null
+    $lines.Add("- Build tool: $(if ($UseDotnetCli) { "dotnet CLI" } else { "MSBuild" })") | Out-Null
     $lines.Add("- Configuration: $Configuration") | Out-Null
     $lines.Add("- Platform: $Platform") | Out-Null
     $lines.Add("- Output path: $OutputDir") | Out-Null
@@ -257,6 +302,77 @@ function Write-BuildReport {
 
     Set-Content -Path $ReportPath -Value $lines -Encoding UTF8
     Write-Host "Build report written: $ReportPath"
+}
+
+function Write-ReleaseSupportFiles {
+    if ($DryRun) {
+        Write-Host "[DRY-RUN] Would write release support files."
+        return
+    }
+
+    $branch = Get-GitValue @("rev-parse", "--abbrev-ref", "HEAD")
+    $commit = Get-GitValue @("rev-parse", "HEAD")
+    $shortCommit = if ($commit -and $commit.Length -ge 12) { $commit.Substring(0, 12) } else { $commit }
+    $builtAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz"
+
+    $versionLines = @(
+        "Win7POS Windows x86 release pack",
+        "BuiltAt=$builtAt",
+        "Branch=$branch",
+        "Commit=$commit",
+        "ShortCommit=$shortCommit",
+        "Configuration=$Configuration",
+        "Platform=$Platform"
+    )
+    Set-Content -Path (Join-Path $DistDir "VERSION.txt") -Value $versionLines -Encoding ASCII
+
+    $readmeLines = @(
+        "Win7POS Windows x86 release pack",
+        "",
+        "Run:",
+        "1. Keep this folder intact.",
+        "2. Start Win7POS.Wpf.exe.",
+        "3. Use a test data directory for QA; do not copy production databases into this pack.",
+        "",
+        "Admin Web staging helper:",
+        "- Run set-admin-web-staging-url.bat from this folder to write a staging pos-admin-web.config next to the app.",
+        "- Do not store real tokens, PINs, passwords, or production config in this folder.",
+        "",
+        "Expected smoke checks:",
+        "- App starts.",
+        "- SQLite native dependency loads.",
+        "- Operator login uses test credentials only.",
+        "- Cash/card sale is saved to the local test database.",
+        "- Backup/restore is tested only on test data."
+    )
+    Set-Content -Path (Join-Path $DistDir "README_RUN.txt") -Value $readmeLines -Encoding ASCII
+
+    $checklistLines = @(
+        "Win7POS release checklist",
+        "",
+        "[ ] Win7POS.Wpf.exe starts on the target Windows machine.",
+        "[ ] e_sqlite3.dll is present and DB startup succeeds.",
+        "[ ] No *.pdb files are present.",
+        "[ ] No source files are present.",
+        "[ ] No production DB, token, PIN, password, or secret is present.",
+        "[ ] Test data directory is used for QA.",
+        "[ ] Operator login works with test-only credentials.",
+        "[ ] Cash sale is saved.",
+        "[ ] Card sale is saved if supported.",
+        "[ ] Print/reprint behavior is verified with available hardware or documented as unavailable.",
+        "[ ] Backup creates a DB copy.",
+        "[ ] Restore guard blocks unresolved outbox sales.",
+        "[ ] Final smoke result is recorded in docs/reports."
+    )
+    Set-Content -Path (Join-Path $DistDir "RELEASE_CHECKLIST.txt") -Value $checklistLines -Encoding ASCII
+
+    $helperSource = Join-Path $RepoRoot "scripts\set-admin-web-staging-url.bat"
+    if (Test-Path $helperSource) {
+        Copy-Item -Path $helperSource -Destination (Join-Path $DistDir "set-admin-web-staging-url.bat") -Force
+    }
+    else {
+        Add-WarningMessage "Admin Web staging helper not found: $helperSource"
+    }
 }
 
 function Show-DropSummary {
@@ -329,32 +445,67 @@ try {
         Add-WarningMessage "Could not read MSBuild version: $($_.Exception.Message)"
     }
 
+    $DotnetPath = Find-Dotnet
+    $DotnetVersion = Get-DotnetSdkVersion $DotnetPath
+    $UseDotnetCli = Test-NeedsDotnetCli
+    if ($UseDotnetCli) {
+        if (-not $DotnetPath) {
+            throw "dotnet CLI not found, but MSBuild $MsBuildVersion cannot build with SDK $DotnetVersion."
+        }
+        Add-WarningMessage "Using dotnet CLI SDK $DotnetVersion because MSBuild $MsBuildVersion cannot resolve SDK 10 projects."
+    }
+
     Write-Host "Repo root: $RepoRoot"
     Write-Host "Project: $ProjectPath"
     Write-Host "MSBuild: $MsBuildPath"
+    if ($DotnetPath) { Write-Host "dotnet: $DotnetPath ($DotnetVersion)" }
     Write-Host "Configuration: $Configuration"
     Write-Host "Platform: $Platform"
 
     if (-not $SkipRestore) {
-        Invoke-LoggedCommand $MsBuildPath @(
-            $ProjectPath,
-            "/t:Restore",
-            "/p:Configuration=$Configuration",
-            "/p:Platform=$Platform"
-        )
+        if ($UseDotnetCli) {
+            Invoke-LoggedCommand $DotnetPath @(
+                "restore",
+                $ProjectPath,
+                "-p:Configuration=$Configuration",
+                "-p:Platform=$Platform"
+            )
+        }
+        else {
+            Invoke-LoggedCommand $MsBuildPath @(
+                $ProjectPath,
+                "/t:Restore",
+                "/p:Configuration=$Configuration",
+                "/p:Platform=$Platform"
+            )
+        }
     }
     else {
         Add-WarningMessage "Restore skipped by -SkipRestore."
     }
 
     if (-not $SkipBuild) {
-        Invoke-LoggedCommand $MsBuildPath @(
-            $ProjectPath,
-            "/t:Build",
-            "/p:Configuration=$Configuration",
-            "/p:Platform=$Platform",
-            "/p:PlatformTarget=$Platform"
-        )
+        if ($UseDotnetCli) {
+            $buildArgs = @(
+                "build",
+                $ProjectPath,
+                "-c",
+                $Configuration,
+                "-p:Platform=$Platform",
+                "-p:PlatformTarget=$Platform",
+                "--no-restore"
+            )
+            Invoke-LoggedCommand $DotnetPath $buildArgs
+        }
+        else {
+            Invoke-LoggedCommand $MsBuildPath @(
+                $ProjectPath,
+                "/t:Build",
+                "/p:Configuration=$Configuration",
+                "/p:Platform=$Platform",
+                "/p:PlatformTarget=$Platform"
+            )
+        }
     }
     else {
         Add-WarningMessage "Build skipped by -SkipBuild."
@@ -381,6 +532,9 @@ try {
         }
         New-Item -ItemType Directory -Force $DistDir | Out-Null
         Copy-Item -Path (Join-Path $resolvedOutputDir "*") -Destination $DistDir -Recurse -Force
+        Get-ChildItem -Path $DistDir -Recurse -File -Filter "*.pdb" |
+            Remove-Item -Force
+        Write-ReleaseSupportFiles
         Write-Host "Copied build output to: $DistDir"
 
         $exe = Join-Path $DistDir "Win7POS.Wpf.exe"

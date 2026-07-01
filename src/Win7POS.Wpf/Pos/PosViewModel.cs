@@ -42,6 +42,7 @@ namespace Win7POS.Wpf.Pos
         private bool _useReceipt42 = true;
         private bool _isLoadingSettings;
         private PosPrinterSettings _printerSettings = new PosPrinterSettings();
+        private string _lastPrintFailureMessage = string.Empty;
 
         private PosCartLineRow _selectedCartItem;
         private RecentSaleRow _selectedRecentSale;
@@ -157,6 +158,10 @@ namespace Win7POS.Wpf.Pos
                 ? PosLocalization.Current.Format("pos.cart.quantityReady", PendingInputQuantity.Value)
                 : string.Empty;
 
+        private bool IsCashDrawerConfigured =>
+            _printerSettings.CashDrawerEnabled &&
+            string.Equals(_printerSettings.CashDrawerMode, "printer_kick", StringComparison.OrdinalIgnoreCase);
+
         public ICommand AddBarcodeCommand { get; }
         public ICommand PayCommand { get; }
         public ICommand ReceiptPreviewCommand { get; }
@@ -213,7 +218,7 @@ namespace Win7POS.Wpf.Pos
             BackupDbCommand = new AsyncRelayCommand(BackupDbAsync, _ => !IsBusy, _logger);
             PrinterSettingsCommand = new AsyncRelayCommand(OpenPrinterSettingsAsync, _ => !IsBusy, _logger);
             PrintLastReceiptCommand = new AsyncRelayCommand(PrintLastReceiptAsync, _ => !IsBusy, _logger);
-            OpenCashDrawerCommand = new AsyncRelayCommand(OpenCashDrawerAsync, _ => !IsBusy && _printerSettings.CashDrawerEnabled, _logger);
+            OpenCashDrawerCommand = new AsyncRelayCommand(OpenCashDrawerAsync, _ => !IsBusy && IsCashDrawerConfigured, _logger);
             DailyReportCommand = new AsyncRelayCommand(OpenDailyReportAsync, _ => !IsBusy, _logger);
             DbMaintenanceCommand = new AsyncRelayCommand(OpenDbMaintenanceAsync, _ => !IsBusy, _logger);
             AboutSupportCommand = new AsyncRelayCommand(OpenAboutSupportAsync, _ => !IsBusy, _logger);
@@ -608,7 +613,7 @@ namespace Win7POS.Wpf.Pos
                     LineTotal = x.LineTotal
                 }).ToList(),
                 UseReceipt42 = UseReceipt42,
-                DefaultPrint = true,
+                DefaultPrint = _printerSettings.ReceiptEnabled && _printerSettings.AutoPrint,
                 ShopInfo = shop,
                 NextBoletaNumber = nextBoleta
             };
@@ -616,8 +621,13 @@ namespace Win7POS.Wpf.Pos
             var fiscalPdf = new FiscalPdfService();
             var vm = new PaymentViewModel(Total, draft,
                 (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code),
-                async (text, code) => await _service.PrintReceiptTextAsync(text, UseReceipt42, "FISCAL_" + code, isFiscalPrint: true).ConfigureAwait(true),
-                openDrawerDefault: _printerSettings.CashDrawerEnabled);
+                async (text, code) => await _service.PrintReceiptTextAsync(
+                    text,
+                    UseReceipt42,
+                    "FISCAL_" + code,
+                    isFiscalPrint: true,
+                    automaticAfterSale: true).ConfigureAwait(true),
+                openDrawerDefault: IsCashDrawerConfigured && _printerSettings.CashDrawerOpenOnCashSale);
 
             bool ok;
             try
@@ -677,13 +687,17 @@ namespace Win7POS.Wpf.Pos
                 var fiscalPrinted = false;
                 if (vm.ShouldPrint)
                 {
-                    var printed = await PrintReceiptAsync(ReceiptPreview, result.SaleCode).ConfigureAwait(true);
+                    var printed = await PrintReceiptAsync(ReceiptPreview, result.SaleCode, automaticAfterSale: true).ConfigureAwait(true);
                     if (!printed)
                     {
                         ModernMessageDialog.Show(
                             DialogOwnerHelper.GetSafeOwner(),
                             PosLocalization.Current.Text("pos.status.printFailedTitle"),
-                            PosLocalization.Current.Text("pos.status.receiptNotPrintedCheckPrinter"));
+                            PosLocalization.Current.Format(
+                                "printer.saleSavedPrintWarning",
+                                string.IsNullOrWhiteSpace(_lastPrintFailureMessage)
+                                    ? PosLocalization.Current.Text("pos.status.receiptNotPrintedCheckPrinter")
+                                    : _lastPrintFailureMessage));
                     }
                 }
 
@@ -736,7 +750,7 @@ namespace Win7POS.Wpf.Pos
         private async Task TryAutoOpenDrawerAfterPaymentAsync(PaymentViewModel vm)
         {
             if (vm == null) return;
-            if (!_printerSettings.CashDrawerEnabled) return;
+            if (!IsCashDrawerConfigured) return;
             if (!vm.OpenDrawerForCurrentPayment) return;
             if (vm.CashAmountMinor <= 0) return;
 
@@ -748,6 +762,10 @@ namespace Win7POS.Wpf.Pos
             {
                 _logger.LogError(ex, "POS VM auto drawer open failed");
                 StatusMessage = PosLocalization.Current.Text("pos.status.paymentOkDrawerFailed");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.Current.Text("printer.cashDrawer"),
+                    PosLocalization.Current.Format("printer.saleSavedDrawerWarning", ex.Message));
             }
         }
 
@@ -864,7 +882,7 @@ namespace Win7POS.Wpf.Pos
                 }
 
                 ReceiptPreview = preview;
-                await PrintReceiptAsync(preview, "SALE_" + SelectedRecentSale.SaleCode).ConfigureAwait(true);
+                await PrintReceiptAsync(preview, "SALE_" + SelectedRecentSale.SaleCode, explicitUserAction: true).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
@@ -1066,11 +1084,44 @@ namespace Win7POS.Wpf.Pos
             {
                 PrinterName = _printerSettings.PrinterName,
                 Copies = _printerSettings.Copies.ToString(),
+                ReceiptEnabled = _printerSettings.ReceiptEnabled,
                 AutoPrint = _printerSettings.AutoPrint,
+                AllowWindowsDefault = _printerSettings.AllowWindowsDefault,
+                AllowVirtualPrinters = _printerSettings.AllowVirtualPrinters,
                 SaveCopyToFile = _printerSettings.SaveCopyToFile,
                 OutputDirectory = _printerSettings.OutputDirectory,
-                CashDrawerCommand = string.IsNullOrWhiteSpace(_printerSettings.CashDrawerCommand) ? "27,112,0,60,255" : _printerSettings.CashDrawerCommand,
-                CashDrawerEnabled = _printerSettings.CashDrawerEnabled
+                CashDrawerCommand = string.IsNullOrWhiteSpace(_printerSettings.CashDrawerCommand) ? "27,112,0,25,250" : _printerSettings.CashDrawerCommand,
+                CashDrawerEnabled = _printerSettings.CashDrawerEnabled,
+                CashDrawerMode = _printerSettings.CashDrawerMode,
+                CashDrawerPrinterName = _printerSettings.CashDrawerPrinterName,
+                CashDrawerOpenOnCashSale = _printerSettings.CashDrawerOpenOnCashSale
+            };
+            vm.ReplaceInstalledPrinters(await _service.GetInstalledPrintersAsync().ConfigureAwait(true));
+            vm.RefreshPrintersRequested += async () =>
+            {
+                try
+                {
+                    vm.ReplaceInstalledPrinters(await _service.GetInstalledPrintersAsync().ConfigureAwait(true));
+                    StatusMessage = PosLocalization.Current.Text("printer.printersReloaded");
+                }
+                catch (Exception ex)
+                {
+                    StatusMessage = PosLocalization.Current.Format("printer.discoveryError", ex.Message);
+                    _logger.LogError(ex, "POS VM printer discovery failed");
+                }
+            };
+            vm.TestPrintRequested += async () =>
+            {
+                try
+                {
+                    await _service.TestReceiptPrinterAsync(ToPrinterSettings(vm)).ConfigureAwait(true);
+                    StatusMessage = PosLocalization.Current.Text("printer.testPrintSent");
+                }
+                catch (Exception ex)
+                {
+                    StatusMessage = PosLocalization.Current.Format("printer.testPrintError", ex.Message);
+                    ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("printer.testPrint"), ex.Message);
+                }
             };
             vm.TestCashDrawerRequested += async (name, cmd) =>
             {
@@ -1099,18 +1150,7 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
-            _printerSettings = new PosPrinterSettings
-            {
-                PrinterName = vm.PrinterName,
-                Copies = vm.ParsedCopies < 1 ? 1 : vm.ParsedCopies,
-                AutoPrint = vm.AutoPrint,
-                SaveCopyToFile = vm.SaveCopyToFile,
-                OutputDirectory = string.IsNullOrWhiteSpace(vm.OutputDirectory)
-                    ? Path.Combine(Win7POS.Core.AppPaths.DataDirectory, "receipts")
-                    : vm.OutputDirectory,
-                CashDrawerCommand = string.IsNullOrWhiteSpace(vm.CashDrawerCommand) ? "27,112,0,60,255" : vm.CashDrawerCommand,
-                CashDrawerEnabled = vm.CashDrawerEnabled
-            };
+            _printerSettings = ToPrinterSettings(vm);
 
             try
             {
@@ -1147,7 +1187,8 @@ namespace Win7POS.Wpf.Pos
                 var saleCode = await _service.GetLastSaleCodeAsync().ConfigureAwait(true);
                 await PrintReceiptAsync(
                     text,
-                    string.IsNullOrWhiteSpace(saleCode) ? "LAST" : "LAST_" + saleCode)
+                    string.IsNullOrWhiteSpace(saleCode) ? "LAST" : "LAST_" + saleCode,
+                    explicitUserAction: true)
                     .ConfigureAwait(true);
             }
             catch (Exception ex)
@@ -1181,11 +1222,43 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        private async Task<bool> PrintReceiptAsync(string receiptText, string saleCode)
+        private static PosPrinterSettings ToPrinterSettings(PrinterSettingsViewModel vm)
+        {
+            return new PosPrinterSettings
+            {
+                PrinterName = vm.PrinterName,
+                Copies = vm.ParsedCopies < 1 ? 1 : vm.ParsedCopies,
+                ReceiptEnabled = vm.ReceiptEnabled,
+                AutoPrint = vm.AutoPrint,
+                AllowWindowsDefault = vm.AllowWindowsDefault,
+                AllowVirtualPrinters = vm.AllowVirtualPrinters,
+                SaveCopyToFile = vm.SaveCopyToFile,
+                OutputDirectory = string.IsNullOrWhiteSpace(vm.OutputDirectory)
+                    ? Path.Combine(Win7POS.Core.AppPaths.DataDirectory, "receipts")
+                    : vm.OutputDirectory,
+                CashDrawerCommand = string.IsNullOrWhiteSpace(vm.CashDrawerCommand) ? "27,112,0,25,250" : vm.CashDrawerCommand,
+                CashDrawerEnabled = vm.CashDrawerEnabled,
+                CashDrawerMode = vm.CashDrawerEnabled ? "printer_kick" : "disabled",
+                CashDrawerPrinterName = vm.CashDrawerPrinterName,
+                CashDrawerOpenOnCashSale = vm.CashDrawerOpenOnCashSale
+            };
+        }
+
+        private async Task<bool> PrintReceiptAsync(
+            string receiptText,
+            string saleCode,
+            bool automaticAfterSale = false,
+            bool explicitUserAction = false)
         {
             try
             {
-                var result = await _service.PrintReceiptTextAsync(receiptText, UseReceipt42, saleCode).ConfigureAwait(true);
+                _lastPrintFailureMessage = string.Empty;
+                var result = await _service.PrintReceiptTextAsync(
+                    receiptText,
+                    UseReceipt42,
+                    saleCode,
+                    automaticAfterSale: automaticAfterSale,
+                    explicitUserAction: explicitUserAction).ConfigureAwait(true);
                 StatusMessage = result.SavedCopy
                     ? PosLocalization.Current.Format("printer.receiptPrintedSaved", result.OutputPath)
                     : PosLocalization.Current.Text("printer.receiptPrinted");
@@ -1193,6 +1266,7 @@ namespace Win7POS.Wpf.Pos
             }
             catch (Exception ex)
             {
+                _lastPrintFailureMessage = ex.Message;
                 StatusMessage = PosLocalization.Current.Format("sales.printFailed", ex.Message);
                 _logger.LogError(ex, "POS VM print failed");
                 return false;

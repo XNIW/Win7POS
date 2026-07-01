@@ -41,7 +41,8 @@ namespace Win7POS.Wpf.Pos.Online
             PosAdminWebOptions options,
             PosFirstLoginRequest request,
             string localCredential,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            IProgress<PosCatalogPullProgress> progress = null)
         {
             if (options == null)
             {
@@ -83,28 +84,45 @@ namespace Win7POS.Wpf.Pos.Online
                 var response = result.Value;
                 if (!ValidateFirstLoginResponse(response))
                 {
+                    _logger.LogWarning("POS online bootstrap invalid first-login response.");
                     return PosOnlineBootstrapResult.Failure(
                         "invalid_response",
                         PosLocalization.T("onlineFirstLogin.invalidResponse"),
                         false);
                 }
 
-                var users = new UserRepository(_factory);
-                await users.UpsertRemoteStaffMirrorAsync(new RemoteStaffMirrorInput
+                progress?.Report(PosCatalogPullProgress.ForPhase("access_verified"));
+                try
                 {
-                    Credential = localCredential,
-                    CredentialVersion = response.Staff.CredentialVersion,
-                    DisplayName = response.Staff.DisplayName,
-                    RemoteRoleKey = response.Staff.RoleKey,
-                    RemoteShopId = response.Shop.ShopId,
-                    RemoteStaffId = response.Staff.StaffId,
-                    ShopCode = response.Shop.ShopCode,
-                    StaffCode = response.Staff.StaffCode
-                }).ConfigureAwait(false);
+                    await PosOnlineShopSnapshot.SaveAsync(_factory, response.Shop).ConfigureAwait(false);
+                    await PosOnlinePolicySnapshot.SaveAsync(_factory, response.Policy).ConfigureAwait(false);
+                    _trustedDeviceStore.SaveFirstLogin(response);
+                    progress?.Report(PosCatalogPullProgress.ForPhase("device_linked"));
 
-                _trustedDeviceStore.SaveFirstLogin(response);
-                await PosOnlineShopSnapshot.SaveAsync(_factory, response.Shop).ConfigureAwait(false);
-                await PosOnlinePolicySnapshot.SaveAsync(_factory, response.Policy).ConfigureAwait(false);
+                    var users = new UserRepository(_factory);
+                    await users.UpsertRemoteStaffMirrorAsync(new RemoteStaffMirrorInput
+                    {
+                        Credential = localCredential,
+                        CredentialVersion = response.Staff.CredentialVersion,
+                        DisplayName = response.Staff.DisplayName,
+                        RemoteRoleKey = response.Staff.RoleKey,
+                        RemoteShopId = response.Shop.ShopId,
+                        RemoteStaffId = response.Staff.StaffId,
+                        ShopCode = response.Shop.ShopCode,
+                        StaffCode = response.Staff.StaffCode
+                    }).ConfigureAwait(false);
+                    progress?.Report(PosCatalogPullProgress.ForPhase("operator_configured"));
+                }
+                catch (Exception ex)
+                {
+                    _trustedDeviceStore.Clear();
+                    _logger.LogWarning("POS online bootstrap local trust/mirror persistence failed.", ex);
+                    return PosOnlineBootstrapResult.Failure(
+                        "local_persistence_failed",
+                        PosLocalization.T("onlineFirstLogin.localRequestError"),
+                        false);
+                }
+
                 _logger.LogInfo(
                     "POS online bootstrap success: category=online.bootstrap clientRequestId=" +
                     SafeAuditValue(result.ClientRequestId) +
@@ -134,14 +152,45 @@ namespace Win7POS.Wpf.Pos.Online
                 try
                 {
                     var catalogPull = new PosCatalogPullService(_factory);
-                    await catalogPull.TryPullCatalogAsync(options, cancellationToken).ConfigureAwait(false);
+                    progress?.Report(PosCatalogPullProgress.ForPhase("catalog"));
+                    var catalogOutcome = await catalogPull
+                        .TryPullInitialCatalogAsync(options, cancellationToken, progress)
+                        .ConfigureAwait(false);
+                    if (catalogOutcome.Completed && catalogOutcome.CatalogSaleSafe)
+                    {
+                        progress?.Report(PosCatalogPullProgress.ForPhase("finalizing"));
+                        return PosOnlineBootstrapResult.Ok(catalogOutcome);
+                    }
+
+                    if (!catalogOutcome.Completed)
+                    {
+                        _logger.LogWarning(
+                            "Bootstrap catalog pull incomplete: category=online.bootstrap.catalog code=" +
+                            SafeAuditValue(catalogOutcome.StatusCode) +
+                            ", pages=" + catalogOutcome.PagesProcessed.ToString() +
+                            ", hasMore=" + catalogOutcome.HasMore.ToString() +
+                            ", authDenied=" + catalogOutcome.AuthDenied.ToString());
+                    }
+
+                    return PosOnlineBootstrapResult.CatalogIncomplete(
+                        catalogOutcome.StatusCode,
+                        catalogOutcome.AuthDenied
+                            ? PosLocalization.T("onlineFirstLogin.catalogAuthDenied")
+                            : PosLocalization.T("onlineFirstLogin.catalogIncomplete"),
+                        catalogOutcome.AuthDenied,
+                        !catalogOutcome.AuthDenied,
+                        catalogOutcome);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning("Bootstrap catalog pull skipped.", ex);
+                    _logger.LogWarning("Bootstrap catalog pull incomplete.", ex);
+                    return PosOnlineBootstrapResult.CatalogIncomplete(
+                        "catalog_exception",
+                        PosLocalization.T("onlineFirstLogin.catalogIncomplete"),
+                        false,
+                        true,
+                        null);
                 }
-
-                return PosOnlineBootstrapResult.Ok();
             }
             catch (OperationCanceledException)
             {
@@ -207,12 +256,17 @@ namespace Win7POS.Wpf.Pos.Online
         private static bool ValidateFirstLoginResponse(PosFirstLoginResponse response)
         {
             return response != null &&
+                   response.Ok &&
                    !string.IsNullOrWhiteSpace(response.TrustedDeviceToken) &&
                    response.Session != null &&
                    !string.IsNullOrWhiteSpace(response.Session.SessionToken) &&
                    !string.IsNullOrWhiteSpace(response.Session.PosSessionId) &&
                    response.Device != null &&
+                   response.Device.Trusted &&
+                   string.Equals(response.Device.Status, "active", StringComparison.OrdinalIgnoreCase) &&
                    !string.IsNullOrWhiteSpace(response.Device.ShopDeviceId) &&
+                   response.Policy != null &&
+                   !string.IsNullOrWhiteSpace(response.Policy.ContractVersion) &&
                    response.Staff != null &&
                    !string.IsNullOrWhiteSpace(response.Staff.StaffId) &&
                    !string.IsNullOrWhiteSpace(response.Staff.StaffCode) &&
@@ -223,22 +277,54 @@ namespace Win7POS.Wpf.Pos.Online
 
     public sealed class PosOnlineBootstrapResult
     {
-        private PosOnlineBootstrapResult(bool success, string code, string message, bool denied)
+        private PosOnlineBootstrapResult(
+            bool success,
+            string code,
+            string message,
+            bool denied,
+            bool catalogCompleted,
+            bool catalogSaleSafe,
+            string catalogStatus,
+            string catalogLastError,
+            bool canOpenPos,
+            bool requiresRetry)
         {
+            CanOpenPos = canOpenPos;
+            CatalogCompleted = catalogCompleted;
+            CatalogLastError = catalogLastError ?? string.Empty;
+            CatalogSaleSafe = catalogSaleSafe;
+            CatalogStatus = catalogStatus ?? string.Empty;
             Code = code;
             Denied = denied;
             Message = message;
+            RequiresRetry = requiresRetry;
             Success = success;
         }
 
+        public bool CanOpenPos { get; }
+        public bool CatalogCompleted { get; }
+        public string CatalogLastError { get; }
+        public bool CatalogSaleSafe { get; }
+        public string CatalogStatus { get; }
         public string Code { get; }
         public bool Denied { get; }
         public string Message { get; }
+        public bool RequiresRetry { get; }
         public bool Success { get; }
 
-        public static PosOnlineBootstrapResult Ok()
+        public static PosOnlineBootstrapResult Ok(PosCatalogPullOutcome catalogOutcome)
         {
-            return new PosOnlineBootstrapResult(true, "success", string.Empty, false);
+            return new PosOnlineBootstrapResult(
+                true,
+                "success",
+                string.Empty,
+                false,
+                catalogOutcome != null && catalogOutcome.Completed,
+                catalogOutcome != null && catalogOutcome.CatalogSaleSafe,
+                catalogOutcome?.StatusCode ?? "completed",
+                string.Empty,
+                true,
+                false);
         }
 
         public static PosOnlineBootstrapResult Failure(string code, string message, bool denied)
@@ -249,7 +335,39 @@ namespace Win7POS.Wpf.Pos.Online
                 string.IsNullOrWhiteSpace(message)
                     ? PosLocalization.T("onlineFirstLogin.connectionFailed")
                     : message,
-                denied);
+                denied,
+                false,
+                false,
+                string.IsNullOrWhiteSpace(code) ? "failure" : code,
+                string.IsNullOrWhiteSpace(code) ? "failure" : code,
+                false,
+                false);
+        }
+
+        public static PosOnlineBootstrapResult CatalogIncomplete(
+            string code,
+            string message,
+            bool denied,
+            bool requiresRetry,
+            PosCatalogPullOutcome catalogOutcome)
+        {
+            var status = string.IsNullOrWhiteSpace(catalogOutcome?.StatusCode)
+                ? (string.IsNullOrWhiteSpace(code) ? "catalog_incomplete" : code)
+                : catalogOutcome.StatusCode;
+
+            return new PosOnlineBootstrapResult(
+                !denied,
+                string.IsNullOrWhiteSpace(code) ? status : code,
+                string.IsNullOrWhiteSpace(message)
+                    ? PosLocalization.T("onlineFirstLogin.catalogIncomplete")
+                    : message,
+                denied,
+                catalogOutcome != null && catalogOutcome.Completed,
+                catalogOutcome != null && catalogOutcome.CatalogSaleSafe,
+                status,
+                status,
+                false,
+                requiresRetry && !denied);
         }
     }
 }

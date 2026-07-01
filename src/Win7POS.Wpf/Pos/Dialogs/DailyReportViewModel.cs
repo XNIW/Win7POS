@@ -637,7 +637,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             IsBusy = true;
             try
             {
-                await _service.PrintReceiptTextAsync(textToPrint, true, "STAMPA_RIEPILOGO_" + DateTime.Now.ToString("yyyyMMdd_HHmm", CultureInfo.InvariantCulture)).ConfigureAwait(true);
+                await _service.PrintReceiptTextAsync(
+                    textToPrint,
+                    true,
+                    "STAMPA_RIEPILOGO_" + DateTime.Now.ToString("yyyyMMdd_HHmm", CultureInfo.InvariantCulture),
+                    explicitUserAction: true).ConfigureAwait(true);
                 Status = PosLocalization.T("reports.printStarted");
             }
             catch (Exception ex)

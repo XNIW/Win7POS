@@ -70,7 +70,7 @@
                 </ControlTemplate>
             </TabControl.Template>
             <TabItem Header="POS">
-                <pos:PosView x:Name="PosViewControl"/>
+                <Grid x:Name="PosTabHost"/>
             </TabItem>
             <TabItem x:Name="ProductsTab" Header="{loc:Loc shell.products}">
                 <prod:ProductsView x:Name="ProductsViewControl"/>
@@ -112,6 +112,7 @@
                                   SelectionChanged="OnLanguageSelectionChanged"/>
                         <Button Content="{loc:Loc shell.officialShopData}" Tag="ShopSettings" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuShopSettingsClick"/>
                         <Button Content="{loc:Loc shell.printerSettings}" Tag="Printer" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPrinterClick"/>
+                        <Button Content="{loc:Loc operations.dbMaintenance}" Tag="DbMaintenance" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuDbClick"/>
                         <Button Content="{loc:Loc shell.usersRoles}" Tag="UsersRoles" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuUsersClick"/>
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>

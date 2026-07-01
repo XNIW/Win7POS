@@ -17,7 +17,13 @@ namespace Win7POS.Wpf.Localization
     {
         public const string DefaultLanguage = "en";
 
-        private static readonly Dictionary<string, Dictionary<string, string>> Translations;
+        private static readonly Lazy<Dictionary<string, Dictionary<string, string>>> TranslationCatalog =
+            new Lazy<Dictionary<string, Dictionary<string, string>>>(CreateTranslations);
+
+        private static Dictionary<string, Dictionary<string, string>> Translations
+        {
+            get { return TranslationCatalog.Value; }
+        }
 
         private static readonly HashSet<string> SupportedLanguageCodes =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "en", "es", "it", "zh-CN" };
@@ -41,12 +47,6 @@ namespace Win7POS.Wpf.Localization
         private static bool _frameworkLanguageMetadataApplied;
         private string _currentLanguage = DefaultLanguage;
 
-        static PosLocalization()
-        {
-            Translations = CreateTranslations();
-            Current = new PosLocalization();
-        }
-
         private PosLocalization()
         {
             SupportedLanguages = new List<SupportedLanguageOption>
@@ -60,7 +60,7 @@ namespace Win7POS.Wpf.Localization
             SetLanguage(DefaultLanguage);
         }
 
-        public static PosLocalization Current { get; private set; }
+        public static PosLocalization Current { get; } = new PosLocalization();
 
         public static IReadOnlyList<SupportedLanguageOption> SupportedLanguages { get; private set; }
 
@@ -375,6 +375,15 @@ namespace Win7POS.Wpf.Localization
             new TranslationEntry("sync.blockedSales", "Blocked sales", "Ventas bloqueadas", "Vendite bloccate", "已阻塞销售"),
             new TranslationEntry("sync.callSupport", "Call manager/support.", "Llamar a gerente/soporte.", "Chiamare manager/assistenza.", "请联系经理/支持。"),
             new TranslationEntry("sync.catalog", "Catalog", "Catalogo", "Catalogo", "目录"),
+            new TranslationEntry("sync.catalogBootstrap", "Catalog bootstrap", "Bootstrap catalogo", "Bootstrap catalogo", "目录初始化"),
+            new TranslationEntry("sync.catalogBootstrapFailed", "Catalog bootstrap failed", "Bootstrap catalogo fallido", "Bootstrap catalogo fallito", "目录初始化失败"),
+            new TranslationEntry("sync.catalogInterruptedResume", "Catalog download interrupted, resume available", "Descarga catalogo interrumpida, reanudacion disponible", "Download interrotto, ripresa disponibile", "目录下载中断，可继续"),
+            new TranslationEntry("sync.catalogNeverDownloaded", "Catalog never downloaded", "Catalogo nunca descargado", "Catalogo mai scaricato", "目录从未下载"),
+            new TranslationEntry("sync.catalogPartial", "Catalog partial", "Catalogo parcial", "Catalogo parziale", "目录部分同步"),
+            new TranslationEntry("sync.catalogPreparing", "Preparing catalog", "Preparando catalogo", "Preparazione catalogo", "正在准备目录"),
+            new TranslationEntry("sync.catalogReady", "Catalog ready", "Catalogo listo", "Catalogo pronto", "目录已就绪"),
+            new TranslationEntry("sync.catalogUpdating", "Catalog updating", "Actualizando catalogo", "Catalogo in aggiornamento", "正在更新目录"),
+            new TranslationEntry("sync.catalogSaleSafe", "Catalog sale-safe", "Catalogo seguro para venta", "Catalogo sicuro per vendita", "目录可安全销售"),
             new TranslationEntry("sync.device", "Device", "Dispositivo", "Dispositivo", "设备"),
             new TranslationEntry("sync.inProgress", "Sync in progress", "Sync en curso", "Sync in corso", "同步中"),
             new TranslationEntry("sync.lastCatalog", "Last catalog", "Ultimo catalogo", "Ultimo catalogo", "最近目录"),
@@ -472,7 +481,7 @@ namespace Win7POS.Wpf.Localization
             new TranslationEntry("payment.paid", "Paid", "Pagado", "Pagato", "已付"),
             new TranslationEntry("payment.changeCashOnly", "Change (cash only): {0}", "Vuelto (solo efectivo): {0}", "Resto (solo contanti): {0}", "找零（仅现金）：{0}"),
             new TranslationEntry("payment.missing", "Missing: {0}", "Falta: {0}", "Manca: {0}", "还差：{0}"),
-            new TranslationEntry("payment.cardOverBalance", "Card cannot exceed the balance due. Reduce card or move the extra to cash.", "La tarjeta no puede superar el saldo a pagar. Reduce tarjeta o mueve el excedente a efectivo.", "La carta non puo superare il saldo da pagare. Riduci carta o sposta l'eccedenza su contanti.", "银行卡金额不能超过应付余额。请减少刷卡金额或把超出部分转为现金。"),
+            new TranslationEntry("payment.cardOverBalance", "Card cannot exceed the balance due. Reduce card or move the extra to cash.", "La tarjeta no puede superar el saldo a pagar. Reduce tarjeta o mueve el excedente a efectivo.", "La carta non può superare il saldo da pagare. Riduci carta o sposta l'eccedenza su contanti.", "银行卡金额不能超过应付余额。请减少刷卡金额或把超出部分转为现金。"),
             new TranslationEntry("payment.openDrawer", "Open cash drawer", "Abrir caja", "Apri cassa", "打开钱箱"),
             new TranslationEntry("payment.cashOnly", "cash only", "solo efectivo", "solo per contanti", "仅现金"),
             new TranslationEntry("payment.suspend", "Suspend", "Suspender", "Sospendi", "挂起"),

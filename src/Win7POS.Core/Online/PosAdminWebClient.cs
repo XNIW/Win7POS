@@ -455,6 +455,9 @@ namespace Win7POS.Wpf.Pos.Online
         [DataMember(Name = "shopDeviceId")]
         public string ShopDeviceId { get; set; }
 
+        [DataMember(Name = "limit", EmitDefaultValue = false)]
+        public int Limit { get; set; }
+
         [DataMember(Name = "syncCursor", EmitDefaultValue = false)]
         public string SyncCursor { get; set; }
 

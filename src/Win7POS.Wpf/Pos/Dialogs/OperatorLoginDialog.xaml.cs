@@ -31,6 +31,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async void OnLoadedAsync(object sender, RoutedEventArgs e)
         {
+            await LoadOperatorsAsync().ConfigureAwait(true);
+        }
+
+        private async Task LoadOperatorsAsync()
+        {
             var userRepo = new UserRepository(_factory);
             var users = await userRepo.ListAsync().ConfigureAwait(true);
 
@@ -42,6 +47,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 .ToList();
 
             _operators = loginable;
+            OperatorCombo.ItemsSource = null;
             OperatorCombo.ItemsSource = _operators;
 
             if (_operators.Count == 0)
@@ -128,7 +134,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             Close();
         }
 
-        private void OnOnlineFirstLoginClick(object sender, RoutedEventArgs e)
+        private async void OnOnlineFirstLoginClick(object sender, RoutedEventArgs e)
         {
             var dialog = new PosOnlineFirstLoginDialog(_factory)
             {
@@ -141,6 +147,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     this,
                     "POS online",
                     PosLocalization.Current.Text("operator.login.onlineLinked"));
+                await LoadOperatorsAsync().ConfigureAwait(true);
             }
         }
 

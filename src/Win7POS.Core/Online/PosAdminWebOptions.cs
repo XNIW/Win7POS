@@ -1,16 +1,27 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using Win7POS.Core;
 
 namespace Win7POS.Wpf.Pos.Online
 {
+    public enum PosAdminWebBaseUrlSource
+    {
+        ExplicitValue = 0,
+        EnvironmentVariable = 1,
+        ConfigFile = 2,
+        PackagedDefault = 3
+    }
+
     public sealed class PosAdminWebOptions
     {
         public const string BaseUrlEnvironmentVariable = "WIN7POS_ADMIN_WEB_BASE_URL";
         public const string AllowInsecureLanEnvironmentVariable = "WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB";
         public const string ConfigFileName = "pos-admin-web.config";
         public const string ConfigBaseUrlKey = "AdminWebBaseUrl";
+        public const string PackagedEnvironmentMetadataKey = "AdminWebEnvironment";
+        public const string PackagedDefaultBaseUrlMetadataKey = "AdminWebDefaultBaseUrl";
         public const string ReasonMissingBaseUrl = "missing_base_url";
         public const string ReasonInvalidUrl = "invalid_url";
         public const string ReasonInvalidScheme = "invalid_scheme";
@@ -19,11 +30,25 @@ namespace Win7POS.Wpf.Pos.Online
         public const string ReasonHttpLoopbackOnly = "http_loopback_only";
 
         public PosAdminWebOptions(Uri baseUri)
+            : this(baseUri, PosAdminWebBaseUrlSource.ExplicitValue, null)
+        {
+        }
+
+        public PosAdminWebOptions(
+            Uri baseUri,
+            PosAdminWebBaseUrlSource baseUrlSource,
+            string packagedEnvironment)
         {
             BaseUri = baseUri ?? throw new ArgumentNullException(nameof(baseUri));
+            BaseUrlSource = baseUrlSource;
+            PackagedEnvironment = string.IsNullOrWhiteSpace(packagedEnvironment)
+                ? null
+                : packagedEnvironment.Trim();
         }
 
         public Uri BaseUri { get; }
+        public PosAdminWebBaseUrlSource BaseUrlSource { get; }
+        public string PackagedEnvironment { get; }
 
         public static string ConfigFilePath => Path.Combine(AppPaths.DataDirectory, ConfigFileName);
 
@@ -39,25 +64,53 @@ namespace Win7POS.Wpf.Pos.Online
             reasonCode = null;
 
             var rawBaseUrl = Environment.GetEnvironmentVariable(BaseUrlEnvironmentVariable);
-            if (string.IsNullOrWhiteSpace(rawBaseUrl))
+            if (!string.IsNullOrWhiteSpace(rawBaseUrl))
             {
-                rawBaseUrl = TryReadBaseUrlFromConfig();
+                return TryCreateFromRawValue(
+                    rawBaseUrl,
+                    PosAdminWebBaseUrlSource.EnvironmentVariable,
+                    null,
+                    out options,
+                    out reason,
+                    out reasonCode);
             }
 
+            rawBaseUrl = TryReadBaseUrlFromConfig();
+            if (!string.IsNullOrWhiteSpace(rawBaseUrl))
+            {
+                return TryCreateFromRawValue(
+                    rawBaseUrl,
+                    PosAdminWebBaseUrlSource.ConfigFile,
+                    null,
+                    out options,
+                    out reason,
+                    out reasonCode);
+            }
+
+            return TryLoadPackagedDefault(out options, out reason, out reasonCode);
+        }
+
+        public static bool TryLoadPackagedDefault(out PosAdminWebOptions options, out string reason, out string reasonCode)
+        {
+            options = null;
+            reason = null;
+            reasonCode = null;
+
+            var rawBaseUrl = TryReadPackagedDefaultBaseUrl();
             if (string.IsNullOrWhiteSpace(rawBaseUrl))
             {
                 reasonCode = ReasonMissingBaseUrl;
-                reason = "URL Admin Web non configurato. Configura il server nelle impostazioni avanzate o tramite " + BaseUrlEnvironmentVariable + ".";
+                reason = "URL Admin Web non configurato nel pacchetto. Configura il server nelle impostazioni avanzate o tramite " + BaseUrlEnvironmentVariable + ".";
                 return false;
             }
 
-            if (!TryCreateBaseUri(rawBaseUrl, out var baseUri, out reason, out reasonCode))
-            {
-                return false;
-            }
-
-            options = new PosAdminWebOptions(baseUri);
-            return true;
+            return TryCreateFromRawValue(
+                rawBaseUrl,
+                PosAdminWebBaseUrlSource.PackagedDefault,
+                TryReadPackagedAdminWebEnvironment(),
+                out options,
+                out reason,
+                out reasonCode);
         }
 
         public static bool TryCreate(string value, out PosAdminWebOptions options, out string reason)
@@ -167,6 +220,24 @@ namespace Win7POS.Wpf.Pos.Online
                 StringComparison.Ordinal);
         }
 
+        private static bool TryCreateFromRawValue(
+            string value,
+            PosAdminWebBaseUrlSource source,
+            string packagedEnvironment,
+            out PosAdminWebOptions options,
+            out string reason,
+            out string reasonCode)
+        {
+            options = null;
+            if (!TryCreateBaseUri(value, out var baseUri, out reason, out reasonCode))
+            {
+                return false;
+            }
+
+            options = new PosAdminWebOptions(baseUri, source, packagedEnvironment);
+            return true;
+        }
+
         private static string TryReadBaseUrlFromConfig()
         {
             try
@@ -188,6 +259,55 @@ namespace Win7POS.Wpf.Pos.Online
             catch
             {
                 return null;
+            }
+
+            return null;
+        }
+
+        private static string TryReadPackagedDefaultBaseUrl()
+        {
+            return TryReadEntryAssemblyMetadata(PackagedDefaultBaseUrlMetadataKey);
+        }
+
+        private static string TryReadPackagedAdminWebEnvironment()
+        {
+            return TryReadEntryAssemblyMetadata(PackagedEnvironmentMetadataKey);
+        }
+
+        private static string TryReadEntryAssemblyMetadata(string key)
+        {
+            try
+            {
+                var value = TryReadAssemblyMetadata(Assembly.GetEntryAssembly(), key);
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value;
+                }
+
+                return TryReadAssemblyMetadata(Assembly.GetExecutingAssembly(), key);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string TryReadAssemblyMetadata(Assembly assembly, string key)
+        {
+            if (assembly == null || string.IsNullOrWhiteSpace(key))
+            {
+                return null;
+            }
+
+            foreach (var rawAttribute in assembly.GetCustomAttributes(typeof(AssemblyMetadataAttribute), false))
+            {
+                var attribute = rawAttribute as AssemblyMetadataAttribute;
+                if (attribute != null &&
+                    string.Equals(attribute.Key, key, StringComparison.Ordinal) &&
+                    !string.IsNullOrWhiteSpace(attribute.Value))
+                {
+                    return attribute.Value.Trim();
+                }
             }
 
             return null;

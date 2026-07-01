@@ -34,14 +34,28 @@ namespace Win7POS.Wpf.Pos
 
     public sealed class PosWorkflowService
     {
-        private const string KeyPrinterName = "printer.name";
-        private const string KeyPrinterCopies = "printer.copies";
-        private const string KeyAutoPrint = "pos.autoPrint";
-        private const string KeySaveReceiptCopy = "printer.saveReceiptCopy";
-        private const string KeyReceiptOutputDirectory = "printer.outputDirectory";
-        private const string KeyCashDrawerCommand = "printer.cashDrawerCommand";
-        private const string KeyCashDrawerEnabled = "printer.cashDrawerEnabled";
-        private const string DefaultCashDrawerCommand = "27,112,0,60,255";
+        private const string KeyPrinterName = AppSettingKeys.PosPrinterReceiptName;
+        private const string KeyPrinterCopies = AppSettingKeys.PosPrinterReceiptCopies;
+        private const string KeyAutoPrint = AppSettingKeys.PosPrinterReceiptAutoPrintAfterSale;
+        private const string KeyReceiptEnabled = AppSettingKeys.PosPrinterReceiptEnabled;
+        private const string KeyAllowWindowsDefault = AppSettingKeys.PosPrinterReceiptAllowWindowsDefault;
+        private const string KeyAllowVirtualPrinters = AppSettingKeys.PosPrinterReceiptAllowVirtualPrinters;
+        private const string KeySaveReceiptCopy = AppSettingKeys.PosPrinterReceiptSaveCopy;
+        private const string KeyReceiptOutputDirectory = AppSettingKeys.PosPrinterReceiptOutputDirectory;
+        private const string KeyCashDrawerCommand = AppSettingKeys.PosCashDrawerCommand;
+        private const string KeyCashDrawerEnabled = AppSettingKeys.PosCashDrawerEnabled;
+        private const string KeyCashDrawerMode = AppSettingKeys.PosCashDrawerMode;
+        private const string KeyCashDrawerPrinterName = AppSettingKeys.PosCashDrawerPrinterName;
+        private const string KeyCashDrawerOpenOnCashSale = AppSettingKeys.PosCashDrawerOpenOnCashSale;
+        private const string LegacyKeyPrinterName = "printer.name";
+        private const string LegacyKeyPrinterCopies = "printer.copies";
+        private const string LegacyKeyAutoPrint = "pos.autoPrint";
+        private const string LegacyKeySaveReceiptCopy = "printer.saveReceiptCopy";
+        private const string LegacyKeyReceiptOutputDirectory = "printer.outputDirectory";
+        private const string LegacyKeyCashDrawerCommand = "printer.cashDrawerCommand";
+        private const string DefaultCashDrawerCommand = "27,112,0,25,250";
+        private const string CashDrawerModeDisabled = "disabled";
+        private const string CashDrawerModePrinterKick = "printer_kick";
         private const string KeyShopName = "shop.name";
         private const string KeyShopAddress = "shop.address";
         private const string KeyShopCity = "shop.city";
@@ -144,14 +158,30 @@ namespace Win7POS.Wpf.Pos
                 var outputDir = string.IsNullOrWhiteSpace(settings.OutputDirectory)
                     ? Path.Combine(AppPaths.DataDirectory, "receipts")
                     : settings.OutputDirectory;
+                var cashDrawerMode = string.Equals(settings.CashDrawerMode, CashDrawerModePrinterKick, StringComparison.OrdinalIgnoreCase)
+                    ? CashDrawerModePrinterKick
+                    : CashDrawerModeDisabled;
 
                 await _settings.SetStringAsync(KeyPrinterName, settings.PrinterName ?? string.Empty).ConfigureAwait(false);
                 await _settings.SetIntAsync(KeyPrinterCopies, copies).ConfigureAwait(false);
+                await _settings.SetBoolAsync(KeyReceiptEnabled, settings.ReceiptEnabled).ConfigureAwait(false);
                 await _settings.SetBoolAsync(KeyAutoPrint, settings.AutoPrint).ConfigureAwait(false);
+                await _settings.SetBoolAsync(KeyAllowWindowsDefault, settings.AllowWindowsDefault).ConfigureAwait(false);
+                await _settings.SetBoolAsync(KeyAllowVirtualPrinters, settings.AllowVirtualPrinters).ConfigureAwait(false);
                 await _settings.SetBoolAsync(KeySaveReceiptCopy, settings.SaveCopyToFile).ConfigureAwait(false);
                 await _settings.SetStringAsync(KeyReceiptOutputDirectory, outputDir).ConfigureAwait(false);
                 await _settings.SetStringAsync(KeyCashDrawerCommand, settings.CashDrawerCommand ?? string.Empty).ConfigureAwait(false);
                 await _settings.SetBoolAsync(KeyCashDrawerEnabled, settings.CashDrawerEnabled).ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyCashDrawerMode, cashDrawerMode).ConfigureAwait(false);
+                await _settings.SetStringAsync(KeyCashDrawerPrinterName, settings.CashDrawerPrinterName ?? string.Empty).ConfigureAwait(false);
+                await _settings.SetBoolAsync(KeyCashDrawerOpenOnCashSale, settings.CashDrawerOpenOnCashSale).ConfigureAwait(false);
+
+                await _settings.SetStringAsync(LegacyKeyPrinterName, settings.PrinterName ?? string.Empty).ConfigureAwait(false);
+                await _settings.SetIntAsync(LegacyKeyPrinterCopies, copies).ConfigureAwait(false);
+                await _settings.SetBoolAsync(LegacyKeyAutoPrint, settings.AutoPrint).ConfigureAwait(false);
+                await _settings.SetBoolAsync(LegacyKeySaveReceiptCopy, settings.SaveCopyToFile).ConfigureAwait(false);
+                await _settings.SetStringAsync(LegacyKeyReceiptOutputDirectory, outputDir).ConfigureAwait(false);
+                await _settings.SetStringAsync(LegacyKeyCashDrawerCommand, settings.CashDrawerCommand ?? string.Empty).ConfigureAwait(false);
             }
             finally
             {
@@ -172,6 +202,25 @@ namespace Win7POS.Wpf.Pos
             await SetPrinterSettingsAsync(settings).ConfigureAwait(false);
         }
 
+        public Task<IReadOnlyList<InstalledPrinterInfo>> GetInstalledPrintersAsync()
+        {
+            return Task.Run(() => WindowsPrinterDiscovery.GetInstalledPrinters());
+        }
+
+        public async Task TestReceiptPrinterAsync(PosPrinterSettings settings)
+        {
+            if (settings == null) throw new ArgumentNullException(nameof(settings));
+            var resolvedPrinter = ResolveReceiptPrinterOrThrow(settings, automaticAfterSale: false, explicitUserAction: true);
+            await _receiptPrinter.PrintAsync(BuildPrinterTestText(), new ReceiptPrintOptions
+            {
+                PrinterName = resolvedPrinter.Name,
+                Copies = settings.Copies < 1 ? 1 : settings.Copies,
+                CharactersPerLine = 42,
+                SaveCopyToFile = false,
+                UseReceiptHeaderStyle = true
+            }).ConfigureAwait(false);
+        }
+
         public async Task<DbRestoreResult> RestoreDbAsync(string backupDbPath)
         {
             if (string.IsNullOrWhiteSpace(backupDbPath))
@@ -188,6 +237,7 @@ namespace Win7POS.Wpf.Pos
                     throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedSales"));
                 }
 
+                await _dbMaintenance.WalCheckpointAsync().ConfigureAwait(false);
                 var preBackupPath = CreateDbBackupCopyNoLock("pos_pre_restore_");
                 var restoredAt = DateTimeOffset.UtcNow;
                 SqliteConnection.ClearAllPools();
@@ -466,6 +516,7 @@ namespace Win7POS.Wpf.Pos
                 if (!string.IsNullOrWhiteSpace(outputDir))
                     Directory.CreateDirectory(outputDir);
 
+                await _dbMaintenance.WalCheckpointAsync().ConfigureAwait(false);
                 File.Copy(_options.DbPath, outputPath, true);
                 _logger.LogInfo("POS DB backup created: " + outputPath);
                 return outputPath;
@@ -1286,7 +1337,7 @@ namespace Win7POS.Wpf.Pos
             var fileTag = string.IsNullOrWhiteSpace(detail?.Sale?.Code)
                 ? "SALE_ID_" + saleId.ToString(CultureInfo.InvariantCulture)
                 : "SALE_" + detail.Sale.Code;
-            return await PrintReceiptTextAsync(preview, use42, fileTag).ConfigureAwait(true);
+            return await PrintReceiptTextAsync(preview, use42, fileTag, explicitUserAction: true).ConfigureAwait(true);
         }
 
         public async Task<string> GetReceiptPreviewBySaleIdAsync(long saleId, bool use42)
@@ -1429,12 +1480,24 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        public async Task<PosPrintResult> PrintReceiptTextAsync(string receiptText, bool use42, string fileTag, bool isFiscalPrint = false)
+        public async Task<PosPrintResult> PrintReceiptTextAsync(
+            string receiptText,
+            bool use42,
+            string fileTag,
+            bool isFiscalPrint = false,
+            bool automaticAfterSale = false,
+            bool explicitUserAction = false)
         {
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
-                return await PrintReceiptTextNoLockAsync(receiptText, use42, fileTag, isFiscalPrint).ConfigureAwait(false);
+                return await PrintReceiptTextNoLockAsync(
+                    receiptText,
+                    use42,
+                    fileTag,
+                    isFiscalPrint,
+                    automaticAfterSale,
+                    explicitUserAction).ConfigureAwait(false);
             }
             finally
             {
@@ -1756,38 +1819,79 @@ SELECT last_insert_rowid();";
 
         private async Task<PosPrinterSettings> ReadPrinterSettingsNoLockAsync()
         {
-            var printerName = await _settings.GetStringAsync(KeyPrinterName).ConfigureAwait(false) ?? string.Empty;
-            var copies = await _settings.GetIntAsync(KeyPrinterCopies).ConfigureAwait(false) ?? 1;
-            if (copies < 1) copies = 1;
+            var printerName = await _settings.GetStringAsync(KeyPrinterName).ConfigureAwait(false);
+            if (printerName == null)
+                printerName = await _settings.GetStringAsync(LegacyKeyPrinterName).ConfigureAwait(false);
+            printerName = printerName ?? string.Empty;
+
+            var copies = await _settings.GetIntAsync(KeyPrinterCopies).ConfigureAwait(false);
+            if (!copies.HasValue)
+                copies = await _settings.GetIntAsync(LegacyKeyPrinterCopies).ConfigureAwait(false);
+            var copyCount = copies ?? 1;
+            if (copyCount < 1) copyCount = 1;
+
+            var receiptEnabled = await _settings.GetBoolAsync(KeyReceiptEnabled).ConfigureAwait(false);
             var autoPrint = await _settings.GetBoolAsync(KeyAutoPrint).ConfigureAwait(false);
+            if (!autoPrint.HasValue)
+                autoPrint = await _settings.GetBoolAsync(LegacyKeyAutoPrint).ConfigureAwait(false);
+            var allowWindowsDefault = await _settings.GetBoolAsync(KeyAllowWindowsDefault).ConfigureAwait(false);
+            var allowVirtualPrinters = await _settings.GetBoolAsync(KeyAllowVirtualPrinters).ConfigureAwait(false);
             var saveCopy = await _settings.GetBoolAsync(KeySaveReceiptCopy).ConfigureAwait(false);
+            if (!saveCopy.HasValue)
+                saveCopy = await _settings.GetBoolAsync(LegacyKeySaveReceiptCopy).ConfigureAwait(false);
+
             var outputDir = await _settings.GetStringAsync(KeyReceiptOutputDirectory).ConfigureAwait(false);
+            if (outputDir == null)
+                outputDir = await _settings.GetStringAsync(LegacyKeyReceiptOutputDirectory).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(outputDir))
                 outputDir = Path.Combine(AppPaths.DataDirectory, "receipts");
+
             var cashDrawerCmd = await _settings.GetStringAsync(KeyCashDrawerCommand).ConfigureAwait(false);
+            if (cashDrawerCmd == null)
+                cashDrawerCmd = await _settings.GetStringAsync(LegacyKeyCashDrawerCommand).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(cashDrawerCmd))
                 cashDrawerCmd = DefaultCashDrawerCommand;
             var cashDrawerEnabled = await _settings.GetBoolAsync(KeyCashDrawerEnabled).ConfigureAwait(false);
+            var cashDrawerMode = await _settings.GetStringAsync(KeyCashDrawerMode).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(cashDrawerMode))
+                cashDrawerMode = cashDrawerEnabled == true ? CashDrawerModePrinterKick : CashDrawerModeDisabled;
+            if (!string.Equals(cashDrawerMode, CashDrawerModePrinterKick, StringComparison.OrdinalIgnoreCase))
+                cashDrawerMode = CashDrawerModeDisabled;
+            var cashDrawerPrinterName = await _settings.GetStringAsync(KeyCashDrawerPrinterName).ConfigureAwait(false) ?? string.Empty;
+            var cashDrawerOpenOnCashSale = await _settings.GetBoolAsync(KeyCashDrawerOpenOnCashSale).ConfigureAwait(false);
 
             return new PosPrinterSettings
             {
                 PrinterName = printerName,
-                Copies = copies,
-                AutoPrint = autoPrint ?? true,
+                Copies = copyCount,
+                ReceiptEnabled = receiptEnabled ?? false,
+                AutoPrint = autoPrint ?? false,
+                AllowWindowsDefault = allowWindowsDefault ?? false,
+                AllowVirtualPrinters = allowVirtualPrinters ?? false,
                 SaveCopyToFile = saveCopy ?? false,
                 OutputDirectory = outputDir,
                 CashDrawerCommand = cashDrawerCmd,
-                CashDrawerEnabled = cashDrawerEnabled ?? true
+                CashDrawerEnabled = cashDrawerEnabled ?? false,
+                CashDrawerMode = cashDrawerMode,
+                CashDrawerPrinterName = cashDrawerPrinterName,
+                CashDrawerOpenOnCashSale = cashDrawerOpenOnCashSale ?? true
             };
         }
 
-        private async Task<PosPrintResult> PrintReceiptTextNoLockAsync(string receiptText, bool use42, string fileTag, bool isFiscalPrint = false)
+        private async Task<PosPrintResult> PrintReceiptTextNoLockAsync(
+            string receiptText,
+            bool use42,
+            string fileTag,
+            bool isFiscalPrint = false,
+            bool automaticAfterSale = false,
+            bool explicitUserAction = false)
         {
             var text = receiptText ?? string.Empty;
             if (string.IsNullOrWhiteSpace(text))
                 throw new InvalidOperationException(PosLocalization.T("printer.receiptTextEmpty"));
 
             var printer = await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
+            var resolvedPrinter = ResolveReceiptPrinterOrThrow(printer, automaticAfterSale, explicitUserAction);
             var outputDirectory = string.IsNullOrWhiteSpace(printer.OutputDirectory)
                 ? Path.Combine(AppPaths.DataDirectory, "receipts")
                 : printer.OutputDirectory;
@@ -1795,7 +1899,7 @@ SELECT last_insert_rowid();";
 
             await _receiptPrinter.PrintAsync(text, new ReceiptPrintOptions
             {
-                PrinterName = printer.PrinterName,
+                PrinterName = resolvedPrinter.Name,
                 Copies = printer.Copies < 1 ? 1 : printer.Copies,
                 CharactersPerLine = use42 ? 42 : 32,
                 SaveCopyToFile = printer.SaveCopyToFile,
@@ -1818,9 +1922,11 @@ SELECT last_insert_rowid();";
             {
                 var printer = await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
                 if (!printer.CashDrawerEnabled) return;
+                if (!string.Equals(printer.CashDrawerMode, CashDrawerModePrinterKick, StringComparison.OrdinalIgnoreCase)) return;
+                var drawerPrinter = ResolveCashDrawerPrinterOrThrow(printer);
                 await _receiptPrinter.OpenCashDrawerAsync(new ReceiptPrintOptions
                 {
-                    PrinterName = printer.PrinterName ?? string.Empty,
+                    PrinterName = drawerPrinter.Name,
                     CashDrawerCommand = printer.CashDrawerCommand ?? string.Empty
                 }).ConfigureAwait(false);
             }
@@ -1830,37 +1936,117 @@ SELECT last_insert_rowid();";
             }
         }
 
-        /// <summary>Testa il cassetto portamonete con i parametri forniti (senza salvare in impostazioni). Se printerName è vuoto, usa la stampante predefinita di Windows.</summary>
+        /// <summary>Testa il cassetto portamonete con i parametri forniti (senza salvare in impostazioni). Non usa fallback sulla stampante predefinita.</summary>
         public Task TestCashDrawerAsync(string printerName, string cashDrawerCommand)
         {
-            var resolvedPrinter = !string.IsNullOrWhiteSpace(printerName)
-                ? printerName.Trim()
-                : GetDefaultPrinterName();
+            var resolvedPrinter = ResolvePrinterNameOrThrow(
+                printerName,
+                allowWindowsDefault: false,
+                allowVirtualPrinters: false,
+                blockVirtualForAutomaticSale: false);
             var cmd = !string.IsNullOrWhiteSpace(cashDrawerCommand)
                 ? cashDrawerCommand.Trim()
                 : DefaultCashDrawerCommand;
 
-            if (string.IsNullOrWhiteSpace(resolvedPrinter))
-                throw new InvalidOperationException(PosLocalization.T("printer.noAvailablePrinter"));
-
             return _receiptPrinter.OpenCashDrawerAsync(new ReceiptPrintOptions
             {
-                PrinterName = resolvedPrinter,
+                PrinterName = resolvedPrinter.Name,
                 CashDrawerCommand = cmd
             });
         }
 
-        private static string GetDefaultPrinterName()
+        private static InstalledPrinterInfo ResolveReceiptPrinterOrThrow(
+            PosPrinterSettings settings,
+            bool automaticAfterSale,
+            bool explicitUserAction)
         {
-            try
+            if (settings == null)
+                throw new ArgumentNullException(nameof(settings));
+            if (!settings.ReceiptEnabled)
+                throw new InvalidOperationException(PosLocalization.T("printer.receiptDisabledSaleSaved"));
+
+            return ResolvePrinterNameOrThrow(
+                settings.PrinterName,
+                settings.AllowWindowsDefault,
+                settings.AllowVirtualPrinters,
+                automaticAfterSale && !explicitUserAction);
+        }
+
+        private static InstalledPrinterInfo ResolveCashDrawerPrinterOrThrow(PosPrinterSettings settings)
+        {
+            if (settings == null)
+                throw new ArgumentNullException(nameof(settings));
+
+            var printerName = string.IsNullOrWhiteSpace(settings.CashDrawerPrinterName)
+                ? settings.PrinterName
+                : settings.CashDrawerPrinterName;
+
+            return ResolvePrinterNameOrThrow(
+                printerName,
+                allowWindowsDefault: false,
+                allowVirtualPrinters: false,
+                blockVirtualForAutomaticSale: true);
+        }
+
+        private static InstalledPrinterInfo ResolvePrinterNameOrThrow(
+            string printerName,
+            bool allowWindowsDefault,
+            bool allowVirtualPrinters,
+            bool blockVirtualForAutomaticSale)
+        {
+            var requestedName = (printerName ?? string.Empty).Trim();
+            var usingWindowsDefault = false;
+
+            if (requestedName.Length == 0)
             {
-                using (var doc = new System.Drawing.Printing.PrintDocument())
-                    return doc.PrinterSettings.PrinterName ?? string.Empty;
+                if (!allowWindowsDefault)
+                    throw new InvalidOperationException(PosLocalization.T("printer.saleSavedPrinterNotConfigured"));
+
+                requestedName = WindowsPrinterDiscovery.GetDefaultPrinterName();
+                usingWindowsDefault = true;
             }
-            catch
+
+            if (requestedName.Length == 0)
+                throw new InvalidOperationException(PosLocalization.T("printer.saleSavedPrinterNotConfigured"));
+
+            var resolved = WindowsPrinterDiscovery.FindPrinter(requestedName);
+            if (resolved == null)
             {
-                return string.Empty;
+                throw new InvalidOperationException(PosLocalization.Current.Format(
+                    "printer.saleSavedPrinterUnavailable",
+                    requestedName));
             }
+
+            if (!resolved.IsAvailable)
+            {
+                throw new InvalidOperationException(PosLocalization.Current.Format(
+                    "printer.saleSavedPrinterUnavailable",
+                    resolved.Name));
+            }
+
+            if (usingWindowsDefault && !allowWindowsDefault)
+                throw new InvalidOperationException(PosLocalization.T("printer.saleSavedPrinterNotConfigured"));
+
+            if (resolved.IsVirtual && (!allowVirtualPrinters || blockVirtualForAutomaticSale))
+            {
+                throw new InvalidOperationException(PosLocalization.Current.Format(
+                    "printer.saleSavedVirtualPrinterBlocked",
+                    resolved.Name));
+            }
+
+            return resolved;
+        }
+
+        private static string BuildPrinterTestText()
+        {
+            return string.Join(Environment.NewLine, new[]
+            {
+                "Win7POS",
+                "Printer test",
+                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
+                "Receipt printer configured.",
+                "Sale saving is independent from printing."
+            });
         }
 
         private static string NormalizeFileTag(string value)
@@ -2039,12 +2225,18 @@ SELECT last_insert_rowid();";
     {
         public string PrinterName { get; set; } = string.Empty;
         public int Copies { get; set; } = 1;
-        public bool AutoPrint { get; set; } = true;
+        public bool ReceiptEnabled { get; set; }
+        public bool AutoPrint { get; set; }
+        public bool AllowWindowsDefault { get; set; }
+        public bool AllowVirtualPrinters { get; set; }
         public bool SaveCopyToFile { get; set; }
         public string OutputDirectory { get; set; } = string.Empty;
-        /// <summary>Istruzione ESC/POS per aprire cassetto (es. "27,112,0,60,255"). Default: "27,112,0,60,255".</summary>
-        public string CashDrawerCommand { get; set; } = "27,112,0,60,255";
+        /// <summary>Istruzione ESC/POS per aprire cassetto (es. "27,112,0,25,250"). Default: "27,112,0,25,250".</summary>
+        public string CashDrawerCommand { get; set; } = "27,112,0,25,250";
         /// <summary>Se true, il pulsante "Apri cassa" è attivo.</summary>
-        public bool CashDrawerEnabled { get; set; } = true;
+        public bool CashDrawerEnabled { get; set; }
+        public string CashDrawerMode { get; set; } = "disabled";
+        public string CashDrawerPrinterName { get; set; } = string.Empty;
+        public bool CashDrawerOpenOnCashSale { get; set; } = true;
     }
 }

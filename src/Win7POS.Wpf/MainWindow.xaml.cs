@@ -29,6 +29,7 @@ namespace Win7POS.Wpf
         private static readonly TimeSpan StartupSalesSyncTimeout = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan StartupCatalogPullTimeout = TimeSpan.FromSeconds(8);
         private static readonly TimeSpan StartupWatchdogTimeout = TimeSpan.FromSeconds(5);
+        private const string CatalogBootstrapStatusSettingKey = "pos.catalog.bootstrap_status";
         private const string LastCatalogErrorSettingKey = "pos.catalog.last_error";
         private const string LastSalesErrorSettingKey = "pos.sales_sync.last_error";
         private readonly TaskCompletionSource<bool> _contentRendered = new TaskCompletionSource<bool>();
@@ -39,6 +40,7 @@ namespace Win7POS.Wpf
         private SqliteConnectionFactory _languageSettingsFactory;
         private string _startupPhase = "constructed";
         private string _productsDataContextOperatorUsername;
+        private PosView PosViewControl;
         public static readonly DependencyProperty CurrentMenuKeyProperty = DependencyProperty.Register(
             nameof(CurrentMenuKey), typeof(string), typeof(MainWindow), new PropertyMetadata("Pos", OnCurrentMenuKeyChanged));
 
@@ -233,6 +235,45 @@ namespace Win7POS.Wpf
                     }
                 }
 
+                var catalogSaleSafe = await PosCatalogPullService.IsCatalogSaleSafeAsync(factory)
+                    .ConfigureAwait(true);
+                if (App.IsSafeStart && !catalogSaleSafe)
+                {
+                    _logger.LogWarning("Safe-start cannot open POS without sale-safe catalog.");
+                    ModernMessageDialog.Show(
+                        this,
+                        "Win7POS",
+                        PosLocalization.T("onlineFirstLogin.catalogIncomplete"));
+                    Close();
+                    return;
+                }
+
+                if (!catalogSaleSafe)
+                {
+                    _logger.LogInfo("Catalog sale-safe missing; opening blocking preparation flow");
+                    if (!await TryOnlineBootstrapFirstRunAsync(factory, resumeCatalogOnly: !needFirstRun).ConfigureAwait(true) ||
+                        !await PosCatalogPullService.IsCatalogSaleSafeAsync(factory).ConfigureAwait(true))
+                    {
+                        ModernMessageDialog.Show(
+                            this,
+                            "Win7POS",
+                            PosLocalization.T("onlineFirstLogin.catalogIncomplete"));
+                        Close();
+                        return;
+                    }
+
+                    needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
+                    if (needFirstRun)
+                    {
+                        ModernMessageDialog.Show(
+                            this,
+                            "Win7POS",
+                            PosLocalization.T("firstRun.notCompleted"));
+                        Close();
+                        return;
+                    }
+                }
+
                 var userRepo = new UserRepository(factory);
                 if (OperatorSessionHolder.Current == null)
                 {
@@ -259,8 +300,22 @@ namespace Win7POS.Wpf
                 _logger.LogInfo("OperatorLogin dialog accepted");
 
                 var session = OperatorSessionHolder.Current;
+                StartOfDaySyncResult startOfDayResult = null;
                 if (session != null)
                 {
+                    if (!App.IsSafeStart)
+                    {
+                        startOfDayResult = await RunStartOfDaySyncAsync(factory).ConfigureAwait(true);
+                        if (startOfDayResult == null || !startOfDayResult.CanOpenPos)
+                        {
+                            _logger.LogWarning("Start-of-day sync blocked POS opening: reason=" +
+                                SafeOnlineCode(startOfDayResult?.BlockingReason));
+                            Close();
+                            return;
+                        }
+                    }
+
+                    EnsurePosViewCreated();
                     UpdateOperatorDisplay(session);
                     RefreshShellAfterOperatorChange(session);
                     session.SessionChanged += () => Dispatcher.BeginInvoke(new Action(() =>
@@ -278,7 +333,14 @@ namespace Win7POS.Wpf
                 }
                 else
                 {
-                    QueueBackgroundOnlineRefresh(factory);
+                    if (startOfDayResult == null || startOfDayResult.ShouldContinueInBackground)
+                    {
+                        QueueBackgroundOnlineRefresh(factory);
+                    }
+                    else
+                    {
+                        QueueSyncStatusRefresh(factory);
+                    }
                 }
             }
             catch (Exception ex)
@@ -295,9 +357,11 @@ namespace Win7POS.Wpf
             }
         }
 
-        private async Task<bool> TryOnlineBootstrapFirstRunAsync(SqliteConnectionFactory factory)
+        private async Task<bool> TryOnlineBootstrapFirstRunAsync(
+            SqliteConnectionFactory factory,
+            bool resumeCatalogOnly = false)
         {
-            var dialog = new PosOnlineFirstLoginDialog(factory)
+            var dialog = new PosOnlineFirstLoginDialog(factory, resumeCatalogOnly)
             {
                 Owner = this
             };
@@ -307,7 +371,32 @@ namespace Win7POS.Wpf
                 return false;
             }
 
-            return !await RequiresFirstRunAsync(factory).ConfigureAwait(true);
+            if (!await PosCatalogPullService.IsCatalogSaleSafeAsync(factory).ConfigureAwait(true))
+            {
+                return false;
+            }
+
+            return resumeCatalogOnly || !await RequiresFirstRunAsync(factory).ConfigureAwait(true);
+        }
+
+        private async Task<StartOfDaySyncResult> RunStartOfDaySyncAsync(SqliteConnectionFactory factory)
+        {
+            var dialog = new PosStartOfDaySyncDialog(factory)
+            {
+                Owner = this
+            };
+
+            var ok = dialog.ShowDialog() == true;
+            await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
+            return ok && dialog.Result != null
+                ? dialog.Result
+                : new StartOfDaySyncResult
+                {
+                    CanOpenPos = false,
+                    RequiresOperatorAction = true,
+                    BlockingReason = "operator_cancelled",
+                    StatusMessage = PosLocalization.T("startOfDay.exit")
+                };
         }
 
         private void QueueBackgroundOnlineRefresh(SqliteConnectionFactory factory)
@@ -407,6 +496,13 @@ namespace Win7POS.Wpf
                     if (result.Denied)
                     {
                         store.Clear();
+                        await StoreStartupSettingAsync(factory, LastCatalogErrorSettingKey, "auth_denied")
+                            .ConfigureAwait(false);
+                        await StoreStartupSettingAsync(factory, LastSalesErrorSettingKey, "auth_denied")
+                            .ConfigureAwait(false);
+                        await StoreStartupSettingAsync(factory, CatalogBootstrapStatusSettingKey, "failed_auth_denied")
+                            .ConfigureAwait(false);
+                        QueueSyncStatusRefresh(factory);
                     }
 
                     _logger.LogWarning(
@@ -638,6 +734,10 @@ namespace Win7POS.Wpf
                     SyncStatusText.ToolTip = status.DeviceText + "\n" +
                         status.StaffText + "\n" +
                         status.LastOnlineText + "\n" +
+                        status.LastCatalogSyncText + "\n" +
+                        status.CatalogBootstrapText + "\n" +
+                        status.CatalogReadinessText + "\n" +
+                        status.CatalogVersionText + "\n" +
                         status.PendingSalesText + "\n" +
                         status.PolicyText + "\n" +
                         status.SalesAttentionText + "\n" +
@@ -966,6 +1066,19 @@ namespace Win7POS.Wpf
         private PosViewModel GetPosViewModel()
         {
             return PosViewControl?.DataContext as PosViewModel;
+        }
+
+        private PosView EnsurePosViewCreated()
+        {
+            if (PosViewControl != null)
+            {
+                return PosViewControl;
+            }
+
+            PosViewControl = new PosView();
+            PosTabHost.Children.Clear();
+            PosTabHost.Children.Add(PosViewControl);
+            return PosViewControl;
         }
 
         private void OnMenuDailyReportClick(object sender, RoutedEventArgs e)

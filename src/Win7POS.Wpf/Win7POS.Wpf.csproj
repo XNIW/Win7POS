@@ -4,10 +4,25 @@
     <TargetFramework>net48</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <Platforms>x86</Platforms>
+    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x86</Platform>
     <PlatformTarget>x86</PlatformTarget>
     <Prefer32Bit>true</Prefer32Bit>
     <LangVersion>8.0</LangVersion>
+    <AdminWebEnvironment Condition="'$(AdminWebEnvironment)' == ''">staging</AdminWebEnvironment>
+    <AdminWebDefaultBaseUrl Condition="'$(AdminWebDefaultBaseUrl)' == ''">https://merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev</AdminWebDefaultBaseUrl>
   </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>AdminWebEnvironment</_Parameter1>
+      <_Parameter2>$(AdminWebEnvironment)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>AdminWebDefaultBaseUrl</_Parameter1>
+      <_Parameter2>$(AdminWebDefaultBaseUrl)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="PDFsharp-gdi" Version="1.50.5147" />

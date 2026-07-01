@@ -128,7 +128,8 @@ CREATE TABLE IF NOT EXISTS product_price_history (
   type      TEXT NOT NULL,
   old_price INTEGER NULL,
   new_price INTEGER NOT NULL,
-  source    TEXT NULL
+  source    TEXT NULL,
+  remote_price_id TEXT NULL
 );
 
 CREATE TABLE IF NOT EXISTS held_carts (
@@ -224,6 +225,7 @@ CREATE TABLE IF NOT EXISTS security_events (
             EnsureColumn(conn, tx, "products", "is_active", "INTEGER NOT NULL DEFAULT 1");
             EnsureColumn(conn, tx, "product_price_history", "old_price", "INTEGER NULL");
             EnsureColumn(conn, tx, "product_price_history", "source", "TEXT NULL");
+            EnsureColumn(conn, tx, "product_price_history", "remote_price_id", "TEXT NULL");
         }
 
         private static void CreateDependentTables(SqliteConnection conn, SqliteTransaction tx)
@@ -260,6 +262,17 @@ CREATE TABLE IF NOT EXISTS sales_sync_outbox (
   updated_at INTEGER NOT NULL,
   FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
 );
+
+CREATE TABLE IF NOT EXISTS remote_catalog_pending_prices (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  remote_price_id TEXT NULL,
+  remote_product_id TEXT NOT NULL,
+  type      TEXT NOT NULL,
+  price     INTEGER NOT NULL,
+  effective_at TEXT NOT NULL,
+  source    TEXT NULL,
+  created_at TEXT NOT NULL
+);
 ", transaction: tx);
 
             EnsureColumn(conn, tx, "local_stock_movements", "movement_key", "TEXT NULL");
@@ -286,6 +299,14 @@ CREATE TABLE IF NOT EXISTS sales_sync_outbox (
             EnsureColumn(conn, tx, "sales_sync_outbox", "server_sale_id", "TEXT NULL");
             EnsureColumn(conn, tx, "sales_sync_outbox", "created_at", "INTEGER NOT NULL DEFAULT 0");
             EnsureColumn(conn, tx, "sales_sync_outbox", "updated_at", "INTEGER NOT NULL DEFAULT 0");
+
+            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "remote_price_id", "TEXT NULL");
+            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "remote_product_id", "TEXT NOT NULL DEFAULT ''");
+            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "type", "TEXT NOT NULL DEFAULT ''");
+            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "price", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "effective_at", "TEXT NOT NULL DEFAULT ''");
+            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "source", "TEXT NULL");
+            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "created_at", "TEXT NOT NULL DEFAULT ''");
         }
 
         private static void EnsureIndexes(SqliteConnection conn, SqliteTransaction tx)
@@ -306,6 +327,13 @@ CREATE INDEX IF NOT EXISTS idx_sales_sync_outbox_last_attempt ON sales_sync_outb
 CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_unique
 ON product_price_history(barcode, timestamp, type, new_price, coalesce(source,''));
+CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_remote_price_id
+ON product_price_history(remote_price_id) WHERE remote_price_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_remote_price_id
+ON remote_catalog_pending_prices(remote_price_id) WHERE remote_price_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_remote_price_fallback
+ON remote_catalog_pending_prices(remote_product_id, type, effective_at, price, coalesce(source,'')) WHERE remote_price_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_pending_remote_price_product ON remote_catalog_pending_prices(remote_product_id);
 CREATE INDEX IF NOT EXISTS idx_held_cart_lines_holdId ON held_cart_lines(holdId);
 CREATE INDEX IF NOT EXISTS idx_security_events_ts ON security_events(ts);
 CREATE INDEX IF NOT EXISTS idx_products_remote_product_id ON products(remote_product_id);
