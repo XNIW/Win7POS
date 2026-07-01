@@ -17,8 +17,13 @@ namespace Win7POS.Wpf.Localization
     {
         public const string DefaultLanguage = "en";
 
-        private static readonly Dictionary<string, Dictionary<string, string>> Translations =
-            CreateTranslations();
+        private static readonly Lazy<Dictionary<string, Dictionary<string, string>>> TranslationCatalog =
+            new Lazy<Dictionary<string, Dictionary<string, string>>>(CreateTranslations);
+
+        private static Dictionary<string, Dictionary<string, string>> Translations
+        {
+            get { return TranslationCatalog.Value; }
+        }
 
         private static readonly HashSet<string> SupportedLanguageCodes =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "en", "es", "it", "zh-CN" };
