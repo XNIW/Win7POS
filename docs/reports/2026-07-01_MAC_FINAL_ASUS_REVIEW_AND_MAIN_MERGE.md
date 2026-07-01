@@ -73,6 +73,16 @@
 - Nessun `sk-*`, private key, JWT reale, bearer token reale o service role secret trovato.
 - Artifact scan tracciati: PASS, nessun `dist/`, `installer/output/`, `bin/`, `obj/`, `*.zip`, `*.exe`, `*.db`, `*.log` tracciato per errore.
 
+## Addendum post-push main
+
+- Main finale: `d4b62157a2b683a067ac24b6bcc5915aeda2c0c3`.
+- Origin main verificato: `d4b62157a2b683a067ac24b6bcc5915aeda2c0c3`.
+- Push main: PASS.
+- Check rapidi main post-merge: `git diff --check`, build Core/Data/CLI/WPF, CLI selftest, `check-dialog-standards` e `check-pos-printer-cashdrawer-safety` PASS.
+- Check finali post-merge: restore CLI, build Core/Data/CLI/WPF, CLI selftest, dialog, staging config, debug logging, online client/bootstrap, sales sync, restore guard, startup Win7-safe e printer/cashdrawer safety PASS.
+- Secret/artifact scan finale su main: PASS; solo falsi positivi documentali/checker, nessun artifact generato tracciato.
+- Report chiusura definitivo: `docs/reports/2026-07-01_WIN7POS_TASK_CLOSURE_FINAL.md`.
+
 ## Limiti non bloccanti
 
 - Stampante POS fisica non disponibile su ASUS: non dichiarata PASS.
@@ -83,6 +93,6 @@
 
 ## Decisione
 
-READY_FOR_MAIN_MERGE
+READY_FOR_MAIN_MERGE_AND_PUSHED
 
-Motivo: non restano P0/P1 software aperti; build, selftest, static checks, review printer/cash drawer, secret scan e artifact scan sono PASS. I limiti residui sono hardware/ambiente e sono documentati senza dichiarare PASS non eseguiti.
+Motivo: non restano P0/P1 software aperti; build, selftest, static checks, review printer/cash drawer, secret scan e artifact scan sono PASS. `main` e `origin/main` sono allineati a `d4b62157a2b683a067ac24b6bcc5915aeda2c0c3`. I limiti residui sono hardware/ambiente e sono documentati senza dichiarare PASS non eseguiti.
