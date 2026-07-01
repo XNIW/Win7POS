@@ -17,8 +17,7 @@ namespace Win7POS.Wpf.Localization
     {
         public const string DefaultLanguage = "en";
 
-        private static readonly Dictionary<string, Dictionary<string, string>> Translations =
-            CreateTranslations();
+        private static readonly Dictionary<string, Dictionary<string, string>> Translations;
 
         private static readonly HashSet<string> SupportedLanguageCodes =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "en", "es", "it", "zh-CN" };
@@ -42,6 +41,12 @@ namespace Win7POS.Wpf.Localization
         private static bool _frameworkLanguageMetadataApplied;
         private string _currentLanguage = DefaultLanguage;
 
+        static PosLocalization()
+        {
+            Translations = CreateTranslations();
+            Current = new PosLocalization();
+        }
+
         private PosLocalization()
         {
             SupportedLanguages = new List<SupportedLanguageOption>
@@ -55,7 +60,7 @@ namespace Win7POS.Wpf.Localization
             SetLanguage(DefaultLanguage);
         }
 
-        public static PosLocalization Current { get; } = new PosLocalization();
+        public static PosLocalization Current { get; private set; }
 
         public static IReadOnlyList<SupportedLanguageOption> SupportedLanguages { get; private set; }
 

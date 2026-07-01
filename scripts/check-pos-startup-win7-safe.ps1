@@ -170,6 +170,16 @@ $catalogPull = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosLocalization.cs"
 $workflow = Read-Text ".github/workflows/release-pack.yml"
 
+if ($translations -match 'private\s+static\s+readonly\s+Dictionary<[^;]+>\s+Translations\s*=\s*CreateTranslations\(\)\s*;') {
+    Fail "PosLocalization translations must not be built by an eager field initializer before static entries"
+}
+elseif ($translations -notmatch 'static\s+PosLocalization\s*\(\)\s*\{[\s\S]*?Translations\s*=\s*CreateTranslations\(\);[\s\S]*?Current\s*=\s*new\s+PosLocalization\(\);[\s\S]*?\}') {
+    Fail "PosLocalization static constructor must initialize translations before Current"
+}
+else {
+    Pass "PosLocalization static initialization order is safe"
+}
+
 $loadedBody = Get-MethodBody `
     $mainWindow `
     "private\s+async\s+void\s+OnLoadedAsync\s*\([^\)]*\)" `
