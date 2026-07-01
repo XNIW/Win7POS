@@ -235,3 +235,12 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Next steps: smoke hardware Win7 reale, decisione su payment method `other`, cleanup branch temporanee dopo conferma.
 - Report: `docs/reports/2026-07-01_WIN7POS_TASK_CLOSURE_FINAL.md`.
 - Decisione: `TASK_CLOSED_MAIN_PUSHED`.
+
+## 2026-07-01 - Win7POS branch cleanup post-merge
+- main/origin main verificati a `7ba92bb8981dbb7f6f9cee246a879100e2ed2583` prima del cleanup.
+- Branch remote cancellate dopo ancestry `origin/main` exit 0: `origin/handoff/win7pos-asus-qa-20260701`, `origin/qa/asus-win7pos-result-20260701`, `origin/qa/asus-printer-cashdrawer-hardening-20260701`.
+- Branch locali cancellate con `git branch -d` dopo ancestry `main` exit 0: `audit/win7pos-full-hardening`, `handoff/win7pos-asus-qa-20260701`, `integration/win7pos-asus-final-review-20260701`.
+- Branch mantenute: nessuna tra quelle richieste.
+- Nessun force delete, nessun tag cancellato, nessun codice modificato.
+- Report: `docs/reports/2026-07-01_WIN7POS_BRANCH_CLEANUP.md`.
+- Decisione: `CLEANUP_DONE`.
