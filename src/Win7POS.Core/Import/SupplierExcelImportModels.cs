@@ -170,6 +170,71 @@ namespace Win7POS.Core.Import
         public SupplierImportProductRow Updated { get; set; }
     }
 
+    public sealed class SupplierImportSyncPreview
+    {
+        public SupplierImportSyncSummary Summary { get; set; } = new SupplierImportSyncSummary();
+        public List<SupplierImportProductRow> NewProducts { get; } = new List<SupplierImportProductRow>();
+        public List<SupplierImportSyncRow> UpdatedProducts { get; } = new List<SupplierImportSyncRow>();
+        public List<SupplierImportSyncRow> NoChangeRows { get; } = new List<SupplierImportSyncRow>();
+        public List<SupplierImportSyncSkippedRow> SkippedRows { get; } = new List<SupplierImportSyncSkippedRow>();
+        public List<SupplierImportWarning> Warnings { get; } = new List<SupplierImportWarning>();
+        public List<SupplierImportError> Errors { get; } = new List<SupplierImportError>();
+        public List<SupplierImportEditableRow> FinalRows { get; } = new List<SupplierImportEditableRow>();
+        public List<SupplierImportEditableRow> ValidatedRows { get; } = new List<SupplierImportEditableRow>();
+        public string Fingerprint { get; set; } = string.Empty;
+        public bool CanApply
+        {
+            get { return Errors.Count == 0 && Summary.NonSkippedRows > 0; }
+        }
+    }
+
+    public sealed class SupplierImportSyncSummary
+    {
+        public int TotalRows { get; set; }
+        public int NonSkippedRows { get; set; }
+        public int NewProducts { get; set; }
+        public int UpdatedProducts { get; set; }
+        public int NoChangeRows { get; set; }
+        public int SkippedRows { get; set; }
+        public int WarningCount { get; set; }
+        public int ErrorCount { get; set; }
+    }
+
+    public sealed class SupplierImportSyncRow
+    {
+        public int RowNumber { get; set; }
+        public string Barcode { get; set; } = string.Empty;
+        public SupplierImportProductRow Existing { get; set; }
+        public SupplierImportProductRow Updated { get; set; }
+        public List<SupplierImportSyncUpdateDiff> Diffs { get; } = new List<SupplierImportSyncUpdateDiff>();
+        public string DiffSummary
+        {
+            get
+            {
+                if (Diffs.Count == 0) return string.Empty;
+                var parts = new List<string>();
+                foreach (var diff in Diffs)
+                    parts.Add(diff.Field + ": " + diff.Before + " -> " + diff.After);
+                return string.Join("; ", parts);
+            }
+        }
+    }
+
+    public sealed class SupplierImportSyncSkippedRow
+    {
+        public int RowNumber { get; set; }
+        public string Barcode { get; set; } = string.Empty;
+        public string ProductName { get; set; } = string.Empty;
+        public string ItemNumber { get; set; } = string.Empty;
+    }
+
+    public sealed class SupplierImportSyncUpdateDiff
+    {
+        public string Field { get; set; } = string.Empty;
+        public string Before { get; set; } = string.Empty;
+        public string After { get; set; } = string.Empty;
+    }
+
     public sealed class SupplierImportProductRow
     {
         public int RowNumber { get; set; }

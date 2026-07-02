@@ -35,6 +35,14 @@ namespace Win7POS.Wpf.Import
             return SupplierImportAnalyzer.Analyze(table, products, columnOverrides);
         }
 
+        public async Task<SupplierImportSyncPreview> BuildSyncPreviewAsync(
+            IReadOnlyList<SupplierImportEditableRow> rows)
+        {
+            DbInitializer.EnsureCreated(_options);
+            var products = await _products.ListAllDetailsAsync().ConfigureAwait(false);
+            return SupplierImportAnalyzer.BuildSyncPreview(rows, products);
+        }
+
         public async Task<SupplierExcelApplyUiResult> ApplyAsync(
             IReadOnlyList<SupplierImportEditableRow> rows,
             bool dryRun,
@@ -67,8 +75,50 @@ namespace Win7POS.Wpf.Import
                 BackupPath = backupPath,
                 Inserted = result.Inserted,
                 Updated = result.Updated,
-                Skipped = result.NoChange + skippedByOperator,
+                NoChange = result.NoChange,
+                Skipped = skippedByOperator,
                 WarningCount = warningCount,
+                ErrorCount = result.Errors,
+                Summary = summary,
+                Success = true
+            };
+        }
+
+        public async Task<SupplierExcelApplyUiResult> ApplyAsync(
+            SupplierImportSyncPreview preview,
+            bool dryRun)
+        {
+            DbInitializer.EnsureCreated(_options);
+            if (preview == null)
+                throw new InvalidOperationException("Sync DB preview richiesto prima di applicare.");
+
+            var rebuilt = await BuildSyncPreviewAsync(preview.FinalRows).ConfigureAwait(false);
+            if (!rebuilt.CanApply)
+                throw new InvalidOperationException(BuildPreviewErrorSummary(rebuilt));
+            if (!string.Equals(rebuilt.Fingerprint, preview.Fingerprint, StringComparison.Ordinal))
+                throw new InvalidOperationException("Sync DB preview non aggiornato: torna allo Step 3 e ricalcola Sync DB.");
+
+            var backupPath = string.Empty;
+            if (!dryRun)
+                backupPath = await CreateBackupBeforeApplyAsync(_options.DbPath).ConfigureAwait(false);
+
+            var applier = new SupplierExcelImportApplier(new SqliteConnectionFactory(_options));
+            var result = await applier.ApplyAsync(
+                rebuilt,
+                new SupplierExcelImportApplyOptions { DryRun = dryRun, InsertNew = true }).ConfigureAwait(false);
+
+            var summary = BuildApplySummary(result, backupPath, dryRun, rebuilt.Summary.WarningCount, rebuilt.Summary.SkippedRows);
+            if (result.Errors > 0)
+                throw new InvalidOperationException(summary);
+
+            return new SupplierExcelApplyUiResult
+            {
+                BackupPath = backupPath,
+                Inserted = result.Inserted,
+                Updated = result.Updated,
+                NoChange = result.NoChange,
+                Skipped = rebuilt.Summary.SkippedRows,
+                WarningCount = rebuilt.Summary.WarningCount,
                 ErrorCount = result.Errors,
                 Summary = summary,
                 Success = true
@@ -94,14 +144,14 @@ namespace Win7POS.Wpf.Import
 
         private static string BuildApplySummary(SupplierExcelImportApplyResult result, string backupPath, bool dryRun, int warningCount, int skippedByOperator)
         {
-            var skipped = result.NoChange + skippedByOperator;
             var lines = new List<string>
             {
                 "Supplier Excel Import",
                 "Mode: " + (dryRun ? "DRY-RUN" : "APPLY"),
                 "Inserted: " + result.Inserted,
                 "Updated: " + result.Updated,
-                "Skipped: " + skipped,
+                "No change: " + result.NoChange,
+                "Skipped: " + skippedByOperator,
                 "Skipped by operator: " + skippedByOperator,
                 "Warning count: " + warningCount,
                 "Error count: " + result.Errors,
@@ -120,6 +170,23 @@ namespace Win7POS.Wpf.Import
             }
             return string.Join(Environment.NewLine, lines);
         }
+
+        private static string BuildPreviewErrorSummary(SupplierImportSyncPreview preview)
+        {
+            var lines = new List<string>
+            {
+                "Sync DB preview contiene errori. Ricalcola e correggi prima di applicare.",
+                "New: " + preview.Summary.NewProducts,
+                "Updated: " + preview.Summary.UpdatedProducts,
+                "No change: " + preview.Summary.NoChangeRows,
+                "Skipped: " + preview.Summary.SkippedRows,
+                "Warning count: " + preview.Summary.WarningCount,
+                "Error count: " + preview.Summary.ErrorCount
+            };
+            lines.AddRange(preview.Errors.Select(error =>
+                " - Riga " + error.RowIndex + " " + error.Barcode + ": " + error.Message));
+            return string.Join(Environment.NewLine, lines);
+        }
     }
 
     public sealed class SupplierExcelApplyUiResult
@@ -128,6 +195,7 @@ namespace Win7POS.Wpf.Import
         public string BackupPath { get; set; } = string.Empty;
         public int Inserted { get; set; }
         public int Updated { get; set; }
+        public int NoChange { get; set; }
         public int Skipped { get; set; }
         public int WarningCount { get; set; }
         public int ErrorCount { get; set; }

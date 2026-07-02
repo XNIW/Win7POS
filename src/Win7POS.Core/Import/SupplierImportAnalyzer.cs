@@ -215,6 +215,115 @@ namespace Win7POS.Core.Import
             return result;
         }
 
+        public static SupplierImportSyncPreview BuildSyncPreview(
+            IEnumerable<SupplierImportEditableRow> finalRows,
+            IEnumerable<ProductDetailsRow> existingProducts)
+        {
+            var preview = new SupplierImportSyncPreview();
+            var rows = (finalRows ?? Enumerable.Empty<SupplierImportEditableRow>())
+                .Where(row => row != null)
+                .ToList();
+            preview.Summary.TotalRows = rows.Count;
+            foreach (var row in rows)
+                preview.FinalRows.Add(row);
+
+            var existingByBarcode = new Dictionary<string, ProductDetailsRow>(StringComparer.OrdinalIgnoreCase);
+            foreach (var product in existingProducts ?? Enumerable.Empty<ProductDetailsRow>())
+            {
+                var barcode = NormalizeValue(product == null ? string.Empty : product.Barcode);
+                if (barcode.Length > 0 && !existingByBarcode.ContainsKey(barcode))
+                    existingByBarcode.Add(barcode, product);
+            }
+
+            var activeRows = rows.Where(row => !row.IsSkipped).ToList();
+            preview.Summary.NonSkippedRows = activeRows.Count;
+
+            foreach (var row in rows.Where(row => row.IsSkipped))
+            {
+                preview.SkippedRows.Add(new SupplierImportSyncSkippedRow
+                {
+                    RowNumber = row.RowNumber,
+                    Barcode = NormalizeValue(row.Barcode),
+                    ProductName = NormalizeValue(row.ProductName),
+                    ItemNumber = NormalizeValue(row.ItemNumber)
+                });
+            }
+
+            var duplicateRows = new HashSet<SupplierImportEditableRow>();
+            foreach (var group in activeRows
+                .Select(row => new { Row = row, Barcode = NormalizeValue(row.Barcode) })
+                .Where(item => item.Barcode.Length > 0)
+                .GroupBy(item => item.Barcode, StringComparer.OrdinalIgnoreCase)
+                .Where(group => group.Count() > 1))
+            {
+                var rowNumbers = group.Select(item => item.Row.RowNumber).ToArray();
+                foreach (var item in group)
+                {
+                    duplicateRows.Add(item.Row);
+                    preview.Errors.Add(new SupplierImportError(
+                        "Barcode duplicato nella revisione finale: " + group.Key,
+                        item.Row.RowNumber,
+                        group.Key));
+                }
+                preview.Warnings.Add(new SupplierImportWarning(
+                    "Barcode duplicato nella revisione finale: correggi o seleziona Skip.",
+                    rowNumbers));
+            }
+
+            foreach (var row in activeRows)
+            {
+                var barcode = NormalizeValue(row.Barcode);
+                if (barcode.Length == 0)
+                {
+                    preview.Errors.Add(new SupplierImportError("Barcode richiesto prima del Sync DB.", row.RowNumber, string.Empty));
+                    continue;
+                }
+                if (duplicateRows.Contains(row))
+                    continue;
+
+                ProductDetailsRow existing;
+                existingByBarcode.TryGetValue(barcode, out existing);
+
+                if (!ValidateFinalRow(row, existing, preview))
+                    continue;
+
+                var updated = ToFinalCanonicalRow(row, existing);
+                if (existing == null)
+                {
+                    preview.NewProducts.Add(updated);
+                    preview.ValidatedRows.Add(row);
+                    continue;
+                }
+
+                var current = ToCanonicalRow(existing);
+                var diffs = DiffRows(current, updated);
+                var syncRow = new SupplierImportSyncRow
+                {
+                    RowNumber = row.RowNumber,
+                    Barcode = barcode,
+                    Existing = current,
+                    Updated = updated
+                };
+                foreach (var diff in diffs)
+                    syncRow.Diffs.Add(diff);
+
+                if (syncRow.Diffs.Count == 0)
+                    preview.NoChangeRows.Add(syncRow);
+                else
+                    preview.UpdatedProducts.Add(syncRow);
+                preview.ValidatedRows.Add(row);
+            }
+
+            preview.Summary.NewProducts = preview.NewProducts.Count;
+            preview.Summary.UpdatedProducts = preview.UpdatedProducts.Count;
+            preview.Summary.NoChangeRows = preview.NoChangeRows.Count;
+            preview.Summary.SkippedRows = preview.SkippedRows.Count;
+            preview.Summary.WarningCount = preview.Warnings.Count;
+            preview.Summary.ErrorCount = preview.Errors.Count;
+            preview.Fingerprint = BuildSyncFingerprint(preview);
+            return preview;
+        }
+
         public static double? ParseNumber(string value)
         {
             if (value == null) return null;
@@ -814,6 +923,173 @@ namespace Win7POS.Core.Import
             return false;
         }
 
+        private static bool ValidateFinalRow(
+            SupplierImportEditableRow row,
+            ProductDetailsRow existing,
+            SupplierImportSyncPreview preview)
+        {
+            var barcode = NormalizeValue(row.Barcode);
+            var hasIdentity = !string.IsNullOrWhiteSpace(row.ProductName) ||
+                !string.IsNullOrWhiteSpace(row.ItemNumber) ||
+                existing != null;
+            var ok = true;
+
+            if (existing == null && !hasIdentity)
+            {
+                preview.Errors.Add(new SupplierImportError(
+                    "Nuovo prodotto senza productName o itemNumber.",
+                    row.RowNumber,
+                    barcode));
+                ok = false;
+            }
+
+            if (existing == null && string.IsNullOrWhiteSpace(row.RetailPrice))
+            {
+                preview.Errors.Add(new SupplierImportError(
+                    "Nuovo prodotto senza retailPrice.",
+                    row.RowNumber,
+                    barcode));
+                ok = false;
+            }
+
+            if (!ValidateOptionalNumber(row.PurchasePrice, row.RowNumber, barcode, "purchasePrice", preview))
+                ok = false;
+            if (!ValidateOptionalNumber(row.RetailPrice, row.RowNumber, barcode, "retailPrice", preview))
+                ok = false;
+            if (!ValidateOptionalNumber(row.Quantity, row.RowNumber, barcode, "quantity", preview))
+                ok = false;
+
+            if (existing != null &&
+                !string.IsNullOrWhiteSpace(row.PurchasePrice) &&
+                string.IsNullOrWhiteSpace(row.RetailPrice))
+            {
+                preview.Warnings.Add(new SupplierImportWarning(
+                    "retailPrice vuoto: il Sync DB mantiene il prezzo vendita esistente.",
+                    new[] { row.RowNumber }));
+            }
+
+            return ok;
+        }
+
+        private static bool ValidateOptionalNumber(
+            string value,
+            int rowNumber,
+            string barcode,
+            string field,
+            SupplierImportSyncPreview preview)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return true;
+            var parsed = ParseNumber(value);
+            if (!parsed.HasValue || parsed.Value < 0)
+            {
+                preview.Errors.Add(new SupplierImportError(
+                    "Valore numerico non valido per " + field + ".",
+                    rowNumber,
+                    barcode));
+                return false;
+            }
+            return true;
+        }
+
+        private static SupplierImportProductRow ToFinalCanonicalRow(SupplierImportEditableRow row, ProductDetailsRow existing)
+        {
+            var itemNumber = ChooseText(row.ItemNumber, existing == null ? null : existing.ArticleCode);
+            var productName = ChooseText(row.ProductName, existing == null ? null : existing.Name);
+            if (string.IsNullOrWhiteSpace(productName))
+                productName = itemNumber;
+
+            return new SupplierImportProductRow
+            {
+                RowNumber = row.RowNumber,
+                Barcode = NormalizeValue(row.Barcode),
+                ItemNumber = itemNumber,
+                ProductName = productName,
+                SecondProductName = ChooseText(row.SecondProductName, existing == null ? null : existing.Name2),
+                PurchasePrice = existing == null ? NumberTextOrEmpty(row.PurchasePrice, false) : ToIntOrExistingText(row.PurchasePrice, existing.PurchasePrice),
+                RetailPrice = existing == null ? NumberTextOrEmpty(row.RetailPrice, true) : ToLongOrExistingText(row.RetailPrice, existing.UnitPrice),
+                Quantity = existing == null ? NumberTextOrEmpty(row.Quantity, false) : ToIntOrExistingText(row.Quantity, existing.StockQty),
+                Supplier = ChooseText(row.Supplier, existing == null ? null : existing.SupplierName),
+                Category = ChooseText(row.Category, existing == null ? null : existing.CategoryName)
+            };
+        }
+
+        private static List<SupplierImportSyncUpdateDiff> DiffRows(
+            SupplierImportProductRow existing,
+            SupplierImportProductRow updated)
+        {
+            var diffs = new List<SupplierImportSyncUpdateDiff>();
+            AddDiff(diffs, "itemNumber", existing.ItemNumber, updated.ItemNumber);
+            AddDiff(diffs, "productName", existing.ProductName, updated.ProductName);
+            AddDiff(diffs, "secondProductName", existing.SecondProductName, updated.SecondProductName);
+            AddDiff(diffs, "purchasePrice", existing.PurchasePrice, updated.PurchasePrice);
+            AddDiff(diffs, "retailPrice", existing.RetailPrice, updated.RetailPrice);
+            AddDiff(diffs, "quantity", existing.Quantity, updated.Quantity);
+            AddDiff(diffs, "supplier", existing.Supplier, updated.Supplier);
+            AddDiff(diffs, "category", existing.Category, updated.Category);
+            return diffs;
+        }
+
+        private static void AddDiff(List<SupplierImportSyncUpdateDiff> diffs, string field, string before, string after)
+        {
+            if (TextEquals(before, after)) return;
+            diffs.Add(new SupplierImportSyncUpdateDiff
+            {
+                Field = field,
+                Before = before ?? string.Empty,
+                After = after ?? string.Empty
+            });
+        }
+
+        private static string BuildSyncFingerprint(SupplierImportSyncPreview preview)
+        {
+            var sb = new StringBuilder();
+            sb.Append("total=").Append(preview.Summary.TotalRows).Append(';');
+            sb.Append("new=").Append(preview.NewProducts.Count).Append(';');
+            sb.Append("upd=").Append(preview.UpdatedProducts.Count).Append(';');
+            sb.Append("same=").Append(preview.NoChangeRows.Count).Append(';');
+            sb.Append("skip=").Append(preview.SkippedRows.Count).Append(';');
+            sb.Append("err=").Append(preview.Errors.Count).Append(';');
+            AppendProductRows(sb, "N", preview.NewProducts);
+            AppendSyncRows(sb, "U", preview.UpdatedProducts);
+            AppendSyncRows(sb, "S", preview.NoChangeRows);
+            foreach (var row in preview.SkippedRows.OrderBy(row => row.RowNumber))
+                sb.Append("K|").Append(row.RowNumber).Append('|').Append(row.Barcode).Append(';');
+            foreach (var error in preview.Errors.OrderBy(error => error.RowIndex).ThenBy(error => error.Message))
+                sb.Append("E|").Append(error.RowIndex).Append('|').Append(error.Barcode).Append('|').Append(error.Message).Append(';');
+            return sb.ToString();
+        }
+
+        private static void AppendProductRows(StringBuilder sb, string prefix, IEnumerable<SupplierImportProductRow> rows)
+        {
+            foreach (var row in rows.OrderBy(row => row.RowNumber).ThenBy(row => row.Barcode))
+            {
+                sb.Append(prefix).Append('|')
+                    .Append(row.RowNumber).Append('|')
+                    .Append(row.Barcode).Append('|')
+                    .Append(row.ItemNumber).Append('|')
+                    .Append(row.ProductName).Append('|')
+                    .Append(row.SecondProductName).Append('|')
+                    .Append(row.PurchasePrice).Append('|')
+                    .Append(row.RetailPrice).Append('|')
+                    .Append(row.Quantity).Append('|')
+                    .Append(row.Supplier).Append('|')
+                    .Append(row.Category).Append(';');
+            }
+        }
+
+        private static void AppendSyncRows(StringBuilder sb, string prefix, IEnumerable<SupplierImportSyncRow> rows)
+        {
+            foreach (var row in rows.OrderBy(row => row.RowNumber).ThenBy(row => row.Barcode))
+            {
+                sb.Append(prefix).Append('|').Append(row.RowNumber).Append('|').Append(row.Barcode).Append('|');
+                if (row.Updated != null)
+                    AppendProductRows(sb, "R", new[] { row.Updated });
+                foreach (var diff in row.Diffs.OrderBy(diff => diff.Field))
+                    sb.Append("D|").Append(diff.Field).Append('|').Append(diff.Before).Append('|').Append(diff.After).Append('|');
+                sb.Append(';');
+            }
+        }
+
         private static bool TextEquals(string left, string right)
         {
             return string.Equals((left ?? string.Empty).Trim(), (right ?? string.Empty).Trim(), StringComparison.OrdinalIgnoreCase);
@@ -822,6 +1098,15 @@ namespace Win7POS.Core.Import
         private static string ChooseText(string candidate, string existing)
         {
             return string.IsNullOrWhiteSpace(candidate) ? (existing ?? string.Empty) : candidate.Trim();
+        }
+
+        private static string NormalizeValue(string value)
+        {
+            if (value == null) return string.Empty;
+            var trimmed = value.Trim();
+            return trimmed.Length == 0
+                ? string.Empty
+                : string.Join(" ", trimmed.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
         }
 
         private static int? ToIntNullable(string value, int existing)

@@ -2080,6 +2080,7 @@ CREATE TABLE users (
         var viewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs");
         var workflow = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs");
         var applier = ReadRepoFile(root, "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs");
+        var analyzer = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierImportAnalyzer.cs");
         var models = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierExcelImportModels.cs");
         var helper = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierRetailPriceHelper.cs");
         var cli = ReadRepoFile(root, "src/Win7POS.Cli/Program.cs");
@@ -2096,10 +2097,24 @@ CREATE TABLE users (
         AssertText(dialogCode, "ShowDialog", "Supplier import dialog must be shown with ShowDialog.");
         AssertText(dialogXaml, "1. Scegli file", "Step 1 label missing.");
         AssertText(dialogXaml, "2. Analizza colonne", "Step 2 label missing.");
-        AssertText(dialogXaml, "3. Rivedi prezzi e applica", "Step 3 label missing.");
+        AssertText(dialogXaml, "3. Correggi righe", "Step 3 label missing.");
+        AssertText(dialogXaml, "4. Verifica Sync DB", "Step 4 label missing.");
+        AssertText(dialogXaml, "Verifica Sync Database", "Step 4 Sync DB title missing.");
+        AssertText(dialogXaml, "Nuovi", "Step 4 new products tab missing.");
+        AssertText(dialogXaml, "Aggiornamenti", "Step 4 updates tab missing.");
+        AssertText(dialogXaml, "Senza modifiche", "Step 4 no-change tab missing.");
+        AssertText(dialogXaml, "Skippati", "Step 4 skipped tab missing.");
+        AssertText(dialogXaml, "Continua a Sync DB", "Step 3 must continue to Sync DB.");
+        AssertText(dialogXaml, "Visibility=\"{Binding IsStep4", "Apply must only be visible on Step 4.");
         AssertText(viewModel, "IsStep1", "Step 1 state missing.");
         AssertText(viewModel, "IsStep2", "Step 2 state missing.");
         AssertText(viewModel, "IsStep3", "Step 3 state missing.");
+        AssertText(viewModel, "IsStep4", "Step 4 state missing.");
+        AssertText(viewModel, "BuildSyncPreviewAsync", "Step 4 sync preview command missing.");
+        AssertText(viewModel, "InvalidateSyncPreview", "Step 3 edits must invalidate Step 4 preview.");
+        AssertText(viewModel, "StepIndex == 3 && SyncCanApply", "Apply must be enabled only from valid Step 4.");
+        AssertText(workflow, "rebuilt.Fingerprint", "Apply must recompute and verify Step 4 before writing.");
+        AssertText(applier, "ApplyAsync(preview.ValidatedRows", "Data applier must apply validated Step 4 rows.");
 
         foreach (var required in new[]
         {
@@ -2143,18 +2158,19 @@ CREATE TABLE users (
         AssertText(viewModel, "_applyOnlyEmptyRetailPrice = true", "Bulk helper default must target empty retailPrice only.");
         AssertText(helper, "ApplyMarkupToRetailPriceRows", "Bulk retail helper must be in core import code.");
 
-        AssertText(viewModel, "MissingNewRetailPriceCount == 0", "New product missing retailPrice must block apply.");
-        AssertText(viewModel, "MissingBarcodeCount == 0", "New product missing barcode must block non-skipped apply.");
-        AssertText(viewModel, "MissingNewIdentityCount == 0", "New product missing productName/itemNumber must block non-skipped apply.");
-        AssertText(viewModel, "row.IsSkipped", "Apply must exclude operator-skipped rows.");
+        AssertText(analyzer, "Nuovo prodotto senza retailPrice.", "Step 4 must block new products without retailPrice.");
+        AssertText(analyzer, "Barcode richiesto prima del Sync DB.", "Step 4 must block non-skipped rows without barcode.");
+        AssertText(analyzer, "Nuovo prodotto senza productName o itemNumber.", "Step 4 must block new products without productName/itemNumber.");
+        AssertText(viewModel, "row.IsSkipped", "Apply must track operator-skipped rows.");
         AssertText(viewModel, "HeaderSummary", "Step 1/2 header summary missing.");
         AssertText(viewModel, "RowSummary", "Step 1/2 row summary missing.");
-        AssertText(viewModel, "Nuovi prodotti senza retailPrice", "Apply blocker message must name missing retailPrice.");
-        AssertText(viewModel, "Righe senza barcode", "Apply blocker message must name missing barcode.");
+        AssertText(viewModel, "SyncErrors", "Step 4 blocker list must expose sync preview errors.");
+        AssertText(viewModel, "Ricalcola Sync DB prima di applicare.", "Apply blocker message must require recalculating Sync DB.");
         AssertText(workflow, "CreateBackupBeforeApplyAsync", "Apply must create a pre-apply backup.");
         AssertText(workflow, "Warning count", "Apply summary must report warning count.");
         AssertText(workflow, "Skipped", "Apply summary must report skipped count.");
         AssertText(workflow, "Skipped by operator", "Apply summary must report operator-skipped count.");
+        AssertText(workflow, "No change", "Apply summary must report no-change count.");
         AssertText(applier, "BeginTransaction", "Apply must use an explicit transaction.");
         AssertText(applier, "tx.Rollback", "Apply must rollback on row/apply error.");
         AssertText(applier, "row.IsSkipped", "Apply must ignore skipped rows defensively.");
@@ -2210,10 +2226,15 @@ CREATE TABLE users (
             var workflowAnalysis = SupplierImportAnalyzer.Analyze(table, existingProducts);
             Assert(workflowAnalysis.Errors.Count == 0, "Operational workbook must analyze without errors.");
             Assert(workflowAnalysis.EditableRows.Count == 1, "Operational workbook must expose one editable row.");
+            var workflowPreview = SupplierImportAnalyzer.BuildSyncPreview(workflowAnalysis.EditableRows, existingProducts);
+            Assert(workflowPreview.CanApply, "Step 4 operational preview must allow apply.");
+            Assert(workflowPreview.NewProducts.Count == 1, "Step 4 operational preview must show one new product.");
+            Assert(workflowPreview.UpdatedProducts.Count == 0, "Step 4 operational preview must show zero updates.");
+            Assert(workflowPreview.NoChangeRows.Count == 0, "Step 4 operational preview must show zero no-change rows.");
 
             var backupPath = await CreateSupplierSelfTestBackupAsync(options.DbPath, tempRoot).ConfigureAwait(false);
             var workflowApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
-                workflowAnalysis.EditableRows,
+                workflowPreview,
                 new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
             var workflowSummary = BuildSupplierApplySelfTestSummary(workflowApply, backupPath, workflowAnalysis.Warnings.Count);
             Assert(workflowApply.Errors == 0, "Workflow apply must succeed.");
@@ -2255,8 +2276,10 @@ CREATE TABLE users (
                 mappingWithOverride.Errors.Count == 0,
                 "Step 2 barcode override must produce an applyable preview: " +
                     string.Join(" | ", mappingWithOverride.Errors.Select(error => error.Message)));
+            var mappingPreview = SupplierImportAnalyzer.BuildSyncPreview(mappingWithOverride.EditableRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            Assert(mappingPreview.CanApply && mappingPreview.NewProducts.Count == 1, "Step 4 mapping override preview must show one new product.");
             var mappingApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
-                mappingWithOverride.EditableRows,
+                mappingPreview,
                 new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
             Assert(mappingApply.Errors == 0 && mappingApply.Inserted == 1, "Step 2 mapping override apply must insert one product.");
             Assert(await SupplierProductCountAsync(factory, "MANUAL-0001").ConfigureAwait(false) == 1, "Mapping override product must be inserted.");
@@ -2269,14 +2292,19 @@ CREATE TABLE users (
             Assert(
                 priceEditAnalysis.EditableRows.Any(row => !row.Exists && string.IsNullOrWhiteSpace(row.RetailPrice)),
                 "Step 3 must expose missing retailPrice before user edit.");
+            var priceEditBlockedPreview = SupplierImportAnalyzer.BuildSyncPreview(priceEditAnalysis.EditableRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            Assert(!priceEditBlockedPreview.CanApply, "Step 4 preview must block a new product without retailPrice.");
+            Assert(priceEditBlockedPreview.Errors.Any(error => error.Message.Contains("retailPrice", StringComparison.OrdinalIgnoreCase)), "Step 4 retailPrice error must be visible.");
             var priceEditChanged = SupplierRetailPriceHelper.ApplyMarkupToRetailPriceRows(
                 priceEditAnalysis.EditableRows,
                 markupPercent: 30,
                 roundTo: 50,
                 applyOnlyEmptyRetailPrice: true);
             Assert(priceEditChanged == 1, "Step 3 bulk helper must fill one empty retailPrice.");
+            var priceEditPreview = SupplierImportAnalyzer.BuildSyncPreview(priceEditAnalysis.EditableRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            Assert(priceEditPreview.CanApply && priceEditPreview.NewProducts.Count == 1, "Edited retailPrice must make Step 4 classify the row as new.");
             var priceEditApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
-                priceEditAnalysis.EditableRows,
+                priceEditPreview,
                 new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
             Assert(priceEditApply.Errors == 0 && priceEditApply.Inserted == 1, "Step 3 price edit apply must insert one product.");
             await AssertSupplierProductStateAsync(
@@ -2299,8 +2327,10 @@ CREATE TABLE users (
             var manualRetailRow = manualRetailAnalysis.EditableRows.Single();
             Assert(string.IsNullOrWhiteSpace(manualRetailRow.RetailPrice), "Manual retail edit fixture must start with empty retailPrice.");
             manualRetailRow.RetailPrice = "175";
+            var manualRetailPreview = SupplierImportAnalyzer.BuildSyncPreview(manualRetailAnalysis.EditableRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            Assert(manualRetailPreview.CanApply && manualRetailPreview.NewProducts.Count == 1, "Manual retail edit must appear in Step 4 as new product.");
             var manualRetailApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
-                manualRetailAnalysis.EditableRows,
+                manualRetailPreview,
                 new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
             Assert(manualRetailApply.Errors == 0 && manualRetailApply.Inserted == 1, "Manual Step 3 retail edit apply must insert one product.");
             await AssertSupplierProductStateAsync(
@@ -2326,12 +2356,16 @@ CREATE TABLE users (
             barcodeCorrectionAnalysis.EditableRows[0].Barcode = "6666666600006";
             barcodeCorrectionAnalysis.EditableRows[1].Barcode = "6666666600999";
             barcodeCorrectionAnalysis.EditableRows[1].IsSkipped = true;
+            var barcodeCorrectionPreview = SupplierImportAnalyzer.BuildSyncPreview(barcodeCorrectionAnalysis.EditableRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            Assert(barcodeCorrectionPreview.CanApply, "Corrected/skipped barcode Step 4 preview must allow apply.");
+            Assert(barcodeCorrectionPreview.NewProducts.Any(row => row.Barcode == "6666666600006"), "Corrected barcode must appear in Step 4 as new product.");
+            Assert(barcodeCorrectionPreview.SkippedRows.Any(row => row.Barcode == "6666666600999"), "Skipped barcode row must appear in Step 4 skipped list.");
             var barcodeCorrectionApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
-                barcodeCorrectionAnalysis.EditableRows,
+                barcodeCorrectionPreview,
                 new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
             Assert(barcodeCorrectionApply.Errors == 0, "Corrected/skipped barcode apply must not error.");
             Assert(barcodeCorrectionApply.Inserted == 1, "Corrected barcode row must be inserted.");
-            Assert(barcodeCorrectionApply.NoChange == 1, "Skipped barcode row must be counted as skipped/noChange.");
+            Assert(barcodeCorrectionPreview.SkippedRows.Count == 1, "Skipped barcode row must be counted in Step 4 skipped rows.");
             await AssertSupplierProductStateAsync(
                 factory,
                 "6666666600006",
@@ -2344,6 +2378,50 @@ CREATE TABLE users (
                 expectedSupplier: string.Empty,
                 expectedCategory: string.Empty).ConfigureAwait(false);
             Assert(await SupplierProductCountAsync(factory, "6666666600999").ConfigureAwait(false) == 0, "Skipped barcode row must not be written.");
+
+            var updateNoChangeTable = SupplierTable(
+                new[] { "barcode", "productName", "itemNumber", "purchasePrice", "retailPrice", "quantity", "supplier", "category" },
+                new[] { "3333333300003", "Operational Product", "OP-333", "115", "195", "5", "Operational Supplier", "Operational Category" },
+                new[] { "4444444400004", "MANUAL-RETAIL", "MANUAL-RETAIL", "100", "175", "1", "", "" });
+            var updateNoChangeExisting = await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false);
+            var updateNoChangeAnalysis = SupplierImportAnalyzer.Analyze(updateNoChangeTable, updateNoChangeExisting);
+            var updateNoChangePreview = SupplierImportAnalyzer.BuildSyncPreview(updateNoChangeAnalysis.EditableRows, updateNoChangeExisting);
+            Assert(updateNoChangePreview.CanApply, "Update/no-change Step 4 preview must allow apply.");
+            Assert(updateNoChangePreview.UpdatedProducts.Count == 1, "Existing product with changed price/quantity must appear in Step 4 updates.");
+            Assert(updateNoChangePreview.UpdatedProducts.Single().DiffSummary.Contains("retailPrice", StringComparison.Ordinal), "Update diff must include retailPrice before/after.");
+            Assert(updateNoChangePreview.UpdatedProducts.Single().DiffSummary.Contains("quantity", StringComparison.Ordinal), "Update diff must include quantity before/after.");
+            Assert(updateNoChangePreview.NoChangeRows.Count == 1, "Unchanged existing product must appear in Step 4 no-change list.");
+            var updateNoChangeApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
+                updateNoChangePreview,
+                new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
+            Assert(updateNoChangeApply.Errors == 0, "Update/no-change apply must not error.");
+            Assert(updateNoChangeApply.Updated == 1, "Step 4 update apply must update exactly one product.");
+            Assert(updateNoChangeApply.NoChange == 1, "Step 4 no-change apply must count exactly one no-change product.");
+            Assert(updateNoChangeApply.ChangedBarcodes.SequenceEqual(new[] { "3333333300003" }), "Apply must write exactly Step 4 changed rows.");
+            await AssertSupplierProductStateAsync(
+                factory,
+                "3333333300003",
+                expectedProductName: "Operational Product",
+                expectedItemNumber: "OP-333",
+                expectedSecondName: "Operational Second",
+                expectedPurchasePrice: 115,
+                expectedRetailPrice: 195,
+                expectedStock: 5,
+                expectedSupplier: "Operational Supplier",
+                expectedCategory: "Operational Category").ConfigureAwait(false);
+
+            var duplicateFinalRows = new[]
+            {
+                new SupplierImportEditableRow { RowNumber = 100, Barcode = "9999999900009", ItemNumber = "DUP-A", ProductName = "Dup A", PurchasePrice = "1", RetailPrice = "2", Quantity = "1" },
+                new SupplierImportEditableRow { RowNumber = 101, Barcode = "9999999900009", ItemNumber = "DUP-B", ProductName = "Dup B", PurchasePrice = "1", RetailPrice = "2", Quantity = "1" }
+            };
+            var duplicatePreview = SupplierImportAnalyzer.BuildSyncPreview(duplicateFinalRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
+            Assert(!duplicatePreview.CanApply, "Step 4 duplicate final barcode errors must block apply.");
+            var duplicateApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
+                duplicatePreview,
+                new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
+            Assert(duplicateApply.Errors > 0, "Data applier must reject non-applyable Step 4 preview.");
+            Assert(await SupplierProductCountAsync(factory, "9999999900009").ConfigureAwait(false) == 0, "Blocked Step 4 preview must not write duplicate product.");
 
             await AssertSupplierRollbackOnForcedFailureAsync(factory).ConfigureAwait(false);
             await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
@@ -2359,7 +2437,10 @@ CREATE TABLE users (
                     priceEditInserted = priceEditApply.Inserted,
                     manualRetailInserted = manualRetailApply.Inserted,
                     correctedBarcodeInserted = barcodeCorrectionApply.Inserted,
-                    skippedRows = barcodeCorrectionApply.NoChange,
+                    updatedFromStep4 = updateNoChangeApply.Updated,
+                    noChangeFromStep4 = updateNoChangeApply.NoChange,
+                    skippedRows = barcodeCorrectionPreview.SkippedRows.Count,
+                    step4ErrorsBlockApply = duplicateApply.Errors > 0,
                     rollbackVerified = true,
                     importHistorySource = "IMPORT",
                     dbPathUnderTemp = options.DbPath.StartsWith(tempRoot, StringComparison.OrdinalIgnoreCase)
@@ -2707,6 +2788,7 @@ CREATE TABLE users (
             "Mode: APPLY",
             "Inserted: " + result.Inserted.ToString(CultureInfo.InvariantCulture),
             "Updated: " + result.Updated.ToString(CultureInfo.InvariantCulture),
+            "No change: " + result.NoChange.ToString(CultureInfo.InvariantCulture),
             "Skipped: " + result.NoChange.ToString(CultureInfo.InvariantCulture),
             "Warning count: " + warningCount.ToString(CultureInfo.InvariantCulture),
             "Error count: " + result.Errors.ToString(CultureInfo.InvariantCulture),

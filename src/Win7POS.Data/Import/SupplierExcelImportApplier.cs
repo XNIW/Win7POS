@@ -38,6 +38,24 @@ namespace Win7POS.Data.Import
         }
 
         public async Task<SupplierExcelImportApplyResult> ApplyAsync(
+            SupplierImportSyncPreview preview,
+            SupplierExcelImportApplyOptions options)
+        {
+            var result = new SupplierExcelImportApplyResult();
+            if (preview == null)
+            {
+                AddError(result, "Sync DB preview richiesto prima di applicare.");
+                return result;
+            }
+            if (!preview.CanApply)
+            {
+                AddError(result, "Sync DB preview contiene errori e blocca l'applicazione.");
+                return result;
+            }
+            return await ApplyAsync(preview.ValidatedRows, options).ConfigureAwait(false);
+        }
+
+        public async Task<SupplierExcelImportApplyResult> ApplyAsync(
             IReadOnlyList<SupplierImportEditableRow> rows,
             SupplierExcelImportApplyOptions options)
         {

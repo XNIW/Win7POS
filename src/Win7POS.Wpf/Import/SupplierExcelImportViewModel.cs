@@ -25,7 +25,9 @@ namespace Win7POS.Wpf.Import
         private int _roundTo = 100;
         private bool _applyOnlyEmptyRetailPrice = true;
         private bool _isBusy;
+        private bool _isSyncPreviewStale;
         private SupplierImportAnalysis _analysis;
+        private SupplierImportSyncPreview _syncPreview;
 
         public SupplierExcelImportViewModel(SupplierExcelImportWorkflowService service = null)
         {
@@ -35,7 +37,8 @@ namespace Win7POS.Wpf.Import
             AnalyzeCommand = new AsyncRelayCommand(AnalyzeAsync, () => !IsBusy && File.Exists(SelectedPath));
             BackCommand = new RelayCommand(Back, () => !IsBusy && StepIndex > 0);
             NextCommand = new AsyncRelayCommand(NextAsync, () => !IsBusy && StepIndex == 1 && CanProceedToStep3);
-            ApplyCommand = new AsyncRelayCommand(ApplyAsync, () => !IsBusy && StepIndex == 2 && CanApply);
+            SyncPreviewCommand = new AsyncRelayCommand(BuildSyncPreviewAsync, () => !IsBusy && StepIndex == 2 && EditableRows.Count > 0);
+            ApplyCommand = new AsyncRelayCommand(ApplyAsync, () => !IsBusy && StepIndex == 3 && CanApply);
             ApplyMarkupCommand = new RelayCommand(ApplyMarkup, () => !IsBusy && StepIndex == 2 && EditableRows.Count > 0);
             CancelCommand = new RelayCommand(() => RequestClose?.Invoke(false), () => !IsBusy);
             Status = "Scegli un file Excel fornitore.";
@@ -50,11 +53,18 @@ namespace Win7POS.Wpf.Import
         public ObservableCollection<SupplierImportEditableRow> EditableRows { get; } = new ObservableCollection<SupplierImportEditableRow>();
         public ObservableCollection<SupplierImportWarning> Warnings { get; } = new ObservableCollection<SupplierImportWarning>();
         public ObservableCollection<SupplierImportError> Errors { get; } = new ObservableCollection<SupplierImportError>();
+        public ObservableCollection<SupplierImportProductRow> SyncNewProducts { get; } = new ObservableCollection<SupplierImportProductRow>();
+        public ObservableCollection<SupplierImportSyncRow> SyncUpdatedProducts { get; } = new ObservableCollection<SupplierImportSyncRow>();
+        public ObservableCollection<SupplierImportSyncRow> SyncNoChangeRows { get; } = new ObservableCollection<SupplierImportSyncRow>();
+        public ObservableCollection<SupplierImportSyncSkippedRow> SyncSkippedRows { get; } = new ObservableCollection<SupplierImportSyncSkippedRow>();
+        public ObservableCollection<SupplierImportWarning> SyncWarnings { get; } = new ObservableCollection<SupplierImportWarning>();
+        public ObservableCollection<SupplierImportError> SyncErrors { get; } = new ObservableCollection<SupplierImportError>();
 
         public ICommand BrowseCommand { get; }
         public ICommand AnalyzeCommand { get; }
         public ICommand BackCommand { get; }
         public ICommand NextCommand { get; }
+        public ICommand SyncPreviewCommand { get; }
         public ICommand ApplyCommand { get; }
         public ICommand ApplyMarkupCommand { get; }
         public ICommand CancelCommand { get; }
@@ -70,6 +80,7 @@ namespace Win7POS.Wpf.Import
                 OnPropertyChanged(nameof(IsStep1));
                 OnPropertyChanged(nameof(IsStep2));
                 OnPropertyChanged(nameof(IsStep3));
+                OnPropertyChanged(nameof(IsStep4));
                 RaiseCanExecuteChanged();
             }
         }
@@ -77,6 +88,7 @@ namespace Win7POS.Wpf.Import
         public bool IsStep1 { get { return StepIndex == 0; } }
         public bool IsStep2 { get { return StepIndex == 1; } }
         public bool IsStep3 { get { return StepIndex == 2; } }
+        public bool IsStep4 { get { return StepIndex == 3; } }
 
         public string SelectedPath
         {
@@ -143,10 +155,51 @@ namespace Win7POS.Wpf.Import
             }
         }
 
+        public SupplierImportSyncPreview SyncPreview
+        {
+            get { return _syncPreview; }
+            private set
+            {
+                _syncPreview = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(SyncNewProductsCount));
+                OnPropertyChanged(nameof(SyncUpdatedProductsCount));
+                OnPropertyChanged(nameof(SyncNoChangeRowsCount));
+                OnPropertyChanged(nameof(SyncSkippedRowsCount));
+                OnPropertyChanged(nameof(SyncWarningsCount));
+                OnPropertyChanged(nameof(SyncErrorsCount));
+                OnPropertyChanged(nameof(SyncTotalRowsCount));
+                OnPropertyChanged(nameof(SyncCanApply));
+                OnPropertyChanged(nameof(CanApply));
+                RaiseCanExecuteChanged();
+            }
+        }
+
         public int NewProductsCount { get { return Analysis == null ? 0 : Analysis.NewProducts.Count; } }
         public int UpdatedProductsCount { get { return Analysis == null ? 0 : Analysis.UpdatedProducts.Count; } }
         public int WarningsCount { get { return Analysis == null ? 0 : Analysis.Warnings.Count; } }
         public int ErrorsCount { get { return Analysis == null ? 0 : Analysis.Errors.Count; } }
+        public int SyncNewProductsCount { get { return SyncPreview == null ? 0 : SyncPreview.Summary.NewProducts; } }
+        public int SyncUpdatedProductsCount { get { return SyncPreview == null ? 0 : SyncPreview.Summary.UpdatedProducts; } }
+        public int SyncNoChangeRowsCount { get { return SyncPreview == null ? 0 : SyncPreview.Summary.NoChangeRows; } }
+        public int SyncSkippedRowsCount { get { return SyncPreview == null ? 0 : SyncPreview.Summary.SkippedRows; } }
+        public int SyncWarningsCount { get { return SyncPreview == null ? 0 : SyncPreview.Summary.WarningCount; } }
+        public int SyncErrorsCount { get { return SyncPreview == null ? 0 : SyncPreview.Summary.ErrorCount; } }
+        public int SyncTotalRowsCount { get { return SyncPreview == null ? 0 : SyncPreview.Summary.TotalRows; } }
+        public bool SyncCanApply { get { return SyncPreview != null && SyncPreview.CanApply && !IsSyncPreviewStale; } }
+        public bool IsSyncPreviewStale
+        {
+            get { return _isSyncPreviewStale; }
+            private set
+            {
+                if (_isSyncPreviewStale == value) return;
+                _isSyncPreviewStale = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(SyncCanApply));
+                OnPropertyChanged(nameof(CanApply));
+                RaiseCanExecuteChanged();
+            }
+        }
         public string SelectedSheetName { get { return Analysis == null ? string.Empty : Analysis.SheetName; } }
         public string HeaderSummary
         {
@@ -229,13 +282,7 @@ namespace Win7POS.Wpf.Import
         {
             get
             {
-                return Analysis != null &&
-                    Analysis.CanApply &&
-                    EditableRows.Any(row => row != null && !row.IsSkipped) &&
-                    MissingBarcodeCount == 0 &&
-                    MissingNewIdentityCount == 0 &&
-                    MissingNewRetailPriceCount == 0 &&
-                    InvalidNumberCount == 0;
+                return StepIndex == 3 && SyncCanApply;
             }
         }
         public bool HasRetailPriceWarning
@@ -328,47 +375,27 @@ namespace Win7POS.Wpf.Import
 
         private async Task ApplyAsync()
         {
-            if (Analysis == null || !Analysis.CanApply)
+            if (SyncPreview == null)
             {
-                Status = "Correggi gli errori prima di applicare.";
+                Status = "Ricalcola Sync DB prima di applicare.";
                 return;
             }
-            var rowsToApply = EditableRows.Where(row => row != null && !row.IsSkipped).ToList();
-            if (rowsToApply.Count == 0)
+            if (IsSyncPreviewStale)
             {
-                Status = "Nessuna riga valida da applicare: correggi una riga o rimuovi Skip.";
+                Status = "Sync DB preview non aggiornato: torna allo Step 3 e ricalcola.";
                 return;
             }
-            if (rowsToApply.Any(row => string.IsNullOrWhiteSpace(row.Barcode)))
+            if (!SyncPreview.CanApply)
             {
-                Status = "Righe senza barcode: correggi barcode o seleziona Skip prima di applicare.";
+                Status = "Errori nel Sync DB preview: correggi prima di applicare.";
                 return;
             }
-            if (rowsToApply.Any(row => !row.Exists && string.IsNullOrWhiteSpace(row.ProductName) && string.IsNullOrWhiteSpace(row.ItemNumber)))
-            {
-                Status = "Nuovi prodotti senza productName o itemNumber: compila un'identita o seleziona Skip.";
-                return;
-            }
-            if (rowsToApply.Any(row => !row.Exists && string.IsNullOrWhiteSpace(row.RetailPrice)))
-            {
-                Status = "Nuovi prodotti senza retailPrice: compila il prezzo vendita prima di applicare.";
-                return;
-            }
-            if (rowsToApply.Any(row =>
-                IsInvalidNonNegativeNumber(row.PurchasePrice) ||
-                IsInvalidNonNegativeNumber(row.RetailPrice) ||
-                IsInvalidNonNegativeNumber(row.Quantity)))
-            {
-                Status = "Prezzi o quantita non validi: correggi i valori numerici prima di applicare.";
-                return;
-            }
-            var skippedRows = EditableRows.Count(row => row != null && row.IsSkipped);
 
             IsBusy = true;
             Status = "Applicazione import fornitore in corso...";
             try
             {
-                var apply = await _service.ApplyAsync(rowsToApply, false, Analysis.Warnings.Count, skippedRows).ConfigureAwait(true);
+                var apply = await _service.ApplyAsync(SyncPreview, false).ConfigureAwait(true);
                 Status = apply.Summary;
                 ModernMessageDialog.Show(Application.Current?.MainWindow, "Import Excel fornitore", apply.Summary);
                 RequestClose?.Invoke(true);
@@ -397,6 +424,31 @@ namespace Win7POS.Wpf.Import
             else Status = "Mappa una colonna barcode reale prima di proseguire.";
         }
 
+        private async Task BuildSyncPreviewAsync()
+        {
+            IsBusy = true;
+            Status = "Calcolo Sync DB in corso...";
+            try
+            {
+                var preview = await _service.BuildSyncPreviewAsync(EditableRows.ToList()).ConfigureAwait(true);
+                ApplySyncPreview(preview);
+                IsSyncPreviewStale = false;
+                StepIndex = 3;
+                Status = preview.CanApply
+                    ? "Sync DB calcolato. Verifica nuovi, aggiornamenti, senza modifiche e skippati prima di applicare."
+                    : "Sync DB calcolato con errori: torna allo Step 3 e correggi.";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Supplier Excel sync preview failed");
+                Status = "Errore Sync DB: " + ex.Message;
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
         private void ApplyMarkup()
         {
             double markup;
@@ -411,6 +463,7 @@ namespace Win7POS.Wpf.Import
                 markup,
                 RoundTo,
                 ApplyOnlyEmptyRetailPrice);
+            InvalidateSyncPreview();
             RefreshEditableRows();
             Status = "Prezzo vendita calcolato per " + changed.ToString(System.Globalization.CultureInfo.InvariantCulture) + " righe.";
         }
@@ -422,6 +475,7 @@ namespace Win7POS.Wpf.Import
             EditableRows.Clear();
             Warnings.Clear();
             Errors.Clear();
+            ClearSyncPreview();
             StepIndex = 0;
         }
 
@@ -432,6 +486,7 @@ namespace Win7POS.Wpf.Import
             EditableRows.Clear();
             Warnings.Clear();
             Errors.Clear();
+            ClearSyncPreview();
 
             foreach (var col in analysis.Columns)
             {
@@ -465,6 +520,59 @@ namespace Win7POS.Wpf.Import
             RaiseCanExecuteChanged();
         }
 
+        private void ApplySyncPreview(SupplierImportSyncPreview preview)
+        {
+            SyncPreview = preview;
+            SyncNewProducts.Clear();
+            SyncUpdatedProducts.Clear();
+            SyncNoChangeRows.Clear();
+            SyncSkippedRows.Clear();
+            SyncWarnings.Clear();
+            SyncErrors.Clear();
+            if (preview == null) return;
+            foreach (var row in preview.NewProducts)
+                SyncNewProducts.Add(row);
+            foreach (var row in preview.UpdatedProducts)
+                SyncUpdatedProducts.Add(row);
+            foreach (var row in preview.NoChangeRows)
+                SyncNoChangeRows.Add(row);
+            foreach (var row in preview.SkippedRows)
+                SyncSkippedRows.Add(row);
+            foreach (var warning in preview.Warnings)
+                SyncWarnings.Add(warning);
+            foreach (var error in preview.Errors)
+                SyncErrors.Add(error);
+            OnPropertyChanged(nameof(SyncNewProductsCount));
+            OnPropertyChanged(nameof(SyncUpdatedProductsCount));
+            OnPropertyChanged(nameof(SyncNoChangeRowsCount));
+            OnPropertyChanged(nameof(SyncSkippedRowsCount));
+            OnPropertyChanged(nameof(SyncWarningsCount));
+            OnPropertyChanged(nameof(SyncErrorsCount));
+            OnPropertyChanged(nameof(SyncTotalRowsCount));
+            OnPropertyChanged(nameof(SyncCanApply));
+            OnPropertyChanged(nameof(CanApply));
+            RaiseCanExecuteChanged();
+        }
+
+        private void ClearSyncPreview()
+        {
+            SyncPreview = null;
+            IsSyncPreviewStale = false;
+            SyncNewProducts.Clear();
+            SyncUpdatedProducts.Clear();
+            SyncNoChangeRows.Clear();
+            SyncSkippedRows.Clear();
+            SyncWarnings.Clear();
+            SyncErrors.Clear();
+        }
+
+        private void InvalidateSyncPreview()
+        {
+            if (SyncPreview == null) return;
+            IsSyncPreviewStale = true;
+            Status = "Sync DB preview non aggiornato: ricalcola prima di applicare.";
+        }
+
         private void Column_PropertyChanged(object sender, PropertyChangedEventArgs e)
         {
             if (e == null ||
@@ -483,10 +591,14 @@ namespace Win7POS.Wpf.Import
                 e.PropertyName == nameof(SupplierImportEditableRow.Barcode) ||
                 e.PropertyName == nameof(SupplierImportEditableRow.ItemNumber) ||
                 e.PropertyName == nameof(SupplierImportEditableRow.ProductName) ||
+                e.PropertyName == nameof(SupplierImportEditableRow.SecondProductName) ||
                 e.PropertyName == nameof(SupplierImportEditableRow.PurchasePrice) ||
                 e.PropertyName == nameof(SupplierImportEditableRow.Quantity) ||
+                e.PropertyName == nameof(SupplierImportEditableRow.Supplier) ||
+                e.PropertyName == nameof(SupplierImportEditableRow.Category) ||
                 e.PropertyName == nameof(SupplierImportEditableRow.IsSkipped))
             {
+                InvalidateSyncPreview();
                 OnPropertyChanged(nameof(MissingNewRetailPriceCount));
                 OnPropertyChanged(nameof(MissingBarcodeCount));
                 OnPropertyChanged(nameof(MissingNewIdentityCount));
@@ -538,6 +650,7 @@ namespace Win7POS.Wpf.Import
             (AnalyzeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (BackCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (NextCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (SyncPreviewCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ApplyCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ApplyMarkupCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();

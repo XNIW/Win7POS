@@ -33,10 +33,12 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="1. Scegli file" FontWeight="SemiBold"/>
                 <TextBlock Grid.Column="1" Text="2. Analizza colonne" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                <TextBlock Grid.Column="2" Text="3. Rivedi prezzi e applica" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                <TextBlock Grid.Column="2" Text="3. Correggi righe" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                <TextBlock Grid.Column="3" Text="4. Verifica Sync DB" FontWeight="SemiBold" HorizontalAlignment="Right"/>
             </Grid>
         </Border>
 
@@ -244,6 +246,98 @@
                     </DataGrid.Columns>
                 </DataGrid>
             </Grid>
+
+            <Grid Visibility="{Binding IsStep4, Converter={StaticResource BoolToVis}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                    <Border Padding="10"
+                            Background="#FFF8E1"
+                            BorderBrush="#F0C36D"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Visibility="{Binding IsSyncPreviewStale, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Sync DB preview non aggiornato: torna allo Step 3 e premi Ricalcola Sync DB."
+                                   TextWrapping="Wrap"
+                                   Foreground="#7A4A00"/>
+                    </Border>
+                    <Border Margin="0,6,0,0" Padding="12" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8">
+                        <StackPanel>
+                            <TextBlock Text="Verifica Sync Database" FontSize="15" FontWeight="SemiBold"/>
+                            <WrapPanel Margin="0,10,0,0">
+                                <TextBlock Margin="0,0,16,0" Text="{Binding SyncTotalRowsCount, StringFormat=Totale: {0}}"/>
+                                <TextBlock Margin="0,0,16,0" Text="{Binding SyncNewProductsCount, StringFormat=Nuovi: {0}}"/>
+                                <TextBlock Margin="0,0,16,0" Text="{Binding SyncUpdatedProductsCount, StringFormat=Aggiornamenti: {0}}"/>
+                                <TextBlock Margin="0,0,16,0" Text="{Binding SyncNoChangeRowsCount, StringFormat=Senza modifiche: {0}}"/>
+                                <TextBlock Margin="0,0,16,0" Text="{Binding SyncSkippedRowsCount, StringFormat=Skippati: {0}}"/>
+                                <TextBlock Margin="0,0,16,0" Text="{Binding SyncWarningsCount, StringFormat=Warning: {0}}"/>
+                                <TextBlock Text="{Binding SyncErrorsCount, StringFormat=Errori: {0}}"/>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <TabControl Grid.Row="1">
+                    <TabItem Header="Nuovi">
+                        <DataGrid ItemsSource="{Binding SyncNewProducts}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="row" Binding="{Binding RowNumber}" Width="60"/>
+                                <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="130"/>
+                                <DataGridTextColumn Header="itemNumber" Binding="{Binding ItemNumber}" Width="120"/>
+                                <DataGridTextColumn Header="productName" Binding="{Binding ProductName}" Width="220"/>
+                                <DataGridTextColumn Header="retailPrice" Binding="{Binding RetailPrice}" Width="110"/>
+                                <DataGridTextColumn Header="purchasePrice" Binding="{Binding PurchasePrice}" Width="110"/>
+                                <DataGridTextColumn Header="quantity" Binding="{Binding Quantity}" Width="90"/>
+                                <DataGridTextColumn Header="supplier" Binding="{Binding Supplier}" Width="140"/>
+                                <DataGridTextColumn Header="category" Binding="{Binding Category}" Width="140"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                    <TabItem Header="Aggiornamenti">
+                        <DataGrid ItemsSource="{Binding SyncUpdatedProducts}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="row" Binding="{Binding RowNumber}" Width="60"/>
+                                <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="130"/>
+                                <DataGridTextColumn Header="before productName" Binding="{Binding Existing.ProductName}" Width="180"/>
+                                <DataGridTextColumn Header="after productName" Binding="{Binding Updated.ProductName}" Width="180"/>
+                                <DataGridTextColumn Header="before retailPrice" Binding="{Binding Existing.RetailPrice}" Width="120"/>
+                                <DataGridTextColumn Header="after retailPrice" Binding="{Binding Updated.RetailPrice}" Width="120"/>
+                                <DataGridTextColumn Header="diff" Binding="{Binding DiffSummary}" Width="4*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                    <TabItem Header="Senza modifiche">
+                        <DataGrid ItemsSource="{Binding SyncNoChangeRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="row" Binding="{Binding RowNumber}" Width="60"/>
+                                <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="130"/>
+                                <DataGridTextColumn Header="productName" Binding="{Binding Updated.ProductName}" Width="220"/>
+                                <DataGridTextColumn Header="retailPrice" Binding="{Binding Updated.RetailPrice}" Width="110"/>
+                                <DataGridTextColumn Header="quantity" Binding="{Binding Updated.Quantity}" Width="90"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                    <TabItem Header="Skippati">
+                        <DataGrid ItemsSource="{Binding SyncSkippedRows}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="original row" Binding="{Binding RowNumber}" Width="100"/>
+                                <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="160"/>
+                                <DataGridTextColumn Header="itemNumber" Binding="{Binding ItemNumber}" Width="160"/>
+                                <DataGridTextColumn Header="productName" Binding="{Binding ProductName}" Width="240"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </TabItem>
+                    <TabItem Header="Warning">
+                        <DataGrid ItemsSource="{Binding SyncWarnings}" AutoGenerateColumns="True" IsReadOnly="True" CanUserAddRows="False"/>
+                    </TabItem>
+                    <TabItem Header="Errori">
+                        <DataGrid ItemsSource="{Binding SyncErrors}" AutoGenerateColumns="True" IsReadOnly="True" CanUserAddRows="False"/>
+                    </TabItem>
+                </TabControl>
+            </Grid>
         </Grid>
 
         <Grid Grid.Row="3" Margin="{StaticResource DialogFooterMargin}">
@@ -256,11 +350,13 @@
                 <Button Content="Indietro" MinWidth="100" Height="42" Margin="0,0,8,0"
                         Command="{Binding BackCommand}" Style="{StaticResource DialogCancelButtonStyle}"/>
                 <Button Content="Analizza" MinWidth="100" Height="42" Margin="0,0,8,0"
-                        Command="{Binding AnalyzeCommand}" Style="{StaticResource DialogCancelButtonStyle}"/>
+                        Command="{Binding AnalyzeCommand}" Visibility="{Binding IsStep1, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogCancelButtonStyle}"/>
                 <Button Content="Avanti" MinWidth="100" Height="42" Margin="0,0,8,0"
-                        Command="{Binding NextCommand}" Style="{StaticResource DialogActionButtonStyle}"/>
+                        Command="{Binding NextCommand}" Visibility="{Binding IsStep2, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}"/>
+                <Button Content="Continua a Sync DB" MinWidth="150" Height="42" Margin="0,0,8,0"
+                        Command="{Binding SyncPreviewCommand}" Visibility="{Binding IsStep3, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}"/>
                 <Button Content="Conferma e applica" MinWidth="150" Height="42" Margin="0,0,8,0"
-                        Command="{Binding ApplyCommand}" Style="{StaticResource DialogActionButtonStyle}"/>
+                        Command="{Binding ApplyCommand}" Visibility="{Binding IsStep4, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}"/>
                 <Button Content="Annulla" MinWidth="100" Height="42" IsCancel="True"
                         Command="{Binding CancelCommand}" Style="{StaticResource DialogCancelButtonStyle}"/>
             </StackPanel>
