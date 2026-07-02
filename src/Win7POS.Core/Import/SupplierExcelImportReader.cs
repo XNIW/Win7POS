@@ -21,32 +21,32 @@ namespace Win7POS.Core.Import
             if (!File.Exists(filePath))
                 throw new FileNotFoundException("File Excel non trovato.", filePath);
 
-            var ext = Path.GetExtension(filePath).ToLowerInvariant();
+            var kind = DetectWorkbookKind(filePath);
             List<List<string>> rows;
             string sheetName;
 
-            if (ext == ".xls" && LooksLikeExcelHtml(filePath))
+            if (kind == WorkbookKind.Html)
             {
                 rows = ReadHtmlTable(filePath, out sheetName);
             }
-            else if (ext == ".xls")
+            else if (kind == WorkbookKind.Xls)
             {
                 rows = ReadWithExcelDataReader(filePath, out sheetName);
             }
-            else if (ext == ".xlsx")
+            else if (kind == WorkbookKind.Xlsx)
             {
                 try
                 {
                     rows = ReadWithClosedXml(filePath, out sheetName);
                 }
-                catch (ArgumentException)
+                catch (Exception ex) when (ShouldFallbackToExcelDataReader(ex))
                 {
                     rows = ReadWithExcelDataReader(filePath, out sheetName);
                 }
             }
             else
             {
-                throw new NotSupportedException("Formato non supportato. Usa .xls o .xlsx.");
+                throw new NotSupportedException("Formato non supportato. Usa un file Excel .xls, .xlsx o HTML Excel.");
             }
 
             return SupplierImportAnalyzer.BuildRawTable(sheetName, rows);
@@ -57,10 +57,10 @@ namespace Win7POS.Core.Import
             if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
                 return 0;
 
-            var ext = Path.GetExtension(filePath).ToLowerInvariant();
-            if (ext == ".xls" && LooksLikeExcelHtml(filePath))
+            var kind = DetectWorkbookKind(filePath);
+            if (kind == WorkbookKind.Html)
                 return 1;
-            if (ext == ".xlsx")
+            if (kind == WorkbookKind.Xlsx)
             {
                 try
                 {
@@ -69,16 +69,58 @@ namespace Win7POS.Core.Import
                         return workbook.Worksheets.Count;
                     }
                 }
-                catch (ArgumentException)
+                catch (Exception ex) when (ShouldFallbackToExcelDataReader(ex))
                 {
                     return CountWithExcelDataReader(filePath);
                 }
             }
-            if (ext == ".xls")
+            if (kind == WorkbookKind.Xls)
             {
                 return CountWithExcelDataReader(filePath);
             }
             return 0;
+        }
+
+        public static bool IsSupportedWorkbookFile(string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+                return false;
+            return DetectWorkbookKind(filePath) != WorkbookKind.Unsupported;
+        }
+
+        private static bool ShouldFallbackToExcelDataReader(Exception ex)
+        {
+            return ex is ArgumentException ||
+                ex is InvalidOperationException ||
+                ex is NullReferenceException ||
+                ex.GetType().FullName.IndexOf("DocumentFormat.OpenXml", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                ex.GetType().FullName.IndexOf("ClosedXML", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static WorkbookKind DetectWorkbookKind(string filePath)
+        {
+            var ext = Path.GetExtension(filePath).ToLowerInvariant();
+            if (ext == ".xlsx")
+                return WorkbookKind.Xlsx;
+            if (ext == ".xls")
+                return LooksLikeExcelHtml(filePath) ? WorkbookKind.Html : WorkbookKind.Xls;
+            if (LooksLikeExcelHtml(filePath))
+                return WorkbookKind.Html;
+
+            var header = new byte[8];
+            int read;
+            using (var stream = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                read = stream.Read(header, 0, header.Length);
+            }
+
+            if (read >= 4 && header[0] == 0x50 && header[1] == 0x4B && header[2] == 0x03 && header[3] == 0x04)
+                return WorkbookKind.Xlsx;
+            if (read >= 8 &&
+                header[0] == 0xD0 && header[1] == 0xCF && header[2] == 0x11 && header[3] == 0xE0 &&
+                header[4] == 0xA1 && header[5] == 0xB1 && header[6] == 0x1A && header[7] == 0xE1)
+                return WorkbookKind.Xls;
+            return WorkbookKind.Unsupported;
         }
 
         private static int CountWithExcelDataReader(string filePath)
@@ -359,6 +401,14 @@ namespace Win7POS.Core.Import
         {
             public int RemainingRows { get; set; }
             public string Text { get; set; } = string.Empty;
+        }
+
+        private enum WorkbookKind
+        {
+            Unsupported,
+            Xls,
+            Xlsx,
+            Html
         }
     }
 }

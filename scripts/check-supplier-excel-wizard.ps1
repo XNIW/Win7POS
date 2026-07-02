@@ -69,6 +69,8 @@ Assert-Contains $helper "ApplyMarkupToRetailPriceRows" "Bulk helper missing from
 Assert-Contains $reader "CountWorksheets" "Reader must expose safe sheet count for smoke validation."
 Assert-Contains $cli "--supplier-excel-drive-smoke <folder>" "CLI Drive smoke mode missing."
 Assert-Contains $cli "RunSupplierExcelDriveSmoke" "CLI Drive smoke runner missing."
+Assert-Contains $cli "SearchOption.AllDirectories" "CLI Drive smoke must scan subfolders."
+Assert-Contains $cli "IsSupportedWorkbookFile" "CLI Drive smoke must include Excel files detected by signature, not extension only."
 Assert-Contains $cli "Step2OverrideDisableCanCorrectMappingIssues" "Drive smoke summary must report Step 2 recoverability."
 Assert-Contains $cli "Step3PriceEditCanResolveMissingRetail" "Drive smoke summary must report Step 3 price-edit recoverability."
 

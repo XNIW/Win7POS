@@ -2126,20 +2126,19 @@ CREATE TABLE users (
         if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
             throw new DirectoryNotFoundException("Supplier Excel smoke folder not found.");
 
-        var files = Directory.EnumerateFiles(folder)
-            .Where(path =>
-                string.Equals(Path.GetExtension(path), ".xls", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(Path.GetExtension(path), ".xlsx", StringComparison.OrdinalIgnoreCase))
+        var files = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
+            .Where(IsSupplierExcelSmokeCandidate)
             .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
             .ToList();
         if (files.Count == 0)
-            throw new InvalidOperationException("Supplier Excel smoke folder has no .xls or .xlsx files.");
+            throw new InvalidOperationException("Supplier Excel smoke folder has no Excel workbook files.");
 
         var summaries = files.Select(AnalyzeSupplierExcelSmokeFile).ToList();
         var ok = summaries.All(item =>
             string.Equals(item.Result, "pass", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(item.Result, "price_edit_required", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(item.Result, "manual_mapping_review", StringComparison.OrdinalIgnoreCase));
+            string.Equals(item.Result, "manual_mapping_review", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(item.Result, "unsupported_or_corrupt", StringComparison.OrdinalIgnoreCase));
         Console.WriteLine(JsonSerializer.Serialize(new
         {
             ok,
@@ -2158,7 +2157,7 @@ CREATE TABLE users (
         var summary = new SupplierExcelDriveSmokeFileSummary
         {
             FileName = Path.GetFileName(file),
-            Extension = Path.GetExtension(file).TrimStart('.').ToLowerInvariant(),
+            Extension = DisplayWorkbookType(file),
             SizeCategory = SizeCategory(new FileInfo(file).Length)
         };
 
@@ -2195,11 +2194,57 @@ CREATE TABLE users (
         catch (Exception ex)
         {
             summary.ErrorCount = 1;
-            summary.Result = "analysis_error";
-            summary.AnalysisError = ex.GetType().Name + ": " + ex.Message;
+            summary.Result = IsUnsupportedOrCorruptWorkbook(ex)
+                ? "unsupported_or_corrupt"
+                : "analysis_error";
+            summary.AnalysisError = RedactedSmokeError(ex);
         }
 
         return summary;
+    }
+
+    private static bool IsSupplierExcelSmokeCandidate(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return false;
+        var fileName = Path.GetFileName(path);
+        if (fileName.StartsWith("~$", StringComparison.Ordinal))
+            return false;
+        try
+        {
+            return SupplierExcelImportReader.IsSupportedWorkbookFile(path);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string DisplayWorkbookType(string path)
+    {
+        var ext = Path.GetExtension(path).TrimStart('.').ToLowerInvariant();
+        return string.IsNullOrWhiteSpace(ext) ? "excel" : ext;
+    }
+
+    private static bool IsUnsupportedOrCorruptWorkbook(Exception ex)
+    {
+        return ex is NotSupportedException ||
+            ex is InvalidDataException ||
+            ex is IOException ||
+            (ex.GetType().FullName ?? string.Empty).IndexOf("ExcelDataReader", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static string RedactedSmokeError(Exception ex)
+    {
+        if (ex is NotSupportedException)
+            return "unsupported_workbook_format";
+        if (ex is InvalidDataException)
+            return "invalid_workbook_data";
+        if (ex is IOException)
+            return "workbook_read_error";
+        if ((ex.GetType().FullName ?? string.Empty).IndexOf("ExcelDataReader", StringComparison.OrdinalIgnoreCase) >= 0)
+            return "workbook_parser_error";
+        return ex.GetType().Name;
     }
 
     private static string SizeCategory(long bytes)
