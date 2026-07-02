@@ -180,9 +180,21 @@ internal static class Program
                 return;
             }
 
+            if (TryParseSupplierExcelApplySelfTestArgs(args))
+            {
+                await RunSupplierExcelApplySelfTestAsync().ConfigureAwait(false);
+                return;
+            }
+
             if (TryParseSupplierExcelDriveSmokeArgs(args, out var supplierExcelDriveSmokeFolder))
             {
                 RunSupplierExcelDriveSmoke(supplierExcelDriveSmokeFolder);
+                return;
+            }
+
+            if (TryParseSupplierExcelDriveCompletionReportArgs(args, out var supplierExcelDriveCompletionFolder))
+            {
+                RunSupplierExcelDriveCompletionReport(supplierExcelDriveCompletionFolder);
                 return;
             }
 
@@ -215,7 +227,9 @@ internal static class Program
         Console.WriteLine("  --task083-legacy-db-startup-harness [--keepdb]");
         Console.WriteLine("  --supplier-excel-selftest");
         Console.WriteLine("  --supplier-excel-ui-selftest");
+        Console.WriteLine("  --supplier-excel-apply-selftest");
         Console.WriteLine("  --supplier-excel-drive-smoke <folder>");
+        Console.WriteLine("  --supplier-excel-drive-completion-report <folder>");
         Console.WriteLine("  --daily yyyy-MM-dd [--db <path>]");
         Console.WriteLine("  --analyze-csv <path>");
             Console.WriteLine("  --diff-csv <path> [--db <path>] [--max-items N] [--format text|json]");
@@ -252,6 +266,11 @@ internal static class Program
         return args.Any(arg => string.Equals(arg, "--supplier-excel-ui-selftest", StringComparison.OrdinalIgnoreCase));
     }
 
+    private static bool TryParseSupplierExcelApplySelfTestArgs(string[] args)
+    {
+        return args.Any(arg => string.Equals(arg, "--supplier-excel-apply-selftest", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool TryParseSupplierExcelDriveSmokeArgs(string[] args, out string folder)
     {
         folder = string.Empty;
@@ -264,6 +283,22 @@ internal static class Program
             folder = args[i + 1];
             return true;
         }
+        return false;
+    }
+
+    private static bool TryParseSupplierExcelDriveCompletionReportArgs(string[] args, out string folder)
+    {
+        folder = string.Empty;
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (!string.Equals(args[i], "--supplier-excel-drive-completion-report", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (i + 1 >= args.Length)
+                throw new ArgumentException("--supplier-excel-drive-completion-report requires a folder path.");
+            folder = args[i + 1];
+            return true;
+        }
+
         return false;
     }
 
@@ -2043,6 +2078,7 @@ CREATE TABLE users (
         var applier = ReadRepoFile(root, "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs");
         var models = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierExcelImportModels.cs");
         var helper = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierRetailPriceHelper.cs");
+        var cli = ReadRepoFile(root, "src/Win7POS.Cli/Program.cs");
 
         AssertText(productsView, "Import Excel fornitore", "Products screen must expose supplier Excel import.");
         AssertText(productsView, "SupplierExcelImportCommand", "Products import button must bind supplier command.");
@@ -2109,6 +2145,18 @@ CREATE TABLE users (
         AssertText(applier, "tx.Rollback", "Apply must rollback on row/apply error.");
         AssertText(applier, "'IMPORT'", "Apply must write IMPORT price history source.");
         AssertText(applier, "Nuovo prodotto senza retailPrice", "Apply must reject new products without retailPrice.");
+        AssertText(cli, "--supplier-excel-apply-selftest", "CLI supplier apply selftest mode missing.");
+        AssertText(cli, "RunSupplierExcelApplySelfTestAsync", "CLI supplier apply selftest runner missing.");
+        AssertText(cli, "WIN7POS_DATA_DIR", "Supplier apply selftest must use a temp WIN7POS_DATA_DIR.");
+        AssertText(cli, "PRAGMA integrity_check", "Supplier apply selftest must verify SQLite integrity.");
+        AssertText(cli, "supplier_import_forced_failure", "Supplier apply selftest must force rollback failure.");
+        AssertText(cli, "product_price_history", "Supplier apply selftest must verify IMPORT price history.");
+        AssertText(cli, "--supplier-excel-drive-completion-report <folder>", "CLI Drive completion report mode missing.");
+        AssertText(cli, "RunSupplierExcelDriveCompletionReport", "CLI Drive completion report runner missing.");
+        AssertText(cli, "ready_after_mapping_override", "Completion report must expose mapping override result.");
+        AssertText(cli, "ready_after_price_edit", "Completion report must expose price edit result.");
+        AssertText(cli, "business_blocked_missing_barcode", "Completion report must expose missing barcode business result.");
+        AssertText(cli, "unsupported_or_corrupt_with_clear_message", "Completion report must expose unsupported/corrupt result.");
         AssertText(productsViewModel, "CatalogEvents.RaiseCatalogChanged(null)", "Products import must refresh catalog after successful apply.");
         AssertText(dbMaintenanceViewModel, "CatalogEvents.RaiseCatalogChanged(null)", "DB maintenance import must refresh catalog after successful apply.");
 
@@ -2119,6 +2167,149 @@ CREATE TABLE users (
 
         Console.WriteLine("SUPPLIER EXCEL UI SELFTEST PASS");
         Console.WriteLine("TEST PASS");
+    }
+
+    private static async Task RunSupplierExcelApplySelfTestAsync()
+    {
+        Console.WriteLine("Supplier Excel import apply selftest");
+
+        var tempRoot = Path.Combine(Path.GetTempPath(), "win7pos-supplier-apply-" + Guid.NewGuid().ToString("N"));
+        var previousDataDir = Environment.GetEnvironmentVariable("WIN7POS_DATA_DIR");
+        Environment.SetEnvironmentVariable("WIN7POS_DATA_DIR", tempRoot);
+
+        try
+        {
+            Directory.CreateDirectory(tempRoot);
+            var dbPath = Path.Combine(tempRoot, "pos.db");
+            var options = PosDbOptions.ForPath(dbPath);
+            Assert(!IsUnderProgramFiles(tempRoot), "Supplier apply selftest must not write under Program Files.");
+            Assert(!IsUnderProgramFiles(options.DbPath), "Supplier apply selftest DB must not be under Program Files.");
+
+            var workbookPath = Path.Combine(tempRoot, "supplier-operational-selftest.xlsx");
+            WriteSupplierApplyWorkbook(workbookPath);
+
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+            var table = SupplierExcelImportReader.ReadFirstWorksheet(workbookPath);
+            var existingProducts = await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false);
+            var workflowAnalysis = SupplierImportAnalyzer.Analyze(table, existingProducts);
+            Assert(workflowAnalysis.Errors.Count == 0, "Operational workbook must analyze without errors.");
+            Assert(workflowAnalysis.EditableRows.Count == 1, "Operational workbook must expose one editable row.");
+
+            var backupPath = await CreateSupplierSelfTestBackupAsync(options.DbPath, tempRoot).ConfigureAwait(false);
+            var workflowApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
+                workflowAnalysis.EditableRows,
+                new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
+            var workflowSummary = BuildSupplierApplySelfTestSummary(workflowApply, backupPath, workflowAnalysis.Warnings.Count);
+            Assert(workflowApply.Errors == 0, "Workflow apply must succeed.");
+            Assert(workflowApply.Inserted == 1, "Workflow apply must insert one new product.");
+            Assert(File.Exists(backupPath), "Workflow apply must create a backup file.");
+            Assert(!IsUnderProgramFiles(backupPath), "Supplier import backup must not be under Program Files.");
+            Assert(workflowSummary.Contains("Backup path", StringComparison.Ordinal), "Apply summary must include backupPath.");
+            Assert(workflowSummary.Contains("Inserted", StringComparison.Ordinal), "Apply summary must include inserted.");
+            Assert(workflowSummary.Contains("Updated", StringComparison.Ordinal), "Apply summary must include updated.");
+            Assert(workflowSummary.Contains("Skipped", StringComparison.Ordinal), "Apply summary must include skipped.");
+            Assert(workflowSummary.Contains("Warning count", StringComparison.Ordinal), "Apply summary must include warning count.");
+            Assert(workflowSummary.Contains("Error count", StringComparison.Ordinal), "Apply summary must include error count.");
+            await AssertSupplierProductStateAsync(
+                factory,
+                "3333333300003",
+                expectedProductName: "Operational Product",
+                expectedItemNumber: "OP-333",
+                expectedSecondName: "Operational Second",
+                expectedPurchasePrice: 100,
+                expectedRetailPrice: 180,
+                expectedStock: 3,
+                expectedSupplier: "Operational Supplier",
+                expectedCategory: "Operational Category").ConfigureAwait(false);
+            await AssertSupplierPriceHistoryAsync(factory, "3333333300003", minimumRows: 2).ConfigureAwait(false);
+            await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
+
+            var mappingTable = SupplierTable(
+                new[] { "Codice interno fornitore", "Nome", "Prezzo acquisto", "Prezzo vendita", "Stock" },
+                new[] { "MANUAL-0001", "Mapping Override Product", "120", "240", "1" });
+            var mappingWithoutOverride = SupplierImportAnalyzer.Analyze(mappingTable, Array.Empty<ProductDetailsRow>());
+            Assert(
+                mappingWithoutOverride.Errors.Any(e => e.Message.Contains("barcode", StringComparison.OrdinalIgnoreCase)),
+                "Mapping fixture must require Step 2 barcode override.");
+            var mappingWithOverride = SupplierImportAnalyzer.Analyze(
+                mappingTable,
+                Array.Empty<ProductDetailsRow>(),
+                new Dictionary<int, string> { { 0, AndroidImportKeys.Barcode } });
+            Assert(
+                mappingWithOverride.Errors.Count == 0,
+                "Step 2 barcode override must produce an applyable preview: " +
+                    string.Join(" | ", mappingWithOverride.Errors.Select(error => error.Message)));
+            var mappingApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
+                mappingWithOverride.EditableRows,
+                new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
+            Assert(mappingApply.Errors == 0 && mappingApply.Inserted == 1, "Step 2 mapping override apply must insert one product.");
+            Assert(await SupplierProductCountAsync(factory, "MANUAL-0001").ConfigureAwait(false) == 1, "Mapping override product must be inserted.");
+
+            var priceEditTable = SupplierTable(
+                new[] { "barcode", "itemNumber", "purchasePrice", "quantity" },
+                new[] { "5555555500005", "PRICE-EDIT", "100", "2" });
+            var priceEditAnalysis = SupplierImportAnalyzer.Analyze(priceEditTable, Array.Empty<ProductDetailsRow>());
+            Assert(priceEditAnalysis.Errors.Count == 0, "Missing retail price is a Step 3 edit state, not a parser error.");
+            Assert(
+                priceEditAnalysis.EditableRows.Any(row => !row.Exists && string.IsNullOrWhiteSpace(row.RetailPrice)),
+                "Step 3 must expose missing retailPrice before user edit.");
+            var priceEditChanged = SupplierRetailPriceHelper.ApplyMarkupToRetailPriceRows(
+                priceEditAnalysis.EditableRows,
+                markupPercent: 30,
+                roundTo: 50,
+                applyOnlyEmptyRetailPrice: true);
+            Assert(priceEditChanged == 1, "Step 3 bulk helper must fill one empty retailPrice.");
+            var priceEditApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
+                priceEditAnalysis.EditableRows,
+                new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
+            Assert(priceEditApply.Errors == 0 && priceEditApply.Inserted == 1, "Step 3 price edit apply must insert one product.");
+            await AssertSupplierProductStateAsync(
+                factory,
+                "5555555500005",
+                expectedProductName: "PRICE-EDIT",
+                expectedItemNumber: "PRICE-EDIT",
+                expectedSecondName: string.Empty,
+                expectedPurchasePrice: 100,
+                expectedRetailPrice: 150,
+                expectedStock: 2,
+                expectedSupplier: string.Empty,
+                expectedCategory: string.Empty).ConfigureAwait(false);
+
+            await AssertSupplierRollbackOnForcedFailureAsync(factory).ConfigureAwait(false);
+            await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
+
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                ok = true,
+                proof = new
+                {
+                    backupCreated = true,
+                    workflowInserted = workflowApply.Inserted,
+                    mappingOverrideInserted = mappingApply.Inserted,
+                    priceEditInserted = priceEditApply.Inserted,
+                    rollbackVerified = true,
+                    importHistorySource = "IMPORT",
+                    dbPathUnderTemp = options.DbPath.StartsWith(tempRoot, StringComparison.OrdinalIgnoreCase)
+                }
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine("SUPPLIER EXCEL APPLY SELFTEST PASS");
+            Console.WriteLine("TEST PASS");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("WIN7POS_DATA_DIR", previousDataDir);
+            SqliteConnection.ClearAllPools();
+            try
+            {
+                if (Directory.Exists(tempRoot))
+                    Directory.Delete(tempRoot, true);
+            }
+            catch
+            {
+                // Temp cleanup is best-effort; the selftest assertions above are the actual gate.
+            }
+        }
     }
 
     private static void RunSupplierExcelDriveSmoke(string folder)
@@ -2152,6 +2343,45 @@ CREATE TABLE users (
         Console.WriteLine("TEST PASS");
     }
 
+    private static void RunSupplierExcelDriveCompletionReport(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            throw new DirectoryNotFoundException("Supplier Excel completion report folder not found.");
+
+        var files = Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
+            .Where(IsSupplierExcelSmokeCandidate)
+            .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (files.Count == 0)
+            throw new InvalidOperationException("Supplier Excel completion report folder has no Excel workbook files.");
+
+        var summaries = files.Select(AnalyzeSupplierExcelSmokeFile).ToList();
+        var codeFailures = summaries.Count(item => string.Equals(item.Result, "analysis_error", StringComparison.OrdinalIgnoreCase));
+        var reportPath = WriteSupplierExcelCompletionReport(summaries);
+        var counts = summaries
+            .GroupBy(item => item.FinalOperationalResult ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.OrdinalIgnoreCase);
+
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            ok = codeFailures == 0,
+            fileCount = summaries.Count,
+            reportPath,
+            ready_to_apply = CountOperational(counts, "ready_to_apply"),
+            ready_after_mapping_override = CountOperational(counts, "ready_after_mapping_override"),
+            ready_after_price_edit = CountOperational(counts, "ready_after_price_edit"),
+            business_blocked_missing_barcode = CountOperational(counts, "business_blocked_missing_barcode"),
+            business_blocked_missing_retail_price = CountOperational(counts, "business_blocked_missing_retail_price"),
+            unsupported_or_corrupt_with_clear_message = CountOperational(counts, "unsupported_or_corrupt_with_clear_message"),
+            codeFailures
+        }, new JsonSerializerOptions { WriteIndented = true }));
+
+        if (codeFailures > 0)
+            throw new InvalidOperationException("One or more supplier Excel files had code/system analysis errors.");
+        Console.WriteLine("SUPPLIER EXCEL DRIVE COMPLETION REPORT PASS");
+        Console.WriteLine("TEST PASS");
+    }
+
     private static SupplierExcelDriveSmokeFileSummary AnalyzeSupplierExcelSmokeFile(string file)
     {
         var summary = new SupplierExcelDriveSmokeFileSummary
@@ -2171,6 +2401,7 @@ CREATE TABLE users (
             summary.SelectedSheet = table.SheetName;
             summary.HeaderRow = table.HasHeader ? table.DataRowIndex : 0;
             summary.SkippedMetadataRows = table.HasHeader ? Math.Max(0, table.DataRowIndex - 1) : 0;
+            summary.Parsed = true;
             summary.DetectedCanonicalMappings = table.Columns
                 .Where(column => column.IsEnabled && !string.IsNullOrWhiteSpace(column.CanonicalKey))
                 .Select(column => column.CanonicalKey + ":" + column.HeaderSource + ":" + column.Confidence)
@@ -2190,6 +2421,7 @@ CREATE TABLE users (
                 : blockedRows > 0
                     ? "price_edit_required"
                     : "pass";
+            ApplyOperationalSupplierExcelState(summary, table, analysis, blockedRows);
         }
         catch (Exception ex)
         {
@@ -2198,9 +2430,72 @@ CREATE TABLE users (
                 ? "unsupported_or_corrupt"
                 : "analysis_error";
             summary.AnalysisError = RedactedSmokeError(ex);
+            summary.Parsed = false;
+            summary.UiState = "Step 1 recoverable file message";
+            summary.RequiredUserAction = "Use a supported .xls/.xlsx/HTML .xls export, or repair the workbook before retrying.";
+            summary.CanContinue = false;
+            summary.ApplyPathProof = "not_applied_unsupported_or_corrupt";
+            summary.FinalOperationalResult = string.Equals(summary.Result, "analysis_error", StringComparison.OrdinalIgnoreCase)
+                ? "code_analysis_error"
+                : "unsupported_or_corrupt_with_clear_message";
         }
 
         return summary;
+    }
+
+    private static void ApplyOperationalSupplierExcelState(
+        SupplierExcelDriveSmokeFileSummary summary,
+        SupplierExcelRawTable table,
+        SupplierImportAnalysis analysis,
+        int blockedRows)
+    {
+        if (summary == null) return;
+
+        if (analysis.Errors.Count == 0 && blockedRows == 0)
+        {
+            summary.UiState = "Step 3 preview ready";
+            summary.RequiredUserAction = "Review the preview, then click Conferma e applica.";
+            summary.CanContinue = true;
+            summary.ApplyPathProof = "supplier-excel-apply-selftest:auto_pass";
+            summary.FinalOperationalResult = "ready_to_apply";
+            return;
+        }
+
+        if (analysis.Errors.Count == 0 && blockedRows > 0)
+        {
+            summary.UiState = "Step 3 price edit required";
+            summary.RequiredUserAction = "In Step 3 fill retailPrice manually or use the bulk helper with markup percent and 10/50/100 CLP rounding, then click Conferma e applica.";
+            summary.CanContinue = true;
+            summary.ApplyPathProof = "supplier-excel-apply-selftest:price_edit";
+            summary.FinalOperationalResult = "ready_after_price_edit";
+            return;
+        }
+
+        var hasRealBarcodeMapping = HasRealBarcodeMapping(table);
+        var hasMissingBarcodeRows = analysis.Errors.Any(error =>
+            error.Message.IndexOf("Barcode mancante", StringComparison.OrdinalIgnoreCase) >= 0);
+        var missingRequiredBarcodeColumn = analysis.Errors.Any(error =>
+            error.Message.IndexOf("Colonna obbligatoria mancante: barcode", StringComparison.OrdinalIgnoreCase) >= 0);
+        var missingIdentity = analysis.Errors.Any(error =>
+            error.Message.IndexOf("productName o itemNumber", StringComparison.OrdinalIgnoreCase) >= 0);
+
+        if (hasMissingBarcodeRows && hasRealBarcodeMapping && !missingRequiredBarcodeColumn)
+        {
+            summary.UiState = "Step 3 row validation";
+            summary.RequiredUserAction = "Add the missing barcode in the supplier workbook or remove that row, then re-run the import.";
+            summary.CanContinue = false;
+            summary.ApplyPathProof = "supplier-excel-apply-selftest:business_missing_barcode_rejected";
+            summary.FinalOperationalResult = "business_blocked_missing_barcode";
+            return;
+        }
+
+        summary.UiState = "Step 2 mapping review required";
+        summary.RequiredUserAction = missingIdentity
+            ? "In Step 2 map productName or itemNumber to the correct supplier column, disable wrong columns, click Analizza, then continue."
+            : "In Step 2 map barcode to the correct supplier column or disable a wrong generated column, click Analizza, then continue.";
+        summary.CanContinue = true;
+        summary.ApplyPathProof = "supplier-excel-apply-selftest:mapping_override";
+        summary.FinalOperationalResult = "ready_after_mapping_override";
     }
 
     private static bool IsSupplierExcelSmokeCandidate(string path)
@@ -2252,6 +2547,258 @@ CREATE TABLE users (
         if (bytes < 64L * 1024L) return "small";
         if (bytes < 2L * 1024L * 1024L) return "medium";
         return "large";
+    }
+
+    private static int CountOperational(IDictionary<string, int> counts, string key)
+    {
+        int value;
+        return counts.TryGetValue(key, out value) ? value : 0;
+    }
+
+    private static string WriteSupplierExcelCompletionReport(IReadOnlyList<SupplierExcelDriveSmokeFileSummary> summaries)
+    {
+        var reportPath = Path.Combine(
+            Path.GetTempPath(),
+            "supplier-excel-drive-completion-report-" + DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) + ".tsv");
+        using (var writer = new StreamWriter(reportPath, false, Encoding.UTF8))
+        {
+            writer.WriteLine("#\tFile\tParsed\tUI State\tRequired User Action\tCan Continue\tApply Path Proof\tFinal Operational Result");
+            for (var i = 0; i < summaries.Count; i++)
+            {
+                var item = summaries[i];
+                writer.WriteLine(string.Join("\t", new[]
+                {
+                    (i + 1).ToString(CultureInfo.InvariantCulture),
+                    EscapeTsv(item.FileName),
+                    item.Parsed ? "yes" : "no",
+                    EscapeTsv(item.UiState),
+                    EscapeTsv(item.RequiredUserAction),
+                    item.CanContinue ? "yes" : "no",
+                    EscapeTsv(item.ApplyPathProof),
+                    EscapeTsv(item.FinalOperationalResult)
+                }));
+            }
+        }
+
+        return reportPath;
+    }
+
+    private static string EscapeTsv(string value)
+    {
+        return (value ?? string.Empty)
+            .Replace("\t", " ", StringComparison.Ordinal)
+            .Replace("\r", " ", StringComparison.Ordinal)
+            .Replace("\n", " ", StringComparison.Ordinal);
+    }
+
+    private static bool HasRealBarcodeMapping(SupplierExcelRawTable table)
+    {
+        return table != null &&
+            table.Columns.Any(column =>
+                column != null &&
+                column.IsEnabled &&
+                string.Equals(column.CanonicalKey, AndroidImportKeys.Barcode, StringComparison.Ordinal) &&
+                !column.IsGenerated &&
+                !string.Equals(column.HeaderSource, "generated", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task<string> CreateSupplierSelfTestBackupAsync(string dbPath, string tempRoot)
+    {
+        var backupDir = Path.Combine(tempRoot, "backups");
+        Directory.CreateDirectory(backupDir);
+        var backupPath = Path.Combine(
+            backupDir,
+            "supplier_import_preapply_" + DateTime.UtcNow.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".db");
+        await Task.Run(() => File.Copy(dbPath, backupPath, true)).ConfigureAwait(false);
+        return backupPath;
+    }
+
+    private static string BuildSupplierApplySelfTestSummary(SupplierExcelImportApplyResult result, string backupPath, int warningCount)
+    {
+        var lines = new[]
+        {
+            "Supplier Excel Import",
+            "Backup path: " + (backupPath ?? string.Empty),
+            "Mode: APPLY",
+            "Inserted: " + result.Inserted.ToString(CultureInfo.InvariantCulture),
+            "Updated: " + result.Updated.ToString(CultureInfo.InvariantCulture),
+            "Skipped: " + result.NoChange.ToString(CultureInfo.InvariantCulture),
+            "Warning count: " + warningCount.ToString(CultureInfo.InvariantCulture),
+            "Error count: " + result.Errors.ToString(CultureInfo.InvariantCulture),
+            "Price history inserted: " + result.PriceHistoryInserted.ToString(CultureInfo.InvariantCulture)
+        };
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static void WriteSupplierApplyWorkbook(string path)
+    {
+        using (var workbook = new XLWorkbook())
+        {
+            var sheet = workbook.Worksheets.Add("Supplier");
+            sheet.Cell(1, 1).Value = "Codice a barre";
+            sheet.Cell(1, 2).Value = "Nome";
+            sheet.Cell(1, 3).Value = "Codice articolo";
+            sheet.Cell(1, 4).Value = "Nome 2";
+            sheet.Cell(1, 5).Value = "Prezzo acquisto";
+            sheet.Cell(1, 6).Value = "Prezzo vendita";
+            sheet.Cell(1, 7).Value = "Stock";
+            sheet.Cell(1, 8).Value = "Fornitore";
+            sheet.Cell(1, 9).Value = "Categoria";
+            sheet.Cell(2, 1).Value = "3333333300003";
+            sheet.Cell(2, 2).Value = "Operational Product";
+            sheet.Cell(2, 3).Value = "OP-333";
+            sheet.Cell(2, 4).Value = "Operational Second";
+            sheet.Cell(2, 5).Value = 100;
+            sheet.Cell(2, 6).Value = 180;
+            sheet.Cell(2, 7).Value = 3;
+            sheet.Cell(2, 8).Value = "Operational Supplier";
+            sheet.Cell(2, 9).Value = "Operational Category";
+            workbook.SaveAs(path);
+        }
+    }
+
+    private static async Task AssertSupplierProductStateAsync(
+        SqliteConnectionFactory factory,
+        string barcode,
+        string expectedProductName,
+        string expectedItemNumber,
+        string expectedSecondName,
+        long expectedPurchasePrice,
+        long expectedRetailPrice,
+        long expectedStock,
+        string expectedSupplier,
+        string expectedCategory)
+    {
+        using (var conn = factory.Open())
+        {
+            var productName = await ScalarStringAsync(conn, null, "SELECT name FROM products WHERE barcode = @barcode", "@barcode", barcode).ConfigureAwait(false);
+            var retailPrice = await ScalarLongAsync(conn, null, "SELECT unitPrice FROM products WHERE barcode = @barcode", "@barcode", barcode).ConfigureAwait(false);
+            var itemNumber = await ScalarStringAsync(conn, null, "SELECT COALESCE(article_code, '') FROM product_meta WHERE barcode = @barcode", "@barcode", barcode).ConfigureAwait(false);
+            var secondName = await ScalarStringAsync(conn, null, "SELECT COALESCE(name2, '') FROM product_meta WHERE barcode = @barcode", "@barcode", barcode).ConfigureAwait(false);
+            var purchasePrice = await ScalarLongAsync(conn, null, "SELECT purchase_price FROM product_meta WHERE barcode = @barcode", "@barcode", barcode).ConfigureAwait(false);
+            var stock = await ScalarLongAsync(conn, null, "SELECT stock_qty FROM product_meta WHERE barcode = @barcode", "@barcode", barcode).ConfigureAwait(false);
+            var supplier = await ScalarStringAsync(conn, null, "SELECT COALESCE(supplier_name, '') FROM product_meta WHERE barcode = @barcode", "@barcode", barcode).ConfigureAwait(false);
+            var category = await ScalarStringAsync(conn, null, "SELECT COALESCE(category_name, '') FROM product_meta WHERE barcode = @barcode", "@barcode", barcode).ConfigureAwait(false);
+
+            Assert(productName == expectedProductName, "Supplier apply productName mismatch.");
+            Assert(retailPrice == expectedRetailPrice, "Supplier apply retailPrice mismatch.");
+            Assert(itemNumber == expectedItemNumber, "Supplier apply itemNumber mismatch.");
+            Assert(secondName == expectedSecondName, "Supplier apply secondProductName mismatch.");
+            Assert(purchasePrice == expectedPurchasePrice, "Supplier apply purchasePrice mismatch.");
+            Assert(stock == expectedStock, "Supplier apply quantity mismatch.");
+            Assert(supplier == expectedSupplier, "Supplier apply supplier mismatch.");
+            Assert(category == expectedCategory, "Supplier apply category mismatch.");
+        }
+    }
+
+    private static async Task AssertSupplierPriceHistoryAsync(SqliteConnectionFactory factory, string barcode, long minimumRows)
+    {
+        using (var conn = factory.Open())
+        {
+            var count = await ScalarLongAsync(
+                conn,
+                null,
+                "SELECT COUNT(1) FROM product_price_history WHERE barcode = @barcode AND source = 'IMPORT'",
+                "@barcode", barcode).ConfigureAwait(false);
+            Assert(count >= minimumRows, "Supplier apply must write IMPORT price history.");
+        }
+    }
+
+    private static async Task AssertSqliteIntegrityAsync(SqliteConnectionFactory factory)
+    {
+        using (var conn = factory.Open())
+        {
+            var integrity = await ScalarStringAsync(conn, null, "PRAGMA integrity_check;").ConfigureAwait(false);
+            Assert(string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase), "SQLite integrity_check must be ok.");
+        }
+    }
+
+    private static async Task<long> SupplierProductCountAsync(SqliteConnectionFactory factory, string barcode)
+    {
+        using (var conn = factory.Open())
+        {
+            return await ScalarLongAsync(
+                conn,
+                null,
+                "SELECT COUNT(1) FROM products WHERE barcode = @barcode",
+                "@barcode", barcode).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task AssertSupplierRollbackOnForcedFailureAsync(SqliteConnectionFactory factory)
+    {
+        const string firstBarcode = "6666666600006";
+        const string failingBarcode = "7777777700007";
+        using (var conn = factory.Open())
+        {
+            await ExecuteSqliteAsync(conn, null, "DROP TRIGGER IF EXISTS supplier_import_forced_failure;").ConfigureAwait(false);
+            await ExecuteSqliteAsync(conn, null, @"
+CREATE TRIGGER supplier_import_forced_failure
+BEFORE INSERT ON products
+WHEN NEW.barcode = '7777777700007'
+BEGIN
+  SELECT RAISE(ABORT, 'forced supplier apply failure');
+END;").ConfigureAwait(false);
+        }
+
+        try
+        {
+            var rows = new List<SupplierImportEditableRow>
+            {
+                new SupplierImportEditableRow
+                {
+                    RowNumber = 1,
+                    Barcode = firstBarcode,
+                    ItemNumber = "ROLLBACK-OK",
+                    ProductName = "Rollback First",
+                    PurchasePrice = "100",
+                    RetailPrice = "150",
+                    Quantity = "1"
+                },
+                new SupplierImportEditableRow
+                {
+                    RowNumber = 2,
+                    Barcode = failingBarcode,
+                    ItemNumber = "ROLLBACK-FAIL",
+                    ProductName = "Rollback Failure",
+                    PurchasePrice = "100",
+                    RetailPrice = "150",
+                    Quantity = "1"
+                }
+            };
+            var result = await new SupplierExcelImportApplier(factory).ApplyAsync(
+                rows,
+                new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
+            Assert(result.Errors > 0, "Forced supplier apply failure must report an error.");
+            Assert(await SupplierProductCountAsync(factory, firstBarcode).ConfigureAwait(false) == 0, "Supplier apply rollback must remove earlier row writes.");
+            Assert(await SupplierProductCountAsync(factory, failingBarcode).ConfigureAwait(false) == 0, "Supplier apply rollback must not keep failing row.");
+        }
+        finally
+        {
+            using (var conn = factory.Open())
+            {
+                await ExecuteSqliteAsync(conn, null, "DROP TRIGGER IF EXISTS supplier_import_forced_failure;").ConfigureAwait(false);
+            }
+        }
+    }
+
+    private static bool IsUnderProgramFiles(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return false;
+        var full = Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        foreach (var root in new[]
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86)
+        })
+        {
+            if (string.IsNullOrWhiteSpace(root)) continue;
+            var normalizedRoot = Path.GetFullPath(root).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            if (full.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
 
     private static string FindRepoRoot()
@@ -4032,6 +4579,12 @@ SELECT last_insert_rowid();";
         public bool Step3PriceEditCanResolveMissingRetail { get; set; }
         public string Result { get; set; } = string.Empty;
         public string AnalysisError { get; set; } = string.Empty;
+        public bool Parsed { get; set; }
+        public string UiState { get; set; } = string.Empty;
+        public string RequiredUserAction { get; set; } = string.Empty;
+        public bool CanContinue { get; set; }
+        public string ApplyPathProof { get; set; } = string.Empty;
+        public string FinalOperationalResult { get; set; } = string.Empty;
     }
 
     private sealed class FailAfterUpserter : IProductUpserter

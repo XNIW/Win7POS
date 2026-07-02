@@ -648,6 +648,26 @@ namespace Win7POS.Core.Import
                 column.IsEnabled = !string.IsNullOrEmpty(column.CanonicalKey);
                 column.IsGenerated = false;
             }
+
+            var manualKeys = new HashSet<string>(
+                columns
+                    .Where(c => c.IsEnabled &&
+                        string.Equals(c.HeaderSource, "manual", StringComparison.OrdinalIgnoreCase) &&
+                        !string.IsNullOrWhiteSpace(c.CanonicalKey))
+                    .Select(c => c.CanonicalKey),
+                StringComparer.Ordinal);
+            foreach (var column in columns)
+            {
+                if (!column.IsGenerated || string.IsNullOrWhiteSpace(column.CanonicalKey))
+                    continue;
+                if (!manualKeys.Contains(column.CanonicalKey))
+                    continue;
+
+                column.CanonicalKey = string.Empty;
+                column.HeaderSource = "unknown";
+                column.Confidence = "low";
+                column.IsEnabled = false;
+            }
         }
 
         private static Dictionary<string, RowValue> BuildRowMap(List<SupplierExcelColumn> columns, IList<string> row)
