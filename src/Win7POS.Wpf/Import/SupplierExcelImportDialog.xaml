@@ -67,15 +67,23 @@
                                      Text="{Binding SelectedPath}"
                                      Style="{StaticResource ModernTextBoxStyle}"/>
                         </Grid>
-                        <TextBlock Grid.Row="2"
-                                   Margin="0,18,0,0"
-                                   Foreground="#6B5B73"
-                                   TextWrapping="Wrap"
-                                   Text="Il flusso ProductDb/CSV esistente resta separato. Questo wizard usa le chiavi Android: barcode, productName, itemNumber, purchasePrice, retailPrice, quantity, supplier, category, secondProductName."/>
-                        <TextBlock Grid.Row="2"
-                                   Margin="0,70,0,0"
-                                   Foreground="#5E3F86"
-                                   Text="{Binding SelectedSheetName, StringFormat=Foglio rilevato: {0}}"/>
+                        <StackPanel Grid.Row="2" Margin="0,18,0,0">
+                            <TextBlock Foreground="#6B5B73"
+                                       TextWrapping="Wrap"
+                                       Text="Il flusso ProductDb/CSV esistente resta separato. Questo wizard usa le chiavi Android: barcode, productName, itemNumber, purchasePrice, retailPrice, quantity, supplier, category, secondProductName."/>
+                            <TextBlock Margin="0,16,0,0"
+                                       Foreground="#5E3F86"
+                                       Text="{Binding SelectedSheetName, StringFormat=Foglio rilevato: {0}}"/>
+                            <TextBlock Margin="0,6,0,0"
+                                       Foreground="#5E3F86"
+                                       Text="{Binding HeaderSummary}"/>
+                            <TextBlock Margin="0,6,0,0"
+                                       Foreground="#5E3F86"
+                                       Text="{Binding RowSummary}"/>
+                            <TextBlock Margin="0,6,0,0"
+                                       Foreground="#5E3F86"
+                                       Text="{Binding IssueSummary}"/>
+                        </StackPanel>
                     </Grid>
                 </Border>
             </Grid>
@@ -93,12 +101,16 @@
                             <TextBlock Margin="0,0,16,0" Text="{Binding SelectedSheetName, StringFormat=Foglio: {0}}"/>
                             <TextBlock Margin="0,0,16,0" Text="{Binding NewProductsCount, StringFormat=Nuovi: {0}}"/>
                             <TextBlock Margin="0,0,16,0" Text="{Binding UpdatedProductsCount, StringFormat=Aggiornati: {0}}"/>
-                            <TextBlock Margin="0,0,16,0" Text="{Binding WarningsCount, StringFormat=Warning: {0}}"/>
-                            <TextBlock Text="{Binding ErrorsCount, StringFormat=Errori: {0}}"/>
-                        </WrapPanel>
-                        <TextBlock Margin="0,8,0,0"
-                                   Foreground="#6B5B73"
-                                   TextWrapping="Wrap"
+	                            <TextBlock Margin="0,0,16,0" Text="{Binding WarningsCount, StringFormat=Warning: {0}}"/>
+	                            <TextBlock Text="{Binding ErrorsCount, StringFormat=Errori: {0}}"/>
+	                        </WrapPanel>
+	                        <WrapPanel Margin="0,8,0,0">
+	                            <TextBlock Margin="0,0,16,0" Text="{Binding HeaderSummary}"/>
+	                            <TextBlock Text="{Binding RowSummary}"/>
+	                        </WrapPanel>
+	                        <TextBlock Margin="0,8,0,0"
+	                                   Foreground="#6B5B73"
+	                                   TextWrapping="Wrap"
                                    Text="Richiesti: barcode, productName o itemNumber, purchasePrice. Disabilita colonne errate o correggi la chiave Android, poi premi Analizza per ricalcolare."/>
                     </StackPanel>
                 </Border>
@@ -154,18 +166,51 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <Border Grid.Row="0"
-                        Margin="0,0,0,10"
-                        Padding="10"
-                        Background="#FFF8E1"
-                        BorderBrush="#F0C36D"
-                        BorderThickness="1"
-                        CornerRadius="8"
-                        Visibility="{Binding HasRetailPriceWarning, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="Attenzione: righe con purchasePrice ma retailPrice vuoto non sovrascrivono il prezzo vendita. Compila retailPrice per confermare il cambio."
-                               TextWrapping="Wrap"
-                               Foreground="#7A4A00"/>
-                </Border>
+                <StackPanel Grid.Row="0" Margin="0,0,0,10">
+                    <Border Padding="10"
+                            Background="#FFF8E1"
+                            BorderBrush="#F0C36D"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Visibility="{Binding HasRetailPriceWarning, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Attenzione: righe con purchasePrice ma retailPrice vuoto non sovrascrivono il prezzo vendita. Compila retailPrice per confermare il cambio."
+                                   TextWrapping="Wrap"
+                                   Foreground="#7A4A00"/>
+                    </Border>
+                    <Border Margin="0,6,0,0"
+                            Padding="10"
+                            Background="#FFF8E1"
+                            BorderBrush="#F0C36D"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Visibility="{Binding HasBarcodeWarning, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Righe senza barcode: digita il barcode nella colonna barcode oppure seleziona Skip per ignorare la riga."
+                                   TextWrapping="Wrap"
+                                   Foreground="#7A4A00"/>
+                    </Border>
+                    <Border Margin="0,6,0,0"
+                            Padding="10"
+                            Background="#FFF8E1"
+                            BorderBrush="#F0C36D"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Visibility="{Binding HasIdentityWarning, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Nuovi prodotti senza productName o itemNumber: compila una delle due colonne oppure seleziona Skip."
+                                   TextWrapping="Wrap"
+                                   Foreground="#7A4A00"/>
+                    </Border>
+                    <Border Margin="0,6,0,0"
+                            Padding="10"
+                            Background="#FFF8E1"
+                            BorderBrush="#F0C36D"
+                            BorderThickness="1"
+                            CornerRadius="8"
+                            Visibility="{Binding HasInvalidNumberWarning, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Prezzi o quantita non validi: correggi purchasePrice, retailPrice o quantity prima di applicare."
+                                   TextWrapping="Wrap"
+                                   Foreground="#7A4A00"/>
+                    </Border>
+                </StackPanel>
 
                 <Border Grid.Row="1" Margin="0,0,0,10" Padding="10" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8">
                     <WrapPanel VerticalAlignment="Center">
@@ -184,9 +229,10 @@
                           AutoGenerateColumns="False"
                           CanUserAddRows="False"
                           CanUserDeleteRows="False"
-                          GridLinesVisibility="All">
+	                          GridLinesVisibility="All">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" IsReadOnly="True" Width="130"/>
+                        <DataGridCheckBoxColumn Header="Skip" Binding="{Binding IsSkipped, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="58"/>
+                        <DataGridTextColumn Header="barcode" Binding="{Binding Barcode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="130"/>
                         <DataGridTextColumn Header="itemNumber" Binding="{Binding ItemNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="120"/>
                         <DataGridTextColumn Header="productName" Binding="{Binding ProductName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="220"/>
                         <DataGridTextColumn Header="secondProductName" Binding="{Binding SecondProductName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="180"/>

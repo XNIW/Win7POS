@@ -55,6 +55,16 @@ namespace Win7POS.Data.Import
 
                     foreach (var row in rows)
                     {
+                        if (row == null)
+                        {
+                            result.NoChange += 1;
+                            continue;
+                        }
+                        if (row.IsSkipped)
+                        {
+                            result.NoChange += 1;
+                            continue;
+                        }
                         var barcode = Normalize(row?.Barcode);
                         if (barcode.Length == 0)
                         {

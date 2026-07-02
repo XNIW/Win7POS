@@ -59,6 +59,7 @@ namespace Win7POS.Core.Import
         public string SheetName { get; set; } = string.Empty;
         public bool HasHeader { get; set; }
         public int DataRowIndex { get; set; }
+        public int DroppedSummaryRows { get; set; }
         public List<SupplierExcelColumn> Columns { get; } = new List<SupplierExcelColumn>();
         public List<SupplierExcelRow> Rows { get; } = new List<SupplierExcelRow>();
     }
@@ -122,6 +123,10 @@ namespace Win7POS.Core.Import
         public List<SupplierImportError> Errors { get; } = new List<SupplierImportError>();
         public int SourceRowCount { get; set; }
         public int DroppedSummaryRows { get; set; }
+        public bool HasHeader { get; set; }
+        public int DataRowIndex { get; set; }
+        public int HeaderRowNumber { get; set; }
+        public int SkippedMetadataRows { get; set; }
         public bool CanApply { get { return Errors.Count == 0; } }
     }
 
@@ -181,31 +186,76 @@ namespace Win7POS.Core.Import
 
     public sealed class SupplierImportEditableRow : INotifyPropertyChanged
     {
+        private bool _isSkipped;
+        private string _barcode = string.Empty;
+        private string _itemNumber = string.Empty;
+        private string _productName = string.Empty;
+        private string _secondProductName = string.Empty;
+        private string _purchasePrice = string.Empty;
         private string _retailPrice = string.Empty;
+        private string _quantity = string.Empty;
+        private string _supplier = string.Empty;
+        private string _category = string.Empty;
 
         public event PropertyChangedEventHandler PropertyChanged;
 
         public int RowNumber { get; set; }
         public bool Exists { get; set; }
-        public string Barcode { get; set; } = string.Empty;
-        public string ItemNumber { get; set; } = string.Empty;
-        public string ProductName { get; set; } = string.Empty;
-        public string SecondProductName { get; set; } = string.Empty;
-        public string PurchasePrice { get; set; } = string.Empty;
-        public string RetailPrice
+        public bool IsSkipped
         {
-            get { return _retailPrice; }
+            get { return _isSkipped; }
             set
             {
-                var next = value ?? string.Empty;
-                if (_retailPrice == next) return;
-                _retailPrice = next;
+                if (_isSkipped == value) return;
+                _isSkipped = value;
                 OnPropertyChanged();
             }
         }
-        public string Quantity { get; set; } = string.Empty;
-        public string Supplier { get; set; } = string.Empty;
-        public string Category { get; set; } = string.Empty;
+        public string Barcode
+        {
+            get { return _barcode; }
+            set { SetString(ref _barcode, value); }
+        }
+        public string ItemNumber
+        {
+            get { return _itemNumber; }
+            set { SetString(ref _itemNumber, value); }
+        }
+        public string ProductName
+        {
+            get { return _productName; }
+            set { SetString(ref _productName, value); }
+        }
+        public string SecondProductName
+        {
+            get { return _secondProductName; }
+            set { SetString(ref _secondProductName, value); }
+        }
+        public string PurchasePrice
+        {
+            get { return _purchasePrice; }
+            set { SetString(ref _purchasePrice, value); }
+        }
+        public string RetailPrice
+        {
+            get { return _retailPrice; }
+            set { SetString(ref _retailPrice, value); }
+        }
+        public string Quantity
+        {
+            get { return _quantity; }
+            set { SetString(ref _quantity, value); }
+        }
+        public string Supplier
+        {
+            get { return _supplier; }
+            set { SetString(ref _supplier, value); }
+        }
+        public string Category
+        {
+            get { return _category; }
+            set { SetString(ref _category, value); }
+        }
         public bool HasItemNumberSource { get; set; }
         public bool HasProductNameSource { get; set; }
         public bool HasSecondProductNameSource { get; set; }
@@ -215,6 +265,14 @@ namespace Win7POS.Core.Import
         public bool HasSupplierSource { get; set; }
         public bool HasCategorySource { get; set; }
         public bool RetailPriceMissingButPurchasePresent { get; set; }
+
+        private void SetString(ref string field, string value, [CallerMemberName] string name = null)
+        {
+            var next = value ?? string.Empty;
+            if (field == next) return;
+            field = next;
+            OnPropertyChanged(name);
+        }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
         {

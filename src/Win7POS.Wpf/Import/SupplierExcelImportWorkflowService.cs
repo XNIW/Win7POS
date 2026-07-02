@@ -38,9 +38,15 @@ namespace Win7POS.Wpf.Import
         public async Task<SupplierExcelApplyUiResult> ApplyAsync(
             IReadOnlyList<SupplierImportEditableRow> rows,
             bool dryRun,
-            int warningCount = 0)
+            int warningCount = 0,
+            int skippedByOperator = 0)
         {
             DbInitializer.EnsureCreated(_options);
+            var activeRows = (rows ?? Array.Empty<SupplierImportEditableRow>())
+                .Where(row => row != null && !row.IsSkipped)
+                .ToList();
+            skippedByOperator += (rows ?? Array.Empty<SupplierImportEditableRow>())
+                .Count(row => row != null && row.IsSkipped);
             var backupPath = string.Empty;
             if (!dryRun)
             {
@@ -49,10 +55,10 @@ namespace Win7POS.Wpf.Import
 
             var applier = new SupplierExcelImportApplier(new SqliteConnectionFactory(_options));
             var result = await applier.ApplyAsync(
-                rows,
+                activeRows,
                 new SupplierExcelImportApplyOptions { DryRun = dryRun, InsertNew = true }).ConfigureAwait(false);
 
-            var summary = BuildApplySummary(result, backupPath, dryRun, warningCount);
+            var summary = BuildApplySummary(result, backupPath, dryRun, warningCount, skippedByOperator);
             if (result.Errors > 0)
                 throw new InvalidOperationException(summary);
 
@@ -61,7 +67,7 @@ namespace Win7POS.Wpf.Import
                 BackupPath = backupPath,
                 Inserted = result.Inserted,
                 Updated = result.Updated,
-                Skipped = result.NoChange,
+                Skipped = result.NoChange + skippedByOperator,
                 WarningCount = warningCount,
                 ErrorCount = result.Errors,
                 Summary = summary,
@@ -86,15 +92,17 @@ namespace Win7POS.Wpf.Import
             return backupPath;
         }
 
-        private static string BuildApplySummary(SupplierExcelImportApplyResult result, string backupPath, bool dryRun, int warningCount)
+        private static string BuildApplySummary(SupplierExcelImportApplyResult result, string backupPath, bool dryRun, int warningCount, int skippedByOperator)
         {
+            var skipped = result.NoChange + skippedByOperator;
             var lines = new List<string>
             {
                 "Supplier Excel Import",
                 "Mode: " + (dryRun ? "DRY-RUN" : "APPLY"),
                 "Inserted: " + result.Inserted,
                 "Updated: " + result.Updated,
-                "Skipped: " + result.NoChange,
+                "Skipped: " + skipped,
+                "Skipped by operator: " + skippedByOperator,
                 "Warning count: " + warningCount,
                 "Error count: " + result.Errors,
                 "Products(inserted/updated/noChange/errors): " +

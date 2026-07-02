@@ -1977,7 +1977,9 @@ CREATE TABLE users (
                 new[] { "barcode", "productName", "purchasePrice", "retailPrice", "quantity" },
                 new[] { "", "No Barcode", "100", "1000", "1" }),
             Array.Empty<ProductDetailsRow>());
-        Assert(blankBarcode.Errors.Any(e => e.Message.Contains("Barcode mancante", StringComparison.OrdinalIgnoreCase)), "Expected blank barcode error.");
+        Assert(blankBarcode.Errors.Count == 0, "Missing row barcode must be a Step 3 correction state, not an analyzer error.");
+        Assert(blankBarcode.Warnings.Any(w => w.Message.Contains("Barcode mancante", StringComparison.OrdinalIgnoreCase)), "Expected blank barcode warning.");
+        Assert(blankBarcode.EditableRows.Count == 1 && string.IsNullOrWhiteSpace(blankBarcode.EditableRows[0].Barcode), "Expected missing barcode row to remain editable.");
 
         var summaryTable = SupplierTable(
             new[] { "barcode", "productName", "purchasePrice", "retailPrice", "quantity" },
@@ -2027,7 +2029,9 @@ CREATE TABLE users (
                 new[] { "barcode", "purchasePrice", "quantity", "supplier" },
                 new[] { "9876543210987", "100", "1", "Fornitore" }),
             Array.Empty<ProductDetailsRow>());
-        Assert(newMissingIdentity.Errors.Any(e => e.Message.Contains("productName o itemNumber", StringComparison.OrdinalIgnoreCase)), "Expected new product identity error.");
+        Assert(newMissingIdentity.Errors.Count == 0, "Missing new product identity must be a Step 3 correction state, not an analyzer error.");
+        Assert(newMissingIdentity.Warnings.Any(e => e.Message.Contains("productName o itemNumber", StringComparison.OrdinalIgnoreCase)), "Expected new product identity warning.");
+        Assert(newMissingIdentity.EditableRows.Count == 1, "Expected missing identity row to remain editable.");
 
         var itemNumberOnly = SupplierImportAnalyzer.Analyze(
             SupplierTable(
@@ -2117,6 +2121,7 @@ CREATE TABLE users (
 
         foreach (var required in new[]
         {
+            "barcode",
             "itemNumber",
             "productName",
             "secondProductName",
@@ -2129,7 +2134,9 @@ CREATE TABLE users (
         {
             AssertText(dialogXaml, "Header=\"" + required + "\"", "Step 3 editable grid missing " + required + ".");
         }
-        AssertText(dialogXaml, "IsReadOnly=\"True\"", "Step 3 barcode column should remain read-only.");
+        AssertText(dialogXaml, "Header=\"Skip\"", "Step 3 skip checkbox missing.");
+        AssertText(dialogXaml, "Binding=\"{Binding IsSkipped", "Step 3 skip binding missing.");
+        AssertText(dialogXaml, "Binding=\"{Binding Barcode, Mode=TwoWay", "Step 3 barcode must be editable.");
 
         AssertText(viewModel, "MarkupPercent", "Bulk markup input missing.");
         AssertText(viewModel, "new[] { 10, 50, 100 }", "Bulk rounding options must be 10/50/100 CLP.");
@@ -2137,12 +2144,20 @@ CREATE TABLE users (
         AssertText(helper, "ApplyMarkupToRetailPriceRows", "Bulk retail helper must be in core import code.");
 
         AssertText(viewModel, "MissingNewRetailPriceCount == 0", "New product missing retailPrice must block apply.");
+        AssertText(viewModel, "MissingBarcodeCount == 0", "New product missing barcode must block non-skipped apply.");
+        AssertText(viewModel, "MissingNewIdentityCount == 0", "New product missing productName/itemNumber must block non-skipped apply.");
+        AssertText(viewModel, "row.IsSkipped", "Apply must exclude operator-skipped rows.");
+        AssertText(viewModel, "HeaderSummary", "Step 1/2 header summary missing.");
+        AssertText(viewModel, "RowSummary", "Step 1/2 row summary missing.");
         AssertText(viewModel, "Nuovi prodotti senza retailPrice", "Apply blocker message must name missing retailPrice.");
+        AssertText(viewModel, "Righe senza barcode", "Apply blocker message must name missing barcode.");
         AssertText(workflow, "CreateBackupBeforeApplyAsync", "Apply must create a pre-apply backup.");
         AssertText(workflow, "Warning count", "Apply summary must report warning count.");
         AssertText(workflow, "Skipped", "Apply summary must report skipped count.");
+        AssertText(workflow, "Skipped by operator", "Apply summary must report operator-skipped count.");
         AssertText(applier, "BeginTransaction", "Apply must use an explicit transaction.");
         AssertText(applier, "tx.Rollback", "Apply must rollback on row/apply error.");
+        AssertText(applier, "row.IsSkipped", "Apply must ignore skipped rows defensively.");
         AssertText(applier, "'IMPORT'", "Apply must write IMPORT price history source.");
         AssertText(applier, "Nuovo prodotto senza retailPrice", "Apply must reject new products without retailPrice.");
         AssertText(cli, "--supplier-excel-apply-selftest", "CLI supplier apply selftest mode missing.");
@@ -2155,7 +2170,7 @@ CREATE TABLE users (
         AssertText(cli, "RunSupplierExcelDriveCompletionReport", "CLI Drive completion report runner missing.");
         AssertText(cli, "ready_after_mapping_override", "Completion report must expose mapping override result.");
         AssertText(cli, "ready_after_price_edit", "Completion report must expose price edit result.");
-        AssertText(cli, "business_blocked_missing_barcode", "Completion report must expose missing barcode business result.");
+        AssertText(cli, "ready_after_barcode_edit_or_skip", "Completion report must expose barcode edit-or-skip result.");
         AssertText(cli, "unsupported_or_corrupt_with_clear_message", "Completion report must expose unsupported/corrupt result.");
         AssertText(productsViewModel, "CatalogEvents.RaiseCatalogChanged(null)", "Products import must refresh catalog after successful apply.");
         AssertText(dbMaintenanceViewModel, "CatalogEvents.RaiseCatalogChanged(null)", "DB maintenance import must refresh catalog after successful apply.");
@@ -2276,6 +2291,60 @@ CREATE TABLE users (
                 expectedSupplier: string.Empty,
                 expectedCategory: string.Empty).ConfigureAwait(false);
 
+            var manualRetailTable = SupplierTable(
+                new[] { "barcode", "itemNumber", "purchasePrice", "quantity" },
+                new[] { "4444444400004", "MANUAL-RETAIL", "100", "1" });
+            var manualRetailAnalysis = SupplierImportAnalyzer.Analyze(manualRetailTable, Array.Empty<ProductDetailsRow>());
+            Assert(manualRetailAnalysis.Errors.Count == 0, "Manual retail edit fixture must not have analyzer errors.");
+            var manualRetailRow = manualRetailAnalysis.EditableRows.Single();
+            Assert(string.IsNullOrWhiteSpace(manualRetailRow.RetailPrice), "Manual retail edit fixture must start with empty retailPrice.");
+            manualRetailRow.RetailPrice = "175";
+            var manualRetailApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
+                manualRetailAnalysis.EditableRows,
+                new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
+            Assert(manualRetailApply.Errors == 0 && manualRetailApply.Inserted == 1, "Manual Step 3 retail edit apply must insert one product.");
+            await AssertSupplierProductStateAsync(
+                factory,
+                "4444444400004",
+                expectedProductName: "MANUAL-RETAIL",
+                expectedItemNumber: "MANUAL-RETAIL",
+                expectedSecondName: string.Empty,
+                expectedPurchasePrice: 100,
+                expectedRetailPrice: 175,
+                expectedStock: 1,
+                expectedSupplier: string.Empty,
+                expectedCategory: string.Empty).ConfigureAwait(false);
+
+            var barcodeCorrectionTable = SupplierTable(
+                new[] { "barcode", "productName", "itemNumber", "purchasePrice", "retailPrice", "quantity" },
+                new[] { "", "Barcode Corrected", "BAR-CORRECT", "90", "140", "1" },
+                new[] { "", "Barcode Skipped", "BAR-SKIP", "90", "140", "1" });
+            var barcodeCorrectionAnalysis = SupplierImportAnalyzer.Analyze(barcodeCorrectionTable, Array.Empty<ProductDetailsRow>());
+            Assert(barcodeCorrectionAnalysis.Errors.Count == 0, "Missing barcode rows must reach Step 3 as warnings.");
+            Assert(barcodeCorrectionAnalysis.Warnings.Any(w => w.Message.Contains("Barcode mancante", StringComparison.OrdinalIgnoreCase)), "Missing barcode rows must warn.");
+            Assert(barcodeCorrectionAnalysis.EditableRows.Count == 2, "Missing barcode fixture must expose two editable rows.");
+            barcodeCorrectionAnalysis.EditableRows[0].Barcode = "6666666600006";
+            barcodeCorrectionAnalysis.EditableRows[1].Barcode = "6666666600999";
+            barcodeCorrectionAnalysis.EditableRows[1].IsSkipped = true;
+            var barcodeCorrectionApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
+                barcodeCorrectionAnalysis.EditableRows,
+                new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
+            Assert(barcodeCorrectionApply.Errors == 0, "Corrected/skipped barcode apply must not error.");
+            Assert(barcodeCorrectionApply.Inserted == 1, "Corrected barcode row must be inserted.");
+            Assert(barcodeCorrectionApply.NoChange == 1, "Skipped barcode row must be counted as skipped/noChange.");
+            await AssertSupplierProductStateAsync(
+                factory,
+                "6666666600006",
+                expectedProductName: "Barcode Corrected",
+                expectedItemNumber: "BAR-CORRECT",
+                expectedSecondName: string.Empty,
+                expectedPurchasePrice: 90,
+                expectedRetailPrice: 140,
+                expectedStock: 1,
+                expectedSupplier: string.Empty,
+                expectedCategory: string.Empty).ConfigureAwait(false);
+            Assert(await SupplierProductCountAsync(factory, "6666666600999").ConfigureAwait(false) == 0, "Skipped barcode row must not be written.");
+
             await AssertSupplierRollbackOnForcedFailureAsync(factory).ConfigureAwait(false);
             await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
 
@@ -2288,6 +2357,9 @@ CREATE TABLE users (
                     workflowInserted = workflowApply.Inserted,
                     mappingOverrideInserted = mappingApply.Inserted,
                     priceEditInserted = priceEditApply.Inserted,
+                    manualRetailInserted = manualRetailApply.Inserted,
+                    correctedBarcodeInserted = barcodeCorrectionApply.Inserted,
+                    skippedRows = barcodeCorrectionApply.NoChange,
                     rollbackVerified = true,
                     importHistorySource = "IMPORT",
                     dbPathUnderTemp = options.DbPath.StartsWith(tempRoot, StringComparison.OrdinalIgnoreCase)
@@ -2328,6 +2400,7 @@ CREATE TABLE users (
         var ok = summaries.All(item =>
             string.Equals(item.Result, "pass", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(item.Result, "price_edit_required", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(item.Result, "row_correction_required", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(item.Result, "manual_mapping_review", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(item.Result, "unsupported_or_corrupt", StringComparison.OrdinalIgnoreCase));
         Console.WriteLine(JsonSerializer.Serialize(new
@@ -2369,6 +2442,7 @@ CREATE TABLE users (
             reportPath,
             ready_to_apply = CountOperational(counts, "ready_to_apply"),
             ready_after_mapping_override = CountOperational(counts, "ready_after_mapping_override"),
+            ready_after_barcode_edit_or_skip = CountOperational(counts, "ready_after_barcode_edit_or_skip"),
             ready_after_price_edit = CountOperational(counts, "ready_after_price_edit"),
             business_blocked_missing_barcode = CountOperational(counts, "business_blocked_missing_barcode"),
             business_blocked_missing_retail_price = CountOperational(counts, "business_blocked_missing_retail_price"),
@@ -2395,8 +2469,17 @@ CREATE TABLE users (
         {
             var table = SupplierExcelImportReader.ReadFirstWorksheet(file);
             var analysis = SupplierImportAnalyzer.Analyze(table, Array.Empty<ProductDetailsRow>());
-            var blockedRows = analysis.EditableRows
+            var missingRetailRows = analysis.EditableRows
                 .Count(row => row != null && !row.Exists && string.IsNullOrWhiteSpace(row.RetailPrice));
+            var missingBarcodeRows = analysis.EditableRows
+                .Count(row => row != null && string.IsNullOrWhiteSpace(row.Barcode));
+            var missingIdentityRows = analysis.EditableRows
+                .Count(row =>
+                    row != null &&
+                    !row.Exists &&
+                    string.IsNullOrWhiteSpace(row.ProductName) &&
+                    string.IsNullOrWhiteSpace(row.ItemNumber));
+            var blockedRows = missingRetailRows + missingBarcodeRows + missingIdentityRows;
             summary.SheetsDetected = SupplierExcelImportReader.CountWorksheets(file);
             summary.SelectedSheet = table.SheetName;
             summary.HeaderRow = table.HasHeader ? table.DataRowIndex : 0;
@@ -2415,13 +2498,16 @@ CREATE TABLE users (
             summary.WarningCount = analysis.Warnings.Count;
             summary.ErrorCount = analysis.Errors.Count;
             summary.Step2OverrideDisableCanCorrectMappingIssues = table.Columns.Count > 0;
-            summary.Step3PriceEditCanResolveMissingRetail = blockedRows > 0;
+            summary.Step3PriceEditCanResolveMissingRetail = missingRetailRows > 0;
+            summary.Step3BarcodeEditOrSkipCanResolveMissingBarcode = missingBarcodeRows > 0 || missingIdentityRows > 0;
             summary.Result = analysis.Errors.Count > 0
                 ? "manual_mapping_review"
-                : blockedRows > 0
+                : missingBarcodeRows > 0 || missingIdentityRows > 0
+                    ? "row_correction_required"
+                    : missingRetailRows > 0
                     ? "price_edit_required"
                     : "pass";
-            ApplyOperationalSupplierExcelState(summary, table, analysis, blockedRows);
+            ApplyOperationalSupplierExcelState(summary, table, analysis, missingRetailRows, missingBarcodeRows, missingIdentityRows);
         }
         catch (Exception ex)
         {
@@ -2447,11 +2533,13 @@ CREATE TABLE users (
         SupplierExcelDriveSmokeFileSummary summary,
         SupplierExcelRawTable table,
         SupplierImportAnalysis analysis,
-        int blockedRows)
+        int missingRetailRows,
+        int missingBarcodeRows,
+        int missingIdentityRows)
     {
         if (summary == null) return;
 
-        if (analysis.Errors.Count == 0 && blockedRows == 0)
+        if (analysis.Errors.Count == 0 && missingRetailRows == 0 && missingBarcodeRows == 0 && missingIdentityRows == 0)
         {
             summary.UiState = "Step 3 preview ready";
             summary.RequiredUserAction = "Review the preview, then click Conferma e applica.";
@@ -2461,7 +2549,17 @@ CREATE TABLE users (
             return;
         }
 
-        if (analysis.Errors.Count == 0 && blockedRows > 0)
+        if (analysis.Errors.Count == 0 && (missingBarcodeRows > 0 || missingIdentityRows > 0))
+        {
+            summary.UiState = "Step 3 row correction or skip required";
+            summary.RequiredUserAction = "In Step 3 type the missing barcode/productName/itemNumber directly in the preview, or select Skip on invalid rows, then click Conferma e applica.";
+            summary.CanContinue = true;
+            summary.ApplyPathProof = "supplier-excel-apply-selftest:barcode_edit_or_skip";
+            summary.FinalOperationalResult = "ready_after_barcode_edit_or_skip";
+            return;
+        }
+
+        if (analysis.Errors.Count == 0 && missingRetailRows > 0)
         {
             summary.UiState = "Step 3 price edit required";
             summary.RequiredUserAction = "In Step 3 fill retailPrice manually or use the bulk helper with markup percent and 10/50/100 CLP rounding, then click Conferma e applica.";
@@ -2471,23 +2569,10 @@ CREATE TABLE users (
             return;
         }
 
-        var hasRealBarcodeMapping = HasRealBarcodeMapping(table);
-        var hasMissingBarcodeRows = analysis.Errors.Any(error =>
-            error.Message.IndexOf("Barcode mancante", StringComparison.OrdinalIgnoreCase) >= 0);
         var missingRequiredBarcodeColumn = analysis.Errors.Any(error =>
             error.Message.IndexOf("Colonna obbligatoria mancante: barcode", StringComparison.OrdinalIgnoreCase) >= 0);
         var missingIdentity = analysis.Errors.Any(error =>
             error.Message.IndexOf("productName o itemNumber", StringComparison.OrdinalIgnoreCase) >= 0);
-
-        if (hasMissingBarcodeRows && hasRealBarcodeMapping && !missingRequiredBarcodeColumn)
-        {
-            summary.UiState = "Step 3 row validation";
-            summary.RequiredUserAction = "Add the missing barcode in the supplier workbook or remove that row, then re-run the import.";
-            summary.CanContinue = false;
-            summary.ApplyPathProof = "supplier-excel-apply-selftest:business_missing_barcode_rejected";
-            summary.FinalOperationalResult = "business_blocked_missing_barcode";
-            return;
-        }
 
         summary.UiState = "Step 2 mapping review required";
         summary.RequiredUserAction = missingIdentity
@@ -2727,7 +2812,7 @@ CREATE TABLE users (
 
     private static async Task AssertSupplierRollbackOnForcedFailureAsync(SqliteConnectionFactory factory)
     {
-        const string firstBarcode = "6666666600006";
+        const string firstBarcode = "6666666600105";
         const string failingBarcode = "7777777700007";
         using (var conn = factory.Open())
         {
@@ -4577,6 +4662,7 @@ SELECT last_insert_rowid();";
         public int ErrorCount { get; set; }
         public bool Step2OverrideDisableCanCorrectMappingIssues { get; set; }
         public bool Step3PriceEditCanResolveMissingRetail { get; set; }
+        public bool Step3BarcodeEditOrSkipCanResolveMissingBarcode { get; set; }
         public string Result { get; set; } = string.Empty;
         public string AnalysisError { get; set; } = string.Empty;
         public bool Parsed { get; set; }

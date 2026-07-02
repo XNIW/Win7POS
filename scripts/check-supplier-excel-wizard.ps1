@@ -59,10 +59,12 @@ Assert-Contains $viewModel "Columns.ToDictionary(c => c.ColumnIndex" "Override s
 Assert-Contains $viewModel "c.IsEnabled ? (c.CanonicalKey ?? string.Empty) : string.Empty" "Disable state is not passed to analyzer."
 Assert-Contains $viewModel "await AnalyzeAsync().ConfigureAwait(true)" "Mapping changes must rebuild Step 3 preview."
 
-foreach ($required in @("itemNumber", "productName", "secondProductName", "purchasePrice", "retailPrice", "quantity", "supplier", "category")) {
+foreach ($required in @("barcode", "itemNumber", "productName", "secondProductName", "purchasePrice", "retailPrice", "quantity", "supplier", "category")) {
     Assert-Contains $dialogXaml "Header=`"$required`"" "Step 3 editable grid missing $required."
 }
-Assert-Contains $dialogXaml "IsReadOnly=`"True`"" "Step 3 barcode should be read-only."
+Assert-Contains $dialogXaml "Header=`"Skip`"" "Step 3 skip checkbox missing."
+Assert-Contains $dialogXaml "Binding=`"{Binding IsSkipped" "Step 3 skip binding missing."
+Assert-Contains $dialogXaml "Binding=`"{Binding Barcode, Mode=TwoWay" "Step 3 barcode must be editable."
 Assert-Contains $viewModel "new[] { 10, 50, 100 }" "Bulk rounding options must be 10/50/100 CLP."
 Assert-Contains $viewModel "_applyOnlyEmptyRetailPrice = true" "Bulk helper default must fill empty retailPrice only."
 Assert-Contains $helper "ApplyMarkupToRetailPriceRows" "Bulk helper missing from core import code."
@@ -84,15 +86,20 @@ Assert-Contains $cli "RunSupplierExcelDriveCompletionReport" "CLI Drive completi
 Assert-Contains $cli "ready_to_apply" "Completion report missing ready_to_apply state."
 Assert-Contains $cli "ready_after_mapping_override" "Completion report missing mapping override state."
 Assert-Contains $cli "ready_after_price_edit" "Completion report missing price edit state."
-Assert-Contains $cli "business_blocked_missing_barcode" "Completion report missing missing-barcode business state."
+Assert-Contains $cli "ready_after_barcode_edit_or_skip" "Completion report missing barcode edit-or-skip state."
 Assert-Contains $cli "unsupported_or_corrupt_with_clear_message" "Completion report missing unsupported/corrupt state."
 
 Assert-Contains $viewModel "MissingNewRetailPriceCount == 0" "Missing retailPrice blocker is not in CanApply."
+Assert-Contains $viewModel "MissingBarcodeCount == 0" "Missing barcode blocker is not in CanApply."
+Assert-Contains $viewModel "MissingNewIdentityCount == 0" "Missing product identity blocker is not in CanApply."
+Assert-Contains $viewModel "row.IsSkipped" "Apply must exclude operator-skipped rows."
 Assert-Contains $workflow "CreateBackupBeforeApplyAsync" "Apply backup missing."
 Assert-Contains $workflow "Warning count" "Apply warning count missing."
 Assert-Contains $workflow "Skipped" "Apply skipped count missing."
+Assert-Contains $workflow "Skipped by operator" "Apply summary must count operator-skipped rows."
 Assert-Contains $applier "BeginTransaction" "Apply transaction missing."
 Assert-Contains $applier "tx.Rollback" "Apply rollback missing."
+Assert-Contains $applier "row.IsSkipped" "Data applier must ignore skipped rows defensively."
 Assert-Contains $applier "'IMPORT'" "Price history IMPORT source missing."
 Assert-Contains $applier "Nuovo prodotto senza retailPrice" "New product retailPrice blocker missing."
 Assert-Contains $productsViewModel "CatalogEvents.RaiseCatalogChanged(null)" "Products catalog refresh missing."

@@ -75,7 +75,9 @@ namespace Win7POS.Core.Import
             DropEmptyColumns(columns, dataRows);
             InferPatternColumns(columns, dataRows, table.HasHeader);
             EnsureRequiredColumns(columns, dataRows);
+            var beforeSummaryFilter = dataRows.Count;
             FilterSummaryRows(columns, dataRows);
+            table.DroppedSummaryRows = Math.Max(0, beforeSummaryFilter - dataRows.Count);
             ApplyColumnSamples(columns, dataRows);
 
             for (var i = 0; i < columns.Count; i++)
@@ -102,6 +104,11 @@ namespace Win7POS.Core.Import
             var result = new SupplierImportAnalysis();
             if (table == null) return result;
             result.SheetName = table.SheetName ?? string.Empty;
+            result.HasHeader = table.HasHeader;
+            result.DataRowIndex = table.DataRowIndex;
+            result.HeaderRowNumber = table.HasHeader ? table.DataRowIndex : 0;
+            result.SkippedMetadataRows = table.HasHeader ? Math.Max(0, table.DataRowIndex - 1) : 0;
+            result.DroppedSummaryRows = table.DroppedSummaryRows;
 
             var columns = CloneColumns(table.Columns);
             ApplyColumnOverrides(columns, columnOverrides);
@@ -131,7 +138,11 @@ namespace Win7POS.Core.Import
                 {
                     if (IsSkippableMissingBarcodeRow(rowMap))
                         continue;
-                    result.Errors.Add(new SupplierImportError("Barcode mancante", raw.RowNumber, string.Empty));
+                    var editableMissingBarcode = BuildEditableRow(raw.RowNumber, rowMap, false);
+                    result.Warnings.Add(new SupplierImportWarning(
+                        "Barcode mancante: correggi barcode in Step 3 oppure seleziona Skip per ignorare la riga.",
+                        new[] { raw.RowNumber }));
+                    result.EditableRows.Add(editableMissingBarcode);
                     continue;
                 }
 
@@ -175,10 +186,10 @@ namespace Win7POS.Core.Import
                     !string.IsNullOrWhiteSpace(editable.ItemNumber);
                 if (existing == null && !hasNewIdentity)
                 {
-                    result.Errors.Add(new SupplierImportError(
-                        "Nuovo prodotto senza productName o itemNumber",
-                        pending.RowNumber,
-                        barcode));
+                    result.Warnings.Add(new SupplierImportWarning(
+                        "Nuovo prodotto senza productName o itemNumber: compila una delle due colonne in Step 3 oppure seleziona Skip.",
+                        new[] { pending.RowNumber }));
+                    result.EditableRows.Add(editable);
                     continue;
                 }
 

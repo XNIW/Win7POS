@@ -125,10 +125,20 @@ namespace Win7POS.Wpf.Import
                 OnPropertyChanged(nameof(WarningsCount));
                 OnPropertyChanged(nameof(ErrorsCount));
                 OnPropertyChanged(nameof(SelectedSheetName));
+                OnPropertyChanged(nameof(HeaderSummary));
+                OnPropertyChanged(nameof(RowSummary));
+                OnPropertyChanged(nameof(IssueSummary));
                 OnPropertyChanged(nameof(MissingNewRetailPriceCount));
+                OnPropertyChanged(nameof(MissingBarcodeCount));
+                OnPropertyChanged(nameof(MissingNewIdentityCount));
+                OnPropertyChanged(nameof(InvalidNumberCount));
+                OnPropertyChanged(nameof(SkippedRowsCount));
                 OnPropertyChanged(nameof(CanProceedToStep3));
                 OnPropertyChanged(nameof(CanApply));
                 OnPropertyChanged(nameof(HasRetailPriceWarning));
+                OnPropertyChanged(nameof(HasBarcodeWarning));
+                OnPropertyChanged(nameof(HasIdentityWarning));
+                OnPropertyChanged(nameof(HasInvalidNumberWarning));
                 RaiseCanExecuteChanged();
             }
         }
@@ -138,9 +148,70 @@ namespace Win7POS.Wpf.Import
         public int WarningsCount { get { return Analysis == null ? 0 : Analysis.Warnings.Count; } }
         public int ErrorsCount { get { return Analysis == null ? 0 : Analysis.Errors.Count; } }
         public string SelectedSheetName { get { return Analysis == null ? string.Empty : Analysis.SheetName; } }
+        public string HeaderSummary
+        {
+            get
+            {
+                if (Analysis == null) return string.Empty;
+                return Analysis.HasHeader
+                    ? "Header rilevato alla riga " + Analysis.HeaderRowNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    : "Header generato: file senza intestazione rilevata";
+            }
+        }
+        public string RowSummary
+        {
+            get
+            {
+                if (Analysis == null) return string.Empty;
+                return "Righe dati: " + Analysis.SourceRowCount.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                    " | Metadata saltati: " + Analysis.SkippedMetadataRows.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                    " | Righe totale filtrate: " + Analysis.DroppedSummaryRows.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+        public string IssueSummary
+        {
+            get
+            {
+                if (Analysis == null) return string.Empty;
+                return "Warning: " + WarningsCount.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                    " | Errori: " + ErrorsCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
         public int MissingNewRetailPriceCount
         {
-            get { return EditableRows.Count(row => row != null && !row.Exists && string.IsNullOrWhiteSpace(row.RetailPrice)); }
+            get { return EditableRows.Count(row => row != null && !row.IsSkipped && !row.Exists && string.IsNullOrWhiteSpace(row.RetailPrice)); }
+        }
+        public int MissingBarcodeCount
+        {
+            get { return EditableRows.Count(row => row != null && !row.IsSkipped && string.IsNullOrWhiteSpace(row.Barcode)); }
+        }
+        public int MissingNewIdentityCount
+        {
+            get
+            {
+                return EditableRows.Count(row =>
+                    row != null &&
+                    !row.IsSkipped &&
+                    !row.Exists &&
+                    string.IsNullOrWhiteSpace(row.ProductName) &&
+                    string.IsNullOrWhiteSpace(row.ItemNumber));
+            }
+        }
+        public int SkippedRowsCount
+        {
+            get { return EditableRows.Count(row => row != null && row.IsSkipped); }
+        }
+        public int InvalidNumberCount
+        {
+            get
+            {
+                return EditableRows.Count(row =>
+                    row != null &&
+                    !row.IsSkipped &&
+                    (IsInvalidNonNegativeNumber(row.PurchasePrice) ||
+                        IsInvalidNonNegativeNumber(row.RetailPrice) ||
+                        IsInvalidNonNegativeNumber(row.Quantity)));
+            }
         }
         public bool CanProceedToStep3
         {
@@ -154,14 +225,38 @@ namespace Win7POS.Wpf.Import
                         !string.Equals(c.HeaderSource, "generated", StringComparison.OrdinalIgnoreCase));
             }
         }
-        public bool CanApply { get { return Analysis != null && Analysis.CanApply && MissingNewRetailPriceCount == 0; } }
+        public bool CanApply
+        {
+            get
+            {
+                return Analysis != null &&
+                    Analysis.CanApply &&
+                    EditableRows.Any(row => row != null && !row.IsSkipped) &&
+                    MissingBarcodeCount == 0 &&
+                    MissingNewIdentityCount == 0 &&
+                    MissingNewRetailPriceCount == 0 &&
+                    InvalidNumberCount == 0;
+            }
+        }
         public bool HasRetailPriceWarning
         {
             get
             {
                 return Analysis != null &&
-                    Analysis.EditableRows.Any(row => row.RetailPriceMissingButPurchasePresent);
+                    EditableRows.Any(row => row != null && !row.IsSkipped && row.RetailPriceMissingButPurchasePresent);
             }
+        }
+        public bool HasBarcodeWarning
+        {
+            get { return MissingBarcodeCount > 0; }
+        }
+        public bool HasIdentityWarning
+        {
+            get { return MissingNewIdentityCount > 0; }
+        }
+        public bool HasInvalidNumberWarning
+        {
+            get { return InvalidNumberCount > 0; }
         }
 
         public string MarkupPercent
@@ -238,17 +333,42 @@ namespace Win7POS.Wpf.Import
                 Status = "Correggi gli errori prima di applicare.";
                 return;
             }
-            if (EditableRows.Any(row => row != null && !row.Exists && string.IsNullOrWhiteSpace(row.RetailPrice)))
+            var rowsToApply = EditableRows.Where(row => row != null && !row.IsSkipped).ToList();
+            if (rowsToApply.Count == 0)
+            {
+                Status = "Nessuna riga valida da applicare: correggi una riga o rimuovi Skip.";
+                return;
+            }
+            if (rowsToApply.Any(row => string.IsNullOrWhiteSpace(row.Barcode)))
+            {
+                Status = "Righe senza barcode: correggi barcode o seleziona Skip prima di applicare.";
+                return;
+            }
+            if (rowsToApply.Any(row => !row.Exists && string.IsNullOrWhiteSpace(row.ProductName) && string.IsNullOrWhiteSpace(row.ItemNumber)))
+            {
+                Status = "Nuovi prodotti senza productName o itemNumber: compila un'identita o seleziona Skip.";
+                return;
+            }
+            if (rowsToApply.Any(row => !row.Exists && string.IsNullOrWhiteSpace(row.RetailPrice)))
             {
                 Status = "Nuovi prodotti senza retailPrice: compila il prezzo vendita prima di applicare.";
                 return;
             }
+            if (rowsToApply.Any(row =>
+                IsInvalidNonNegativeNumber(row.PurchasePrice) ||
+                IsInvalidNonNegativeNumber(row.RetailPrice) ||
+                IsInvalidNonNegativeNumber(row.Quantity)))
+            {
+                Status = "Prezzi o quantita non validi: correggi i valori numerici prima di applicare.";
+                return;
+            }
+            var skippedRows = EditableRows.Count(row => row != null && row.IsSkipped);
 
             IsBusy = true;
             Status = "Applicazione import fornitore in corso...";
             try
             {
-                var apply = await _service.ApplyAsync(EditableRows.ToList(), false, Analysis.Warnings.Count).ConfigureAwait(true);
+                var apply = await _service.ApplyAsync(rowsToApply, false, Analysis.Warnings.Count, skippedRows).ConfigureAwait(true);
                 Status = apply.Summary;
                 ModernMessageDialog.Show(Application.Current?.MainWindow, "Import Excel fornitore", apply.Summary);
                 RequestClose?.Invoke(true);
@@ -287,7 +407,7 @@ namespace Win7POS.Wpf.Import
             }
 
             var changed = SupplierRetailPriceHelper.ApplyMarkupToRetailPriceRows(
-                EditableRows,
+                EditableRows.Where(row => row != null && !row.IsSkipped),
                 markup,
                 RoundTo,
                 ApplyOnlyEmptyRetailPrice);
@@ -328,9 +448,20 @@ namespace Win7POS.Wpf.Import
             foreach (var error in analysis.Errors)
                 Errors.Add(error);
             OnPropertyChanged(nameof(SelectedSheetName));
+            OnPropertyChanged(nameof(HeaderSummary));
+            OnPropertyChanged(nameof(RowSummary));
+            OnPropertyChanged(nameof(IssueSummary));
             OnPropertyChanged(nameof(MissingNewRetailPriceCount));
+            OnPropertyChanged(nameof(MissingBarcodeCount));
+            OnPropertyChanged(nameof(MissingNewIdentityCount));
+            OnPropertyChanged(nameof(InvalidNumberCount));
+            OnPropertyChanged(nameof(SkippedRowsCount));
             OnPropertyChanged(nameof(CanProceedToStep3));
             OnPropertyChanged(nameof(CanApply));
+            OnPropertyChanged(nameof(HasBarcodeWarning));
+            OnPropertyChanged(nameof(HasIdentityWarning));
+            OnPropertyChanged(nameof(HasInvalidNumberWarning));
+            OnPropertyChanged(nameof(HasRetailPriceWarning));
             RaiseCanExecuteChanged();
         }
 
@@ -347,10 +478,24 @@ namespace Win7POS.Wpf.Import
 
         private void EditableRow_PropertyChanged(object sender, PropertyChangedEventArgs e)
         {
-            if (e == null || e.PropertyName == nameof(SupplierImportEditableRow.RetailPrice))
+            if (e == null ||
+                e.PropertyName == nameof(SupplierImportEditableRow.RetailPrice) ||
+                e.PropertyName == nameof(SupplierImportEditableRow.Barcode) ||
+                e.PropertyName == nameof(SupplierImportEditableRow.ItemNumber) ||
+                e.PropertyName == nameof(SupplierImportEditableRow.ProductName) ||
+                e.PropertyName == nameof(SupplierImportEditableRow.PurchasePrice) ||
+                e.PropertyName == nameof(SupplierImportEditableRow.Quantity) ||
+                e.PropertyName == nameof(SupplierImportEditableRow.IsSkipped))
             {
                 OnPropertyChanged(nameof(MissingNewRetailPriceCount));
+                OnPropertyChanged(nameof(MissingBarcodeCount));
+                OnPropertyChanged(nameof(MissingNewIdentityCount));
+                OnPropertyChanged(nameof(InvalidNumberCount));
+                OnPropertyChanged(nameof(SkippedRowsCount));
                 OnPropertyChanged(nameof(CanApply));
+                OnPropertyChanged(nameof(HasBarcodeWarning));
+                OnPropertyChanged(nameof(HasIdentityWarning));
+                OnPropertyChanged(nameof(HasInvalidNumberWarning));
                 OnPropertyChanged(nameof(HasRetailPriceWarning));
                 RaiseCanExecuteChanged();
             }
@@ -363,7 +508,14 @@ namespace Win7POS.Wpf.Import
             foreach (var row in rows)
                 EditableRows.Add(row);
             OnPropertyChanged(nameof(MissingNewRetailPriceCount));
+            OnPropertyChanged(nameof(MissingBarcodeCount));
+            OnPropertyChanged(nameof(MissingNewIdentityCount));
+            OnPropertyChanged(nameof(InvalidNumberCount));
+            OnPropertyChanged(nameof(SkippedRowsCount));
             OnPropertyChanged(nameof(CanApply));
+            OnPropertyChanged(nameof(HasBarcodeWarning));
+            OnPropertyChanged(nameof(HasIdentityWarning));
+            OnPropertyChanged(nameof(HasInvalidNumberWarning));
             OnPropertyChanged(nameof(HasRetailPriceWarning));
             RaiseCanExecuteChanged();
         }
@@ -371,6 +523,13 @@ namespace Win7POS.Wpf.Import
         private void OnPropertyChanged([CallerMemberName] string name = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+        }
+
+        private static bool IsInvalidNonNegativeNumber(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            var number = SupplierImportAnalyzer.ParseNumber(value);
+            return !number.HasValue || number.Value < 0;
         }
 
         private void RaiseCanExecuteChanged()
