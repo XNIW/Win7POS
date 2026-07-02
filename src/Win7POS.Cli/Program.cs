@@ -2084,6 +2084,10 @@ CREATE TABLE users (
         var models = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierExcelImportModels.cs");
         var helper = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierRetailPriceHelper.cs");
         var cli = ReadRepoFile(root, "src/Win7POS.Cli/Program.cs");
+        var generalImportViewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Import/ImportViewModel.cs");
+        var generalImportWorkflow = ReadRepoFile(root, "src/Win7POS.Wpf/Import/ImportWorkflowService.cs");
+        var generalImportViewCode = ReadRepoFile(root, "src/Win7POS.Wpf/Import/ImportView.xaml.cs");
+        var productDbImportViewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Import/ProductDbImportViewModel.cs");
 
         AssertText(productsView, "Import Excel fornitore", "Products screen must expose supplier Excel import.");
         AssertText(productsView, "SupplierExcelImportCommand", "Products import button must bind supplier command.");
@@ -2104,6 +2108,9 @@ CREATE TABLE users (
         AssertText(dialogXaml, "Aggiornamenti", "Step 4 updates tab missing.");
         AssertText(dialogXaml, "Senza modifiche", "Step 4 no-change tab missing.");
         AssertText(dialogXaml, "Skippati", "Step 4 skipped tab missing.");
+        AssertText(dialogXaml, "SyncSearchText", "Step 4 search/filter input missing.");
+        AssertText(dialogXaml, "SyncNewProductsView", "Step 4 new products must use filtered view.");
+        AssertText(dialogXaml, "SyncUpdatedProductsView", "Step 4 updates must use filtered view.");
         AssertText(dialogXaml, "Continua a Sync DB", "Step 3 must continue to Sync DB.");
         AssertText(dialogXaml, "Visibility=\"{Binding IsStep4", "Apply must only be visible on Step 4.");
         AssertText(viewModel, "IsStep1", "Step 1 state missing.");
@@ -2112,9 +2119,19 @@ CREATE TABLE users (
         AssertText(viewModel, "IsStep4", "Step 4 state missing.");
         AssertText(viewModel, "BuildSyncPreviewAsync", "Step 4 sync preview command missing.");
         AssertText(viewModel, "InvalidateSyncPreview", "Step 3 edits must invalidate Step 4 preview.");
+        AssertText(viewModel, "CollectionViewSource.GetDefaultView", "Step 4 search/filter collection views missing.");
+        AssertText(viewModel, "SyncProductMatches", "Step 4 product search predicate missing.");
         AssertText(viewModel, "StepIndex == 3 && SyncCanApply", "Apply must be enabled only from valid Step 4.");
         AssertText(workflow, "rebuilt.Fingerprint", "Apply must recompute and verify Step 4 before writing.");
         AssertText(applier, "ApplyAsync(preview.ValidatedRows", "Data applier must apply validated Step 4 rows.");
+        AssertText(generalImportViewModel, "CanApplyImport", "General catalog import must gate Apply on a current DB sync preview.");
+        AssertText(generalImportViewModel, "BuildCurrentAnalyzeFingerprint", "General catalog import must invalidate stale analyzed files/options.");
+        AssertText(generalImportViewModel, "InvalidateAnalyzeResult", "General catalog import must clear stale preview state.");
+        AssertText(generalImportWorkflow, "DiffSummariesMatch", "General catalog import must recompute DB diff before writing.");
+        AssertText(generalImportWorkflow, "Sync DB preview non aggiornato", "General catalog import must reject stale DB sync preview.");
+        AssertText(generalImportViewCode, ".xls", "General catalog import drag/drop must accept legacy .xls files.");
+        AssertText(productDbImportViewModel, "HasCurrentWorkbook", "Legacy product DB import must reject stale analyzed workbooks.");
+        AssertText(productDbImportViewModel, "BuildCurrentWorkbookFingerprint", "Legacy product DB import must fingerprint analyzed workbook files.");
 
         foreach (var required in new[]
         {

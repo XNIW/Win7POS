@@ -218,7 +218,7 @@ VALUES(@Barcode, @Timestamp, @Type, @OldPrice, @NewPrice, @Source)",
                             Type = r.Type ?? "retail",
                             OldPrice = r.OldPrice,
                             NewPrice = r.NewPrice,
-                            Source = r.Source ?? string.Empty
+                            Source = string.IsNullOrWhiteSpace(r.Source) ? "IMPORT" : r.Source
                         }, tx).ConfigureAwait(false);
                     if (affected > 0) inserted++;
                     else skipped++;

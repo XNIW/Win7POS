@@ -7,6 +7,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Input;
 using Microsoft.Win32;
 using Win7POS.Core.Import;
@@ -26,12 +27,14 @@ namespace Win7POS.Wpf.Import
         private bool _applyOnlyEmptyRetailPrice = true;
         private bool _isBusy;
         private bool _isSyncPreviewStale;
+        private string _syncSearchText = string.Empty;
         private SupplierImportAnalysis _analysis;
         private SupplierImportSyncPreview _syncPreview;
 
         public SupplierExcelImportViewModel(SupplierExcelImportWorkflowService service = null)
         {
             _service = service ?? new SupplierExcelImportWorkflowService();
+            InitializeSyncViews();
             ColumnKeyOptions = new ObservableCollection<string>(new[] { string.Empty }.Concat(AndroidImportKeys.AllKeys));
             BrowseCommand = new RelayCommand(Browse, () => !IsBusy && StepIndex == 0);
             AnalyzeCommand = new AsyncRelayCommand(AnalyzeAsync, () => !IsBusy && File.Exists(SelectedPath));
@@ -59,6 +62,12 @@ namespace Win7POS.Wpf.Import
         public ObservableCollection<SupplierImportSyncSkippedRow> SyncSkippedRows { get; } = new ObservableCollection<SupplierImportSyncSkippedRow>();
         public ObservableCollection<SupplierImportWarning> SyncWarnings { get; } = new ObservableCollection<SupplierImportWarning>();
         public ObservableCollection<SupplierImportError> SyncErrors { get; } = new ObservableCollection<SupplierImportError>();
+        public ICollectionView SyncNewProductsView { get; private set; }
+        public ICollectionView SyncUpdatedProductsView { get; private set; }
+        public ICollectionView SyncNoChangeRowsView { get; private set; }
+        public ICollectionView SyncSkippedRowsView { get; private set; }
+        public ICollectionView SyncWarningsView { get; private set; }
+        public ICollectionView SyncErrorsView { get; private set; }
 
         public ICommand BrowseCommand { get; }
         public ICommand AnalyzeCommand { get; }
@@ -186,6 +195,18 @@ namespace Win7POS.Wpf.Import
         public int SyncWarningsCount { get { return SyncPreview == null ? 0 : SyncPreview.Summary.WarningCount; } }
         public int SyncErrorsCount { get { return SyncPreview == null ? 0 : SyncPreview.Summary.ErrorCount; } }
         public int SyncTotalRowsCount { get { return SyncPreview == null ? 0 : SyncPreview.Summary.TotalRows; } }
+        public string SyncSearchText
+        {
+            get { return _syncSearchText; }
+            set
+            {
+                var next = value ?? string.Empty;
+                if (_syncSearchText == next) return;
+                _syncSearchText = next;
+                OnPropertyChanged();
+                RefreshSyncFilters();
+            }
+        }
         public bool SyncCanApply { get { return SyncPreview != null && SyncPreview.CanApply && !IsSyncPreviewStale; } }
         public bool IsSyncPreviewStale
         {
@@ -542,6 +563,7 @@ namespace Win7POS.Wpf.Import
                 SyncWarnings.Add(warning);
             foreach (var error in preview.Errors)
                 SyncErrors.Add(error);
+            RefreshSyncFilters();
             OnPropertyChanged(nameof(SyncNewProductsCount));
             OnPropertyChanged(nameof(SyncUpdatedProductsCount));
             OnPropertyChanged(nameof(SyncNoChangeRowsCount));
@@ -564,6 +586,8 @@ namespace Win7POS.Wpf.Import
             SyncSkippedRows.Clear();
             SyncWarnings.Clear();
             SyncErrors.Clear();
+            SyncSearchText = string.Empty;
+            RefreshSyncFilters();
         }
 
         private void InvalidateSyncPreview()
@@ -630,6 +654,108 @@ namespace Win7POS.Wpf.Import
             OnPropertyChanged(nameof(HasInvalidNumberWarning));
             OnPropertyChanged(nameof(HasRetailPriceWarning));
             RaiseCanExecuteChanged();
+        }
+
+        private void InitializeSyncViews()
+        {
+            SyncNewProductsView = CollectionViewSource.GetDefaultView(SyncNewProducts);
+            SyncUpdatedProductsView = CollectionViewSource.GetDefaultView(SyncUpdatedProducts);
+            SyncNoChangeRowsView = CollectionViewSource.GetDefaultView(SyncNoChangeRows);
+            SyncSkippedRowsView = CollectionViewSource.GetDefaultView(SyncSkippedRows);
+            SyncWarningsView = CollectionViewSource.GetDefaultView(SyncWarnings);
+            SyncErrorsView = CollectionViewSource.GetDefaultView(SyncErrors);
+
+            SyncNewProductsView.Filter = item => SyncProductMatches(item as SupplierImportProductRow);
+            SyncUpdatedProductsView.Filter = item => SyncUpdateMatches(item as SupplierImportSyncRow);
+            SyncNoChangeRowsView.Filter = item => SyncUpdateMatches(item as SupplierImportSyncRow);
+            SyncSkippedRowsView.Filter = item => SyncSkippedMatches(item as SupplierImportSyncSkippedRow);
+            SyncWarningsView.Filter = item => SyncWarningMatches(item as SupplierImportWarning);
+            SyncErrorsView.Filter = item => SyncErrorMatches(item as SupplierImportError);
+        }
+
+        private void RefreshSyncFilters()
+        {
+            SyncNewProductsView?.Refresh();
+            SyncUpdatedProductsView?.Refresh();
+            SyncNoChangeRowsView?.Refresh();
+            SyncSkippedRowsView?.Refresh();
+            SyncWarningsView?.Refresh();
+            SyncErrorsView?.Refresh();
+        }
+
+        private bool SyncProductMatches(SupplierImportProductRow row)
+        {
+            if (row == null) return false;
+            var query = SyncSearchText.Trim();
+            if (query.Length == 0) return true;
+            return TextMatches(row.RowNumber.ToString(System.Globalization.CultureInfo.InvariantCulture), query) ||
+                TextMatches(row.Barcode, query) ||
+                TextMatches(row.ItemNumber, query) ||
+                TextMatches(row.ProductName, query) ||
+                TextMatches(row.SecondProductName, query) ||
+                TextMatches(row.PurchasePrice, query) ||
+                TextMatches(row.RetailPrice, query) ||
+                TextMatches(row.Quantity, query) ||
+                TextMatches(row.Supplier, query) ||
+                TextMatches(row.Category, query);
+        }
+
+        private bool SyncUpdateMatches(SupplierImportSyncRow row)
+        {
+            if (row == null) return false;
+            var query = SyncSearchText.Trim();
+            if (query.Length == 0) return true;
+            return TextMatches(row.RowNumber.ToString(System.Globalization.CultureInfo.InvariantCulture), query) ||
+                TextMatches(row.Barcode, query) ||
+                TextMatches(row.DiffSummary, query) ||
+                SyncProductMatches(row.Existing) ||
+                SyncProductMatches(row.Updated);
+        }
+
+        private bool SyncSkippedMatches(SupplierImportSyncSkippedRow row)
+        {
+            if (row == null) return false;
+            var query = SyncSearchText.Trim();
+            if (query.Length == 0) return true;
+            return TextMatches(row.RowNumber.ToString(System.Globalization.CultureInfo.InvariantCulture), query) ||
+                TextMatches(row.Barcode, query) ||
+                TextMatches(row.ItemNumber, query) ||
+                TextMatches(row.ProductName, query);
+        }
+
+        private bool SyncWarningMatches(SupplierImportWarning warning)
+        {
+            if (warning == null) return false;
+            var query = SyncSearchText.Trim();
+            if (query.Length == 0) return true;
+            return TextMatches(warning.Message, query) || RowsMatch(warning.Rows, query);
+        }
+
+        private bool SyncErrorMatches(SupplierImportError error)
+        {
+            if (error == null) return false;
+            var query = SyncSearchText.Trim();
+            if (query.Length == 0) return true;
+            return TextMatches(error.Message, query) ||
+                TextMatches(error.Barcode, query) ||
+                TextMatches(error.RowIndex.ToString(System.Globalization.CultureInfo.InvariantCulture), query);
+        }
+
+        private static bool RowsMatch(IReadOnlyList<int> rows, string query)
+        {
+            if (rows == null) return false;
+            foreach (var row in rows)
+            {
+                if (TextMatches(row.ToString(System.Globalization.CultureInfo.InvariantCulture), query))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool TextMatches(string value, string query)
+        {
+            return !string.IsNullOrWhiteSpace(value) &&
+                value.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)

@@ -1,3 +1,4 @@
+using System;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
@@ -88,6 +89,12 @@ SELECT last_insert_rowid();", product, _tx).ConfigureAwait(false);
                     "SELECT id, barcode, name, unitPrice FROM products WHERE barcode = @barcode",
                     new { barcode },
                     _tx).ConfigureAwait(false);
+                var existingPurchase = existing == null
+                    ? null
+                    : await _conn.ExecuteScalarAsync<int?>(
+                        "SELECT purchase_price FROM product_meta WHERE barcode = @barcode",
+                        new { barcode },
+                        _tx).ConfigureAwait(false);
 
                 var updated = await _conn.ExecuteAsync(@"
 UPDATE products SET name = @name, unitPrice = @unitPrice WHERE barcode = @barcode",
@@ -104,6 +111,14 @@ INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price
 VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
                     new { barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty }, _tx).ConfigureAwait(false);
 
+                await InsertImportPriceHistoryAsync(
+                    existing,
+                    existingPurchase,
+                    barcode,
+                    row.Cost,
+                    purchasePrice,
+                    unitPrice).ConfigureAwait(false);
+
                 return existing == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;
             }
 
@@ -111,6 +126,46 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
             var existingP = await _products.GetByBarcodeAsync(barcode).ConfigureAwait(false);
             await _products.UpsertProductAndMetaInTransactionAsync(p, articleCode, name2, purchasePrice, null, supplierName, null, categoryName, stockQty).ConfigureAwait(false);
             return existingP == null ? UpsertOutcome.Inserted : UpsertOutcome.Updated;
+        }
+
+        private async Task InsertImportPriceHistoryAsync(
+            Product existing,
+            int? existingPurchase,
+            string barcode,
+            int? incomingPurchase,
+            int purchasePrice,
+            long unitPrice)
+        {
+            if (_conn == null || _tx == null) return;
+
+            var changedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            if (existing == null)
+            {
+                if (incomingPurchase.HasValue)
+                {
+                    await InsertPriceHistoryAsync(barcode, changedAt, "purchase", null, purchasePrice).ConfigureAwait(false);
+                }
+                await InsertPriceHistoryAsync(barcode, changedAt, "retail", null, unitPrice).ConfigureAwait(false);
+                return;
+            }
+
+            if (incomingPurchase.HasValue && (!existingPurchase.HasValue || existingPurchase.Value != purchasePrice))
+            {
+                await InsertPriceHistoryAsync(barcode, changedAt, "purchase", existingPurchase, purchasePrice).ConfigureAwait(false);
+            }
+            if (existing.UnitPrice != unitPrice)
+            {
+                await InsertPriceHistoryAsync(barcode, changedAt, "retail", existing.UnitPrice, unitPrice).ConfigureAwait(false);
+            }
+        }
+
+        private Task InsertPriceHistoryAsync(string barcode, string changedAt, string type, long? oldPrice, long newPrice)
+        {
+            return _conn.ExecuteAsync(@"
+INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
+VALUES(@barcode, @changedAt, @type, @oldPrice, @newPrice, 'IMPORT')",
+                new { barcode, changedAt, type, oldPrice, newPrice },
+                _tx);
         }
     }
 }

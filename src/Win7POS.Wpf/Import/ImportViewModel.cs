@@ -26,6 +26,7 @@ namespace Win7POS.Wpf.Import
         private bool _updatePrice = true;
         private bool _updateName = false;
         private bool _dryRun = true;
+        private string _lastAnalyzeFingerprint = string.Empty;
 
         // Preview items (kept as object to avoid hard coupling if core types change)
         public ObservableCollection<object> DiffItems { get; } = new ObservableCollection<object>();
@@ -35,11 +36,18 @@ namespace Win7POS.Wpf.Import
             get => _selectedPath ?? string.Empty;
             set
             {
+                var next = value ?? string.Empty;
+                if (string.Equals(_selectedPath ?? string.Empty, next, StringComparison.Ordinal))
+                    return;
                 _selectedPath = value ?? string.Empty;
+                InvalidateAnalyzeResult(PosLocalization.T("import.analyzeFirst"));
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(Kind));
                 OnPropertyChanged(nameof(IsCsv));
                 OnPropertyChanged(nameof(IsXlsx));
+                OnPropertyChanged(nameof(IsXls));
+                OnPropertyChanged(nameof(CanApplyImport));
+                RaiseCanExecuteChanged();
             }
         }
 
@@ -75,25 +83,52 @@ namespace Win7POS.Wpf.Import
         public bool IsBusy
         {
             get => _isBusy;
-            set { _isBusy = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
+            set
+            {
+                _isBusy = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanApplyImport));
+                RaiseCanExecuteChanged();
+            }
         }
 
         public bool InsertNew
         {
             get => _insertNew;
-            set { _insertNew = value; OnPropertyChanged(); }
+            set
+            {
+                if (_insertNew == value) return;
+                _insertNew = value;
+                InvalidateAnalyzeResult(PosLocalization.T("import.analyzeFirst"));
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanApplyImport));
+            }
         }
 
         public bool UpdatePrice
         {
             get => _updatePrice;
-            set { _updatePrice = value; OnPropertyChanged(); }
+            set
+            {
+                if (_updatePrice == value) return;
+                _updatePrice = value;
+                InvalidateAnalyzeResult(PosLocalization.T("import.analyzeFirst"));
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanApplyImport));
+            }
         }
 
         public bool UpdateName
         {
             get => _updateName;
-            set { _updateName = value; OnPropertyChanged(); }
+            set
+            {
+                if (_updateName == value) return;
+                _updateName = value;
+                InvalidateAnalyzeResult(PosLocalization.T("import.analyzeFirst"));
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanApplyImport));
+            }
         }
 
         public bool DryRun
@@ -104,12 +139,14 @@ namespace Win7POS.Wpf.Import
                 _dryRun = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(ApplyModeText));
+                RaiseCanExecuteChanged();
             }
         }
 
         public string DbPath => AppPaths.DbPath;
 
         public string ApplyModeText => PosLocalization.T(DryRun ? "import.modeDryRun" : "import.modeApply");
+        public bool CanApplyImport => !IsBusy && HasCurrentAnalyzeResult();
 
         public ICommand BrowseCommand { get; }
         public ICommand AnalyzeCommand { get; }
@@ -128,7 +165,7 @@ namespace Win7POS.Wpf.Import
         {
             BrowseCommand = new RelayCommand(_ => Browse(), _ => !IsBusy);
             AnalyzeCommand = new AsyncRelayCommand(AnalyzeAsync, _ => !IsBusy);
-            ApplyCommand = new AsyncRelayCommand(ApplyAsync, _ => !IsBusy);
+            ApplyCommand = new AsyncRelayCommand(ApplyAsync, _ => CanApplyImport);
             Summary = PosLocalization.T("import.initialSummary");
             Status = "";
         }
@@ -164,11 +201,7 @@ namespace Win7POS.Wpf.Import
             Status = PosLocalization.T("import.analyzing");
             Summary = "";
             DiffItems.Clear();
-            _lastDiffResult = null;
-            _lastParsedRows = null;
-            _lastDedicatedSuppliers = null;
-            _lastDedicatedCategories = null;
-            _lastPriceHistoryRows = null;
+            ClearAnalyzeCache();
 
             try
             {
@@ -184,6 +217,7 @@ namespace Win7POS.Wpf.Import
                 _lastDedicatedSuppliers = result.DedicatedSuppliers;
                 _lastDedicatedCategories = result.DedicatedCategories;
                 _lastPriceHistoryRows = result.PriceHistoryRows;
+                _lastAnalyzeFingerprint = BuildCurrentAnalyzeFingerprint();
 
                 Summary = result.Summary;
                 DiffItems.Clear();
@@ -195,6 +229,8 @@ namespace Win7POS.Wpf.Import
                     result.UpdateCount,
                     result.UnchangedCount,
                     result.ErrorCount);
+                OnPropertyChanged(nameof(CanApplyImport));
+                RaiseCanExecuteChanged();
             }
             catch (Exception ex)
             {
@@ -228,6 +264,12 @@ namespace Win7POS.Wpf.Import
         {
             if (_lastDiffResult == null || _lastParsedRows == null)
             {
+                Status = PosLocalization.T("import.analyzeFirst");
+                return;
+            }
+            if (!HasCurrentAnalyzeResult())
+            {
+                InvalidateAnalyzeResult(PosLocalization.T("import.analyzeFirst"));
                 Status = PosLocalization.T("import.analyzeFirst");
                 return;
             }
@@ -267,6 +309,7 @@ namespace Win7POS.Wpf.Import
                     : PosLocalization.T("import.applyCompletedWithErrors");
                 if (result.Success && !DryRun)
                     Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(null);
+                OnPropertyChanged(nameof(CanApplyImport));
             }
             catch (Exception ex)
             {
@@ -283,6 +326,75 @@ namespace Win7POS.Wpf.Import
             (BrowseCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (AnalyzeCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ApplyCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private void InvalidateAnalyzeResult(string status)
+        {
+            if (_lastDiffResult == null && _lastParsedRows == null && DiffItems.Count == 0)
+                return;
+
+            ClearAnalyzeCache();
+            DiffItems.Clear();
+            Status = status ?? string.Empty;
+            Summary = PosLocalization.T("import.initialSummary");
+            OnPropertyChanged(nameof(CanApplyImport));
+            RaiseCanExecuteChanged();
+        }
+
+        private void ClearAnalyzeCache()
+        {
+            _lastDiffResult = null;
+            _lastParsedRows = null;
+            _lastDedicatedSuppliers = null;
+            _lastDedicatedCategories = null;
+            _lastPriceHistoryRows = null;
+            _lastAnalyzeFingerprint = string.Empty;
+            OnPropertyChanged(nameof(CanApplyImport));
+            RaiseCanExecuteChanged();
+        }
+
+        private bool HasCurrentAnalyzeResult()
+        {
+            if (_lastDiffResult == null || _lastParsedRows == null || string.IsNullOrWhiteSpace(_lastAnalyzeFingerprint))
+                return false;
+            return string.Equals(_lastAnalyzeFingerprint, BuildCurrentAnalyzeFingerprint(), StringComparison.Ordinal);
+        }
+
+        private string BuildCurrentAnalyzeFingerprint()
+        {
+            var path = (SelectedPath ?? string.Empty).Trim();
+            var fullPath = string.Empty;
+            long length = -1;
+            long lastWriteTicks = -1;
+            try
+            {
+                if (path.Length > 0 && File.Exists(path))
+                {
+                    var info = new FileInfo(path);
+                    fullPath = info.FullName;
+                    length = info.Length;
+                    lastWriteTicks = info.LastWriteTimeUtc.Ticks;
+                }
+                else
+                {
+                    fullPath = Path.GetFullPath(path);
+                }
+            }
+            catch
+            {
+                fullPath = path;
+            }
+
+            return string.Join("|", new[]
+            {
+                Kind.ToString(),
+                fullPath,
+                length.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                lastWriteTicks.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                InsertNew.ToString(),
+                UpdatePrice.ToString(),
+                UpdateName.ToString()
+            });
         }
 
         public event PropertyChangedEventHandler PropertyChanged;

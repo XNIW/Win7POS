@@ -83,6 +83,10 @@ namespace Win7POS.Wpf.Import
                 if (rows == null || rows.Count == 0)
                     throw new InvalidOperationException(PosLocalization.T("import.missingAnalyzedRows"));
 
+                var expectedDiff = diffModel as ImportDiffResult;
+                if (expectedDiff == null)
+                    throw new InvalidOperationException(PosLocalization.T("import.analyzeFirst"));
+
                 var options = new ImportApplyOptions
                 {
                     InsertNew = insertNew,
@@ -93,6 +97,14 @@ namespace Win7POS.Wpf.Import
 
                 var opt = ResolveDbOptions(dbPath);
                 DbInitializer.EnsureCreated(opt);
+                var factory = new SqliteConnectionFactory(opt);
+                var products = new ProductRepository(factory);
+                var currentDiff = await new ImportDiffer(new ProductSnapshotLookupAdapter(products))
+                    .DiffAsync(rows, expectedDiff.Items.Count)
+                    .ConfigureAwait(false);
+                if (!DiffSummariesMatch(expectedDiff.Summary, currentDiff.Summary))
+                    throw new InvalidOperationException("Sync DB preview non aggiornato: riesegui Analizza prima di applicare.");
+
                 string backupSummary = string.Empty;
                 if (!options.DryRun)
                 {
@@ -110,7 +122,7 @@ namespace Win7POS.Wpf.Import
                 }
 
                 var apply = await ApplyWithTransactionAsync(
-                    new SqliteConnectionFactory(opt),
+                    factory,
                     rows,
                     options,
                     dedicatedSuppliers,
@@ -150,6 +162,17 @@ namespace Win7POS.Wpf.Import
                 _logger.LogError(ex, "Apply failed");
                 throw;
             }
+        }
+
+        private static bool DiffSummariesMatch(ImportDiffSummary expected, ImportDiffSummary current)
+        {
+            if (expected == null || current == null) return false;
+            return expected.NewProduct == current.NewProduct &&
+                expected.UpdatePrice == current.UpdatePrice &&
+                expected.UpdateName == current.UpdateName &&
+                expected.UpdateBoth == current.UpdateBoth &&
+                expected.NoChange == current.NoChange &&
+                expected.InvalidRow == current.InvalidRow;
         }
 
         /// <summary>Carica CSV o XLSX e restituisce parse + fogli dedicati (per XLSX).</summary>
@@ -380,7 +403,7 @@ VALUES(@Barcode, @Timestamp, @Type, @OldPrice, @NewPrice, @Source)",
                             Type = string.IsNullOrWhiteSpace(row.Type) ? "retail" : row.Type,
                             OldPrice = row.OldPrice,
                             NewPrice = row.NewPrice,
-                            Source = row.Source ?? string.Empty
+                            Source = string.IsNullOrWhiteSpace(row.Source) ? "IMPORT" : row.Source
                         }, tx).ConfigureAwait(false);
 
                     if (affected > 0) inserted++;

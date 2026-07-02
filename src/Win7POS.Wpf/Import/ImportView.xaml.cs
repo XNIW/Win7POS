@@ -31,6 +31,7 @@ namespace Win7POS.Wpf.Import
 
             var ext = Path.GetExtension(first);
             if (string.Equals(ext, ".csv", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(ext, ".xls", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase))
                 vm.SelectedPath = first;
 
