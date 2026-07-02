@@ -1,0 +1,505 @@
+{
+  "metadataRowsBeforeHeader": [
+    [
+      "Report fornitore",
+      "Da ignorare",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "Generato",
+      "2026-07-02",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ]
+  ],
+  "sheetRows": [
+    [
+      "Report fornitore",
+      "Da ignorare",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "Generato",
+      "2026-07-02",
+      "",
+      "",
+      "",
+      "",
+      "",
+      ""
+    ],
+    [
+      "Codice a barre",
+      "Ref",
+      "Nome",
+      "Prezzo acquisto",
+      "Stock",
+      "Fornitore",
+      "Categoria",
+      "Prezzo vendita"
+    ],
+    [
+      "9999999900001",
+      "EX-999",
+      "Existing rename",
+      "100",
+      "3",
+      "Fornitore A",
+      "Categoria A",
+      "150"
+    ],
+    [
+      "8888888800008",
+      "DUP-A",
+      "Duplicate first",
+      "200",
+      "1",
+      "Fornitore A",
+      "Categoria A",
+      "250"
+    ],
+    [
+      "8888888800008",
+      "DUP-B",
+      "Duplicate last",
+      "220",
+      "2",
+      "Fornitore A",
+      "Categoria A",
+      "270"
+    ],
+    [
+      "7777777700007",
+      "ART-777",
+      "",
+      "100",
+      "1",
+      "Fornitore B",
+      "Categoria B",
+      "160"
+    ],
+    [
+      "",
+      "",
+      "Totale",
+      "620",
+      "7",
+      "",
+      "",
+      "830"
+    ]
+  ],
+  "sampleRows": [
+    [
+      "Codice a barre",
+      "Ref",
+      "Nome",
+      "Prezzo acquisto",
+      "Stock",
+      "Fornitore",
+      "Categoria",
+      "Prezzo vendita"
+    ],
+    [
+      "9999999900001",
+      "EX-999",
+      "Existing rename",
+      "100",
+      "3",
+      "Fornitore A",
+      "Categoria A",
+      "150"
+    ],
+    [
+      "8888888800008",
+      "DUP-A",
+      "Duplicate first",
+      "200",
+      "1",
+      "Fornitore A",
+      "Categoria A",
+      "250"
+    ],
+    [
+      "8888888800008",
+      "DUP-B",
+      "Duplicate last",
+      "220",
+      "2",
+      "Fornitore A",
+      "Categoria A",
+      "270"
+    ],
+    [
+      "7777777700007",
+      "ART-777",
+      "",
+      "100",
+      "1",
+      "Fornitore B",
+      "Categoria B",
+      "160"
+    ],
+    [
+      "",
+      "",
+      "Totale",
+      "620",
+      "7",
+      "",
+      "",
+      "830"
+    ]
+  ],
+  "aliasSamples": {
+    "italianRows": [
+      [
+        "Codice a barre",
+        "Ref",
+        "Nome",
+        "Prezzo acquisto",
+        "Stock",
+        "Fornitore",
+        "Categoria",
+        "Prezzo vendita"
+      ],
+      [
+        "9999999900001",
+        "EX-999",
+        "Existing rename",
+        "100",
+        "3",
+        "Fornitore A",
+        "Categoria A",
+        "150"
+      ],
+      [
+        "8888888800008",
+        "DUP-A",
+        "Duplicate first",
+        "200",
+        "1",
+        "Fornitore A",
+        "Categoria A",
+        "250"
+      ],
+      [
+        "8888888800008",
+        "DUP-B",
+        "Duplicate last",
+        "220",
+        "2",
+        "Fornitore A",
+        "Categoria A",
+        "270"
+      ],
+      [
+        "7777777700007",
+        "ART-777",
+        "",
+        "100",
+        "1",
+        "Fornitore B",
+        "Categoria B",
+        "160"
+      ],
+      [
+        "",
+        "",
+        "Totale",
+        "620",
+        "7",
+        "",
+        "",
+        "830"
+      ]
+    ],
+    "spanishRows": [
+      [
+        "Código de barras",
+        "Referencia",
+        "Nombre del producto",
+        "Precio de compra",
+        "Stock",
+        "Proveedor",
+        "Categoría",
+        "Precio de venta"
+      ],
+      [
+        "1234567890123",
+        "ES-001",
+        "Producto español",
+        "1.234,56",
+        "5",
+        "Proveedor A",
+        "Categoría A",
+        "1990"
+      ]
+    ],
+    "chineseRows": [
+      [
+        "条码",
+        "货号",
+        "品名",
+        "进价",
+        "库存",
+        "供应商",
+        "分类",
+        "零售价"
+      ],
+      [
+        "1234567890123",
+        "ZH-001",
+        "中文商品",
+        "1,234.56",
+        "5",
+        "供应商 A",
+        "分类 A",
+        "1990"
+      ]
+    ]
+  },
+  "headerlessSample": {
+    "rows": [
+      [
+        "20034",
+        "6871128200344",
+        "Dream Item One",
+        "12",
+        "270",
+        "3240"
+      ],
+      [
+        "20089",
+        "6871128200894",
+        "Dream Item Two",
+        "24",
+        "480",
+        "11520"
+      ]
+    ],
+    "normalizedHeader": [
+      "itemNumber",
+      "barcode",
+      "productName",
+      "quantity",
+      "purchasePrice",
+      "totalPrice"
+    ],
+    "headerSource": [
+      "pattern",
+      "pattern",
+      "pattern",
+      "pattern",
+      "pattern",
+      "pattern"
+    ],
+    "dataRowsCount": 2
+  },
+  "originalHeader": [
+    "Codice a barre",
+    "Ref",
+    "Nome",
+    "Prezzo acquisto",
+    "Stock",
+    "Fornitore",
+    "Categoria",
+    "Prezzo vendita"
+  ],
+  "normalizedHeader": [
+    "barcode",
+    "itemNumber",
+    "productName",
+    "purchasePrice",
+    "quantity",
+    "supplier",
+    "category",
+    "retailPrice"
+  ],
+  "headerSource": {
+    "barcode": "alias",
+    "itemNumber": "alias",
+    "productName": "alias",
+    "purchasePrice": "alias",
+    "quantity": "alias",
+    "supplier": "alias",
+    "category": "alias",
+    "retailPrice": "alias"
+  },
+  "headerSourceValues": [
+    "alias",
+    "pattern",
+    "generated",
+    "unknown"
+  ],
+  "dataRowsCount": 4,
+  "previewRows": [
+    {
+      "barcode": "9999999900001",
+      "itemNumber": "EX-999",
+      "productName": "Existing rename",
+      "purchasePrice": 100,
+      "retailPrice": 150,
+      "quantity": 3,
+      "supplier": "Fornitore A",
+      "category": "Categoria A"
+    },
+    {
+      "barcode": "8888888800008",
+      "itemNumber": "DUP-B",
+      "productName": "Duplicate last",
+      "purchasePrice": 220,
+      "retailPrice": 270,
+      "quantity": 2,
+      "supplier": "Fornitore A",
+      "category": "Categoria A"
+    },
+    {
+      "barcode": "7777777700007",
+      "itemNumber": "ART-777",
+      "productName": "",
+      "purchasePrice": 100,
+      "retailPrice": 160,
+      "quantity": 1,
+      "supplier": "Fornitore B",
+      "category": "Categoria B"
+    }
+  ],
+  "newProducts": 2,
+  "updatedProducts": 1,
+  "duplicateWarning": {
+    "barcode": "8888888800008",
+    "rows": [
+      3,
+      4
+    ]
+  },
+  "duplicateWarnings": [
+    {
+      "barcode": "8888888800008",
+      "rows": [
+        3,
+        4
+      ]
+    }
+  ],
+  "warnings": 1,
+  "errors": [],
+  "blockedRows": [
+    {
+      "barcode": "7777777700014",
+      "rowNumber": 10,
+      "field": "retailPrice",
+      "code": "missing_required_retail_price"
+    }
+  ],
+  "canApply": true,
+  "parseNumber": {
+    "1234": 1234,
+    "1.234,56": 1234.56,
+    "1,234.56": 1234.56,
+    "1234,56": 1234.56
+  },
+  "parseNumberResults": {
+    "1234": 1234,
+    "1.234,56": 1234.56,
+    "1,234.56": 1234.56,
+    "1234,56": 1234.56
+  },
+  "requiredGeneratedColumns": [
+    "barcode",
+    "productName",
+    "purchasePrice"
+  ],
+  "itemNumberOnlyAcceptedBarcode": "7777777700007",
+  "retailMissingNewProduct": {
+    "barcode": "7777777700014",
+    "blocksApply": true
+  },
+  "newProductMissingRetail": {
+    "barcode": "7777777700014",
+    "itemNumber": "ART-NO-RETAIL",
+    "purchasePrice": 100,
+    "quantity": 1,
+    "blocksApply": true,
+    "errorCode": "missing_required_retail_price"
+  },
+  "existingSparseUpdate": {
+    "barcode": "9999999900001",
+    "row": [
+      "9999999900001",
+      "",
+      "",
+      "120",
+      "4",
+      "",
+      "",
+      ""
+    ],
+    "preserves": [
+      "productName",
+      "itemNumber",
+      "retailPrice"
+    ]
+  },
+  "publicKeysAudit": {
+    "allowed": [
+      "barcode",
+      "productName",
+      "itemNumber",
+      "purchasePrice",
+      "retailPrice",
+      "quantity",
+      "supplier",
+      "category",
+      "secondProductName",
+      "totalPrice",
+      "rowNumber",
+      "discount",
+      "discountedPrice",
+      "oldPurchasePrice",
+      "oldRetailPrice",
+      "realQuantity",
+      "complete"
+    ],
+    "forbidden": [
+      "stockQuantity",
+      "supplierName",
+      "categoryName",
+      "articleCode",
+      "unitPrice",
+      "name",
+      "name2",
+      "cost",
+      "prevPurchase",
+      "prevRetail"
+    ],
+    "forbiddenAbsentFromPreviewRows": true
+  },
+  "forbiddenPublicKeys": [
+    "stockQuantity",
+    "supplierName",
+    "categoryName",
+    "articleCode",
+    "unitPrice",
+    "name",
+    "name2",
+    "cost",
+    "prevPurchase",
+    "prevRetail"
+  ]
+}

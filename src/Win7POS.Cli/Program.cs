@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using ClosedXML.Excel;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Import;
 using Win7POS.Core.Models;
@@ -16,6 +17,7 @@ using Win7POS.Core.Reports;
 using Win7POS.Core.Receipt;
 using Win7POS.Data;
 using Win7POS.Data.Adapters;
+using Win7POS.Data.Import;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Pos.Online;
@@ -166,6 +168,24 @@ internal static class Program
                 return;
             }
 
+            if (TryParseSupplierExcelSelfTestArgs(args))
+            {
+                RunSupplierExcelSelfTest();
+                return;
+            }
+
+            if (TryParseSupplierExcelUiSelfTestArgs(args))
+            {
+                RunSupplierExcelUiSelfTest();
+                return;
+            }
+
+            if (TryParseSupplierExcelDriveSmokeArgs(args, out var supplierExcelDriveSmokeFolder))
+            {
+                RunSupplierExcelDriveSmoke(supplierExcelDriveSmokeFolder);
+                return;
+            }
+
             if (TryParseSelfTestArgs(args, out var keepDb))
             {
                 await RunSelfTest(keepDb);
@@ -193,6 +213,9 @@ internal static class Program
         Console.WriteLine("  --task081-catalog-price-sync-harness --base-url <AdminWebUrl> --session-json <path> [--db <path>] [--expected-*] [--expect-tombstone] [--keepdb]");
         Console.WriteLine("  --task081-offline-reconnect-harness --base-url <AdminWebUrl> --session-json <path> [--keepdb]");
         Console.WriteLine("  --task083-legacy-db-startup-harness [--keepdb]");
+        Console.WriteLine("  --supplier-excel-selftest");
+        Console.WriteLine("  --supplier-excel-ui-selftest");
+        Console.WriteLine("  --supplier-excel-drive-smoke <folder>");
         Console.WriteLine("  --daily yyyy-MM-dd [--db <path>]");
         Console.WriteLine("  --analyze-csv <path>");
             Console.WriteLine("  --diff-csv <path> [--db <path>] [--max-items N] [--format text|json]");
@@ -217,6 +240,31 @@ internal static class Program
         }
 
         return hasSelfTest;
+    }
+
+    private static bool TryParseSupplierExcelSelfTestArgs(string[] args)
+    {
+        return args.Any(arg => string.Equals(arg, "--supplier-excel-selftest", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryParseSupplierExcelUiSelfTestArgs(string[] args)
+    {
+        return args.Any(arg => string.Equals(arg, "--supplier-excel-ui-selftest", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryParseSupplierExcelDriveSmokeArgs(string[] args, out string folder)
+    {
+        folder = string.Empty;
+        for (var i = 0; i < args.Length; i++)
+        {
+            if (!string.Equals(args[i], "--supplier-excel-drive-smoke", StringComparison.OrdinalIgnoreCase))
+                continue;
+            if (i + 1 >= args.Length)
+                throw new ArgumentException("--supplier-excel-drive-smoke requires a folder path.");
+            folder = args[i + 1];
+            return true;
+        }
+        return false;
     }
 
     private static bool TryParseTask081SalesSyncHarnessArgs(string[] args, out bool keepDb)
@@ -1749,6 +1797,655 @@ CREATE TABLE users (
         }
     }
 
+    private static void RunSupplierExcelSelfTest()
+    {
+        Console.WriteLine("Supplier Excel import selftest");
+
+        AssertSupplierAliasSet(
+            "Codice a barre",
+            "Nome",
+            "Prezzo acquisto",
+            "Stock",
+            "Fornitore",
+            "Categoria");
+        AssertSupplierAliasSet(
+            "Código de barras",
+            "Nombre del producto",
+            "Precio de compra",
+            "Stock",
+            "Proveedor",
+            "Categoría");
+        AssertSupplierAliasSet(
+            "条码",
+            "品名",
+            "进价",
+            "库存",
+            "供应商",
+            "分类");
+
+        var tempXlsx = Path.Combine(Path.GetTempPath(), "supplier-import-" + Guid.NewGuid().ToString("N") + ".xlsx");
+        try
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var sheet = workbook.Worksheets.Add("Supplier");
+                sheet.Cell(1, 1).Value = "Codice a barre";
+                sheet.Cell(1, 2).Value = "Nome";
+                sheet.Cell(1, 3).Value = "Prezzo acquisto";
+                sheet.Cell(1, 4).Value = "Prezzo vendita";
+                sheet.Cell(2, 1).Value = "1234567890123";
+                sheet.Cell(2, 2).Value = "Prodotto xlsx";
+                sheet.Cell(2, 3).Value = 1234.56;
+                sheet.Cell(2, 4).Value = 1990;
+                workbook.SaveAs(tempXlsx);
+            }
+
+            var readXlsx = SupplierExcelImportReader.ReadFirstWorksheet(tempXlsx);
+            Assert(readXlsx.HasHeader, "Expected .xlsx reader to detect header.");
+            AssertColumn(readXlsx, AndroidImportKeys.Barcode, "alias");
+            AssertColumn(readXlsx, AndroidImportKeys.ProductName, "alias");
+            AssertColumn(readXlsx, AndroidImportKeys.PurchasePrice, "alias");
+            AssertColumn(readXlsx, AndroidImportKeys.RetailPrice, "alias");
+            Assert(readXlsx.Columns.Any(c => c.CanonicalKey == AndroidImportKeys.Barcode && c.IsEnabled && c.Confidence == "high"), "Expected Step 2 barcode column to expose enabled/high confidence.");
+            Assert(readXlsx.Columns.Any(c => c.CanonicalKey == AndroidImportKeys.ProductName && c.SampleValues.Contains("Prodotto xlsx", StringComparison.OrdinalIgnoreCase)), "Expected Step 2 productName sample values.");
+        }
+        finally
+        {
+            if (File.Exists(tempXlsx)) File.Delete(tempXlsx);
+        }
+
+        var tempHtmlXls = Path.Combine(Path.GetTempPath(), "supplier-import-" + Guid.NewGuid().ToString("N") + ".xls");
+        try
+        {
+            File.WriteAllText(
+                tempHtmlXls,
+                "<html><head><meta charset=\"utf-8\"><meta name=\"ProgId\" content=\"Excel.Sheet\"></head><body>" +
+                "<table>" +
+                "<tr><th>Codice a barre</th><th>Nome</th><th>Prezzo acquisto</th><th>Stock</th></tr>" +
+                "<tr><td>1234567890123</td><td>Prodotto html</td><td>1.234,56</td><td>3</td></tr>" +
+                "</table></body></html>",
+                Encoding.UTF8);
+
+            var readHtmlXls = SupplierExcelImportReader.ReadFirstWorksheet(tempHtmlXls);
+            Assert(readHtmlXls.HasHeader, "Expected HTML .xls reader to detect header.");
+            AssertColumn(readHtmlXls, AndroidImportKeys.Barcode, "alias");
+            AssertColumn(readHtmlXls, AndroidImportKeys.ProductName, "alias");
+            AssertColumn(readHtmlXls, AndroidImportKeys.PurchasePrice, "alias");
+            AssertColumn(readHtmlXls, AndroidImportKeys.Quantity, "alias");
+            Assert(readHtmlXls.Rows.Count == 1, "Expected HTML .xls reader to return one data row.");
+        }
+        finally
+        {
+            if (File.Exists(tempHtmlXls)) File.Delete(tempHtmlXls);
+        }
+
+        var noHeader = SupplierTable(
+            new[] { "1234567890123", "Prodotto pattern", "10", "1.000", "10.000", "AB12", "1.500", "Nome secondario", "Fornitore Pattern", "10%", "900", "1" },
+            new[] { "9876543210987", "Altro pattern", "5", "2.000", "10.000", "CD34", "2.500", "Secondario due", "Fornitore Pattern", "5%", "1900", "2" });
+        Assert(!noHeader.HasHeader, "Expected no-header worksheet.");
+        AssertColumn(noHeader, AndroidImportKeys.Barcode, "pattern");
+        AssertColumn(noHeader, AndroidImportKeys.ProductName, "pattern");
+        AssertColumn(noHeader, AndroidImportKeys.Quantity, "pattern");
+        AssertColumn(noHeader, AndroidImportKeys.PurchasePrice, "pattern");
+        AssertColumn(noHeader, AndroidImportKeys.TotalPrice, "pattern");
+        AssertColumn(noHeader, AndroidImportKeys.ItemNumber, "pattern");
+        AssertColumn(noHeader, AndroidImportKeys.RetailPrice, "pattern");
+        AssertColumn(noHeader, AndroidImportKeys.SecondProductName, "pattern");
+        AssertColumn(noHeader, AndroidImportKeys.Supplier, "pattern");
+        AssertColumn(noHeader, AndroidImportKeys.Discount, "pattern");
+        AssertColumn(noHeader, AndroidImportKeys.DiscountedPrice, "pattern");
+        AssertColumn(noHeader, AndroidImportKeys.RowNumber, "pattern");
+        var itemNumberFirstNoHeader = SupplierTable(
+            new[] { "20034", "6871128200344", "Pattern One", "12", "270", "3240" },
+            new[] { "20089", "6871128200894", "Pattern Two", "24", "480", "11520" });
+        AssertColumn(itemNumberFirstNoHeader, AndroidImportKeys.ItemNumber, "pattern");
+        AssertColumn(itemNumberFirstNoHeader, AndroidImportKeys.Quantity, "pattern");
+        Assert(
+            itemNumberFirstNoHeader.Columns.First(c => c.CanonicalKey == AndroidImportKeys.ItemNumber).ColumnIndex == 0,
+            "Headerless itemNumber must be preferred before quantity for short article-like codes.");
+        Assert(
+            itemNumberFirstNoHeader.Columns.First(c => c.CanonicalKey == AndroidImportKeys.Quantity).ColumnIndex == 3,
+            "Headerless quantity must remain the real quantity column.");
+
+        var generatedRequired = SupplierTable(
+            new[] { "Codice a barre", "Nome", "Stock", "Fornitore", "No" },
+            new[] { "1234567890123", "Prodotto generated", "5", "Fornitore", "1" });
+        AssertColumn(generatedRequired, AndroidImportKeys.PurchasePrice, "generated");
+
+        var manualOverrideTable = SupplierTable(
+            new[] { "Codice interno", "Nome", "Prezzo acquisto", "Prezzo vendita" },
+            new[] { "1234567890123", "Manual override", "100", "150" });
+        var manualOverrideAnalysis = SupplierImportAnalyzer.Analyze(
+            manualOverrideTable,
+            Array.Empty<ProductDetailsRow>(),
+            new Dictionary<int, string> { { 0, AndroidImportKeys.Barcode } });
+        Assert(!manualOverrideAnalysis.Errors.Any(e => e.Message.Contains("barcode", StringComparison.OrdinalIgnoreCase)), "Expected manual override to map barcode.");
+        Assert(manualOverrideAnalysis.Columns.Any(c => c.CanonicalKey == AndroidImportKeys.Barcode && c.HeaderSource == "manual"), "Expected manual override source.");
+        var disabledColumnAnalysis = SupplierImportAnalyzer.Analyze(
+            manualOverrideTable,
+            Array.Empty<ProductDetailsRow>(),
+            new Dictionary<int, string> { { 0, string.Empty } });
+        Assert(disabledColumnAnalysis.Errors.Any(e => e.Message.Contains("barcode", StringComparison.OrdinalIgnoreCase)), "Expected disabled barcode column to block Step 3.");
+
+        var duplicateAnalysis = SupplierImportAnalyzer.Analyze(
+            SupplierTable(
+                new[] { "barcode", "productName", "purchasePrice", "retailPrice" },
+                new[] { "1234567890123", "Old duplicate", "100", "1000" },
+                new[] { "1234567890123", "Last duplicate", "120", "1100" }),
+            Array.Empty<ProductDetailsRow>());
+        Assert(duplicateAnalysis.Warnings.Any(w => w.Rows.Count == 2), "Expected duplicate barcode warning with both rows.");
+        Assert(duplicateAnalysis.NewProducts.Count == 1, "Expected duplicate barcode to keep one product.");
+        Assert(duplicateAnalysis.EditableRows.Single().ProductName == "Last duplicate", "Expected duplicate barcode to keep last occurrence.");
+
+        var blankBarcode = SupplierImportAnalyzer.Analyze(
+            SupplierTable(
+                new[] { "barcode", "productName", "purchasePrice", "retailPrice", "quantity" },
+                new[] { "", "No Barcode", "100", "1000", "1" }),
+            Array.Empty<ProductDetailsRow>());
+        Assert(blankBarcode.Errors.Any(e => e.Message.Contains("Barcode mancante", StringComparison.OrdinalIgnoreCase)), "Expected blank barcode error.");
+
+        var summaryTable = SupplierTable(
+            new[] { "barcode", "productName", "purchasePrice", "retailPrice", "quantity" },
+            new[] { "1234567890123", "Prodotto reale", "100", "1000", "1" },
+            new[] { "", "Totale", "100", "1000", "1" });
+        Assert(summaryTable.Rows.Count == 1, "Expected summary/total row to be filtered.");
+        foreach (var token in new[]
+        {
+            "合计", "总计", "小计", "汇总", "合計", "總計", "小計", "總結", "总额",
+            "subtotal", "total", "totale", "tot.", "sommario", "resumen", "sum"
+        })
+        {
+            var tokenTable = SupplierTable(
+                new[] { "barcode", "productName", "purchasePrice", "retailPrice", "quantity" },
+                new[] { "1234567890123", "Prodotto reale", "100", "1000", "1" },
+                new[] { "", token, "100", "1000", "1" });
+            Assert(tokenTable.Rows.Count == 1, "Expected summary row token to be filtered: " + token);
+        }
+
+        AssertNumber("1.234,56", 1234.56);
+        AssertNumber("1,234.56", 1234.56);
+        AssertNumber("1234,56", 1234.56);
+        AssertNumber("1234", 1234);
+
+        var existing = ExistingSupplierProduct();
+        var retailMissingAnalysis = SupplierImportAnalyzer.Analyze(
+            SupplierTable(
+                new[] { "barcode", "productName", "purchasePrice", "quantity" },
+                new[] { existing.Barcode, "Existing renamed", "300", "9" }),
+            new[] { existing });
+        Assert(retailMissingAnalysis.UpdatedProducts.Count == 1, "Expected existing product update.");
+        Assert(retailMissingAnalysis.UpdatedProducts[0].Updated.RetailPrice == existing.UnitPrice.ToString(CultureInfo.InvariantCulture), "Missing retailPrice must preserve products.unitPrice.");
+        Assert(retailMissingAnalysis.Warnings.Any(w => w.Message.Contains("Prezzo vendita vuoto", StringComparison.OrdinalIgnoreCase)), "Expected retailPrice missing warning.");
+
+        var preserveMissingAnalysis = SupplierImportAnalyzer.Analyze(
+            SupplierTable(
+                new[] { "barcode", "purchasePrice", "quantity", "supplier" },
+                new[] { existing.Barcode, "350", "6", "Nuovo Fornitore" }),
+            new[] { existing });
+        Assert(preserveMissingAnalysis.UpdatedProducts.Count == 1, "Expected update with missing name fields.");
+        Assert(preserveMissingAnalysis.UpdatedProducts[0].Updated.ProductName == existing.Name, "Missing productName must preserve products.name.");
+        Assert(preserveMissingAnalysis.UpdatedProducts[0].Updated.ItemNumber == existing.ArticleCode, "Missing itemNumber must preserve product_meta.article_code.");
+        Assert(preserveMissingAnalysis.UpdatedProducts[0].Updated.RetailPrice == existing.UnitPrice.ToString(CultureInfo.InvariantCulture), "Missing retailPrice must preserve products.unitPrice.");
+
+        var newMissingIdentity = SupplierImportAnalyzer.Analyze(
+            SupplierTable(
+                new[] { "barcode", "purchasePrice", "quantity", "supplier" },
+                new[] { "9876543210987", "100", "1", "Fornitore" }),
+            Array.Empty<ProductDetailsRow>());
+        Assert(newMissingIdentity.Errors.Any(e => e.Message.Contains("productName o itemNumber", StringComparison.OrdinalIgnoreCase)), "Expected new product identity error.");
+
+        var itemNumberOnly = SupplierImportAnalyzer.Analyze(
+            SupplierTable(
+                new[] { "barcode", "itemNumber", "purchasePrice", "retailPrice" },
+                new[] { "7777777700007", "ART-777", "100", "160" }),
+            Array.Empty<ProductDetailsRow>());
+        Assert(itemNumberOnly.Errors.Count == 0, "Expected new product with itemNumber but no productName to be valid.");
+        Assert(itemNumberOnly.NewProducts.Count == 1, "Expected itemNumber-only product to be new.");
+
+        var missingRetailNew = SupplierImportAnalyzer.Analyze(
+            SupplierTable(
+                new[] { "barcode", "itemNumber", "purchasePrice", "quantity" },
+                new[] { "7777777700014", "ART-778", "100", "1" }),
+            Array.Empty<ProductDetailsRow>());
+        Assert(missingRetailNew.EditableRows.Any(row => !row.Exists && string.IsNullOrWhiteSpace(row.RetailPrice)), "Expected pre-apply blocker condition for missing new retailPrice.");
+
+        var bulkRows = new List<SupplierImportEditableRow>
+        {
+            new SupplierImportEditableRow { Barcode = "1111111100001", PurchasePrice = "100", RetailPrice = "" },
+            new SupplierImportEditableRow { Barcode = "1111111100002", PurchasePrice = "100", RetailPrice = "180" }
+        };
+        var bulkChanged = SupplierRetailPriceHelper.ApplyMarkupToRetailPriceRows(bulkRows, 30, 50, true);
+        Assert(bulkChanged == 1, "Expected bulk markup helper to fill only empty retailPrice.");
+        Assert(bulkRows[0].RetailPrice == "150", "Expected 30% markup rounded to nearest 50 CLP.");
+        Assert(bulkRows[1].RetailPrice == "180", "Expected existing retailPrice to remain unchanged.");
+
+        AssertSupplierGoldenFixture();
+
+        AssertSupplierPublicKeysAreCanonical();
+
+        Console.WriteLine("SUPPLIER EXCEL SELFTEST PASS");
+        Console.WriteLine("TEST PASS");
+    }
+
+    private static void RunSupplierExcelUiSelfTest()
+    {
+        Console.WriteLine("Supplier Excel import UI selftest");
+
+        var root = FindRepoRoot();
+        var productsView = ReadRepoFile(root, "src/Win7POS.Wpf/Products/ProductsView.xaml");
+        var productsViewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Products/ProductsViewModel.cs");
+        var dbMaintenanceView = ReadRepoFile(root, "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml");
+        var dbMaintenanceViewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceViewModel.cs");
+        var dialogXaml = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml");
+        var dialogCode = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml.cs");
+        var viewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs");
+        var workflow = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs");
+        var applier = ReadRepoFile(root, "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs");
+        var models = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierExcelImportModels.cs");
+        var helper = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierRetailPriceHelper.cs");
+
+        AssertText(productsView, "Import Excel fornitore", "Products screen must expose supplier Excel import.");
+        AssertText(productsView, "SupplierExcelImportCommand", "Products import button must bind supplier command.");
+        AssertText(productsViewModel, "SupplierExcelImportDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner())", "Products command must open the supplier dialog modally.");
+        AssertText(dbMaintenanceView, "Import Excel fornitore", "DB maintenance screen must expose supplier Excel import.");
+        AssertText(dbMaintenanceView, "SupplierExcelImportCommand", "DB maintenance import button must bind supplier command.");
+        AssertText(dbMaintenanceViewModel, "SupplierExcelImportDialog.ShowDialog", "DB maintenance command must open the same supplier dialog.");
+
+        AssertText(dialogXaml, "chrome:DialogShellWindow", "Supplier import must use the WPF dialog shell.");
+        AssertText(dialogXaml, "UseModalOverlay=\"True\"", "Supplier import dialog must be modal.");
+        AssertText(dialogCode, "ShowDialog", "Supplier import dialog must be shown with ShowDialog.");
+        AssertText(dialogXaml, "1. Scegli file", "Step 1 label missing.");
+        AssertText(dialogXaml, "2. Analizza colonne", "Step 2 label missing.");
+        AssertText(dialogXaml, "3. Rivedi prezzi e applica", "Step 3 label missing.");
+        AssertText(viewModel, "IsStep1", "Step 1 state missing.");
+        AssertText(viewModel, "IsStep2", "Step 2 state missing.");
+        AssertText(viewModel, "IsStep3", "Step 3 state missing.");
+
+        foreach (var required in new[]
+        {
+            "originalColumnName",
+            "canonicalKey",
+            "headerSource",
+            "confidence",
+            "sampleValues",
+            "enabled"
+        })
+        {
+            AssertText(dialogXaml, required, "Step 2 mapping grid missing " + required + ".");
+        }
+        AssertText(dialogXaml, "SelectedItem=\"{Binding CanonicalKey", "Step 2 must allow canonical key override.");
+        AssertText(dialogXaml, "Binding=\"{Binding IsEnabled", "Step 2 must allow disabling columns.");
+        AssertText(viewModel, "Columns.ToDictionary(c => c.ColumnIndex", "Step 2 override/disable state must feed analyzer.");
+        AssertText(viewModel, "c.IsEnabled ? (c.CanonicalKey ?? string.Empty) : string.Empty", "Disabled columns must be sent as empty override.");
+        AssertText(viewModel, "await AnalyzeAsync().ConfigureAwait(true)", "Step 3 preview must be rebuilt from mapping state.");
+
+        foreach (var required in new[]
+        {
+            "itemNumber",
+            "productName",
+            "secondProductName",
+            "purchasePrice",
+            "retailPrice",
+            "quantity",
+            "supplier",
+            "category"
+        })
+        {
+            AssertText(dialogXaml, "Header=\"" + required + "\"", "Step 3 editable grid missing " + required + ".");
+        }
+        AssertText(dialogXaml, "IsReadOnly=\"True\"", "Step 3 barcode column should remain read-only.");
+
+        AssertText(viewModel, "MarkupPercent", "Bulk markup input missing.");
+        AssertText(viewModel, "new[] { 10, 50, 100 }", "Bulk rounding options must be 10/50/100 CLP.");
+        AssertText(viewModel, "_applyOnlyEmptyRetailPrice = true", "Bulk helper default must target empty retailPrice only.");
+        AssertText(helper, "ApplyMarkupToRetailPriceRows", "Bulk retail helper must be in core import code.");
+
+        AssertText(viewModel, "MissingNewRetailPriceCount == 0", "New product missing retailPrice must block apply.");
+        AssertText(viewModel, "Nuovi prodotti senza retailPrice", "Apply blocker message must name missing retailPrice.");
+        AssertText(workflow, "CreateBackupBeforeApplyAsync", "Apply must create a pre-apply backup.");
+        AssertText(workflow, "Warning count", "Apply summary must report warning count.");
+        AssertText(workflow, "Skipped", "Apply summary must report skipped count.");
+        AssertText(applier, "BeginTransaction", "Apply must use an explicit transaction.");
+        AssertText(applier, "tx.Rollback", "Apply must rollback on row/apply error.");
+        AssertText(applier, "'IMPORT'", "Apply must write IMPORT price history source.");
+        AssertText(applier, "Nuovo prodotto senza retailPrice", "Apply must reject new products without retailPrice.");
+        AssertText(productsViewModel, "CatalogEvents.RaiseCatalogChanged(null)", "Products import must refresh catalog after successful apply.");
+        AssertText(dbMaintenanceViewModel, "CatalogEvents.RaiseCatalogChanged(null)", "DB maintenance import must refresh catalog after successful apply.");
+
+        AssertText(models, "HeaderSource", "Import models must preserve headerSource.");
+        AssertText(models, "Confidence", "Import models must preserve confidence.");
+        AssertText(models, "SampleValues", "Import models must preserve sample values.");
+        AssertText(models, "IsEnabled", "Import models must preserve enabled state.");
+
+        Console.WriteLine("SUPPLIER EXCEL UI SELFTEST PASS");
+        Console.WriteLine("TEST PASS");
+    }
+
+    private static void RunSupplierExcelDriveSmoke(string folder)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            throw new DirectoryNotFoundException("Supplier Excel smoke folder not found.");
+
+        var files = Directory.EnumerateFiles(folder)
+            .Where(path =>
+                string.Equals(Path.GetExtension(path), ".xls", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(Path.GetExtension(path), ".xlsx", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(path => Path.GetFileName(path), StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (files.Count == 0)
+            throw new InvalidOperationException("Supplier Excel smoke folder has no .xls or .xlsx files.");
+
+        var summaries = files.Select(AnalyzeSupplierExcelSmokeFile).ToList();
+        var ok = summaries.All(item =>
+            string.Equals(item.Result, "pass", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(item.Result, "price_edit_required", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(item.Result, "manual_mapping_review", StringComparison.OrdinalIgnoreCase));
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            ok,
+            fileCount = summaries.Count,
+            files = summaries
+        }, new JsonSerializerOptions { WriteIndented = true }));
+
+        if (!ok)
+            throw new InvalidOperationException("One or more supplier Excel smoke files failed analysis.");
+        Console.WriteLine("SUPPLIER EXCEL DRIVE SMOKE PASS");
+        Console.WriteLine("TEST PASS");
+    }
+
+    private static SupplierExcelDriveSmokeFileSummary AnalyzeSupplierExcelSmokeFile(string file)
+    {
+        var summary = new SupplierExcelDriveSmokeFileSummary
+        {
+            FileName = Path.GetFileName(file),
+            Extension = Path.GetExtension(file).TrimStart('.').ToLowerInvariant(),
+            SizeCategory = SizeCategory(new FileInfo(file).Length)
+        };
+
+        try
+        {
+            var table = SupplierExcelImportReader.ReadFirstWorksheet(file);
+            var analysis = SupplierImportAnalyzer.Analyze(table, Array.Empty<ProductDetailsRow>());
+            var blockedRows = analysis.EditableRows
+                .Count(row => row != null && !row.Exists && string.IsNullOrWhiteSpace(row.RetailPrice));
+            summary.SheetsDetected = SupplierExcelImportReader.CountWorksheets(file);
+            summary.SelectedSheet = table.SheetName;
+            summary.HeaderRow = table.HasHeader ? table.DataRowIndex : 0;
+            summary.SkippedMetadataRows = table.HasHeader ? Math.Max(0, table.DataRowIndex - 1) : 0;
+            summary.DetectedCanonicalMappings = table.Columns
+                .Where(column => column.IsEnabled && !string.IsNullOrWhiteSpace(column.CanonicalKey))
+                .Select(column => column.CanonicalKey + ":" + column.HeaderSource + ":" + column.Confidence)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .ToArray();
+            summary.UnmappedColumns = table.Columns.Count(column => !column.IsEnabled || string.IsNullOrWhiteSpace(column.CanonicalKey));
+            summary.ParsedRows = table.Rows.Count;
+            summary.ValidRows = Math.Max(0, analysis.EditableRows.Count - blockedRows);
+            summary.BlockedRows = blockedRows;
+            summary.WarningCount = analysis.Warnings.Count;
+            summary.ErrorCount = analysis.Errors.Count;
+            summary.Step2OverrideDisableCanCorrectMappingIssues = table.Columns.Count > 0;
+            summary.Step3PriceEditCanResolveMissingRetail = blockedRows > 0;
+            summary.Result = analysis.Errors.Count > 0
+                ? "manual_mapping_review"
+                : blockedRows > 0
+                    ? "price_edit_required"
+                    : "pass";
+        }
+        catch (Exception ex)
+        {
+            summary.ErrorCount = 1;
+            summary.Result = "analysis_error";
+            summary.AnalysisError = ex.GetType().Name + ": " + ex.Message;
+        }
+
+        return summary;
+    }
+
+    private static string SizeCategory(long bytes)
+    {
+        if (bytes < 64L * 1024L) return "small";
+        if (bytes < 2L * 1024L * 1024L) return "medium";
+        return "large";
+    }
+
+    private static string FindRepoRoot()
+    {
+        var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+        while (dir != null)
+        {
+            var marker = Path.Combine(dir.FullName, "src", "Win7POS.Cli", "Program.cs");
+            if (File.Exists(marker))
+                return dir.FullName;
+            dir = dir.Parent;
+        }
+
+        throw new InvalidOperationException("Unable to locate Win7POS repository root.");
+    }
+
+    private static string ReadRepoFile(string root, string relativePath)
+    {
+        var path = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+        Assert(File.Exists(path), "Required source file missing: " + relativePath);
+        return File.ReadAllText(path);
+    }
+
+    private static void AssertText(string source, string required, string message)
+    {
+        Assert(source.IndexOf(required, StringComparison.Ordinal) >= 0, message);
+    }
+
+    private static void AssertSupplierAliasSet(
+        string barcodeHeader,
+        string productNameHeader,
+        string purchasePriceHeader,
+        string quantityHeader,
+        string supplierHeader,
+        string categoryHeader)
+    {
+        var table = SupplierTable(
+            new[] { barcodeHeader, productNameHeader, purchasePriceHeader, quantityHeader, supplierHeader, categoryHeader },
+            new[] { "1234567890123", "Prodotto alias", "1.234,56", "10", "Fornitore Alias", "Categoria Alias" });
+
+        Assert(table.HasHeader, "Expected header detection for alias table.");
+        AssertColumn(table, AndroidImportKeys.Barcode, "alias");
+        AssertColumn(table, AndroidImportKeys.ProductName, "alias");
+        AssertColumn(table, AndroidImportKeys.PurchasePrice, "alias");
+        AssertColumn(table, AndroidImportKeys.Quantity, "alias");
+        AssertColumn(table, AndroidImportKeys.Supplier, "alias");
+        AssertColumn(table, AndroidImportKeys.Category, "alias");
+        Assert(
+            table.Columns
+                .Where(column => !string.IsNullOrWhiteSpace(column.CanonicalKey))
+                .All(column => AndroidImportKeys.AllKeys.Contains(column.CanonicalKey)),
+            "Detected import keys must be Android canonical keys only.");
+    }
+
+    private static void AssertSupplierGoldenFixture()
+    {
+        var path = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "tests",
+            "fixtures",
+            "supplier-import",
+            "android-canonical-sample.json");
+        Assert(File.Exists(path), "Golden supplier import fixture missing.");
+        using var doc = JsonDocument.Parse(File.ReadAllText(path));
+        var root = doc.RootElement;
+        var rows = root.GetProperty("sampleRows")
+            .EnumerateArray()
+            .Select(row => row.EnumerateArray().Select(cell => cell.GetString() ?? string.Empty).ToArray())
+            .ToArray();
+        var table = SupplierTable(rows);
+
+        if (root.TryGetProperty("sheetRows", out var sheetRowsElement))
+        {
+            var sheetRows = sheetRowsElement
+                .EnumerateArray()
+                .Select(row => row.EnumerateArray().Select(cell => cell.GetString() ?? string.Empty).ToArray())
+                .ToArray();
+            var metadataTable = SupplierTable(sheetRows);
+            Assert(metadataTable.Rows.Count == root.GetProperty("dataRowsCount").GetInt32(), "Golden fixture metadata sheetRows dataRowsCount mismatch.");
+            Assert(root.GetProperty("metadataRowsBeforeHeader").GetArrayLength() > 0, "Golden fixture must include metadata rows before header.");
+        }
+
+        if (root.TryGetProperty("aliasSamples", out var aliasSamplesElement))
+        {
+            foreach (var aliasSample in aliasSamplesElement.EnumerateObject())
+            {
+                var aliasRows = aliasSample.Value
+                    .EnumerateArray()
+                    .Select(row => row.EnumerateArray().Select(cell => cell.GetString() ?? string.Empty).ToArray())
+                    .ToArray();
+                var aliasTable = SupplierTable(aliasRows);
+                Assert(aliasTable.HasHeader, "Golden fixture alias sample header not detected: " + aliasSample.Name);
+                Assert(aliasTable.Columns.Count(c => !string.IsNullOrWhiteSpace(c.CanonicalKey)) >= 6, "Golden fixture alias sample canonical key count too low: " + aliasSample.Name);
+            }
+        }
+
+        var expectedHeader = root.GetProperty("normalizedHeader").EnumerateArray().Select(x => x.GetString() ?? string.Empty).ToArray();
+        var actualHeader = table.Columns.Select(c => c.CanonicalKey).Where(key => !string.IsNullOrWhiteSpace(key)).ToArray();
+        Assert(expectedHeader.SequenceEqual(actualHeader), "Golden fixture normalizedHeader mismatch.");
+
+        foreach (var item in root.GetProperty("headerSource").EnumerateObject())
+        {
+            AssertColumn(table, item.Name, item.Value.GetString() ?? string.Empty);
+        }
+        Assert(table.Rows.Count == root.GetProperty("dataRowsCount").GetInt32(), "Golden fixture dataRowsCount mismatch.");
+
+        var existing = ExistingSupplierProduct();
+        existing.Barcode = "9999999900001";
+        existing.Name = "Existing";
+        var analysis = SupplierImportAnalyzer.Analyze(table, new[] { existing });
+        Assert(analysis.NewProducts.Count == root.GetProperty("newProducts").GetInt32(), "Golden fixture newProducts mismatch.");
+        Assert(analysis.UpdatedProducts.Count == root.GetProperty("updatedProducts").GetInt32(), "Golden fixture updatedProducts mismatch.");
+        var warning = analysis.Warnings.FirstOrDefault(w => w.Rows.Count > 1);
+        if (warning == null)
+        {
+            throw new InvalidOperationException("Golden fixture duplicate warning missing.");
+        }
+        var expectedRows = root.GetProperty("duplicateWarnings")[0].GetProperty("rows").EnumerateArray().Select(x => x.GetInt32()).ToArray();
+        Assert(expectedRows.SequenceEqual(warning.Rows), "Golden fixture duplicate warning rows mismatch.");
+        Assert(analysis.Errors.Count == root.GetProperty("errors").GetArrayLength(), "Golden fixture errors mismatch.");
+
+        if (root.TryGetProperty("parseNumberResults", out var parseNumberResults))
+        {
+            foreach (var item in parseNumberResults.EnumerateObject())
+            {
+                AssertNumber(item.Name, item.Value.GetDouble());
+            }
+        }
+
+        if (root.TryGetProperty("publicKeysAudit", out var publicKeysAudit))
+        {
+            var allowed = publicKeysAudit.GetProperty("allowed").EnumerateArray().Select(x => x.GetString() ?? string.Empty).ToArray();
+            Assert(allowed.SequenceEqual(AndroidImportKeys.AllKeys), "Golden fixture allowed public keys must match AndroidImportKeys.AllKeys.");
+            var forbidden = publicKeysAudit.GetProperty("forbidden").EnumerateArray().Select(x => x.GetString() ?? string.Empty).ToArray();
+            foreach (var row in root.GetProperty("previewRows").EnumerateArray())
+            {
+                foreach (var forbiddenKey in forbidden)
+                {
+                    Assert(!row.TryGetProperty(forbiddenKey, out _), "Forbidden public key leaked into golden fixture previewRows: " + forbiddenKey);
+                }
+            }
+        }
+    }
+
+    private static SupplierExcelRawTable SupplierTable(params string[][] rows)
+    {
+        return SupplierImportAnalyzer.BuildRawTable(
+            "supplier-selftest",
+            rows.Select(row => (IReadOnlyList<string>)row.ToList()).ToList());
+    }
+
+    private static void AssertColumn(SupplierExcelRawTable table, string canonicalKey, string expectedSource)
+    {
+        var column = table.Columns.FirstOrDefault(c => c.CanonicalKey == canonicalKey);
+        Assert(column != null, "Expected canonical column: " + canonicalKey);
+        Assert(
+            string.Equals(column?.HeaderSource, expectedSource, StringComparison.OrdinalIgnoreCase),
+            "Expected " + canonicalKey + " source " + expectedSource + ", actual " + (column?.HeaderSource ?? "<missing>") + ".");
+    }
+
+    private static void AssertSupplierPublicKeysAreCanonical()
+    {
+        var forbidden = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "ArticleCode",
+            "Name",
+            "Name2",
+            "UnitPrice",
+            "Cost",
+            "Stock",
+            "StockQuantity",
+            "SupplierName",
+            "CategoryName",
+            "PrevPurchase",
+            "PrevRetail"
+        };
+        var publicSupplierTypes = typeof(AndroidImportKeys).Assembly
+            .GetTypes()
+            .Where(type => type.IsPublic && type.Namespace == "Win7POS.Core.Import" && type.Name.StartsWith("Supplier", StringComparison.Ordinal));
+        foreach (var type in publicSupplierTypes)
+        {
+            foreach (var property in type.GetProperties())
+            {
+                Assert(!forbidden.Contains(property.Name), "Forbidden public supplier import property: " + type.Name + "." + property.Name);
+            }
+        }
+
+        var modelPath = Path.Combine(
+            Directory.GetCurrentDirectory(),
+            "src",
+            "Win7POS.Core",
+            "Import",
+            "SupplierExcelImportModels.cs");
+        Assert(File.Exists(modelPath), "Supplier public model source not found for forbidden key scan.");
+        var modelSource = File.ReadAllText(modelPath);
+        foreach (var forbiddenKey in new[]
+        {
+            "stockQuantity",
+            "supplierName",
+            "categoryName",
+            "articleCode",
+            "unitPrice",
+            "cost",
+            "name2",
+            "prevPurchase",
+            "prevRetail"
+        })
+        {
+            Assert(modelSource.IndexOf(forbiddenKey, StringComparison.OrdinalIgnoreCase) < 0, "Forbidden public supplier import key in model source: " + forbiddenKey);
+        }
+    }
+
+    private static void AssertNumber(string value, double expected)
+    {
+        var actual = SupplierImportAnalyzer.ParseNumber(value);
+        if (!actual.HasValue)
+            throw new InvalidOperationException("Expected numeric parse for " + value + ".");
+        Assert(Math.Abs(actual.Value - expected) < 0.0001, "Unexpected parseNumber for " + value + ".");
+    }
+
+    private static ProductDetailsRow ExistingSupplierProduct()
+    {
+        return new ProductDetailsRow
+        {
+            Id = 1,
+            Barcode = "1234567890123",
+            Name = "Existing Product",
+            UnitPrice = 1200,
+            ArticleCode = "EX-001",
+            Name2 = "Existing Second",
+            PurchasePrice = 200,
+            StockQty = 5,
+            SupplierId = 7,
+            SupplierName = "Existing Supplier",
+            CategoryId = 9,
+            CategoryName = "Existing Category"
+        };
+    }
+
     private static async Task RunSelfTest(bool keepDb)
     {
         var tempRoot = Path.Combine(Path.GetTempPath(), "Win7POS");
@@ -3268,6 +3965,28 @@ SELECT last_insert_rowid();";
         var totalLines = await ScalarLongAsync(conn, null, "SELECT COUNT(*) FROM sale_lines").ConfigureAwait(false);
         var linesForSale = await ScalarLongAsync(conn, null, "SELECT COUNT(*) FROM sale_lines WHERE saleId = @saleId", "@saleId", saleId).ConfigureAwait(false);
         Console.WriteLine($"DB CHECK: sales={totalSales}, sale_lines={totalLines}, linesForSale={linesForSale}");
+    }
+
+    private sealed class SupplierExcelDriveSmokeFileSummary
+    {
+        public string FileName { get; set; } = string.Empty;
+        public string Extension { get; set; } = string.Empty;
+        public string SizeCategory { get; set; } = string.Empty;
+        public int SheetsDetected { get; set; }
+        public string SelectedSheet { get; set; } = string.Empty;
+        public int HeaderRow { get; set; }
+        public int SkippedMetadataRows { get; set; }
+        public string[] DetectedCanonicalMappings { get; set; } = Array.Empty<string>();
+        public int UnmappedColumns { get; set; }
+        public int ParsedRows { get; set; }
+        public int ValidRows { get; set; }
+        public int BlockedRows { get; set; }
+        public int WarningCount { get; set; }
+        public int ErrorCount { get; set; }
+        public bool Step2OverrideDisableCanCorrectMappingIssues { get; set; }
+        public bool Step3PriceEditCanResolveMissingRetail { get; set; }
+        public string Result { get; set; } = string.Empty;
+        public string AnalysisError { get; set; } = string.Empty;
     }
 
     private sealed class FailAfterUpserter : IProductUpserter

@@ -48,6 +48,7 @@
                     <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc products.duplicate}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CopyNewCommand}"/>
                     <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc common.delete}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding DeleteCommand}"/>
                     <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc import.title}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ImportCommand}"/>
+                    <Button MinWidth="150" Margin="12,0,0,0" Height="36" Content="Import Excel fornitore" Style="{StaticResource OutlineButtonStyle}" Command="{Binding SupplierExcelImportCommand}"/>
                     <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc export.title}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ExportDataCommand}"/>
                     <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc priceHistory.title}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenPriceHistoryCommand}"/>
                 </StackPanel>

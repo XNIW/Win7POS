@@ -9,6 +9,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using Win7POS.Core;
 using Win7POS.Core.Security;
+using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Localization;
 
@@ -30,6 +31,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             RestoreBackupCommand = new AsyncRelayCommand(RestoreBackupAsync, _ => !IsBusy);
             IntegrityCheckCommand = new AsyncRelayCommand(IntegrityCheckAsync, _ => !IsBusy);
             VacuumCommand = new AsyncRelayCommand(VacuumAsync, _ => !IsBusy);
+            SupplierExcelImportCommand = new RelayCommand(_ => OpenSupplierExcelImport(), _ => !IsBusy);
             OpenFolderCommand = new RelayCommand(_ => OpenFolder(), _ => !IsBusy);
         }
 
@@ -53,6 +55,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand RestoreBackupCommand { get; }
         public ICommand IntegrityCheckCommand { get; }
         public ICommand VacuumCommand { get; }
+        public ICommand SupplierExcelImportCommand { get; }
         public ICommand OpenFolderCommand { get; }
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -177,6 +180,27 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
+        private void OpenSupplierExcelImport()
+        {
+            try
+            {
+                var applied = SupplierExcelImportDialog.ShowDialog(System.Windows.Application.Current?.MainWindow);
+                if (applied)
+                {
+                    Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(null);
+                    Append("Import Excel fornitore completato. Catalogo aggiornato.");
+                }
+                else
+                {
+                    Append("Import Excel fornitore annullato.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Append("Import Excel fornitore fallito: " + ex.Message);
+            }
+        }
+
         private void Append(string line)
         {
             OutputLog = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + " " + line + Environment.NewLine + OutputLog;
@@ -188,6 +212,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (RestoreBackupCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (IntegrityCheckCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (VacuumCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (SupplierExcelImportCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenFolderCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 

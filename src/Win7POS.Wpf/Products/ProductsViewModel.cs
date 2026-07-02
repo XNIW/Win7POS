@@ -141,6 +141,7 @@ namespace Win7POS.Wpf.Products
         public ICommand CopyNewCommand { get; }
         public ICommand DeleteCommand { get; }
         public ICommand ImportCommand { get; }
+        public ICommand SupplierExcelImportCommand { get; }
         public ICommand ExportDataCommand { get; }
         public ICommand OpenPriceHistoryCommand { get; }
         public ICommand PrevPageCommand { get; }
@@ -159,6 +160,7 @@ namespace Win7POS.Wpf.Products
             CopyNewCommand = new AsyncRelayCommand(CopyNewAsync, _ => CanEditSelectedProduct, _logger);
             DeleteCommand = new AsyncRelayCommand(DeleteAsync, _ => CanEditSelectedProduct, _logger);
             ImportCommand = new AsyncRelayCommand(ImportAsync, _ => CanImportCatalog, _logger);
+            SupplierExcelImportCommand = new AsyncRelayCommand(SupplierExcelImportAsync, _ => CanImportCatalog, _logger);
             ExportDataCommand = new AsyncRelayCommand(ExportDataAsync, _ => !IsBusy, _logger);
             OpenPriceHistoryCommand = new AsyncRelayCommand(OpenPriceHistoryAsync, _ => !IsBusy && SelectedProduct != null, _logger);
             PrevPageCommand = new AsyncRelayCommand(PrevPageAsync, _ => !IsBusy && PageIndex > 1, _logger);
@@ -486,6 +488,30 @@ namespace Win7POS.Wpf.Products
             }
         }
 
+        private async Task SupplierExcelImportAsync()
+        {
+            if (!DemandProductPermission(PermissionCodes.CatalogImport, "products.operationImportCatalog")) return;
+            try
+            {
+                var applied = SupplierExcelImportDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner());
+                if (applied)
+                {
+                    CatalogEvents.RaiseCatalogChanged(null);
+                    StatusMessage = PosLocalization.T("products.catalogUpdating");
+                    await RefreshAsync().ConfigureAwait(true);
+                }
+                else
+                {
+                    StatusMessage = PosLocalization.T("products.ready");
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = PosLocalization.F("common.errorWithMessage", ex.Message);
+                _logger.LogError(ex, "Products Supplier Excel import failed");
+            }
+        }
+
         private async Task ExportDataAsync()
         {
             IsBusy = true;
@@ -562,6 +588,7 @@ namespace Win7POS.Wpf.Products
             (CopyNewCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (DeleteCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ImportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (SupplierExcelImportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (ExportDataCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (OpenPriceHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (PrevPageCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
