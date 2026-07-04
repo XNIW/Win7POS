@@ -23,13 +23,26 @@ function Assert-Contains {
     }
 }
 
+function Assert-NotContains {
+    param(
+        [string]$Source,
+        [string]$Forbidden,
+        [string]$Message
+    )
+    if ($Source.IndexOf($Forbidden, [System.StringComparison]::Ordinal) -ge 0) {
+        throw $Message
+    }
+}
+
 $productsView = Read-RepoFile "src/Win7POS.Wpf/Products/ProductsView.xaml"
 $productsViewModel = Read-RepoFile "src/Win7POS.Wpf/Products/ProductsViewModel.cs"
 $dbMaintenanceView = Read-RepoFile "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml"
+$dbMaintenanceDialogCode = Read-RepoFile "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml.cs"
 $dbMaintenanceViewModel = Read-RepoFile "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceViewModel.cs"
 $dialogXaml = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml"
 $dialogCode = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml.cs"
 $viewModel = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs"
+$dialogOwnerHelper = Read-RepoFile "src/Win7POS.Wpf/Infrastructure/DialogOwnerHelper.cs"
 $workflow = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs"
 $applier = Read-RepoFile "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs"
 $analyzer = Read-RepoFile "src/Win7POS.Core/Import/SupplierImportAnalyzer.cs"
@@ -46,11 +59,24 @@ Assert-Contains $productsView "SupplierExcelImportCommand" "Products entry point
 Assert-Contains $productsViewModel "SupplierExcelImportDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner())" "Products entry point does not open supplier dialog."
 Assert-Contains $dbMaintenanceView "Import Excel fornitore" "DB maintenance entry point missing."
 Assert-Contains $dbMaintenanceView "SupplierExcelImportCommand" "DB maintenance entry point is not wired."
-Assert-Contains $dbMaintenanceViewModel "SupplierExcelImportDialog.ShowDialog" "DB maintenance entry point does not open supplier dialog."
+Assert-Contains $dbMaintenanceViewModel "internal Window OwnerWindow { get; set; }" "DB maintenance must keep the current dialog owner."
+Assert-Contains $dbMaintenanceDialogCode "vm.OwnerWindow = this" "DB maintenance dialog must pass itself as current owner."
+Assert-Contains $dbMaintenanceViewModel "SupplierExcelImportDialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner())" "DB maintenance entry point must open supplier dialog from the current owner chain."
 
 Assert-Contains $dialogXaml "chrome:DialogShellWindow" "Supplier import must use WPF dialog shell."
 Assert-Contains $dialogXaml "UseModalOverlay=`"True`"" "Supplier import dialog must be modal."
 Assert-Contains $dialogCode "ShowDialog" "Supplier import must be shown with ShowDialog."
+Assert-Contains $dialogCode "new SupplierExcelFileDialogService(() => this)" "Supplier import dialog must provide itself as file picker owner."
+Assert-Contains $viewModel "ISupplierExcelFileDialogService" "Supplier import file picker must be owner-aware behind an interface."
+Assert-Contains $viewModel "SelectSupplierExcelFile()" "Supplier import Browse must use the owner-aware file picker service."
+Assert-Contains $viewModel "DialogOwnerHelper.GetSafeOwner(_ownerProvider == null ? null : _ownerProvider())" "Supplier import file picker must resolve the current safe owner."
+Assert-Contains $viewModel "dlg.ShowDialog(owner)" "Supplier import file picker must be shown with an explicit owner."
+Assert-NotContains $viewModel "dlg.ShowDialog() == true" "Supplier import file picker must not use ownerless ShowDialog()."
+Assert-NotContains $viewModel "ModernMessageDialog.Show(Application.Current?.MainWindow" "Supplier import flow must not hardcode MainWindow for nested dialog messages."
+Assert-NotContains $dbMaintenanceViewModel "SupplierExcelImportDialog.ShowDialog(System.Windows.Application.Current?.MainWindow)" "DB maintenance supplier import must not hardcode MainWindow."
+Assert-Contains $dialogOwnerHelper "window.IsVisible && window.IsEnabled" "DialogOwnerHelper must skip invisible or disabled owners."
+Assert-Contains $dialogOwnerHelper "window.IsActive" "DialogOwnerHelper must prefer the active safe owner."
+Assert-Contains $dialogOwnerHelper "LastOrDefault(IsSafeOwner)" "DialogOwnerHelper must fall back only to visible/enabled owners."
 Assert-Contains $dialogXaml "1. Scegli file" "Step 1 missing."
 Assert-Contains $dialogXaml "2. Analizza colonne" "Step 2 missing."
 Assert-Contains $dialogXaml "3. Correggi righe" "Step 3 missing."

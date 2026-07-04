@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Linq;
 
 namespace Win7POS.Wpf.Infrastructure
 {
@@ -6,11 +7,28 @@ namespace Win7POS.Wpf.Infrastructure
     {
         public static Window GetSafeOwner(Window preferred = null)
         {
-            if (preferred != null && preferred.IsVisible)
+            if (IsSafeOwner(preferred))
                 return preferred;
 
+            var windows = Application.Current?.Windows.OfType<Window>().ToList();
+            if (windows != null)
+            {
+                var active = windows.FirstOrDefault(window => IsSafeOwner(window) && window.IsActive);
+                if (active != null)
+                    return active;
+
+                var lastVisible = windows.LastOrDefault(IsSafeOwner);
+                if (lastVisible != null)
+                    return lastVisible;
+            }
+
             var mainWindow = Application.Current?.MainWindow;
-            return mainWindow != null && mainWindow.IsVisible ? mainWindow : null;
+            return IsSafeOwner(mainWindow) ? mainWindow : null;
+        }
+
+        private static bool IsSafeOwner(Window window)
+        {
+            return window != null && window.IsVisible && window.IsEnabled;
         }
     }
 }

@@ -18,6 +18,7 @@ namespace Win7POS.Wpf.Import
     public sealed class SupplierExcelImportViewModel : INotifyPropertyChanged
     {
         private readonly SupplierExcelImportWorkflowService _service;
+        private readonly ISupplierExcelFileDialogService _fileDialogService;
         private readonly FileLogger _logger = new FileLogger("SupplierExcelImportViewModel");
         private int _stepIndex;
         private string _selectedPath = string.Empty;
@@ -31,9 +32,12 @@ namespace Win7POS.Wpf.Import
         private SupplierImportAnalysis _analysis;
         private SupplierImportSyncPreview _syncPreview;
 
-        public SupplierExcelImportViewModel(SupplierExcelImportWorkflowService service = null)
+        public SupplierExcelImportViewModel(
+            SupplierExcelImportWorkflowService service = null,
+            ISupplierExcelFileDialogService fileDialogService = null)
         {
             _service = service ?? new SupplierExcelImportWorkflowService();
+            _fileDialogService = fileDialogService ?? new SupplierExcelFileDialogService();
             InitializeSyncViews();
             ColumnKeyOptions = new ObservableCollection<string>(new[] { string.Empty }.Concat(AndroidImportKeys.AllKeys));
             BrowseCommand = new RelayCommand(Browse, () => !IsBusy && StepIndex == 0);
@@ -347,17 +351,10 @@ namespace Win7POS.Wpf.Import
 
         private void Browse()
         {
-            var dlg = new OpenFileDialog
+            var fileName = _fileDialogService.SelectSupplierExcelFile();
+            if (!string.IsNullOrWhiteSpace(fileName))
             {
-                Title = "Scegli Excel fornitore",
-                Filter = "Excel (*.xls;*.xlsx)|*.xls;*.xlsx",
-                CheckFileExists = true,
-                Multiselect = false
-            };
-
-            if (dlg.ShowDialog() == true)
-            {
-                SelectedPath = dlg.FileName;
+                SelectedPath = fileName;
                 ClearAnalysis();
                 Status = "File selezionato: " + SelectedFileName;
             }
@@ -418,7 +415,7 @@ namespace Win7POS.Wpf.Import
             {
                 var apply = await _service.ApplyAsync(SyncPreview, false).ConfigureAwait(true);
                 Status = apply.Summary;
-                ModernMessageDialog.Show(Application.Current?.MainWindow, "Import Excel fornitore", apply.Summary);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Import Excel fornitore", apply.Summary);
                 RequestClose?.Invoke(true);
             }
             catch (Exception ex)
@@ -836,6 +833,38 @@ namespace Win7POS.Wpf.Import
             {
                 CanExecuteChanged?.Invoke(this, EventArgs.Empty);
             }
+        }
+    }
+
+    public interface ISupplierExcelFileDialogService
+    {
+        string SelectSupplierExcelFile();
+    }
+
+    public sealed class SupplierExcelFileDialogService : ISupplierExcelFileDialogService
+    {
+        private readonly Func<Window> _ownerProvider;
+
+        public SupplierExcelFileDialogService(Func<Window> ownerProvider = null)
+        {
+            _ownerProvider = ownerProvider;
+        }
+
+        public string SelectSupplierExcelFile()
+        {
+            var dlg = new OpenFileDialog
+            {
+                Title = "Scegli Excel fornitore",
+                Filter = "Excel (*.xls;*.xlsx)|*.xls;*.xlsx",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+
+            var owner = DialogOwnerHelper.GetSafeOwner(_ownerProvider == null ? null : _ownerProvider());
+            if (owner == null)
+                throw new InvalidOperationException("Nessuna finestra owner attiva per il file picker Excel fornitore.");
+
+            return dlg.ShowDialog(owner) == true ? dlg.FileName : null;
         }
     }
 }

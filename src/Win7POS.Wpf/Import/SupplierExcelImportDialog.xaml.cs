@@ -11,7 +11,8 @@ namespace Win7POS.Wpf.Import
         public SupplierExcelImportDialog()
         {
             InitializeComponent();
-            _viewModel = new SupplierExcelImportViewModel();
+            _viewModel = new SupplierExcelImportViewModel(
+                fileDialogService: new SupplierExcelFileDialogService(() => this));
             _viewModel.RequestClose += OnRequestClose;
             DataContext = _viewModel;
         }

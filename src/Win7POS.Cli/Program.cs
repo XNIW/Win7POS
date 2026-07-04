@@ -2095,10 +2095,12 @@ CREATE TABLE users (
         var productsView = ReadRepoFile(root, "src/Win7POS.Wpf/Products/ProductsView.xaml");
         var productsViewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Products/ProductsViewModel.cs");
         var dbMaintenanceView = ReadRepoFile(root, "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml");
+        var dbMaintenanceDialogCode = ReadRepoFile(root, "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml.cs");
         var dbMaintenanceViewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceViewModel.cs");
         var dialogXaml = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml");
         var dialogCode = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml.cs");
         var viewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs");
+        var dialogOwnerHelper = ReadRepoFile(root, "src/Win7POS.Wpf/Infrastructure/DialogOwnerHelper.cs");
         var workflow = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs");
         var applier = ReadRepoFile(root, "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs");
         var analyzer = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierImportAnalyzer.cs");
@@ -2115,11 +2117,30 @@ CREATE TABLE users (
         AssertText(productsViewModel, "SupplierExcelImportDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner())", "Products command must open the supplier dialog modally.");
         AssertText(dbMaintenanceView, "Import Excel fornitore", "DB maintenance screen must expose supplier Excel import.");
         AssertText(dbMaintenanceView, "SupplierExcelImportCommand", "DB maintenance import button must bind supplier command.");
-        AssertText(dbMaintenanceViewModel, "SupplierExcelImportDialog.ShowDialog", "DB maintenance command must open the same supplier dialog.");
+        AssertText(dbMaintenanceViewModel, "internal Window OwnerWindow { get; set; }", "DB maintenance view model must keep the current dialog owner.");
+        AssertText(dbMaintenanceDialogCode, "vm.OwnerWindow = this", "DB maintenance dialog must pass itself as current owner.");
+        AssertText(dbMaintenanceViewModel, "SupplierExcelImportDialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner())", "DB maintenance command must open the supplier dialog from the current owner chain.");
 
         AssertText(dialogXaml, "chrome:DialogShellWindow", "Supplier import must use the WPF dialog shell.");
         AssertText(dialogXaml, "UseModalOverlay=\"True\"", "Supplier import dialog must be modal.");
         AssertText(dialogCode, "ShowDialog", "Supplier import dialog must be shown with ShowDialog.");
+        AssertText(dialogCode, "new SupplierExcelFileDialogService(() => this)", "Supplier import dialog must provide itself as file picker owner.");
+        AssertText(viewModel, "ISupplierExcelFileDialogService", "Supplier import file picker must be owner-aware behind an interface.");
+        AssertText(viewModel, "SelectSupplierExcelFile()", "Supplier import Browse must use the owner-aware file picker service.");
+        AssertText(viewModel, "DialogOwnerHelper.GetSafeOwner(_ownerProvider == null ? null : _ownerProvider())", "Supplier import file picker must resolve the current safe owner.");
+        AssertText(viewModel, "dlg.ShowDialog(owner)", "Supplier import file picker must be shown with an explicit owner.");
+        Assert(
+            viewModel.IndexOf("dlg.ShowDialog() == true", StringComparison.Ordinal) < 0,
+            "Supplier import file picker must not use ownerless ShowDialog().");
+        Assert(
+            viewModel.IndexOf("ModernMessageDialog.Show(Application.Current?.MainWindow", StringComparison.Ordinal) < 0,
+            "Supplier import flow must not hardcode MainWindow for nested dialog messages.");
+        Assert(
+            dbMaintenanceViewModel.IndexOf("SupplierExcelImportDialog.ShowDialog(System.Windows.Application.Current?.MainWindow)", StringComparison.Ordinal) < 0,
+            "DB maintenance supplier import must not hardcode MainWindow.");
+        AssertText(dialogOwnerHelper, "window.IsVisible && window.IsEnabled", "DialogOwnerHelper must skip invisible or disabled owners.");
+        AssertText(dialogOwnerHelper, "window.IsActive", "DialogOwnerHelper must prefer the active safe owner.");
+        AssertText(dialogOwnerHelper, "LastOrDefault(IsSafeOwner)", "DialogOwnerHelper must fall back only to visible/enabled owners.");
         AssertText(dialogXaml, "1. Scegli file", "Step 1 label missing.");
         AssertText(dialogXaml, "2. Analizza colonne", "Step 2 label missing.");
         AssertText(dialogXaml, "3. Correggi righe", "Step 3 label missing.");

@@ -10,6 +10,7 @@ using Microsoft.Win32;
 using Win7POS.Core;
 using Win7POS.Core.Security;
 using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Localization;
 
@@ -59,6 +60,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand OpenFolderCommand { get; }
 
         public event PropertyChangedEventHandler PropertyChanged;
+        internal Window OwnerWindow { get; set; }
 
         private async Task BackupNowAsync()
         {
@@ -184,7 +186,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             try
             {
-                var applied = SupplierExcelImportDialog.ShowDialog(System.Windows.Application.Current?.MainWindow);
+                var applied = SupplierExcelImportDialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner());
                 if (applied)
                 {
                     Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(null);
