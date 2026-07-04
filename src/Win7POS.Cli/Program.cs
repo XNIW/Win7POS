@@ -2100,6 +2100,7 @@ CREATE TABLE users (
         var dialogXaml = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml");
         var dialogCode = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml.cs");
         var viewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs");
+        var dialogShellWindow = ReadRepoFile(root, "src/Win7POS.Wpf/Chrome/DialogShellWindow.cs");
         var dialogOwnerHelper = ReadRepoFile(root, "src/Win7POS.Wpf/Infrastructure/DialogOwnerHelper.cs");
         var workflow = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs");
         var applier = ReadRepoFile(root, "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs");
@@ -2123,7 +2124,15 @@ CREATE TABLE users (
 
         AssertText(dialogXaml, "chrome:DialogShellWindow", "Supplier import must use the WPF dialog shell.");
         AssertText(dialogXaml, "UseModalOverlay=\"True\"", "Supplier import dialog must be modal.");
+        AssertText(dialogXaml, "WindowStartupLocation=\"CenterOwner\"", "Supplier import dialog must center on its safe owner.");
+        AssertText(dialogXaml, "MaxWidth=\"1120\"", "Supplier import dialog must cap width for work-area clamp.");
+        AssertText(dialogXaml, "MaxHeight=\"720\"", "Supplier import dialog must cap height for work-area clamp.");
+        AssertText(dialogXaml, "<ScrollViewer Grid.Row=\"2\"", "Supplier import step content must be inside a scrollable content row.");
+        AssertText(dialogXaml, "<Grid Grid.Row=\"3\" Margin=\"{StaticResource DialogFooterMargin}\"", "Supplier import footer must be a fixed root row.");
+        AssertText(dialogShellWindow, "ApplyOverlayPosition(outerBorder)", "Overlay positioning must account for the actual dialog card size.");
+        AssertText(dialogShellWindow, "CanHostOverlayCard", "Nested overlays must fall back to monitor work area when the owner cannot host the card.");
         AssertText(dialogCode, "ShowDialog", "Supplier import dialog must be shown with ShowDialog.");
+        AssertText(dialogCode, "Owner = DialogOwnerHelper.GetSafeOwner(owner)", "Supplier import dialog owner must be normalized through DialogOwnerHelper.");
         AssertText(dialogCode, "new SupplierExcelFileDialogService(() => this)", "Supplier import dialog must provide itself as file picker owner.");
         AssertText(viewModel, "ISupplierExcelFileDialogService", "Supplier import file picker must be owner-aware behind an interface.");
         AssertText(viewModel, "SelectSupplierExcelFile()", "Supplier import Browse must use the owner-aware file picker service.");
@@ -2141,6 +2150,28 @@ CREATE TABLE users (
         AssertText(dialogOwnerHelper, "window.IsVisible && window.IsEnabled", "DialogOwnerHelper must skip invisible or disabled owners.");
         AssertText(dialogOwnerHelper, "window.IsActive", "DialogOwnerHelper must prefer the active safe owner.");
         AssertText(dialogOwnerHelper, "LastOrDefault(IsSafeOwner)", "DialogOwnerHelper must fall back only to visible/enabled owners.");
+
+        var stepScrollStart = dialogXaml.IndexOf("<ScrollViewer Grid.Row=\"2\"", StringComparison.Ordinal);
+        var stepScrollEnd = stepScrollStart >= 0
+            ? dialogXaml.IndexOf("</ScrollViewer>", stepScrollStart, StringComparison.Ordinal)
+            : -1;
+        var footerStart = dialogXaml.IndexOf("<Grid Grid.Row=\"3\"", StringComparison.Ordinal);
+        Assert(stepScrollStart >= 0 && stepScrollEnd >= 0 && footerStart > stepScrollEnd,
+            "Supplier import footer must stay outside the step ScrollViewer.");
+        foreach (var button in new[]
+        {
+            "Indietro",
+            "Analizza",
+            "Avanti",
+            "Continua a Sync DB",
+            "Conferma e applica",
+            "Annulla"
+        })
+        {
+            Assert(dialogXaml.IndexOf("Content=\"" + button + "\"", StringComparison.Ordinal) > footerStart,
+                "Supplier import footer button must be outside the ScrollViewer: " + button);
+        }
+
         AssertText(dialogXaml, "1. Scegli file", "Step 1 label missing.");
         AssertText(dialogXaml, "2. Analizza colonne", "Step 2 label missing.");
         AssertText(dialogXaml, "3. Correggi righe", "Step 3 label missing.");

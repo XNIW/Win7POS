@@ -42,6 +42,7 @@ $dbMaintenanceViewModel = Read-RepoFile "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenan
 $dialogXaml = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml"
 $dialogCode = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml.cs"
 $viewModel = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs"
+$dialogShellWindow = Read-RepoFile "src/Win7POS.Wpf/Chrome/DialogShellWindow.cs"
 $dialogOwnerHelper = Read-RepoFile "src/Win7POS.Wpf/Infrastructure/DialogOwnerHelper.cs"
 $workflow = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs"
 $applier = Read-RepoFile "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs"
@@ -65,7 +66,15 @@ Assert-Contains $dbMaintenanceViewModel "SupplierExcelImportDialog.ShowDialog(Ow
 
 Assert-Contains $dialogXaml "chrome:DialogShellWindow" "Supplier import must use WPF dialog shell."
 Assert-Contains $dialogXaml "UseModalOverlay=`"True`"" "Supplier import dialog must be modal."
+Assert-Contains $dialogXaml "WindowStartupLocation=`"CenterOwner`"" "Supplier import dialog must center on its safe owner."
+Assert-Contains $dialogXaml "MaxWidth=`"1120`"" "Supplier import dialog must cap width for work-area clamp."
+Assert-Contains $dialogXaml "MaxHeight=`"720`"" "Supplier import dialog must cap height for work-area clamp."
+Assert-Contains $dialogXaml "<ScrollViewer Grid.Row=`"2`"" "Supplier import step content must be inside a scrollable content row."
+Assert-Contains $dialogXaml "<Grid Grid.Row=`"3`" Margin=`"{StaticResource DialogFooterMargin}`"" "Supplier import footer must be a fixed root row."
+Assert-Contains $dialogShellWindow "ApplyOverlayPosition(outerBorder)" "Overlay positioning must account for the actual dialog card size."
+Assert-Contains $dialogShellWindow "CanHostOverlayCard" "Nested overlays must fall back to monitor work area when the owner cannot host the card."
 Assert-Contains $dialogCode "ShowDialog" "Supplier import must be shown with ShowDialog."
+Assert-Contains $dialogCode "Owner = DialogOwnerHelper.GetSafeOwner(owner)" "Supplier import dialog owner must be normalized through DialogOwnerHelper."
 Assert-Contains $dialogCode "new SupplierExcelFileDialogService(() => this)" "Supplier import dialog must provide itself as file picker owner."
 Assert-Contains $viewModel "ISupplierExcelFileDialogService" "Supplier import file picker must be owner-aware behind an interface."
 Assert-Contains $viewModel "SelectSupplierExcelFile()" "Supplier import Browse must use the owner-aware file picker service."
@@ -77,6 +86,20 @@ Assert-NotContains $dbMaintenanceViewModel "SupplierExcelImportDialog.ShowDialog
 Assert-Contains $dialogOwnerHelper "window.IsVisible && window.IsEnabled" "DialogOwnerHelper must skip invisible or disabled owners."
 Assert-Contains $dialogOwnerHelper "window.IsActive" "DialogOwnerHelper must prefer the active safe owner."
 Assert-Contains $dialogOwnerHelper "LastOrDefault(IsSafeOwner)" "DialogOwnerHelper must fall back only to visible/enabled owners."
+
+$stepScrollStart = $dialogXaml.IndexOf("<ScrollViewer Grid.Row=`"2`"", [System.StringComparison]::Ordinal)
+$stepScrollEnd = if ($stepScrollStart -ge 0) { $dialogXaml.IndexOf("</ScrollViewer>", $stepScrollStart, [System.StringComparison]::Ordinal) } else { -1 }
+$footerStart = $dialogXaml.IndexOf("<Grid Grid.Row=`"3`"", [System.StringComparison]::Ordinal)
+if ($stepScrollStart -lt 0 -or $stepScrollEnd -lt 0 -or $footerStart -lt 0 -or $footerStart -le $stepScrollEnd) {
+    throw "Supplier import footer must stay outside the step ScrollViewer."
+}
+foreach ($button in @("Indietro", "Analizza", "Avanti", "Continua a Sync DB", "Conferma e applica", "Annulla")) {
+    $buttonIndex = $dialogXaml.IndexOf("Content=`"$button`"", [System.StringComparison]::Ordinal)
+    if ($buttonIndex -lt $footerStart) {
+        throw "Supplier import footer button '$button' must be outside the ScrollViewer."
+    }
+}
+
 Assert-Contains $dialogXaml "1. Scegli file" "Step 1 missing."
 Assert-Contains $dialogXaml "2. Analizza colonne" "Step 2 missing."
 Assert-Contains $dialogXaml "3. Correggi righe" "Step 3 missing."

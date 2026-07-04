@@ -247,7 +247,7 @@ namespace Win7POS.Wpf.Chrome
                 fullGrid.Children.Add(outerBorder);
                 Content = fullGrid;
                 ConfigureOverlayHost(originalSizeToContent, originalWidth, originalHeight, originalMinWidth, originalMinHeight, originalMaxWidth, originalMaxHeight, outerBorder);
-                ApplyOverlayPosition();
+                ApplyOverlayPosition(outerBorder);
             }
             else
             {
@@ -334,7 +334,7 @@ namespace Win7POS.Wpf.Chrome
             MaxHeight = double.PositiveInfinity;
         }
 
-        private void ApplyOverlayPosition()
+        private void ApplyOverlayPosition(Border outerBorder)
         {
             Rect bounds;
 
@@ -354,13 +354,45 @@ namespace Win7POS.Wpf.Chrome
             }
             else
             {
-                bounds = new Rect(Owner.Left, Owner.Top, Owner.ActualWidth, Owner.ActualHeight);
+                var ownerBounds = new Rect(Owner.Left, Owner.Top, Owner.ActualWidth, Owner.ActualHeight);
+                var workArea = MonitorHelper.GetWorkAreaForExactWindowOrPrimary(Owner);
+                var requiredWidth = GetRequiredOverlayLength(outerBorder.Width, outerBorder.MinWidth);
+                var requiredHeight = GetRequiredOverlayLength(outerBorder.Height, outerBorder.MinHeight);
+
+                bounds = CanHostOverlayCard(ownerBounds, workArea, requiredWidth, requiredHeight)
+                    ? ownerBounds
+                    : workArea;
             }
 
             Left = bounds.Left;
             Top = bounds.Top;
             Width = Math.Max(1, bounds.Width);
             Height = Math.Max(1, bounds.Height);
+        }
+
+        private static bool CanHostOverlayCard(Rect ownerBounds, Rect workArea, double requiredWidth, double requiredHeight)
+        {
+            if (ownerBounds.Width <= 0 || ownerBounds.Height <= 0)
+                return false;
+
+            if (ownerBounds.Left < workArea.Left ||
+                ownerBounds.Top < workArea.Top ||
+                ownerBounds.Right > workArea.Right ||
+                ownerBounds.Bottom > workArea.Bottom)
+                return false;
+
+            return ownerBounds.Width >= requiredWidth && ownerBounds.Height >= requiredHeight;
+        }
+
+        private static double GetRequiredOverlayLength(double explicitLength, double minLength)
+        {
+            if (!double.IsNaN(explicitLength) && !double.IsInfinity(explicitLength) && explicitLength > 0)
+                return explicitLength;
+
+            if (!double.IsNaN(minLength) && !double.IsInfinity(minLength) && minLength > 0)
+                return minLength;
+
+            return 1;
         }
 
         private static double ClampToFiniteMax(double value, double max)

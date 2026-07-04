@@ -12,6 +12,8 @@
         SizeToContent="Manual"
         Width="1040"
         Height="720"
+        MaxWidth="1120"
+        MaxHeight="720"
         MinWidth="820"
         MinHeight="560"
         ResizeMode="CanResize"
@@ -42,7 +44,11 @@
             </Grid>
         </Border>
 
-        <Grid Grid.Row="2">
+        <ScrollViewer Grid.Row="2"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      CanContentScroll="False">
+        <Grid>
             <Grid Visibility="{Binding IsStep1, Converter={StaticResource BoolToVis}}">
                 <Border Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
                     <Grid>
@@ -346,6 +352,7 @@
                 </TabControl>
             </Grid>
         </Grid>
+        </ScrollViewer>
 
         <Grid Grid.Row="3" Margin="{StaticResource DialogFooterMargin}">
             <Grid.ColumnDefinitions>
