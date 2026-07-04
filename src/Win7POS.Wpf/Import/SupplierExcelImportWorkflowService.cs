@@ -15,6 +15,7 @@ namespace Win7POS.Wpf.Import
     public sealed class SupplierExcelImportWorkflowService
     {
         private readonly FileLogger _logger = new FileLogger("SupplierExcelImportWorkflowService");
+        private readonly DbMaintenanceRepository _maintenance;
         private readonly PosDbOptions _options;
         private readonly ProductRepository _products;
 
@@ -22,6 +23,7 @@ namespace Win7POS.Wpf.Import
         {
             _options = PosDbOptions.Default();
             var factory = new SqliteConnectionFactory(_options);
+            _maintenance = new DbMaintenanceRepository(factory);
             _products = new ProductRepository(factory);
         }
 
@@ -137,6 +139,7 @@ namespace Win7POS.Wpf.Import
             if (!string.IsNullOrWhiteSpace(dir))
                 Directory.CreateDirectory(dir);
 
+            await _maintenance.WalCheckpointAsync().ConfigureAwait(false);
             await Task.Run(() => File.Copy(sourceDbPath, backupPath, true)).ConfigureAwait(false);
             _logger.LogInfo("Supplier import pre-apply backup created: " + backupPath);
             return backupPath;

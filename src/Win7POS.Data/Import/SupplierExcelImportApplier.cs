@@ -220,11 +220,13 @@ LIMIT 1",
             var itemNumber = TextOrExisting(row?.ItemNumber, existing == null ? null : existing.ArticleCode);
             var secondName = TextOrExisting(row?.SecondProductName, existing == null ? null : existing.Name2);
 
-            if (existing == null && string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(itemNumber))
+            if (existing == null && string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(secondName) && string.IsNullOrWhiteSpace(itemNumber))
             {
-                AddError(result, "Nuovo prodotto senza productName o itemNumber: " + barcode);
+                AddError(result, "Nuovo prodotto senza productName, secondProductName o itemNumber: " + barcode);
                 return null;
             }
+            if (existing == null && string.IsNullOrWhiteSpace(name))
+                name = string.IsNullOrWhiteSpace(secondName) ? itemNumber : secondName;
             if (existing == null && string.IsNullOrWhiteSpace(row?.RetailPrice))
             {
                 AddError(result, "Nuovo prodotto senza retailPrice: " + barcode);

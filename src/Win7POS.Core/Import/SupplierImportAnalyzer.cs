@@ -53,6 +53,7 @@ namespace Win7POS.Core.Import
                 ? PadRow(rows[dataRowIdx - 1], colCount)
                 : Enumerable.Range(1, colCount).Select(i => "Column " + i.ToString(CultureInfo.InvariantCulture)).ToList();
             var dataRows = rows.Skip(dataRowIdx).Select(row => PadRow(row, colCount)).ToList();
+            var dataRowNumbers = Enumerable.Range(dataRowIdx + 1, dataRows.Count).ToList();
 
             var columns = new List<SupplierExcelColumn>();
             for (var i = 0; i < colCount; i++)
@@ -76,7 +77,7 @@ namespace Win7POS.Core.Import
             InferPatternColumns(columns, dataRows, table.HasHeader);
             EnsureRequiredColumns(columns, dataRows);
             var beforeSummaryFilter = dataRows.Count;
-            FilterSummaryRows(columns, dataRows);
+            FilterSummaryRows(columns, dataRows, dataRowNumbers);
             table.DroppedSummaryRows = Math.Max(0, beforeSummaryFilter - dataRows.Count);
             ApplyColumnSamples(columns, dataRows);
 
@@ -86,10 +87,10 @@ namespace Win7POS.Core.Import
                 table.Columns.Add(columns[i]);
             }
 
-            foreach (var row in dataRows)
+            for (var i = 0; i < dataRows.Count; i++)
             {
-                var item = new SupplierExcelRow { RowNumber = dataRowIdx + table.Rows.Count + 1 };
-                item.Values.AddRange(row);
+                var item = new SupplierExcelRow { RowNumber = dataRowNumbers[i] };
+                item.Values.AddRange(dataRows[i]);
                 table.Rows.Add(item);
             }
 
@@ -183,11 +184,12 @@ namespace Win7POS.Core.Import
 
                 var hasNewIdentity =
                     !string.IsNullOrWhiteSpace(editable.ProductName) ||
+                    !string.IsNullOrWhiteSpace(editable.SecondProductName) ||
                     !string.IsNullOrWhiteSpace(editable.ItemNumber);
                 if (existing == null && !hasNewIdentity)
                 {
                     result.Warnings.Add(new SupplierImportWarning(
-                        "Nuovo prodotto senza productName o itemNumber: compila una delle due colonne in Step 3 oppure seleziona Skip.",
+                        "Nuovo prodotto senza productName, secondProductName o itemNumber: compila una delle colonne in Step 3 oppure seleziona Skip.",
                         new[] { pending.RowNumber }));
                     result.EditableRows.Add(editable);
                     continue;
@@ -236,7 +238,6 @@ namespace Win7POS.Core.Import
             }
 
             var activeRows = rows.Where(row => !row.IsSkipped).ToList();
-            preview.Summary.NonSkippedRows = activeRows.Count;
 
             foreach (var row in rows.Where(row => row.IsSkipped))
             {
@@ -249,28 +250,49 @@ namespace Win7POS.Core.Import
                 });
             }
 
-            var duplicateRows = new HashSet<SupplierImportEditableRow>();
+            var lastRowsByBarcode = new Dictionary<string, SupplierImportEditableRow>(StringComparer.OrdinalIgnoreCase);
+            var rowNumbersByBarcode = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var row in activeRows)
+            {
+                var barcode = NormalizeValue(row.Barcode);
+                if (barcode.Length == 0)
+                    continue;
+
+                List<int> rowNumbers;
+                if (!rowNumbersByBarcode.TryGetValue(barcode, out rowNumbers))
+                {
+                    rowNumbers = new List<int>();
+                    rowNumbersByBarcode[barcode] = rowNumbers;
+                }
+                rowNumbers.Add(row.RowNumber);
+                lastRowsByBarcode[barcode] = row;
+            }
+
             foreach (var group in activeRows
                 .Select(row => new { Row = row, Barcode = NormalizeValue(row.Barcode) })
                 .Where(item => item.Barcode.Length > 0)
                 .GroupBy(item => item.Barcode, StringComparer.OrdinalIgnoreCase)
                 .Where(group => group.Count() > 1))
             {
-                var rowNumbers = group.Select(item => item.Row.RowNumber).ToArray();
-                foreach (var item in group)
-                {
-                    duplicateRows.Add(item.Row);
-                    preview.Errors.Add(new SupplierImportError(
-                        "Barcode duplicato nella revisione finale: " + group.Key,
-                        item.Row.RowNumber,
-                        group.Key));
-                }
                 preview.Warnings.Add(new SupplierImportWarning(
-                    "Barcode duplicato nella revisione finale: correggi o seleziona Skip.",
-                    rowNumbers));
+                    "Barcode duplicato nella revisione finale: viene usata l'ultima occorrenza.",
+                    rowNumbersByBarcode[group.Key].ToArray()));
             }
 
-            foreach (var row in activeRows)
+            var effectiveActiveRows = activeRows
+                .Where(row =>
+                {
+                    var barcode = NormalizeValue(row.Barcode);
+                    if (barcode.Length == 0)
+                        return true;
+                    SupplierImportEditableRow last;
+                    return lastRowsByBarcode.TryGetValue(barcode, out last) &&
+                        object.ReferenceEquals(last, row);
+                })
+                .ToList();
+            preview.Summary.NonSkippedRows = effectiveActiveRows.Count;
+
+            foreach (var row in effectiveActiveRows)
             {
                 var barcode = NormalizeValue(row.Barcode);
                 if (barcode.Length == 0)
@@ -278,8 +300,6 @@ namespace Win7POS.Core.Import
                     preview.Errors.Add(new SupplierImportError("Barcode richiesto prima del Sync DB.", row.RowNumber, string.Empty));
                     continue;
                 }
-                if (duplicateRows.Contains(row))
-                    continue;
 
                 ProductDetailsRow existing;
                 existingByBarcode.TryGetValue(barcode, out existing);
@@ -557,14 +577,20 @@ namespace Win7POS.Core.Import
             }
         }
 
-        private static void FilterSummaryRows(List<SupplierExcelColumn> columns, List<List<string>> rows)
+        private static void FilterSummaryRows(List<SupplierExcelColumn> columns, List<List<string>> rows, List<int> rowNumbers)
         {
             var map = columns
                 .Select((c, i) => new { c.CanonicalKey, Index = i })
                 .Where(x => !string.IsNullOrWhiteSpace(x.CanonicalKey))
                 .GroupBy(x => x.CanonicalKey)
                 .ToDictionary(g => g.Key, g => g.First().Index, StringComparer.Ordinal);
-            rows.RemoveAll(row => IsSummaryRow(row, map));
+            for (var i = rows.Count - 1; i >= 0; i--)
+            {
+                if (!IsSummaryRow(rows[i], map))
+                    continue;
+                rows.RemoveAt(i);
+                rowNumbers.RemoveAt(i);
+            }
         }
 
         private static bool IsSummaryRow(IReadOnlyList<string> row, IDictionary<string, int> map)
@@ -583,15 +609,27 @@ namespace Win7POS.Core.Import
 
         private static bool IsSummaryLabel(string value)
         {
-            var normalized = NormalizeHeader(value).Replace("tot", "tot");
+            var normalized = NormalizeHeader(value);
             if (normalized.Length == 0) return false;
             var tokens = new[]
             {
                 "合计", "总计", "小计", "汇总", "合計", "總計", "小計", "總結",
                 "总额", "总数", "总价", "总数量", "总金额", "总件数",
                 "subtotal", "total", "totale", "tot", "sommario", "resumen", "sum"
-            }.Select(NormalizeHeader);
-            return tokens.Any(token => normalized == token || normalized.StartsWith(token, StringComparison.Ordinal));
+            }.Select(NormalizeHeader).ToArray();
+            if (tokens.Any(token => normalized == token))
+                return true;
+
+            var suffixTokens = new[]
+            {
+                "",
+                "总数", "总价", "总数量", "总金额", "总件数",
+                "quantity", "qty", "count", "price", "amount", "importe"
+            }.Select(NormalizeHeader).ToArray();
+
+            return tokens.Any(token =>
+                normalized.StartsWith(token, StringComparison.Ordinal) &&
+                suffixTokens.Any(suffix => normalized.Substring(token.Length) == suffix));
         }
 
         private static bool HasPlausibleProductIdentity(string barcode, string item, string name, string secondName)
@@ -891,13 +929,19 @@ namespace Win7POS.Core.Import
 
         private static SupplierImportProductRow ToCanonicalRow(SupplierImportEditableRow row, ProductDetailsRow existing)
         {
+            var itemNumber = ChooseText(row.ItemNumber, existing == null ? null : existing.ArticleCode);
+            var productName = ChooseText(row.ProductName, existing == null ? null : existing.Name);
+            var secondProductName = ChooseText(row.SecondProductName, existing == null ? null : existing.Name2);
+            if (existing == null && string.IsNullOrWhiteSpace(productName))
+                productName = string.IsNullOrWhiteSpace(secondProductName) ? itemNumber : secondProductName;
+
             return new SupplierImportProductRow
             {
                 RowNumber = row.RowNumber,
                 Barcode = row.Barcode ?? string.Empty,
-                ItemNumber = ChooseText(row.ItemNumber, existing == null ? null : existing.ArticleCode),
-                ProductName = ChooseText(row.ProductName, existing == null ? null : existing.Name),
-                SecondProductName = ChooseText(row.SecondProductName, existing == null ? null : existing.Name2),
+                ItemNumber = itemNumber,
+                ProductName = productName,
+                SecondProductName = secondProductName,
                 PurchasePrice = existing == null ? NumberTextOrEmpty(row.PurchasePrice, false) : ToIntOrExistingText(row.PurchasePrice, existing.PurchasePrice),
                 RetailPrice = existing == null ? NumberTextOrEmpty(row.RetailPrice, true) : ToLongOrExistingText(row.RetailPrice, existing.UnitPrice),
                 Quantity = existing == null ? NumberTextOrEmpty(row.Quantity, false) : ToIntOrExistingText(row.Quantity, existing.StockQty),
@@ -930,6 +974,7 @@ namespace Win7POS.Core.Import
         {
             var barcode = NormalizeValue(row.Barcode);
             var hasIdentity = !string.IsNullOrWhiteSpace(row.ProductName) ||
+                !string.IsNullOrWhiteSpace(row.SecondProductName) ||
                 !string.IsNullOrWhiteSpace(row.ItemNumber) ||
                 existing != null;
             var ok = true;
@@ -937,7 +982,7 @@ namespace Win7POS.Core.Import
             if (existing == null && !hasIdentity)
             {
                 preview.Errors.Add(new SupplierImportError(
-                    "Nuovo prodotto senza productName o itemNumber.",
+                    "Nuovo prodotto senza productName, secondProductName o itemNumber.",
                     row.RowNumber,
                     barcode));
                 ok = false;
@@ -995,8 +1040,9 @@ namespace Win7POS.Core.Import
         {
             var itemNumber = ChooseText(row.ItemNumber, existing == null ? null : existing.ArticleCode);
             var productName = ChooseText(row.ProductName, existing == null ? null : existing.Name);
+            var secondProductName = ChooseText(row.SecondProductName, existing == null ? null : existing.Name2);
             if (string.IsNullOrWhiteSpace(productName))
-                productName = itemNumber;
+                productName = string.IsNullOrWhiteSpace(secondProductName) ? itemNumber : secondProductName;
 
             return new SupplierImportProductRow
             {
@@ -1004,7 +1050,7 @@ namespace Win7POS.Core.Import
                 Barcode = NormalizeValue(row.Barcode),
                 ItemNumber = itemNumber,
                 ProductName = productName,
-                SecondProductName = ChooseText(row.SecondProductName, existing == null ? null : existing.Name2),
+                SecondProductName = secondProductName,
                 PurchasePrice = existing == null ? NumberTextOrEmpty(row.PurchasePrice, false) : ToIntOrExistingText(row.PurchasePrice, existing.PurchasePrice),
                 RetailPrice = existing == null ? NumberTextOrEmpty(row.RetailPrice, true) : ToLongOrExistingText(row.RetailPrice, existing.UnitPrice),
                 Quantity = existing == null ? NumberTextOrEmpty(row.Quantity, false) : ToIntOrExistingText(row.Quantity, existing.StockQty),

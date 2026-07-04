@@ -118,12 +118,21 @@ namespace Win7POS.Data.ImportDb
             var categoryByName = BuildCategoryNameToId(categories);
 
             var map = new Dictionary<string, long>(StringComparer.Ordinal);
-            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var rowsByBarcode = new Dictionary<string, ProductRow>(StringComparer.OrdinalIgnoreCase);
+            var barcodeOrder = new List<string>();
 
             foreach (var r in rows)
             {
                 if (string.IsNullOrWhiteSpace(r.Barcode)) continue;
-                if (!seen.Add(r.Barcode)) continue;
+                var barcode = r.Barcode.Trim();
+                if (!rowsByBarcode.ContainsKey(barcode))
+                    barcodeOrder.Add(barcode);
+                rowsByBarcode[barcode] = r;
+            }
+
+            foreach (var barcode in barcodeOrder)
+            {
+                var r = rowsByBarcode[barcode];
                 if (r.RetailPrice < 0) continue;
 
                 var supplierId = r.SupplierId;

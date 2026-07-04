@@ -268,18 +268,19 @@ namespace Win7POS.Wpf.Import
 
         private static IReadOnlyList<ImportRow> UniqueRows(IReadOnlyList<ImportRow> rows)
         {
-            var list = new List<ImportRow>();
-            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var rowsByBarcode = new Dictionary<string, ImportRow>(StringComparer.OrdinalIgnoreCase);
+            var barcodeOrder = new List<string>();
             foreach (var row in rows)
             {
                 if (row == null) continue;
                 var barcode = (row.Barcode ?? string.Empty).Trim();
                 if (barcode.Length == 0) continue;
-                if (!seen.Add(barcode)) continue;
-                list.Add(row);
+                if (!rowsByBarcode.ContainsKey(barcode))
+                    barcodeOrder.Add(barcode);
+                rowsByBarcode[barcode] = row;
             }
 
-            return list;
+            return barcodeOrder.Select(barcode => rowsByBarcode[barcode]).ToList();
         }
 
         /// <summary>

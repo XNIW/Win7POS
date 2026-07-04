@@ -1972,6 +1972,18 @@ CREATE TABLE users (
         Assert(duplicateAnalysis.NewProducts.Count == 1, "Expected duplicate barcode to keep one product.");
         Assert(duplicateAnalysis.EditableRows.Single().ProductName == "Last duplicate", "Expected duplicate barcode to keep last occurrence.");
 
+        var duplicateWithSummary = SupplierImportAnalyzer.Analyze(
+            SupplierTable(
+                new[] { "barcode", "productName", "purchasePrice", "retailPrice" },
+                new[] { "1234567890124", "First duplicate", "100", "1000" },
+                new[] { "", "Totale", "100", "1000" },
+                new[] { "", "Subtotal quantity", "100", "1000" },
+                new[] { "1234567890124", "Last duplicate", "120", "1100" }),
+            Array.Empty<ProductDetailsRow>());
+        Assert(
+            duplicateWithSummary.Warnings.Any(w => w.Rows.SequenceEqual(new[] { 2, 5 })),
+            "Duplicate warnings must preserve original row numbers when summary rows are filtered.");
+
         var blankBarcode = SupplierImportAnalyzer.Analyze(
             SupplierTable(
                 new[] { "barcode", "productName", "purchasePrice", "retailPrice", "quantity" },
@@ -2030,7 +2042,7 @@ CREATE TABLE users (
                 new[] { "9876543210987", "100", "1", "Fornitore" }),
             Array.Empty<ProductDetailsRow>());
         Assert(newMissingIdentity.Errors.Count == 0, "Missing new product identity must be a Step 3 correction state, not an analyzer error.");
-        Assert(newMissingIdentity.Warnings.Any(e => e.Message.Contains("productName o itemNumber", StringComparison.OrdinalIgnoreCase)), "Expected new product identity warning.");
+        Assert(newMissingIdentity.Warnings.Any(e => e.Message.Contains("productName, secondProductName o itemNumber", StringComparison.OrdinalIgnoreCase)), "Expected new product identity warning.");
         Assert(newMissingIdentity.EditableRows.Count == 1, "Expected missing identity row to remain editable.");
 
         var itemNumberOnly = SupplierImportAnalyzer.Analyze(
@@ -2040,6 +2052,15 @@ CREATE TABLE users (
             Array.Empty<ProductDetailsRow>());
         Assert(itemNumberOnly.Errors.Count == 0, "Expected new product with itemNumber but no productName to be valid.");
         Assert(itemNumberOnly.NewProducts.Count == 1, "Expected itemNumber-only product to be new.");
+
+        var secondNameOnly = SupplierImportAnalyzer.Analyze(
+            SupplierTable(
+                new[] { "barcode", "secondProductName", "purchasePrice", "retailPrice" },
+                new[] { "7777777700008", "Second-only name", "100", "160" }),
+            Array.Empty<ProductDetailsRow>());
+        Assert(secondNameOnly.Errors.Count == 0, "Expected new product with secondProductName but no productName to be valid.");
+        Assert(secondNameOnly.NewProducts.Count == 1, "Expected secondProductName-only product to be new.");
+        Assert(secondNameOnly.NewProducts[0].ProductName == "Second-only name", "Expected secondProductName to seed productName like Android.");
 
         var missingRetailNew = SupplierImportAnalyzer.Analyze(
             SupplierTable(
@@ -2177,7 +2198,7 @@ CREATE TABLE users (
 
         AssertText(analyzer, "Nuovo prodotto senza retailPrice.", "Step 4 must block new products without retailPrice.");
         AssertText(analyzer, "Barcode richiesto prima del Sync DB.", "Step 4 must block non-skipped rows without barcode.");
-        AssertText(analyzer, "Nuovo prodotto senza productName o itemNumber.", "Step 4 must block new products without productName/itemNumber.");
+        AssertText(analyzer, "Nuovo prodotto senza productName, secondProductName o itemNumber.", "Step 4 must block new products without productName/secondProductName/itemNumber.");
         AssertText(viewModel, "row.IsSkipped", "Apply must track operator-skipped rows.");
         AssertText(viewModel, "HeaderSummary", "Step 1/2 header summary missing.");
         AssertText(viewModel, "RowSummary", "Step 1/2 row summary missing.");
@@ -2433,12 +2454,15 @@ CREATE TABLE users (
                 new SupplierImportEditableRow { RowNumber = 101, Barcode = "9999999900009", ItemNumber = "DUP-B", ProductName = "Dup B", PurchasePrice = "1", RetailPrice = "2", Quantity = "1" }
             };
             var duplicatePreview = SupplierImportAnalyzer.BuildSyncPreview(duplicateFinalRows, await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false));
-            Assert(!duplicatePreview.CanApply, "Step 4 duplicate final barcode errors must block apply.");
+            Assert(duplicatePreview.CanApply, "Step 4 duplicate final barcode must keep last row and allow apply with warning.");
+            Assert(duplicatePreview.NewProducts.Count == 1, "Duplicate final preview must expose one effective new product.");
+            Assert(duplicatePreview.NewProducts.Single().ItemNumber == "DUP-B", "Duplicate final preview must keep last occurrence.");
+            Assert(duplicatePreview.Warnings.Any(w => w.Rows.SequenceEqual(new[] { 100, 101 })), "Duplicate final preview warning must preserve duplicate row numbers.");
             var duplicateApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
                 duplicatePreview,
                 new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
-            Assert(duplicateApply.Errors > 0, "Data applier must reject non-applyable Step 4 preview.");
-            Assert(await SupplierProductCountAsync(factory, "9999999900009").ConfigureAwait(false) == 0, "Blocked Step 4 preview must not write duplicate product.");
+            Assert(duplicateApply.Errors == 0 && duplicateApply.Inserted == 1, "Data applier must write the effective last duplicate row.");
+            Assert(await SupplierProductCountAsync(factory, "9999999900009").ConfigureAwait(false) == 1, "Duplicate final apply must write one product.");
 
             await AssertSupplierRollbackOnForcedFailureAsync(factory).ConfigureAwait(false);
             await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
@@ -2457,7 +2481,7 @@ CREATE TABLE users (
                     updatedFromStep4 = updateNoChangeApply.Updated,
                     noChangeFromStep4 = updateNoChangeApply.NoChange,
                     skippedRows = barcodeCorrectionPreview.SkippedRows.Count,
-                    step4ErrorsBlockApply = duplicateApply.Errors > 0,
+                    step4DuplicateLastWins = duplicateApply.Errors == 0 && duplicateApply.Inserted == 1,
                     rollbackVerified = true,
                     importHistorySource = "IMPORT",
                     dbPathUnderTemp = options.DbPath.StartsWith(tempRoot, StringComparison.OrdinalIgnoreCase)
@@ -2650,7 +2674,7 @@ CREATE TABLE users (
         if (analysis.Errors.Count == 0 && (missingBarcodeRows > 0 || missingIdentityRows > 0))
         {
             summary.UiState = "Step 3 row correction or skip required";
-            summary.RequiredUserAction = "In Step 3 type the missing barcode/productName/itemNumber directly in the preview, or select Skip on invalid rows, then click Conferma e applica.";
+            summary.RequiredUserAction = "In Step 3 type the missing barcode/productName/secondProductName/itemNumber directly in the preview, or select Skip on invalid rows, then click Conferma e applica.";
             summary.CanContinue = true;
             summary.ApplyPathProof = "supplier-excel-apply-selftest:barcode_edit_or_skip";
             summary.FinalOperationalResult = "ready_after_barcode_edit_or_skip";
@@ -2670,11 +2694,11 @@ CREATE TABLE users (
         var missingRequiredBarcodeColumn = analysis.Errors.Any(error =>
             error.Message.IndexOf("Colonna obbligatoria mancante: barcode", StringComparison.OrdinalIgnoreCase) >= 0);
         var missingIdentity = analysis.Errors.Any(error =>
-            error.Message.IndexOf("productName o itemNumber", StringComparison.OrdinalIgnoreCase) >= 0);
+            error.Message.IndexOf("productName, secondProductName o itemNumber", StringComparison.OrdinalIgnoreCase) >= 0);
 
         summary.UiState = "Step 2 mapping review required";
         summary.RequiredUserAction = missingIdentity
-            ? "In Step 2 map productName or itemNumber to the correct supplier column, disable wrong columns, click Analizza, then continue."
+            ? "In Step 2 map productName, secondProductName or itemNumber to the correct supplier column, disable wrong columns, click Analizza, then continue."
             : "In Step 2 map barcode to the correct supplier column or disable a wrong generated column, click Analizza, then continue.";
         summary.CanContinue = true;
         summary.ApplyPathProof = "supplier-excel-apply-selftest:mapping_override";
