@@ -1,4 +1,4 @@
-namespace Win7POS.Wpf.Pos.Online
+namespace Win7POS.Core.Online
 {
     public sealed class PosTrustedDeviceSession
     {

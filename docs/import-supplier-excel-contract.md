@@ -4,7 +4,7 @@ Android is the canonical source for supplier Excel import behavior. Public impor
 
 Forbidden names such as `stockQuantity`, `supplierName`, `categoryName`, `articleCode`, `unitPrice`, `name`, `name2`, `cost`, `prevPurchase`, and `prevRetail` are allowed only as storage/model boundary details or legacy aliases normalized before preview.
 
-UX workflow: supplier import is a three-step wizard: file selection, column analysis/mapping, then editable price preview/apply. The preview must allow editing `purchasePrice`, `retailPrice`, `quantity`, `supplier`, and `category` before apply. The bulk helper can calculate `retailPrice` from `purchasePrice` using a markup percent, rounding to 10/50/100 CLP, and an apply-only-empty option. `purchasePrice` must never silently auto-fill `retailPrice`; new products without `retailPrice` are blocked until the user fills the value or uses the helper.
+UX workflow: supplier import is a four-step wizard: file selection, column analysis/mapping, editable row correction, then DB sync preview/apply. The editable row step must allow editing `purchasePrice`, `retailPrice`, `quantity`, `supplier`, and `category` before apply. The bulk helper can calculate `retailPrice` from `purchasePrice` using a markup percent, rounding to 10/50/100 CLP, and an apply-only-empty option. `purchasePrice` must never silently auto-fill `retailPrice`; new products without `retailPrice` are blocked until the user fills the value or uses the helper.
 
 Detection policy: normalize headers by trim/lowercase/diacritic removal/space and underscore removal/non-alphanumeric removal; first data row is `numericCount >= 3 && textCount >= 1`; previous row is header when present, otherwise generated columns; each column keeps `headerSource` as `alias`, `pattern`, `generated`, or `unknown`; required `barcode`, `productName`, and `purchasePrice` are generated when missing.
 
@@ -18,6 +18,15 @@ Boundary mapping:
 - Admin: canonical preview/import rows map to API/database schema only inside server apply/merge functions.
 - Win7POS: `itemNumber -> ImportRow.ArticleCode / product_meta.article_code`; `productName -> ImportRow.Name / products.name`; `secondProductName -> ImportRow.Name2 / product_meta.name2`; `retailPrice -> ImportRow.UnitPrice / products.unitPrice`; `purchasePrice -> ImportRow.Cost / product_meta.purchase_price`; `quantity -> ImportRow.Stock / product_meta.stock_qty`; `supplier -> SupplierName` only inside the adapter; `category -> CategoryName` only inside the adapter.
 
+Catalog import Admin Web sync contract:
+- Boundary is always `Win7POS -> Admin Web/Admin Console API -> Supabase`. Win7POS must not call Supabase directly and must not store service-role credentials.
+- Local schema version is `pos-catalog-import-v1` (`PosOnlineContract.CatalogImportSchemaVersion`).
+- Local durability starts in `catalog_import_outbox`; supplier Excel apply enqueues a `pending` import in the same SQLite transaction as the product/meta/price-history mutations. Dry-run, no-change, and failed imports do not enqueue.
+- Outbox payload is normalized canonical data only: `clientImportId`, `idempotencyKey`, `schemaVersion`, `source`, `payloadHash`, operator/shop/device context, and items keyed by barcode plus canonical fields. Do not store the original Excel file bytes in the outbox.
+- Status values are `pending`, `retry`, `acked`, and `failed_blocked`; retry uses `attempt_count`, `next_retry_at`, `last_attempt_at`, `last_error_code`, and `last_error_at`.
+- Server ack must return an Admin Web import id and canonical remote product/price identifiers or a blocked conflict reason. The client then follows with catalog pull to converge on Admin's canonical state.
+- HTTP sync is intentionally not implemented until Admin Web publishes the endpoint, auth scope, conflict policy, and response schema. The expected endpoint is `POST /api/pos/catalog/import-sync`, but Win7POS must not add a live client call until that contract exists server-side. Expected ack statuses are `accepted`, `duplicate`, `idempotent`, `validation_failed`, and `conflict`; accepted/duplicate/idempotent map to `acked`, retryable transport/server failures map to `retry`, and validation/conflict failures map to `failed_blocked`.
+
 Excel readers must support real `.xlsx`, real `.xls`, and simple HTML table exports saved as `.xls` when the platform reader supports those formats. Win7POS handles HTML `.xls` with an internal table parser so no new Win7-incompatible UI/runtime dependency is introduced.
 
 Win7POS operator workflow:
@@ -27,7 +36,8 @@ Win7POS operator workflow:
 4. In Step 2 set any wrong column to the Android canonical key, or disable columns that should not import.
 5. Click analyze/continue so Step 3 rebuilds from the corrected mapping.
 6. In Step 3 edit `retailPrice`, `purchasePrice`, `quantity`, `supplier`, or `category`; for new products with empty `retailPrice`, use the bulk helper or type the values.
-7. Apply only after the button is enabled; the summary shows backup path, inserted, updated, skipped, warning count, and error count.
+7. Continue to Step 4 and review the DB sync preview: new products, updates, no-change rows, skipped rows, warnings, and blockers.
+8. Apply only after the button is enabled; the summary shows backup path, inserted, updated, skipped, warning count, and error count.
 
 Operational state policy:
 - `ready_to_apply`: Step 3 preview has required values; the user reviews and applies.
@@ -38,7 +48,7 @@ Operational state policy:
 
 Admin web import is intended for normal/smaller workbooks. Win7POS offline import is the recommended path for large or complex supplier files and for store-side offline operation; Admin must show a clear message routing over-limit files to Win7POS or split workbooks.
 
-Evidence: `dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release -- --supplier-excel-selftest` loads `tests/fixtures/supplier-import/android-canonical-sample.json` and checks canonical keys, metadata/alias fixture cases, `headerSource`, no-header pattern detection, summary filtering, parseNumber parity, duplicate last-wins, missing-retail handling, and HTML `.xls`. `--supplier-excel-ui-selftest` plus `scripts/check-supplier-excel-wizard.ps1` statically prove Products/DB entry points, modal three-step wizard, mapping override/disable, editable price grid, bulk helper, backup/transaction/rollback, IMPORT price history, and catalog refresh wiring. `--supplier-excel-apply-selftest` creates a temporary `WIN7POS_DATA_DIR`, initializes SQLite, analyzes a workbook, applies through the same supplier workflow, verifies backup, transaction commit, forced rollback, `IMPORT` price history, DB integrity, and no Program Files data write. `--supplier-excel-drive-completion-report <folder>` turns real-file parser outcomes into the operational action matrix used by the shop.
+Evidence: `dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release -- --supplier-excel-selftest` loads `tests/fixtures/supplier-import/android-canonical-sample.json` and checks canonical keys, metadata/alias fixture cases, `headerSource`, no-header pattern detection, summary filtering, parseNumber parity, duplicate last-wins, missing-retail handling, and HTML `.xls`. `--supplier-excel-ui-selftest` plus `scripts/check-supplier-excel-wizard.ps1` statically prove Products/DB entry points, modal four-step wizard, mapping override/disable, editable price grid, bulk helper, backup/transaction/rollback, IMPORT price history, and catalog refresh wiring. `scripts/check-pos-catalog-import-outbox.ps1` proves the local `pos-catalog-import-v1` DTO/schema/repository/payload/enqueue path, targeted barcode lookup, product soft-delete, no destructive outbox cleanup, and no direct Supabase/service-role markers in POS source. `--supplier-excel-apply-selftest` creates a temporary `WIN7POS_DATA_DIR`, initializes SQLite, analyzes a workbook, applies through the same supplier workflow, verifies backup, transaction commit, forced rollback, `IMPORT` price history, DB integrity, and no Program Files data write. `--supplier-excel-drive-completion-report <folder>` turns real-file parser outcomes into the operational action matrix used by the shop.
 
 Windows/ASUS validation checklist:
 1. `git pull`.

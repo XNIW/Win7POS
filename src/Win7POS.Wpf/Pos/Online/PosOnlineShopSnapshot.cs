@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Win7POS.Core.Online;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 

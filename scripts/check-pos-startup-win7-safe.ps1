@@ -148,6 +148,7 @@ $requiredFiles = @(
     "src/Win7POS.Wpf/Infrastructure/StartupTrace.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     ".github/workflows/release-pack.yml",
+    "installer/Win7POS.iss",
     "scripts/check-release-pack-completeness.ps1",
     "scripts/win7pos/collect-win7-startup-diagnostics.bat"
 )
@@ -169,6 +170,7 @@ $startupTrace = Read-Text "src/Win7POS.Wpf/Infrastructure/StartupTrace.cs"
 $catalogPull = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosLocalization.cs"
 $workflow = Read-Text ".github/workflows/release-pack.yml"
+$installer = Read-Text "installer/Win7POS.iss"
 
 if ($translations -match 'private\s+static\s+readonly\s+Dictionary<[^;]+>\s+Translations\s*=\s*CreateTranslations\(\)\s*;') {
     Fail "PosLocalization translations must not be built by an eager field initializer before static entries"
@@ -392,6 +394,13 @@ if ($workflow -notmatch "check-pos-startup-win7-safe\.ps1" -or
 }
 else {
     Pass "ReleasePack workflow runs startup and package validators"
+}
+
+if ($installer -notmatch "(?m)^MinVersion=6\.1sp1$") {
+    Fail "Installer must require Windows 7 SP1 or later"
+}
+else {
+    Pass "Installer requires Windows 7 SP1 or later"
 }
 
 Test-ReleasePackSource $ReleasePackSource

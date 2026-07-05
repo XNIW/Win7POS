@@ -6,11 +6,13 @@ using System.Threading.Tasks;
 using Dapper;
 using Win7POS.Core.Import;
 using Win7POS.Core.Models;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Import
 {
     public sealed class SupplierExcelImportApplyOptions
     {
+        public CatalogImportOutboxEntry CatalogImportOutboxEntry { get; set; }
         public bool DryRun { get; set; }
         public bool InsertNew { get; set; } = true;
     }
@@ -26,6 +28,8 @@ namespace Win7POS.Data.Import
         public int PriceHistoryInserted { get; set; }
         public List<string> ErrorMessages { get; } = new List<string>();
         public List<string> ChangedBarcodes { get; } = new List<string>();
+        public long CatalogImportOutboxId { get; set; }
+        public string CatalogImportOutboxStatus { get; set; } = string.Empty;
     }
 
     public sealed class SupplierExcelImportApplier
@@ -161,6 +165,16 @@ namespace Win7POS.Data.Import
                     {
                         tx.Rollback();
                         return result;
+                    }
+
+                    if (!options.DryRun &&
+                        options.CatalogImportOutboxEntry != null &&
+                        result.ChangedBarcodes.Count > 0)
+                    {
+                        result.CatalogImportOutboxId = await CatalogImportOutboxRepository
+                            .EnqueueAsync(conn, tx, options.CatalogImportOutboxEntry)
+                            .ConfigureAwait(false);
+                        result.CatalogImportOutboxStatus = "pending";
                     }
 
                     if (options.DryRun) tx.Rollback();

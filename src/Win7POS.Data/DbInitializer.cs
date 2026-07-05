@@ -263,6 +263,25 @@ CREATE TABLE IF NOT EXISTS sales_sync_outbox (
   FOREIGN KEY(sale_id) REFERENCES sales(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS catalog_import_outbox (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  client_import_id TEXT NOT NULL,
+  idempotency_key TEXT NOT NULL,
+  schema_version TEXT NOT NULL DEFAULT 'pos-catalog-import-v1',
+  source TEXT NOT NULL DEFAULT 'supplier_excel',
+  payload_json TEXT NOT NULL,
+  payload_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempt_count INTEGER NOT NULL DEFAULT 0,
+  next_retry_at INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at INTEGER NULL,
+  last_error_code TEXT NULL,
+  last_error_at INTEGER NULL,
+  server_import_id TEXT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS remote_catalog_pending_prices (
   id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   remote_price_id TEXT NULL,
@@ -300,6 +319,22 @@ CREATE TABLE IF NOT EXISTS remote_catalog_pending_prices (
             EnsureColumn(conn, tx, "sales_sync_outbox", "created_at", "INTEGER NOT NULL DEFAULT 0");
             EnsureColumn(conn, tx, "sales_sync_outbox", "updated_at", "INTEGER NOT NULL DEFAULT 0");
 
+            EnsureColumn(conn, tx, "catalog_import_outbox", "client_import_id", "TEXT NOT NULL DEFAULT ''");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "idempotency_key", "TEXT NOT NULL DEFAULT ''");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "schema_version", "TEXT NOT NULL DEFAULT 'pos-catalog-import-v1'");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "source", "TEXT NOT NULL DEFAULT 'supplier_excel'");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "payload_json", "TEXT NOT NULL DEFAULT ''");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "payload_hash", "TEXT NOT NULL DEFAULT ''");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "status", "TEXT NOT NULL DEFAULT 'pending'");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "attempt_count", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "next_retry_at", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "last_attempt_at", "INTEGER NULL");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "last_error_code", "TEXT NULL");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "last_error_at", "INTEGER NULL");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "server_import_id", "TEXT NULL");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "created_at", "INTEGER NOT NULL DEFAULT 0");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "updated_at", "INTEGER NOT NULL DEFAULT 0");
+
             EnsureColumn(conn, tx, "remote_catalog_pending_prices", "remote_price_id", "TEXT NULL");
             EnsureColumn(conn, tx, "remote_catalog_pending_prices", "remote_product_id", "TEXT NOT NULL DEFAULT ''");
             EnsureColumn(conn, tx, "remote_catalog_pending_prices", "type", "TEXT NOT NULL DEFAULT ''");
@@ -324,6 +359,10 @@ CREATE INDEX IF NOT EXISTS idx_local_stock_movements_barcode ON local_stock_move
 CREATE INDEX IF NOT EXISTS idx_sales_sync_outbox_status_next ON sales_sync_outbox(status, next_retry_at, id);
 CREATE INDEX IF NOT EXISTS idx_sales_sync_outbox_sale ON sales_sync_outbox(sale_id);
 CREATE INDEX IF NOT EXISTS idx_sales_sync_outbox_last_attempt ON sales_sync_outbox(last_attempt_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_import_outbox_client_import ON catalog_import_outbox(client_import_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_import_outbox_idempotency ON catalog_import_outbox(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_catalog_import_outbox_status_next ON catalog_import_outbox(status, next_retry_at, id);
+CREATE INDEX IF NOT EXISTS idx_catalog_import_outbox_last_attempt ON catalog_import_outbox(last_attempt_at);
 CREATE INDEX IF NOT EXISTS idx_audit_log_ts ON audit_log(ts);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_unique
 ON product_price_history(barcode, timestamp, type, new_price, coalesce(source,''));

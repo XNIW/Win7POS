@@ -107,7 +107,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Append(PosLocalization.F("dbMaintenance.integrityCheckResult", result.IntegrityCheck));
                 Append(PosLocalization.T("dbMaintenance.restoreSyncReview"));
                 Win7POS.Wpf.Import.ModernMessageDialog.Show(
-                    System.Windows.Application.Current?.MainWindow,
+                    OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
                     PosLocalization.T("dbMaintenance.title"),
                     PosLocalization.T("dbMaintenance.restoreCompletedMessage"));
             }

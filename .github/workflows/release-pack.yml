@@ -47,19 +47,9 @@ jobs:
           $ErrorActionPreference = "Stop"
           New-Item -ItemType Directory -Force -Path "dist/Win7POS" | Out-Null
 
-          $wpfOutput = Get-ChildItem -Path "src/Win7POS.Wpf/bin" -Directory -Recurse |
-            Where-Object { Test-Path (Join-Path $_.FullName "Win7POS.Wpf.exe") } |
-            Select-Object -First 1
-          if ($null -eq $wpfOutput) { throw "WPF output folder not found." }
-          Copy-Item -Path (Join-Path $wpfOutput.FullName "*") -Destination "dist/Win7POS" -Recurse -Force
-
-          $cliOutput = Get-ChildItem -Path "src/Win7POS.Cli/bin" -Directory -Recurse |
-            Where-Object { Test-Path (Join-Path $_.FullName "Win7POS.Cli.dll") } |
-            Select-Object -First 1
-          if ($null -ne $cliOutput) {
-            New-Item -ItemType Directory -Force -Path "dist/Win7POS/cli" | Out-Null
-            Copy-Item -Path (Join-Path $cliOutput.FullName "*") -Destination "dist/Win7POS/cli" -Recurse -Force
-          }
+          $wpfOutput = "src/Win7POS.Wpf/bin/x86/Release/net48"
+          if (!(Test-Path (Join-Path $wpfOutput "Win7POS.Wpf.exe"))) { throw "WPF x86 net48 output folder not found: $wpfOutput" }
+          Copy-Item -Path (Join-Path $wpfOutput "*") -Destination "dist/Win7POS" -Recurse -Force
 
           Copy-Item -Path "scripts/set-admin-web-staging-url.bat" -Destination "dist/Win7POS/set-admin-web-staging-url.bat" -Force
 
@@ -94,7 +84,6 @@ jobs:
 
           Notes:
           - WPF executable: Win7POS.Wpf.exe
-          - CLI (optional) files are under .\cli
           - Verify package completeness with RELEASE_CHECKLIST.txt
           "@
           Set-Content -Path "dist/Win7POS/README_RUN.txt" -Value $readme -Encoding UTF8
@@ -124,9 +113,8 @@ jobs:
           IMPORTANT:
           - Missing x86 native SQLite DLL can cause DB-open crash on Win7.
 
-          [CLI - optional but recommended]
-          [ ] dist/Win7POS/cli/Win7POS.Cli.exe (or dll/runtime output)
-          [ ] CLI dependency DLLs
+          [CLI - diagnostics only]
+          [ ] CLI is not bundled in the Win7 runtime pack; run CLI diagnostics from CI/dev tooling.
 
           [Docs]
           [ ] README_RUN.txt includes .NET Framework 4.8 note

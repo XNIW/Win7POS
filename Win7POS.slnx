@@ -1,2 +1,8 @@
 <Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Win7POS.Cli/Win7POS.Cli.csproj" />
+    <Project Path="src/Win7POS.Core/Win7POS.Core.csproj" />
+    <Project Path="src/Win7POS.Data/Win7POS.Data.csproj" />
+    <Project Path="src/Win7POS.Wpf/Win7POS.Wpf.csproj" />
+  </Folder>
 </Solution>

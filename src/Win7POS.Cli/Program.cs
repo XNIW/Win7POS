@@ -20,7 +20,7 @@ using Win7POS.Data.Adapters;
 using Win7POS.Data.Import;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
-using Win7POS.Wpf.Pos.Online;
+using Win7POS.Core.Online;
 
 internal static class Program
 {
@@ -2104,6 +2104,9 @@ CREATE TABLE users (
         var dialogOwnerHelper = ReadRepoFile(root, "src/Win7POS.Wpf/Infrastructure/DialogOwnerHelper.cs");
         var workflow = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs");
         var applier = ReadRepoFile(root, "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs");
+        var catalogImportContract = ReadRepoFile(root, "src/Win7POS.Core/Online/PosCatalogImportContract.cs");
+        var catalogImportOutbox = ReadRepoFile(root, "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs");
+        var catalogImportPayloadBuilder = ReadRepoFile(root, "src/Win7POS.Data/Online/CatalogImportOutboxPayloadBuilder.cs");
         var analyzer = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierImportAnalyzer.cs");
         var models = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierExcelImportModels.cs");
         var helper = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierRetailPriceHelper.cs");
@@ -2177,6 +2180,7 @@ CREATE TABLE users (
         AssertText(dialogXaml, "3. Correggi righe", "Step 3 label missing.");
         AssertText(dialogXaml, "4. Verifica Sync DB", "Step 4 label missing.");
         AssertText(dialogXaml, "Verifica Sync Database", "Step 4 Sync DB title missing.");
+        AssertText(dialogXaml, "coda Admin Web pending", "Step 4 must explain local apply and Admin Web pending queue.");
         AssertText(dialogXaml, "Nuovi", "Step 4 new products tab missing.");
         AssertText(dialogXaml, "Aggiornamenti", "Step 4 updates tab missing.");
         AssertText(dialogXaml, "Senza modifiche", "Step 4 no-change tab missing.");
@@ -2184,6 +2188,8 @@ CREATE TABLE users (
         AssertText(dialogXaml, "SyncSearchText", "Step 4 search/filter input missing.");
         AssertText(dialogXaml, "SyncNewProductsView", "Step 4 new products must use filtered view.");
         AssertText(dialogXaml, "SyncUpdatedProductsView", "Step 4 updates must use filtered view.");
+        AssertText(dialogXaml, "Updated.SecondProductName", "Step 4 updated products must show secondProductName.");
+        AssertText(dialogXaml, "Binding=\"{Binding SecondProductName", "Step 4 new/skipped products must show secondProductName.");
         AssertText(dialogXaml, "Continua a Sync DB", "Step 3 must continue to Sync DB.");
         AssertText(dialogXaml, "Visibility=\"{Binding IsStep4", "Apply must only be visible on Step 4.");
         AssertText(viewModel, "IsStep1", "Step 1 state missing.");
@@ -2195,7 +2201,15 @@ CREATE TABLE users (
         AssertText(viewModel, "CollectionViewSource.GetDefaultView", "Step 4 search/filter collection views missing.");
         AssertText(viewModel, "SyncProductMatches", "Step 4 product search predicate missing.");
         AssertText(viewModel, "StepIndex == 3 && SyncCanApply", "Apply must be enabled only from valid Step 4.");
+        AssertText(viewModel, "string.IsNullOrWhiteSpace(row.SecondProductName)", "Missing new identity count must accept secondProductName like the analyzer.");
+        AssertText(workflow, "ListDetailsByBarcodesAsync", "Supplier import must not load the full catalog for barcode-only matching.");
+        AssertText(workflow, "CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry", "Supplier import workflow must prepare catalog import outbox payload.");
         AssertText(workflow, "rebuilt.Fingerprint", "Apply must recompute and verify Step 4 before writing.");
+        AssertText(applier, "CatalogImportOutboxRepository", "Supplier import apply must enqueue catalog import outbox.");
+        AssertText(applier, ".EnqueueAsync(conn, tx", "Catalog import outbox enqueue must share the apply transaction.");
+        AssertText(catalogImportContract, "PosCatalogImportRequest", "Catalog import DTO request missing.");
+        AssertText(catalogImportOutbox, "MarkBlockedAsync", "Catalog import outbox blocked transition missing.");
+        AssertText(catalogImportPayloadBuilder, "Path.GetFileName", "Catalog import payload must redact source path.");
         AssertText(applier, "ApplyAsync(preview.ValidatedRows", "Data applier must apply validated Step 4 rows.");
         AssertText(generalImportViewModel, "CanApplyImport", "General catalog import must gate Apply on a current DB sync preview.");
         AssertText(generalImportViewModel, "BuildCurrentAnalyzeFingerprint", "General catalog import must invalidate stale analyzed files/options.");
@@ -2323,12 +2337,27 @@ CREATE TABLE users (
             Assert(workflowPreview.NoChangeRows.Count == 0, "Step 4 operational preview must show zero no-change rows.");
 
             var backupPath = await CreateSupplierSelfTestBackupAsync(options.DbPath, tempRoot).ConfigureAwait(false);
+            var catalogOutboxEntry = CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(
+                workflowPreview,
+                Path.GetFileName(workbookPath),
+                "selftest");
             var workflowApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
                 workflowPreview,
-                new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
+                new SupplierExcelImportApplyOptions
+                {
+                    CatalogImportOutboxEntry = catalogOutboxEntry,
+                    InsertNew = true
+                }).ConfigureAwait(false);
             var workflowSummary = BuildSupplierApplySelfTestSummary(workflowApply, backupPath, workflowAnalysis.Warnings.Count);
             Assert(workflowApply.Errors == 0, "Workflow apply must succeed.");
             Assert(workflowApply.Inserted == 1, "Workflow apply must insert one new product.");
+            Assert(workflowApply.CatalogImportOutboxId > 0, "Workflow apply must enqueue catalog import outbox.");
+            Assert(
+                await ReadCatalogImportOutboxStatusAsync(factory, workflowApply.CatalogImportOutboxId).ConfigureAwait(false) == "pending",
+                "Catalog import outbox must be pending after supplier apply.");
+            var catalogPayload = await ReadCatalogImportOutboxPayloadAsync(factory, workflowApply.CatalogImportOutboxId).ConfigureAwait(false);
+            Assert(catalogPayload.Contains("pos-catalog-import-v1", StringComparison.Ordinal), "Catalog import payload schema version missing.");
+            Assert(!catalogPayload.Contains(tempRoot, StringComparison.OrdinalIgnoreCase), "Catalog import payload must not store the full source path.");
             Assert(File.Exists(backupPath), "Workflow apply must create a backup file.");
             Assert(!IsUnderProgramFiles(backupPath), "Supplier import backup must not be under Program Files.");
             Assert(workflowSummary.Contains("Backup path", StringComparison.Ordinal), "Apply summary must include backupPath.");
@@ -2652,6 +2681,7 @@ CREATE TABLE users (
                     row != null &&
                     !row.Exists &&
                     string.IsNullOrWhiteSpace(row.ProductName) &&
+                    string.IsNullOrWhiteSpace(row.SecondProductName) &&
                     string.IsNullOrWhiteSpace(row.ItemNumber));
             var blockedRows = missingRetailRows + missingBarcodeRows + missingIdentityRows;
             summary.SheetsDetected = SupplierExcelImportReader.CountWorksheets(file);
@@ -2982,6 +3012,30 @@ CREATE TABLE users (
                 null,
                 "SELECT COUNT(1) FROM products WHERE barcode = @barcode",
                 "@barcode", barcode).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<string> ReadCatalogImportOutboxStatusAsync(SqliteConnectionFactory factory, long outboxId)
+    {
+        using (var conn = factory.Open())
+        {
+            return await ScalarStringAsync(
+                conn,
+                null,
+                "SELECT status FROM catalog_import_outbox WHERE id = @outboxId",
+                "@outboxId", outboxId).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<string> ReadCatalogImportOutboxPayloadAsync(SqliteConnectionFactory factory, long outboxId)
+    {
+        using (var conn = factory.Open())
+        {
+            return await ScalarStringAsync(
+                conn,
+                null,
+                "SELECT payload_json FROM catalog_import_outbox WHERE id = @outboxId",
+                "@outboxId", outboxId).ConfigureAwait(false);
         }
     }
 

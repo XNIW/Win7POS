@@ -134,6 +134,12 @@ if ($combined -match "(?i)\b(TRUNCATE\s+TABLE\s+sales_sync_outbox|DROP\s+TABLE\s
     Pass "no destructive sales_sync_outbox cleanup detected"
 }
 
+if ($combined -match "(?i)\b(TRUNCATE\s+TABLE\s+catalog_import_outbox|DROP\s+TABLE\s+catalog_import_outbox|DELETE\s+FROM\s+catalog_import_outbox)\b") {
+    Fail "destructive catalog_import_outbox cleanup detected"
+} else {
+    Pass "no destructive catalog_import_outbox cleanup detected"
+}
+
 if ($fail) {
     Write-Host "`n=== RESULT: FAIL ===" -ForegroundColor Red
     exit 1

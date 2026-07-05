@@ -55,7 +55,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             else
             {
                 Win7POS.Wpf.Import.ModernMessageDialog.Show(
-                    System.Windows.Application.Current?.MainWindow,
+                    DialogOwnerHelper.GetSafeOwner(this),
                     PosLocalization.T("quantity.changeTitle"),
                     PosLocalization.T("quantity.invalid"));
             }

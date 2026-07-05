@@ -5,6 +5,7 @@ using System.Runtime.Serialization.Json;
 using System.Security.Cryptography;
 using System.Text;
 using Win7POS.Core;
+using Win7POS.Core.Online;
 
 namespace Win7POS.Wpf.Pos.Online
 {
@@ -152,7 +153,40 @@ namespace Win7POS.Wpf.Pos.Online
         private void SaveState(StoredTrustedDeviceState state)
         {
             AppPaths.EnsureDataDirectories();
-            File.WriteAllText(TrustedDeviceFilePath, Serialize(state), Encoding.UTF8);
+            WriteAllTextAtomic(TrustedDeviceFilePath, Serialize(state));
+        }
+
+        private static void WriteAllTextAtomic(string path, string text)
+        {
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            var tempPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            File.WriteAllText(tempPath, text ?? string.Empty, Encoding.UTF8);
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Replace(tempPath, path, null);
+                }
+                else
+                {
+                    File.Move(tempPath, path);
+                }
+            }
+            catch (IOException)
+            {
+                File.Copy(tempPath, path, true);
+                File.Delete(tempPath);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                File.Copy(tempPath, path, true);
+                File.Delete(tempPath);
+            }
         }
 
         private static string ProtectString(string value)

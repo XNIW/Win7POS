@@ -119,7 +119,7 @@
 	                        <TextBlock Margin="0,8,0,0"
 	                                   Foreground="#6B5B73"
 	                                   TextWrapping="Wrap"
-                                   Text="Richiesti: barcode, productName o itemNumber, purchasePrice. Disabilita colonne errate o correggi la chiave Android, poi premi Analizza per ricalcolare."/>
+                                   Text="Richiesti: barcode, productName, secondProductName o itemNumber, purchasePrice. Disabilita colonne errate o correggi la chiave Android, poi premi Analizza per ricalcolare."/>
                     </StackPanel>
                 </Border>
 
@@ -203,7 +203,7 @@
                             BorderThickness="1"
                             CornerRadius="8"
                             Visibility="{Binding HasIdentityWarning, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Nuovi prodotti senza productName o itemNumber: compila una delle due colonne oppure seleziona Skip."
+                        <TextBlock Text="Nuovi prodotti senza productName, secondProductName o itemNumber: compila una delle colonne oppure seleziona Skip."
                                    TextWrapping="Wrap"
                                    Foreground="#7A4A00"/>
                     </Border>
@@ -273,6 +273,10 @@
                     <Border Margin="0,6,0,0" Padding="12" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8">
                         <StackPanel>
                             <TextBlock Text="Verifica Sync Database" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Margin="0,4,0,0"
+                                       Text="Conferma le modifiche locali. Dopo l'applicazione, i prodotti modificati entrano nella coda Admin Web pending."
+                                       TextWrapping="Wrap"
+                                       Foreground="#6B5B73"/>
                             <WrapPanel Margin="0,10,0,0">
                                 <TextBlock Margin="0,0,16,0" Text="{Binding SyncTotalRowsCount, StringFormat=Totale: {0}}"/>
                                 <TextBlock Margin="0,0,16,0" Text="{Binding SyncNewProductsCount, StringFormat=Nuovi: {0}}"/>
@@ -301,6 +305,7 @@
                                 <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="130"/>
                                 <DataGridTextColumn Header="itemNumber" Binding="{Binding ItemNumber}" Width="120"/>
                                 <DataGridTextColumn Header="productName" Binding="{Binding ProductName}" Width="220"/>
+                                <DataGridTextColumn Header="secondProductName" Binding="{Binding SecondProductName}" Width="180"/>
                                 <DataGridTextColumn Header="retailPrice" Binding="{Binding RetailPrice}" Width="110"/>
                                 <DataGridTextColumn Header="purchasePrice" Binding="{Binding PurchasePrice}" Width="110"/>
                                 <DataGridTextColumn Header="quantity" Binding="{Binding Quantity}" Width="90"/>
@@ -316,6 +321,7 @@
                                 <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="130"/>
                                 <DataGridTextColumn Header="before productName" Binding="{Binding Existing.ProductName}" Width="180"/>
                                 <DataGridTextColumn Header="after productName" Binding="{Binding Updated.ProductName}" Width="180"/>
+                                <DataGridTextColumn Header="after secondProductName" Binding="{Binding Updated.SecondProductName}" Width="180"/>
                                 <DataGridTextColumn Header="before retailPrice" Binding="{Binding Existing.RetailPrice}" Width="120"/>
                                 <DataGridTextColumn Header="after retailPrice" Binding="{Binding Updated.RetailPrice}" Width="120"/>
                                 <DataGridTextColumn Header="diff" Binding="{Binding DiffSummary}" Width="4*"/>
@@ -328,6 +334,7 @@
                                 <DataGridTextColumn Header="row" Binding="{Binding RowNumber}" Width="60"/>
                                 <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="130"/>
                                 <DataGridTextColumn Header="productName" Binding="{Binding Updated.ProductName}" Width="220"/>
+                                <DataGridTextColumn Header="secondProductName" Binding="{Binding Updated.SecondProductName}" Width="180"/>
                                 <DataGridTextColumn Header="retailPrice" Binding="{Binding Updated.RetailPrice}" Width="110"/>
                                 <DataGridTextColumn Header="quantity" Binding="{Binding Updated.Quantity}" Width="90"/>
                             </DataGrid.Columns>
@@ -340,6 +347,7 @@
                                 <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="160"/>
                                 <DataGridTextColumn Header="itemNumber" Binding="{Binding ItemNumber}" Width="160"/>
                                 <DataGridTextColumn Header="productName" Binding="{Binding ProductName}" Width="240"/>
+                                <DataGridTextColumn Header="secondProductName" Binding="{Binding SecondProductName}" Width="180"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </TabItem>

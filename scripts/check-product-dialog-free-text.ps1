@@ -81,6 +81,12 @@ if ($repository -match 'UpdateProductAndMetaWithPriceHistoryAsync[\s\S]*BeginTra
     Fail "Edit path must resolve supplier/category inside the product transaction"
 }
 
+if ($repository -match 'UpdateProductAndMetaWithPriceHistoryAsync[\s\S]*BeginTransaction\(\)[\s\S]*INSERT INTO product_price_history[\s\S]*tx\.Commit\(\)') {
+    Pass "Edit path writes price history inside product transaction"
+} else {
+    Fail "Edit path must write price history inside the product transaction"
+}
+
 if ($repository -match 'StringComparer\.OrdinalIgnoreCase|LOWER\(') {
     Pass "Case-insensitive duplicate guard is present"
 } else {

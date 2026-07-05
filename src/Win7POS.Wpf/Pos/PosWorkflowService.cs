@@ -10,6 +10,7 @@ using Microsoft.Data.Sqlite;
 using Win7POS.Core;
 using Win7POS.Core.Audit;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Receipt;
 using Win7POS.Core.Util;

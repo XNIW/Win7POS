@@ -246,7 +246,8 @@ namespace Win7POS.Core.Import
                     RowNumber = row.RowNumber,
                     Barcode = NormalizeValue(row.Barcode),
                     ProductName = NormalizeValue(row.ProductName),
-                    ItemNumber = NormalizeValue(row.ItemNumber)
+                    ItemNumber = NormalizeValue(row.ItemNumber),
+                    SecondProductName = NormalizeValue(row.SecondProductName)
                 });
             }
 

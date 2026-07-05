@@ -24,6 +24,7 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
 ArchitecturesAllowed=x86 x64
+MinVersion=6.1sp1
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]

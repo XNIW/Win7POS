@@ -272,6 +272,7 @@ namespace Win7POS.Wpf.Import
                     !row.IsSkipped &&
                     !row.Exists &&
                     string.IsNullOrWhiteSpace(row.ProductName) &&
+                    string.IsNullOrWhiteSpace(row.SecondProductName) &&
                     string.IsNullOrWhiteSpace(row.ItemNumber));
             }
         }
@@ -413,7 +414,7 @@ namespace Win7POS.Wpf.Import
             Status = "Applicazione import fornitore in corso...";
             try
             {
-                var apply = await _service.ApplyAsync(SyncPreview, false).ConfigureAwait(true);
+                var apply = await _service.ApplyAsync(SyncPreview, false, SelectedFileName).ConfigureAwait(true);
                 Status = apply.Summary;
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Import Excel fornitore", apply.Summary);
                 RequestClose?.Invoke(true);

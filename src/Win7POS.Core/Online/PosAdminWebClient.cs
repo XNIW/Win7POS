@@ -9,7 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace Win7POS.Wpf.Pos.Online
+namespace Win7POS.Core.Online
 {
     public sealed class PosAdminWebClient : IDisposable
     {

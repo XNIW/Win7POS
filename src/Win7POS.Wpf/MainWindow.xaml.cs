@@ -13,6 +13,7 @@ using Win7POS.Wpf.Pos.Dialogs;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Data.Repositories;
 using Win7POS.Core;
+using Win7POS.Core.Online;
 using Win7POS.Core.Security;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
