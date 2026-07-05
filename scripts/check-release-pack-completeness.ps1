@@ -43,6 +43,7 @@ $requiredFiles = @(
     "ExcelDataReader.dll",
     "ExcelDataReader.DataSet.dll",
     "PdfSharp-gdi.dll",
+    "Microsoft.Data.Sqlite.dll",
     "System.Drawing.Common.dll",
     "System.IO.Packaging.dll",
     "System.Text.Encoding.CodePages.dll",
@@ -56,12 +57,16 @@ $requiredFiles = @(
     "VERSION.txt",
     "README_RUN.txt",
     "RELEASE_CHECKLIST.txt",
+    "check-win7-prereqs.ps1",
     "set-admin-web-staging-url.bat"
 )
 
 $forbiddenFiles = @(
     "Win7POS.Cli.exe",
-    "Win7POS.Cli.dll"
+    "Win7POS.Cli.dll",
+    "Win7POS.Cli.deps.json",
+    "Win7POS.Cli.runtimeconfig.json",
+    "Win7POS.Cli.pdb"
 )
 
 if ([string]::IsNullOrWhiteSpace($ReleasePackSource)) {

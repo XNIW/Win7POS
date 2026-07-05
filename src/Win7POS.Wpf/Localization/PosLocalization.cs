@@ -399,6 +399,7 @@ namespace Win7POS.Wpf.Localization
             new TranslationEntry("sync.offlineStaff", "offline staff", "staff offline", "staff offline", "离线员工"),
             new TranslationEntry("sync.online", "Online", "Online", "Online", "在线"),
             new TranslationEntry("sync.payments", "payments", "pagos", "pagamenti", "付款"),
+            new TranslationEntry("sync.pendingCatalogImports", "Catalog imports", "Importaciones catalogo", "Import catalogo", "目录导入"),
             new TranslationEntry("sync.pendingSales", "Queued sales", "Ventas en cola", "Vendite in coda", "排队销售"),
             new TranslationEntry("sync.policyUnavailable", "POS policy: unavailable from server.", "Policy POS: no disponible desde servidor.", "Policy POS: non disponibile dal server.", "POS 策略：服务器不可用。"),
             new TranslationEntry("sync.reconnectSession", "Reconnect session", "Reconectar sesion", "Sessione da ricollegare", "重新连接会话"),

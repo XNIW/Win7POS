@@ -897,6 +897,13 @@ namespace Win7POS.Core.Import
                 row.Quantity = Value(values, AndroidImportKeys.Quantity);
             row.Supplier = Value(values, AndroidImportKeys.Supplier);
             row.Category = Value(values, AndroidImportKeys.Category);
+            if (!exists &&
+                string.IsNullOrWhiteSpace(row.ProductName) &&
+                !string.IsNullOrWhiteSpace(row.SecondProductName))
+            {
+                row.ProductName = row.SecondProductName;
+            }
+
             row.HasItemNumberSource = HasSource(values, AndroidImportKeys.ItemNumber);
             row.HasProductNameSource = HasSource(values, AndroidImportKeys.ProductName);
             row.HasSecondProductNameSource = HasSource(values, AndroidImportKeys.SecondProductName);

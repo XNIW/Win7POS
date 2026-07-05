@@ -60,8 +60,14 @@ VALUES(
                 },
                 tx).ConfigureAwait(false);
 
-            return await conn.ExecuteScalarAsync<long>(@"
-SELECT id
+            var existing = await conn.QuerySingleAsync<CatalogImportExistingRow>(@"
+SELECT
+  id AS Id,
+  client_import_id AS ClientImportId,
+  idempotency_key AS IdempotencyKey,
+  schema_version AS SchemaVersion,
+  source AS Source,
+  payload_hash AS PayloadHash
 FROM catalog_import_outbox
 WHERE client_import_id = @ClientImportId
    OR idempotency_key = @IdempotencyKey
@@ -69,6 +75,17 @@ ORDER BY id ASC
 LIMIT 1;",
                 new { entry.ClientImportId, entry.IdempotencyKey },
                 tx).ConfigureAwait(false);
+
+            if (!string.Equals(existing.ClientImportId, entry.ClientImportId, StringComparison.Ordinal) ||
+                !string.Equals(existing.IdempotencyKey, entry.IdempotencyKey, StringComparison.Ordinal) ||
+                !string.Equals(existing.SchemaVersion, entry.SchemaVersion, StringComparison.Ordinal) ||
+                !string.Equals(existing.Source, entry.Source, StringComparison.Ordinal) ||
+                !string.Equals(existing.PayloadHash, entry.PayloadHash, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Catalog import outbox idempotency conflict.");
+            }
+
+            return existing.Id;
         }
 
         public async Task<IReadOnlyList<CatalogImportOutboxItem>> GetPendingAsync(int take, long nowMs)
@@ -92,7 +109,7 @@ SELECT
   next_retry_at AS NextRetryAt,
   last_error_code AS LastErrorCode
 FROM catalog_import_outbox
-WHERE status IN ('pending', 'retry')
+WHERE status IN ('pending', 'retry', 'in_progress')
   AND next_retry_at <= @nowMs
 ORDER BY id ASC
 LIMIT @take;",
@@ -130,6 +147,7 @@ LIMIT 1;").ConfigureAwait(false);
                 {
                     Acked = CountFor("acked"),
                     Blocked = CountFor("failed_blocked"),
+                    InProgress = CountFor("in_progress"),
                     LastAckedAt = lastAckedAt,
                     Pending = CountFor("pending"),
                     Retry = CountFor("retry")
@@ -144,7 +162,7 @@ LIMIT 1;").ConfigureAwait(false);
                 var count = await conn.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1)
 FROM catalog_import_outbox
-WHERE status IN ('pending', 'retry', 'failed_blocked');").ConfigureAwait(false);
+WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked');").ConfigureAwait(false);
                 return count > 0;
             }
         }
@@ -155,11 +173,12 @@ WHERE status IN ('pending', 'retry', 'failed_blocked');").ConfigureAwait(false);
             {
                 await conn.ExecuteAsync(@"
 UPDATE catalog_import_outbox
-SET attempt_count = attempt_count + 1,
+SET status = 'in_progress',
+    attempt_count = attempt_count + 1,
     last_attempt_at = @nowMs,
     updated_at = @nowMs
 WHERE id = @outboxId
-  AND status IN ('pending', 'retry');",
+  AND status IN ('pending', 'retry', 'in_progress');",
                     new { outboxId, nowMs }).ConfigureAwait(false);
             }
         }
@@ -216,6 +235,16 @@ WHERE id = @outboxId;",
             public long Count { get; set; }
             public string Status { get; set; } = string.Empty;
         }
+
+        private sealed class CatalogImportExistingRow
+        {
+            public string ClientImportId { get; set; } = string.Empty;
+            public long Id { get; set; }
+            public string IdempotencyKey { get; set; } = string.Empty;
+            public string PayloadHash { get; set; } = string.Empty;
+            public string SchemaVersion { get; set; } = string.Empty;
+            public string Source { get; set; } = string.Empty;
+        }
     }
 
     public sealed class CatalogImportOutboxEntry
@@ -248,9 +277,10 @@ WHERE id = @outboxId;",
     {
         public long Acked { get; set; }
         public long Blocked { get; set; }
+        public long InProgress { get; set; }
         public long? LastAckedAt { get; set; }
         public long Pending { get; set; }
-        public long PendingOrRetry => Pending + Retry;
+        public long PendingOrRetry => Pending + Retry + InProgress;
         public long Retry { get; set; }
     }
 }

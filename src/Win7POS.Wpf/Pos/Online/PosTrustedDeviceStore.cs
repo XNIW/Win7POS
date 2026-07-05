@@ -12,8 +12,6 @@ namespace Win7POS.Wpf.Pos.Online
     public sealed class PosTrustedDeviceStore
     {
         private const int CurrentFormatVersion = 1;
-        private const DataProtectionScope ProtectionScope = DataProtectionScope.CurrentUser;
-
         public string TrustedDeviceFilePath => Path.Combine(AppPaths.DataDirectory, "pos-trusted-device.json");
 
         public bool HasStoredState()
@@ -197,14 +195,14 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             var bytes = Encoding.UTF8.GetBytes(value);
-            var protectedBytes = ProtectedData.Protect(bytes, null, ProtectionScope);
+            var protectedBytes = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
             return Convert.ToBase64String(protectedBytes);
         }
 
         private static string UnprotectToString(string protectedValue)
         {
             var protectedBytes = Convert.FromBase64String(protectedValue);
-            var bytes = ProtectedData.Unprotect(protectedBytes, null, ProtectionScope);
+            var bytes = ProtectedData.Unprotect(protectedBytes, null, DataProtectionScope.CurrentUser);
             return Encoding.UTF8.GetString(bytes);
         }
 

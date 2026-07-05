@@ -16,6 +16,7 @@ namespace Win7POS.Core.Online
         private const string FirstLoginPath = "/api/pos/auth/first-login";
         private const string HeartbeatPath = "/api/pos/session/heartbeat";
         private const string CatalogPullPath = "/api/pos/catalog/pull";
+        private const string CatalogImportSyncPath = "/api/pos/catalog/import-sync";
         private const string SalesSyncPath = "/api/pos/sales/sync";
         private const int MaxResponseBodyBytes = 8 * 1024 * 1024;
         private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
@@ -70,6 +71,16 @@ namespace Win7POS.Core.Online
         {
             return await PostJsonAsync<PosSalesSyncRequest, PosSalesSyncResponse>(
                 SalesSyncPath,
+                request,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<PosOnlineResult<PosCatalogImportResponse>> CatalogImportAsync(
+            PosCatalogImportRequest request,
+            CancellationToken cancellationToken)
+        {
+            return await PostJsonAsync<PosCatalogImportRequest, PosCatalogImportResponse>(
+                CatalogImportSyncPath,
                 request,
                 cancellationToken).ConfigureAwait(false);
         }

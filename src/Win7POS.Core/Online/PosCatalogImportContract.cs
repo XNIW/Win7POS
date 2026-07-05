@@ -11,11 +11,26 @@ namespace Win7POS.Core.Online
         [DataMember(Name = "batch")]
         public PosCatalogImportBatchRequest Batch { get; set; }
 
+        [DataMember(Name = "deviceToken", EmitDefaultValue = false)]
+        public string DeviceToken { get; set; }
+
         [DataMember(Name = "items")]
         public PosCatalogImportItemRequest[] Items { get; set; }
 
+        [DataMember(Name = "posSessionId", EmitDefaultValue = false)]
+        public string PosSessionId { get; set; }
+
         [DataMember(Name = "schemaVersion")]
         public string SchemaVersion { get; set; }
+
+        [DataMember(Name = "sessionToken", EmitDefaultValue = false)]
+        public string SessionToken { get; set; }
+
+        [DataMember(Name = "shopCode", EmitDefaultValue = false)]
+        public string ShopCode { get; set; }
+
+        [DataMember(Name = "shopDeviceId", EmitDefaultValue = false)]
+        public string ShopDeviceId { get; set; }
 
         [DataMember(Name = "source")]
         public string Source { get; set; }

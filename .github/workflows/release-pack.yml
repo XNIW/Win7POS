@@ -37,6 +37,7 @@ jobs:
           pwsh -NoProfile -File scripts/check-win7pos-legacy-db-migrations.ps1
           pwsh -NoProfile -File scripts/check-win7pos-startup-no-eager-db.ps1
           pwsh -NoProfile -File scripts/check-pos-online-linking-task084b.ps1
+          pwsh -NoProfile -File scripts/check-win7-runtime-release-validation.ps1
 
       - name: Build WPF Release x86
         run: dotnet restore src/Win7POS.Wpf/Win7POS.Wpf.csproj && dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
@@ -52,6 +53,8 @@ jobs:
           Copy-Item -Path (Join-Path $wpfOutput "*") -Destination "dist/Win7POS" -Recurse -Force
 
           Copy-Item -Path "scripts/set-admin-web-staging-url.bat" -Destination "dist/Win7POS/set-admin-web-staging-url.bat" -Force
+          New-Item -ItemType Directory -Force -Path "dist/Win7POS/scripts/win7-smoke" | Out-Null
+          Copy-Item -Path "scripts/win7-smoke/check-win7-prereqs.ps1" -Destination "dist/Win7POS/scripts/win7-smoke/check-win7-prereqs.ps1" -Force
 
           Get-ChildItem -Path "dist/Win7POS" -Recurse -File -Filter "*.pdb" |
             Remove-Item -Force
@@ -60,7 +63,9 @@ jobs:
           Win7POS Release Pack
 
           Requirements:
-          - Windows 7+ with .NET Framework 4.8 for WPF app
+          - Windows 7 SP1 or later
+          - .NET Framework 4.8 for WPF app
+          - Microsoft Visual C++ Runtime x86 (2015-2022) for native dependencies such as SQLite
 
           Important paths:
           - Data: %ProgramData%\Win7POS
@@ -92,6 +97,12 @@ jobs:
           Win7POS Release Pack Checklist
 
           Verify inside zip Win7POS_yyyyMMdd_HHmm.zip -> dist/Win7POS:
+
+          [Windows 7 prerequisites]
+          [ ] Windows 7 SP1 or later
+          [ ] .NET Framework 4.8 installed
+          [ ] Microsoft Visual C++ Runtime x86 installed
+          [ ] Run scripts\win7-smoke\check-win7-prereqs.ps1 on the target or equivalent VM
 
           [WPF - required]
           [ ] Win7POS.Wpf.exe (or current app exe name)
@@ -138,11 +149,13 @@ jobs:
           Set-Content -Path "dist/Win7POS/VERSION.txt" -Value $versionInfo -Encoding UTF8
 
           pwsh -NoProfile -File scripts/check-release-pack-completeness.ps1 -ReleasePackSource dist/Win7POS -WriteManifests
+          pwsh -NoProfile -File scripts/check-win7-runtime-release-validation.ps1 -ReleasePackSource dist/Win7POS
 
           $stamp = Get-Date -Format "yyyyMMdd_HHmm"
           $zip = "dist/Win7POS_$stamp.zip"
           if (Test-Path $zip) { Remove-Item $zip -Force }
           Compress-Archive -Path "dist/Win7POS/*" -DestinationPath $zip -Force
+          pwsh -NoProfile -File scripts/check-win7-runtime-release-validation.ps1 -ReleasePackSource $zip
           Write-Host "Created package: $zip"
 
       - name: Validate Win7 startup safety

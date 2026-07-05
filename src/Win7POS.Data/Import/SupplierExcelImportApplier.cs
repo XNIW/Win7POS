@@ -207,6 +207,7 @@ SELECT
   p.barcode AS Barcode,
   p.name AS Name,
   p.unitPrice AS UnitPrice,
+  COALESCE(p.is_active, 1) AS IsActive,
   COALESCE(m.article_code, '') AS ArticleCode,
   COALESCE(m.name2, '') AS Name2,
   COALESCE(m.purchase_price, 0) AS PurchasePrice,
@@ -218,7 +219,6 @@ SELECT
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.barcode = @barcode
-  AND COALESCE(p.is_active, 1) = 1
 LIMIT 1",
                 new { barcode },
                 tx).ConfigureAwait(false);
@@ -287,7 +287,8 @@ LIMIT 1",
         private static bool HasChanges(ProductDetailsRow existing, ProductDetailsRow merged)
         {
             if (existing == null) return true;
-            return !TextEquals(existing.Name, merged.Name) ||
+            return !existing.IsActive ||
+                !TextEquals(existing.Name, merged.Name) ||
                 existing.UnitPrice != merged.UnitPrice ||
                 !TextEquals(existing.ArticleCode, merged.ArticleCode) ||
                 !TextEquals(existing.Name2, merged.Name2) ||

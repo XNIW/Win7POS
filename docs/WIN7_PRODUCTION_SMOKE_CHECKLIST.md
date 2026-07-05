@@ -8,6 +8,8 @@ Per il gate specifico i18n runtime, usare anche `docs/QA/WIN7POS-I18N-RUNTIME-VA
 
 - [ ] Windows 7 SP1 reale o VM equivalente, preferibilmente x86/x64 con runtime legacy realistico.
 - [ ] .NET Framework 4.8 installato.
+- [ ] Microsoft Visual C++ Runtime x86 installato.
+- [ ] Preflight non distruttivo eseguito: `powershell -ExecutionPolicy Bypass -File scripts\win7-smoke\check-win7-prereqs.ps1 -AppDir C:\Win7POSTest\drop\Win7POS -DataDir C:\Win7POSTest\data`.
 - [ ] Build Win7POS `Release` x86 installata o copiata da drop verificato.
 - [ ] `C:\ProgramData\Win7POS` scrivibile dall'utente POS.
 - [ ] `C:\ProgramData\Win7POS\pos.db` assente o backup esplicitamente approvato per test distruttivi.
@@ -83,6 +85,15 @@ Per il gate specifico i18n runtime, usare anche `docs/QA/WIN7POS-I18N-RUNTIME-VA
 - [ ] Outbox non viene cancellata.
 - [ ] Vendite gia acked non vengono marcate nuovamente senza ack server.
 - [ ] Dopo ritorno online, retry resta idempotente.
+
+## Catalog import locale -> Admin Web
+
+- [ ] Import Excel fornitore eseguito con rete assente salva il batch in outbox locale.
+- [ ] Status strip mostra catalog import pending/retry senza esporre token.
+- [ ] Ritorno online invia `/api/pos/catalog/import-sync` con sessione trusted valida.
+- [ ] Risposta `accepted`/`duplicate` marca il batch come acked.
+- [ ] Risposta `validation_failed`/`conflict` blocca il batch senza cancellare dati locali.
+- [ ] Risposta `auth_denied` richiede ricollegamento e pulisce la sessione trusted.
 
 ## Periferiche
 

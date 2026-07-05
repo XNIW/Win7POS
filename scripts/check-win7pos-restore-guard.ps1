@@ -30,6 +30,7 @@ $required = @(
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs",
     "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs",
     "src/Win7POS.Data/Repositories/DbMaintenanceRepository.cs"
 )
 
@@ -48,6 +49,7 @@ $startOfDay = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs"
 $saleRepo = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$catalogOutboxRepo = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
 $maintenance = Read-Text "src/Win7POS.Data/Repositories/DbMaintenanceRepository.cs"
 $combined = Get-ChildItem -Path (Join-Path $repoRoot "src") -Recurse -File -Include *.cs,*.xaml |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
@@ -59,15 +61,16 @@ $restoreEnd = Index-OrFail $workflow "public async Task<string> IntegrityCheckAs
 $restoreBody = $workflow.Substring($restoreStart, $restoreEnd - $restoreStart)
 
 $outboxCheck = Index-OrFail $restoreBody "HasUnresolvedSalesSyncOutboxAsync" "restore must check unresolved sales outbox"
+$catalogOutboxCheck = Index-OrFail $restoreBody "_catalogImportOutbox.HasUnresolvedAsync" "restore must check unresolved catalog import outbox"
 $preBackup = Index-OrFail $restoreBody 'CreateDbBackupCopyNoLock("pos_pre_restore_")' "restore must create pre-restore backup"
 $copyRestore = Index-OrFail $restoreBody "File.Copy(backupDbPath, _options.DbPath, true)" "restore must copy selected backup after guard"
 $ensureCreated = Index-OrFail $restoreBody "DbInitializer.EnsureCreated(_options)" "restore must run migrations after copy"
-$integrity = Index-OrFail $restoreBody "IntegrityCheckAsync()" "restore must run integrity check"
+$integrity = Index-OrFail $restoreBody "var integrity = await _dbMaintenance.IntegrityCheckAsync()" "restore must run live DB integrity check"
 $reviewFlag = Index-OrFail $restoreBody "SetBoolAsync(KeyRestoreNeedsSyncReview, true)" "restore must mark sync review required"
 $walCheckpoint = Index-OrFail $restoreBody "WalCheckpointAsync()" "restore must checkpoint WAL before copying live DB"
 
-if ($outboxCheck -gt $preBackup -or $preBackup -gt $copyRestore -or $copyRestore -gt $ensureCreated -or $ensureCreated -gt $integrity -or $integrity -gt $reviewFlag) {
-    Fail "restore guard order must be outbox -> pre-backup -> restore -> migrations -> integrity -> sync-review flag"
+if ($outboxCheck -gt $preBackup -or $catalogOutboxCheck -gt $preBackup -or $preBackup -gt $copyRestore -or $copyRestore -gt $ensureCreated -or $ensureCreated -gt $integrity -or $integrity -gt $reviewFlag) {
+    Fail "restore guard order must be outbox checks -> pre-backup -> restore -> migrations -> integrity -> sync-review flag"
 } else {
     Pass "restore guard order is safe"
 }
@@ -82,6 +85,12 @@ if ($saleRepo -notmatch "WHERE status IN \('pending', 'retry', 'failed_blocked'\
     Fail "unresolved outbox guard must include pending, retry and failed_blocked"
 } else {
     Pass "unresolved outbox guard includes pending/retry/failed_blocked"
+}
+
+if ($catalogOutboxRepo -notmatch "WHERE status IN \('pending', 'retry', 'in_progress', 'failed_blocked'\)") {
+    Fail "catalog import unresolved guard must include pending, retry, in_progress and failed_blocked"
+} else {
+    Pass "catalog import unresolved guard includes pending/retry/in_progress/failed_blocked"
 }
 
 if ($workflow -notmatch "KeyRestoreLastPreBackupPath" -or
@@ -122,6 +131,7 @@ if ($statusReader -notmatch "RestoreNeedsReviewSettingKey" -or
 }
 
 if ($translations -notmatch "dbMaintenance.restoreBlockedUnresolvedSales" -or
+    $translations -notmatch "dbMaintenance.restoreBlockedUnresolvedCatalogImports" -or
     $translations -notmatch "dbMaintenance.restoreSyncReview") {
     Fail "restore user-facing safety messages missing"
 } else {
