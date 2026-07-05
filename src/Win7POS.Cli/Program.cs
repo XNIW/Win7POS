@@ -2776,14 +2776,18 @@ CREATE TABLE users (
             var pending = await repository.GetPendingAsync(10, nowMs + 1000).ConfigureAwait(false);
             Assert(pending.Count == 3, "Catalog import pending query must include all pending rows.");
 
-            await repository.PrepareAttemptAsync(acceptedId, nowMs + 2000).ConfigureAwait(false);
+            Assert(await repository.PrepareAttemptAsync(acceptedId, nowMs + 2000).ConfigureAwait(false), "Prepare must lease pending row.");
             Assert(await ReadCatalogImportOutboxStatusAsync(factory, acceptedId).ConfigureAwait(false) == "in_progress", "Prepare must promote row to in_progress.");
             var preparedPending = await repository.GetPendingAsync(10, nowMs + 3000).ConfigureAwait(false);
-            Assert(preparedPending.Any(row => row.Id == acceptedId), "Pending query must recover in_progress rows.");
+            Assert(!preparedPending.Any(row => row.Id == acceptedId), "Pending query must not immediately reselect leased in_progress rows.");
+            var stalePending = await repository.GetPendingAsync(10, nowMs + (16 * 60 * 1000)).ConfigureAwait(false);
+            Assert(stalePending.Any(row => row.Id == acceptedId), "Pending query must recover stale in_progress rows.");
 
-            await repository.MarkAckedAsync(acceptedId, "server-accepted", nowMs + 4000).ConfigureAwait(false);
-            await repository.MarkRetryAsync(retryId, "network_error", nowMs + 9000, nowMs + 5000).ConfigureAwait(false);
-            await repository.MarkBlockedAsync(blockedId, "validation_failed", nowMs + 6000).ConfigureAwait(false);
+            Assert(await repository.PrepareAttemptAsync(retryId, nowMs + 2500).ConfigureAwait(false), "Prepare must lease retry scenario row.");
+            Assert(await repository.PrepareAttemptAsync(blockedId, nowMs + 2600).ConfigureAwait(false), "Prepare must lease blocked scenario row.");
+            Assert(await repository.MarkAckedAsync(acceptedId, "server-accepted", nowMs + 4000).ConfigureAwait(false), "Ack must update active attempt.");
+            Assert(await repository.MarkRetryAsync(retryId, "network_error", nowMs + 9000, nowMs + 5000).ConfigureAwait(false), "Retry must update active attempt.");
+            Assert(await repository.MarkBlockedAsync(blockedId, "validation_failed", nowMs + 6000).ConfigureAwait(false), "Blocked must update active attempt.");
             var summary = await repository.GetSummaryAsync().ConfigureAwait(false);
             Assert(summary.Acked == 1, "Ack summary mismatch.");
             Assert(summary.Retry == 1, "Retry summary mismatch.");
@@ -2814,7 +2818,7 @@ CREATE TABLE users (
             var factory = new SqliteConnectionFactory(options);
             var repository = new CatalogImportOutboxRepository(factory);
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var scenarios = new[] { "accepted", "duplicate", "idempotent", "validation_failed", "conflict", "auth_denied", "timeout" };
+            var scenarios = new[] { "accepted", "duplicate", "idempotent", "validation_failed", "conflict", "mismatch", "auth_denied", "timeout" };
             var ids = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             for (var i = 0; i < scenarios.Length; i++)
             {
@@ -2845,7 +2849,7 @@ CREATE TABLE users (
                     .ConfigureAwait(false);
                 Assert(result.Total == scenarios.Length, "Catalog import sync must process all seeded rows.");
                 Assert(result.Acked == 3, "Accepted/duplicate/idempotent rows must be acked.");
-                Assert(result.Blocked == 2, "Validation/conflict rows must be blocked.");
+                Assert(result.Blocked == 3, "Validation/conflict/mismatch rows must be blocked.");
                 Assert(result.Retried == 2, "Auth/timeout rows must be retry.");
                 Assert(result.RequiresTrustClear, "Auth denied response must request trust clear.");
             }
@@ -2855,6 +2859,7 @@ CREATE TABLE users (
             Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["idempotent"]).ConfigureAwait(false) == "acked", "idempotent status mismatch.");
             Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["validation_failed"]).ConfigureAwait(false) == "failed_blocked", "validation_failed status mismatch.");
             Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["conflict"]).ConfigureAwait(false) == "failed_blocked", "conflict status mismatch.");
+            Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["mismatch"]).ConfigureAwait(false) == "failed_blocked", "mismatch status mismatch.");
             Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["auth_denied"]).ConfigureAwait(false) == "retry", "auth_denied status mismatch.");
             Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["timeout"]).ConfigureAwait(false) == "retry", "timeout status mismatch.");
             var payload = await ReadCatalogImportOutboxPayloadAsync(factory, ids["accepted"]).ConfigureAwait(false);
@@ -5649,11 +5654,12 @@ SELECT last_insert_rowid();";
                 var status = scenario == "validation_failed" || scenario == "conflict" || scenario == "duplicate" || scenario == "idempotent"
                     ? scenario
                     : "accepted";
+                var clientImportId = ClientImportIdFromBody(body);
                 var response = new PosCatalogImportResponse
                 {
                     Batch = new PosCatalogImportBatchResponse
                     {
-                        ClientImportId = "fake-" + scenario,
+                        ClientImportId = scenario == "mismatch" ? "fake-mismatch" : clientImportId,
                         PosCatalogImportBatchId = "server-" + scenario,
                         Status = status
                     },
@@ -5668,7 +5674,7 @@ SELECT last_insert_rowid();";
 
         private static string ScenarioFromBody(string body)
         {
-            foreach (var scenario in new[] { "validation_failed", "auth_denied", "idempotent", "duplicate", "conflict", "timeout", "accepted" })
+            foreach (var scenario in new[] { "validation_failed", "auth_denied", "idempotent", "duplicate", "conflict", "mismatch", "timeout", "accepted" })
             {
                 if ((body ?? string.Empty).IndexOf(scenario, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
@@ -5677,6 +5683,29 @@ SELECT last_insert_rowid();";
             }
 
             return "accepted";
+        }
+
+        private static string ClientImportIdFromBody(string body)
+        {
+            try
+            {
+                using (var document = JsonDocument.Parse(body ?? "{}"))
+                {
+                    JsonElement batch;
+                    JsonElement clientImportId;
+                    if (document.RootElement.TryGetProperty("batch", out batch) &&
+                        batch.TryGetProperty("clientImportId", out clientImportId) &&
+                        clientImportId.ValueKind == JsonValueKind.String)
+                    {
+                        return clientImportId.GetString() ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
         }
 
         private static async Task<HttpRequestSnapshot> ReadHttpRequestAsync(NetworkStream stream, CancellationToken cancellationToken)

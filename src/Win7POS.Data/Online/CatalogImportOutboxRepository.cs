@@ -9,6 +9,8 @@ namespace Win7POS.Data.Online
 {
     public sealed class CatalogImportOutboxRepository
     {
+        private const long CatalogImportInProgressLeaseMilliseconds = 15 * 60 * 1000L;
+
         private readonly SqliteConnectionFactory _factory;
 
         public CatalogImportOutboxRepository(SqliteConnectionFactory factory)
@@ -95,6 +97,7 @@ LIMIT 1;",
 
             using (var conn = _factory.Open())
             {
+                var staleInProgressBefore = nowMs - CatalogImportInProgressLeaseMilliseconds;
                 var rows = await conn.QueryAsync<CatalogImportOutboxItem>(@"
 SELECT
   id AS Id,
@@ -109,11 +112,17 @@ SELECT
   next_retry_at AS NextRetryAt,
   last_error_code AS LastErrorCode
 FROM catalog_import_outbox
-WHERE status IN ('pending', 'retry', 'in_progress')
-  AND next_retry_at <= @nowMs
+WHERE (
+    status IN ('pending', 'retry')
+    AND next_retry_at <= @nowMs
+  )
+  OR (
+    status = 'in_progress'
+    AND COALESCE(last_attempt_at, updated_at, 0) <= @staleInProgressBefore
+  )
 ORDER BY id ASC
 LIMIT @take;",
-                    new { take, nowMs }).ConfigureAwait(false);
+                    new { take, nowMs, staleInProgressBefore }).ConfigureAwait(false);
                 return rows.ToList();
             }
         }
@@ -167,66 +176,86 @@ WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked');").Configu
             }
         }
 
-        public async Task PrepareAttemptAsync(long outboxId, long nowMs)
+        public async Task<bool> PrepareAttemptAsync(long outboxId, long nowMs)
         {
             using (var conn = _factory.Open())
             {
-                await conn.ExecuteAsync(@"
+                var staleInProgressBefore = nowMs - CatalogImportInProgressLeaseMilliseconds;
+                var rows = await conn.ExecuteAsync(@"
 UPDATE catalog_import_outbox
 SET status = 'in_progress',
     attempt_count = attempt_count + 1,
     last_attempt_at = @nowMs,
     updated_at = @nowMs
 WHERE id = @outboxId
-  AND status IN ('pending', 'retry', 'in_progress');",
-                    new { outboxId, nowMs }).ConfigureAwait(false);
+  AND (
+    (
+      status IN ('pending', 'retry')
+      AND next_retry_at <= @nowMs
+    )
+    OR (
+      status = 'in_progress'
+      AND COALESCE(last_attempt_at, updated_at, 0) <= @staleInProgressBefore
+    )
+  );",
+                    new { outboxId, nowMs, staleInProgressBefore }).ConfigureAwait(false);
+                return rows == 1;
             }
         }
 
-        public async Task MarkAckedAsync(long outboxId, string serverImportId, long nowMs)
+        public async Task<bool> MarkAckedAsync(long outboxId, string serverImportId, long nowMs, int expectedAttemptCount = 0)
         {
             using (var conn = _factory.Open())
             {
-                await conn.ExecuteAsync(@"
+                var rows = await conn.ExecuteAsync(@"
 UPDATE catalog_import_outbox
 SET status = 'acked',
     server_import_id = @serverImportId,
     last_error_code = NULL,
     last_error_at = NULL,
     updated_at = @nowMs
-WHERE id = @outboxId;",
-                    new { outboxId, serverImportId, nowMs }).ConfigureAwait(false);
+WHERE id = @outboxId
+  AND status = 'in_progress'
+  AND (@expectedAttemptCount <= 0 OR attempt_count = @expectedAttemptCount);",
+                    new { outboxId, serverImportId, nowMs, expectedAttemptCount }).ConfigureAwait(false);
+                return rows == 1;
             }
         }
 
-        public async Task MarkRetryAsync(long outboxId, string errorCode, long nextRetryAt, long nowMs)
+        public async Task<bool> MarkRetryAsync(long outboxId, string errorCode, long nextRetryAt, long nowMs, int expectedAttemptCount = 0)
         {
             using (var conn = _factory.Open())
             {
-                await conn.ExecuteAsync(@"
+                var rows = await conn.ExecuteAsync(@"
 UPDATE catalog_import_outbox
 SET status = 'retry',
     next_retry_at = @nextRetryAt,
     last_error_code = @errorCode,
     last_error_at = @nowMs,
     updated_at = @nowMs
-WHERE id = @outboxId;",
-                    new { outboxId, errorCode, nextRetryAt, nowMs }).ConfigureAwait(false);
+WHERE id = @outboxId
+  AND status = 'in_progress'
+  AND (@expectedAttemptCount <= 0 OR attempt_count = @expectedAttemptCount);",
+                    new { outboxId, errorCode, nextRetryAt, nowMs, expectedAttemptCount }).ConfigureAwait(false);
+                return rows == 1;
             }
         }
 
-        public async Task MarkBlockedAsync(long outboxId, string errorCode, long nowMs)
+        public async Task<bool> MarkBlockedAsync(long outboxId, string errorCode, long nowMs, int expectedAttemptCount = 0)
         {
             using (var conn = _factory.Open())
             {
-                await conn.ExecuteAsync(@"
+                var rows = await conn.ExecuteAsync(@"
 UPDATE catalog_import_outbox
 SET status = 'failed_blocked',
     last_error_code = @errorCode,
     last_error_at = @nowMs,
     updated_at = @nowMs
-WHERE id = @outboxId;",
-                    new { outboxId, errorCode, nowMs }).ConfigureAwait(false);
+WHERE id = @outboxId
+  AND status = 'in_progress'
+  AND (@expectedAttemptCount <= 0 OR attempt_count = @expectedAttemptCount);",
+                    new { outboxId, errorCode, nowMs, expectedAttemptCount }).ConfigureAwait(false);
+                return rows == 1;
             }
         }
 

@@ -33,7 +33,8 @@ namespace Win7POS.Data.Online
             var importHash = Sha256Hex(PosOnlineContract.CatalogImportSchemaVersion + "|" + fingerprint + "|" + BuildFallbackFingerprint(items));
             var clientImportId = "win7pos-catalog-import-" + importHash.Substring(0, 24);
             var idempotencyKey = clientImportId + ":" + PosOnlineContract.CatalogImportSchemaVersion;
-            var createdAt = DateTimeOffset.UtcNow;
+            var batchCreatedAt = BuildStableBatchCreatedAt(importHash);
+            var outboxCreatedAt = DateTimeOffset.UtcNow;
 
             for (var i = 0; i < items.Length; i++)
             {
@@ -48,7 +49,7 @@ namespace Win7POS.Data.Online
                 Batch = new PosCatalogImportBatchRequest
                 {
                     ClientImportId = clientImportId,
-                    CreatedAt = createdAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+                    CreatedAt = batchCreatedAt,
                     IdempotencyKey = idempotencyKey,
                     PreviewFingerprint = TrimOrNull(fingerprint, 128),
                     SourceFileName = RedactFileName(sourceFileName)
@@ -70,13 +71,31 @@ namespace Win7POS.Data.Online
             return new CatalogImportOutboxEntry
             {
                 ClientImportId = clientImportId,
-                CreatedAt = createdAt.ToUnixTimeMilliseconds(),
+                CreatedAt = outboxCreatedAt.ToUnixTimeMilliseconds(),
                 IdempotencyKey = idempotencyKey,
                 PayloadHash = Sha256Hex(payloadJson),
                 PayloadJson = payloadJson,
                 SchemaVersion = PosOnlineContract.CatalogImportSchemaVersion,
                 Source = Source
             };
+        }
+
+        private static string BuildStableBatchCreatedAt(string importHash)
+        {
+            var hex = (importHash ?? string.Empty).Length >= 8
+                ? importHash.Substring(0, 8)
+                : "00000000";
+            long parsed;
+            if (!long.TryParse(hex, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out parsed))
+            {
+                parsed = 0;
+            }
+
+            var seconds = parsed % (10L * 365 * 24 * 60 * 60);
+            return new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)
+                .AddSeconds(seconds)
+                .ToUniversalTime()
+                .ToString("O", CultureInfo.InvariantCulture);
         }
 
         public static string Sha256Hex(string value)

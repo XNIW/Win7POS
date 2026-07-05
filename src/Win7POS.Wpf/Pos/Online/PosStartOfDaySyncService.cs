@@ -355,7 +355,10 @@ namespace Win7POS.Wpf.Pos.Online
                         await settings.SetStringAsync(CatalogBootstrapStatusSettingKey, "failed_auth_denied").ConfigureAwait(false);
                     }
 
-                    return !sync.RequiresTrustClear;
+                    var summary = await new CatalogImportOutboxRepository(_factory)
+                        .GetSummaryAsync()
+                        .ConfigureAwait(false);
+                    return !sync.RequiresTrustClear && summary.PendingOrRetry == 0;
                 }
                 catch (OperationCanceledException)
                 {

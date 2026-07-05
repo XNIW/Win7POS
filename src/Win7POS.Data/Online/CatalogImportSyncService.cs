@@ -83,17 +83,24 @@ namespace Win7POS.Data.Online
             CancellationToken cancellationToken)
         {
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            await _outbox.PrepareAttemptAsync(item.Id, nowMs).ConfigureAwait(false);
+            if (!await _outbox.PrepareAttemptAsync(item.Id, nowMs).ConfigureAwait(false))
+            {
+                return;
+            }
+
             run.Prepared++;
 
             var preparedAttempt = item.AttemptCount + 1;
             var validation = CatalogImportOutboxPayloadValidator.Validate(item);
             if (!validation.IsValid)
             {
-                await _outbox.MarkBlockedAsync(item.Id, validation.Code, nowMs).ConfigureAwait(false);
-                run.Blocked++;
-                run.InvalidPayload++;
-                run.LastErrorCode = validation.Code;
+                if (await _outbox.MarkBlockedAsync(item.Id, validation.Code, nowMs, preparedAttempt).ConfigureAwait(false))
+                {
+                    run.Blocked++;
+                    run.InvalidPayload++;
+                    run.LastErrorCode = validation.Code;
+                }
+
                 return;
             }
 
@@ -118,22 +125,45 @@ namespace Win7POS.Data.Online
             var batchStatus = FirstNonEmpty(remote.Batch == null ? null : remote.Batch.Status, remote.Code);
             if (IsBlockedStatus(batchStatus) || HasBlockedItem(remote.Items))
             {
-                await _outbox.MarkBlockedAsync(
+                if (await _outbox.MarkBlockedAsync(
                     item.Id,
                     FirstNonEmpty(batchStatus, "remote_blocked"),
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
-                run.Blocked++;
-                run.LastErrorCode = FirstNonEmpty(batchStatus, "remote_blocked");
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    preparedAttempt).ConfigureAwait(false))
+                {
+                    run.Blocked++;
+                    run.LastErrorCode = FirstNonEmpty(batchStatus, "remote_blocked");
+                }
+
                 return;
             }
 
             if (IsAckStatus(batchStatus))
             {
-                await _outbox.MarkAckedAsync(
+                if (!IsExpectedRemoteBatch(item, remote.Batch))
+                {
+                    if (await _outbox.MarkBlockedAsync(
+                        item.Id,
+                        "client_import_mismatch",
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        preparedAttempt).ConfigureAwait(false))
+                    {
+                        run.Blocked++;
+                        run.LastErrorCode = "client_import_mismatch";
+                    }
+
+                    return;
+                }
+
+                if (await _outbox.MarkAckedAsync(
                     item.Id,
-                    remote.Batch == null ? null : remote.Batch.PosCatalogImportBatchId,
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
-                run.Acked++;
+                    remote.Batch.PosCatalogImportBatchId,
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    preparedAttempt).ConfigureAwait(false))
+                {
+                    run.Acked++;
+                }
+
                 return;
             }
 
@@ -157,12 +187,16 @@ namespace Win7POS.Data.Online
             var normalizedCode = denied || IsAuthDenied(code) ? "auth_denied" : FirstNonEmpty(code, "network_error");
             if (IsBlockedStatus(normalizedCode))
             {
-                await _outbox.MarkBlockedAsync(
+                if (await _outbox.MarkBlockedAsync(
                     item.Id,
                     normalizedCode,
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
-                run.Blocked++;
-                run.LastErrorCode = normalizedCode;
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    preparedAttempt).ConfigureAwait(false))
+                {
+                    run.Blocked++;
+                    run.LastErrorCode = normalizedCode;
+                }
+
                 return;
             }
 
@@ -184,17 +218,22 @@ namespace Win7POS.Data.Online
             var normalizedCode = FirstNonEmpty(code, "retry");
             if (preparedAttempt >= MaxAttemptsBeforeBlocked)
             {
-                await _outbox.MarkBlockedAsync(item.Id, normalizedCode, nowMs).ConfigureAwait(false);
-                run.Blocked++;
+                if (await _outbox.MarkBlockedAsync(item.Id, normalizedCode, nowMs, preparedAttempt).ConfigureAwait(false))
+                {
+                    run.Blocked++;
+                }
             }
             else
             {
-                await _outbox.MarkRetryAsync(
+                if (await _outbox.MarkRetryAsync(
                     item.Id,
                     normalizedCode,
                     ComputeNextRetryAt(nowMs, preparedAttempt),
-                    nowMs).ConfigureAwait(false);
-                run.Retried++;
+                    nowMs,
+                    preparedAttempt).ConfigureAwait(false))
+                {
+                    run.Retried++;
+                }
             }
 
             run.LastErrorCode = normalizedCode;
@@ -213,6 +252,14 @@ namespace Win7POS.Data.Online
                 !string.IsNullOrWhiteSpace(trustedSession.SessionToken) &&
                 !string.IsNullOrWhiteSpace(trustedSession.PosSessionId) &&
                 !string.IsNullOrWhiteSpace(trustedSession.ShopDeviceId);
+        }
+
+        private static bool IsExpectedRemoteBatch(
+            CatalogImportOutboxItem item,
+            PosCatalogImportBatchResponse batch)
+        {
+            return batch != null &&
+                string.Equals(batch.ClientImportId, item.ClientImportId, StringComparison.Ordinal);
         }
 
         private static void AttachTrust(PosCatalogImportRequest request, PosTrustedDeviceSession trustedSession)
@@ -245,7 +292,7 @@ namespace Win7POS.Data.Online
 
         private static bool IsBlockedStatus(string status)
         {
-            return IsOneOf(status, "validation_failed", "conflict", "failed_blocked", "invalid_payload", "schema_mismatch", "hash_mismatch");
+            return IsOneOf(status, "validation_failed", "conflict", "failed_blocked", "invalid_payload", "schema_mismatch", "hash_mismatch", "client_import_mismatch");
         }
 
         private static bool IsAuthDenied(string status)

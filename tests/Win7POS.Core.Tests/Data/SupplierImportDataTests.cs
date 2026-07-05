@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Linq;
 using System.Runtime.Serialization.Json;
 using System.Text;
 using Microsoft.Data.Sqlite;
@@ -102,6 +103,47 @@ public sealed class SupplierImportDataTests
         conflict.ClientImportId = entry.ClientImportId;
         conflict.IdempotencyKey = entry.IdempotencyKey;
         await AssertThrowsInvalidOperationAsync(() => repository.EnqueueAsync(conflict));
+    }
+
+    [TestMethod]
+    public async Task CatalogImportOutboxRepository_PrepareAttemptAsync_LeasesInProgressRows()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogImportOutboxRepository(db.Factory);
+        var nowMs = 1767225600000L;
+        var id = await repository.EnqueueAsync(BuildCatalogEntry("lease", 3));
+
+        Assert.IsTrue(await repository.PrepareAttemptAsync(id, nowMs));
+        Assert.IsFalse(await repository.PrepareAttemptAsync(id, nowMs + 1000));
+
+        var immediate = await repository.GetPendingAsync(10, nowMs + 2000);
+        Assert.IsFalse(immediate.Any(row => row.Id == id), "Fresh in_progress rows must stay leased.");
+
+        var afterLease = await repository.GetPendingAsync(10, nowMs + (16 * 60 * 1000));
+        Assert.IsTrue(afterLease.Any(row => row.Id == id), "Stale in_progress rows must be recoverable.");
+
+        var recoveredAt = nowMs + (17 * 60 * 1000);
+        Assert.IsTrue(await repository.PrepareAttemptAsync(id, recoveredAt));
+        Assert.AreEqual(2, await ScalarLongAsync(db.Factory, "SELECT attempt_count FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
+        Assert.IsFalse(await repository.MarkAckedAsync(id, "late-first-attempt", recoveredAt + 1000, expectedAttemptCount: 1));
+        Assert.IsTrue(await repository.MarkAckedAsync(id, "server-acked", recoveredAt + 2000, expectedAttemptCount: 2));
+        Assert.AreEqual("acked", await ScalarStringAsync(db.Factory, "SELECT status FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
+    }
+
+    [TestMethod]
+    public async Task CatalogImportOutboxRepository_Transitions_DoNotOverwriteAckedRows()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogImportOutboxRepository(db.Factory);
+        var nowMs = 1767225600000L;
+        var id = await repository.EnqueueAsync(BuildCatalogEntry("acked-race", 4));
+
+        Assert.IsTrue(await repository.PrepareAttemptAsync(id, nowMs));
+        Assert.IsTrue(await repository.MarkAckedAsync(id, "server-acked", nowMs + 1000));
+        Assert.IsFalse(await repository.MarkRetryAsync(id, "timeout", nowMs + 30000, nowMs + 2000));
+        Assert.IsFalse(await repository.MarkBlockedAsync(id, "late_block", nowMs + 3000));
+
+        Assert.AreEqual("acked", await ScalarStringAsync(db.Factory, "SELECT status FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
     }
 
     private static CatalogImportOutboxEntry BuildCatalogEntry(string name, int rowNumber)
