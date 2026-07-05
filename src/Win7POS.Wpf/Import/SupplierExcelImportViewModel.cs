@@ -12,6 +12,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using Win7POS.Core.Import;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Import
 {
@@ -416,7 +417,7 @@ namespace Win7POS.Wpf.Import
             {
                 var apply = await _service.ApplyAsync(SyncPreview, false, SelectedFileName).ConfigureAwait(true);
                 Status = apply.Summary;
-                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Import Excel fornitore", apply.Summary);
+                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.T("supplierExcelImport.title"), apply.Summary);
                 RequestClose?.Invoke(true);
             }
             catch (Exception ex)

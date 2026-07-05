@@ -99,7 +99,7 @@ namespace Win7POS.Wpf.Pos.Online
                 PendingSalesText = T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
                     " | " + T("sync.pendingCatalogImports") + ": " + catalogOutbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
                     " | " + T("sync.toRetry") + ": " + outbox.Retry.ToString(CultureInfo.InvariantCulture) +
-                    " | " + T("sync.blocked") + ": " + (outbox.Blocked + catalogOutbox.Blocked).ToString(CultureInfo.InvariantCulture),
+                    " | " + T("sync.blockedAttention") + ": " + (outbox.Blocked + catalogOutbox.Blocked).ToString(CultureInfo.InvariantCulture),
                 PolicyText = PolicyText(policyContractVersion, policyPaymentMethods, policyStaffOfflineMirror, policyTaxStatus, policyWarning),
                 RestoreReviewText = RestoreReviewText(restoreNeedsReview, restoreCompletedAt, restorePreBackupPath),
                 SalesAttentionText = SalesAttentionText(outbox, restoreNeedsReview),
@@ -213,7 +213,7 @@ namespace Win7POS.Wpf.Pos.Online
                 return T("sync.requiresAttention") +
                     " | " + ConnectivityText(connectivityState) +
                     " | " + PendingOutboxText(outbox, catalogOutbox) +
-                    " | " + T("sync.blocked") + ": " + (outbox.Blocked + catalogOutbox.Blocked).ToString(CultureInfo.InvariantCulture);
+                    " | " + T("sync.blockedAttention") + ": " + (outbox.Blocked + catalogOutbox.Blocked).ToString(CultureInfo.InvariantCulture);
             }
 
             if (outbox.Retry > 0 || catalogOutbox.Retry > 0)

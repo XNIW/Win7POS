@@ -53,7 +53,7 @@
                         <Button MinWidth="140" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.restoreBackup}" Command="{Binding RestoreBackupCommand}" Style="{StaticResource OutlineButtonStyle}"/>
                         <Button MinWidth="130" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.integrityCheck}" Command="{Binding IntegrityCheckCommand}" Style="{StaticResource OutlineButtonStyle}"/>
                         <Button MinWidth="110" Height="36" Margin="0,0,8,8" Content="VACUUM" Command="{Binding VacuumCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                        <Button MinWidth="170" Height="36" Margin="0,0,8,8" Content="Import Excel fornitore" Command="{Binding SupplierExcelImportCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                        <Button MinWidth="170" Height="36" Margin="0,0,8,8" Content="{loc:Loc supplierExcelImport.title}" Command="{Binding SupplierExcelImportCommand}" Style="{StaticResource OutlineButtonStyle}"/>
                         <Button MinWidth="120" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.openFolder}" Command="{Binding OpenFolderCommand}" Style="{StaticResource OutlineButtonStyle}"/>
                     </WrapPanel>
 

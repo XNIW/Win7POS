@@ -190,16 +190,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (applied)
                 {
                     Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(null);
-                    Append("Import Excel fornitore completato. Catalogo aggiornato.");
+                    Append(PosLocalization.T("supplierExcelImport.completed"));
                 }
                 else
                 {
-                    Append("Import Excel fornitore annullato.");
+                    Append(PosLocalization.T("supplierExcelImport.cancelled"));
                 }
             }
             catch (Exception ex)
             {
-                Append("Import Excel fornitore fallito: " + ex.Message);
+                Append(PosLocalization.F("supplierExcelImport.failed", ex.Message));
             }
         }
 
