@@ -1,56 +1,117 @@
-# Win7POS final delivery closure
+# Win7POS + Admin Web delivery closure
 
-Date: 2026-07-05
-Branch: `fix/win7pos-hardening-phase3`
+Data esecuzione: 2026-07-06 UTC / 2026-07-05 host locale
+Branch Win7POS: `fix/win7pos-hardening-phase3`
+Branch Admin Web: `fix/pos-catalog-import-sync-api`
 
-## Delivery status
+## Stato PR
 
-| Area | Status | Evidence |
+| Repo | PR | Stato | Evidenza |
+| --- | --- | --- | --- |
+| Win7POS | https://github.com/XNIW/Win7POS/pull/1 | `OPEN`, `MERGEABLE` | CI `build-and-check` success; Release Pack success; head pre-report `00722df8a5792dcf93245508974836be58fe0e1d`. |
+| Admin Web | https://github.com/XNIW/merchandise-control-admin-web/pull/2 | `OPEN`, `MERGEABLE` | CI `Verify` success; Cloudflare build success; deploy staging manual success run `28761814972`; head pre-report `d97587f302f2177b3c8ffad6beca37b4ce614afe`. |
+
+## Chiusura dei 5 gate
+
+| Gate iniziale | Azione fatta | Evidenza | Stato aggiornato |
+| --- | --- | --- | --- |
+| `WIN7_HARDWARE_NOT_AVAILABLE` | Cercati Hyper-V, VirtualBox, VMware e path VM locali; validato lo stesso artifact GitHub su ASUS Windows 11. | Nessuna VM Win7 disponibile; ASUS `ASUSTeK COMPUTER INC. ASUS Zenbook 14 UX3405CA_UX3405CA`, Windows `10.0.26200`; prereq `ALL PASS`; artifact GitHub validati. | `HARDWARE_REQUIRED_WITH_ARTIFACT_AND_CHECKLIST` |
+| `STAGING_SUPABASE_URL_MISSING` | Verificate variabili GitHub repo/env e secrets Cloudflare per staging senza stampare valori. | Project ref `jpgoimipbothfgkokyvm`; host `jpgoimipbothfgkokyvm.supabase.co`; worker staging configurato. | `CONFIGURED` |
+| `SUPABASE_CLI_MISSING` | Installata Supabase CLI via npm globale; corretto tooling Windows per risolvere shim `.cmd`. | `supabase 2.109.0`; `node scripts/check-supabase-tooling.mjs` `PASS`. | `PASS` |
+| `STAGING_DEPLOY_PERMISSION_MISSING` | Riaperta auth Cloudflare; eseguito deploy staging via GitHub Actions workflow dispatch. | Run https://github.com/XNIW/merchandise-control-admin-web/actions/runs/28761814972 `success`; endpoint staging smoke 405/400/401 con `no-store`. | `PASS` |
+| `E2E_STAGING_PENDING` | Deploy reale e smoke negativi eseguiti; CLI/harness locali passati; migration/E2E positivo fermo solo su auth Supabase owner e sessione POS staging. | `GET /api/pos/catalog/import-sync` -> 405; `POST {}` -> 400; auth invalida -> 401 `auth_denied`; CLI local harness `CATALOG IMPORT SYNC HTTP HARNESS PASS`. | `READY_FOR_STAGING_E2E_AFTER_OWNER_SECRET` |
+
+## Supabase staging
+
+| Voce | Stato | Evidenza |
 | --- | --- | --- |
-| Local release drop | `LOCAL_RELEASE_PACK_PASS` | `dist\Win7POS`; `check-release-pack-completeness` and `check-win7-runtime-release-validation` both `ALL PASS`. |
-| Local release zip | `LOCAL_RELEASE_ZIP_PASS` | `dist\Win7POS_20260705_200950.zip`; SHA256 `889A3FB5C5503803BE542689C4C9EC47E30C2F5D7C751271511F8691FCA3D90A`. |
-| Local Inno installer | `LOCAL_INSTALLER_PASS` | `installer\output\Win7POS-Setup.exe`; size `5902040`; SHA256 `E6BE99A065CD92D0F49A1E4CBA2608647D078AF0DAB480D9002B1A688474851B`. |
-| VC++ x86 runtime policy | `VCREDIST_X86_REQUIRED` | Installer blocks if Microsoft Visual C++ Runtime x86 is missing; Win7 prereq smoke also fails if missing. |
-| ASUS Windows 11 builder smoke | `ASUS_WIN11_STARTUP_SMOKE_PASS` | Machine `ASUSTeK COMPUTER INC. ASUS Zenbook 14 UX3405CA_UX3405CA`, Windows `10.0.26200`; prereq script `ALL PASS`; `Win7POS.Wpf.exe` stayed alive for startup smoke and created `C:\Temp\Win7POS-final-smoke-data-app\logs\app.log`. |
-| GitHub release artifact | `GITHUB_RELEASE_ARTIFACT_PENDING_PR_TRIGGER` | Existing PR commit had only CI run `28747493937` and no artifacts; `release-pack.yml` now runs on `pull_request` to produce PR artifacts on next push. |
-| Windows 7 physical smoke | `WIN7_HARDWARE_NOT_AVAILABLE` | No Windows 7 hardware/VM attached to this Codex session. Use `docs\WIN7_PRODUCTION_SMOKE_CHECKLIST.md` on the target. |
-| Admin Web staging E2E | `E2E_STAGING_PENDING` | Staging public smoke passes, but staging Supabase URL/project ref/service role/CLI are not available in this environment. |
-| Win7POS validation suite | `WIN7POS_VALIDATION_PASS` | Restore/build/test/selftests/check scripts completed; full `scripts\check-*.ps1` sweep ended `ALL CHECK SCRIPTS PASS`. |
-| Admin Web validation suite | `ADMIN_WEB_VALIDATION_PASS` | Security scan, foundation tests, typecheck, production build and ESLint completed against this Win7POS checkout. |
+| Project ref | `CONFIGURED` | `jpgoimipbothfgkokyvm` presente in GitHub variables e Cloudflare staging env. |
+| URL staging | `CONFIGURED_MASKED` | Host `jpgoimipbothfgkokyvm.supabase.co`; chiavi pubbliche/secret non riportate. |
+| CLI | `PASS` | `supabase 2.109.0`; script repo aggiornato per Windows e validato. |
+| Migration TASK-094 | `SUPABASE_OWNER_PERMISSION_REQUIRED` | `supabase projects list` prima del login ha richiesto auth; `supabase login --no-browser --output-format text` avviato e in attesa di codice verifica. |
+| Policy/RLS | `STATIC_PASS` | Migration `20260705120000_task_094_pos_catalog_import_sync.sql` crea `public.pos_catalog_import_batches`, forza RLS, revoca `public`/`anon`/`authenticated`, concede solo a `service_role`. |
 
-## Commands executed
+Comando da rieseguire dopo auth Supabase:
 
 ```powershell
-winget list --id JRSoftware.InnoSetup -e
-pwsh -NoLogo -NoProfile -File scripts\win7pos\windows\build-release-x86.ps1 -BuildInstaller
-& "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe" installer\Win7POS.iss
-pwsh -NoLogo -NoProfile -File scripts\win7-smoke\check-win7-prereqs.ps1 -AppDir dist\Win7POS -DataDir C:\Temp\Win7POS-final-smoke-data -AdminWebBaseUrl https://merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev
-pwsh -NoLogo -NoProfile -File scripts\check-release-pack-completeness.ps1 -ReleasePackSource dist\Win7POS -WriteManifests
-pwsh -NoLogo -NoProfile -File scripts\check-win7-runtime-release-validation.ps1 -ReleasePackSource dist\Win7POS
-pwsh -NoLogo -NoProfile -File scripts\check-win7-runtime-release-validation.ps1 -ReleasePackSource dist\Win7POS_20260705_200950.zip
-C:\Dev\dotnet10\dotnet.exe build src\Win7POS.Cli\Win7POS.Cli.csproj -c Release
-C:\Dev\dotnet10\dotnet.exe run --project src\Win7POS.Cli\Win7POS.Cli.csproj -c Release --no-build -- --catalog-import-sync-http-harness
-$env:DOTNET_EXE = "C:\Dev\dotnet10\dotnet.exe"; Get-ChildItem scripts -Filter check-*.ps1 | ForEach-Object { pwsh -NoLogo -NoProfile -File $_.FullName }
-$env:WIN7POS_DATA_DIR = "C:\Temp\Win7POS-final-smoke-data-app"; Start-Process -FilePath dist\Win7POS\Win7POS.Wpf.exe -WorkingDirectory dist\Win7POS -PassThru
+supabase projects list
+supabase link --project-ref jpgoimipbothfgkokyvm
+supabase migration list --linked
+supabase db push --linked
 ```
 
-Admin Web validation commands:
+## Deploy staging
 
-```powershell
-$env:PATH = "C:\Users\xniw9\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin;C:\Users\xniw9\.cache\codex-runtimes\codex-primary-runtime\dependencies\bin;" + $env:PATH
-$env:WIN7POS_REPO_PATH = "C:\Dev\Win7POS-full-audit"
-node scripts\security-checks.mjs
-node scripts\run-foundation-tests.mjs
-pnpm exec tsc --noEmit --pretty false
-pnpm build
-pnpm exec eslint .
-node scripts\staging-readiness-check.mjs --public-only
-node scripts\db\staging-status.mjs
-node scripts\check-supabase-tooling.mjs --linked
-```
+| Voce | Stato | Evidenza |
+| --- | --- | --- |
+| Tool | `PASS` | GitHub CLI autenticata come owner repo; Wrangler autenticato su account Cloudflare autorizzato; Cloudflare secrets staging presenti per nome. |
+| Deploy | `PASS` | Workflow `cloudflare.yml`, target `staging`, run `28761814972`, conclusion `success`. |
+| URL | `PASS` | `https://merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev` |
+| Smoke base endpoint | `PASS` | `GET /api/pos/catalog/import-sync` -> `405 method_not_allowed`, `cache-control: no-store`, request id `posreq_153aec65-55c8-4313-9222-67c134cd293f`. |
+| Smoke validation | `PASS` | `POST {}` -> `400 validation_failed`, request id `posreq_00881edd-a623-4943-86b7-60d205ff4818`. |
+| Smoke auth denied | `PASS` | Payload sintetico con auth invalida -> `401 auth_denied`, request id `posreq_4e7c29e9-1cd3-43d9-9f55-3b6392e6c379`. |
 
-## Notes
+## E2E staging
 
-- `installer/output/` is ignored to prevent generated `.exe` artifacts from entering git.
-- The catalog import HTTP harness now supports `--session-json` for real staging sessions; without it, it keeps the existing local fake-server matrix.
-- The generated artifacts are local evidence, not tracked source. GitHub PR artifacts will be produced by the next `release-pack.yml` pull request run.
+| Caso | Stato | Evidenza |
+| --- | --- | --- |
+| accepted | `PENDING_SUPABASE_OWNER_AUTH` | Richiede migration applicata, seed/sessione POS staging e verifica Supabase. |
+| duplicate/idempotent | `PENDING_SUPABASE_OWNER_AUTH` | Richiede stesso batch reale contro staging. |
+| conflict | `PENDING_SUPABASE_OWNER_AUTH` | Richiede batch reale con stessa idempotency key e payload diverso. |
+| auth_denied | `PASS_STAGING_SMOKE` | Endpoint staging ha risposto `401 auth_denied` senza stampare token. |
+| catalog pull | `PENDING_SUPABASE_OWNER_AUTH` | Richiede prodotto/prezzo creati in staging e sessione POS valida. |
+
+## Win7 / ASUS / artifact
+
+| Voce | Stato | Evidenza |
+| --- | --- | --- |
+| VM Win7 | `HARDWARE_REQUIRED_WITH_ARTIFACT_AND_CHECKLIST` | `Get-VM`, `VBoxManage`, `vmrun` e path VM locali non disponibili. |
+| ASUS Windows 11 prereq | `PASS` | `check-win7-prereqs.ps1 -AppDir C:\Temp\Win7POS-gh-artifacts\Win7POS-dist` -> `ALL PASS`; .NET 4.8+, VC++ x86, x86 PE e file pack OK. |
+| ASUS startup smoke | `PASS_WITH_NOTE` | L'eseguibile artifact resta avviabile; un'istanza Win7POS preesistente ha attivato il single-instance guard, quindi il run pulito richiede chiudere l'istanza `C:\Dev\Win7POS_TASK090_QA\...\Win7POS.Wpf.exe`. |
+| ReleasePack artifact | `PASS` | Artifact id `8097385015`, digest `sha256:3251459a3bd086dbd9fdcd50f66e7ba5a102b4aef49b84a7362aecf7d1611493`; zip scaricato `C:\Temp\Win7POS-gh-artifacts\Win7POS-ReleasePack-x86\Win7POS_20260706_0036.zip`, SHA256 `B94D0D4E07BA4F1BCA902C5F3448D75FB5D0A5EB7606B9B72502F53D32CFA5B6`. |
+| Dist artifact | `PASS` | Artifact id `8097384847`, digest `sha256:b17c6e414dfad7e8c7bed17f06797ab455b1acb9f3f1f06cd0561e7f93eb0418`; pack validators `ALL PASS`. |
+| Installer artifact | `PASS` | Artifact id `8097384647`, digest `sha256:3681c6ab088f8466710204cbd1634c12ba98e7b071d23fa7f5858ba75a65297f`; exe scaricato `C:\Temp\Win7POS-gh-artifacts\Win7POS-Setup\Win7POS-Setup.exe`, SHA256 `A118220703519660CAA1BB521A77897AF8259E3639ACB5D09BB1B96E4CD2AEC1`. |
+
+Checklist Win7 da rieseguire sul target fisico: `docs\WIN7_PRODUCTION_SMOKE_CHECKLIST.md`.
+
+## Installer / VC++ x86
+
+| Voce | Stato | Evidenza |
+| --- | --- | --- |
+| Inno Setup | `PASS` | `ISCC.exe` trovato in `%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`; artifact GitHub `Win7POS-Setup` prodotto e scaricato. |
+| Installer | `PASS` | `Win7POS-Setup.exe` artifact GitHub validato con hash sopra. |
+| VC++ x86 policy | `PASS` | `check-win7-prereqs.ps1` fallisce se manca VC++ x86; installer contiene check VC++ x86; README/checklist dichiarano prerequisito. |
+
+## Test finali
+
+| Area | Comando | Stato |
+| --- | --- | --- |
+| Win7POS diff | `git diff --check` | `PASS` |
+| Win7POS restore | `C:\Dev\dotnet10\dotnet.exe restore Win7POS.slnx` | `PASS` |
+| Win7POS solution build | `C:\Dev\dotnet10\dotnet.exe build Win7POS.slnx -c Release --no-restore` | `PASS` |
+| Win7POS WPF x86 | `C:\Dev\dotnet10\dotnet.exe build src\Win7POS.Wpf\Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore` | `PASS` |
+| Core tests | `C:\Dev\dotnet10\dotnet.exe test tests\Win7POS.Core.Tests\Win7POS.Core.Tests.csproj -c Release --no-restore` | `PASS`, 11 passed |
+| CLI harnesses | selftest, supplier excel, apply, outbox, catalog HTTP, perf 20000/5000, sqlite integrity, restore guard | `PASS` |
+| Win7POS check scripts | `Get-ChildItem scripts -Filter check-*.ps1 ...` | `PASS`, all scripts completed |
+| Admin diff | `git diff --check` | `PASS` |
+| Admin security | `npm run security:scan` | `PASS`, external Win7POS macOS path skipped as non-blocking |
+| Admin foundation | `npm run test:foundation` | `PASS` |
+| Admin typecheck | `npm run typecheck` | `PASS` |
+| Admin lint | `npm run lint` | `PASS` |
+| Admin build | `npm run build` | `PASS` |
+| Admin verify | `npm run verify` | `PASS` |
+| Cloudflare local build | `npm run cf:build` | `PASS_TOOLING_FIX_WITH_HOST_LIMIT`: OpenNext starts and builds Next; stops only on Windows symlink `EPERM`, while GitHub Actions Linux deploy is `PASS`. |
+
+## Residui veri
+
+| Residuo | Comando gia provato | Errore/stato preciso | Chi deve fare cosa | Comando successivo |
+| --- | --- | --- | --- | --- |
+| `SUPABASE_OWNER_PERMISSION_REQUIRED` | `supabase projects list`; `supabase login --no-browser --output-format text` | Prima del login: `LegacyPlatformAuthRequiredError`; login no-browser in attesa codice verifica. | Owner deve completare login Supabase CLI e fornire/inserire codice nel prompt sicuro. | `supabase projects list`; `supabase link --project-ref jpgoimipbothfgkokyvm`; `supabase db push --linked`. |
+| `WIN7_PHYSICAL_MACHINE_REQUIRED` | `Get-VM`, `VBoxManage list vms`, `vmrun list`, lookup path VM | Hyper-V/VirtualBox/VMware/path VM non disponibili in questa sessione. | Owner deve fornire VM o macchina Windows 7 SP1 con .NET 4.8 e VC++ x86. | Copiare artifact GitHub e lanciare `scripts\win7-smoke\check-win7-prereqs.ps1`, poi checklist Win7. |
+| `PRODUCTION_MERGE_AWAITING_OWNER_APPROVAL` | PR aperte e mergeable | Nessun merge eseguito per istruzione esplicita. | Owner deve approvare merge finale. | Merge PR #1 e PR #2 dopo E2E/Win7 fisico se richiesti. |
+
+## Stato finale
+
+`READY_FOR_STAGING_E2E_AFTER_OWNER_SECRET`
+
+Il deploy staging e gli artifact reali sono pronti; l'unico gate funzionale non chiuso end-to-end e il positivo Supabase staging, che richiede completamento auth owner e sessione POS staging.
