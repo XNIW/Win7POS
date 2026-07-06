@@ -61,8 +61,8 @@ Win7POS never calls Supabase directly. The POS persists local business changes f
 
 - `clientImportId`: stable POS batch identity derived from schema version and preview fingerprint.
 - `idempotencyKey`: stable duplicate key, currently `clientImportId:schemaVersion`.
-- `payloadHash`: hash of persisted payload; send-time tokens are excluded.
-- `attempt_count`: local attempt token. ACK/retry/block require the current attempt count.
+- `payloadHash`: hash of persisted POS payload; send-time tokens are excluded and Admin Web echoes it in the ACK.
+- `attempt_count` / `attemptCount`: local lease attempt token. POS sends the prepared attempt count, Admin Web echoes it in the ACK, and ACK/retry/block require the current attempt count.
 - `serverImportId`: Admin Web batch id, echoed as the remote import id.
 - `serverRequestId`: Admin Web request id from the HTTP envelope.
 
@@ -93,14 +93,14 @@ Admin Web accepts a new idempotency key once, treats same key/hash as duplicate/
 - Persisted catalog import payload does not include `deviceToken`, `sessionToken`, password, PIN, or full workbook path.
 - Supplier Excel apply and catalog outbox enqueue are one SQLite transaction.
 - ACK/retry/block are attempt-token guarded.
-- Remote ACK must match `clientImportId` and `idempotencyKey`.
+- Remote ACK must match `clientImportId`, `idempotencyKey`, `payloadHash`, and `attemptCount`.
 - No hard delete for local products, outbox rows, sales, sale lines, or history.
 - `failed_blocked` rows are not cleared by restore/maintenance/reconciliation.
 - Status UX separates sales sync from catalog import sync, including retry and blocked counts.
 
 ## Verified by tests
 
-- MSTest: catalog outbox idempotency, lease recovery, attempt mismatch, late retry protection, remote product/price id ACK, late price ACK client-item mapping.
+- MSTest: catalog outbox idempotency, lease recovery, attempt mismatch, mandatory ACK payload hash/attempt, late retry protection, remote product/price id ACK, late price ACK client-item mapping.
 - CLI: `--catalog-import-outbox-selftest`, `--catalog-import-sync-http-harness`, `--catalog-import-reconciliation-selftest`, `--sqlite-integrity-selftest`, `--db-restore-guard-selftest`.
 - PowerShell gates: catalog import outbox/sync, start-of-day, sync status UX, restore guard, security hardening.
 - Admin Web foundation: TASK-094 route boundary, transactional RPC migration, service-role-only ledger/RPC, ACK remote id fields.

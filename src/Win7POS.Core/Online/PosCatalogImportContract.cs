@@ -20,6 +20,9 @@ namespace Win7POS.Core.Online
         [DataMember(Name = "posSessionId", EmitDefaultValue = false)]
         public string PosSessionId { get; set; }
 
+        [DataMember(Name = "payloadHash", EmitDefaultValue = false)]
+        public string PayloadHash { get; set; }
+
         [DataMember(Name = "schemaVersion")]
         public string SchemaVersion { get; set; }
 
@@ -42,6 +45,9 @@ namespace Win7POS.Core.Online
     [DataContract]
     public sealed class PosCatalogImportBatchRequest
     {
+        [DataMember(Name = "attemptCount", EmitDefaultValue = false)]
+        public int AttemptCount { get; set; }
+
         [DataMember(Name = "clientImportId")]
         public string ClientImportId { get; set; }
 
@@ -157,6 +163,9 @@ namespace Win7POS.Core.Online
     [DataContract]
     public sealed class PosCatalogImportBatchResponse
     {
+        [DataMember(Name = "attemptCount", EmitDefaultValue = false)]
+        public int AttemptCount { get; set; }
+
         [DataMember(Name = "clientImportId")]
         public string ClientImportId { get; set; }
 

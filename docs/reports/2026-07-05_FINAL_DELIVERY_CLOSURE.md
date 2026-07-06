@@ -8,8 +8,8 @@ Branch Admin Web: `fix/pos-catalog-import-sync-api`
 
 | Repo | PR | Stato | Evidenza |
 | --- | --- | --- | --- |
-| Win7POS | https://github.com/XNIW/Win7POS/pull/1 | `OPEN`, `MERGEABLE` | CI `build-and-check` success; Release Pack success; head pre-report `00722df8a5792dcf93245508974836be58fe0e1d`. |
-| Admin Web | https://github.com/XNIW/merchandise-control-admin-web/pull/2 | `OPEN`, `MERGEABLE` | CI `Verify` success; Cloudflare build success; deploy staging manual success run `28761814972`; head pre-report `d97587f302f2177b3c8ffad6beca37b4ce614afe`. |
+| Win7POS | https://github.com/XNIW/Win7POS/pull/1 | `OPEN`, `MERGEABLE` | CI `28775697702` success; Release Pack `28775697785` success; head before this local patch `208fa42a0df5d5132db0311b33bfd4aebfe45659`. |
+| Admin Web | https://github.com/XNIW/merchandise-control-admin-web/pull/2 | `OPEN`, `MERGEABLE` | CI `28775697461` success; Cloudflare build `28775697463` success; staging deploy `28775731673` success; head before this local patch `b1b87c888d5bb0c9603ae85620a6d20884ddbc5d`. |
 
 ## Chiusura dei 5 gate
 

@@ -106,6 +106,7 @@ namespace Win7POS.Data.Online
 
             var request = validation.Request;
             AttachTrust(request, trustedSession);
+            AttachAttemptMetadata(request, item, preparedAttempt);
 
             var response = await client.CatalogImportAsync(request, cancellationToken).ConfigureAwait(false);
             if (!response.Success)
@@ -282,10 +283,15 @@ namespace Win7POS.Data.Online
                 return "idempotency_key_mismatch";
             }
 
-            if (!string.IsNullOrWhiteSpace(batch.PayloadHash) &&
+            if (string.IsNullOrWhiteSpace(batch.PayloadHash) ||
                 !string.Equals(batch.PayloadHash.Trim(), item.PayloadHash, StringComparison.Ordinal))
             {
                 return "payload_hash_mismatch";
+            }
+
+            if (batch.AttemptCount != item.AttemptCount + 1)
+            {
+                return "attempt_count_mismatch";
             }
 
             return string.Empty;
@@ -427,6 +433,23 @@ namespace Win7POS.Data.Online
             request.ShopDeviceId = TrimOrNull(trustedSession.ShopDeviceId);
         }
 
+        private static void AttachAttemptMetadata(
+            PosCatalogImportRequest request,
+            CatalogImportOutboxItem item,
+            int preparedAttempt)
+        {
+            if (request == null || item == null)
+            {
+                return;
+            }
+
+            request.PayloadHash = TrimOrNull(item.PayloadHash);
+            if (request.Batch != null)
+            {
+                request.Batch.AttemptCount = preparedAttempt;
+            }
+        }
+
         private static bool HasBlockedItem(IEnumerable<PosCatalogImportItemAck> items)
         {
             foreach (var item in items ?? Array.Empty<PosCatalogImportItemAck>())
@@ -448,7 +471,7 @@ namespace Win7POS.Data.Online
 
         private static bool IsBlockedStatus(string status)
         {
-            return IsOneOf(status, "validation_failed", "conflict", "failed_blocked", "invalid_payload", "schema_mismatch", "hash_mismatch", "client_import_mismatch", "idempotency_key_mismatch", "payload_hash_mismatch");
+            return IsOneOf(status, "validation_failed", "conflict", "failed_blocked", "invalid_payload", "schema_mismatch", "hash_mismatch", "client_import_mismatch", "idempotency_key_mismatch", "payload_hash_mismatch", "attempt_count_mismatch");
         }
 
         private static bool IsAuthDenied(string status)

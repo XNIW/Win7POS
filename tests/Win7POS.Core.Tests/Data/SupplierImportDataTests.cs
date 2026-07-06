@@ -308,17 +308,18 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
     }
 
     [TestMethod]
-    public void CatalogImportSyncService_RemoteBatchValidation_ChecksOptionalPayloadHash()
+    public void CatalogImportSyncService_RemoteBatchValidation_RequiresPayloadHashAndAttempt()
     {
         var item = new CatalogImportOutboxItem
         {
+            AttemptCount = 0,
             ClientImportId = "client-import",
             IdempotencyKey = "idempotency-key",
             PayloadHash = "expected-hash"
         };
 
         Assert.AreEqual(
-            "",
+            "payload_hash_mismatch",
             InvokeRemoteBatchMismatchCode(item, new PosCatalogImportBatchResponse
             {
                 ClientImportId = "client-import",
@@ -328,6 +329,16 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
             "",
             InvokeRemoteBatchMismatchCode(item, new PosCatalogImportBatchResponse
             {
+                AttemptCount = 1,
+                ClientImportId = "client-import",
+                IdempotencyKey = "idempotency-key",
+                PayloadHash = "expected-hash"
+            }));
+        Assert.AreEqual(
+            "attempt_count_mismatch",
+            InvokeRemoteBatchMismatchCode(item, new PosCatalogImportBatchResponse
+            {
+                AttemptCount = 2,
                 ClientImportId = "client-import",
                 IdempotencyKey = "idempotency-key",
                 PayloadHash = "expected-hash"
@@ -336,6 +347,7 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
             "payload_hash_mismatch",
             InvokeRemoteBatchMismatchCode(item, new PosCatalogImportBatchResponse
             {
+                AttemptCount = 1,
                 ClientImportId = "client-import",
                 IdempotencyKey = "idempotency-key",
                 PayloadHash = "wrong-hash"

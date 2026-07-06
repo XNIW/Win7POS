@@ -5425,8 +5425,9 @@ SELECT last_insert_rowid();";
 
         foreach (var price in catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>())
         {
-            await products.UpsertRemotePriceHistoryAsync(
+            await products.UpsertOrQueueRemotePriceHistoryAsync(
                 Normalize(price.ProductId),
+                Normalize(price.PriceId),
                 Normalize(price.Type),
                 ToInt(price.Price),
                 Normalize(price.EffectiveAt),
@@ -5886,14 +5887,18 @@ SELECT last_insert_rowid();";
                     : "accepted";
                 var clientImportId = ClientImportIdFromBody(body);
                 var idempotencyKey = IdempotencyKeyFromBody(body);
+                var payloadHash = PayloadHashFromBody(body);
+                var attemptCount = AttemptCountFromBody(body);
                 var clientItemId = ClientItemIdFromBody(body);
                 var barcode = BarcodeFromBody(body);
                 var response = new PosCatalogImportResponse
                 {
                     Batch = new PosCatalogImportBatchResponse
                     {
+                        AttemptCount = attemptCount,
                         ClientImportId = scenario == "mismatch" ? "fake-mismatch" : clientImportId,
                         IdempotencyKey = scenario == "idempotency_mismatch" ? "fake-idempotency-mismatch" : idempotencyKey,
+                        PayloadHash = payloadHash,
                         PosCatalogImportBatchId = "server-" + scenario,
                         ServerImportId = "server-" + scenario,
                         ServerRequestId = "server-request-" + scenario,
@@ -5997,6 +6002,51 @@ SELECT last_insert_rowid();";
             }
 
             return string.Empty;
+        }
+
+        private static string PayloadHashFromBody(string body)
+        {
+            try
+            {
+                using (var document = JsonDocument.Parse(body ?? "{}"))
+                {
+                    JsonElement payloadHash;
+                    if (document.RootElement.TryGetProperty("payloadHash", out payloadHash) &&
+                        payloadHash.ValueKind == JsonValueKind.String)
+                    {
+                        return payloadHash.GetString() ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+
+        private static int AttemptCountFromBody(string body)
+        {
+            try
+            {
+                using (var document = JsonDocument.Parse(body ?? "{}"))
+                {
+                    JsonElement batch;
+                    JsonElement attemptCount;
+                    if (document.RootElement.TryGetProperty("batch", out batch) &&
+                        batch.TryGetProperty("attemptCount", out attemptCount) &&
+                        attemptCount.ValueKind == JsonValueKind.Number &&
+                        attemptCount.TryGetInt32(out var value))
+                    {
+                        return value;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return 0;
         }
 
         private static string ClientItemIdFromBody(string body)
