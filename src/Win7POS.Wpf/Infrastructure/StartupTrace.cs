@@ -40,13 +40,19 @@ namespace Win7POS.Wpf.Infrastructure
         {
             try
             {
-                var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-                if (string.IsNullOrWhiteSpace(programData))
+                var dataRoot = Environment.GetEnvironmentVariable("WIN7POS_DATA_DIR");
+                if (string.IsNullOrWhiteSpace(dataRoot))
                 {
-                    return false;
+                    var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                    if (string.IsNullOrWhiteSpace(programData))
+                    {
+                        return false;
+                    }
+
+                    dataRoot = Path.Combine(programData, "Win7POS");
                 }
 
-                var logs = Path.Combine(programData, "Win7POS", "logs");
+                var logs = Path.Combine(dataRoot, "logs");
                 Directory.CreateDirectory(logs);
                 File.AppendAllText(Path.Combine(logs, "startup-trace.log"), line, Encoding.UTF8);
                 return true;

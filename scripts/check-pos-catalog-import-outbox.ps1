@@ -64,6 +64,7 @@ Assert-Contains $initializer "catalog_import_client_item_id" "catalog import pri
 Assert-Contains $initializer "catalog_import_idempotency_key" "catalog import price history idempotency column present"
 Assert-Contains $initializer "idx_price_history_catalog_import_item" "catalog import price history item index present"
 Assert-Contains $dto "idempotencyKey" "catalog import ACK can echo idempotency key"
+Assert-Contains $dto "payloadHash" "catalog import ACK can echo payload hash"
 Assert-Contains $dto "remoteProductIds" "catalog import ACK remote product ids present"
 Assert-Contains $dto "remotePriceIds" "catalog import ACK remote price ids present"
 Assert-Contains $builder "Path.GetFileName" "catalog import payload redacts source file path"

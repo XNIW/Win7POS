@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.Serialization.Json;
 using System.Text;
 using Dapper;
@@ -248,6 +249,99 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
             await ScalarStringAsync(db.Factory, "SELECT COALESCE(remote_price_id, '') FROM product_price_history WHERE barcode = 'CAT-6' AND catalog_import_client_item_id IS NULL ORDER BY id DESC LIMIT 1"));
     }
 
+    [TestMethod]
+    public void CatalogImportSyncService_AckMapping_PrefersLocalClientItemBarcode()
+    {
+        var request = new PosCatalogImportRequest
+        {
+            Items = new[]
+            {
+                new PosCatalogImportItemRequest
+                {
+                    Barcode = "CAT-LOCAL",
+                    ClientItemId = "client-item-1",
+                    Operation = "upsert_product",
+                    RowNumber = 2
+                }
+            }
+        };
+        var remote = new PosCatalogImportResponse
+        {
+            Batch = new PosCatalogImportBatchResponse
+            {
+                ClientImportId = "client-import",
+                IdempotencyKey = "idempotency-key",
+                PosCatalogImportBatchId = "server-import"
+            },
+            RemoteProductIds = new[]
+            {
+                new PosCatalogImportRemoteProductIdAck
+                {
+                    Barcode = "CAT-WRONG",
+                    ClientItemId = "client-item-1",
+                    RemoteProductId = "remote-product"
+                }
+            },
+            RemotePriceIds = new[]
+            {
+                new PosCatalogImportRemotePriceIdAck
+                {
+                    Barcode = "CAT-WRONG",
+                    ClientItemId = "client-item-1",
+                    PriceType = "retail",
+                    RemotePriceId = "remote-price"
+                }
+            },
+            ServerRequestId = "server-request"
+        };
+        var item = new CatalogImportOutboxItem
+        {
+            ClientImportId = "client-import",
+            IdempotencyKey = "idempotency-key",
+            PayloadHash = "payload-hash"
+        };
+
+        var ack = InvokeBuildAckResult(item, request, remote);
+
+        Assert.AreEqual("CAT-LOCAL", ack.RemoteProductIds.Single().Barcode);
+        Assert.AreEqual("CAT-LOCAL", ack.RemotePriceIds.Single().Barcode);
+    }
+
+    [TestMethod]
+    public void CatalogImportSyncService_RemoteBatchValidation_ChecksOptionalPayloadHash()
+    {
+        var item = new CatalogImportOutboxItem
+        {
+            ClientImportId = "client-import",
+            IdempotencyKey = "idempotency-key",
+            PayloadHash = "expected-hash"
+        };
+
+        Assert.AreEqual(
+            "",
+            InvokeRemoteBatchMismatchCode(item, new PosCatalogImportBatchResponse
+            {
+                ClientImportId = "client-import",
+                IdempotencyKey = "idempotency-key"
+            }));
+        Assert.AreEqual(
+            "",
+            InvokeRemoteBatchMismatchCode(item, new PosCatalogImportBatchResponse
+            {
+                ClientImportId = "client-import",
+                IdempotencyKey = "idempotency-key",
+                PayloadHash = "expected-hash"
+            }));
+        Assert.AreEqual(
+            "payload_hash_mismatch",
+            InvokeRemoteBatchMismatchCode(item, new PosCatalogImportBatchResponse
+            {
+                ClientImportId = "client-import",
+                IdempotencyKey = "idempotency-key",
+                PayloadHash = "wrong-hash"
+            }));
+    }
+
     private static CatalogImportOutboxEntry BuildCatalogEntry(string name, int rowNumber)
     {
         var request = new PosCatalogImportRequest
@@ -297,6 +391,29 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
         using var stream = new MemoryStream();
         serializer.WriteObject(stream, value);
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private static CatalogImportAckResult InvokeBuildAckResult(
+        CatalogImportOutboxItem item,
+        PosCatalogImportRequest request,
+        PosCatalogImportResponse response)
+    {
+        var method = typeof(CatalogImportSyncService).GetMethod(
+            "BuildAckResult",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.IsNotNull(method);
+        return (CatalogImportAckResult)method!.Invoke(null, new object[] { item, request, response, "transport-request" })!;
+    }
+
+    private static string InvokeRemoteBatchMismatchCode(
+        CatalogImportOutboxItem item,
+        PosCatalogImportBatchResponse batch)
+    {
+        var method = typeof(CatalogImportSyncService).GetMethod(
+            "GetRemoteBatchMismatchCode",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.IsNotNull(method);
+        return (string)method!.Invoke(null, new object[] { item, batch })!;
     }
 
     private static async Task AssertThrowsInvalidOperationAsync(Func<Task> action)

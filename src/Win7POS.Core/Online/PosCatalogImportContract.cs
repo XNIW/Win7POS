@@ -163,6 +163,9 @@ namespace Win7POS.Core.Online
         [DataMember(Name = "idempotencyKey", EmitDefaultValue = false)]
         public string IdempotencyKey { get; set; }
 
+        [DataMember(Name = "payloadHash", EmitDefaultValue = false)]
+        public string PayloadHash { get; set; }
+
         [DataMember(Name = "posCatalogImportBatchId")]
         public string PosCatalogImportBatchId { get; set; }
 

@@ -95,7 +95,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Multiselect = false,
                 InitialDirectory = BackupsDirectory
             };
-            if (dlg.ShowDialog() != true) return;
+            var owner = DialogOwnerHelper.GetSafeOwner(OwnerWindow);
+            if (owner == null)
+                throw new InvalidOperationException("Nessuna finestra owner attiva per il file picker restore DB.");
+
+            owner.Activate();
+            if (dlg.ShowDialog(owner) != true) return;
 
             IsBusy = true;
             try

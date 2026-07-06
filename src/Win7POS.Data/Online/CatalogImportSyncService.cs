@@ -140,16 +140,17 @@ namespace Win7POS.Data.Online
 
             if (IsAckStatus(batchStatus))
             {
-                if (!IsExpectedRemoteBatch(item, remote.Batch))
+                var remoteBatchMismatch = GetRemoteBatchMismatchCode(item, remote.Batch);
+                if (!string.IsNullOrWhiteSpace(remoteBatchMismatch))
                 {
                     if (await _outbox.MarkBlockedAsync(
                         item.Id,
-                        "client_import_mismatch",
+                        remoteBatchMismatch,
                         DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                         preparedAttempt).ConfigureAwait(false))
                     {
                         run.Blocked++;
-                        run.LastErrorCode = "client_import_mismatch";
+                        run.LastErrorCode = remoteBatchMismatch;
                     }
 
                     return;
@@ -259,9 +260,35 @@ namespace Win7POS.Data.Online
             CatalogImportOutboxItem item,
             PosCatalogImportBatchResponse batch)
         {
-            return batch != null &&
-                string.Equals(batch.ClientImportId, item.ClientImportId, StringComparison.Ordinal) &&
-                string.Equals(batch.IdempotencyKey, item.IdempotencyKey, StringComparison.Ordinal);
+            return string.IsNullOrWhiteSpace(GetRemoteBatchMismatchCode(item, batch));
+        }
+
+        private static string GetRemoteBatchMismatchCode(
+            CatalogImportOutboxItem item,
+            PosCatalogImportBatchResponse batch)
+        {
+            if (item == null || batch == null)
+            {
+                return "client_import_mismatch";
+            }
+
+            if (!string.Equals(batch.ClientImportId, item.ClientImportId, StringComparison.Ordinal))
+            {
+                return "client_import_mismatch";
+            }
+
+            if (!string.Equals(batch.IdempotencyKey, item.IdempotencyKey, StringComparison.Ordinal))
+            {
+                return "idempotency_key_mismatch";
+            }
+
+            if (!string.IsNullOrWhiteSpace(batch.PayloadHash) &&
+                !string.Equals(batch.PayloadHash.Trim(), item.PayloadHash, StringComparison.Ordinal))
+            {
+                return "payload_hash_mismatch";
+            }
+
+            return string.Empty;
         }
 
         private static CatalogImportAckResult BuildAckResult(
@@ -283,7 +310,7 @@ namespace Win7POS.Data.Online
 
                 remoteProductIds.Add(new CatalogImportRemoteProductId
                 {
-                    Barcode = FirstNonEmpty(remoteProduct.Barcode, BarcodeFor(barcodeByClientItemId, remoteProduct.ClientItemId)),
+                    Barcode = ResolveAckBarcode(barcodeByClientItemId, remoteProduct.ClientItemId, remoteProduct.Barcode),
                     ClientItemId = remoteProduct.ClientItemId,
                     RemoteProductId = remoteProduct.RemoteProductId
                 });
@@ -298,7 +325,7 @@ namespace Win7POS.Data.Online
 
                 remotePriceIds.Add(new CatalogImportRemotePriceId
                 {
-                    Barcode = FirstNonEmpty(remotePrice.Barcode, BarcodeFor(barcodeByClientItemId, remotePrice.ClientItemId)),
+                    Barcode = ResolveAckBarcode(barcodeByClientItemId, remotePrice.ClientItemId, remotePrice.Barcode),
                     ClientItemId = remotePrice.ClientItemId,
                     PriceType = remotePrice.PriceType,
                     RemotePriceId = remotePrice.RemotePriceId
@@ -312,7 +339,7 @@ namespace Win7POS.Data.Online
                     continue;
                 }
 
-                var barcode = FirstNonEmpty(ackItem.Barcode, BarcodeFor(barcodeByClientItemId, ackItem.ClientItemId));
+                var barcode = ResolveAckBarcode(barcodeByClientItemId, ackItem.ClientItemId, ackItem.Barcode);
                 if (!string.IsNullOrWhiteSpace(ackItem.RemoteProductId))
                 {
                     remoteProductIds.Add(new CatalogImportRemoteProductId
@@ -382,6 +409,15 @@ namespace Win7POS.Data.Online
                 : string.Empty;
         }
 
+        private static string ResolveAckBarcode(
+            IReadOnlyDictionary<string, string> barcodeByClientItemId,
+            string clientItemId,
+            string serverBarcode)
+        {
+            var localBarcode = BarcodeFor(barcodeByClientItemId, clientItemId);
+            return FirstNonEmpty(localBarcode, serverBarcode);
+        }
+
         private static void AttachTrust(PosCatalogImportRequest request, PosTrustedDeviceSession trustedSession)
         {
             request.DeviceToken = TrimOrNull(trustedSession.DeviceToken);
@@ -412,7 +448,7 @@ namespace Win7POS.Data.Online
 
         private static bool IsBlockedStatus(string status)
         {
-            return IsOneOf(status, "validation_failed", "conflict", "failed_blocked", "invalid_payload", "schema_mismatch", "hash_mismatch", "client_import_mismatch");
+            return IsOneOf(status, "validation_failed", "conflict", "failed_blocked", "invalid_payload", "schema_mismatch", "hash_mismatch", "client_import_mismatch", "idempotency_key_mismatch", "payload_hash_mismatch");
         }
 
         private static bool IsAuthDenied(string status)

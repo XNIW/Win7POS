@@ -105,6 +105,58 @@ Admin Web accepts a new idempotency key once, treats same key/hash as duplicate/
 - PowerShell gates: catalog import outbox/sync, start-of-day, sync status UX, restore guard, security hardening.
 - Admin Web foundation: TASK-094 route boundary, transactional RPC migration, service-role-only ledger/RPC, ACK remote id fields.
 
+## Definition of Done 100%
+
+Gate A - Win7POS local DB:
+
+- Supplier Excel apply and `catalog_import_outbox` enqueue are committed in one SQLite transaction.
+- Catalog payload hashes are stable across equivalent rebuilds and persisted payloads do not contain `deviceToken`, `sessionToken`, passwords, PINs, or workbook paths.
+- ACK/retry/block require matching `clientImportId`, `idempotencyKey`, and current `attempt_count`.
+- ACK remote ids update `products.remote_product_id` and the matching `product_price_history.remote_price_id`.
+- Reconciliation recovers expired `in_progress`, reports `failed_blocked`, reconciles barcode to `remote_product_id`, and does not delete data.
+- POS status UX separates sales sync and catalog import sync, including pending/retry/blocked states.
+- Restore guard blocks unresolved `sales_sync_outbox` and `catalog_import_outbox` rows.
+
+Gate B - Admin Web:
+
+- `/api/pos/catalog/import-sync` is the real POS catalog import endpoint.
+- POS auth validates device, session, staff, shop, and catalog import permission.
+- Idempotency ledger treats same key/hash as duplicate/idempotent and same key/different hash as conflict.
+- Supabase writes flow through the transactional server-side RPC; product, price history, import ledger, audit, and `sync_events` are one logical commit.
+- Responses use `no-store`, request ids, and a stable JSON error schema.
+- `service_role` remains server-side only.
+
+Gate C - Supabase staging:
+
+- Migrations `20260705120000` and `20260706120000` are applied.
+- `public.pos_catalog_import_apply_v1(...)` exists as `SECURITY DEFINER`.
+- `service_role` has `EXECUTE`; `anon` and `authenticated` do not.
+- Import ledger rows and `sync_events` are visible for positive staging imports.
+
+Gate D - positive E2E:
+
+- Accepted import succeeds.
+- Duplicate/idempotent replay does not duplicate ledger, products, prices, or events.
+- Same idempotency key with different payload returns conflict without partial writes.
+- Invalid POS auth returns `auth_denied`.
+- Catalog pull returns the imported product/price and allows POS barcode-to-remote-id reconciliation.
+- Synthetic staging data is deactivated/archived after the proof, without hard deleting ledger/history.
+
+Gate E - UI smoke Windows 11:
+
+- Products -> Supplier Excel -> `.xlsx` and `.xls` -> Analyze -> Step 4 -> Apply.
+- Database/Maintenance -> Supplier Excel -> `.xlsx` and `.xls` -> Analyze -> Step 4 -> Apply.
+- Backup is created, catalog import outbox is created or ACKed, status is visible, and logs/screenshots are retained.
+- If the native file picker cannot be automated, the CLI/ViewModel smoke must exercise the same file, Analyze, Step 4, and Apply path.
+
+Gate F - CI/Release:
+
+- Win7POS CI is green on the final branch head.
+- Win7POS Release Pack artifact is generated and validated from the final branch head.
+- Admin Web CI and Cloudflare workflow are green on the final branch head.
+- Cloudflare staging deploy uses the current Admin Web head and preserves staging env/bindings.
+- Both PRs remain mergeable, with docs/runbooks updated and no generated or secret-bearing files committed.
+
 ## Live gates
 
 Staging Supabase migration, positive staging E2E, Cloudflare deploy/CI artifact proof, and Windows 7 physical smoke require owner-authenticated infrastructure or physical runtime. Local code paths are prepared for those gates without embedding secrets.

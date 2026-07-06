@@ -22,6 +22,7 @@ namespace Win7POS.Wpf
 
         public App()
         {
+            SupplierExcelWpfViewModelSmoke.PrepareDataDirFromCommandLine(Environment.GetCommandLineArgs());
             StartupTrace.Write("process entry / App constructed");
         }
 
@@ -47,7 +48,14 @@ namespace Win7POS.Wpf
         protected override void OnStartup(StartupEventArgs e)
         {
             StartupTrace.Write("App.OnStartup entered");
+            if (SupplierExcelWpfViewModelSmoke.TryRun(e == null ? null : e.Args, out var smokeExitCode))
+            {
+                Shutdown(smokeExitCode);
+                return;
+            }
+
             _logger.LogInfo("App.OnStartup entered");
+
             IsSafeStart = IsSafeStartRequested(e?.Args);
             if (IsSafeStart)
             {
