@@ -1,8 +1,9 @@
 using System;
 using System.IO;
 using ClosedXML.Excel;
+using Win7POS.Core.ImportDb;
 
-namespace Win7POS.Core.ImportDb
+namespace Win7POS.Data.ImportDb
 {
     public static class ProductDbExcelWriter
     {

@@ -25,7 +25,7 @@ function Require-Marker([string]$label, [string]$source, [string]$pattern) {
 }
 
 $required = @(
-    "src/Win7POS.Core/Online/PosAdminWebClient.cs",
+    "src/Win7POS.Data/Online/PosAdminWebClient.cs",
     "src/Win7POS.Wpf/Infrastructure/FileLogger.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
@@ -43,7 +43,9 @@ if ($fail) {
     exit 1
 }
 
-$client = Read-Text "src/Win7POS.Core/Online/PosAdminWebClient.cs"
+$client = Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs"
+$clientContracts = Read-Text "src/Win7POS.Core/Online/PosOnlineTransportContracts.cs"
+$client = $client + "`n" + $clientContracts
 $logger = Read-Text "src/Win7POS.Wpf/Infrastructure/FileLogger.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $catalog = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"

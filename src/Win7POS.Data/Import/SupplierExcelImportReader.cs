@@ -9,8 +9,9 @@ using System.Text;
 using System.Text.RegularExpressions;
 using ClosedXML.Excel;
 using ExcelDataReader;
+using Win7POS.Core.Import;
 
-namespace Win7POS.Core.Import
+namespace Win7POS.Data.Import
 {
     public static class SupplierExcelImportReader
     {

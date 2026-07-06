@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Dapper;
 using Win7POS.Core;
 using Win7POS.Core.Audit;
 using Win7POS.Core.Import;
@@ -12,6 +11,7 @@ using Win7POS.Core.ImportDb;
 using Win7POS.Data;
 using Win7POS.Data.Adapters;
 using Win7POS.Data.Import;
+using Win7POS.Data.ImportDb;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
@@ -121,13 +121,13 @@ namespace Win7POS.Wpf.Import
                     }
                 }
 
-                var apply = await ApplyWithTransactionAsync(
-                    factory,
-                    rows,
-                    options,
-                    dedicatedSuppliers,
-                    dedicatedCategories,
-                    priceHistoryRows).ConfigureAwait(false);
+                var apply = await new ProductImportApplyService(factory)
+                    .ApplyAsync(
+                        rows,
+                        options,
+                        dedicatedSuppliers,
+                        dedicatedCategories,
+                        priceHistoryRows).ConfigureAwait(false);
                 if (apply.ErrorsCount > 0)
                     throw new InvalidOperationException("Apply failed with row errors.");
 
@@ -281,185 +281,6 @@ namespace Win7POS.Wpf.Import
             }
 
             return barcodeOrder.Select(barcode => rowsByBarcode[barcode]).ToList();
-        }
-
-        /// <summary>
-        /// Precedenza risoluzione supplier/category:
-        /// 1. Fogli dedicati (INSERT OR REPLACE nel DB)
-        /// 2. DB esistente (lookup case-insensitive con normalize)
-        /// 3. Auto-create (nuovo record con ID sequenziale)
-        /// Se fogli dedicati assenti o funzionalmente vuoti/incompleti, il sistema deriva da Products + DB senza perdita dati.
-        /// Gli overwrite nome-per-ID dai fogli dedicati sono intenzionali e vengono riportati nel summary Apply.
-        /// </summary>
-        private static async Task<ImportApplyResult> ApplyWithTransactionAsync(
-            SqliteConnectionFactory factory,
-            IReadOnlyList<ImportRow> rows,
-            ImportApplyOptions options,
-            IReadOnlyList<Core.ImportDb.SupplierRow> dedicatedSuppliers,
-            IReadOnlyList<Core.ImportDb.CategoryRow> dedicatedCategories,
-            IReadOnlyList<Core.ImportDb.PriceHistoryRow> priceHistoryRows)
-        {
-            using (var conn = factory.Open())
-            using (var tx = conn.BeginTransaction())
-            {
-                try
-                {
-                    var usableSuppliers = (dedicatedSuppliers ?? Array.Empty<Core.ImportDb.SupplierRow>())
-                        .Where(r => r != null && !string.IsNullOrWhiteSpace(r.Name))
-                        .ToList();
-                    var usableCategories = (dedicatedCategories ?? Array.Empty<Core.ImportDb.CategoryRow>())
-                        .Where(r => r != null && !string.IsNullOrWhiteSpace(r.Name))
-                        .ToList();
-
-                    var supplierOverwrites = await CountSheetNameOverwritesAsync(conn, tx, "suppliers", usableSuppliers.Select(r => new IdNamePair
-                    {
-                        Id = r.Id,
-                        Name = CategorySupplierResolver.Normalize(r.Name)
-                    })).ConfigureAwait(false);
-                    var categoryOverwrites = await CountSheetNameOverwritesAsync(conn, tx, "categories", usableCategories.Select(r => new IdNamePair
-                    {
-                        Id = r.Id,
-                        Name = CategorySupplierResolver.Normalize(r.Name)
-                    })).ConfigureAwait(false);
-
-                    if (!options.DryRun && usableSuppliers.Count > 0)
-                    {
-                        foreach (var r in usableSuppliers)
-                        {
-                            if (string.IsNullOrWhiteSpace(r?.Name)) continue;
-                            await conn.ExecuteAsync("INSERT OR REPLACE INTO suppliers(id, name) VALUES(@Id, @Name)", new { r.Id, r.Name }, tx).ConfigureAwait(false);
-                        }
-                    }
-                    if (!options.DryRun && usableCategories.Count > 0)
-                    {
-                        foreach (var r in usableCategories)
-                        {
-                            if (string.IsNullOrWhiteSpace(r?.Name)) continue;
-                            await conn.ExecuteAsync("INSERT OR REPLACE INTO categories(id, name) VALUES(@Id, @Name)", new { r.Id, r.Name }, tx).ConfigureAwait(false);
-                        }
-                    }
-
-                    var resolver = new CategorySupplierResolver(conn, tx, usableSuppliers, usableCategories);
-                    IProductUpserter upserter = new ProductUpserterAdapter(conn, tx, resolver);
-                    var lookup = new ProductSnapshotLookupAdapter(conn, tx);
-                    var applier = new ImportApplier(upserter, lookup);
-                    var result = await applier.ApplyAsync(rows, options).ConfigureAwait(false);
-
-                    if (result.ErrorsCount > 0)
-                    {
-                        tx.Rollback();
-                        throw new InvalidOperationException("Apply failed with row errors.");
-                    }
-
-                    var (priceHistoryInserted, priceHistorySkipped) = await InsertPriceHistoryAsync(conn, tx, priceHistoryRows).ConfigureAwait(false);
-                    result.PriceHistoryInserted = priceHistoryInserted;
-                    result.PriceHistorySkipped = priceHistorySkipped;
-                    result.SuppliersFromSheet = resolver.SuppliersFromSheet;
-                    result.SuppliersFromDb = resolver.SuppliersFromDb;
-                    result.SuppliersCreated = resolver.SuppliersCreated;
-                    result.CategoriesFromSheet = resolver.CategoriesFromSheet;
-                    result.CategoriesFromDb = resolver.CategoriesFromDb;
-                    result.CategoriesCreated = resolver.CategoriesCreated;
-                    result.SupplierNameOverwrittenCount = supplierOverwrites;
-                    result.CategoryNameOverwrittenCount = categoryOverwrites;
-
-                    if (options.DryRun) tx.Rollback();
-                    else tx.Commit();
-                    return result;
-                }
-                catch
-                {
-                    try { tx.Rollback(); } catch { }
-                    throw;
-                }
-            }
-        }
-
-        private static async Task<(int inserted, int skipped)> InsertPriceHistoryAsync(
-            Microsoft.Data.Sqlite.SqliteConnection conn,
-            Microsoft.Data.Sqlite.SqliteTransaction tx,
-            IReadOnlyList<Core.ImportDb.PriceHistoryRow> rows)
-        {
-            if (rows == null || rows.Count == 0) return (0, 0);
-
-            var inserted = 0;
-            var skipped = 0;
-            foreach (var row in rows)
-            {
-                if (string.IsNullOrWhiteSpace(row?.ProductBarcode) || string.IsNullOrWhiteSpace(row.Timestamp))
-                {
-                    skipped++;
-                    continue;
-                }
-
-                try
-                {
-                    var affected = await conn.ExecuteAsync(@"
-INSERT OR IGNORE INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
-VALUES(@Barcode, @Timestamp, @Type, @OldPrice, @NewPrice, @Source)",
-                        new
-                        {
-                            Barcode = row.ProductBarcode,
-                            Timestamp = row.Timestamp,
-                            Type = string.IsNullOrWhiteSpace(row.Type) ? "retail" : row.Type,
-                            OldPrice = row.OldPrice,
-                            NewPrice = row.NewPrice,
-                            Source = string.IsNullOrWhiteSpace(row.Source) ? "IMPORT" : row.Source
-                        }, tx).ConfigureAwait(false);
-
-                    if (affected > 0) inserted++;
-                    else skipped++;
-                }
-                catch
-                {
-                    skipped++;
-                }
-            }
-
-            return (inserted, skipped);
-        }
-
-        private static async Task<int> CountSheetNameOverwritesAsync(
-            Microsoft.Data.Sqlite.SqliteConnection conn,
-            Microsoft.Data.Sqlite.SqliteTransaction tx,
-            string tableName,
-            IEnumerable<IdNamePair> rows)
-        {
-            if (!string.Equals(tableName, "suppliers", StringComparison.Ordinal) &&
-                !string.Equals(tableName, "categories", StringComparison.Ordinal))
-                throw new ArgumentOutOfRangeException(nameof(tableName));
-
-            var finalById = new Dictionary<int, string>();
-            foreach (var row in rows ?? Enumerable.Empty<IdNamePair>())
-            {
-                if (row == null) continue;
-                var normalized = CategorySupplierResolver.Normalize(row.Name);
-                if (normalized.Length == 0) continue;
-                finalById[row.Id] = normalized;
-            }
-
-            if (finalById.Count == 0) return 0;
-
-            var existingRows = await conn.QueryAsync<IdNamePair>(
-                "SELECT id AS Id, name AS Name FROM " + tableName + " WHERE id IN @ids",
-                new { ids = finalById.Keys.ToArray() },
-                tx).ConfigureAwait(false);
-
-            var existingById = new Dictionary<int, string>();
-            foreach (var existing in existingRows ?? Enumerable.Empty<IdNamePair>())
-                existingById[existing.Id] = existing.Name ?? string.Empty;
-
-            var count = 0;
-            foreach (var pair in finalById)
-            {
-                if (existingById.TryGetValue(pair.Key, out var currentName) &&
-                    !string.Equals(CategorySupplierResolver.Normalize(currentName), pair.Value, StringComparison.OrdinalIgnoreCase))
-                {
-                    count++;
-                }
-            }
-
-            return count;
         }
 
         /// <summary>
@@ -618,9 +439,4 @@ VALUES(@Barcode, @Timestamp, @Type, @OldPrice, @NewPrice, @Source)",
         public IReadOnlyList<Core.ImportDb.PriceHistoryRow> PriceHistoryRows { get; set; } = Array.Empty<Core.ImportDb.PriceHistoryRow>();
     }
 
-    internal sealed class IdNamePair
-    {
-        public int Id { get; set; }
-        public string Name { get; set; } = string.Empty;
-    }
 }

@@ -6,7 +6,6 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Globalization;
-using Microsoft.Data.Sqlite;
 using Win7POS.Core;
 using Win7POS.Core.Audit;
 using Win7POS.Core.Models;
@@ -272,16 +271,16 @@ namespace Win7POS.Wpf.Pos
                     try { File.Delete(tempRestorePath); } catch { }
                 }
 
-                SqliteConnection.ClearAllPools();
+                SqliteConnectionFactory.ClearAllPools();
                 File.Copy(backupDbPath, _options.DbPath, true);
                 DbInitializer.EnsureCreated(_options);
                 var integrity = await _dbMaintenance.IntegrityCheckAsync().ConfigureAwait(false);
                 var integrityOk = IsIntegrityOk(integrity);
                 if (!integrityOk)
                 {
-                    SqliteConnection.ClearAllPools();
+                    SqliteConnectionFactory.ClearAllPools();
                     File.Copy(preBackupPath, _options.DbPath, true);
-                    SqliteConnection.ClearAllPools();
+                    SqliteConnectionFactory.ClearAllPools();
                     throw new InvalidOperationException(PosLocalization.F("dbMaintenance.integrityCheckFailed", integrity));
                 }
 
@@ -1029,45 +1028,24 @@ namespace Win7POS.Wpf.Pos
                     RelatedOriginalLineId = x.OriginalLineId
                 }).ToList();
 
-                using (var conn = _factory.Open())
-                using (var tx = conn.BeginTransaction())
-                {
-                    try
+                var refundSaleId = await _sales.InsertRefundOrVoidAsync(
+                    refundSale,
+                    refundLines,
+                    req.IsFullVoid ? original.Id : (long?)null,
+                    AuditActions.RefundCreate,
+                    savedRefundSaleId =>
                     {
-                        var refundSaleId = await ExecuteInsertRefundSaleIdAsync(conn, tx, refundSale).ConfigureAwait(false);
-                        refundSale.Id = refundSaleId;
-                        refundSale.ClientSaleId = await _sales.EnsureClientSaleIdAsync(conn, tx, refundSaleId).ConfigureAwait(false);
-
-                        foreach (var line in refundLines)
-                            line.SaleId = refundSaleId;
-
-                        await _sales.InsertSaleLinesAsync(conn, tx, refundLines).ConfigureAwait(false);
-                        await _sales.ApplyLocalStockMovementsAsync(conn, tx, refundSale, refundLines).ConfigureAwait(false);
-                        await _sales.EnqueueSalesSyncOutboxAsync(conn, tx, refundSaleId, refundSale.ClientSaleId).ConfigureAwait(false);
-
                         var voided = req.IsFullVoid ? "true" : "false";
-                        var details = AuditDetails.Kv(new (string k, string v)[]
+                        return AuditDetails.Kv(new (string k, string v)[]
                         {
                             ("originalSaleId", original.Id.ToString()),
-                            ("refundSaleId", refundSaleId.ToString()),
+                            ("refundSaleId", savedRefundSaleId.ToString()),
                             ("isFullVoid", req.IsFullVoid.ToString()),
                             ("voided", voided),
                             ("totalMinor", refundSale.Total.ToString()),
                             ("lines", refundLines.Count.ToString())
                         });
-                        await _audit.AppendAsync(conn, tx, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.RefundCreate, details).ConfigureAwait(false);
-
-                        if (req.IsFullVoid)
-                            await _sales.MarkSaleVoidedAsync(conn, tx, original.Id, refundSaleId, UnixTime.NowMs()).ConfigureAwait(false);
-
-                        tx.Commit();
-                    }
-                    catch
-                    {
-                        tx.Rollback();
-                        throw;
-                    }
-                }
+                    }).ConfigureAwait(false);
 
                 var completed = new SaleCompleted(refundSale, refundLines);
                 QueueSalesOutboxSyncNoThrow();
@@ -1829,32 +1807,6 @@ namespace Win7POS.Wpf.Pos
                     Interlocked.Exchange(ref _backgroundSalesSyncQueued, 0);
                 }
             });
-        }
-
-        private static async Task<long> ExecuteInsertRefundSaleIdAsync(SqliteConnection conn, SqliteTransaction tx, Sale refundSale)
-        {
-            using (var cmd = conn.CreateCommand())
-            {
-                cmd.Transaction = tx;
-                cmd.CommandText = @"
-INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change)
-VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change);
-SELECT last_insert_rowid();";
-
-                cmd.Parameters.AddWithValue("@Code", (object)refundSale.Code ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@CreatedAt", refundSale.CreatedAt);
-                cmd.Parameters.AddWithValue("@Kind", refundSale.Kind);
-                cmd.Parameters.AddWithValue("@RelatedSaleId", (object)refundSale.RelatedSaleId ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@Reason", (object)refundSale.Reason ?? DBNull.Value);
-                cmd.Parameters.AddWithValue("@Total", refundSale.Total);
-                cmd.Parameters.AddWithValue("@PaidCash", refundSale.PaidCash);
-                cmd.Parameters.AddWithValue("@PaidCard", refundSale.PaidCard);
-                cmd.Parameters.AddWithValue("@Change", refundSale.Change);
-
-                var obj = await cmd.ExecuteScalarAsync().ConfigureAwait(false);
-                if (obj == null || obj == DBNull.Value) return 0;
-                return Convert.ToInt64(obj, CultureInfo.InvariantCulture);
-            }
         }
 
         private async Task<PosPrinterSettings> ReadPrinterSettingsNoLockAsync()

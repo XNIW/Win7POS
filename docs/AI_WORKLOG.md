@@ -244,3 +244,15 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Nessun force delete, nessun tag cancellato, nessun codice modificato.
 - Report: `docs/reports/2026-07-01_WIN7POS_BRANCH_CLEANUP.md`.
 - Decisione: `CLEANUP_DONE`.
+
+## 2026-07-06 - Refactor architettura ideale Win7POS
+- Branch / base: `refactor/ideal-architecture-win7pos` da `origin/main` @ `d25a377`.
+- Refactor applicato:
+  - spostati `PosAdminWebClient`, reader Excel/HTML fornitore e reader/writer Product DB da Core a Data.
+  - Core resta `netstandard2.0` senza WPF, SQLite/Dapper, HTTP transport o package Excel concreti.
+  - aggiunti servizi Data per apply import prodotti, proof smoke fornitore, clear SQLite pool e persistenza transazionale refund/void.
+  - WPF non usa piu direttamente `Microsoft.Data.Sqlite` o Dapper; resta responsabile di UI, dialog, stampa e composizione.
+  - rafforzato `scripts/check-architecture-boundaries.ps1` con gate Core/Data/WPF, Supabase marker, payload redaction e project references.
+  - aggiunti test MSTest `ArchitectureBoundaryTests`.
+- Docs aggiornati: `README.md` e `docs/ARCHITECTURE/POS_ADMIN_SUPABASE_SYNC_ARCHITECTURE.md`.
+- Live gate non dichiarati completati: staging Supabase/Admin Web/Cloudflare e smoke Windows 7 fisico/stampante.

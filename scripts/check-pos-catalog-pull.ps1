@@ -18,7 +18,7 @@ function Read-Text([string]$relativePath) {
 }
 
 $required = @(
-    "src/Win7POS.Core/Online/PosAdminWebClient.cs",
+    "src/Win7POS.Data/Online/PosAdminWebClient.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs"
 )
@@ -33,7 +33,7 @@ if ($fail) {
     exit 1
 }
 
-$client = Read-Text "src/Win7POS.Core/Online/PosAdminWebClient.cs"
+$client = (Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs") + "`n" + (Read-Text "src/Win7POS.Core/Online/PosOnlineTransportContracts.cs")
 $service = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $repository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
