@@ -396,7 +396,7 @@ else {
     Pass "ReleasePack workflow runs startup and package validators"
 }
 
-if ($installer -notmatch "(?m)^MinVersion=6\.1sp1$") {
+if ($installer -notmatch "(?m)^MinVersion=6\.1sp1\r?$") {
     Fail "Installer must require Windows 7 SP1 or later"
 }
 else {
