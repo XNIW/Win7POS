@@ -64,7 +64,11 @@ if ($app -notmatch "App\.OnStartup startup failed" -or $app -notmatch "Shutdown\
     Pass "App.OnStartup traces startup failures and exits cleanly"
 }
 
-if ($dialogOwnerHelper -notmatch "IsVisible" -or $dialogOwnerHelper -notmatch "return\s+mainWindow\s*!=\s*null\s*&&\s*mainWindow\.IsVisible\s*\?\s*mainWindow\s*:\s*null") {
+$mainWindowOwnerGuard =
+    $dialogOwnerHelper -match "return\s+mainWindow\s*!=\s*null\s*&&\s*mainWindow\.IsVisible\s*\?\s*mainWindow\s*:\s*null" -or
+    $dialogOwnerHelper -match "return\s+IsSafeOwner\(mainWindow\)\s*\?\s*mainWindow\s*:\s*null"
+
+if ($dialogOwnerHelper -notmatch "IsVisible" -or -not $mainWindowOwnerGuard) {
     Fail "DialogOwnerHelper must not return an invisible startup owner"
 } else {
     Pass "DialogOwnerHelper skips invisible startup owners"

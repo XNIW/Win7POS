@@ -139,9 +139,9 @@ if ($dialog -notmatch "ContentRendered" -or $dialog -notmatch "RunPreflightAsync
 }
 
 $authIndex = Index-OrFail $statusReader 'failed_auth_denied' "status auth denied priority missing"
-$blockedIndex = Index-OrFail $statusReader 'outbox.Blocked > 0 || restoreNeedsReview' "status blocked priority missing"
-$retryIndex = Index-OrFail $statusReader 'if (outbox.Retry > 0)' "status retry priority missing"
-$pendingIndex = Index-OrFail $statusReader 'if (outbox.PendingOrRetry > 0)' "status pending priority missing"
+$blockedIndex = Index-OrFail $statusReader 'outbox.Blocked > 0 || catalogOutbox.Blocked > 0 || restoreNeedsReview' "status blocked priority missing"
+$retryIndex = Index-OrFail $statusReader 'if (outbox.Retry > 0 || catalogOutbox.Retry > 0)' "status retry priority missing"
+$pendingIndex = Index-OrFail $statusReader 'if (outbox.PendingOrRetry > 0 || catalogOutbox.PendingOrRetry > 0)' "status pending priority missing"
 $catalogIndex = Index-OrFail $statusReader 'if (CatalogRequiresAttention' "status catalog attention priority missing"
 $syncIndex = Index-OrFail $statusReader 'if (salesSyncInProgress)' "status sync-in-progress priority missing"
 $readyIndex = Index-OrFail $statusReader 'if (!string.IsNullOrWhiteSpace(catalogSaleSafeAt))' "status catalog-ready priority missing"

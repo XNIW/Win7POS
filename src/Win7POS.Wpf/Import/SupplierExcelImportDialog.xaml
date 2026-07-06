@@ -2,7 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
-        Title="Import Excel fornitore"
+        xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
+        Title="{Binding Source={x:Static loc:PosLocalization.Current}, Path=[supplierExcelImport.title]}"
         ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
@@ -26,7 +27,7 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="Import Excel fornitore" Style="{StaticResource DialogTitleStyle}"/>
+        <TextBlock Grid.Row="0" Text="{loc:Loc supplierExcelImport.title}" Style="{StaticResource DialogTitleStyle}"/>
 
         <Border Grid.Row="1" Margin="0,10,0,12" Padding="12" CornerRadius="8"
                 Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1">
@@ -37,10 +38,10 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="1. Scegli file" FontWeight="SemiBold"/>
-                <TextBlock Grid.Column="1" Text="2. Analizza colonne" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                <TextBlock Grid.Column="2" Text="3. Correggi righe" FontWeight="SemiBold" HorizontalAlignment="Center"/>
-                <TextBlock Grid.Column="3" Text="4. Verifica Sync DB" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                <TextBlock Grid.Column="0" Text="{loc:Loc supplierExcelImport.stepChooseFile}" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="1" Text="{loc:Loc supplierExcelImport.stepAnalyzeColumns}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                <TextBlock Grid.Column="2" Text="{loc:Loc supplierExcelImport.stepFixRows}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                <TextBlock Grid.Column="3" Text="{loc:Loc supplierExcelImport.stepVerifySync}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
             </Grid>
         </Border>
 
@@ -57,13 +58,13 @@
                             <RowDefinition Height="Auto"/>
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
-                        <TextBlock Text="Scegli il file Excel del fornitore (.xls/.xlsx)." FontSize="15" FontWeight="SemiBold"/>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.chooseFilePrompt}" FontSize="15" FontWeight="SemiBold"/>
                         <Grid Grid.Row="1" Margin="0,18,0,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <Button Content="Scegli Excel fornitore"
+                            <Button Content="{loc:Loc supplierExcelImport.chooseExcelButton}"
                                     MinWidth="180"
                                     Height="42"
                                     Command="{Binding BrowseCommand}"
@@ -78,7 +79,7 @@
                         <StackPanel Grid.Row="2" Margin="0,18,0,0">
                             <TextBlock Foreground="#6B5B73"
                                        TextWrapping="Wrap"
-                                       Text="Il flusso ProductDb/CSV esistente resta separato. Questo wizard usa le chiavi Android: barcode, productName, itemNumber, purchasePrice, retailPrice, quantity, supplier, category, secondProductName."/>
+                                       Text="{loc:Loc supplierExcelImport.flowHelp}"/>
                             <TextBlock Margin="0,16,0,0"
                                        Foreground="#5E3F86"
                                        Text="{Binding SelectedSheetName, StringFormat=Foglio rilevato: {0}}"/>
@@ -119,7 +120,7 @@
 	                        <TextBlock Margin="0,8,0,0"
 	                                   Foreground="#6B5B73"
 	                                   TextWrapping="Wrap"
-                                   Text="Richiesti: barcode, productName o itemNumber, purchasePrice. Disabilita colonne errate o correggi la chiave Android, poi premi Analizza per ricalcolare."/>
+                                   Text="{loc:Loc supplierExcelImport.requiredColumnsHelp}"/>
                     </StackPanel>
                 </Border>
 
@@ -130,9 +131,9 @@
                           CanUserDeleteRows="False"
                           GridLinesVisibility="All">
                     <DataGrid.Columns>
-                        <DataGridCheckBoxColumn Header="enabled" Binding="{Binding IsEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
-                        <DataGridTextColumn Header="originalColumnName" Binding="{Binding DisplayName}" IsReadOnly="True" Width="2*"/>
-                        <DataGridTemplateColumn Header="canonicalKey" Width="2*">
+                        <DataGridCheckBoxColumn Header="{loc:Loc supplierExcelImport.columnEnabled}" Binding="{Binding IsEnabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.columnOriginalName}" Binding="{Binding DisplayName}" IsReadOnly="True" Width="2*"/>
+                        <DataGridTemplateColumn Header="{loc:Loc supplierExcelImport.columnCanonicalKey}" Width="2*">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <ComboBox ItemsSource="{Binding DataContext.ColumnKeyOptions, RelativeSource={RelativeSource AncestorType=DataGrid}}"
@@ -148,9 +149,9 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellEditingTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="headerSource" Binding="{Binding HeaderSource}" IsReadOnly="True" Width="*"/>
-                        <DataGridTextColumn Header="confidence" Binding="{Binding Confidence}" IsReadOnly="True" Width="*"/>
-                        <DataGridTextColumn Header="sampleValues" Binding="{Binding SampleValues}" IsReadOnly="True" Width="3*"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.columnHeaderSource}" Binding="{Binding HeaderSource}" IsReadOnly="True" Width="*"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.columnConfidence}" Binding="{Binding Confidence}" IsReadOnly="True" Width="*"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.columnSampleValues}" Binding="{Binding SampleValues}" IsReadOnly="True" Width="3*"/>
                     </DataGrid.Columns>
                 </DataGrid>
 
@@ -159,10 +160,10 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
-                    <GroupBox Header="Warning" Margin="0,0,6,0">
+                    <GroupBox Header="{loc:Loc supplierExcelImport.warnings}" Margin="0,0,6,0">
                         <DataGrid ItemsSource="{Binding Warnings}" AutoGenerateColumns="True" IsReadOnly="True"/>
                     </GroupBox>
-                    <GroupBox Grid.Column="1" Header="Errori" Margin="6,0,0,0">
+                    <GroupBox Grid.Column="1" Header="{loc:Loc supplierExcelImport.errors}" Margin="6,0,0,0">
                         <DataGrid ItemsSource="{Binding Errors}" AutoGenerateColumns="True" IsReadOnly="True"/>
                     </GroupBox>
                 </Grid>
@@ -181,7 +182,7 @@
                             BorderThickness="1"
                             CornerRadius="8"
                             Visibility="{Binding HasRetailPriceWarning, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Attenzione: righe con purchasePrice ma retailPrice vuoto non sovrascrivono il prezzo vendita. Compila retailPrice per confermare il cambio."
+                        <TextBlock Text="{loc:Loc supplierExcelImport.retailPriceWarning}"
                                    TextWrapping="Wrap"
                                    Foreground="#7A4A00"/>
                     </Border>
@@ -192,7 +193,7 @@
                             BorderThickness="1"
                             CornerRadius="8"
                             Visibility="{Binding HasBarcodeWarning, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Righe senza barcode: digita il barcode nella colonna barcode oppure seleziona Skip per ignorare la riga."
+                        <TextBlock Text="{loc:Loc supplierExcelImport.barcodeWarning}"
                                    TextWrapping="Wrap"
                                    Foreground="#7A4A00"/>
                     </Border>
@@ -203,7 +204,7 @@
                             BorderThickness="1"
                             CornerRadius="8"
                             Visibility="{Binding HasIdentityWarning, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Nuovi prodotti senza productName o itemNumber: compila una delle due colonne oppure seleziona Skip."
+                        <TextBlock Text="{loc:Loc supplierExcelImport.identityWarning}"
                                    TextWrapping="Wrap"
                                    Foreground="#7A4A00"/>
                     </Border>
@@ -214,7 +215,7 @@
                             BorderThickness="1"
                             CornerRadius="8"
                             Visibility="{Binding HasInvalidNumberWarning, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Prezzi o quantita non validi: correggi purchasePrice, retailPrice o quantity prima di applicare."
+                        <TextBlock Text="{loc:Loc supplierExcelImport.invalidNumberWarning}"
                                    TextWrapping="Wrap"
                                    Foreground="#7A4A00"/>
                     </Border>
@@ -222,13 +223,13 @@
 
                 <Border Grid.Row="1" Margin="0,0,0,10" Padding="10" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8">
                     <WrapPanel VerticalAlignment="Center">
-                        <TextBlock Text="Calcola prezzo vendita da prezzo acquisto" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                        <TextBlock Text="Markup %" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.markupTitle}" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.markupPercent}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <TextBox Width="70" Height="32" Text="{Binding MarkupPercent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" Margin="0,0,12,0"/>
-                        <TextBlock Text="Arrotonda a" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.roundTo}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <ComboBox Width="80" Height="32" ItemsSource="{Binding RoundToOptions}" SelectedItem="{Binding RoundTo, Mode=TwoWay}" Style="{StaticResource ModernComboBoxStyle}" Margin="0,0,12,0"/>
-                        <CheckBox Content="Solo retailPrice vuoti" IsChecked="{Binding ApplyOnlyEmptyRetailPrice, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                        <Button Content="Applica calcolo" MinWidth="120" Height="34" Command="{Binding ApplyMarkupCommand}" Style="{StaticResource DialogActionButtonStyle}"/>
+                        <CheckBox Content="{loc:Loc supplierExcelImport.onlyEmptyRetailPrice}" IsChecked="{Binding ApplyOnlyEmptyRetailPrice, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <Button Content="{loc:Loc supplierExcelImport.applyMarkup}" MinWidth="120" Height="34" Command="{Binding ApplyMarkupCommand}" Style="{StaticResource DialogActionButtonStyle}"/>
                     </WrapPanel>
                 </Border>
 
@@ -239,16 +240,16 @@
                           CanUserDeleteRows="False"
 	                          GridLinesVisibility="All">
                     <DataGrid.Columns>
-                        <DataGridCheckBoxColumn Header="Skip" Binding="{Binding IsSkipped, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="58"/>
-                        <DataGridTextColumn Header="barcode" Binding="{Binding Barcode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="130"/>
-                        <DataGridTextColumn Header="itemNumber" Binding="{Binding ItemNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="120"/>
-                        <DataGridTextColumn Header="productName" Binding="{Binding ProductName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="220"/>
-                        <DataGridTextColumn Header="secondProductName" Binding="{Binding SecondProductName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="180"/>
-                        <DataGridTextColumn Header="purchasePrice" Binding="{Binding PurchasePrice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
-                        <DataGridTextColumn Header="retailPrice" Binding="{Binding RetailPrice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
-                        <DataGridTextColumn Header="quantity" Binding="{Binding Quantity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="90"/>
-                        <DataGridTextColumn Header="supplier" Binding="{Binding Supplier, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="140"/>
-                        <DataGridTextColumn Header="category" Binding="{Binding Category, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="140"/>
+                        <DataGridCheckBoxColumn Header="{loc:Loc supplierExcelImport.fieldSkip}" Binding="{Binding IsSkipped, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="58"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldBarcode}" Binding="{Binding Barcode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="130"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldItemNumber}" Binding="{Binding ItemNumber, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="120"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldProductName}" Binding="{Binding ProductName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="220"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldSecondProductName}" Binding="{Binding SecondProductName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="180"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldPurchasePrice}" Binding="{Binding PurchasePrice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldRetailPrice}" Binding="{Binding RetailPrice, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="110"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldQuantity}" Binding="{Binding Quantity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="90"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldSupplier}" Binding="{Binding Supplier, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="140"/>
+                        <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldCategory}" Binding="{Binding Category, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="140"/>
                     </DataGrid.Columns>
                 </DataGrid>
             </Grid>
@@ -266,13 +267,17 @@
                             BorderThickness="1"
                             CornerRadius="8"
                             Visibility="{Binding IsSyncPreviewStale, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="Sync DB preview non aggiornato: torna allo Step 3 e premi Ricalcola Sync DB."
+                        <TextBlock Text="{loc:Loc supplierExcelImport.syncPreviewStale}"
                                    TextWrapping="Wrap"
                                    Foreground="#7A4A00"/>
                     </Border>
                     <Border Margin="0,6,0,0" Padding="12" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="8">
                         <StackPanel>
-                            <TextBlock Text="Verifica Sync Database" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Text="{loc:Loc supplierExcelImport.verifySyncDatabase}" FontSize="15" FontWeight="SemiBold"/>
+                            <TextBlock Margin="0,4,0,0"
+                                       Text="{loc:Loc supplierExcelImport.verifySyncHelp}"
+                                       TextWrapping="Wrap"
+                                       Foreground="#6B5B73"/>
                             <WrapPanel Margin="0,10,0,0">
                                 <TextBlock Margin="0,0,16,0" Text="{Binding SyncTotalRowsCount, StringFormat=Totale: {0}}"/>
                                 <TextBlock Margin="0,0,16,0" Text="{Binding SyncNewProductsCount, StringFormat=Nuovi: {0}}"/>
@@ -283,7 +288,7 @@
                                 <TextBlock Text="{Binding SyncErrorsCount, StringFormat=Errori: {0}}"/>
                             </WrapPanel>
                             <DockPanel Margin="0,10,0,0">
-                                <TextBlock Text="Cerca" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <TextBlock Text="{loc:Loc supplierExcelImport.search}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                                 <TextBox MinWidth="260"
                                          Height="32"
                                          Text="{Binding SyncSearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -294,59 +299,63 @@
                 </StackPanel>
 
                 <TabControl Grid.Row="1">
-                    <TabItem Header="Nuovi">
+                    <TabItem Header="{loc:Loc supplierExcelImport.tabNew}">
                         <DataGrid ItemsSource="{Binding SyncNewProductsView}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="row" Binding="{Binding RowNumber}" Width="60"/>
-                                <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="130"/>
-                                <DataGridTextColumn Header="itemNumber" Binding="{Binding ItemNumber}" Width="120"/>
-                                <DataGridTextColumn Header="productName" Binding="{Binding ProductName}" Width="220"/>
-                                <DataGridTextColumn Header="retailPrice" Binding="{Binding RetailPrice}" Width="110"/>
-                                <DataGridTextColumn Header="purchasePrice" Binding="{Binding PurchasePrice}" Width="110"/>
-                                <DataGridTextColumn Header="quantity" Binding="{Binding Quantity}" Width="90"/>
-                                <DataGridTextColumn Header="supplier" Binding="{Binding Supplier}" Width="140"/>
-                                <DataGridTextColumn Header="category" Binding="{Binding Category}" Width="140"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldRow}" Binding="{Binding RowNumber}" Width="60"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldBarcode}" Binding="{Binding Barcode}" Width="130"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldItemNumber}" Binding="{Binding ItemNumber}" Width="120"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldProductName}" Binding="{Binding ProductName}" Width="220"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldSecondProductName}" Binding="{Binding SecondProductName}" Width="180"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldRetailPrice}" Binding="{Binding RetailPrice}" Width="110"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldPurchasePrice}" Binding="{Binding PurchasePrice}" Width="110"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldQuantity}" Binding="{Binding Quantity}" Width="90"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldSupplier}" Binding="{Binding Supplier}" Width="140"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldCategory}" Binding="{Binding Category}" Width="140"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </TabItem>
-                    <TabItem Header="Aggiornamenti">
+                    <TabItem Header="{loc:Loc supplierExcelImport.tabUpdates}">
                         <DataGrid ItemsSource="{Binding SyncUpdatedProductsView}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="row" Binding="{Binding RowNumber}" Width="60"/>
-                                <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="130"/>
-                                <DataGridTextColumn Header="before productName" Binding="{Binding Existing.ProductName}" Width="180"/>
-                                <DataGridTextColumn Header="after productName" Binding="{Binding Updated.ProductName}" Width="180"/>
-                                <DataGridTextColumn Header="before retailPrice" Binding="{Binding Existing.RetailPrice}" Width="120"/>
-                                <DataGridTextColumn Header="after retailPrice" Binding="{Binding Updated.RetailPrice}" Width="120"/>
-                                <DataGridTextColumn Header="diff" Binding="{Binding DiffSummary}" Width="4*"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldRow}" Binding="{Binding RowNumber}" Width="60"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldBarcode}" Binding="{Binding Barcode}" Width="130"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldBeforeProductName}" Binding="{Binding Existing.ProductName}" Width="180"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldAfterProductName}" Binding="{Binding Updated.ProductName}" Width="180"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldAfterSecondProductName}" Binding="{Binding Updated.SecondProductName}" Width="180"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldBeforeRetailPrice}" Binding="{Binding Existing.RetailPrice}" Width="120"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldAfterRetailPrice}" Binding="{Binding Updated.RetailPrice}" Width="120"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldDiff}" Binding="{Binding DiffSummary}" Width="4*"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </TabItem>
-                    <TabItem Header="Senza modifiche">
+                    <TabItem Header="{loc:Loc supplierExcelImport.tabNoChanges}">
                         <DataGrid ItemsSource="{Binding SyncNoChangeRowsView}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="row" Binding="{Binding RowNumber}" Width="60"/>
-                                <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="130"/>
-                                <DataGridTextColumn Header="productName" Binding="{Binding Updated.ProductName}" Width="220"/>
-                                <DataGridTextColumn Header="retailPrice" Binding="{Binding Updated.RetailPrice}" Width="110"/>
-                                <DataGridTextColumn Header="quantity" Binding="{Binding Updated.Quantity}" Width="90"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldRow}" Binding="{Binding RowNumber}" Width="60"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldBarcode}" Binding="{Binding Barcode}" Width="130"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldProductName}" Binding="{Binding Updated.ProductName}" Width="220"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldSecondProductName}" Binding="{Binding Updated.SecondProductName}" Width="180"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldRetailPrice}" Binding="{Binding Updated.RetailPrice}" Width="110"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldQuantity}" Binding="{Binding Updated.Quantity}" Width="90"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </TabItem>
-                    <TabItem Header="Skippati">
+                    <TabItem Header="{loc:Loc supplierExcelImport.tabSkipped}">
                         <DataGrid ItemsSource="{Binding SyncSkippedRowsView}" AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="original row" Binding="{Binding RowNumber}" Width="100"/>
-                                <DataGridTextColumn Header="barcode" Binding="{Binding Barcode}" Width="160"/>
-                                <DataGridTextColumn Header="itemNumber" Binding="{Binding ItemNumber}" Width="160"/>
-                                <DataGridTextColumn Header="productName" Binding="{Binding ProductName}" Width="240"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldOriginalRow}" Binding="{Binding RowNumber}" Width="100"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldBarcode}" Binding="{Binding Barcode}" Width="160"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldItemNumber}" Binding="{Binding ItemNumber}" Width="160"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldProductName}" Binding="{Binding ProductName}" Width="240"/>
+                                <DataGridTextColumn Header="{loc:Loc supplierExcelImport.fieldSecondProductName}" Binding="{Binding SecondProductName}" Width="180"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </TabItem>
-                    <TabItem Header="Warning">
+                    <TabItem Header="{loc:Loc supplierExcelImport.warnings}">
                         <DataGrid ItemsSource="{Binding SyncWarningsView}" AutoGenerateColumns="True" IsReadOnly="True" CanUserAddRows="False"/>
                     </TabItem>
-                    <TabItem Header="Errori">
+                    <TabItem Header="{loc:Loc supplierExcelImport.errors}">
                         <DataGrid ItemsSource="{Binding SyncErrorsView}" AutoGenerateColumns="True" IsReadOnly="True" CanUserAddRows="False"/>
                     </TabItem>
                 </TabControl>
@@ -361,17 +370,17 @@
             </Grid.ColumnDefinitions>
             <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#5E3F86"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="Indietro" MinWidth="100" Height="42" Margin="0,0,8,0"
+                <Button Content="{loc:Loc supplierExcelImport.back}" MinWidth="100" Height="42" Margin="0,0,8,0"
                         Command="{Binding BackCommand}" Style="{StaticResource DialogCancelButtonStyle}"/>
-                <Button Content="Analizza" MinWidth="100" Height="42" Margin="0,0,8,0"
+                <Button Content="{loc:Loc supplierExcelImport.analyze}" MinWidth="100" Height="42" Margin="0,0,8,0"
                         Command="{Binding AnalyzeCommand}" Visibility="{Binding IsStep1, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogCancelButtonStyle}"/>
-                <Button Content="Avanti" MinWidth="100" Height="42" Margin="0,0,8,0"
+                <Button Content="{loc:Loc supplierExcelImport.next}" MinWidth="100" Height="42" Margin="0,0,8,0"
                         Command="{Binding NextCommand}" Visibility="{Binding IsStep2, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}"/>
-                <Button Content="Continua a Sync DB" MinWidth="150" Height="42" Margin="0,0,8,0"
+                <Button Content="{loc:Loc supplierExcelImport.continueSyncDb}" MinWidth="150" Height="42" Margin="0,0,8,0"
                         Command="{Binding SyncPreviewCommand}" Visibility="{Binding IsStep3, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}"/>
-                <Button Content="Conferma e applica" MinWidth="150" Height="42" Margin="0,0,8,0"
+                <Button Content="{loc:Loc supplierExcelImport.confirmApply}" MinWidth="150" Height="42" Margin="0,0,8,0"
                         Command="{Binding ApplyCommand}" Visibility="{Binding IsStep4, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}"/>
-                <Button Content="Annulla" MinWidth="100" Height="42" IsCancel="True"
+                <Button Content="{loc:Loc common.cancel}" MinWidth="100" Height="42" IsCancel="True"
                         Command="{Binding CancelCommand}" Style="{StaticResource DialogCancelButtonStyle}"/>
             </StackPanel>
         </Grid>

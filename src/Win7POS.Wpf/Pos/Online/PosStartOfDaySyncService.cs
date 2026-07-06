@@ -2,7 +2,9 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Data;
+using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
@@ -14,6 +16,7 @@ namespace Win7POS.Wpf.Pos.Online
         internal static readonly TimeSpan StartOfDayTotalTimeout = TimeSpan.FromSeconds(28);
         internal static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromSeconds(4);
         internal static readonly TimeSpan SalesSyncTimeout = TimeSpan.FromSeconds(8);
+        internal static readonly TimeSpan CatalogImportSyncTimeout = TimeSpan.FromSeconds(6);
         internal static readonly TimeSpan CatalogDeltaTimeout = TimeSpan.FromSeconds(12);
 
         private const string CatalogBootstrapStatusSettingKey = "pos.catalog.bootstrap_status";
@@ -55,7 +58,7 @@ namespace Win7POS.Wpf.Pos.Online
             result.RestoreNeedsReview = await settings
                 .GetBoolAsync(RestoreNeedsReviewSettingKey)
                 .ConfigureAwait(false) == true;
-            await RefreshOutboxAsync(result, sales).ConfigureAwait(false);
+            await RefreshOutboxAsync(result, sales, _factory).ConfigureAwait(false);
 
             if (!result.CatalogSaleSafe)
             {
@@ -70,6 +73,11 @@ namespace Win7POS.Wpf.Pos.Online
             if (result.BlockedSales > 0)
             {
                 return Block(result, "sales_blocked", T("startOfDay.blockSalesBlocked"), "outbox", progress);
+            }
+
+            if (result.BlockedCatalogImports > 0)
+            {
+                return Block(result, "catalog_import_blocked", T("startOfDay.blockCatalogImportBlocked"), "outbox", progress);
             }
 
             if (await HasStoredAuthDeniedAsync(settings).ConfigureAwait(false))
@@ -121,16 +129,21 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             Report(progress, "outbox", "active", T("startOfDay.stepOutbox"));
-            await RefreshOutboxAsync(result, sales).ConfigureAwait(false);
+            await RefreshOutboxAsync(result, sales, _factory).ConfigureAwait(false);
             if (result.BlockedSales > 0)
             {
                 return Block(result, "sales_blocked", T("startOfDay.blockSalesBlocked"), "outbox", progress);
             }
 
+            if (result.BlockedCatalogImports > 0)
+            {
+                return Block(result, "catalog_import_blocked", T("startOfDay.blockCatalogImportBlocked"), "outbox", progress);
+            }
+
             Report(progress, "outbox", "ok", T("startOfDay.stepOutbox"));
             Report(progress, "sales", "active", T("startOfDay.stepSales"));
             var salesComplete = await TrySalesSyncAsync(options, result, cancellationToken).ConfigureAwait(false);
-            await RefreshOutboxAsync(result, sales).ConfigureAwait(false);
+            await RefreshOutboxAsync(result, sales, _factory).ConfigureAwait(false);
             if (await HasStoredAuthDeniedAsync(settings).ConfigureAwait(false))
             {
                 return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "sales", progress);
@@ -142,6 +155,20 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             Report(progress, "sales", salesComplete ? "ok" : "warning", T("startOfDay.stepSales"));
+            Report(progress, "catalog-import", "active", T("startOfDay.stepCatalogImport"));
+            var catalogImportComplete = await TryCatalogImportSyncAsync(options, trustedSession, result, cancellationToken).ConfigureAwait(false);
+            await RefreshOutboxAsync(result, sales, _factory).ConfigureAwait(false);
+            if (await HasStoredAuthDeniedAsync(settings).ConfigureAwait(false))
+            {
+                return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "catalog-import", progress);
+            }
+
+            if (result.BlockedCatalogImports > 0)
+            {
+                return Block(result, "catalog_import_blocked", T("startOfDay.blockCatalogImportBlocked"), "catalog-import", progress);
+            }
+
+            Report(progress, "catalog-import", catalogImportComplete ? "ok" : "warning", T("startOfDay.stepCatalogImport"));
             Report(progress, "catalog", "active", T("startOfDay.stepCatalog"));
             var catalogComplete = await TryCatalogDeltaAsync(options, result, cancellationToken).ConfigureAwait(false);
             if (await HasStoredAuthDeniedAsync(settings).ConfigureAwait(false))
@@ -151,7 +178,7 @@ namespace Win7POS.Wpf.Pos.Online
 
             result.CanOpenPos = true;
             result.RequiresOperatorAction = false;
-            result.ShouldContinueInBackground = !salesComplete || !catalogComplete;
+            result.ShouldContinueInBackground = !salesComplete || !catalogImportComplete || !catalogComplete;
             result.BlockingReason = string.Empty;
             result.CatalogStatus = catalogComplete ? "completed" : "background";
             result.StatusMessage = result.ShouldContinueInBackground
@@ -306,12 +333,68 @@ namespace Win7POS.Wpf.Pos.Online
             }
         }
 
-        private static async Task RefreshOutboxAsync(StartOfDaySyncResult result, SaleRepository sales)
+        private async Task<bool> TryCatalogImportSyncAsync(
+            PosAdminWebOptions options,
+            PosTrustedDeviceSession trustedSession,
+            StartOfDaySyncResult result,
+            CancellationToken cancellationToken)
+        {
+            using (var cts = CreateStepCts(CatalogImportSyncTimeout, cancellationToken))
+            {
+                try
+                {
+                    var sync = await new CatalogImportSyncService(_factory)
+                        .SyncPendingAsync(options, trustedSession, cts.Token)
+                        .ConfigureAwait(false);
+                    if (sync.RequiresTrustClear)
+                    {
+                        _store.Clear();
+                        var settings = new SettingsRepository(_factory);
+                        await settings.SetStringAsync(LastCatalogErrorSettingKey, "auth_denied").ConfigureAwait(false);
+                        await settings.SetStringAsync(LastSalesErrorSettingKey, "auth_denied").ConfigureAwait(false);
+                        await settings.SetStringAsync(CatalogBootstrapStatusSettingKey, "failed_auth_denied").ConfigureAwait(false);
+                    }
+
+                    var summary = await new CatalogImportOutboxRepository(_factory)
+                        .GetSummaryAsync()
+                        .ConfigureAwait(false);
+                    return !sync.RequiresTrustClear && summary.PendingOrRetry == 0;
+                }
+                catch (OperationCanceledException)
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+
+                    result.LastTransientError = "catalog_import_timeout";
+                    _logger.LogWarning("Start-of-day catalog import sync timeout; continuing only if outbox remains retryable.");
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    result.LastTransientError = "catalog_import_exception";
+                    _logger.LogWarning("Start-of-day catalog import sync failed; continuing only if outbox remains retryable.", ex);
+                    return false;
+                }
+            }
+        }
+
+        private static async Task RefreshOutboxAsync(
+            StartOfDaySyncResult result,
+            SaleRepository sales,
+            SqliteConnectionFactory factory)
         {
             var outbox = await sales.GetSalesSyncOutboxSummaryAsync().ConfigureAwait(false);
+            var catalogOutbox = await new CatalogImportOutboxRepository(factory)
+                .GetSummaryAsync()
+                .ConfigureAwait(false);
             result.PendingSales = ToSafeInt(outbox.Pending);
             result.RetrySales = ToSafeInt(outbox.Retry);
             result.BlockedSales = ToSafeInt(outbox.Blocked);
+            result.PendingCatalogImports = ToSafeInt(catalogOutbox.Pending + catalogOutbox.InProgress);
+            result.RetryCatalogImports = ToSafeInt(catalogOutbox.Retry);
+            result.BlockedCatalogImports = ToSafeInt(catalogOutbox.Blocked);
         }
 
         private static async Task<bool> HasStoredAuthDeniedAsync(SettingsRepository settings)
@@ -455,6 +538,9 @@ namespace Win7POS.Wpf.Pos.Online
         public int PendingSales { get; set; }
         public int RetrySales { get; set; }
         public int BlockedSales { get; set; }
+        public int PendingCatalogImports { get; set; }
+        public int RetryCatalogImports { get; set; }
+        public int BlockedCatalogImports { get; set; }
         public string CatalogStatus { get; set; } = string.Empty;
         public bool CatalogSaleSafe { get; set; }
         public bool RestoreNeedsReview { get; set; }

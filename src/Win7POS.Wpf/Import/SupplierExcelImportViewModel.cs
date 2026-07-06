@@ -12,6 +12,7 @@ using System.Windows.Input;
 using Microsoft.Win32;
 using Win7POS.Core.Import;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Import
 {
@@ -19,6 +20,7 @@ namespace Win7POS.Wpf.Import
     {
         private readonly SupplierExcelImportWorkflowService _service;
         private readonly ISupplierExcelFileDialogService _fileDialogService;
+        private readonly ISupplierExcelCompletionDialogService _completionDialogService;
         private readonly FileLogger _logger = new FileLogger("SupplierExcelImportViewModel");
         private int _stepIndex;
         private string _selectedPath = string.Empty;
@@ -34,10 +36,12 @@ namespace Win7POS.Wpf.Import
 
         public SupplierExcelImportViewModel(
             SupplierExcelImportWorkflowService service = null,
-            ISupplierExcelFileDialogService fileDialogService = null)
+            ISupplierExcelFileDialogService fileDialogService = null,
+            ISupplierExcelCompletionDialogService completionDialogService = null)
         {
             _service = service ?? new SupplierExcelImportWorkflowService();
             _fileDialogService = fileDialogService ?? new SupplierExcelFileDialogService();
+            _completionDialogService = completionDialogService ?? new SupplierExcelCompletionDialogService();
             InitializeSyncViews();
             ColumnKeyOptions = new ObservableCollection<string>(new[] { string.Empty }.Concat(AndroidImportKeys.AllKeys));
             BrowseCommand = new RelayCommand(Browse, () => !IsBusy && StepIndex == 0);
@@ -53,6 +57,7 @@ namespace Win7POS.Wpf.Import
 
         public event PropertyChangedEventHandler PropertyChanged;
         public event Action<bool> RequestClose;
+        public SupplierExcelApplyUiResult LastApplyResult { get; private set; }
 
         public ObservableCollection<string> ColumnKeyOptions { get; }
         public ObservableCollection<int> RoundToOptions { get; } = new ObservableCollection<int>(new[] { 10, 50, 100 });
@@ -272,6 +277,7 @@ namespace Win7POS.Wpf.Import
                     !row.IsSkipped &&
                     !row.Exists &&
                     string.IsNullOrWhiteSpace(row.ProductName) &&
+                    string.IsNullOrWhiteSpace(row.SecondProductName) &&
                     string.IsNullOrWhiteSpace(row.ItemNumber));
             }
         }
@@ -413,9 +419,10 @@ namespace Win7POS.Wpf.Import
             Status = "Applicazione import fornitore in corso...";
             try
             {
-                var apply = await _service.ApplyAsync(SyncPreview, false).ConfigureAwait(true);
+                var apply = await _service.ApplyAsync(SyncPreview, false, SelectedFileName).ConfigureAwait(true);
+                LastApplyResult = apply;
                 Status = apply.Summary;
-                ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), "Import Excel fornitore", apply.Summary);
+                _completionDialogService.ShowCompletion(PosLocalization.T("supplierExcelImport.title"), apply.Summary);
                 RequestClose?.Invoke(true);
             }
             catch (Exception ex)
@@ -779,6 +786,41 @@ namespace Win7POS.Wpf.Import
             (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
+        public async Task<SupplierExcelViewModelSmokeResult> RunSmokeAsync()
+        {
+            BrowseCommand.Execute(null);
+            if (string.IsNullOrWhiteSpace(SelectedPath) || !File.Exists(SelectedPath))
+                throw new InvalidOperationException("Supplier Excel smoke did not select a valid file.");
+
+            await AnalyzeAsync().ConfigureAwait(true);
+            if (Analysis == null || StepIndex != 1)
+                throw new InvalidOperationException("Supplier Excel smoke did not reach Analyze results.");
+
+            await NextAsync().ConfigureAwait(true);
+            if (StepIndex != 2)
+                throw new InvalidOperationException("Supplier Excel smoke did not reach Step 3.");
+
+            await BuildSyncPreviewAsync().ConfigureAwait(true);
+            if (SyncPreview == null || StepIndex != 3 || !CanApply)
+                throw new InvalidOperationException("Supplier Excel smoke did not reach appliable Step 4.");
+
+            await ApplyAsync().ConfigureAwait(true);
+            if (LastApplyResult == null || !LastApplyResult.Success)
+                throw new InvalidOperationException("Supplier Excel smoke did not apply successfully.");
+
+            return new SupplierExcelViewModelSmokeResult
+            {
+                BackupPath = LastApplyResult.BackupPath,
+                CatalogImportOutboxId = LastApplyResult.CatalogImportOutboxId,
+                CatalogImportOutboxStatus = LastApplyResult.CatalogImportOutboxStatus,
+                Inserted = LastApplyResult.Inserted,
+                NoChange = LastApplyResult.NoChange,
+                SelectedFileName = SelectedFileName,
+                Status = Status,
+                Updated = LastApplyResult.Updated
+            };
+        }
+
         private sealed class RelayCommand : ICommand
         {
             private readonly Action _execute;
@@ -841,6 +883,31 @@ namespace Win7POS.Wpf.Import
         string SelectSupplierExcelFile();
     }
 
+    public interface ISupplierExcelCompletionDialogService
+    {
+        void ShowCompletion(string title, string message);
+    }
+
+    public sealed class SupplierExcelCompletionDialogService : ISupplierExcelCompletionDialogService
+    {
+        public void ShowCompletion(string title, string message)
+        {
+            ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), title, message);
+        }
+    }
+
+    public sealed class SupplierExcelViewModelSmokeResult
+    {
+        public string BackupPath { get; set; } = string.Empty;
+        public long CatalogImportOutboxId { get; set; }
+        public string CatalogImportOutboxStatus { get; set; } = string.Empty;
+        public int Inserted { get; set; }
+        public int NoChange { get; set; }
+        public string SelectedFileName { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public int Updated { get; set; }
+    }
+
     public sealed class SupplierExcelFileDialogService : ISupplierExcelFileDialogService
     {
         private readonly Func<Window> _ownerProvider;
@@ -864,6 +931,7 @@ namespace Win7POS.Wpf.Import
             if (owner == null)
                 throw new InvalidOperationException("Nessuna finestra owner attiva per il file picker Excel fornitore.");
 
+            owner.Activate();
             return dlg.ShowDialog(owner) == true ? dlg.FileName : null;
         }
     }

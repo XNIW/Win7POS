@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Printing
 {
@@ -74,7 +75,7 @@ namespace Win7POS.Wpf.Printing
 
             var effectivePrinter = (printerName ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(effectivePrinter))
-                throw new InvalidOperationException("Cash drawer printer is not configured.");
+                throw new InvalidOperationException(PosLocalization.T("printer.cashDrawerNotConfigured"));
 
             var bytesStr = string.Join(",", bytes.Select(b => b.ToString()));
             _logger.LogInfo("CashDrawer: stampante=\"" + (effectivePrinter ?? "") + "\" comando=" + (cmdForLog ?? "") + " bytes=[" + bytesStr + "]");
@@ -122,7 +123,7 @@ namespace Win7POS.Wpf.Printing
         private static void PrintOnce(string receiptText, ReceiptPrintOptions opt)
         {
             if (string.IsNullOrWhiteSpace(opt.PrinterName))
-                throw new InvalidOperationException("Receipt printer is not configured.");
+                throw new InvalidOperationException(PosLocalization.T("printer.receiptPrinterNotConfigured"));
 
             var lines = receiptText.Replace("\r\n", "\n").Split('\n');
             var lineIndex = 0;

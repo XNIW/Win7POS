@@ -21,6 +21,7 @@ $required = @(
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs",
     "src/Win7POS.Wpf/Pos/PosViewModel.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml"
 )
@@ -37,6 +38,7 @@ $mainXaml = Read-Text "src/Win7POS.Wpf/MainWindow.xaml"
 $mainCode = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $reader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $sales = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$catalogOutbox = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
 $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
 $shopDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml"
 $salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
@@ -57,6 +59,10 @@ if ($mainCode -notmatch "PosSyncStatusReader") { Fail "main shell does not use s
 if ($reader -match "DeviceToken|SessionToken|ProtectedDeviceSecret|ProtectedSessionSecret") { Fail "sync status reader must not expose POS secrets" } else { Pass "sync status reader avoids POS secrets" }
 if ($reader -notmatch "pos\.catalog\.last_sync_at" -or $reader -notmatch "pos\.sales_sync\.last_success_at") { Fail "sync status reader must show catalog and sales sync timestamps" } else { Pass "sync timestamps present" }
 if ($uxCopy -notmatch "Bloccate" -or $sales -notmatch "failed_blocked" -or $sales -notmatch "GetSalesSyncOutboxSummaryAsync") { Fail "outbox summary must expose pending/retry/blocked" } else { Pass "outbox summary exposes pending/retry/blocked" }
+if ($reader -notmatch "CatalogImportOutboxRepository" -or $reader -notmatch "GetSummaryAsync" -or $reader -notmatch "pendingCatalogImports" -or $reader -notmatch "catalogOutbox\.Blocked") { Fail "sync status must surface catalog import outbox pending/retry/blocked" } else { Pass "sync status surfaces catalog import outbox" }
+if ($reader -notmatch "DetailedPendingOutboxText" -or $reader -notmatch "salesOutbox\.Blocked" -or $reader -notmatch "catalogOutbox\.Blocked") { Fail "sync status must separate sales and catalog import retry/blocked counts" } else { Pass "sync status separates sales/catalog import retry and blocked counts" }
+if ($reader -notmatch "BlockedOutboxText" -or $reader -notmatch "RetryOutboxText" -or $reader -notmatch "salesOutbox\.Retry" -or $reader -notmatch "catalogOutbox\.Retry") { Fail "sync status headline must separate sales and catalog retry/blocked counts" } else { Pass "sync status headline separates sales/catalog retry and blocked counts" }
+if ($catalogOutbox -notmatch "InProgress" -or $catalogOutbox -notmatch "PendingOrRetry => Pending \+ Retry \+ InProgress") { Fail "catalog import summary must include in_progress as pending work" } else { Pass "catalog import summary includes in_progress" }
 if ($uxCopy -notmatch "Sync in corso" -or $reader -notmatch "IsSyncing" -or $salesSync -notmatch "pos\.sales_sync\.in_progress") { Fail "syncing status must be visible while background sync runs" } else { Pass "syncing status visible" }
 if ($salesSync -notmatch "Interlocked\.CompareExchange" -or $salesSync -notmatch "Sales sync skipped: already running") { Fail "sales sync service must guard concurrent runs" } else { Pass "sales sync concurrency guard present" }
 if ($salesSync -notmatch "pos\.sales_sync\.last_success_at" -or $salesSync -notmatch "pos\.sales_sync\.last_error") { Fail "sales sync diagnostics settings missing" } else { Pass "sales sync diagnostics settings present" }

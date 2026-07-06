@@ -12,7 +12,9 @@ using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.Dialogs;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Data.Repositories;
+using Win7POS.Data.Online;
 using Win7POS.Core;
+using Win7POS.Core.Online;
 using Win7POS.Core.Security;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
@@ -27,6 +29,7 @@ namespace Win7POS.Wpf
         private static readonly Infrastructure.FileLogger _logger = new Infrastructure.FileLogger("MainWindow");
         private static readonly TimeSpan StartupHeartbeatTimeout = TimeSpan.FromSeconds(3);
         private static readonly TimeSpan StartupSalesSyncTimeout = TimeSpan.FromSeconds(5);
+        private static readonly TimeSpan StartupCatalogImportSyncTimeout = TimeSpan.FromSeconds(5);
         private static readonly TimeSpan StartupCatalogPullTimeout = TimeSpan.FromSeconds(8);
         private static readonly TimeSpan StartupWatchdogTimeout = TimeSpan.FromSeconds(5);
         private const string CatalogBootstrapStatusSettingKey = "pos.catalog.bootstrap_status";
@@ -489,6 +492,7 @@ namespace Win7POS.Wpf
                             " serverRequestId=" + SafeOnlineId(result.ServerRequestId));
                         QueueSyncStatusRefresh(factory);
                         await TrySyncSalesOutboxAsync(options, factory).ConfigureAwait(false);
+                        await TrySyncCatalogImportOutboxAsync(options, factory).ConfigureAwait(false);
                         await TryPullCatalogAsync(options, factory).ConfigureAwait(false);
                         return;
                     }
@@ -588,6 +592,58 @@ namespace Win7POS.Wpf
             {
                 StartupTrace.Write("online sales sync failed", ex);
                 _logger.LogWarning("TrySyncSalesOutboxAsync: sales sync non completato", ex);
+            }
+            finally
+            {
+                QueueSyncStatusRefresh(factory);
+            }
+        }
+
+        private async Task TrySyncCatalogImportOutboxAsync(PosAdminWebOptions options, SqliteConnectionFactory factory)
+        {
+            try
+            {
+                var store = new PosTrustedDeviceStore();
+                if (!store.TryRead(out var trustedSession))
+                {
+                    return;
+                }
+
+                using (var cts = new CancellationTokenSource(StartupCatalogImportSyncTimeout))
+                {
+                    var result = await new CatalogImportSyncService(factory)
+                        .SyncPendingAsync(options, trustedSession, cts.Token)
+                        .ConfigureAwait(false);
+
+                    if (result.RequiresTrustClear)
+                    {
+                        store.Clear();
+                        await StoreStartupSettingAsync(factory, LastCatalogErrorSettingKey, "auth_denied")
+                            .ConfigureAwait(false);
+                        await StoreStartupSettingAsync(factory, LastSalesErrorSettingKey, "auth_denied")
+                            .ConfigureAwait(false);
+                        await StoreStartupSettingAsync(factory, CatalogBootstrapStatusSettingKey, "failed_auth_denied")
+                            .ConfigureAwait(false);
+                    }
+
+                    _logger.LogInfo(
+                        "BackgroundOnlineRefresh catalog import sync done: total=" + result.Total.ToString() +
+                        " acked=" + result.Acked.ToString() +
+                        " retried=" + result.Retried.ToString() +
+                        " blocked=" + result.Blocked.ToString());
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                await StoreStartupSettingAsync(factory, LastCatalogErrorSettingKey, "catalog_import_timeout")
+                    .ConfigureAwait(false);
+                StartupTrace.Write("online catalog import sync timeout");
+                _logger.LogWarning("BackgroundOnlineRefresh catalog import sync timeout");
+            }
+            catch (Exception ex)
+            {
+                StartupTrace.Write("online catalog import sync failed", ex);
+                _logger.LogWarning("TrySyncCatalogImportOutboxAsync: catalog import sync non completato", ex);
             }
             finally
             {

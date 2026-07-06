@@ -95,7 +95,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Multiselect = false,
                 InitialDirectory = BackupsDirectory
             };
-            if (dlg.ShowDialog() != true) return;
+            var owner = DialogOwnerHelper.GetSafeOwner(OwnerWindow);
+            if (owner == null)
+                throw new InvalidOperationException("Nessuna finestra owner attiva per il file picker restore DB.");
+
+            owner.Activate();
+            if (dlg.ShowDialog(owner) != true) return;
 
             IsBusy = true;
             try
@@ -107,7 +112,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Append(PosLocalization.F("dbMaintenance.integrityCheckResult", result.IntegrityCheck));
                 Append(PosLocalization.T("dbMaintenance.restoreSyncReview"));
                 Win7POS.Wpf.Import.ModernMessageDialog.Show(
-                    System.Windows.Application.Current?.MainWindow,
+                    OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
                     PosLocalization.T("dbMaintenance.title"),
                     PosLocalization.T("dbMaintenance.restoreCompletedMessage"));
             }
@@ -190,16 +195,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (applied)
                 {
                     Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(null);
-                    Append("Import Excel fornitore completato. Catalogo aggiornato.");
+                    Append(PosLocalization.T("supplierExcelImport.completed"));
                 }
                 else
                 {
-                    Append("Import Excel fornitore annullato.");
+                    Append(PosLocalization.T("supplierExcelImport.cancelled"));
                 }
             }
             catch (Exception ex)
             {
-                Append("Import Excel fornitore fallito: " + ex.Message);
+                Append(PosLocalization.F("supplierExcelImport.failed", ex.Message));
             }
         }
 

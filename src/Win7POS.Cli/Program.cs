@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net;
+using System.Net.Sockets;
+using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -20,7 +24,7 @@ using Win7POS.Data.Adapters;
 using Win7POS.Data.Import;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
-using Win7POS.Wpf.Pos.Online;
+using Win7POS.Core.Online;
 
 internal static class Program
 {
@@ -66,6 +70,20 @@ internal static class Program
         public bool ExpectTombstone;
         public bool KeepDb;
         public string SessionJsonPath = string.Empty;
+    }
+
+    private sealed class CatalogImportSyncHarnessParams
+    {
+        public string BaseUrl = string.Empty;
+        public bool KeepDb;
+        public string SessionJsonPath = string.Empty;
+    }
+
+    private sealed class SupplierExcelPerfSelfTestParams
+    {
+        public bool KeepDb;
+        public int Products = 20000;
+        public int Rows = 5000;
     }
 
     private sealed class Task081HttpHarnessSession
@@ -186,6 +204,42 @@ internal static class Program
                 return;
             }
 
+            if (TryParseCatalogImportOutboxSelfTestArgs(args))
+            {
+                await RunCatalogImportOutboxSelfTestAsync().ConfigureAwait(false);
+                return;
+            }
+
+            if (TryParseCatalogImportReconciliationSelfTestArgs(args))
+            {
+                await RunCatalogImportReconciliationSelfTestAsync().ConfigureAwait(false);
+                return;
+            }
+
+            if (TryParseCatalogImportSyncHttpHarnessArgs(args, out var catalogImportSyncParams))
+            {
+                await RunCatalogImportSyncHttpHarnessAsync(catalogImportSyncParams).ConfigureAwait(false);
+                return;
+            }
+
+            if (TryParseSupplierExcelPerfSelfTestArgs(args, out var supplierExcelPerfParams))
+            {
+                await RunSupplierExcelPerfSelfTestAsync(supplierExcelPerfParams).ConfigureAwait(false);
+                return;
+            }
+
+            if (TryParseSqliteIntegritySelfTestArgs(args))
+            {
+                await RunSqliteIntegritySelfTestAsync().ConfigureAwait(false);
+                return;
+            }
+
+            if (TryParseDbRestoreGuardSelfTestArgs(args))
+            {
+                await RunDbRestoreGuardSelfTestAsync().ConfigureAwait(false);
+                return;
+            }
+
             if (TryParseSupplierExcelDriveSmokeArgs(args, out var supplierExcelDriveSmokeFolder))
             {
                 RunSupplierExcelDriveSmoke(supplierExcelDriveSmokeFolder);
@@ -228,6 +282,12 @@ internal static class Program
         Console.WriteLine("  --supplier-excel-selftest");
         Console.WriteLine("  --supplier-excel-ui-selftest");
         Console.WriteLine("  --supplier-excel-apply-selftest");
+        Console.WriteLine("  --supplier-excel-perf-selftest [--products N] [--rows N] [--keepdb]");
+        Console.WriteLine("  --catalog-import-outbox-selftest");
+        Console.WriteLine("  --catalog-import-reconciliation-selftest");
+        Console.WriteLine("  --catalog-import-sync-http-harness [--base-url <AdminWebUrl>] [--session-json <path>] [--keepdb]");
+        Console.WriteLine("  --sqlite-integrity-selftest");
+        Console.WriteLine("  --db-restore-guard-selftest");
         Console.WriteLine("  --supplier-excel-drive-smoke <folder>");
         Console.WriteLine("  --supplier-excel-drive-completion-report <folder>");
         Console.WriteLine("  --daily yyyy-MM-dd [--db <path>]");
@@ -269,6 +329,116 @@ internal static class Program
     private static bool TryParseSupplierExcelApplySelfTestArgs(string[] args)
     {
         return args.Any(arg => string.Equals(arg, "--supplier-excel-apply-selftest", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryParseCatalogImportOutboxSelfTestArgs(string[] args)
+    {
+        return args.Any(arg => string.Equals(arg, "--catalog-import-outbox-selftest", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryParseCatalogImportReconciliationSelfTestArgs(string[] args)
+    {
+        return args.Any(arg => string.Equals(arg, "--catalog-import-reconciliation-selftest", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryParseCatalogImportSyncHttpHarnessArgs(
+        string[] args,
+        out CatalogImportSyncHarnessParams parameters)
+    {
+        parameters = new CatalogImportSyncHarnessParams();
+        var hasHarness = false;
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (string.Equals(arg, "--catalog-import-sync-http-harness", StringComparison.OrdinalIgnoreCase))
+            {
+                hasHarness = true;
+                continue;
+            }
+
+            if (string.Equals(arg, "--base-url", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.BaseUrl = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--session-json", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.SessionJsonPath = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase))
+            {
+                parameters.KeepDb = true;
+            }
+        }
+
+        return hasHarness;
+    }
+
+    private static bool TryParseSupplierExcelPerfSelfTestArgs(
+        string[] args,
+        out SupplierExcelPerfSelfTestParams parameters)
+    {
+        parameters = new SupplierExcelPerfSelfTestParams();
+        var hasSelfTest = false;
+        for (var i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            if (string.Equals(arg, "--supplier-excel-perf-selftest", StringComparison.OrdinalIgnoreCase))
+            {
+                hasSelfTest = true;
+                continue;
+            }
+
+            if (string.Equals(arg, "--products", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length ||
+                    !int.TryParse(args[i + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out parameters.Products))
+                {
+                    return false;
+                }
+
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--rows", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length ||
+                    !int.TryParse(args[i + 1], NumberStyles.Integer, CultureInfo.InvariantCulture, out parameters.Rows))
+                {
+                    return false;
+                }
+
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--keepdb", StringComparison.OrdinalIgnoreCase))
+            {
+                parameters.KeepDb = true;
+            }
+        }
+
+        parameters.Products = Math.Max(100, parameters.Products);
+        parameters.Rows = Math.Max(20, parameters.Rows);
+        return hasSelfTest;
+    }
+
+    private static bool TryParseSqliteIntegritySelfTestArgs(string[] args)
+    {
+        return args.Any(arg => string.Equals(arg, "--sqlite-integrity-selftest", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryParseDbRestoreGuardSelfTestArgs(string[] args)
+    {
+        return args.Any(arg => string.Equals(arg, "--db-restore-guard-selftest", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TryParseSupplierExcelDriveSmokeArgs(string[] args, out string folder)
@@ -2102,8 +2272,12 @@ CREATE TABLE users (
         var viewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs");
         var dialogShellWindow = ReadRepoFile(root, "src/Win7POS.Wpf/Chrome/DialogShellWindow.cs");
         var dialogOwnerHelper = ReadRepoFile(root, "src/Win7POS.Wpf/Infrastructure/DialogOwnerHelper.cs");
+        var localization = ReadRepoFile(root, "src/Win7POS.Wpf/Localization/PosLocalization.cs");
         var workflow = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs");
         var applier = ReadRepoFile(root, "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs");
+        var catalogImportContract = ReadRepoFile(root, "src/Win7POS.Core/Online/PosCatalogImportContract.cs");
+        var catalogImportOutbox = ReadRepoFile(root, "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs");
+        var catalogImportPayloadBuilder = ReadRepoFile(root, "src/Win7POS.Data/Online/CatalogImportOutboxPayloadBuilder.cs");
         var analyzer = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierImportAnalyzer.cs");
         var models = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierExcelImportModels.cs");
         var helper = ReadRepoFile(root, "src/Win7POS.Core/Import/SupplierRetailPriceHelper.cs");
@@ -2113,11 +2287,12 @@ CREATE TABLE users (
         var generalImportViewCode = ReadRepoFile(root, "src/Win7POS.Wpf/Import/ImportView.xaml.cs");
         var productDbImportViewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Import/ProductDbImportViewModel.cs");
 
-        AssertText(productsView, "Import Excel fornitore", "Products screen must expose supplier Excel import.");
+        AssertText(productsView, "supplierExcelImport.title", "Products screen must expose localized supplier Excel import.");
         AssertText(productsView, "SupplierExcelImportCommand", "Products import button must bind supplier command.");
         AssertText(productsViewModel, "SupplierExcelImportDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner())", "Products command must open the supplier dialog modally.");
-        AssertText(dbMaintenanceView, "Import Excel fornitore", "DB maintenance screen must expose supplier Excel import.");
+        AssertText(dbMaintenanceView, "supplierExcelImport.title", "DB maintenance screen must expose localized supplier Excel import.");
         AssertText(dbMaintenanceView, "SupplierExcelImportCommand", "DB maintenance import button must bind supplier command.");
+        AssertText(localization, "Import Excel fornitore", "Supplier Excel import Italian title translation missing.");
         AssertText(dbMaintenanceViewModel, "internal Window OwnerWindow { get; set; }", "DB maintenance view model must keep the current dialog owner.");
         AssertText(dbMaintenanceDialogCode, "vm.OwnerWindow = this", "DB maintenance dialog must pass itself as current owner.");
         AssertText(dbMaintenanceViewModel, "SupplierExcelImportDialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner())", "DB maintenance command must open the supplier dialog from the current owner chain.");
@@ -2158,33 +2333,46 @@ CREATE TABLE users (
         var footerStart = dialogXaml.IndexOf("<Grid Grid.Row=\"3\"", StringComparison.Ordinal);
         Assert(stepScrollStart >= 0 && stepScrollEnd >= 0 && footerStart > stepScrollEnd,
             "Supplier import footer must stay outside the step ScrollViewer.");
-        foreach (var button in new[]
+        foreach (var buttonKey in new[]
         {
-            "Indietro",
-            "Analizza",
-            "Avanti",
-            "Continua a Sync DB",
-            "Conferma e applica",
-            "Annulla"
+            "supplierExcelImport.back",
+            "supplierExcelImport.analyze",
+            "supplierExcelImport.next",
+            "supplierExcelImport.continueSyncDb",
+            "supplierExcelImport.confirmApply",
+            "common.cancel"
         })
         {
-            Assert(dialogXaml.IndexOf("Content=\"" + button + "\"", StringComparison.Ordinal) > footerStart,
-                "Supplier import footer button must be outside the ScrollViewer: " + button);
+            Assert(dialogXaml.IndexOf("Content=\"{loc:Loc " + buttonKey + "}\"", StringComparison.Ordinal) > footerStart,
+                "Supplier import footer button must be outside the ScrollViewer: " + buttonKey);
         }
 
-        AssertText(dialogXaml, "1. Scegli file", "Step 1 label missing.");
-        AssertText(dialogXaml, "2. Analizza colonne", "Step 2 label missing.");
-        AssertText(dialogXaml, "3. Correggi righe", "Step 3 label missing.");
-        AssertText(dialogXaml, "4. Verifica Sync DB", "Step 4 label missing.");
-        AssertText(dialogXaml, "Verifica Sync Database", "Step 4 Sync DB title missing.");
-        AssertText(dialogXaml, "Nuovi", "Step 4 new products tab missing.");
-        AssertText(dialogXaml, "Aggiornamenti", "Step 4 updates tab missing.");
-        AssertText(dialogXaml, "Senza modifiche", "Step 4 no-change tab missing.");
-        AssertText(dialogXaml, "Skippati", "Step 4 skipped tab missing.");
+        AssertText(dialogXaml, "supplierExcelImport.stepChooseFile", "Step 1 label key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.stepAnalyzeColumns", "Step 2 label key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.stepFixRows", "Step 3 label key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.stepVerifySync", "Step 4 label key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.verifySyncDatabase", "Step 4 Sync DB title key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.verifySyncHelp", "Step 4 help key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.tabNew", "Step 4 new products tab key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.tabUpdates", "Step 4 updates tab key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.tabNoChanges", "Step 4 no-change tab key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.tabSkipped", "Step 4 skipped tab key missing.");
+        AssertText(localization, "1. Scegli file", "Step 1 Italian label missing.");
+        AssertText(localization, "2. Analizza colonne", "Step 2 Italian label missing.");
+        AssertText(localization, "3. Correggi righe", "Step 3 Italian label missing.");
+        AssertText(localization, "4. Verifica Sync DB", "Step 4 Italian label missing.");
+        AssertText(localization, "Verifica Sync Database", "Step 4 Sync DB Italian title missing.");
+        AssertText(localization, "coda Admin Web pending", "Step 4 Italian help must explain local apply and Admin Web pending queue.");
+        AssertText(localization, "Nuovi", "Step 4 Italian new products tab missing.");
+        AssertText(localization, "Aggiornamenti", "Step 4 Italian updates tab missing.");
+        AssertText(localization, "Senza modifiche", "Step 4 Italian no-change tab missing.");
+        AssertText(localization, "Skippati", "Step 4 Italian skipped tab missing.");
         AssertText(dialogXaml, "SyncSearchText", "Step 4 search/filter input missing.");
         AssertText(dialogXaml, "SyncNewProductsView", "Step 4 new products must use filtered view.");
         AssertText(dialogXaml, "SyncUpdatedProductsView", "Step 4 updates must use filtered view.");
-        AssertText(dialogXaml, "Continua a Sync DB", "Step 3 must continue to Sync DB.");
+        AssertText(dialogXaml, "Updated.SecondProductName", "Step 4 updated products must show secondProductName.");
+        AssertText(dialogXaml, "Binding=\"{Binding SecondProductName", "Step 4 new/skipped products must show secondProductName.");
+        AssertText(dialogXaml, "supplierExcelImport.continueSyncDb", "Step 3 must continue to Sync DB.");
         AssertText(dialogXaml, "Visibility=\"{Binding IsStep4", "Apply must only be visible on Step 4.");
         AssertText(viewModel, "IsStep1", "Step 1 state missing.");
         AssertText(viewModel, "IsStep2", "Step 2 state missing.");
@@ -2195,7 +2383,15 @@ CREATE TABLE users (
         AssertText(viewModel, "CollectionViewSource.GetDefaultView", "Step 4 search/filter collection views missing.");
         AssertText(viewModel, "SyncProductMatches", "Step 4 product search predicate missing.");
         AssertText(viewModel, "StepIndex == 3 && SyncCanApply", "Apply must be enabled only from valid Step 4.");
+        AssertText(viewModel, "string.IsNullOrWhiteSpace(row.SecondProductName)", "Missing new identity count must accept secondProductName like the analyzer.");
+        AssertText(workflow, "ListDetailsByBarcodesAsync", "Supplier import must not load the full catalog for barcode-only matching.");
+        AssertText(workflow, "CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry", "Supplier import workflow must prepare catalog import outbox payload.");
         AssertText(workflow, "rebuilt.Fingerprint", "Apply must recompute and verify Step 4 before writing.");
+        AssertText(applier, "CatalogImportOutboxRepository", "Supplier import apply must enqueue catalog import outbox.");
+        AssertText(applier, ".EnqueueAsync(conn, tx", "Catalog import outbox enqueue must share the apply transaction.");
+        AssertText(catalogImportContract, "PosCatalogImportRequest", "Catalog import DTO request missing.");
+        AssertText(catalogImportOutbox, "MarkBlockedAsync", "Catalog import outbox blocked transition missing.");
+        AssertText(catalogImportPayloadBuilder, "Path.GetFileName", "Catalog import payload must redact source path.");
         AssertText(applier, "ApplyAsync(preview.ValidatedRows", "Data applier must apply validated Step 4 rows.");
         AssertText(generalImportViewModel, "CanApplyImport", "General catalog import must gate Apply on a current DB sync preview.");
         AssertText(generalImportViewModel, "BuildCurrentAnalyzeFingerprint", "General catalog import must invalidate stale analyzed files/options.");
@@ -2208,15 +2404,19 @@ CREATE TABLE users (
 
         foreach (var required in new[]
         {
-            "originalColumnName",
-            "canonicalKey",
-            "headerSource",
-            "confidence",
-            "sampleValues",
-            "enabled"
+            "supplierExcelImport.columnOriginalName",
+            "supplierExcelImport.columnCanonicalKey",
+            "supplierExcelImport.columnHeaderSource",
+            "supplierExcelImport.columnConfidence",
+            "supplierExcelImport.columnSampleValues",
+            "supplierExcelImport.columnEnabled"
         })
         {
             AssertText(dialogXaml, required, "Step 2 mapping grid missing " + required + ".");
+        }
+        foreach (var translated in new[] { "originalColumnName", "canonicalKey", "headerSource", "confidence", "sampleValues", "enabled" })
+        {
+            AssertText(localization, translated, "Step 2 mapping translation missing " + translated + ".");
         }
         AssertText(dialogXaml, "SelectedItem=\"{Binding CanonicalKey", "Step 2 must allow canonical key override.");
         AssertText(dialogXaml, "Binding=\"{Binding IsEnabled", "Step 2 must allow disabling columns.");
@@ -2226,20 +2426,24 @@ CREATE TABLE users (
 
         foreach (var required in new[]
         {
-            "barcode",
-            "itemNumber",
-            "productName",
-            "secondProductName",
-            "purchasePrice",
-            "retailPrice",
-            "quantity",
-            "supplier",
-            "category"
+            "supplierExcelImport.fieldBarcode",
+            "supplierExcelImport.fieldItemNumber",
+            "supplierExcelImport.fieldProductName",
+            "supplierExcelImport.fieldSecondProductName",
+            "supplierExcelImport.fieldPurchasePrice",
+            "supplierExcelImport.fieldRetailPrice",
+            "supplierExcelImport.fieldQuantity",
+            "supplierExcelImport.fieldSupplier",
+            "supplierExcelImport.fieldCategory"
         })
         {
-            AssertText(dialogXaml, "Header=\"" + required + "\"", "Step 3 editable grid missing " + required + ".");
+            AssertText(dialogXaml, "Header=\"{loc:Loc " + required + "}\"", "Step 3 editable grid missing " + required + ".");
         }
-        AssertText(dialogXaml, "Header=\"Skip\"", "Step 3 skip checkbox missing.");
+        foreach (var translated in new[] { "barcode", "itemNumber", "productName", "secondProductName", "purchasePrice", "retailPrice", "quantity", "supplier", "category" })
+        {
+            AssertText(localization, translated, "Step 3 field translation missing " + translated + ".");
+        }
+        AssertText(dialogXaml, "Header=\"{loc:Loc supplierExcelImport.fieldSkip}\"", "Step 3 skip checkbox missing.");
         AssertText(dialogXaml, "Binding=\"{Binding IsSkipped", "Step 3 skip binding missing.");
         AssertText(dialogXaml, "Binding=\"{Binding Barcode, Mode=TwoWay", "Step 3 barcode must be editable.");
 
@@ -2323,12 +2527,27 @@ CREATE TABLE users (
             Assert(workflowPreview.NoChangeRows.Count == 0, "Step 4 operational preview must show zero no-change rows.");
 
             var backupPath = await CreateSupplierSelfTestBackupAsync(options.DbPath, tempRoot).ConfigureAwait(false);
+            var catalogOutboxEntry = CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(
+                workflowPreview,
+                Path.GetFileName(workbookPath),
+                "selftest");
             var workflowApply = await new SupplierExcelImportApplier(factory).ApplyAsync(
                 workflowPreview,
-                new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
+                new SupplierExcelImportApplyOptions
+                {
+                    CatalogImportOutboxEntry = catalogOutboxEntry,
+                    InsertNew = true
+                }).ConfigureAwait(false);
             var workflowSummary = BuildSupplierApplySelfTestSummary(workflowApply, backupPath, workflowAnalysis.Warnings.Count);
             Assert(workflowApply.Errors == 0, "Workflow apply must succeed.");
             Assert(workflowApply.Inserted == 1, "Workflow apply must insert one new product.");
+            Assert(workflowApply.CatalogImportOutboxId > 0, "Workflow apply must enqueue catalog import outbox.");
+            Assert(
+                await ReadCatalogImportOutboxStatusAsync(factory, workflowApply.CatalogImportOutboxId).ConfigureAwait(false) == "pending",
+                "Catalog import outbox must be pending after supplier apply.");
+            var catalogPayload = await ReadCatalogImportOutboxPayloadAsync(factory, workflowApply.CatalogImportOutboxId).ConfigureAwait(false);
+            Assert(catalogPayload.Contains("pos-catalog-import-v1", StringComparison.Ordinal), "Catalog import payload schema version missing.");
+            Assert(!catalogPayload.Contains(tempRoot, StringComparison.OrdinalIgnoreCase), "Catalog import payload must not store the full source path.");
             Assert(File.Exists(backupPath), "Workflow apply must create a backup file.");
             Assert(!IsUnderProgramFiles(backupPath), "Supplier import backup must not be under Program Files.");
             Assert(workflowSummary.Contains("Backup path", StringComparison.Ordinal), "Apply summary must include backupPath.");
@@ -2516,6 +2735,7 @@ CREATE TABLE users (
             Assert(duplicateApply.Errors == 0 && duplicateApply.Inserted == 1, "Data applier must write the effective last duplicate row.");
             Assert(await SupplierProductCountAsync(factory, "9999999900009").ConfigureAwait(false) == 1, "Duplicate final apply must write one product.");
 
+            await AssertSupplierSoftDeletedReactivationAsync(factory).ConfigureAwait(false);
             await AssertSupplierRollbackOnForcedFailureAsync(factory).ConfigureAwait(false);
             await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
 
@@ -2534,6 +2754,7 @@ CREATE TABLE users (
                     noChangeFromStep4 = updateNoChangeApply.NoChange,
                     skippedRows = barcodeCorrectionPreview.SkippedRows.Count,
                     step4DuplicateLastWins = duplicateApply.Errors == 0 && duplicateApply.Inserted == 1,
+                    softDeletedReactivationVerified = true,
                     rollbackVerified = true,
                     importHistorySource = "IMPORT",
                     dbPathUnderTemp = options.DbPath.StartsWith(tempRoot, StringComparison.OrdinalIgnoreCase)
@@ -2555,6 +2776,680 @@ CREATE TABLE users (
             {
                 // Temp cleanup is best-effort; the selftest assertions above are the actual gate.
             }
+        }
+    }
+
+    private static async Task RunCatalogImportOutboxSelfTestAsync()
+    {
+        Console.WriteLine("Catalog import outbox selftest");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "win7pos-catalog-outbox-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(tempRoot);
+            var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+            var repository = new CatalogImportOutboxRepository(factory);
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            var accepted = BuildCatalogImportOutboxEntry("accepted", 1, nowMs);
+            var acceptedId = await repository.EnqueueAsync(accepted).ConfigureAwait(false);
+            var duplicateId = await repository.EnqueueAsync(accepted).ConfigureAwait(false);
+            Assert(acceptedId == duplicateId, "Identical catalog import enqueue must be idempotent.");
+
+            var conflict = BuildCatalogImportOutboxEntry("accepted", 2, nowMs);
+            conflict.ClientImportId = accepted.ClientImportId;
+            conflict.IdempotencyKey = accepted.IdempotencyKey;
+            var conflictThrown = false;
+            try
+            {
+                await repository.EnqueueAsync(conflict).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException)
+            {
+                conflictThrown = true;
+            }
+
+            Assert(conflictThrown, "Catalog import enqueue must reject idempotency conflict with different payload.");
+
+            var retryId = await repository.EnqueueAsync(BuildCatalogImportOutboxEntry("retry", 3, nowMs)).ConfigureAwait(false);
+            var blockedId = await repository.EnqueueAsync(BuildCatalogImportOutboxEntry("blocked", 4, nowMs)).ConfigureAwait(false);
+            var pending = await repository.GetPendingAsync(10, nowMs + 1000).ConfigureAwait(false);
+            Assert(pending.Count == 3, "Catalog import pending query must include all pending rows.");
+
+            Assert(await repository.PrepareAttemptAsync(acceptedId, nowMs + 2000).ConfigureAwait(false), "Prepare must lease pending row.");
+            Assert(await ReadCatalogImportOutboxStatusAsync(factory, acceptedId).ConfigureAwait(false) == "in_progress", "Prepare must promote row to in_progress.");
+            var preparedPending = await repository.GetPendingAsync(10, nowMs + 3000).ConfigureAwait(false);
+            Assert(!preparedPending.Any(row => row.Id == acceptedId), "Pending query must not immediately reselect leased in_progress rows.");
+            var stalePending = await repository.GetPendingAsync(10, nowMs + (16 * 60 * 1000)).ConfigureAwait(false);
+            Assert(stalePending.Any(row => row.Id == acceptedId), "Pending query must recover stale in_progress rows.");
+
+            Assert(await repository.PrepareAttemptAsync(retryId, nowMs + 2500).ConfigureAwait(false), "Prepare must lease retry scenario row.");
+            Assert(await repository.PrepareAttemptAsync(blockedId, nowMs + 2600).ConfigureAwait(false), "Prepare must lease blocked scenario row.");
+            Assert(await repository.MarkAckedAsync(acceptedId, "server-accepted", "server-request-accepted", nowMs + 4000, expectedAttemptCount: 1).ConfigureAwait(false), "Ack must update active attempt.");
+            Assert(await repository.MarkRetryAsync(retryId, "network_error", nowMs + 9000, nowMs + 5000, expectedAttemptCount: 1).ConfigureAwait(false), "Retry must update active attempt.");
+            Assert(await repository.MarkBlockedAsync(blockedId, "validation_failed", nowMs + 6000, expectedAttemptCount: 1).ConfigureAwait(false), "Blocked must update active attempt.");
+            var summary = await repository.GetSummaryAsync().ConfigureAwait(false);
+            Assert(summary.Acked == 1, "Ack summary mismatch.");
+            Assert(summary.Retry == 1, "Retry summary mismatch.");
+            Assert(summary.Blocked == 1, "Blocked summary mismatch.");
+            Assert(await repository.HasUnresolvedAsync().ConfigureAwait(false), "Retry/blocked rows must be unresolved.");
+            await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
+
+            Console.WriteLine("CATALOG IMPORT OUTBOX SELFTEST PASS");
+            Console.WriteLine("TEST PASS");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true); } catch { }
+        }
+    }
+
+    private static async Task RunCatalogImportReconciliationSelfTestAsync()
+    {
+        Console.WriteLine("Catalog import reconciliation selftest");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "win7pos-catalog-reconcile-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(tempRoot);
+            var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+            var repository = new CatalogImportOutboxRepository(factory);
+            var reconciliation = new CatalogImportReconciliationService(factory);
+            var products = new ProductRepository(factory);
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            var staleId = await repository
+                .EnqueueAsync(BuildCatalogImportOutboxEntry("reconcile-stale", 1, nowMs))
+                .ConfigureAwait(false);
+            var blockedId = await repository
+                .EnqueueAsync(BuildCatalogImportOutboxEntry("reconcile-blocked", 2, nowMs))
+                .ConfigureAwait(false);
+
+            Assert(await repository.PrepareAttemptAsync(staleId, nowMs).ConfigureAwait(false), "Reconciliation setup must lease stale row.");
+            Assert(await repository.PrepareAttemptAsync(blockedId, nowMs + 1).ConfigureAwait(false), "Reconciliation setup must lease blocked row.");
+            Assert(await repository.MarkBlockedAsync(blockedId, "validation_failed", nowMs + 2, expectedAttemptCount: 1).ConfigureAwait(false), "Reconciliation setup must block review row.");
+
+            var recovered = await reconciliation
+                .RecoverExpiredInProgressAsync(nowMs + CatalogImportOutboxRepository.CatalogImportInProgressLeaseMilliseconds + 1000)
+                .ConfigureAwait(false);
+            Assert(recovered == 1, "Reconciliation must recover exactly one expired in_progress row.");
+            Assert(
+                await ReadCatalogImportOutboxStatusAsync(factory, staleId).ConfigureAwait(false) == "retry",
+                "Expired in_progress row must become retry.");
+            Assert(
+                await ReadCatalogImportOutboxStatusAsync(factory, blockedId).ConfigureAwait(false) == "failed_blocked",
+                "Reconciliation must not clear failed_blocked rows.");
+            Assert(
+                await reconciliation.GetFailedBlockedCountAsync().ConfigureAwait(false) == 1,
+                "Reconciliation must signal failed_blocked rows for manual review.");
+
+            await products.UpsertAsync(new Product
+            {
+                Barcode = "RECON-REMOTE",
+                Name = "Reconcile remote id",
+                UnitPrice = 1200
+            }).ConfigureAwait(false);
+            Assert(
+                await reconciliation.ReconcileRemoteProductIdAsync("RECON-REMOTE", "remote-product-reconciled").ConfigureAwait(false),
+                "Reconciliation must apply barcode-to-remote product id.");
+            Assert(
+                await ReadProductRemoteProductIdAsync(factory, "RECON-REMOTE").ConfigureAwait(false) == "remote-product-reconciled",
+                "Reconciled remote product id mismatch.");
+
+            await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
+            Console.WriteLine("CATALOG IMPORT RECONCILIATION SELFTEST PASS");
+            Console.WriteLine("TEST PASS");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true); } catch { }
+        }
+    }
+
+    private static async Task RunCatalogImportSyncHttpHarnessAsync(CatalogImportSyncHarnessParams parameters)
+    {
+        Console.WriteLine("Catalog import sync HTTP harness");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "win7pos-catalog-sync-" + Guid.NewGuid().ToString("N"));
+        CatalogImportFakeServer? fakeServer = null;
+        try
+        {
+            Directory.CreateDirectory(tempRoot);
+            var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+            var repository = new CatalogImportOutboxRepository(factory);
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var realSessionMode = !string.IsNullOrWhiteSpace(parameters.SessionJsonPath);
+            var scenarios = realSessionMode
+                ? new[] { "accepted-" + Guid.NewGuid().ToString("N").Substring(0, 12) }
+                : new[] { "accepted", "duplicate", "idempotent", "validation_failed", "conflict", "mismatch", "idempotency_mismatch", "auth_denied", "timeout" };
+            var ids = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < scenarios.Length; i++)
+            {
+                var entry = BuildCatalogImportOutboxEntry(scenarios[i], i + 1, nowMs);
+                ids[scenarios[i]] = await repository.EnqueueAsync(entry).ConfigureAwait(false);
+                await SeedCatalogImportHarnessProductAsync(factory, scenarios[i], i + 1).ConfigureAwait(false);
+            }
+
+            var baseUrl = parameters.BaseUrl;
+            if (string.IsNullOrWhiteSpace(baseUrl) && !realSessionMode)
+            {
+                fakeServer = new CatalogImportFakeServer();
+                baseUrl = fakeServer.BaseUrl;
+            }
+
+            Assert(PosAdminWebOptions.TryCreate(baseUrl, out var adminOptions, out var reason), "Invalid Admin Web URL for catalog import harness: " + reason);
+            var session = realSessionMode
+                ? ToTrustedSession(ReadCatalogImportHarnessSession(parameters.SessionJsonPath))
+                : new PosTrustedDeviceSession
+                {
+                    DeviceToken = "device-token-harness",
+                    PosSessionId = "pos-session-harness",
+                    SessionToken = "session-token-harness",
+                    ShopCode = "SHOP-HARNESS",
+                    ShopDeviceId = "shop-device-harness",
+                };
+
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(realSessionMode ? 30 : 2)))
+            {
+                var result = await new CatalogImportSyncService(factory)
+                    .SyncPendingAsync(adminOptions, session, 10, cts.Token)
+                    .ConfigureAwait(false);
+                if (realSessionMode)
+                {
+                    Assert(result.Total == 1, "Real catalog import sync must process the seeded row.");
+                    Assert(result.Acked == 1, "Real catalog import sync row must be acked.");
+                    Assert(result.Blocked == 0, "Real catalog import sync must not block the seeded row.");
+                    Assert(result.Retried == 0, "Real catalog import sync must not leave the seeded row retrying.");
+                    Assert(!result.RequiresTrustClear, "Real catalog import sync must not request trust clear.");
+                }
+                else
+                {
+                    Assert(result.Total == scenarios.Length, "Catalog import sync must process all seeded rows.");
+                    Assert(result.Acked == 3, "Accepted/duplicate/idempotent rows must be acked.");
+                    Assert(result.Blocked == 4, "Validation/conflict/mismatch/idempotency rows must be blocked.");
+                    Assert(result.Retried == 2, "Auth/timeout rows must be retry.");
+                    Assert(result.RequiresTrustClear, "Auth denied response must request trust clear.");
+                }
+            }
+
+            if (realSessionMode)
+            {
+                var acceptedId = ids.Values.Single();
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, acceptedId).ConfigureAwait(false) == "acked", "real accepted status mismatch.");
+            }
+            else
+            {
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["accepted"]).ConfigureAwait(false) == "acked", "accepted status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["duplicate"]).ConfigureAwait(false) == "acked", "duplicate status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["idempotent"]).ConfigureAwait(false) == "acked", "idempotent status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["validation_failed"]).ConfigureAwait(false) == "failed_blocked", "validation_failed status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["conflict"]).ConfigureAwait(false) == "failed_blocked", "conflict status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["mismatch"]).ConfigureAwait(false) == "failed_blocked", "mismatch status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["idempotency_mismatch"]).ConfigureAwait(false) == "failed_blocked", "idempotency mismatch status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["auth_denied"]).ConfigureAwait(false) == "retry", "auth_denied status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["timeout"]).ConfigureAwait(false) == "retry", "timeout status mismatch.");
+                var acceptedBarcode = CatalogImportHarnessBarcode("accepted", 1);
+                Assert(
+                    await ReadProductRemoteProductIdAsync(factory, acceptedBarcode).ConfigureAwait(false) == "remote-product-map-accepted",
+                    "accepted ACK must save returned remote product id.");
+                Assert(
+                    await ReadLatestRemotePriceIdAsync(factory, acceptedBarcode, "retail").ConfigureAwait(false) == "remote-price-map-accepted",
+                    "accepted ACK remote price map must save returned remote price id.");
+                var payload = await ReadCatalogImportOutboxPayloadAsync(factory, ids["accepted"]).ConfigureAwait(false);
+                Assert(!payload.Contains("device-token-harness", StringComparison.OrdinalIgnoreCase), "Persisted catalog payload must not contain device token.");
+                Assert(!payload.Contains("session-token-harness", StringComparison.OrdinalIgnoreCase), "Persisted catalog payload must not contain session token.");
+            }
+            await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
+
+            Console.WriteLine("CATALOG IMPORT SYNC HTTP HARNESS PASS");
+            Console.WriteLine("TEST PASS");
+        }
+        finally
+        {
+            fakeServer?.Dispose();
+            SqliteConnection.ClearAllPools();
+            if (!parameters.KeepDb)
+            {
+                try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true); } catch { }
+            }
+            else
+            {
+                Console.WriteLine("Kept harness DB: " + tempRoot);
+            }
+        }
+    }
+
+    private static async Task RunSupplierExcelPerfSelfTestAsync(SupplierExcelPerfSelfTestParams parameters)
+    {
+        Console.WriteLine("Supplier Excel perf selftest");
+        var total = Stopwatch.StartNew();
+        var timings = new Dictionary<string, long>(StringComparer.Ordinal);
+        var tempRoot = Path.Combine(Path.GetTempPath(), "win7pos-supplier-perf-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(tempRoot);
+            var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+
+            var sw = Stopwatch.StartNew();
+            await SeedSupplierPerfProductsAsync(factory, parameters.Products).ConfigureAwait(false);
+            timings["seedDbMs"] = sw.ElapsedMilliseconds;
+
+            var workbookPath = Path.Combine(tempRoot, "supplier-perf.xlsx");
+            sw.Restart();
+            WriteSupplierPerfWorkbook(workbookPath, parameters.Rows, parameters.Products);
+            timings["writeWorkbookMs"] = sw.ElapsedMilliseconds;
+
+            sw.Restart();
+            var table = SupplierExcelImportReader.ReadFirstWorksheet(workbookPath);
+            timings["readWorkbookMs"] = sw.ElapsedMilliseconds;
+            Assert(table.Rows.Count == parameters.Rows, "Perf workbook row count mismatch.");
+
+            sw.Restart();
+            var preliminary = SupplierImportAnalyzer.Analyze(table, Array.Empty<ProductDetailsRow>());
+            timings["preliminaryAnalyzeMs"] = sw.ElapsedMilliseconds;
+            Assert(preliminary.Warnings.Any(w => w.Message.Contains("duplicato", StringComparison.OrdinalIgnoreCase)), "Perf fixture duplicate warning missing.");
+            Assert(preliminary.Warnings.Any(w => w.Message.Contains("Barcode", StringComparison.OrdinalIgnoreCase)), "Perf fixture missing-barcode warning missing.");
+
+            var productRepository = new ProductRepository(factory);
+            var analyzeBarcodes = preliminary.EditableRows.Select(row => row.Barcode).Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
+            sw.Restart();
+            var targetedAnalyzeProducts = await productRepository.ListDetailsByBarcodesAsync(analyzeBarcodes).ConfigureAwait(false);
+            timings["analyzeLookupMs"] = sw.ElapsedMilliseconds;
+            Assert(targetedAnalyzeProducts.Count <= parameters.Rows, "Targeted analyze lookup must stay bounded by source rows.");
+            Assert(targetedAnalyzeProducts.Count < parameters.Products, "Targeted analyze lookup must not load full catalog.");
+
+            sw.Restart();
+            var analysis = SupplierImportAnalyzer.Analyze(table, targetedAnalyzeProducts);
+            timings["analyzeMs"] = sw.ElapsedMilliseconds;
+            var missingBarcode = analysis.EditableRows.First(row => row.RowNumber == 4);
+            missingBarcode.IsSkipped = true;
+            var secondNameOnly = analysis.EditableRows.First(row => row.RowNumber == 5);
+            Assert(!string.IsNullOrWhiteSpace(secondNameOnly.SecondProductName), "Second-name-only row missing.");
+            Assert(string.Equals(secondNameOnly.ProductName, secondNameOnly.SecondProductName, StringComparison.Ordinal), "Second name must seed product name.");
+            var filledRetail = SupplierRetailPriceHelper.ApplyMarkupToRetailPriceRows(analysis.EditableRows, 30, 50, true);
+            Assert(filledRetail >= 1, "Perf fixture retail bulk fill did not update missing retail row.");
+
+            var previewBarcodes = analysis.EditableRows.Select(row => row.Barcode).Where(value => !string.IsNullOrWhiteSpace(value)).ToArray();
+            sw.Restart();
+            var targetedPreviewProducts = await productRepository.ListDetailsByBarcodesAsync(previewBarcodes).ConfigureAwait(false);
+            timings["previewLookupMs"] = sw.ElapsedMilliseconds;
+            Assert(targetedPreviewProducts.Count <= parameters.Rows, "Targeted preview lookup must stay bounded by source rows.");
+
+            sw.Restart();
+            var preview = SupplierImportAnalyzer.BuildSyncPreview(analysis.EditableRows, targetedPreviewProducts);
+            timings["previewMs"] = sw.ElapsedMilliseconds;
+            Assert(preview.CanApply, "Perf preview must be applyable after Step 3 fixes.");
+            Assert(preview.NewProducts.Count > 0, "Perf preview must include new products.");
+            Assert(preview.UpdatedProducts.Count > 0, "Perf preview must include updates.");
+            Assert(preview.SkippedRows.Count == 1, "Perf preview must include one skipped row.");
+
+            sw.Restart();
+            var dryRun = await new SupplierExcelImportApplier(factory).ApplyAsync(
+                preview,
+                new SupplierExcelImportApplyOptions { DryRun = true, InsertNew = true }).ConfigureAwait(false);
+            timings["dryRunApplyMs"] = sw.ElapsedMilliseconds;
+            Assert(dryRun.Errors == 0, "Perf dry-run apply must not error.");
+            Assert(dryRun.Inserted == preview.NewProducts.Count, "Dry-run insert count must match preview.");
+            Assert(dryRun.Updated == preview.UpdatedProducts.Count, "Dry-run update count must match preview.");
+
+            total.Stop();
+            timings["totalMs"] = total.ElapsedMilliseconds;
+            Assert(total.Elapsed < TimeSpan.FromSeconds(180), "Supplier perf selftest exceeded 180 seconds.");
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                ok = true,
+                parameters.Products,
+                parameters.Rows,
+                counts = new
+                {
+                    tableRows = table.Rows.Count,
+                    targetedAnalyzeProducts = targetedAnalyzeProducts.Count,
+                    targetedPreviewProducts = targetedPreviewProducts.Count,
+                    previewNew = preview.NewProducts.Count,
+                    previewUpdated = preview.UpdatedProducts.Count,
+                    previewNoChange = preview.NoChangeRows.Count,
+                    previewSkipped = preview.SkippedRows.Count
+                },
+                timings
+            }, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine("SUPPLIER EXCEL PERF SELFTEST PASS");
+            Console.WriteLine("TEST PASS");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            if (!parameters.KeepDb)
+            {
+                try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true); } catch { }
+            }
+            else
+            {
+                Console.WriteLine("Kept perf DB: " + tempRoot);
+            }
+        }
+    }
+
+    private static async Task RunSqliteIntegritySelfTestAsync()
+    {
+        Console.WriteLine("SQLite integrity selftest");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "win7pos-sqlite-integrity-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(tempRoot);
+            var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+            await new ProductRepository(factory).UpsertAsync(new Product { Barcode = "SQLITE-INTEGRITY", Name = "SQLite Integrity", UnitPrice = 100 }).ConfigureAwait(false);
+            await new CatalogImportOutboxRepository(factory)
+                .EnqueueAsync(BuildCatalogImportOutboxEntry("integrity", 1, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()))
+                .ConfigureAwait(false);
+            var maintenance = new DbMaintenanceRepository(factory);
+            var checkpoint = await maintenance.WalCheckpointAsync().ConfigureAwait(false);
+            Assert(checkpoint.Busy == 0, "WAL checkpoint must not be busy.");
+            var integrity = await maintenance.IntegrityCheckAsync().ConfigureAwait(false);
+            Assert(string.Equals(integrity, "ok", StringComparison.OrdinalIgnoreCase), "SQLite integrity_check must be ok.");
+            Console.WriteLine("SQLITE INTEGRITY SELFTEST PASS");
+            Console.WriteLine("TEST PASS");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true); } catch { }
+        }
+    }
+
+    private static async Task RunDbRestoreGuardSelfTestAsync()
+    {
+        Console.WriteLine("DB restore guard selftest");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "win7pos-restore-guard-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(tempRoot);
+            var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+            var repository = new CatalogImportOutboxRepository(factory);
+            await repository.EnqueueAsync(BuildCatalogImportOutboxEntry("restore_guard", 1, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())).ConfigureAwait(false);
+            Assert(await repository.HasUnresolvedAsync().ConfigureAwait(false), "Catalog import pending row must be unresolved for restore guard.");
+
+            var root = FindRepoRoot();
+            var workflow = ReadRepoFile(root, "src/Win7POS.Wpf/Pos/PosWorkflowService.cs");
+            var catalogRepository = ReadRepoFile(root, "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs");
+            var restoreCheck = workflow.IndexOf("_catalogImportOutbox.HasUnresolvedAsync", StringComparison.Ordinal);
+            var copyIndex = workflow.IndexOf("File.Copy(backupDbPath, _options.DbPath, true)", StringComparison.Ordinal);
+            var preBackupIndex = workflow.IndexOf("CreateDbBackupCopyNoLock(\"pos_pre_restore_\"", StringComparison.Ordinal);
+            Assert(restoreCheck >= 0, "Restore flow must check catalog import outbox.");
+            Assert(copyIndex > restoreCheck, "Restore must check catalog import outbox before live DB copy.");
+            Assert(preBackupIndex > restoreCheck, "Restore must check catalog import outbox before pre-restore backup/copy flow.");
+            Assert(workflow.Contains("dbMaintenance.restoreBlockedUnresolvedCatalogImports", StringComparison.Ordinal), "Restore flow must use catalog import blocked message.");
+            Assert(catalogRepository.Contains("'pending', 'retry', 'in_progress', 'failed_blocked'", StringComparison.Ordinal), "Catalog import unresolved guard must include pending/retry/in_progress/failed_blocked.");
+            Console.WriteLine("DB RESTORE GUARD SELFTEST PASS");
+            Console.WriteLine("TEST PASS");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true); } catch { }
+        }
+    }
+
+    private static CatalogImportOutboxEntry BuildCatalogImportOutboxEntry(string scenario, int rowNumber, long createdAtMs)
+    {
+        var safeScenario = NormalizeScenario(scenario);
+        var clientImportId = "catalog-import-harness-" + safeScenario + "-" + rowNumber.ToString(CultureInfo.InvariantCulture);
+        var request = new PosCatalogImportRequest
+        {
+            AppVersion = "cli-harness",
+            Batch = new PosCatalogImportBatchRequest
+            {
+                ClientImportId = clientImportId,
+                CreatedAt = DateTimeOffset.FromUnixTimeMilliseconds(createdAtMs <= 0 ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() : createdAtMs)
+                    .ToString("O", CultureInfo.InvariantCulture),
+                IdempotencyKey = clientImportId + ":pos-catalog-import-v1",
+                PreviewFingerprint = "preview-" + safeScenario,
+                SourceFileName = "supplier-" + safeScenario + ".xlsx"
+            },
+            Items = new[]
+            {
+                new PosCatalogImportItemRequest
+                {
+                    Barcode = CatalogImportHarnessBarcode(scenario, rowNumber),
+                    ChangeKind = "new",
+                    ClientItemId = clientImportId + "-item-1",
+                    ItemNumber = "ITEM-" + safeScenario,
+                    Operation = "upsert_product",
+                    ProductName = "Catalog Import " + safeScenario,
+                    PurchasePrice = "100",
+                    RetailPrice = "150",
+                    Quantity = "1",
+                    RowNumber = rowNumber,
+                }
+            },
+            SchemaVersion = PosOnlineContract.CatalogImportSchemaVersion,
+            Source = "supplier_excel",
+            Summary = new PosCatalogImportSummaryRequest
+            {
+                NewProducts = 1,
+                NoChangeRows = 0,
+                SkippedRows = 0,
+                UpdatedProducts = 0,
+                WarningCount = 0
+            }
+        };
+        var payloadJson = SerializeDataContract(request);
+        return new CatalogImportOutboxEntry
+        {
+            ClientImportId = request.Batch.ClientImportId,
+            CreatedAt = createdAtMs <= 0 ? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() : createdAtMs,
+            IdempotencyKey = request.Batch.IdempotencyKey,
+            PayloadHash = CatalogImportOutboxPayloadBuilder.Sha256Hex(payloadJson),
+            PayloadJson = payloadJson,
+            SchemaVersion = PosOnlineContract.CatalogImportSchemaVersion,
+            Source = "supplier_excel"
+        };
+    }
+
+    private static async Task SeedCatalogImportHarnessProductAsync(
+        SqliteConnectionFactory factory,
+        string scenario,
+        int rowNumber)
+    {
+        var barcode = CatalogImportHarnessBarcode(scenario, rowNumber);
+        using (var conn = factory.Open())
+        {
+            await ExecuteSqliteAsync(conn, null, @"
+INSERT OR IGNORE INTO products(barcode, name, unitPrice, is_active, remote_deleted_at)
+VALUES(@barcode, @name, 150, 1, NULL);
+
+INSERT OR REPLACE INTO product_meta(
+  barcode, article_code, name2, purchase_price, purchase_old, retail_old,
+  supplier_id, supplier_name, category_id, category_name, stock_qty)
+VALUES(
+  @barcode, @articleCode, '', 100, 0, 0,
+  NULL, '', NULL, '', 1);
+
+INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
+VALUES(@barcode, @timestamp, 'retail', NULL, 150, 'IMPORT');",
+                "@barcode", barcode,
+                "@name", "Catalog Import " + NormalizeScenario(scenario),
+                "@articleCode", "ITEM-" + NormalizeScenario(scenario),
+                "@timestamp", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")).ConfigureAwait(false);
+        }
+    }
+
+    private static string CatalogImportHarnessBarcode(string scenario, int rowNumber)
+    {
+        return "CAT-" + NormalizeScenario(scenario) + "-" + rowNumber.ToString("000000", CultureInfo.InvariantCulture);
+    }
+
+    private static string NormalizeScenario(string scenario)
+    {
+        var safe = new string((scenario ?? string.Empty)
+            .Trim()
+            .Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-')
+            .ToArray());
+        return safe.Length == 0 ? "accepted" : safe;
+    }
+
+    private static string SerializeDataContract<T>(T value)
+    {
+        var serializer = new DataContractJsonSerializer(typeof(T));
+        using (var stream = new MemoryStream())
+        {
+            serializer.WriteObject(stream, value);
+            return Encoding.UTF8.GetString(stream.ToArray());
+        }
+    }
+
+    private static async Task SeedSupplierPerfProductsAsync(SqliteConnectionFactory factory, int products)
+    {
+        using (var conn = factory.Open())
+        using (var tx = conn.BeginTransaction())
+        {
+            using (var product = conn.CreateCommand())
+            using (var meta = conn.CreateCommand())
+            {
+                product.Transaction = tx;
+                product.CommandText = @"
+INSERT INTO products(barcode, name, unitPrice, is_active, remote_deleted_at)
+VALUES(@barcode, @name, @unitPrice, 1, NULL);";
+                var pBarcode = product.Parameters.Add("@barcode", SqliteType.Text);
+                var pName = product.Parameters.Add("@name", SqliteType.Text);
+                var pUnitPrice = product.Parameters.Add("@unitPrice", SqliteType.Integer);
+
+                meta.Transaction = tx;
+                meta.CommandText = @"
+INSERT OR REPLACE INTO product_meta(
+  barcode, article_code, name2, purchase_price, purchase_old, retail_old,
+  supplier_id, supplier_name, category_id, category_name, stock_qty)
+VALUES(
+  @barcode, @articleCode, @name2, @purchasePrice, 0, 0,
+  NULL, @supplierName, NULL, @categoryName, @stockQty);";
+                var mBarcode = meta.Parameters.Add("@barcode", SqliteType.Text);
+                var mArticleCode = meta.Parameters.Add("@articleCode", SqliteType.Text);
+                var mName2 = meta.Parameters.Add("@name2", SqliteType.Text);
+                var mPurchasePrice = meta.Parameters.Add("@purchasePrice", SqliteType.Integer);
+                var mSupplierName = meta.Parameters.Add("@supplierName", SqliteType.Text);
+                var mCategoryName = meta.Parameters.Add("@categoryName", SqliteType.Text);
+                var mStockQty = meta.Parameters.Add("@stockQty", SqliteType.Integer);
+
+                for (var i = 1; i <= products; i++)
+                {
+                    var barcode = SupplierPerfExistingBarcode(i);
+                    pBarcode.Value = barcode;
+                    pName.Value = "Existing Product " + i.ToString(CultureInfo.InvariantCulture);
+                    pUnitPrice.Value = 1000 + (i % 200);
+                    await product.ExecuteNonQueryAsync().ConfigureAwait(false);
+
+                    mBarcode.Value = barcode;
+                    mArticleCode.Value = "EX-" + i.ToString("000000", CultureInfo.InvariantCulture);
+                    mName2.Value = "Existing Second " + i.ToString(CultureInfo.InvariantCulture);
+                    mPurchasePrice.Value = 500 + (i % 100);
+                    mSupplierName.Value = "Existing Supplier";
+                    mCategoryName.Value = "Existing Category";
+                    mStockQty.Value = i % 50;
+                    await meta.ExecuteNonQueryAsync().ConfigureAwait(false);
+                }
+            }
+
+            tx.Commit();
+        }
+    }
+
+    private static void WriteSupplierPerfWorkbook(string path, int rows, int products)
+    {
+        using (var workbook = new XLWorkbook())
+        {
+            var ws = workbook.Worksheets.Add("supplier-perf");
+            var headers = new[] { "barcode", "itemNumber", "productName", "secondProductName", "purchasePrice", "retailPrice", "quantity", "supplier", "category" };
+            for (var c = 0; c < headers.Length; c++)
+            {
+                ws.Cell(1, c + 1).Value = headers[c];
+            }
+
+            for (var i = 1; i <= rows; i++)
+            {
+                var excelRow = i + 1;
+                var barcode = SupplierPerfBarcodeForRow(i, products);
+                var item = "PERF-" + i.ToString("000000", CultureInfo.InvariantCulture);
+                var productName = "Perf Product " + i.ToString(CultureInfo.InvariantCulture);
+                var secondName = "Perf Second " + i.ToString(CultureInfo.InvariantCulture);
+                var retailPrice = SupplierPerfPrice(i + 100);
+
+                if (i == 1 || i == 2)
+                {
+                    barcode = SupplierPerfExistingBarcode(1);
+                    item = i == 1 ? "DUP-FIRST" : "DUP-LAST";
+                    productName = i == 1 ? "Duplicate First" : "Duplicate Last";
+                }
+                else if (i == 3)
+                {
+                    barcode = string.Empty;
+                    item = "MISSING-BARCODE";
+                }
+                else if (i == 4)
+                {
+                    barcode = SupplierPerfNewBarcode(i);
+                    productName = string.Empty;
+                    secondName = "Second Name Only";
+                }
+                else if (i == 5)
+                {
+                    barcode = SupplierPerfNewBarcode(i);
+                    retailPrice = string.Empty;
+                }
+
+                ws.Cell(excelRow, 1).Value = barcode;
+                ws.Cell(excelRow, 2).Value = item;
+                ws.Cell(excelRow, 3).Value = productName;
+                ws.Cell(excelRow, 4).Value = secondName;
+                ws.Cell(excelRow, 5).Value = SupplierPerfPrice(i);
+                ws.Cell(excelRow, 6).Value = retailPrice;
+                ws.Cell(excelRow, 7).Value = (i % 40 + 1).ToString(CultureInfo.InvariantCulture);
+                ws.Cell(excelRow, 8).Value = "Perf Supplier";
+                ws.Cell(excelRow, 9).Value = "Perf Category";
+            }
+
+            workbook.SaveAs(path);
+        }
+    }
+
+    private static string SupplierPerfBarcodeForRow(int row, int products)
+    {
+        if (row % 5 == 0)
+        {
+            return SupplierPerfNewBarcode(row);
+        }
+
+        var existingIndex = (row % Math.Max(1, products)) + 1;
+        return SupplierPerfExistingBarcode(existingIndex);
+    }
+
+    private static string SupplierPerfExistingBarcode(int index)
+    {
+        return "PERF" + index.ToString("000000000", CultureInfo.InvariantCulture);
+    }
+
+    private static string SupplierPerfNewBarcode(int index)
+    {
+        return "NEWP" + index.ToString("000000000", CultureInfo.InvariantCulture);
+    }
+
+    private static string SupplierPerfPrice(int value)
+    {
+        switch (Math.Abs(value) % 4)
+        {
+            case 0: return "1.234,56";
+            case 1: return "1,234.56";
+            case 2: return "1234,56";
+            default: return value.ToString(CultureInfo.InvariantCulture);
         }
     }
 
@@ -2652,6 +3547,7 @@ CREATE TABLE users (
                     row != null &&
                     !row.Exists &&
                     string.IsNullOrWhiteSpace(row.ProductName) &&
+                    string.IsNullOrWhiteSpace(row.SecondProductName) &&
                     string.IsNullOrWhiteSpace(row.ItemNumber));
             var blockedRows = missingRetailRows + missingBarcodeRows + missingIdentityRows;
             summary.SheetsDetected = SupplierExcelImportReader.CountWorksheets(file);
@@ -2982,6 +3878,60 @@ CREATE TABLE users (
                 null,
                 "SELECT COUNT(1) FROM products WHERE barcode = @barcode",
                 "@barcode", barcode).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<string> ReadCatalogImportOutboxStatusAsync(SqliteConnectionFactory factory, long outboxId)
+    {
+        using (var conn = factory.Open())
+        {
+            return await ScalarStringAsync(
+                conn,
+                null,
+                "SELECT status FROM catalog_import_outbox WHERE id = @outboxId",
+                "@outboxId", outboxId).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<string> ReadCatalogImportOutboxPayloadAsync(SqliteConnectionFactory factory, long outboxId)
+    {
+        using (var conn = factory.Open())
+        {
+            return await ScalarStringAsync(
+                conn,
+                null,
+                "SELECT payload_json FROM catalog_import_outbox WHERE id = @outboxId",
+                "@outboxId", outboxId).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<string> ReadProductRemoteProductIdAsync(SqliteConnectionFactory factory, string barcode)
+    {
+        using (var conn = factory.Open())
+        {
+            return await ScalarStringAsync(
+                conn,
+                null,
+                "SELECT COALESCE(remote_product_id, '') FROM products WHERE barcode = @barcode",
+                "@barcode", barcode).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<string> ReadLatestRemotePriceIdAsync(SqliteConnectionFactory factory, string barcode, string priceType)
+    {
+        using (var conn = factory.Open())
+        {
+            return await ScalarStringAsync(
+                conn,
+                null,
+                @"SELECT COALESCE(remote_price_id, '')
+FROM product_price_history
+WHERE barcode = @barcode
+  AND type = @priceType
+ORDER BY id DESC
+LIMIT 1",
+                "@barcode", barcode,
+                "@priceType", priceType).ConfigureAwait(false);
         }
     }
 
@@ -3641,16 +4591,19 @@ END;").ConfigureAwait(false);
         Console.WriteLine($"Exported products: {products.Count}");
     }
 
-    private static Task RunBackupDbAsync(string outputPath, string dbPath)
+    private static async Task RunBackupDbAsync(string outputPath, string dbPath)
     {
         var opt = ResolveDbOptions(dbPath);
         Console.WriteLine($"DB path: {opt.DbPath}");
         DbInitializer.EnsureCreated(opt);
+        var checkpoint = await new DbMaintenanceRepository(new SqliteConnectionFactory(opt))
+            .WalCheckpointAsync()
+            .ConfigureAwait(false);
+        Console.WriteLine($"WAL checkpoint: busy={checkpoint.Busy}, log={checkpoint.Log}, checkpointed={checkpoint.Checkpointed}");
         var dir = Path.GetDirectoryName(Path.GetFullPath(outputPath));
         if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
         File.Copy(opt.DbPath, outputPath, true);
         Console.WriteLine($"Backup created: {outputPath}");
-        return Task.CompletedTask;
     }
 
     private static async Task<ImportApplyResult> ApplyWithTransactionAsync(SqliteConnectionFactory factory, IReadOnlyList<ImportRow> rows, ImportApplyOptions options, int failAfter = 0)
@@ -4295,6 +5248,34 @@ SELECT last_insert_rowid();";
         return session;
     }
 
+    private static Task081HttpHarnessSession ReadCatalogImportHarnessSession(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new InvalidOperationException("--session-json is required for real catalog import sync.");
+        }
+
+        if (!File.Exists(path))
+        {
+            throw new InvalidOperationException("Session JSON file was not found.");
+        }
+
+        var session = JsonSerializer.Deserialize<Task081HttpHarnessSession>(
+            File.ReadAllText(path),
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (session == null ||
+            string.IsNullOrWhiteSpace(session.DeviceToken) ||
+            string.IsNullOrWhiteSpace(session.PosSessionId) ||
+            string.IsNullOrWhiteSpace(session.SessionToken) ||
+            string.IsNullOrWhiteSpace(session.ShopCode) ||
+            string.IsNullOrWhiteSpace(session.ShopDeviceId))
+        {
+            throw new InvalidOperationException("Session JSON is missing required POS catalog import harness fields.");
+        }
+
+        return session;
+    }
+
     private static string NormalizeTask081RunId(string value)
     {
         var safe = new string((value ?? string.Empty)
@@ -4444,8 +5425,9 @@ SELECT last_insert_rowid();";
 
         foreach (var price in catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>())
         {
-            await products.UpsertRemotePriceHistoryAsync(
+            await products.UpsertOrQueueRemotePriceHistoryAsync(
                 Normalize(price.ProductId),
+                Normalize(price.PriceId),
                 Normalize(price.Type),
                 ToInt(price.Price),
                 Normalize(price.EffectiveAt),
@@ -4817,6 +5799,436 @@ SELECT last_insert_rowid();";
         var totalLines = await ScalarLongAsync(conn, null, "SELECT COUNT(*) FROM sale_lines").ConfigureAwait(false);
         var linesForSale = await ScalarLongAsync(conn, null, "SELECT COUNT(*) FROM sale_lines WHERE saleId = @saleId", "@saleId", saleId).ConfigureAwait(false);
         Console.WriteLine($"DB CHECK: sales={totalSales}, sale_lines={totalLines}, linesForSale={linesForSale}");
+    }
+
+    private sealed class CatalogImportFakeServer : IDisposable
+    {
+        private readonly CancellationTokenSource _cts = new CancellationTokenSource();
+        private readonly TcpListener _listener;
+        private readonly Task _serverTask;
+
+        public CatalogImportFakeServer()
+        {
+            _listener = new TcpListener(IPAddress.Loopback, 0);
+            _listener.Start();
+            var port = ((IPEndPoint)_listener.LocalEndpoint).Port;
+            BaseUrl = "http://127.0.0.1:" + port.ToString(CultureInfo.InvariantCulture) + "/";
+            _serverTask = Task.Run(() => RunAsync(_cts.Token));
+        }
+
+        public string BaseUrl { get; }
+
+        public void Dispose()
+        {
+            _cts.Cancel();
+            try { _listener.Stop(); } catch { }
+            try { _serverTask.Wait(TimeSpan.FromSeconds(1)); } catch { }
+            _cts.Dispose();
+        }
+
+        private async Task RunAsync(CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                TcpClient? client = null;
+                try
+                {
+                    client = await _listener.AcceptTcpClientAsync().ConfigureAwait(false);
+                    _ = Task.Run(() => HandleClientAsync(client, cancellationToken), cancellationToken);
+                }
+                catch
+                {
+                    client?.Dispose();
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        await Task.Delay(25, cancellationToken).ConfigureAwait(false);
+                    }
+                }
+            }
+        }
+
+        private static async Task HandleClientAsync(TcpClient client, CancellationToken cancellationToken)
+        {
+            using (client)
+            using (var stream = client.GetStream())
+            {
+                var request = await ReadHttpRequestAsync(stream, cancellationToken).ConfigureAwait(false);
+                var body = request.Body;
+                if (!request.StartLine.StartsWith("POST /api/pos/catalog/import-sync ", StringComparison.OrdinalIgnoreCase))
+                {
+                    await WriteJsonAsync(stream, 404, "{\"ok\":false,\"code\":\"not_found\",\"message\":\"not found\"}", cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                var scenario = ScenarioFromBody(body);
+                if (scenario == "timeout")
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), CancellationToken.None).ConfigureAwait(false);
+                    return;
+                }
+
+                if (!body.Contains("\"deviceToken\"", StringComparison.Ordinal) ||
+                    !body.Contains("\"sessionToken\"", StringComparison.Ordinal) ||
+                    !body.Contains("\"posSessionId\"", StringComparison.Ordinal) ||
+                    !body.Contains("\"shopDeviceId\"", StringComparison.Ordinal))
+                {
+                    await WriteJsonAsync(stream, 401, "{\"ok\":false,\"code\":\"auth_denied\",\"message\":\"auth denied\"}", cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                if (scenario == "auth_denied")
+                {
+                    await WriteJsonAsync(stream, 403, "{\"ok\":false,\"code\":\"auth_denied\",\"message\":\"auth denied\"}", cancellationToken).ConfigureAwait(false);
+                    return;
+                }
+
+                var status = scenario == "validation_failed" || scenario == "conflict" || scenario == "duplicate" || scenario == "idempotent"
+                    ? scenario
+                    : "accepted";
+                var clientImportId = ClientImportIdFromBody(body);
+                var idempotencyKey = IdempotencyKeyFromBody(body);
+                var payloadHash = PayloadHashFromBody(body);
+                var attemptCount = AttemptCountFromBody(body);
+                var clientItemId = ClientItemIdFromBody(body);
+                var barcode = BarcodeFromBody(body);
+                var response = new PosCatalogImportResponse
+                {
+                    Batch = new PosCatalogImportBatchResponse
+                    {
+                        AttemptCount = attemptCount,
+                        ClientImportId = scenario == "mismatch" ? "fake-mismatch" : clientImportId,
+                        IdempotencyKey = scenario == "idempotency_mismatch" ? "fake-idempotency-mismatch" : idempotencyKey,
+                        PayloadHash = payloadHash,
+                        PosCatalogImportBatchId = "server-" + scenario,
+                        ServerImportId = "server-" + scenario,
+                        ServerRequestId = "server-request-" + scenario,
+                        Status = status
+                    },
+                    Code = status,
+                    Items = new[]
+                    {
+                        new PosCatalogImportItemAck
+                        {
+                            Barcode = barcode,
+                            ClientItemId = clientItemId,
+                            PriceType = "retail",
+                            RemotePriceId = "remote-price-" + scenario,
+                            RemoteProductId = "remote-product-" + scenario,
+                            Status = status
+                        }
+                    },
+                    Ok = true,
+                    RemotePriceIds = new[]
+                    {
+                        new PosCatalogImportRemotePriceIdAck
+                        {
+                            Barcode = barcode,
+                            ClientItemId = clientItemId,
+                            PriceType = "retail",
+                            RemotePriceId = "remote-price-map-" + scenario
+                        }
+                    },
+                    RemoteProductIds = new[]
+                    {
+                        new PosCatalogImportRemoteProductIdAck
+                        {
+                            Barcode = barcode,
+                            ClientItemId = clientItemId,
+                            RemoteProductId = "remote-product-map-" + scenario
+                        }
+                    },
+                    ServerImportId = "server-" + scenario,
+                    ServerRequestId = "server-request-" + scenario,
+                    ServerTime = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
+                };
+                await WriteJsonAsync(stream, 200, SerializeDataContract(response), cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private static string ScenarioFromBody(string body)
+        {
+            foreach (var scenario in new[] { "validation_failed", "auth_denied", "idempotent", "duplicate", "conflict", "idempotency_mismatch", "mismatch", "timeout", "accepted" })
+            {
+                if ((body ?? string.Empty).IndexOf(scenario, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return scenario;
+                }
+            }
+
+            return "accepted";
+        }
+
+        private static string ClientImportIdFromBody(string body)
+        {
+            try
+            {
+                using (var document = JsonDocument.Parse(body ?? "{}"))
+                {
+                    JsonElement batch;
+                    JsonElement clientImportId;
+                    if (document.RootElement.TryGetProperty("batch", out batch) &&
+                        batch.TryGetProperty("clientImportId", out clientImportId) &&
+                        clientImportId.ValueKind == JsonValueKind.String)
+                    {
+                        return clientImportId.GetString() ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+
+        private static string IdempotencyKeyFromBody(string body)
+        {
+            try
+            {
+                using (var document = JsonDocument.Parse(body ?? "{}"))
+                {
+                    JsonElement batch;
+                    JsonElement idempotencyKey;
+                    if (document.RootElement.TryGetProperty("batch", out batch) &&
+                        batch.TryGetProperty("idempotencyKey", out idempotencyKey) &&
+                        idempotencyKey.ValueKind == JsonValueKind.String)
+                    {
+                        return idempotencyKey.GetString() ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+
+        private static string PayloadHashFromBody(string body)
+        {
+            try
+            {
+                using (var document = JsonDocument.Parse(body ?? "{}"))
+                {
+                    JsonElement payloadHash;
+                    if (document.RootElement.TryGetProperty("payloadHash", out payloadHash) &&
+                        payloadHash.ValueKind == JsonValueKind.String)
+                    {
+                        return payloadHash.GetString() ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+
+        private static int AttemptCountFromBody(string body)
+        {
+            try
+            {
+                using (var document = JsonDocument.Parse(body ?? "{}"))
+                {
+                    JsonElement batch;
+                    JsonElement attemptCount;
+                    if (document.RootElement.TryGetProperty("batch", out batch) &&
+                        batch.TryGetProperty("attemptCount", out attemptCount) &&
+                        attemptCount.ValueKind == JsonValueKind.Number &&
+                        attemptCount.TryGetInt32(out var value))
+                    {
+                        return value;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return 0;
+        }
+
+        private static string ClientItemIdFromBody(string body)
+        {
+            return FirstCatalogItemStringFromBody(body, "clientItemId");
+        }
+
+        private static string BarcodeFromBody(string body)
+        {
+            return FirstCatalogItemStringFromBody(body, "barcode");
+        }
+
+        private static string FirstCatalogItemStringFromBody(string body, string propertyName)
+        {
+            try
+            {
+                using (var document = JsonDocument.Parse(body ?? "{}"))
+                {
+                    JsonElement items;
+                    if (!document.RootElement.TryGetProperty("items", out items) ||
+                        items.ValueKind != JsonValueKind.Array ||
+                        items.GetArrayLength() <= 0)
+                    {
+                        return string.Empty;
+                    }
+
+                    JsonElement value;
+                    if (items[0].TryGetProperty(propertyName, out value) &&
+                        value.ValueKind == JsonValueKind.String)
+                    {
+                        return value.GetString() ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+
+        private static async Task<HttpRequestSnapshot> ReadHttpRequestAsync(NetworkStream stream, CancellationToken cancellationToken)
+        {
+            var buffer = new byte[8192];
+            var bytes = new List<byte>();
+            var headerEnd = -1;
+            while (headerEnd < 0)
+            {
+                var read = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
+                if (read <= 0) break;
+                bytes.AddRange(buffer.Take(read));
+                headerEnd = IndexOfHeaderEnd(bytes);
+            }
+
+            if (headerEnd < 0)
+            {
+                return new HttpRequestSnapshot(string.Empty, string.Empty);
+            }
+
+            var headerText = Encoding.ASCII.GetString(bytes.Take(headerEnd).ToArray());
+            var startLine = headerText.Split(new[] { "\r\n" }, StringSplitOptions.None).FirstOrDefault() ?? string.Empty;
+            var contentLength = 0;
+            foreach (var line in headerText.Split(new[] { "\r\n" }, StringSplitOptions.None))
+            {
+                var separator = line.IndexOf(':');
+                if (separator <= 0) continue;
+                if (string.Equals(line.Substring(0, separator).Trim(), "Content-Length", StringComparison.OrdinalIgnoreCase))
+                {
+                    int.TryParse(line.Substring(separator + 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out contentLength);
+                }
+            }
+
+            var bodyStart = headerEnd + 4;
+            while (bytes.Count - bodyStart < contentLength)
+            {
+                var read = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
+                if (read <= 0) break;
+                bytes.AddRange(buffer.Take(read));
+            }
+
+            var bodyBytes = bytes.Skip(bodyStart).Take(Math.Max(0, Math.Min(contentLength, bytes.Count - bodyStart))).ToArray();
+            return new HttpRequestSnapshot(startLine, Encoding.UTF8.GetString(bodyBytes));
+        }
+
+        private static int IndexOfHeaderEnd(List<byte> bytes)
+        {
+            for (var i = 3; i < bytes.Count; i++)
+            {
+                if (bytes[i - 3] == 13 && bytes[i - 2] == 10 && bytes[i - 1] == 13 && bytes[i] == 10)
+                {
+                    return i - 3;
+                }
+            }
+
+            return -1;
+        }
+
+        private static async Task WriteJsonAsync(NetworkStream stream, int statusCode, string json, CancellationToken cancellationToken)
+        {
+            var reason = statusCode == 200 ? "OK" : statusCode == 401 ? "Unauthorized" : statusCode == 403 ? "Forbidden" : "Error";
+            var body = Encoding.UTF8.GetBytes(json ?? "{}");
+            var header = Encoding.ASCII.GetBytes(
+                "HTTP/1.1 " + statusCode.ToString(CultureInfo.InvariantCulture) + " " + reason + "\r\n" +
+                "Content-Type: application/json; charset=utf-8\r\n" +
+                "Content-Length: " + body.Length.ToString(CultureInfo.InvariantCulture) + "\r\n" +
+                "Connection: close\r\n\r\n");
+            await stream.WriteAsync(header, 0, header.Length, cancellationToken).ConfigureAwait(false);
+            await stream.WriteAsync(body, 0, body.Length, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task AssertSupplierSoftDeletedReactivationAsync(SqliteConnectionFactory factory)
+    {
+        const string barcode = "8888888800008";
+        var products = new ProductRepository(factory);
+        await products.UpsertProductAndMetaInTransactionAsync(
+            new Product { Barcode = barcode, Name = "Soft Deleted Old", UnitPrice = 100 },
+            "SOFT-OLD",
+            "Soft Old Second",
+            50,
+            null,
+            "Soft Supplier Old",
+            null,
+            "Soft Category Old",
+            1).ConfigureAwait(false);
+
+        Assert(await products.DeleteByBarcodeAsync(barcode).ConfigureAwait(false), "Soft-delete setup must deactivate product.");
+        Assert(await ReadProductIsActiveAsync(factory, barcode).ConfigureAwait(false) == 0, "Soft-delete setup must set is_active=0.");
+        Assert(!string.IsNullOrWhiteSpace(await ReadRemoteDeletedAtAsync(factory, barcode).ConfigureAwait(false)), "Soft-delete setup must set remote_deleted_at.");
+
+        var row = new SupplierImportEditableRow
+        {
+            RowNumber = 808,
+            Barcode = barcode,
+            ItemNumber = "SOFT-NEW",
+            ProductName = "Soft Deleted Reactivated",
+            SecondProductName = "Soft Reactivated Second",
+            PurchasePrice = "80",
+            RetailPrice = "180",
+            Quantity = "6",
+            Supplier = "Soft Supplier New",
+            Category = "Soft Category New"
+        };
+        var existing = await products.ListDetailsByBarcodesAsync(new[] { barcode }).ConfigureAwait(false);
+        Assert(existing.Count == 1 && !existing[0].IsActive, "Targeted lookup must include inactive same-barcode product for reactivation.");
+        var preview = SupplierImportAnalyzer.BuildSyncPreview(new[] { row }, existing);
+        Assert(preview.CanApply, "Soft-deleted reactivation preview must be applyable.");
+        Assert(preview.UpdatedProducts.Count == 1, "Soft-deleted reactivation must be classified as update/reactivation.");
+        Assert(preview.NewProducts.Count == 0, "Soft-deleted reactivation must not be classified as a new insert.");
+
+        var apply = await new SupplierExcelImportApplier(factory).ApplyAsync(
+            preview,
+            new SupplierExcelImportApplyOptions { InsertNew = true }).ConfigureAwait(false);
+        Assert(apply.Errors == 0, "Soft-deleted reactivation apply must not error.");
+        Assert(apply.Updated == 1 && apply.Inserted == 0, "Soft-deleted reactivation must update, not insert.");
+        Assert(await SupplierProductCountAsync(factory, barcode).ConfigureAwait(false) == 1, "Soft-deleted reactivation must keep a single product row.");
+        Assert(await ReadProductIsActiveAsync(factory, barcode).ConfigureAwait(false) == 1, "Soft-deleted reactivation must set is_active=1.");
+        Assert(string.IsNullOrWhiteSpace(await ReadRemoteDeletedAtAsync(factory, barcode).ConfigureAwait(false)), "Soft-deleted reactivation must clear remote_deleted_at.");
+        await AssertSupplierProductStateAsync(
+            factory,
+            barcode,
+            expectedProductName: "Soft Deleted Reactivated",
+            expectedItemNumber: "SOFT-NEW",
+            expectedSecondName: "Soft Reactivated Second",
+            expectedPurchasePrice: 80,
+            expectedRetailPrice: 180,
+            expectedStock: 6,
+            expectedSupplier: "Soft Supplier New",
+            expectedCategory: "Soft Category New").ConfigureAwait(false);
+        await AssertSupplierPriceHistoryAsync(factory, barcode, minimumRows: 2).ConfigureAwait(false);
+    }
+
+    private sealed class HttpRequestSnapshot
+    {
+        public HttpRequestSnapshot(string startLine, string body)
+        {
+            Body = body ?? string.Empty;
+            StartLine = startLine ?? string.Empty;
+        }
+
+        public string Body { get; }
+        public string StartLine { get; }
     }
 
     private sealed class SupplierExcelDriveSmokeFileSummary

@@ -4,7 +4,7 @@ using System.IO;
 using System.Reflection;
 using Win7POS.Core;
 
-namespace Win7POS.Wpf.Pos.Online
+namespace Win7POS.Core.Online
 {
     public enum PosAdminWebBaseUrlSource
     {

@@ -21,24 +21,25 @@ jobs:
       - name: Print .NET info
         run: dotnet --info
 
-      - name: Restore CLI
-        run: dotnet restore src/Win7POS.Cli/Win7POS.Cli.csproj
-
-      - name: Restore WPF
-        run: dotnet restore src/Win7POS.Wpf/Win7POS.Wpf.csproj
+      - name: Restore solution
+        run: dotnet restore Win7POS.slnx
 
       - name: Dialog standards check
         shell: pwsh
         run: pwsh -File scripts/check-dialog-standards.ps1
 
-      - name: Build Core (Release)
-        run: dotnet build src/Win7POS.Core/Win7POS.Core.csproj -c Release --no-restore
+      - name: Architecture boundary check
+        shell: pwsh
+        run: pwsh -File scripts/check-architecture-boundaries.ps1
 
-      - name: Build CLI (Release)
-        run: dotnet build src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-restore
+      - name: Build solution (Release)
+        run: dotnet build Win7POS.slnx -c Release --no-restore
+
+      - name: Test Core/Data
+        run: dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj -c Release --no-build --no-restore --logger "trx;LogFileName=Win7POS.Core.Tests.trx"
 
       - name: Selftest (fast)
         run: dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build -- --selftest --keepdb
 
       - name: Build WPF (Release x86)
-        run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+        run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86

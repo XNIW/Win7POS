@@ -10,11 +10,13 @@ using Microsoft.Data.Sqlite;
 using Win7POS.Core;
 using Win7POS.Core.Audit;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Receipt;
 using Win7POS.Core.Util;
 using Win7POS.Data;
 using Win7POS.Data.Adapters;
+using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
@@ -76,6 +78,7 @@ namespace Win7POS.Wpf.Pos
         private readonly SaleRepository _sales;
         private readonly SettingsRepository _settings;
         private readonly DbMaintenanceRepository _dbMaintenance;
+        private readonly CatalogImportOutboxRepository _catalogImportOutbox;
         private readonly SupplierRepository _suppliers;
         private readonly CategoryRepository _categories;
         private readonly HeldCartRepository _heldCarts;
@@ -99,6 +102,7 @@ namespace Win7POS.Wpf.Pos
             _sales = new SaleRepository(_factory);
             _settings = new SettingsRepository(_factory);
             _dbMaintenance = new DbMaintenanceRepository(_factory);
+            _catalogImportOutbox = new CatalogImportOutboxRepository(_factory);
             _suppliers = new SupplierRepository(_factory);
             _categories = new CategoryRepository(_factory);
             _heldCarts = new HeldCartRepository(_factory);
@@ -237,14 +241,50 @@ namespace Win7POS.Wpf.Pos
                     throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedSales"));
                 }
 
+                if (await _catalogImportOutbox.HasUnresolvedAsync().ConfigureAwait(false))
+                {
+                    _logger.LogWarning("POS DB restore blocked: unresolved catalog import outbox exists.");
+                    throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedCatalogImports"));
+                }
+
                 await _dbMaintenance.WalCheckpointAsync().ConfigureAwait(false);
                 var preBackupPath = CreateDbBackupCopyNoLock("pos_pre_restore_");
                 var restoredAt = DateTimeOffset.UtcNow;
+
+                var tempRestorePath = Path.Combine(
+                    AppPaths.BackupsDirectory,
+                    "pos_restore_validate_" + Guid.NewGuid().ToString("N") + ".db");
+                File.Copy(backupDbPath, tempRestorePath, true);
+                try
+                {
+                    var validateOptions = new PosDbOptions(tempRestorePath);
+                    DbInitializer.EnsureCreated(validateOptions);
+                    var validationIntegrity = await new DbMaintenanceRepository(new SqliteConnectionFactory(validateOptions))
+                        .IntegrityCheckAsync()
+                        .ConfigureAwait(false);
+                    if (!IsIntegrityOk(validationIntegrity))
+                    {
+                        throw new InvalidOperationException(PosLocalization.F("dbMaintenance.integrityCheckFailed", validationIntegrity));
+                    }
+                }
+                finally
+                {
+                    try { File.Delete(tempRestorePath); } catch { }
+                }
+
                 SqliteConnection.ClearAllPools();
                 File.Copy(backupDbPath, _options.DbPath, true);
                 DbInitializer.EnsureCreated(_options);
                 var integrity = await _dbMaintenance.IntegrityCheckAsync().ConfigureAwait(false);
                 var integrityOk = IsIntegrityOk(integrity);
+                if (!integrityOk)
+                {
+                    SqliteConnection.ClearAllPools();
+                    File.Copy(preBackupPath, _options.DbPath, true);
+                    SqliteConnection.ClearAllPools();
+                    throw new InvalidOperationException(PosLocalization.F("dbMaintenance.integrityCheckFailed", integrity));
+                }
+
                 await _settings.SetBoolAsync(KeyRestoreNeedsSyncReview, true).ConfigureAwait(false);
                 await _settings.SetStringAsync(KeyRestoreLastCompletedAt, restoredAt.ToString("O", CultureInfo.InvariantCulture)).ConfigureAwait(false);
                 await _settings.SetStringAsync(KeyRestoreLastPreBackupPath, preBackupPath).ConfigureAwait(false);

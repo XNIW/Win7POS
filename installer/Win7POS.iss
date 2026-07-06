@@ -23,7 +23,8 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=admin
-ArchitecturesAllowed=x86 x64
+ArchitecturesAllowed=x86 x64compatible
+MinVersion=6.1sp1
 UninstallDisplayIcon={app}\{#MyAppExeName}
 
 [Languages]
@@ -93,11 +94,13 @@ begin
   if not IsVcRuntimeX86Installed() then
   begin
     MsgBox(
-      'Avviso: Microsoft Visual C++ Runtime x86 non rilevato.' + #13#10 +
-      'Alcune dipendenze native (es. SQLite) potrebbero richiederlo.' + #13#10#13#10 +
-      'Il setup continua comunque.',
-      mbInformation,
+      'Microsoft Visual C++ Runtime x86 non rilevato.' + #13#10#13#10 +
+      'Installa Microsoft Visual C++ Redistributable 2015-2022 x86 e riesegui il setup.' + #13#10 +
+      'Win7POS lo richiede per le dipendenze native usate dal runtime dati.',
+      mbCriticalError,
       MB_OK);
+    Result := False;
+    Exit;
   end;
 
   Result := True;

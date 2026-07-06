@@ -226,6 +226,7 @@ namespace Win7POS.Core.Import
         public string Barcode { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
         public string ItemNumber { get; set; } = string.Empty;
+        public string SecondProductName { get; set; } = string.Empty;
     }
 
     public sealed class SupplierImportSyncUpdateDiff

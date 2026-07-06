@@ -38,17 +38,41 @@ $requiredFiles = @(
     "Win7POS.Wpf.exe.config",
     "Win7POS.Core.dll",
     "Win7POS.Data.dll",
+    "ClosedXML.dll",
+    "DocumentFormat.OpenXml.dll",
+    "ExcelDataReader.dll",
+    "ExcelDataReader.DataSet.dll",
+    "PdfSharp-gdi.dll",
+    "Microsoft.Data.Sqlite.dll",
+    "System.Drawing.Common.dll",
+    "System.IO.Packaging.dll",
+    "System.Text.Encoding.CodePages.dll",
     "e_sqlite3.dll",
+    "SQLitePCLRaw.batteries_v2.dll",
+    "SQLitePCLRaw.core.dll",
     "SQLitePCLRaw.provider.e_sqlite3.dll",
+    "zxing.dll",
+    "zxing.presentation.dll",
+    "ZXing.Windows.Compatibility.dll",
     "VERSION.txt",
     "README_RUN.txt",
     "RELEASE_CHECKLIST.txt",
+    "check-win7-prereqs.ps1",
     "set-admin-web-staging-url.bat"
+)
+
+$forbiddenFiles = @(
+    "Win7POS.Cli.exe",
+    "Win7POS.Cli.dll",
+    "Win7POS.Cli.deps.json",
+    "Win7POS.Cli.runtimeconfig.json",
+    "Win7POS.Cli.pdb"
 )
 
 if ([string]::IsNullOrWhiteSpace($ReleasePackSource)) {
     Pass "ReleasePack completeness checker loaded"
     Pass "Required files: $($requiredFiles -join ', ')"
+    Pass "Forbidden runtime files: $($forbiddenFiles -join ', ')"
     Write-Host "`n=== RESULT: ALL PASS ===" -ForegroundColor Green
     exit 0
 }
@@ -81,6 +105,25 @@ if (-not $fail) {
         }
         else {
             Pass "ReleasePack contains $name"
+        }
+    }
+
+    $cliFolder = Join-Path $root "cli"
+    if (Test-Path $cliFolder) {
+        Fail "ReleasePack must not bundle CLI diagnostics under runtime folder: cli"
+    }
+    else {
+        Pass "ReleasePack does not bundle CLI diagnostics folder"
+    }
+
+    foreach ($name in $forbiddenFiles) {
+        $found = Get-ChildItem -Path $root -Recurse -File -Filter $name -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($null -ne $found) {
+            Fail "ReleasePack contains forbidden CLI runtime file: $name"
+        }
+        else {
+            Pass "ReleasePack does not contain $name"
         }
     }
 

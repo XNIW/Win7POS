@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using Win7POS.Wpf.Chrome;
+using Win7POS.Core.Online;
 using Win7POS.Data;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Online;

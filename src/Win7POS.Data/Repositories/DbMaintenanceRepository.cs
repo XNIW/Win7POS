@@ -29,10 +29,23 @@ namespace Win7POS.Data.Repositories
             await conn.ExecuteAsync("VACUUM;").ConfigureAwait(false);
         }
 
-        public async Task WalCheckpointAsync()
+        public async Task<WalCheckpointResult> WalCheckpointAsync()
         {
             using var conn = _factory.Open();
-            await conn.ExecuteAsync("PRAGMA wal_checkpoint(FULL);").ConfigureAwait(false);
+            var result = await conn.QuerySingleAsync<WalCheckpointResult>("PRAGMA wal_checkpoint(FULL);").ConfigureAwait(false);
+            if (result.Busy != 0)
+            {
+                throw new InvalidOperationException("SQLite WAL checkpoint incomplete: busy=" + result.Busy);
+            }
+
+            return result;
         }
+    }
+
+    public sealed class WalCheckpointResult
+    {
+        public int Busy { get; set; }
+        public int Checkpointed { get; set; }
+        public int Log { get; set; }
     }
 }

@@ -138,6 +138,9 @@ function Find-ISCC {
     if ($env:ProgramFiles) {
         $candidates += (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe")
     }
+    if ($env:LOCALAPPDATA) {
+        $candidates += (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe")
+    }
 
     foreach ($candidate in $candidates) {
         if (Test-Path $candidate) { return $candidate }
@@ -334,8 +337,14 @@ function Write-ReleaseSupportFiles {
         "2. Start Win7POS.Wpf.exe.",
         "3. Use a test data directory for QA; do not copy production databases into this pack.",
         "",
+        "Windows 7 prerequisites:",
+        "- Windows 7 SP1 or later.",
+        "- .NET Framework 4.8 installed.",
+        "- Microsoft Visual C++ Runtime x86 installed. The installer and Win7 preflight fail if this runtime is missing.",
+        "- Run check-win7-prereqs.ps1 on the target machine before smoke testing.",
+        "",
         "Admin Web staging helper:",
-        "- Run set-admin-web-staging-url.bat from this folder to write a staging pos-admin-web.config next to the app.",
+        "- Run set-admin-web-staging-url.bat from this folder to write %ProgramData%\Win7POS\pos-admin-web.config for staging.",
         "- Do not store real tokens, PINs, passwords, or production config in this folder.",
         "",
         "Expected smoke checks:",
@@ -372,6 +381,14 @@ function Write-ReleaseSupportFiles {
     }
     else {
         Add-WarningMessage "Admin Web staging helper not found: $helperSource"
+    }
+
+    $win7PrereqSource = Join-Path $RepoRoot "scripts\win7-smoke\check-win7-prereqs.ps1"
+    if (Test-Path $win7PrereqSource) {
+        Copy-Item -Path $win7PrereqSource -Destination (Join-Path $DistDir "check-win7-prereqs.ps1") -Force
+    }
+    else {
+        Add-WarningMessage "Win7 prereq checker not found: $win7PrereqSource"
     }
 }
 

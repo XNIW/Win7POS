@@ -25,13 +25,20 @@ C:\Win7POSTest\run-pos-smoke.bat
 C:\Win7POSTest\run-pos-smoke.bat
 ```
 
-5. Salvare screenshot e log nella cartella condivisa.
+5. Prima o dopo l'avvio, eseguire il preflight non distruttivo:
+
+```cmd
+powershell -ExecutionPolicy Bypass -File C:\Win7POSTest\drop\Win7POS\scripts\win7-smoke\check-win7-prereqs.ps1 -AppDir C:\Win7POSTest\drop\Win7POS -DataDir C:\Win7POSTest\data
+```
+
+6. Salvare screenshot e log nella cartella condivisa.
 
 ## Evidence attesa
 
 - Screenshot della schermata iniziale o dell'errore.
 - `C:\Win7POSTest\data\logs\app.log`, se generato.
 - Note su runtime installati.
+- Output di `check-win7-prereqs.ps1`.
 - Note su hardware non testato.
 
 ## Limiti

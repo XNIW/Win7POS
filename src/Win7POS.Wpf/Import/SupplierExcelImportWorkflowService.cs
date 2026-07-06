@@ -5,8 +5,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using Win7POS.Core;
 using Win7POS.Core.Import;
+using Win7POS.Core.Models;
 using Win7POS.Data;
 using Win7POS.Data.Import;
+using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
 
@@ -33,7 +35,7 @@ namespace Win7POS.Wpf.Import
         {
             DbInitializer.EnsureCreated(_options);
             var table = await Task.Run(() => SupplierExcelImportReader.ReadFirstWorksheet(filePath)).ConfigureAwait(false);
-            var products = await _products.ListAllDetailsAsync().ConfigureAwait(false);
+            var products = await LoadExistingProductsForTableAsync(table, columnOverrides).ConfigureAwait(false);
             return SupplierImportAnalyzer.Analyze(table, products, columnOverrides);
         }
 
@@ -41,7 +43,7 @@ namespace Win7POS.Wpf.Import
             IReadOnlyList<SupplierImportEditableRow> rows)
         {
             DbInitializer.EnsureCreated(_options);
-            var products = await _products.ListAllDetailsAsync().ConfigureAwait(false);
+            var products = await LoadExistingProductsForRowsAsync(rows).ConfigureAwait(false);
             return SupplierImportAnalyzer.BuildSyncPreview(rows, products);
         }
 
@@ -88,7 +90,8 @@ namespace Win7POS.Wpf.Import
 
         public async Task<SupplierExcelApplyUiResult> ApplyAsync(
             SupplierImportSyncPreview preview,
-            bool dryRun)
+            bool dryRun,
+            string sourceFileName = null)
         {
             DbInitializer.EnsureCreated(_options);
             if (preview == null)
@@ -104,10 +107,21 @@ namespace Win7POS.Wpf.Import
             if (!dryRun)
                 backupPath = await CreateBackupBeforeApplyAsync(_options.DbPath).ConfigureAwait(false);
 
+            var outboxEntry = dryRun
+                ? null
+                : CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(
+                    rebuilt,
+                    sourceFileName,
+                    typeof(SupplierExcelImportWorkflowService).Assembly.GetName().Version?.ToString());
             var applier = new SupplierExcelImportApplier(new SqliteConnectionFactory(_options));
             var result = await applier.ApplyAsync(
                 rebuilt,
-                new SupplierExcelImportApplyOptions { DryRun = dryRun, InsertNew = true }).ConfigureAwait(false);
+                new SupplierExcelImportApplyOptions
+                {
+                    CatalogImportOutboxEntry = outboxEntry,
+                    DryRun = dryRun,
+                    InsertNew = true
+                }).ConfigureAwait(false);
 
             var summary = BuildApplySummary(result, backupPath, dryRun, rebuilt.Summary.WarningCount, rebuilt.Summary.SkippedRows);
             if (result.Errors > 0)
@@ -122,9 +136,33 @@ namespace Win7POS.Wpf.Import
                 Skipped = rebuilt.Summary.SkippedRows,
                 WarningCount = rebuilt.Summary.WarningCount,
                 ErrorCount = result.Errors,
+                CatalogImportOutboxId = result.CatalogImportOutboxId,
+                CatalogImportOutboxStatus = result.CatalogImportOutboxStatus,
                 Summary = summary,
                 Success = true
             };
+        }
+
+        private async Task<IReadOnlyList<ProductDetailsRow>> LoadExistingProductsForTableAsync(
+            SupplierExcelRawTable table,
+            IDictionary<int, string> columnOverrides)
+        {
+            var preliminary = SupplierImportAnalyzer.Analyze(
+                table,
+                Array.Empty<ProductDetailsRow>(),
+                columnOverrides);
+            return await LoadExistingProductsForRowsAsync(preliminary.EditableRows).ConfigureAwait(false);
+        }
+
+        private async Task<IReadOnlyList<ProductDetailsRow>> LoadExistingProductsForRowsAsync(
+            IEnumerable<SupplierImportEditableRow> rows)
+        {
+            var barcodes = (rows ?? Array.Empty<SupplierImportEditableRow>())
+                .Where(row => row != null && !string.IsNullOrWhiteSpace(row.Barcode))
+                .Select(row => row.Barcode.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            return await _products.ListDetailsByBarcodesAsync(barcodes).ConfigureAwait(false);
         }
 
         private async Task<string> CreateBackupBeforeApplyAsync(string sourceDbPath)
@@ -162,7 +200,11 @@ namespace Win7POS.Wpf.Import
                     result.Inserted + "/" + result.Updated + "/" + result.NoChange + "/" + result.Errors,
                 "Suppliers/Categories created: " + result.SuppliersCreated + "/" + result.CategoriesCreated,
                 "Price history inserted: " + result.PriceHistoryInserted,
-                "Changed barcodes: " + result.ChangedBarcodes.Count
+                "Changed barcodes: " + result.ChangedBarcodes.Count,
+                "Catalog import outbox: " + (
+                    result.CatalogImportOutboxId > 0
+                        ? "pending #" + result.CatalogImportOutboxId
+                        : "not queued")
             };
             if (!string.IsNullOrWhiteSpace(backupPath))
                 lines.Insert(1, "Backup path: " + backupPath);
@@ -202,6 +244,8 @@ namespace Win7POS.Wpf.Import
         public int Skipped { get; set; }
         public int WarningCount { get; set; }
         public int ErrorCount { get; set; }
+        public long CatalogImportOutboxId { get; set; }
+        public string CatalogImportOutboxStatus { get; set; } = string.Empty;
         public string Summary { get; set; } = string.Empty;
     }
 }

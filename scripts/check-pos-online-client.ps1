@@ -137,6 +137,7 @@ if ($client -notmatch "Timeout\s*=") { Fail "explicit timeout missing" } else { 
 if ($client -notmatch "/api/pos/auth/first-login") { Fail "first-login path missing" } else { Pass "first-login path present" }
 if ($client -notmatch "/api/pos/session/heartbeat") { Fail "heartbeat path missing" } else { Pass "heartbeat path present" }
 if ($store -notmatch "ProtectedData\.Protect" -or $store -notmatch "ProtectedData\.Unprotect") { Fail "DPAPI storage missing" } else { Pass "DPAPI storage present" }
+if ($store -notmatch "WriteAllTextAtomic" -or $store -notmatch "File\.Replace" -or $store -notmatch "File\.Move") { Fail "trusted-device atomic write missing" } else { Pass "trusted-device atomic write present" }
 if ($options -notmatch "WIN7POS_ADMIN_WEB_BASE_URL" -or $options -notmatch "pos-admin-web\.config") { Fail "base URL config sources missing" } else { Pass "base URL config present" }
 if ($options -notmatch "PosAdminWebBaseUrlSource" -or $options -notmatch "EnvironmentVariable" -or $options -notmatch "ConfigFile" -or $options -notmatch "PackagedDefault") { Fail "base URL source model missing" } else { Pass "base URL source model present" }
 if ($options -notmatch "TryLoadPackagedDefault" -or $options -notmatch "TryReadPackagedDefaultBaseUrl" -or $options -notmatch "AssemblyMetadataAttribute") { Fail "packaged default URL resolver missing" } else { Pass "packaged default URL resolver present" }
