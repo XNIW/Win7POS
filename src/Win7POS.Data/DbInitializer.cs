@@ -129,7 +129,9 @@ CREATE TABLE IF NOT EXISTS product_price_history (
   old_price INTEGER NULL,
   new_price INTEGER NOT NULL,
   source    TEXT NULL,
-  remote_price_id TEXT NULL
+  remote_price_id TEXT NULL,
+  catalog_import_client_item_id TEXT NULL,
+  catalog_import_idempotency_key TEXT NULL
 );
 
 CREATE TABLE IF NOT EXISTS held_carts (
@@ -226,6 +228,8 @@ CREATE TABLE IF NOT EXISTS security_events (
             EnsureColumn(conn, tx, "product_price_history", "old_price", "INTEGER NULL");
             EnsureColumn(conn, tx, "product_price_history", "source", "TEXT NULL");
             EnsureColumn(conn, tx, "product_price_history", "remote_price_id", "TEXT NULL");
+            EnsureColumn(conn, tx, "product_price_history", "catalog_import_client_item_id", "TEXT NULL");
+            EnsureColumn(conn, tx, "product_price_history", "catalog_import_idempotency_key", "TEXT NULL");
         }
 
         private static void CreateDependentTables(SqliteConnection conn, SqliteTransaction tx)
@@ -278,6 +282,7 @@ CREATE TABLE IF NOT EXISTS catalog_import_outbox (
   last_error_code TEXT NULL,
   last_error_at INTEGER NULL,
   server_import_id TEXT NULL,
+  server_request_id TEXT NULL,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -332,6 +337,7 @@ CREATE TABLE IF NOT EXISTS remote_catalog_pending_prices (
             EnsureColumn(conn, tx, "catalog_import_outbox", "last_error_code", "TEXT NULL");
             EnsureColumn(conn, tx, "catalog_import_outbox", "last_error_at", "INTEGER NULL");
             EnsureColumn(conn, tx, "catalog_import_outbox", "server_import_id", "TEXT NULL");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "server_request_id", "TEXT NULL");
             EnsureColumn(conn, tx, "catalog_import_outbox", "created_at", "INTEGER NOT NULL DEFAULT 0");
             EnsureColumn(conn, tx, "catalog_import_outbox", "updated_at", "INTEGER NOT NULL DEFAULT 0");
 
@@ -368,6 +374,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_unique
 ON product_price_history(barcode, timestamp, type, new_price, coalesce(source,''));
 CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_remote_price_id
 ON product_price_history(remote_price_id) WHERE remote_price_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_price_history_catalog_import_item
+ON product_price_history(catalog_import_idempotency_key, catalog_import_client_item_id, type)
+WHERE catalog_import_client_item_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_remote_price_id
 ON remote_catalog_pending_prices(remote_price_id) WHERE remote_price_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_remote_price_fallback

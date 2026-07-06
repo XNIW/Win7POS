@@ -187,3 +187,42 @@ supabase db push --linked
 | Supabase staging migration + E2E positivo | `SUPABASE_OWNER_PERMISSION_REQUIRED` |
 | Win7 runtime fisico/VM | `WIN7_PHYSICAL_MACHINE_REQUIRED_WITH_ARTIFACT_AND_SCRIPT_READY` |
 | Merge produzione | `PRODUCTION_MERGE_AWAITING_OWNER_APPROVAL` |
+
+## Addendum architetturale 2026-07-06 - sync hardening
+
+Questa run ha chiuso lacune locali trovate su mapping ACK prezzi, status UX e contratto Admin Web.
+
+### Patch Win7POS
+
+- Aggiunto `docs/ARCHITECTURE/POS_ADMIN_SUPABASE_SYNC_ARCHITECTURE.md`.
+- `product_price_history` ora conserva `catalog_import_client_item_id` e `catalog_import_idempotency_key`.
+- ACK `remote_price_id` usa il client item originale e l'idempotency key dell'outbox; il fallback "latest row" resta solo per dati legacy senza marker d'import.
+- Aggiunto `CatalogImportReconciliationService` con recovery `in_progress` scaduti, segnalazione `failed_blocked` e riconciliazione barcode -> `remote_product_id` senza delete.
+- Aggiunto CLI `--catalog-import-reconciliation-selftest`.
+- Headline sync status separa retry/blocked per sales sync e catalog import sync.
+- Check script aggiornati per identity mapping, reconciliation e headline separata.
+
+### Patch Admin Web
+
+- Aggiunta migration `20260706120000_task_094_pos_catalog_import_apply_rpc.sql`.
+- `pos_catalog_import_apply_v1` applica ledger, catalogo, prezzi, `sync_events` e audit in una transazione Supabase server-side.
+- Endpoint `/api/pos/catalog/import-sync` conserva auth/validation TypeScript ma sposta le scritture catalogo nell'RPC.
+- ACK Admin Web ora espone `batch.idempotencyKey`, `serverImportId`, `serverRequestId`, `remoteProductIds`, `remotePriceIds`, `pullRequired` e `nextAction: catalog_pull`.
+- Runbook staging e WAF aggiornati.
+
+### Verifiche aggiunte
+
+| Area | Comando | Stato |
+| --- | --- | --- |
+| Win7POS MSTest | `C:\Dev\dotnet10\dotnet.exe test tests\Win7POS.Core.Tests\Win7POS.Core.Tests.csproj -c Release --no-restore` | `PASS`, 13 passed |
+| Win7POS reconciliation CLI | `C:\Dev\dotnet10\dotnet.exe run --project src\Win7POS.Cli\Win7POS.Cli.csproj -c Release -- --catalog-import-reconciliation-selftest` | `PASS` |
+| Admin TASK-094 foundation | bundled `node.exe tests\foundation\task-094-pos-catalog-import-sync.test.mjs` | `PASS`, 3 passed |
+| Admin typecheck | bundled `pnpm.cmd run typecheck` with bundled Node on PATH | `PASS` |
+
+### Stato residuale invariato
+
+| Residuo | Stato preciso |
+| --- | --- |
+| Supabase staging migration + E2E positivo | `SUPABASE_OWNER_PERMISSION_REQUIRED` |
+| Win7 runtime fisico/VM | `WIN7_PHYSICAL_MACHINE_REQUIRED_WITH_ARTIFACT_AND_SCRIPT_READY` |
+| Merge produzione | `PRODUCTION_MERGE_AWAITING_OWNER_APPROVAL` |

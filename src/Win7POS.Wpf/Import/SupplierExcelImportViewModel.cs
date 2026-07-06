@@ -866,6 +866,7 @@ namespace Win7POS.Wpf.Import
             if (owner == null)
                 throw new InvalidOperationException("Nessuna finestra owner attiva per il file picker Excel fornitore.");
 
+            owner.Activate();
             return dlg.ShowDialog(owner) == true ? dlg.FileName : null;
         }
     }

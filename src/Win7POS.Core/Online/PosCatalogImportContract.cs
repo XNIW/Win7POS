@@ -138,6 +138,18 @@ namespace Win7POS.Core.Online
         [DataMember(Name = "ok")]
         public bool Ok { get; set; }
 
+        [DataMember(Name = "remotePriceIds", EmitDefaultValue = false)]
+        public PosCatalogImportRemotePriceIdAck[] RemotePriceIds { get; set; }
+
+        [DataMember(Name = "remoteProductIds", EmitDefaultValue = false)]
+        public PosCatalogImportRemoteProductIdAck[] RemoteProductIds { get; set; }
+
+        [DataMember(Name = "serverImportId", EmitDefaultValue = false)]
+        public string ServerImportId { get; set; }
+
+        [DataMember(Name = "serverRequestId", EmitDefaultValue = false)]
+        public string ServerRequestId { get; set; }
+
         [DataMember(Name = "serverTime")]
         public string ServerTime { get; set; }
     }
@@ -148,8 +160,17 @@ namespace Win7POS.Core.Online
         [DataMember(Name = "clientImportId")]
         public string ClientImportId { get; set; }
 
+        [DataMember(Name = "idempotencyKey", EmitDefaultValue = false)]
+        public string IdempotencyKey { get; set; }
+
         [DataMember(Name = "posCatalogImportBatchId")]
         public string PosCatalogImportBatchId { get; set; }
+
+        [DataMember(Name = "serverImportId", EmitDefaultValue = false)]
+        public string ServerImportId { get; set; }
+
+        [DataMember(Name = "serverRequestId", EmitDefaultValue = false)]
+        public string ServerRequestId { get; set; }
 
         [DataMember(Name = "status")]
         public string Status { get; set; }
@@ -158,6 +179,9 @@ namespace Win7POS.Core.Online
     [DataContract]
     public sealed class PosCatalogImportItemAck
     {
+        [DataMember(Name = "barcode", EmitDefaultValue = false)]
+        public string Barcode { get; set; }
+
         [DataMember(Name = "clientItemId")]
         public string ClientItemId { get; set; }
 
@@ -167,10 +191,45 @@ namespace Win7POS.Core.Online
         [DataMember(Name = "message", EmitDefaultValue = false)]
         public string Message { get; set; }
 
+        [DataMember(Name = "priceType", EmitDefaultValue = false)]
+        public string PriceType { get; set; }
+
+        [DataMember(Name = "remotePriceId", EmitDefaultValue = false)]
+        public string RemotePriceId { get; set; }
+
         [DataMember(Name = "remoteProductId", EmitDefaultValue = false)]
         public string RemoteProductId { get; set; }
 
         [DataMember(Name = "status")]
         public string Status { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogImportRemoteProductIdAck
+    {
+        [DataMember(Name = "barcode", EmitDefaultValue = false)]
+        public string Barcode { get; set; }
+
+        [DataMember(Name = "clientItemId", EmitDefaultValue = false)]
+        public string ClientItemId { get; set; }
+
+        [DataMember(Name = "remoteProductId")]
+        public string RemoteProductId { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogImportRemotePriceIdAck
+    {
+        [DataMember(Name = "barcode", EmitDefaultValue = false)]
+        public string Barcode { get; set; }
+
+        [DataMember(Name = "clientItemId", EmitDefaultValue = false)]
+        public string ClientItemId { get; set; }
+
+        [DataMember(Name = "priceType", EmitDefaultValue = false)]
+        public string PriceType { get; set; }
+
+        [DataMember(Name = "remotePriceId")]
+        public string RemotePriceId { get; set; }
     }
 }

@@ -155,9 +155,10 @@ namespace Win7POS.Data.Online
                     return;
                 }
 
+                var ack = BuildAckResult(item, request, remote, response.ServerRequestId);
                 if (await _outbox.MarkAckedAsync(
                     item.Id,
-                    remote.Batch.PosCatalogImportBatchId,
+                    ack,
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                     preparedAttempt).ConfigureAwait(false))
                 {
@@ -259,7 +260,126 @@ namespace Win7POS.Data.Online
             PosCatalogImportBatchResponse batch)
         {
             return batch != null &&
-                string.Equals(batch.ClientImportId, item.ClientImportId, StringComparison.Ordinal);
+                string.Equals(batch.ClientImportId, item.ClientImportId, StringComparison.Ordinal) &&
+                string.Equals(batch.IdempotencyKey, item.IdempotencyKey, StringComparison.Ordinal);
+        }
+
+        private static CatalogImportAckResult BuildAckResult(
+            CatalogImportOutboxItem item,
+            PosCatalogImportRequest request,
+            PosCatalogImportResponse remote,
+            string transportServerRequestId)
+        {
+            var barcodeByClientItemId = BuildBarcodeMap(request);
+            var remoteProductIds = new List<CatalogImportRemoteProductId>();
+            var remotePriceIds = new List<CatalogImportRemotePriceId>();
+
+            foreach (var remoteProduct in remote.RemoteProductIds ?? Array.Empty<PosCatalogImportRemoteProductIdAck>())
+            {
+                if (remoteProduct == null)
+                {
+                    continue;
+                }
+
+                remoteProductIds.Add(new CatalogImportRemoteProductId
+                {
+                    Barcode = FirstNonEmpty(remoteProduct.Barcode, BarcodeFor(barcodeByClientItemId, remoteProduct.ClientItemId)),
+                    ClientItemId = remoteProduct.ClientItemId,
+                    RemoteProductId = remoteProduct.RemoteProductId
+                });
+            }
+
+            foreach (var remotePrice in remote.RemotePriceIds ?? Array.Empty<PosCatalogImportRemotePriceIdAck>())
+            {
+                if (remotePrice == null)
+                {
+                    continue;
+                }
+
+                remotePriceIds.Add(new CatalogImportRemotePriceId
+                {
+                    Barcode = FirstNonEmpty(remotePrice.Barcode, BarcodeFor(barcodeByClientItemId, remotePrice.ClientItemId)),
+                    ClientItemId = remotePrice.ClientItemId,
+                    PriceType = remotePrice.PriceType,
+                    RemotePriceId = remotePrice.RemotePriceId
+                });
+            }
+
+            foreach (var ackItem in remote.Items ?? Array.Empty<PosCatalogImportItemAck>())
+            {
+                if (ackItem == null)
+                {
+                    continue;
+                }
+
+                var barcode = FirstNonEmpty(ackItem.Barcode, BarcodeFor(barcodeByClientItemId, ackItem.ClientItemId));
+                if (!string.IsNullOrWhiteSpace(ackItem.RemoteProductId))
+                {
+                    remoteProductIds.Add(new CatalogImportRemoteProductId
+                    {
+                        Barcode = barcode,
+                        ClientItemId = ackItem.ClientItemId,
+                        RemoteProductId = ackItem.RemoteProductId
+                    });
+                }
+
+                if (!string.IsNullOrWhiteSpace(ackItem.RemotePriceId))
+                {
+                    remotePriceIds.Add(new CatalogImportRemotePriceId
+                    {
+                        Barcode = barcode,
+                        ClientItemId = ackItem.ClientItemId,
+                        PriceType = ackItem.PriceType,
+                        RemotePriceId = ackItem.RemotePriceId
+                    });
+                }
+            }
+
+            return new CatalogImportAckResult
+            {
+                RemotePriceIds = remotePriceIds,
+                RemoteProductIds = remoteProductIds,
+                ServerImportId = FirstNonEmpty(
+                    remote.ServerImportId,
+                    FirstNonEmpty(remote.Batch.ServerImportId, remote.Batch.PosCatalogImportBatchId)),
+                ServerRequestId = FirstNonEmpty(
+                    remote.ServerRequestId,
+                    FirstNonEmpty(remote.Batch.ServerRequestId, transportServerRequestId))
+            };
+        }
+
+        private static IReadOnlyDictionary<string, string> BuildBarcodeMap(PosCatalogImportRequest request)
+        {
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var requestItem in request.Items ?? Array.Empty<PosCatalogImportItemRequest>())
+            {
+                if (requestItem == null ||
+                    string.IsNullOrWhiteSpace(requestItem.ClientItemId) ||
+                    string.IsNullOrWhiteSpace(requestItem.Barcode))
+                {
+                    continue;
+                }
+
+                if (!result.ContainsKey(requestItem.ClientItemId))
+                {
+                    result.Add(requestItem.ClientItemId, requestItem.Barcode);
+                }
+            }
+
+            return result;
+        }
+
+        private static string BarcodeFor(IReadOnlyDictionary<string, string> barcodeByClientItemId, string clientItemId)
+        {
+            if (string.IsNullOrWhiteSpace(clientItemId) || barcodeByClientItemId == null)
+            {
+                return string.Empty;
+            }
+
+            string barcode;
+            return barcodeByClientItemId.TryGetValue(clientItemId, out barcode)
+                ? barcode
+                : string.Empty;
         }
 
         private static void AttachTrust(PosCatalogImportRequest request, PosTrustedDeviceSession trustedSession)

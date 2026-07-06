@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Runtime.Serialization.Json;
+using System.Text;
 using System.Threading.Tasks;
 using Dapper;
 using Win7POS.Core.Import;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Import
@@ -73,6 +77,7 @@ namespace Win7POS.Data.Import
                 try
                 {
                     var resolver = new CategorySupplierResolver(conn, tx);
+                    var catalogImportContext = CatalogImportApplyContext.FromEntry(options.CatalogImportOutboxEntry);
                     var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
                     foreach (var row in rows)
@@ -143,14 +148,14 @@ namespace Win7POS.Data.Import
                             await InsertProductAsync(conn, tx, merged).ConfigureAwait(false);
                             result.Inserted += 1;
                             result.ChangedBarcodes.Add(barcode);
-                            result.PriceHistoryInserted += await InsertInitialPriceHistoryAsync(conn, tx, row, merged).ConfigureAwait(false);
+                            result.PriceHistoryInserted += await InsertInitialPriceHistoryAsync(conn, tx, row, merged, catalogImportContext).ConfigureAwait(false);
                         }
                         else if (HasChanges(existing, merged))
                         {
                             await UpdateProductAsync(conn, tx, existing, merged).ConfigureAwait(false);
                             result.Updated += 1;
                             result.ChangedBarcodes.Add(barcode);
-                            result.PriceHistoryInserted += await InsertChangedPriceHistoryAsync(conn, tx, existing, row, merged).ConfigureAwait(false);
+                            result.PriceHistoryInserted += await InsertChangedPriceHistoryAsync(conn, tx, existing, row, merged, catalogImportContext).ConfigureAwait(false);
                         }
                         else
                         {
@@ -345,17 +350,18 @@ VALUES(
             Microsoft.Data.Sqlite.SqliteConnection conn,
             Microsoft.Data.Sqlite.SqliteTransaction tx,
             SupplierImportEditableRow source,
-            ProductDetailsRow row)
+            ProductDetailsRow row,
+            CatalogImportApplyContext catalogImportContext)
         {
             var count = 0;
             var ts = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
             if (!string.IsNullOrWhiteSpace(source.PurchasePrice))
             {
-                count += await InsertPriceHistoryAsync(conn, tx, row.Barcode, ts, "purchase", null, row.PurchasePrice).ConfigureAwait(false);
+                count += await InsertPriceHistoryAsync(conn, tx, row.Barcode, ts, "purchase", null, row.PurchasePrice, catalogImportContext).ConfigureAwait(false);
             }
             if (!string.IsNullOrWhiteSpace(source.RetailPrice))
             {
-                count += await InsertPriceHistoryAsync(conn, tx, row.Barcode, ts, "retail", null, (int)row.UnitPrice).ConfigureAwait(false);
+                count += await InsertPriceHistoryAsync(conn, tx, row.Barcode, ts, "retail", null, (int)row.UnitPrice, catalogImportContext).ConfigureAwait(false);
             }
             return count;
         }
@@ -365,17 +371,18 @@ VALUES(
             Microsoft.Data.Sqlite.SqliteTransaction tx,
             ProductDetailsRow existing,
             SupplierImportEditableRow source,
-            ProductDetailsRow row)
+            ProductDetailsRow row,
+            CatalogImportApplyContext catalogImportContext)
         {
             var count = 0;
             var ts = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
             if (!string.IsNullOrWhiteSpace(source.PurchasePrice) && existing.PurchasePrice != row.PurchasePrice)
             {
-                count += await InsertPriceHistoryAsync(conn, tx, row.Barcode, ts, "purchase", existing.PurchasePrice, row.PurchasePrice).ConfigureAwait(false);
+                count += await InsertPriceHistoryAsync(conn, tx, row.Barcode, ts, "purchase", existing.PurchasePrice, row.PurchasePrice, catalogImportContext).ConfigureAwait(false);
             }
             if (!string.IsNullOrWhiteSpace(source.RetailPrice) && existing.UnitPrice != row.UnitPrice)
             {
-                count += await InsertPriceHistoryAsync(conn, tx, row.Barcode, ts, "retail", (int)existing.UnitPrice, (int)row.UnitPrice).ConfigureAwait(false);
+                count += await InsertPriceHistoryAsync(conn, tx, row.Barcode, ts, "retail", (int)existing.UnitPrice, (int)row.UnitPrice, catalogImportContext).ConfigureAwait(false);
             }
             return count;
         }
@@ -387,18 +394,26 @@ VALUES(
             string timestamp,
             string type,
             int? oldPrice,
-            int newPrice)
+            int newPrice,
+            CatalogImportApplyContext catalogImportContext)
         {
+            var clientItemId = catalogImportContext.ClientItemIdForBarcode(barcode);
             return conn.ExecuteAsync(@"
-INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
-VALUES(@barcode, @timestamp, @type, @oldPrice, @newPrice, 'IMPORT')",
+INSERT INTO product_price_history(
+  barcode, timestamp, type, old_price, new_price, source,
+  catalog_import_client_item_id, catalog_import_idempotency_key)
+VALUES(
+  @barcode, @timestamp, @type, @oldPrice, @newPrice, 'IMPORT',
+  @clientItemId, @idempotencyKey)",
                 new
                 {
                     barcode,
                     timestamp,
                     type,
                     oldPrice,
-                    newPrice
+                    newPrice,
+                    clientItemId,
+                    idempotencyKey = catalogImportContext.IdempotencyKey
                 },
                 tx);
         }
@@ -441,6 +456,72 @@ VALUES(@barcode, @timestamp, @type, @oldPrice, @newPrice, 'IMPORT')",
         private static bool TextEquals(string left, string right)
         {
             return string.Equals(Normalize(left), Normalize(right), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private sealed class CatalogImportApplyContext
+        {
+            private static readonly CatalogImportApplyContext Empty = new CatalogImportApplyContext(
+                string.Empty,
+                new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase));
+
+            private readonly IReadOnlyDictionary<string, string> _clientItemIdsByBarcode;
+
+            private CatalogImportApplyContext(string idempotencyKey, IReadOnlyDictionary<string, string> clientItemIdsByBarcode)
+            {
+                IdempotencyKey = idempotencyKey ?? string.Empty;
+                _clientItemIdsByBarcode = clientItemIdsByBarcode;
+            }
+
+            public string IdempotencyKey { get; }
+
+            public string ClientItemIdForBarcode(string barcode)
+            {
+                if (string.IsNullOrWhiteSpace(barcode) || _clientItemIdsByBarcode == null)
+                {
+                    return null;
+                }
+
+                return _clientItemIdsByBarcode.TryGetValue(barcode, out var clientItemId)
+                    ? clientItemId
+                    : null;
+            }
+
+            public static CatalogImportApplyContext FromEntry(CatalogImportOutboxEntry entry)
+            {
+                if (entry == null || string.IsNullOrWhiteSpace(entry.PayloadJson))
+                {
+                    return Empty;
+                }
+
+                try
+                {
+                    var serializer = new DataContractJsonSerializer(typeof(PosCatalogImportRequest));
+                    using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(entry.PayloadJson)))
+                    {
+                        var request = serializer.ReadObject(stream) as PosCatalogImportRequest;
+                        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (var item in request?.Items ?? Array.Empty<PosCatalogImportItemRequest>())
+                        {
+                            if (string.IsNullOrWhiteSpace(item?.Barcode) ||
+                                string.IsNullOrWhiteSpace(item.ClientItemId) ||
+                                map.ContainsKey(item.Barcode))
+                            {
+                                continue;
+                            }
+
+                            map.Add(item.Barcode, item.ClientItemId);
+                        }
+
+                        return new CatalogImportApplyContext(
+                            request?.Batch?.IdempotencyKey ?? entry.IdempotencyKey ?? string.Empty,
+                            map);
+                    }
+                }
+                catch
+                {
+                    return Empty;
+                }
+            }
         }
     }
 }

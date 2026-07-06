@@ -9,7 +9,7 @@ namespace Win7POS.Data.Online
 {
     public sealed class CatalogImportOutboxRepository
     {
-        private const long CatalogImportInProgressLeaseMilliseconds = 15 * 60 * 1000L;
+        public const long CatalogImportInProgressLeaseMilliseconds = 15 * 60 * 1000L;
 
         private readonly SqliteConnectionFactory _factory;
 
@@ -203,27 +203,87 @@ WHERE id = @outboxId
             }
         }
 
-        public async Task<bool> MarkAckedAsync(long outboxId, string serverImportId, long nowMs, int expectedAttemptCount = 0)
+        public Task<bool> MarkAckedAsync(
+            long outboxId,
+            string serverImportId,
+            string serverRequestId,
+            long nowMs,
+            int expectedAttemptCount)
         {
+            return MarkAckedAsync(
+                outboxId,
+                new CatalogImportAckResult
+                {
+                    ServerImportId = serverImportId,
+                    ServerRequestId = serverRequestId
+                },
+                nowMs,
+                expectedAttemptCount);
+        }
+
+        public async Task<bool> MarkAckedAsync(
+            long outboxId,
+            CatalogImportAckResult ack,
+            long nowMs,
+            int expectedAttemptCount)
+        {
+            if (expectedAttemptCount <= 0) throw new ArgumentException("expected attempt count is required.");
+            ack = ack ?? new CatalogImportAckResult();
+
             using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction())
             {
-                var rows = await conn.ExecuteAsync(@"
+                try
+                {
+                    var rows = await conn.ExecuteAsync(@"
 UPDATE catalog_import_outbox
 SET status = 'acked',
     server_import_id = @serverImportId,
+    server_request_id = @serverRequestId,
     last_error_code = NULL,
     last_error_at = NULL,
     updated_at = @nowMs
 WHERE id = @outboxId
   AND status = 'in_progress'
-  AND (@expectedAttemptCount <= 0 OR attempt_count = @expectedAttemptCount);",
-                    new { outboxId, serverImportId, nowMs, expectedAttemptCount }).ConfigureAwait(false);
-                return rows == 1;
+  AND attempt_count = @expectedAttemptCount;",
+                        new
+                        {
+                            outboxId,
+                            serverImportId = NormalizeTechnicalId(ack.ServerImportId, 160),
+                            serverRequestId = NormalizeTechnicalId(ack.ServerRequestId, 160),
+                            nowMs,
+                            expectedAttemptCount
+                        },
+                        tx).ConfigureAwait(false);
+
+                    if (rows != 1)
+                    {
+                        tx.Rollback();
+                        return false;
+                    }
+
+                    var idempotencyKey = await conn.ExecuteScalarAsync<string>(
+                        "SELECT idempotency_key FROM catalog_import_outbox WHERE id = @outboxId",
+                        new { outboxId },
+                        tx).ConfigureAwait(false) ?? string.Empty;
+
+                    await ApplyRemoteProductIdsAsync(conn, tx, ack.RemoteProductIds).ConfigureAwait(false);
+                    await ApplyRemotePriceIdsAsync(conn, tx, ack.RemotePriceIds, idempotencyKey).ConfigureAwait(false);
+                    tx.Commit();
+                    return true;
+                }
+                catch
+                {
+                    tx.Rollback();
+                    throw;
+                }
             }
         }
 
-        public async Task<bool> MarkRetryAsync(long outboxId, string errorCode, long nextRetryAt, long nowMs, int expectedAttemptCount = 0)
+        public async Task<bool> MarkRetryAsync(long outboxId, string errorCode, long nextRetryAt, long nowMs, int expectedAttemptCount)
         {
+            if (expectedAttemptCount <= 0) throw new ArgumentException("expected attempt count is required.");
+
             using (var conn = _factory.Open())
             {
                 var rows = await conn.ExecuteAsync(@"
@@ -235,14 +295,16 @@ SET status = 'retry',
     updated_at = @nowMs
 WHERE id = @outboxId
   AND status = 'in_progress'
-  AND (@expectedAttemptCount <= 0 OR attempt_count = @expectedAttemptCount);",
+  AND attempt_count = @expectedAttemptCount;",
                     new { outboxId, errorCode, nextRetryAt, nowMs, expectedAttemptCount }).ConfigureAwait(false);
                 return rows == 1;
             }
         }
 
-        public async Task<bool> MarkBlockedAsync(long outboxId, string errorCode, long nowMs, int expectedAttemptCount = 0)
+        public async Task<bool> MarkBlockedAsync(long outboxId, string errorCode, long nowMs, int expectedAttemptCount)
         {
+            if (expectedAttemptCount <= 0) throw new ArgumentException("expected attempt count is required.");
+
             using (var conn = _factory.Open())
             {
                 var rows = await conn.ExecuteAsync(@"
@@ -253,10 +315,237 @@ SET status = 'failed_blocked',
     updated_at = @nowMs
 WHERE id = @outboxId
   AND status = 'in_progress'
-  AND (@expectedAttemptCount <= 0 OR attempt_count = @expectedAttemptCount);",
+  AND attempt_count = @expectedAttemptCount;",
                     new { outboxId, errorCode, nowMs, expectedAttemptCount }).ConfigureAwait(false);
                 return rows == 1;
             }
+        }
+
+        private static async Task ApplyRemoteProductIdsAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            IReadOnlyList<CatalogImportRemoteProductId> remoteProductIds)
+        {
+            foreach (var mapping in DeduplicateRemoteProducts(remoteProductIds))
+            {
+                var rows = await conn.ExecuteAsync(@"
+UPDATE products
+SET remote_product_id = @RemoteProductId,
+    remote_deleted_at = NULL,
+    is_active = 1
+WHERE barcode = @Barcode
+  AND (COALESCE(remote_product_id, '') = '' OR remote_product_id = @RemoteProductId);",
+                    new
+                    {
+                        mapping.Barcode,
+                        mapping.RemoteProductId
+                    },
+                    tx).ConfigureAwait(false);
+
+                if (rows <= 0)
+                {
+                    continue;
+                }
+
+                await conn.ExecuteAsync(@"
+UPDATE products
+SET is_active = 0,
+    remote_deleted_at = @remoteDeletedAt
+WHERE remote_product_id = @RemoteProductId
+  AND barcode <> @Barcode
+  AND COALESCE(is_active, 1) = 1;",
+                    new
+                    {
+                        mapping.Barcode,
+                        mapping.RemoteProductId,
+                        remoteDeletedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                    },
+                    tx).ConfigureAwait(false);
+            }
+        }
+
+        private static async Task ApplyRemotePriceIdsAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            IReadOnlyList<CatalogImportRemotePriceId> remotePriceIds,
+            string idempotencyKey)
+        {
+            foreach (var mapping in DeduplicateRemotePrices(remotePriceIds))
+            {
+                if (!string.IsNullOrWhiteSpace(mapping.ClientItemId) &&
+                    !string.IsNullOrWhiteSpace(idempotencyKey))
+                {
+                    var exactRows = await conn.ExecuteAsync(@"
+UPDATE product_price_history
+SET remote_price_id = @RemotePriceId
+WHERE id = (
+    SELECT id
+    FROM product_price_history
+    WHERE catalog_import_idempotency_key = @IdempotencyKey
+      AND catalog_import_client_item_id = @ClientItemId
+      AND barcode = @Barcode
+      AND COALESCE(remote_price_id, '') = ''
+      AND (@PriceType = '' OR LOWER(type) = LOWER(@PriceType))
+    ORDER BY id DESC
+    LIMIT 1
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM product_price_history existing
+    WHERE existing.remote_price_id = @RemotePriceId
+);",
+                        new
+                        {
+                            mapping.Barcode,
+                            mapping.ClientItemId,
+                            IdempotencyKey = idempotencyKey,
+                            mapping.PriceType,
+                            mapping.RemotePriceId
+                        },
+                        tx).ConfigureAwait(false);
+
+                    if (exactRows > 0)
+                    {
+                        continue;
+                    }
+
+                    var importRows = await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE catalog_import_idempotency_key = @IdempotencyKey;",
+                        new { IdempotencyKey = idempotencyKey },
+                        tx).ConfigureAwait(false);
+
+                    if (importRows > 0)
+                    {
+                        continue;
+                    }
+                }
+
+                await conn.ExecuteAsync(@"
+UPDATE product_price_history
+SET remote_price_id = @RemotePriceId
+WHERE id = (
+    SELECT id
+    FROM product_price_history
+    WHERE barcode = @Barcode
+      AND COALESCE(remote_price_id, '') = ''
+      AND (@PriceType = '' OR LOWER(type) = LOWER(@PriceType))
+    ORDER BY
+      CASE WHEN COALESCE(source, '') = 'IMPORT' THEN 0 ELSE 1 END,
+      timestamp DESC,
+      id DESC
+    LIMIT 1
+)
+AND NOT EXISTS (
+    SELECT 1
+    FROM product_price_history existing
+    WHERE existing.remote_price_id = @RemotePriceId
+);",
+                    new
+                    {
+                        mapping.Barcode,
+                        mapping.PriceType,
+                        mapping.RemotePriceId
+                    },
+                    tx).ConfigureAwait(false);
+            }
+        }
+
+        private static IReadOnlyList<CatalogImportRemoteProductId> DeduplicateRemoteProducts(
+            IReadOnlyList<CatalogImportRemoteProductId> remoteProductIds)
+        {
+            var result = new List<CatalogImportRemoteProductId>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var mapping in remoteProductIds ?? Array.Empty<CatalogImportRemoteProductId>())
+            {
+                var barcode = NormalizeKey(mapping == null ? null : mapping.Barcode, 80);
+                var remoteProductId = NormalizeTechnicalId(mapping == null ? null : mapping.RemoteProductId, 160);
+                if (barcode.Length == 0 || remoteProductId.Length == 0)
+                {
+                    continue;
+                }
+
+                var key = barcode + "|" + remoteProductId;
+                if (!seen.Add(key))
+                {
+                    continue;
+                }
+
+                result.Add(new CatalogImportRemoteProductId
+                {
+                    Barcode = barcode,
+                    ClientItemId = NormalizeTechnicalId(mapping.ClientItemId, 160),
+                    RemoteProductId = remoteProductId
+                });
+            }
+
+            return result;
+        }
+
+        private static IReadOnlyList<CatalogImportRemotePriceId> DeduplicateRemotePrices(
+            IReadOnlyList<CatalogImportRemotePriceId> remotePriceIds)
+        {
+            var result = new List<CatalogImportRemotePriceId>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var mapping in remotePriceIds ?? Array.Empty<CatalogImportRemotePriceId>())
+            {
+                var barcode = NormalizeKey(mapping == null ? null : mapping.Barcode, 80);
+                var remotePriceId = NormalizeTechnicalId(mapping == null ? null : mapping.RemotePriceId, 160);
+                var priceType = NormalizePriceType(mapping == null ? null : mapping.PriceType);
+                if (barcode.Length == 0 || remotePriceId.Length == 0)
+                {
+                    continue;
+                }
+
+                var key = barcode + "|" + priceType + "|" + remotePriceId;
+                if (!seen.Add(key))
+                {
+                    continue;
+                }
+
+                result.Add(new CatalogImportRemotePriceId
+                {
+                    Barcode = barcode,
+                    ClientItemId = NormalizeTechnicalId(mapping.ClientItemId, 160),
+                    PriceType = priceType,
+                    RemotePriceId = remotePriceId
+                });
+            }
+
+            return result;
+        }
+
+        private static string NormalizePriceType(string value)
+        {
+            var normalized = NormalizeTechnicalId(value, 40).ToLowerInvariant();
+            return string.Equals(normalized, "purchase", StringComparison.Ordinal) ||
+                string.Equals(normalized, "retail", StringComparison.Ordinal)
+                ? normalized
+                : string.Empty;
+        }
+
+        private static string NormalizeKey(string value, int maxLength)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (normalized.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            return normalized.Length > maxLength
+                ? normalized.Substring(0, maxLength)
+                : normalized;
+        }
+
+        private static string NormalizeTechnicalId(string value, int maxLength)
+        {
+            var normalized = new string((value ?? string.Empty)
+                .Trim()
+                .Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' || ch == ':' || ch == '.')
+                .Take(maxLength)
+                .ToArray());
+            return normalized;
         }
 
         private sealed class CatalogImportStatusCount
@@ -311,5 +600,30 @@ WHERE id = @outboxId
         public long Pending { get; set; }
         public long PendingOrRetry => Pending + Retry + InProgress;
         public long Retry { get; set; }
+    }
+
+    public sealed class CatalogImportAckResult
+    {
+        public IReadOnlyList<CatalogImportRemotePriceId> RemotePriceIds { get; set; } =
+            Array.Empty<CatalogImportRemotePriceId>();
+        public IReadOnlyList<CatalogImportRemoteProductId> RemoteProductIds { get; set; } =
+            Array.Empty<CatalogImportRemoteProductId>();
+        public string ServerImportId { get; set; } = string.Empty;
+        public string ServerRequestId { get; set; } = string.Empty;
+    }
+
+    public sealed class CatalogImportRemoteProductId
+    {
+        public string Barcode { get; set; } = string.Empty;
+        public string ClientItemId { get; set; } = string.Empty;
+        public string RemoteProductId { get; set; } = string.Empty;
+    }
+
+    public sealed class CatalogImportRemotePriceId
+    {
+        public string Barcode { get; set; } = string.Empty;
+        public string ClientItemId { get; set; } = string.Empty;
+        public string PriceType { get; set; } = string.Empty;
+        public string RemotePriceId { get; set; } = string.Empty;
     }
 }

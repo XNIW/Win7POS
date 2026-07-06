@@ -210,6 +210,12 @@ internal static class Program
                 return;
             }
 
+            if (TryParseCatalogImportReconciliationSelfTestArgs(args))
+            {
+                await RunCatalogImportReconciliationSelfTestAsync().ConfigureAwait(false);
+                return;
+            }
+
             if (TryParseCatalogImportSyncHttpHarnessArgs(args, out var catalogImportSyncParams))
             {
                 await RunCatalogImportSyncHttpHarnessAsync(catalogImportSyncParams).ConfigureAwait(false);
@@ -278,6 +284,7 @@ internal static class Program
         Console.WriteLine("  --supplier-excel-apply-selftest");
         Console.WriteLine("  --supplier-excel-perf-selftest [--products N] [--rows N] [--keepdb]");
         Console.WriteLine("  --catalog-import-outbox-selftest");
+        Console.WriteLine("  --catalog-import-reconciliation-selftest");
         Console.WriteLine("  --catalog-import-sync-http-harness [--base-url <AdminWebUrl>] [--session-json <path>] [--keepdb]");
         Console.WriteLine("  --sqlite-integrity-selftest");
         Console.WriteLine("  --db-restore-guard-selftest");
@@ -327,6 +334,11 @@ internal static class Program
     private static bool TryParseCatalogImportOutboxSelfTestArgs(string[] args)
     {
         return args.Any(arg => string.Equals(arg, "--catalog-import-outbox-selftest", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryParseCatalogImportReconciliationSelfTestArgs(string[] args)
+    {
+        return args.Any(arg => string.Equals(arg, "--catalog-import-reconciliation-selftest", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool TryParseCatalogImportSyncHttpHarnessArgs(
@@ -2814,9 +2826,9 @@ CREATE TABLE users (
 
             Assert(await repository.PrepareAttemptAsync(retryId, nowMs + 2500).ConfigureAwait(false), "Prepare must lease retry scenario row.");
             Assert(await repository.PrepareAttemptAsync(blockedId, nowMs + 2600).ConfigureAwait(false), "Prepare must lease blocked scenario row.");
-            Assert(await repository.MarkAckedAsync(acceptedId, "server-accepted", nowMs + 4000).ConfigureAwait(false), "Ack must update active attempt.");
-            Assert(await repository.MarkRetryAsync(retryId, "network_error", nowMs + 9000, nowMs + 5000).ConfigureAwait(false), "Retry must update active attempt.");
-            Assert(await repository.MarkBlockedAsync(blockedId, "validation_failed", nowMs + 6000).ConfigureAwait(false), "Blocked must update active attempt.");
+            Assert(await repository.MarkAckedAsync(acceptedId, "server-accepted", "server-request-accepted", nowMs + 4000, expectedAttemptCount: 1).ConfigureAwait(false), "Ack must update active attempt.");
+            Assert(await repository.MarkRetryAsync(retryId, "network_error", nowMs + 9000, nowMs + 5000, expectedAttemptCount: 1).ConfigureAwait(false), "Retry must update active attempt.");
+            Assert(await repository.MarkBlockedAsync(blockedId, "validation_failed", nowMs + 6000, expectedAttemptCount: 1).ConfigureAwait(false), "Blocked must update active attempt.");
             var summary = await repository.GetSummaryAsync().ConfigureAwait(false);
             Assert(summary.Acked == 1, "Ack summary mismatch.");
             Assert(summary.Retry == 1, "Retry summary mismatch.");
@@ -2825,6 +2837,70 @@ CREATE TABLE users (
             await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
 
             Console.WriteLine("CATALOG IMPORT OUTBOX SELFTEST PASS");
+            Console.WriteLine("TEST PASS");
+        }
+        finally
+        {
+            SqliteConnection.ClearAllPools();
+            try { if (Directory.Exists(tempRoot)) Directory.Delete(tempRoot, true); } catch { }
+        }
+    }
+
+    private static async Task RunCatalogImportReconciliationSelfTestAsync()
+    {
+        Console.WriteLine("Catalog import reconciliation selftest");
+        var tempRoot = Path.Combine(Path.GetTempPath(), "win7pos-catalog-reconcile-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(tempRoot);
+            var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+            var repository = new CatalogImportOutboxRepository(factory);
+            var reconciliation = new CatalogImportReconciliationService(factory);
+            var products = new ProductRepository(factory);
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            var staleId = await repository
+                .EnqueueAsync(BuildCatalogImportOutboxEntry("reconcile-stale", 1, nowMs))
+                .ConfigureAwait(false);
+            var blockedId = await repository
+                .EnqueueAsync(BuildCatalogImportOutboxEntry("reconcile-blocked", 2, nowMs))
+                .ConfigureAwait(false);
+
+            Assert(await repository.PrepareAttemptAsync(staleId, nowMs).ConfigureAwait(false), "Reconciliation setup must lease stale row.");
+            Assert(await repository.PrepareAttemptAsync(blockedId, nowMs + 1).ConfigureAwait(false), "Reconciliation setup must lease blocked row.");
+            Assert(await repository.MarkBlockedAsync(blockedId, "validation_failed", nowMs + 2, expectedAttemptCount: 1).ConfigureAwait(false), "Reconciliation setup must block review row.");
+
+            var recovered = await reconciliation
+                .RecoverExpiredInProgressAsync(nowMs + CatalogImportOutboxRepository.CatalogImportInProgressLeaseMilliseconds + 1000)
+                .ConfigureAwait(false);
+            Assert(recovered == 1, "Reconciliation must recover exactly one expired in_progress row.");
+            Assert(
+                await ReadCatalogImportOutboxStatusAsync(factory, staleId).ConfigureAwait(false) == "retry",
+                "Expired in_progress row must become retry.");
+            Assert(
+                await ReadCatalogImportOutboxStatusAsync(factory, blockedId).ConfigureAwait(false) == "failed_blocked",
+                "Reconciliation must not clear failed_blocked rows.");
+            Assert(
+                await reconciliation.GetFailedBlockedCountAsync().ConfigureAwait(false) == 1,
+                "Reconciliation must signal failed_blocked rows for manual review.");
+
+            await products.UpsertAsync(new Product
+            {
+                Barcode = "RECON-REMOTE",
+                Name = "Reconcile remote id",
+                UnitPrice = 1200
+            }).ConfigureAwait(false);
+            Assert(
+                await reconciliation.ReconcileRemoteProductIdAsync("RECON-REMOTE", "remote-product-reconciled").ConfigureAwait(false),
+                "Reconciliation must apply barcode-to-remote product id.");
+            Assert(
+                await ReadProductRemoteProductIdAsync(factory, "RECON-REMOTE").ConfigureAwait(false) == "remote-product-reconciled",
+                "Reconciled remote product id mismatch.");
+
+            await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
+            Console.WriteLine("CATALOG IMPORT RECONCILIATION SELFTEST PASS");
             Console.WriteLine("TEST PASS");
         }
         finally
@@ -2850,11 +2926,13 @@ CREATE TABLE users (
             var realSessionMode = !string.IsNullOrWhiteSpace(parameters.SessionJsonPath);
             var scenarios = realSessionMode
                 ? new[] { "accepted-" + Guid.NewGuid().ToString("N").Substring(0, 12) }
-                : new[] { "accepted", "duplicate", "idempotent", "validation_failed", "conflict", "mismatch", "auth_denied", "timeout" };
+                : new[] { "accepted", "duplicate", "idempotent", "validation_failed", "conflict", "mismatch", "idempotency_mismatch", "auth_denied", "timeout" };
             var ids = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             for (var i = 0; i < scenarios.Length; i++)
             {
-                ids[scenarios[i]] = await repository.EnqueueAsync(BuildCatalogImportOutboxEntry(scenarios[i], i + 1, nowMs)).ConfigureAwait(false);
+                var entry = BuildCatalogImportOutboxEntry(scenarios[i], i + 1, nowMs);
+                ids[scenarios[i]] = await repository.EnqueueAsync(entry).ConfigureAwait(false);
+                await SeedCatalogImportHarnessProductAsync(factory, scenarios[i], i + 1).ConfigureAwait(false);
             }
 
             var baseUrl = parameters.BaseUrl;
@@ -2893,7 +2971,7 @@ CREATE TABLE users (
                 {
                     Assert(result.Total == scenarios.Length, "Catalog import sync must process all seeded rows.");
                     Assert(result.Acked == 3, "Accepted/duplicate/idempotent rows must be acked.");
-                    Assert(result.Blocked == 3, "Validation/conflict/mismatch rows must be blocked.");
+                    Assert(result.Blocked == 4, "Validation/conflict/mismatch/idempotency rows must be blocked.");
                     Assert(result.Retried == 2, "Auth/timeout rows must be retry.");
                     Assert(result.RequiresTrustClear, "Auth denied response must request trust clear.");
                 }
@@ -2912,8 +2990,16 @@ CREATE TABLE users (
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["validation_failed"]).ConfigureAwait(false) == "failed_blocked", "validation_failed status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["conflict"]).ConfigureAwait(false) == "failed_blocked", "conflict status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["mismatch"]).ConfigureAwait(false) == "failed_blocked", "mismatch status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["idempotency_mismatch"]).ConfigureAwait(false) == "failed_blocked", "idempotency mismatch status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["auth_denied"]).ConfigureAwait(false) == "retry", "auth_denied status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["timeout"]).ConfigureAwait(false) == "retry", "timeout status mismatch.");
+                var acceptedBarcode = CatalogImportHarnessBarcode("accepted", 1);
+                Assert(
+                    await ReadProductRemoteProductIdAsync(factory, acceptedBarcode).ConfigureAwait(false) == "remote-product-map-accepted",
+                    "accepted ACK must save returned remote product id.");
+                Assert(
+                    await ReadLatestRemotePriceIdAsync(factory, acceptedBarcode, "retail").ConfigureAwait(false) == "remote-price-map-accepted",
+                    "accepted ACK remote price map must save returned remote price id.");
                 var payload = await ReadCatalogImportOutboxPayloadAsync(factory, ids["accepted"]).ConfigureAwait(false);
                 Assert(!payload.Contains("device-token-harness", StringComparison.OrdinalIgnoreCase), "Persisted catalog payload must not contain device token.");
                 Assert(!payload.Contains("session-token-harness", StringComparison.OrdinalIgnoreCase), "Persisted catalog payload must not contain session token.");
@@ -3134,7 +3220,7 @@ CREATE TABLE users (
             {
                 new PosCatalogImportItemRequest
                 {
-                    Barcode = "CAT-" + safeScenario + "-" + rowNumber.ToString("000000", CultureInfo.InvariantCulture),
+                    Barcode = CatalogImportHarnessBarcode(scenario, rowNumber),
                     ChangeKind = "new",
                     ClientItemId = clientImportId + "-item-1",
                     ItemNumber = "ITEM-" + safeScenario,
@@ -3168,6 +3254,39 @@ CREATE TABLE users (
             SchemaVersion = PosOnlineContract.CatalogImportSchemaVersion,
             Source = "supplier_excel"
         };
+    }
+
+    private static async Task SeedCatalogImportHarnessProductAsync(
+        SqliteConnectionFactory factory,
+        string scenario,
+        int rowNumber)
+    {
+        var barcode = CatalogImportHarnessBarcode(scenario, rowNumber);
+        using (var conn = factory.Open())
+        {
+            await ExecuteSqliteAsync(conn, null, @"
+INSERT OR IGNORE INTO products(barcode, name, unitPrice, is_active, remote_deleted_at)
+VALUES(@barcode, @name, 150, 1, NULL);
+
+INSERT OR REPLACE INTO product_meta(
+  barcode, article_code, name2, purchase_price, purchase_old, retail_old,
+  supplier_id, supplier_name, category_id, category_name, stock_qty)
+VALUES(
+  @barcode, @articleCode, '', 100, 0, 0,
+  NULL, '', NULL, '', 1);
+
+INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
+VALUES(@barcode, @timestamp, 'retail', NULL, 150, 'IMPORT');",
+                "@barcode", barcode,
+                "@name", "Catalog Import " + NormalizeScenario(scenario),
+                "@articleCode", "ITEM-" + NormalizeScenario(scenario),
+                "@timestamp", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")).ConfigureAwait(false);
+        }
+    }
+
+    private static string CatalogImportHarnessBarcode(string scenario, int rowNumber)
+    {
+        return "CAT-" + NormalizeScenario(scenario) + "-" + rowNumber.ToString("000000", CultureInfo.InvariantCulture);
     }
 
     private static string NormalizeScenario(string scenario)
@@ -3783,6 +3902,36 @@ VALUES(
                 null,
                 "SELECT payload_json FROM catalog_import_outbox WHERE id = @outboxId",
                 "@outboxId", outboxId).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<string> ReadProductRemoteProductIdAsync(SqliteConnectionFactory factory, string barcode)
+    {
+        using (var conn = factory.Open())
+        {
+            return await ScalarStringAsync(
+                conn,
+                null,
+                "SELECT COALESCE(remote_product_id, '') FROM products WHERE barcode = @barcode",
+                "@barcode", barcode).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<string> ReadLatestRemotePriceIdAsync(SqliteConnectionFactory factory, string barcode, string priceType)
+    {
+        using (var conn = factory.Open())
+        {
+            return await ScalarStringAsync(
+                conn,
+                null,
+                @"SELECT COALESCE(remote_price_id, '')
+FROM product_price_history
+WHERE barcode = @barcode
+  AND type = @priceType
+ORDER BY id DESC
+LIMIT 1",
+                "@barcode", barcode,
+                "@priceType", priceType).ConfigureAwait(false);
         }
     }
 
@@ -5736,17 +5885,55 @@ SELECT last_insert_rowid();";
                     ? scenario
                     : "accepted";
                 var clientImportId = ClientImportIdFromBody(body);
+                var idempotencyKey = IdempotencyKeyFromBody(body);
+                var clientItemId = ClientItemIdFromBody(body);
+                var barcode = BarcodeFromBody(body);
                 var response = new PosCatalogImportResponse
                 {
                     Batch = new PosCatalogImportBatchResponse
                     {
                         ClientImportId = scenario == "mismatch" ? "fake-mismatch" : clientImportId,
+                        IdempotencyKey = scenario == "idempotency_mismatch" ? "fake-idempotency-mismatch" : idempotencyKey,
                         PosCatalogImportBatchId = "server-" + scenario,
+                        ServerImportId = "server-" + scenario,
+                        ServerRequestId = "server-request-" + scenario,
                         Status = status
                     },
                     Code = status,
-                    Items = Array.Empty<PosCatalogImportItemAck>(),
+                    Items = new[]
+                    {
+                        new PosCatalogImportItemAck
+                        {
+                            Barcode = barcode,
+                            ClientItemId = clientItemId,
+                            PriceType = "retail",
+                            RemotePriceId = "remote-price-" + scenario,
+                            RemoteProductId = "remote-product-" + scenario,
+                            Status = status
+                        }
+                    },
                     Ok = true,
+                    RemotePriceIds = new[]
+                    {
+                        new PosCatalogImportRemotePriceIdAck
+                        {
+                            Barcode = barcode,
+                            ClientItemId = clientItemId,
+                            PriceType = "retail",
+                            RemotePriceId = "remote-price-map-" + scenario
+                        }
+                    },
+                    RemoteProductIds = new[]
+                    {
+                        new PosCatalogImportRemoteProductIdAck
+                        {
+                            Barcode = barcode,
+                            ClientItemId = clientItemId,
+                            RemoteProductId = "remote-product-map-" + scenario
+                        }
+                    },
+                    ServerImportId = "server-" + scenario,
+                    ServerRequestId = "server-request-" + scenario,
                     ServerTime = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
                 };
                 await WriteJsonAsync(stream, 200, SerializeDataContract(response), cancellationToken).ConfigureAwait(false);
@@ -5755,7 +5942,7 @@ SELECT last_insert_rowid();";
 
         private static string ScenarioFromBody(string body)
         {
-            foreach (var scenario in new[] { "validation_failed", "auth_denied", "idempotent", "duplicate", "conflict", "mismatch", "timeout", "accepted" })
+            foreach (var scenario in new[] { "validation_failed", "auth_denied", "idempotent", "duplicate", "conflict", "idempotency_mismatch", "mismatch", "timeout", "accepted" })
             {
                 if ((body ?? string.Empty).IndexOf(scenario, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
@@ -5779,6 +5966,68 @@ SELECT last_insert_rowid();";
                         clientImportId.ValueKind == JsonValueKind.String)
                     {
                         return clientImportId.GetString() ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+
+        private static string IdempotencyKeyFromBody(string body)
+        {
+            try
+            {
+                using (var document = JsonDocument.Parse(body ?? "{}"))
+                {
+                    JsonElement batch;
+                    JsonElement idempotencyKey;
+                    if (document.RootElement.TryGetProperty("batch", out batch) &&
+                        batch.TryGetProperty("idempotencyKey", out idempotencyKey) &&
+                        idempotencyKey.ValueKind == JsonValueKind.String)
+                    {
+                        return idempotencyKey.GetString() ?? string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return string.Empty;
+        }
+
+        private static string ClientItemIdFromBody(string body)
+        {
+            return FirstCatalogItemStringFromBody(body, "clientItemId");
+        }
+
+        private static string BarcodeFromBody(string body)
+        {
+            return FirstCatalogItemStringFromBody(body, "barcode");
+        }
+
+        private static string FirstCatalogItemStringFromBody(string body, string propertyName)
+        {
+            try
+            {
+                using (var document = JsonDocument.Parse(body ?? "{}"))
+                {
+                    JsonElement items;
+                    if (!document.RootElement.TryGetProperty("items", out items) ||
+                        items.ValueKind != JsonValueKind.Array ||
+                        items.GetArrayLength() <= 0)
+                    {
+                        return string.Empty;
+                    }
+
+                    JsonElement value;
+                    if (items[0].TryGetProperty(propertyName, out value) &&
+                        value.ValueKind == JsonValueKind.String)
+                    {
+                        return value.GetString() ?? string.Empty;
                     }
                 }
             }

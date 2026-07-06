@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.Serialization.Json;
 using System.Text;
+using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Win7POS.Core.Import;
@@ -125,8 +126,8 @@ public sealed class SupplierImportDataTests
         var recoveredAt = nowMs + (17 * 60 * 1000);
         Assert.IsTrue(await repository.PrepareAttemptAsync(id, recoveredAt));
         Assert.AreEqual(2, await ScalarLongAsync(db.Factory, "SELECT attempt_count FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
-        Assert.IsFalse(await repository.MarkAckedAsync(id, "late-first-attempt", recoveredAt + 1000, expectedAttemptCount: 1));
-        Assert.IsTrue(await repository.MarkAckedAsync(id, "server-acked", recoveredAt + 2000, expectedAttemptCount: 2));
+        Assert.IsFalse(await repository.MarkAckedAsync(id, "late-first-attempt", "server-request-late", recoveredAt + 1000, expectedAttemptCount: 1));
+        Assert.IsTrue(await repository.MarkAckedAsync(id, "server-acked", "server-request-acked", recoveredAt + 2000, expectedAttemptCount: 2));
         Assert.AreEqual("acked", await ScalarStringAsync(db.Factory, "SELECT status FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
     }
 
@@ -139,11 +140,112 @@ public sealed class SupplierImportDataTests
         var id = await repository.EnqueueAsync(BuildCatalogEntry("acked-race", 4));
 
         Assert.IsTrue(await repository.PrepareAttemptAsync(id, nowMs));
-        Assert.IsTrue(await repository.MarkAckedAsync(id, "server-acked", nowMs + 1000));
-        Assert.IsFalse(await repository.MarkRetryAsync(id, "timeout", nowMs + 30000, nowMs + 2000));
-        Assert.IsFalse(await repository.MarkBlockedAsync(id, "late_block", nowMs + 3000));
+        Assert.IsTrue(await repository.MarkAckedAsync(id, "server-acked", "server-request-acked", nowMs + 1000, expectedAttemptCount: 1));
+        Assert.IsFalse(await repository.MarkRetryAsync(id, "timeout", nowMs + 30000, nowMs + 2000, expectedAttemptCount: 1));
+        Assert.IsFalse(await repository.MarkBlockedAsync(id, "late_block", nowMs + 3000, expectedAttemptCount: 1));
 
         Assert.AreEqual("acked", await ScalarStringAsync(db.Factory, "SELECT status FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
+    }
+
+    [TestMethod]
+    public async Task CatalogImportOutboxRepository_AckAttemptMatch_AppliesRemoteIds()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogImportOutboxRepository(db.Factory);
+        var products = new ProductRepository(db.Factory);
+        var nowMs = 1767225600000L;
+        var id = await repository.EnqueueAsync(BuildCatalogEntry("remote-ids", 5));
+        await products.UpsertAsync(new Product { Barcode = "CAT-5", Name = "Catalog Remote", UnitPrice = 180 });
+        await products.InsertPriceHistoryAsync("CAT-5", "retail", 180, "IMPORT");
+
+        Assert.IsTrue(await repository.PrepareAttemptAsync(id, nowMs));
+        var ack = new CatalogImportAckResult
+        {
+            ServerImportId = "server-import-remote",
+            ServerRequestId = "server-request-remote",
+            RemoteProductIds = new[]
+            {
+                new CatalogImportRemoteProductId
+                {
+                    Barcode = "CAT-5",
+                    ClientItemId = "test-import-remote-ids-item",
+                    RemoteProductId = "remote-product-5"
+                }
+            },
+            RemotePriceIds = new[]
+            {
+                new CatalogImportRemotePriceId
+                {
+                    Barcode = "CAT-5",
+                    ClientItemId = "test-import-remote-ids-item",
+                    PriceType = "retail",
+                    RemotePriceId = "remote-price-5"
+                }
+            }
+        };
+
+        Assert.IsFalse(await repository.MarkAckedAsync(id, ack, nowMs + 1000, expectedAttemptCount: 2));
+        Assert.AreEqual("", await ScalarStringAsync(db.Factory, "SELECT COALESCE(remote_product_id, '') FROM products WHERE barcode = 'CAT-5'"));
+        Assert.AreEqual("", await ScalarStringAsync(db.Factory, "SELECT COALESCE(remote_price_id, '') FROM product_price_history WHERE barcode = 'CAT-5' ORDER BY id DESC LIMIT 1"));
+
+        Assert.IsTrue(await repository.MarkAckedAsync(id, ack, nowMs + 2000, expectedAttemptCount: 1));
+        Assert.AreEqual("acked", await ScalarStringAsync(db.Factory, "SELECT status FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
+        Assert.AreEqual("server-request-remote", await ScalarStringAsync(db.Factory, "SELECT COALESCE(server_request_id, '') FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
+        Assert.AreEqual("remote-product-5", await ScalarStringAsync(db.Factory, "SELECT COALESCE(remote_product_id, '') FROM products WHERE barcode = 'CAT-5'"));
+        Assert.AreEqual("remote-price-5", await ScalarStringAsync(db.Factory, "SELECT COALESCE(remote_price_id, '') FROM product_price_history WHERE barcode = 'CAT-5' ORDER BY id DESC LIMIT 1"));
+    }
+
+    [TestMethod]
+    public async Task CatalogImportOutboxRepository_AckRemotePriceIds_UsesClientItemIdentityForLateAck()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogImportOutboxRepository(db.Factory);
+        var nowMs = 1767225600000L;
+        var entry = BuildCatalogEntry("late-price-ack", 6);
+        var outboxId = await repository.EnqueueAsync(entry);
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+INSERT INTO product_price_history(
+  barcode, timestamp, type, old_price, new_price, source,
+  catalog_import_client_item_id, catalog_import_idempotency_key)
+VALUES(
+  'CAT-6', '2026-01-01T00:00:01Z', 'retail', NULL, 180, 'IMPORT',
+  @clientItemId, @idempotencyKey);
+
+INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
+VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
+                new
+                {
+                    clientItemId = "test-import-late-price-ack-item",
+                    idempotencyKey = entry.IdempotencyKey
+                });
+        }
+
+        Assert.IsTrue(await repository.PrepareAttemptAsync(outboxId, nowMs));
+        var ack = new CatalogImportAckResult
+        {
+            ServerImportId = "server-import-late-price",
+            ServerRequestId = "server-request-late-price",
+            RemotePriceIds = new[]
+            {
+                new CatalogImportRemotePriceId
+                {
+                    Barcode = "CAT-6",
+                    ClientItemId = "test-import-late-price-ack-item",
+                    PriceType = "retail",
+                    RemotePriceId = "remote-price-original"
+                }
+            }
+        };
+
+        Assert.IsTrue(await repository.MarkAckedAsync(outboxId, ack, nowMs + 1000, expectedAttemptCount: 1));
+        Assert.AreEqual(
+            "remote-price-original",
+            await ScalarStringAsync(db.Factory, "SELECT COALESCE(remote_price_id, '') FROM product_price_history WHERE barcode = 'CAT-6' AND catalog_import_client_item_id = 'test-import-late-price-ack-item'"));
+        Assert.AreEqual(
+            "",
+            await ScalarStringAsync(db.Factory, "SELECT COALESCE(remote_price_id, '') FROM product_price_history WHERE barcode = 'CAT-6' AND catalog_import_client_item_id IS NULL ORDER BY id DESC LIMIT 1"));
     }
 
     private static CatalogImportOutboxEntry BuildCatalogEntry(string name, int rowNumber)

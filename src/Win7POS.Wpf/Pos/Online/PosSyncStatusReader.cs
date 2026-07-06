@@ -96,10 +96,7 @@ namespace Win7POS.Wpf.Pos.Online
                 LastOnlineText = T("sync.sessionVerified") + ": " + FormatIso(trustedSession?.LastOkServerAt),
                 LastSalesSyncText = T("sync.lastSaleSent") + ": " + FormatIso(lastSales),
                 RequiresAttention = requiresAttention,
-                PendingSalesText = T("sync.pendingSales") + ": " + outbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
-                    " | " + T("sync.pendingCatalogImports") + ": " + catalogOutbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
-                    " | " + T("sync.toRetry") + ": " + outbox.Retry.ToString(CultureInfo.InvariantCulture) +
-                    " | " + T("sync.blockedAttention") + ": " + (outbox.Blocked + catalogOutbox.Blocked).ToString(CultureInfo.InvariantCulture),
+                PendingSalesText = DetailedPendingOutboxText(outbox, catalogOutbox),
                 PolicyText = PolicyText(policyContractVersion, policyPaymentMethods, policyStaffOfflineMirror, policyTaxStatus, policyWarning),
                 RestoreReviewText = RestoreReviewText(restoreNeedsReview, restoreCompletedAt, restorePreBackupPath),
                 SalesAttentionText = SalesAttentionText(outbox, restoreNeedsReview),
@@ -213,14 +210,14 @@ namespace Win7POS.Wpf.Pos.Online
                 return T("sync.requiresAttention") +
                     " | " + ConnectivityText(connectivityState) +
                     " | " + PendingOutboxText(outbox, catalogOutbox) +
-                    " | " + T("sync.blockedAttention") + ": " + (outbox.Blocked + catalogOutbox.Blocked).ToString(CultureInfo.InvariantCulture);
+                    " | " + BlockedOutboxText(outbox, catalogOutbox);
             }
 
             if (outbox.Retry > 0 || catalogOutbox.Retry > 0)
             {
                 return T("sync.retrySync") +
                     " | " + ConnectivityText(connectivityState) +
-                    " | " + T("sync.toRetry") + ": " + (outbox.Retry + catalogOutbox.Retry).ToString(CultureInfo.InvariantCulture) +
+                    " | " + RetryOutboxText(outbox, catalogOutbox) +
                     " | " + PendingOutboxText(outbox, catalogOutbox);
             }
 
@@ -264,7 +261,7 @@ namespace Win7POS.Wpf.Pos.Online
                 return T("sync.inProgress") +
                     " | " + ConnectivityText(connectivityState) +
                     " | " + PendingOutboxText(outbox, catalogOutbox) +
-                    " | " + T("sync.toRetry") + ": " + (outbox.Retry + catalogOutbox.Retry).ToString(CultureInfo.InvariantCulture);
+                    " | " + RetryOutboxText(outbox, catalogOutbox);
             }
 
             if (string.IsNullOrWhiteSpace(lastCatalog))
@@ -294,6 +291,36 @@ namespace Win7POS.Wpf.Pos.Online
         {
             return T("sync.pendingSales") + ": " + salesOutbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
                 " | " + T("sync.pendingCatalogImports") + ": " + catalogOutbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static string DetailedPendingOutboxText(
+            SalesSyncOutboxSummary salesOutbox,
+            CatalogImportOutboxSummary catalogOutbox)
+        {
+            return T("sync.pendingSales") + ": " + salesOutbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
+                " (" + T("sync.toRetry") + ": " + salesOutbox.Retry.ToString(CultureInfo.InvariantCulture) +
+                ", " + T("sync.blockedAttention") + ": " + salesOutbox.Blocked.ToString(CultureInfo.InvariantCulture) + ")" +
+                " | " + T("sync.pendingCatalogImports") + ": " + catalogOutbox.PendingOrRetry.ToString(CultureInfo.InvariantCulture) +
+                " (" + T("sync.toRetry") + ": " + catalogOutbox.Retry.ToString(CultureInfo.InvariantCulture) +
+                ", " + T("sync.blockedAttention") + ": " + catalogOutbox.Blocked.ToString(CultureInfo.InvariantCulture) + ")";
+        }
+
+        private static string BlockedOutboxText(
+            SalesSyncOutboxSummary salesOutbox,
+            CatalogImportOutboxSummary catalogOutbox)
+        {
+            return T("sync.blockedAttention") +
+                " | " + T("sync.pendingSales") + ": " + salesOutbox.Blocked.ToString(CultureInfo.InvariantCulture) +
+                " | " + T("sync.pendingCatalogImports") + ": " + catalogOutbox.Blocked.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static string RetryOutboxText(
+            SalesSyncOutboxSummary salesOutbox,
+            CatalogImportOutboxSummary catalogOutbox)
+        {
+            return T("sync.toRetry") +
+                " | " + T("sync.pendingSales") + ": " + salesOutbox.Retry.ToString(CultureInfo.InvariantCulture) +
+                " | " + T("sync.pendingCatalogImports") + ": " + catalogOutbox.Retry.ToString(CultureInfo.InvariantCulture);
         }
 
         private static bool CatalogRequiresAttention(
