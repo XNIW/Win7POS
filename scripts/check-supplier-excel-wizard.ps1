@@ -44,6 +44,7 @@ $dialogCode = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xa
 $viewModel = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs"
 $dialogShellWindow = Read-RepoFile "src/Win7POS.Wpf/Chrome/DialogShellWindow.cs"
 $dialogOwnerHelper = Read-RepoFile "src/Win7POS.Wpf/Infrastructure/DialogOwnerHelper.cs"
+$localization = Read-RepoFile "src/Win7POS.Wpf/Localization/PosLocalization.cs"
 $workflow = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs"
 $applier = Read-RepoFile "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs"
 $analyzer = Read-RepoFile "src/Win7POS.Core/Import/SupplierImportAnalyzer.cs"
@@ -55,11 +56,12 @@ $generalImportWorkflow = Read-RepoFile "src/Win7POS.Wpf/Import/ImportWorkflowSer
 $generalImportViewCode = Read-RepoFile "src/Win7POS.Wpf/Import/ImportView.xaml.cs"
 $productDbImportViewModel = Read-RepoFile "src/Win7POS.Wpf/Import/ProductDbImportViewModel.cs"
 
-Assert-Contains $productsView "Import Excel fornitore" "Products entry point missing."
+Assert-Contains $productsView "supplierExcelImport.title" "Products localized entry point missing."
 Assert-Contains $productsView "SupplierExcelImportCommand" "Products entry point is not wired."
 Assert-Contains $productsViewModel "SupplierExcelImportDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner())" "Products entry point does not open supplier dialog."
-Assert-Contains $dbMaintenanceView "Import Excel fornitore" "DB maintenance entry point missing."
+Assert-Contains $dbMaintenanceView "supplierExcelImport.title" "DB maintenance localized entry point missing."
 Assert-Contains $dbMaintenanceView "SupplierExcelImportCommand" "DB maintenance entry point is not wired."
+Assert-Contains $localization "Import Excel fornitore" "Supplier Excel Italian title translation missing."
 Assert-Contains $dbMaintenanceViewModel "internal Window OwnerWindow { get; set; }" "DB maintenance must keep the current dialog owner."
 Assert-Contains $dbMaintenanceDialogCode "vm.OwnerWindow = this" "DB maintenance dialog must pass itself as current owner."
 Assert-Contains $dbMaintenanceViewModel "SupplierExcelImportDialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner())" "DB maintenance entry point must open supplier dialog from the current owner chain."
@@ -93,29 +95,39 @@ $footerStart = $dialogXaml.IndexOf("<Grid Grid.Row=`"3`"", [System.StringCompari
 if ($stepScrollStart -lt 0 -or $stepScrollEnd -lt 0 -or $footerStart -lt 0 -or $footerStart -le $stepScrollEnd) {
     throw "Supplier import footer must stay outside the step ScrollViewer."
 }
-foreach ($button in @("Indietro", "Analizza", "Avanti", "Continua a Sync DB", "Conferma e applica", "Annulla")) {
-    $buttonIndex = $dialogXaml.IndexOf("Content=`"$button`"", [System.StringComparison]::Ordinal)
+foreach ($buttonKey in @("supplierExcelImport.back", "supplierExcelImport.analyze", "supplierExcelImport.next", "supplierExcelImport.continueSyncDb", "supplierExcelImport.confirmApply", "common.cancel")) {
+    $buttonIndex = $dialogXaml.IndexOf("Content=`"{loc:Loc $buttonKey}`"", [System.StringComparison]::Ordinal)
     if ($buttonIndex -lt $footerStart) {
-        throw "Supplier import footer button '$button' must be outside the ScrollViewer."
+        throw "Supplier import footer button '$buttonKey' must be outside the ScrollViewer."
     }
 }
 
-Assert-Contains $dialogXaml "1. Scegli file" "Step 1 missing."
-Assert-Contains $dialogXaml "2. Analizza colonne" "Step 2 missing."
-Assert-Contains $dialogXaml "3. Correggi righe" "Step 3 missing."
-Assert-Contains $dialogXaml "4. Verifica Sync DB" "Step 4 missing."
-Assert-Contains $dialogXaml "Verifica Sync Database" "Step 4 Sync DB title missing."
-Assert-Contains $dialogXaml "coda Admin Web pending" "Step 4 must explain local apply plus pending Admin Web queue."
-Assert-Contains $dialogXaml "Nuovi" "Step 4 new products tab missing."
-Assert-Contains $dialogXaml "Aggiornamenti" "Step 4 updates tab missing."
-Assert-Contains $dialogXaml "Senza modifiche" "Step 4 no-change tab missing."
-Assert-Contains $dialogXaml "Skippati" "Step 4 skipped tab missing."
+Assert-Contains $dialogXaml "supplierExcelImport.stepChooseFile" "Step 1 key missing."
+Assert-Contains $dialogXaml "supplierExcelImport.stepAnalyzeColumns" "Step 2 key missing."
+Assert-Contains $dialogXaml "supplierExcelImport.stepFixRows" "Step 3 key missing."
+Assert-Contains $dialogXaml "supplierExcelImport.stepVerifySync" "Step 4 key missing."
+Assert-Contains $dialogXaml "supplierExcelImport.verifySyncDatabase" "Step 4 Sync DB title key missing."
+Assert-Contains $dialogXaml "supplierExcelImport.verifySyncHelp" "Step 4 help key missing."
+Assert-Contains $dialogXaml "supplierExcelImport.tabNew" "Step 4 new products tab key missing."
+Assert-Contains $dialogXaml "supplierExcelImport.tabUpdates" "Step 4 updates tab key missing."
+Assert-Contains $dialogXaml "supplierExcelImport.tabNoChanges" "Step 4 no-change tab key missing."
+Assert-Contains $dialogXaml "supplierExcelImport.tabSkipped" "Step 4 skipped tab key missing."
+Assert-Contains $localization "1. Scegli file" "Step 1 Italian label missing."
+Assert-Contains $localization "2. Analizza colonne" "Step 2 Italian label missing."
+Assert-Contains $localization "3. Correggi righe" "Step 3 Italian label missing."
+Assert-Contains $localization "4. Verifica Sync DB" "Step 4 Italian label missing."
+Assert-Contains $localization "Verifica Sync Database" "Step 4 Sync DB Italian title missing."
+Assert-Contains $localization "coda Admin Web pending" "Step 4 Italian help must explain local apply plus pending Admin Web queue."
+Assert-Contains $localization "Nuovi" "Step 4 Italian new products tab missing."
+Assert-Contains $localization "Aggiornamenti" "Step 4 Italian updates tab missing."
+Assert-Contains $localization "Senza modifiche" "Step 4 Italian no-change tab missing."
+Assert-Contains $localization "Skippati" "Step 4 Italian skipped tab missing."
 Assert-Contains $dialogXaml "SyncSearchText" "Step 4 search/filter input missing."
 Assert-Contains $dialogXaml "SyncNewProductsView" "Step 4 new products must use filtered view."
 Assert-Contains $dialogXaml "SyncUpdatedProductsView" "Step 4 updates must use filtered view."
 Assert-Contains $dialogXaml "Updated.SecondProductName" "Step 4 updated products must show secondProductName."
 Assert-Contains $dialogXaml "Binding=`"{Binding SecondProductName" "Step 4 new/skipped products must show secondProductName."
-Assert-Contains $dialogXaml "Continua a Sync DB" "Step 3 must continue to Sync DB."
+Assert-Contains $dialogXaml "supplierExcelImport.continueSyncDb" "Step 3 must continue to Sync DB."
 Assert-Contains $dialogXaml "Visibility=`"{Binding IsStep4" "Apply must only be visible on Step 4."
 Assert-Contains $viewModel "BuildSyncPreviewAsync" "Step 4 sync preview builder missing."
 Assert-Contains $viewModel "InvalidateSyncPreview" "Step 3 edits must invalidate Step 4 preview."
@@ -135,8 +147,11 @@ Assert-Contains $generalImportViewCode ".xls" "General catalog import drag/drop 
 Assert-Contains $productDbImportViewModel "HasCurrentWorkbook" "Legacy product DB import must reject stale analyzed workbooks."
 Assert-Contains $productDbImportViewModel "BuildCurrentWorkbookFingerprint" "Legacy product DB import must fingerprint analyzed workbook files."
 
-foreach ($required in @("originalColumnName", "canonicalKey", "headerSource", "confidence", "sampleValues", "enabled")) {
+foreach ($required in @("supplierExcelImport.columnOriginalName", "supplierExcelImport.columnCanonicalKey", "supplierExcelImport.columnHeaderSource", "supplierExcelImport.columnConfidence", "supplierExcelImport.columnSampleValues", "supplierExcelImport.columnEnabled")) {
     Assert-Contains $dialogXaml $required "Step 2 mapping grid missing $required."
+}
+foreach ($translated in @("originalColumnName", "canonicalKey", "headerSource", "confidence", "sampleValues", "enabled")) {
+    Assert-Contains $localization $translated "Step 2 mapping translation missing $translated."
 }
 Assert-Contains $dialogXaml "SelectedItem=`"{Binding CanonicalKey" "Step 2 canonical override missing."
 Assert-Contains $dialogXaml "Binding=`"{Binding IsEnabled" "Step 2 disable checkbox missing."
@@ -144,10 +159,13 @@ Assert-Contains $viewModel "Columns.ToDictionary(c => c.ColumnIndex" "Override s
 Assert-Contains $viewModel "c.IsEnabled ? (c.CanonicalKey ?? string.Empty) : string.Empty" "Disable state is not passed to analyzer."
 Assert-Contains $viewModel "await AnalyzeAsync().ConfigureAwait(true)" "Mapping changes must rebuild Step 3 preview."
 
-foreach ($required in @("barcode", "itemNumber", "productName", "secondProductName", "purchasePrice", "retailPrice", "quantity", "supplier", "category")) {
-    Assert-Contains $dialogXaml "Header=`"$required`"" "Step 3 editable grid missing $required."
+foreach ($required in @("supplierExcelImport.fieldBarcode", "supplierExcelImport.fieldItemNumber", "supplierExcelImport.fieldProductName", "supplierExcelImport.fieldSecondProductName", "supplierExcelImport.fieldPurchasePrice", "supplierExcelImport.fieldRetailPrice", "supplierExcelImport.fieldQuantity", "supplierExcelImport.fieldSupplier", "supplierExcelImport.fieldCategory")) {
+    Assert-Contains $dialogXaml "Header=`"{loc:Loc $required}`"" "Step 3 editable grid missing $required."
 }
-Assert-Contains $dialogXaml "Header=`"Skip`"" "Step 3 skip checkbox missing."
+foreach ($translated in @("barcode", "itemNumber", "productName", "secondProductName", "purchasePrice", "retailPrice", "quantity", "supplier", "category")) {
+    Assert-Contains $localization $translated "Step 3 field translation missing $translated."
+}
+Assert-Contains $dialogXaml "Header=`"{loc:Loc supplierExcelImport.fieldSkip}`"" "Step 3 skip checkbox missing."
 Assert-Contains $dialogXaml "Binding=`"{Binding IsSkipped" "Step 3 skip binding missing."
 Assert-Contains $dialogXaml "Binding=`"{Binding Barcode, Mode=TwoWay" "Step 3 barcode must be editable."
 Assert-Contains $viewModel "new[] { 10, 50, 100 }" "Bulk rounding options must be 10/50/100 CLP."
@@ -177,7 +195,8 @@ Assert-Contains $cli "unsupported_or_corrupt_with_clear_message" "Completion rep
 Assert-Contains $analyzer "Nuovo prodotto senza retailPrice." "Step 4 missing retailPrice blocker missing."
 Assert-Contains $analyzer "Barcode richiesto prima del Sync DB." "Step 4 missing barcode blocker missing."
 Assert-Contains $analyzer "Nuovo prodotto senza productName, secondProductName o itemNumber." "Step 4 missing product identity blocker missing."
-Assert-Contains $dialogXaml "Nuovi prodotti senza productName, secondProductName o itemNumber" "Step 3 identity warning must mention secondProductName."
+Assert-Contains $dialogXaml "supplierExcelImport.identityWarning" "Step 3 identity warning key missing."
+Assert-Contains $localization "Nuovi prodotti senza productName, secondProductName o itemNumber" "Step 3 identity warning translation must mention secondProductName."
 Assert-Contains $viewModel "row.IsSkipped" "Apply must track operator-skipped rows."
 Assert-Contains $viewModel "SyncErrors" "Step 4 blocker list must expose sync preview errors."
 Assert-Contains $viewModel "Ricalcola Sync DB prima di applicare." "Apply blocker must require Sync DB recalculation."

@@ -76,6 +76,7 @@ internal static class Program
     {
         public string BaseUrl = string.Empty;
         public bool KeepDb;
+        public string SessionJsonPath = string.Empty;
     }
 
     private sealed class SupplierExcelPerfSelfTestParams
@@ -277,7 +278,7 @@ internal static class Program
         Console.WriteLine("  --supplier-excel-apply-selftest");
         Console.WriteLine("  --supplier-excel-perf-selftest [--products N] [--rows N] [--keepdb]");
         Console.WriteLine("  --catalog-import-outbox-selftest");
-        Console.WriteLine("  --catalog-import-sync-http-harness [--base-url <AdminWebUrl>] [--keepdb]");
+        Console.WriteLine("  --catalog-import-sync-http-harness [--base-url <AdminWebUrl>] [--session-json <path>] [--keepdb]");
         Console.WriteLine("  --sqlite-integrity-selftest");
         Console.WriteLine("  --db-restore-guard-selftest");
         Console.WriteLine("  --supplier-excel-drive-smoke <folder>");
@@ -347,6 +348,14 @@ internal static class Program
             {
                 if (i + 1 >= args.Length) return false;
                 parameters.BaseUrl = args[i + 1];
+                i += 1;
+                continue;
+            }
+
+            if (string.Equals(arg, "--session-json", StringComparison.OrdinalIgnoreCase))
+            {
+                if (i + 1 >= args.Length) return false;
+                parameters.SessionJsonPath = args[i + 1];
                 i += 1;
                 continue;
             }
@@ -2251,6 +2260,7 @@ CREATE TABLE users (
         var viewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs");
         var dialogShellWindow = ReadRepoFile(root, "src/Win7POS.Wpf/Chrome/DialogShellWindow.cs");
         var dialogOwnerHelper = ReadRepoFile(root, "src/Win7POS.Wpf/Infrastructure/DialogOwnerHelper.cs");
+        var localization = ReadRepoFile(root, "src/Win7POS.Wpf/Localization/PosLocalization.cs");
         var workflow = ReadRepoFile(root, "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs");
         var applier = ReadRepoFile(root, "src/Win7POS.Data/Import/SupplierExcelImportApplier.cs");
         var catalogImportContract = ReadRepoFile(root, "src/Win7POS.Core/Online/PosCatalogImportContract.cs");
@@ -2265,11 +2275,12 @@ CREATE TABLE users (
         var generalImportViewCode = ReadRepoFile(root, "src/Win7POS.Wpf/Import/ImportView.xaml.cs");
         var productDbImportViewModel = ReadRepoFile(root, "src/Win7POS.Wpf/Import/ProductDbImportViewModel.cs");
 
-        AssertText(productsView, "Import Excel fornitore", "Products screen must expose supplier Excel import.");
+        AssertText(productsView, "supplierExcelImport.title", "Products screen must expose localized supplier Excel import.");
         AssertText(productsView, "SupplierExcelImportCommand", "Products import button must bind supplier command.");
         AssertText(productsViewModel, "SupplierExcelImportDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner())", "Products command must open the supplier dialog modally.");
-        AssertText(dbMaintenanceView, "Import Excel fornitore", "DB maintenance screen must expose supplier Excel import.");
+        AssertText(dbMaintenanceView, "supplierExcelImport.title", "DB maintenance screen must expose localized supplier Excel import.");
         AssertText(dbMaintenanceView, "SupplierExcelImportCommand", "DB maintenance import button must bind supplier command.");
+        AssertText(localization, "Import Excel fornitore", "Supplier Excel import Italian title translation missing.");
         AssertText(dbMaintenanceViewModel, "internal Window OwnerWindow { get; set; }", "DB maintenance view model must keep the current dialog owner.");
         AssertText(dbMaintenanceDialogCode, "vm.OwnerWindow = this", "DB maintenance dialog must pass itself as current owner.");
         AssertText(dbMaintenanceViewModel, "SupplierExcelImportDialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner())", "DB maintenance command must open the supplier dialog from the current owner chain.");
@@ -2310,36 +2321,46 @@ CREATE TABLE users (
         var footerStart = dialogXaml.IndexOf("<Grid Grid.Row=\"3\"", StringComparison.Ordinal);
         Assert(stepScrollStart >= 0 && stepScrollEnd >= 0 && footerStart > stepScrollEnd,
             "Supplier import footer must stay outside the step ScrollViewer.");
-        foreach (var button in new[]
+        foreach (var buttonKey in new[]
         {
-            "Indietro",
-            "Analizza",
-            "Avanti",
-            "Continua a Sync DB",
-            "Conferma e applica",
-            "Annulla"
+            "supplierExcelImport.back",
+            "supplierExcelImport.analyze",
+            "supplierExcelImport.next",
+            "supplierExcelImport.continueSyncDb",
+            "supplierExcelImport.confirmApply",
+            "common.cancel"
         })
         {
-            Assert(dialogXaml.IndexOf("Content=\"" + button + "\"", StringComparison.Ordinal) > footerStart,
-                "Supplier import footer button must be outside the ScrollViewer: " + button);
+            Assert(dialogXaml.IndexOf("Content=\"{loc:Loc " + buttonKey + "}\"", StringComparison.Ordinal) > footerStart,
+                "Supplier import footer button must be outside the ScrollViewer: " + buttonKey);
         }
 
-        AssertText(dialogXaml, "1. Scegli file", "Step 1 label missing.");
-        AssertText(dialogXaml, "2. Analizza colonne", "Step 2 label missing.");
-        AssertText(dialogXaml, "3. Correggi righe", "Step 3 label missing.");
-        AssertText(dialogXaml, "4. Verifica Sync DB", "Step 4 label missing.");
-        AssertText(dialogXaml, "Verifica Sync Database", "Step 4 Sync DB title missing.");
-        AssertText(dialogXaml, "coda Admin Web pending", "Step 4 must explain local apply and Admin Web pending queue.");
-        AssertText(dialogXaml, "Nuovi", "Step 4 new products tab missing.");
-        AssertText(dialogXaml, "Aggiornamenti", "Step 4 updates tab missing.");
-        AssertText(dialogXaml, "Senza modifiche", "Step 4 no-change tab missing.");
-        AssertText(dialogXaml, "Skippati", "Step 4 skipped tab missing.");
+        AssertText(dialogXaml, "supplierExcelImport.stepChooseFile", "Step 1 label key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.stepAnalyzeColumns", "Step 2 label key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.stepFixRows", "Step 3 label key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.stepVerifySync", "Step 4 label key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.verifySyncDatabase", "Step 4 Sync DB title key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.verifySyncHelp", "Step 4 help key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.tabNew", "Step 4 new products tab key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.tabUpdates", "Step 4 updates tab key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.tabNoChanges", "Step 4 no-change tab key missing.");
+        AssertText(dialogXaml, "supplierExcelImport.tabSkipped", "Step 4 skipped tab key missing.");
+        AssertText(localization, "1. Scegli file", "Step 1 Italian label missing.");
+        AssertText(localization, "2. Analizza colonne", "Step 2 Italian label missing.");
+        AssertText(localization, "3. Correggi righe", "Step 3 Italian label missing.");
+        AssertText(localization, "4. Verifica Sync DB", "Step 4 Italian label missing.");
+        AssertText(localization, "Verifica Sync Database", "Step 4 Sync DB Italian title missing.");
+        AssertText(localization, "coda Admin Web pending", "Step 4 Italian help must explain local apply and Admin Web pending queue.");
+        AssertText(localization, "Nuovi", "Step 4 Italian new products tab missing.");
+        AssertText(localization, "Aggiornamenti", "Step 4 Italian updates tab missing.");
+        AssertText(localization, "Senza modifiche", "Step 4 Italian no-change tab missing.");
+        AssertText(localization, "Skippati", "Step 4 Italian skipped tab missing.");
         AssertText(dialogXaml, "SyncSearchText", "Step 4 search/filter input missing.");
         AssertText(dialogXaml, "SyncNewProductsView", "Step 4 new products must use filtered view.");
         AssertText(dialogXaml, "SyncUpdatedProductsView", "Step 4 updates must use filtered view.");
         AssertText(dialogXaml, "Updated.SecondProductName", "Step 4 updated products must show secondProductName.");
         AssertText(dialogXaml, "Binding=\"{Binding SecondProductName", "Step 4 new/skipped products must show secondProductName.");
-        AssertText(dialogXaml, "Continua a Sync DB", "Step 3 must continue to Sync DB.");
+        AssertText(dialogXaml, "supplierExcelImport.continueSyncDb", "Step 3 must continue to Sync DB.");
         AssertText(dialogXaml, "Visibility=\"{Binding IsStep4", "Apply must only be visible on Step 4.");
         AssertText(viewModel, "IsStep1", "Step 1 state missing.");
         AssertText(viewModel, "IsStep2", "Step 2 state missing.");
@@ -2371,15 +2392,19 @@ CREATE TABLE users (
 
         foreach (var required in new[]
         {
-            "originalColumnName",
-            "canonicalKey",
-            "headerSource",
-            "confidence",
-            "sampleValues",
-            "enabled"
+            "supplierExcelImport.columnOriginalName",
+            "supplierExcelImport.columnCanonicalKey",
+            "supplierExcelImport.columnHeaderSource",
+            "supplierExcelImport.columnConfidence",
+            "supplierExcelImport.columnSampleValues",
+            "supplierExcelImport.columnEnabled"
         })
         {
             AssertText(dialogXaml, required, "Step 2 mapping grid missing " + required + ".");
+        }
+        foreach (var translated in new[] { "originalColumnName", "canonicalKey", "headerSource", "confidence", "sampleValues", "enabled" })
+        {
+            AssertText(localization, translated, "Step 2 mapping translation missing " + translated + ".");
         }
         AssertText(dialogXaml, "SelectedItem=\"{Binding CanonicalKey", "Step 2 must allow canonical key override.");
         AssertText(dialogXaml, "Binding=\"{Binding IsEnabled", "Step 2 must allow disabling columns.");
@@ -2389,20 +2414,24 @@ CREATE TABLE users (
 
         foreach (var required in new[]
         {
-            "barcode",
-            "itemNumber",
-            "productName",
-            "secondProductName",
-            "purchasePrice",
-            "retailPrice",
-            "quantity",
-            "supplier",
-            "category"
+            "supplierExcelImport.fieldBarcode",
+            "supplierExcelImport.fieldItemNumber",
+            "supplierExcelImport.fieldProductName",
+            "supplierExcelImport.fieldSecondProductName",
+            "supplierExcelImport.fieldPurchasePrice",
+            "supplierExcelImport.fieldRetailPrice",
+            "supplierExcelImport.fieldQuantity",
+            "supplierExcelImport.fieldSupplier",
+            "supplierExcelImport.fieldCategory"
         })
         {
-            AssertText(dialogXaml, "Header=\"" + required + "\"", "Step 3 editable grid missing " + required + ".");
+            AssertText(dialogXaml, "Header=\"{loc:Loc " + required + "}\"", "Step 3 editable grid missing " + required + ".");
         }
-        AssertText(dialogXaml, "Header=\"Skip\"", "Step 3 skip checkbox missing.");
+        foreach (var translated in new[] { "barcode", "itemNumber", "productName", "secondProductName", "purchasePrice", "retailPrice", "quantity", "supplier", "category" })
+        {
+            AssertText(localization, translated, "Step 3 field translation missing " + translated + ".");
+        }
+        AssertText(dialogXaml, "Header=\"{loc:Loc supplierExcelImport.fieldSkip}\"", "Step 3 skip checkbox missing.");
         AssertText(dialogXaml, "Binding=\"{Binding IsSkipped", "Step 3 skip binding missing.");
         AssertText(dialogXaml, "Binding=\"{Binding Barcode, Mode=TwoWay", "Step 3 barcode must be editable.");
 
@@ -2818,7 +2847,10 @@ CREATE TABLE users (
             var factory = new SqliteConnectionFactory(options);
             var repository = new CatalogImportOutboxRepository(factory);
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var scenarios = new[] { "accepted", "duplicate", "idempotent", "validation_failed", "conflict", "mismatch", "auth_denied", "timeout" };
+            var realSessionMode = !string.IsNullOrWhiteSpace(parameters.SessionJsonPath);
+            var scenarios = realSessionMode
+                ? new[] { "accepted-" + Guid.NewGuid().ToString("N").Substring(0, 12) }
+                : new[] { "accepted", "duplicate", "idempotent", "validation_failed", "conflict", "mismatch", "auth_denied", "timeout" };
             var ids = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             for (var i = 0; i < scenarios.Length; i++)
             {
@@ -2826,45 +2858,66 @@ CREATE TABLE users (
             }
 
             var baseUrl = parameters.BaseUrl;
-            if (string.IsNullOrWhiteSpace(baseUrl))
+            if (string.IsNullOrWhiteSpace(baseUrl) && !realSessionMode)
             {
                 fakeServer = new CatalogImportFakeServer();
                 baseUrl = fakeServer.BaseUrl;
             }
 
             Assert(PosAdminWebOptions.TryCreate(baseUrl, out var adminOptions, out var reason), "Invalid Admin Web URL for catalog import harness: " + reason);
-            var session = new PosTrustedDeviceSession
-            {
-                DeviceToken = "device-token-harness",
-                PosSessionId = "pos-session-harness",
-                SessionToken = "session-token-harness",
-                ShopCode = "SHOP-HARNESS",
-                ShopDeviceId = "shop-device-harness",
-            };
+            var session = realSessionMode
+                ? ToTrustedSession(ReadCatalogImportHarnessSession(parameters.SessionJsonPath))
+                : new PosTrustedDeviceSession
+                {
+                    DeviceToken = "device-token-harness",
+                    PosSessionId = "pos-session-harness",
+                    SessionToken = "session-token-harness",
+                    ShopCode = "SHOP-HARNESS",
+                    ShopDeviceId = "shop-device-harness",
+                };
 
-            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(realSessionMode ? 30 : 2)))
             {
                 var result = await new CatalogImportSyncService(factory)
                     .SyncPendingAsync(adminOptions, session, 10, cts.Token)
                     .ConfigureAwait(false);
-                Assert(result.Total == scenarios.Length, "Catalog import sync must process all seeded rows.");
-                Assert(result.Acked == 3, "Accepted/duplicate/idempotent rows must be acked.");
-                Assert(result.Blocked == 3, "Validation/conflict/mismatch rows must be blocked.");
-                Assert(result.Retried == 2, "Auth/timeout rows must be retry.");
-                Assert(result.RequiresTrustClear, "Auth denied response must request trust clear.");
+                if (realSessionMode)
+                {
+                    Assert(result.Total == 1, "Real catalog import sync must process the seeded row.");
+                    Assert(result.Acked == 1, "Real catalog import sync row must be acked.");
+                    Assert(result.Blocked == 0, "Real catalog import sync must not block the seeded row.");
+                    Assert(result.Retried == 0, "Real catalog import sync must not leave the seeded row retrying.");
+                    Assert(!result.RequiresTrustClear, "Real catalog import sync must not request trust clear.");
+                }
+                else
+                {
+                    Assert(result.Total == scenarios.Length, "Catalog import sync must process all seeded rows.");
+                    Assert(result.Acked == 3, "Accepted/duplicate/idempotent rows must be acked.");
+                    Assert(result.Blocked == 3, "Validation/conflict/mismatch rows must be blocked.");
+                    Assert(result.Retried == 2, "Auth/timeout rows must be retry.");
+                    Assert(result.RequiresTrustClear, "Auth denied response must request trust clear.");
+                }
             }
 
-            Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["accepted"]).ConfigureAwait(false) == "acked", "accepted status mismatch.");
-            Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["duplicate"]).ConfigureAwait(false) == "acked", "duplicate status mismatch.");
-            Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["idempotent"]).ConfigureAwait(false) == "acked", "idempotent status mismatch.");
-            Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["validation_failed"]).ConfigureAwait(false) == "failed_blocked", "validation_failed status mismatch.");
-            Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["conflict"]).ConfigureAwait(false) == "failed_blocked", "conflict status mismatch.");
-            Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["mismatch"]).ConfigureAwait(false) == "failed_blocked", "mismatch status mismatch.");
-            Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["auth_denied"]).ConfigureAwait(false) == "retry", "auth_denied status mismatch.");
-            Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["timeout"]).ConfigureAwait(false) == "retry", "timeout status mismatch.");
-            var payload = await ReadCatalogImportOutboxPayloadAsync(factory, ids["accepted"]).ConfigureAwait(false);
-            Assert(!payload.Contains("device-token-harness", StringComparison.OrdinalIgnoreCase), "Persisted catalog payload must not contain device token.");
-            Assert(!payload.Contains("session-token-harness", StringComparison.OrdinalIgnoreCase), "Persisted catalog payload must not contain session token.");
+            if (realSessionMode)
+            {
+                var acceptedId = ids.Values.Single();
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, acceptedId).ConfigureAwait(false) == "acked", "real accepted status mismatch.");
+            }
+            else
+            {
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["accepted"]).ConfigureAwait(false) == "acked", "accepted status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["duplicate"]).ConfigureAwait(false) == "acked", "duplicate status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["idempotent"]).ConfigureAwait(false) == "acked", "idempotent status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["validation_failed"]).ConfigureAwait(false) == "failed_blocked", "validation_failed status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["conflict"]).ConfigureAwait(false) == "failed_blocked", "conflict status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["mismatch"]).ConfigureAwait(false) == "failed_blocked", "mismatch status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["auth_denied"]).ConfigureAwait(false) == "retry", "auth_denied status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["timeout"]).ConfigureAwait(false) == "retry", "timeout status mismatch.");
+                var payload = await ReadCatalogImportOutboxPayloadAsync(factory, ids["accepted"]).ConfigureAwait(false);
+                Assert(!payload.Contains("device-token-harness", StringComparison.OrdinalIgnoreCase), "Persisted catalog payload must not contain device token.");
+                Assert(!payload.Contains("session-token-harness", StringComparison.OrdinalIgnoreCase), "Persisted catalog payload must not contain session token.");
+            }
             await AssertSqliteIntegrityAsync(factory).ConfigureAwait(false);
 
             Console.WriteLine("CATALOG IMPORT SYNC HTTP HARNESS PASS");
@@ -3081,7 +3134,7 @@ CREATE TABLE users (
             {
                 new PosCatalogImportItemRequest
                 {
-                    Barcode = "CAT-" + rowNumber.ToString("000000", CultureInfo.InvariantCulture),
+                    Barcode = "CAT-" + safeScenario + "-" + rowNumber.ToString("000000", CultureInfo.InvariantCulture),
                     ChangeKind = "new",
                     ClientItemId = clientImportId + "-item-1",
                     ItemNumber = "ITEM-" + safeScenario,
@@ -5041,6 +5094,34 @@ SELECT last_insert_rowid();";
             string.IsNullOrWhiteSpace(session.ShopDeviceId))
         {
             throw new InvalidOperationException("Session JSON is missing required Win7POS HTTP harness fields.");
+        }
+
+        return session;
+    }
+
+    private static Task081HttpHarnessSession ReadCatalogImportHarnessSession(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new InvalidOperationException("--session-json is required for real catalog import sync.");
+        }
+
+        if (!File.Exists(path))
+        {
+            throw new InvalidOperationException("Session JSON file was not found.");
+        }
+
+        var session = JsonSerializer.Deserialize<Task081HttpHarnessSession>(
+            File.ReadAllText(path),
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        if (session == null ||
+            string.IsNullOrWhiteSpace(session.DeviceToken) ||
+            string.IsNullOrWhiteSpace(session.PosSessionId) ||
+            string.IsNullOrWhiteSpace(session.SessionToken) ||
+            string.IsNullOrWhiteSpace(session.ShopCode) ||
+            string.IsNullOrWhiteSpace(session.ShopDeviceId))
+        {
+            throw new InvalidOperationException("Session JSON is missing required POS catalog import harness fields.");
         }
 
         return session;

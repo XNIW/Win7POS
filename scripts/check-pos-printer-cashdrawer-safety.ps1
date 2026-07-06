@@ -112,7 +112,9 @@ if ($workflow -notmatch "ReceiptEnabled = receiptEnabled \?\? false" -or $workfl
 
 if ($spooler -match "doc\.PrinterSettings\.PrinterName\s*=\s*opt\.PrinterName[\s\S]{0,250}if\s*\(\s*!string\.IsNullOrWhiteSpace\(opt\.PrinterName\)") {
     Fail "spooler still conditionally falls back to Windows default printer"
-} elseif ($spooler -notmatch "Receipt printer is not configured" -or $spooler -notmatch "doc\.PrinterSettings\.PrinterName\s*=\s*opt\.PrinterName") {
+} elseif ($spooler -notmatch "printer\.receiptPrinterNotConfigured" -or
+    $translations -notmatch "Receipt printer is not configured" -or
+    $spooler -notmatch "doc\.PrinterSettings\.PrinterName\s*=\s*opt\.PrinterName") {
     Fail "spooler must require explicit printer name"
 } else {
     Pass "spooler requires explicit printer name"

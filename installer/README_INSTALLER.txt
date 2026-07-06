@@ -15,8 +15,8 @@ Prerequisites on Windows build machine:
 
 Prerequisiti runtime per il PC destinazione:
 - .NET Framework 4.8 (obbligatorio, il setup verifica e blocca se manca)
-- Microsoft Visual C++ Runtime x86 (consigliato se richiesto da dipendenze native, es. SQLite;
-  il setup mostra solo un avviso e non scarica/installa automaticamente)
+- Microsoft Visual C++ Runtime x86 (obbligatorio; il setup verifica e blocca se manca,
+  senza scaricare/installare automaticamente il redistributable)
 
 How to build installer:
 1) Open installer\Win7POS.iss in Inno Setup Compiler GUI

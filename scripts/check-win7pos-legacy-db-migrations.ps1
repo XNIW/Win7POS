@@ -16,6 +16,24 @@ function Read-Text([string]$relativePath) {
     [System.IO.File]::ReadAllText((Join-Path $repoRoot $relativePath))
 }
 
+function Resolve-DotnetExe {
+    if ($env:DOTNET_EXE -and (Test-Path -LiteralPath $env:DOTNET_EXE)) {
+        return $env:DOTNET_EXE
+    }
+
+    $repoLocal = Join-Path $repoRoot ".dotnet_home\dotnet.exe"
+    if (Test-Path -LiteralPath $repoLocal) {
+        return $repoLocal
+    }
+
+    $codexDotnet10 = "C:\Dev\dotnet10\dotnet.exe"
+    if (Test-Path -LiteralPath $codexDotnet10) {
+        return $codexDotnet10
+    }
+
+    return "dotnet"
+}
+
 $initializerPath = "src/Win7POS.Data/DbInitializer.cs"
 $cliPath = "src/Win7POS.Cli/Program.cs"
 
@@ -85,7 +103,8 @@ if ($initializer -match "(?i)DROP\s+TABLE|ALTER\s+TABLE\s+\w+\s+DROP|DELETE\s+FR
 if (-not $fail) {
     Push-Location $repoRoot
     try {
-        dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -- --task083-legacy-db-startup-harness
+        $dotnetExe = Resolve-DotnetExe
+        & $dotnetExe run --project src/Win7POS.Cli/Win7POS.Cli.csproj -- --task083-legacy-db-startup-harness
         if ($LASTEXITCODE -ne 0) {
             Fail "TASK-083 legacy DB harness failed"
         } else {
