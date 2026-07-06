@@ -115,3 +115,75 @@ Checklist Win7 da rieseguire sul target fisico: `docs\WIN7_PRODUCTION_SMOKE_CHEC
 `READY_FOR_STAGING_E2E_AFTER_OWNER_SECRET`
 
 Il deploy staging e gli artifact reali sono pronti; l'unico gate funzionale non chiuso end-to-end e il positivo Supabase staging, che richiede completamento auth owner e sessione POS staging.
+
+## Addendum ultra-finale 2026-07-06
+
+Stato branch prima di questo addendum documentale:
+
+- Win7POS `fix/win7pos-hardening-phase3`: `46fcd681fcb74fc66cdca3979b8e350172430fb3`.
+- Admin Web `fix/pos-catalog-import-sync-api`: `1ab0f61075862f1256e157926d1c5e8e12dd541d`.
+
+### Cloudflare staging live route
+
+Il workflow Cloudflare staging e stato rieseguito da GitHub Actions per sostituire una versione live successiva che rispondeva `404` solo su `/api/pos/catalog/import-sync`, pur avendo gli altri endpoint POS attivi.
+
+- Run GitHub Actions: `28763455797`.
+- Build job: `85283095902`, `success`.
+- Deploy staging job: `85283293516`, `success`.
+- Worker staging URL: `https://merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev`.
+- Current Version ID: `2daadf35-036c-491e-9ecc-944fbc4def68`.
+- Evidence build: OpenNext route list include `/api/pos/catalog/import-sync`.
+- Evidence staging smoke workflow: `1 passed`.
+
+Probe live post-deploy:
+
+| Probe | Risultato |
+| --- | --- |
+| `GET /api/pos/catalog/import-sync` | `405`, `cache-control: no-store`, request id `posreq_fe7908b0-9bb7-4cd6-aa15-2a833d61c41a` |
+| `POST /api/pos/catalog/import-sync` con `{}` | `400 validation_failed`, `cache-control: no-store`, request id `posreq_60fcdfac-a76a-4815-bf2f-c811088ecfbf` |
+| `POST /api/pos/catalog/import-sync` con payload valido e credenziali finte | `401 auth_denied`, `cache-control: no-store`, request id `posreq_63a1019e-697f-46d8-b4f5-8d2353323c8d` |
+
+Il tentativo di redeploy locale Windows non e stato usato come evidenza finale perche `npm run cf:deploy:staging` si ferma nella fase OpenNext su symlink `EPERM`; il deploy autorevole resta quello Linux di GitHub Actions.
+
+### Win7 physical smoke package
+
+Creato il documento operativo:
+
+- `docs/QA/WIN7_PHYSICAL_SMOKE_REQUEST.md`
+
+Stato: `WIN7_PHYSICAL_MACHINE_REQUIRED_WITH_ARTIFACT_AND_SCRIPT_READY`.
+
+La richiesta contiene target richiesto, artifact GitHub, hash, prereq command, checklist minima e lista evidenze non segrete. Il target Win7 SP1 fisico/VM resta necessario per passare da `WIN7_PHYSICAL_MACHINE_REQUIRED` a `PASS_WIN7_PHYSICAL_SMOKE`.
+
+Artifact validati per il passaggio fisico:
+
+| Artifact | ID | Digest |
+| --- | --- | --- |
+| `Win7POS-Setup` | `8098062159` | `sha256:f4fe4a6e0937738414c110caa5d7fef5cd490003781bbcd8f40198af3f37fccb` |
+| `Win7POS-dist` | `8098062657` | `sha256:2dc7273ea26aa6b0c25b2817f98fce5938632403511929d9832c2d8a4dac2680` |
+| `Win7POS-ReleasePack-x86` | `8098063084` | `sha256:35d39fd02d970b6d0b410e416a8fa16f4728bbc5f519379448a65520bef4a8e7` |
+
+### Supabase owner gate
+
+La CLI Supabase resta ferma su login owner:
+
+- Comando avviato: `supabase login --no-browser --output-format text`.
+- Stato: in attesa del verification code owner.
+- Gate reale: `SUPABASE_OWNER_PERMISSION_REQUIRED`.
+
+Dopo auth owner, i comandi successivi restano:
+
+```powershell
+supabase projects list
+supabase link --project-ref jpgoimipbothfgkokyvm
+supabase migration list --linked
+supabase db push --linked
+```
+
+### Residui dopo addendum
+
+| Residuo | Stato preciso |
+| --- | --- |
+| Supabase staging migration + E2E positivo | `SUPABASE_OWNER_PERMISSION_REQUIRED` |
+| Win7 runtime fisico/VM | `WIN7_PHYSICAL_MACHINE_REQUIRED_WITH_ARTIFACT_AND_SCRIPT_READY` |
+| Merge produzione | `PRODUCTION_MERGE_AWAITING_OWNER_APPROVAL` |
