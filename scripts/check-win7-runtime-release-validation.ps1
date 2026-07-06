@@ -207,10 +207,10 @@ if (-not $fail) {
     Require-Text "Pack check requires Microsoft.Data.Sqlite" $packCheck "Microsoft\.Data\.Sqlite\.dll"
     Require-Text "Pack check forbids CLI deps/runtimeconfig/pdb" $packCheck "Win7POS\.Cli\.deps\.json[\s\S]*Win7POS\.Cli\.runtimeconfig\.json[\s\S]*Win7POS\.Cli\.pdb"
 
-    Require-Text "Installer requires Windows 7 SP1" $installer "(?m)^MinVersion=6\.1sp1$"
+    Require-Text "Installer requires Windows 7 SP1" $installer "(?m)^MinVersion=6\.1sp1\r?$"
     Require-Text "Installer checks .NET 4.8 release key" $installer "IsDotNet48OrLaterInstalled[\s\S]*ReleaseValue\s*>=\s*528040"
     Require-Text "Installer checks VC++ x86 runtime" $installer "VisualStudio\\14\.0\\VC\\Runtimes\\x86"
-    Require-Text "Installer requires admin" $installer "(?m)^PrivilegesRequired=admin$"
+    Require-Text "Installer requires admin" $installer "(?m)^PrivilegesRequired=admin\r?$"
 
     Require-Text "Smoke checklist includes prereq script" $smoke "scripts[\\/]+win7-smoke[\\/]+check-win7-prereqs\.ps1"
     Require-Text "Smoke checklist covers Visual C++ Runtime x86" $smoke "Visual C\+\+ Runtime x86"
