@@ -1,7 +1,7 @@
 # POS / Admin Web / Supabase sync architecture
 
-Status: code-aligned architecture note for branch `refactor/ideal-architecture-win7pos`.
-Last updated: 2026-07-06.
+Status: code-aligned architecture note for branch `refactor/architecture-100-consolidation`.
+Last updated: 2026-07-07.
 
 ## Logical flow
 
@@ -35,6 +35,7 @@ Win7POS.Wpf net48/x86
 
 Layer rules enforced by `scripts/check-architecture-boundaries.ps1`:
 
+- Project shape is fixed and checked: Core/Data target `netstandard2.0`, Data keeps C# 8, WPF targets `net48` with WPF enabled, x86 and `Prefer32Bit`.
 - Core has no WPF/UI, SQLite, Dapper, HTTP transport, ClosedXML or ExcelDataReader references.
 - Core owns pure POS/domain contracts: cart, payment/refund/void models, import normalized rows/analyzers, receipt models, report/date logic and online DTO contracts.
 - Data owns infrastructure: SQLite repositories, migrations, transactions, Admin Web HTTP transport, outbox, catalog/sales sync, backup/restore data operations and Excel/HTML workbook readers.
@@ -124,6 +125,7 @@ Admin Web accepts a new idempotency key once, treats same key/hash as duplicate/
 
 ## Verified by tests
 
+- MSTest architecture boundary tests execute the PowerShell boundary gate and independently assert target frameworks, project reference shape, Data adapter ownership, WPF no direct SQLite/Dapper, Data no WPF refs, Supabase marker absence and outbox payload redaction.
 - MSTest: catalog outbox idempotency, lease recovery, attempt mismatch, mandatory ACK payload hash/attempt, late retry protection, remote product/price id ACK, late price ACK client-item mapping.
 - CLI: `--catalog-import-outbox-selftest`, `--catalog-import-sync-http-harness`, `--catalog-import-reconciliation-selftest`, `--sqlite-integrity-selftest`, `--db-restore-guard-selftest`.
 - PowerShell gates: catalog import outbox/sync, start-of-day, sync status UX, restore guard, security hardening.

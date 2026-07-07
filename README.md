@@ -6,10 +6,10 @@ POS (Point of Sale) per Windows 7 / .NET Framework 4.8, architettura x86. Valuta
 
 ```bash
 # Dalla root del repository
-dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release
+dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86
 ```
 
-Il progetto è configurato con `PlatformTarget=x86` e `TargetFramework=net48`. L’eseguibile si trova in `src/Win7POS.Wpf/bin/Release/net48/`.
+Il progetto è configurato con `PlatformTarget=x86` e `TargetFramework=net48`. L’eseguibile si trova in `src/Win7POS.Wpf/bin/x86/Release/net48/`.
 
 ## Dialog WPF
 
@@ -32,8 +32,9 @@ Regole di confine verificate da `scripts/check-architecture-boundaries.ps1`:
 - `Win7POS.Wpf` resta shell WPF `net48`/x86: dialog, viewmodel, composizione, stampa Windows/spooler e scanner; niente uso diretto di `Microsoft.Data.Sqlite` o Dapper nel progetto WPF.
 - Il POS non parla mai direttamente con Supabase e non contiene chiavi Supabase/service-role/anon.
 - I payload persistiti in outbox non salvano token dispositivo/sessione, PIN, password o path completo del workbook.
+- Il gate verifica anche la forma dei progetti: Core/Data `netstandard2.0`, Data C# 8, WPF `net48` con `UseWPF`, `x86` e `Prefer32Bit`.
 
-Workflow dev:
+Workflow dev portabile (Core/Data/tests; richiede SDK .NET 10 per i test `net10.0`):
 
 ```powershell
 pwsh -File scripts/check-dialog-standards.ps1
@@ -47,7 +48,10 @@ Su Windows build machine eseguire anche:
 
 ```powershell
 dotnet restore Win7POS.slnx
+pwsh -File scripts/check-dialog-standards.ps1
+pwsh -File scripts/check-architecture-boundaries.ps1
 dotnet build Win7POS.slnx -c Release --no-restore
+dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj -c Release --no-build --no-restore
 dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build -- --selftest --keepdb
 dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86
 ```
