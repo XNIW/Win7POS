@@ -510,6 +510,9 @@ UPDATE users SET pin_hash = @pinHash, pin_salt = @pinSalt, require_pin_change = 
             {
                 case "admin":
                 case "shop_owner":
+                case "pos_admin":
+                case "staff_admin":
+                case "shop_owner_staff":
                     return "admin";
                 case "manager":
                 case "shop_manager":

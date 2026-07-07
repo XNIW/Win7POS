@@ -42,6 +42,7 @@ function Forbid-Match([string]$label, [string]$text, [string]$pattern) {
 
 $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
 $operatorSwitch = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xaml.cs"
+$bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 $logger = Read-Text "src/Win7POS.Wpf/Infrastructure/FileLogger.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 
@@ -56,6 +57,7 @@ Require-Match "POS access catalog sale-safe stage" $dialog '"catalog_sale_safe'
 Require-Match "POS access local login result" $dialog '"local_login_result"'
 Require-Match "POS access bootstrap result" $dialog '"online_bootstrap_result"'
 Require-Match "POS access catalog retry category" $dialog '"pos\.access\.catalog_retry"'
+Require-Match "POS bootstrap logs safe remote role key" $bootstrap 'role_key="\s*\+\s*SafeAuditValue\(response\.Staff\.RoleKey\)'
 Require-Match "Start-of-day blocked category" $mainWindow 'category=start_of_day result=blocked reason='
 
 Require-Match "Operator switch category" $operatorSwitch 'category=operator\.switch'

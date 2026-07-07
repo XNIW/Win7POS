@@ -139,7 +139,8 @@ namespace Win7POS.Wpf.Pos.Online
                     SafeAuditValue(result.ClientRequestId) +
                     ", serverRequestId=" + SafeAuditValue(result.ServerRequestId) +
                     ", shopCode=" + SafeAuditValue(response.Shop.ShopCode) +
-                    ", staffCode=" + SafeAuditValue(response.Staff.StaffCode));
+                    ", staffCode=" + SafeAuditValue(response.Staff.StaffCode) +
+                    ", role_key=" + SafeAuditValue(response.Staff.RoleKey));
 
                 var security = new SecurityRepository(_factory);
                 await security.LogEventAsync(

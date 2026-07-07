@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 
@@ -61,6 +62,65 @@ public sealed class RemoteStaffMirrorLoginTests
     }
 
     [TestMethod]
+    [DataRow("pos_admin", "admin")]
+    [DataRow("staff_admin", "admin")]
+    [DataRow("shop_owner_staff", "admin")]
+    [DataRow("manager", "manager")]
+    [DataRow("cashier", "cashier")]
+    public async Task RemoteStaffMirror_MapsRemoteRoleKeyToLocalRole(string remoteRoleKey, string expectedRoleCode)
+    {
+        using var db = TestDb.Create();
+        var users = new UserRepository(db.Factory);
+        await users.UpsertRemoteStaffMirrorAsync(BuildMirror("SHOP-1", "STAFF-" + remoteRoleKey, "1234", remoteRoleKey));
+
+        var username = await users.FindRemoteStaffUsernameAsync("SHOP-1", "STAFF-" + remoteRoleKey);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(username));
+
+        var account = await users.GetByUsernameAsync(username!);
+
+        Assert.IsNotNull(account);
+        Assert.AreEqual(expectedRoleCode, account!.RoleCode);
+    }
+
+    [TestMethod]
+    public async Task RemoteStaffMirror_PosAdminGetsSensitiveAdminPermissions()
+    {
+        using var db = TestDb.Create();
+        var users = new UserRepository(db.Factory);
+        await users.UpsertRemoteStaffMirrorAsync(BuildMirror("SHOP-1", "STAFF-ADMIN", "1234", "pos_admin"));
+
+        var username = await users.FindRemoteStaffUsernameAsync("SHOP-1", "STAFF-ADMIN");
+        Assert.IsFalse(string.IsNullOrWhiteSpace(username));
+
+        var account = await users.GetByUsernameAsync(username!);
+
+        Assert.IsNotNull(account);
+        Assert.AreEqual("admin", account!.RoleCode);
+        CollectionAssert.Contains(account.PermissionCodes.ToList(), PermissionCodes.UsersManage);
+        CollectionAssert.Contains(account.PermissionCodes.ToList(), PermissionCodes.RolesManage);
+        CollectionAssert.Contains(account.PermissionCodes.ToList(), PermissionCodes.DbMaintenance);
+    }
+
+    [TestMethod]
+    public async Task RemoteStaffMirror_ManagerDoesNotGetSensitiveAdminPermissions()
+    {
+        using var db = TestDb.Create();
+        var users = new UserRepository(db.Factory);
+        await users.UpsertRemoteStaffMirrorAsync(BuildMirror("SHOP-1", "STAFF-MANAGER", "1234", "manager"));
+
+        var username = await users.FindRemoteStaffUsernameAsync("SHOP-1", "STAFF-MANAGER");
+        Assert.IsFalse(string.IsNullOrWhiteSpace(username));
+
+        var account = await users.GetByUsernameAsync(username!);
+
+        Assert.IsNotNull(account);
+        Assert.AreEqual("manager", account!.RoleCode);
+        CollectionAssert.DoesNotContain(account.PermissionCodes.ToList(), PermissionCodes.UsersManage);
+        CollectionAssert.DoesNotContain(account.PermissionCodes.ToList(), PermissionCodes.RolesManage);
+        CollectionAssert.DoesNotContain(account.PermissionCodes.ToList(), PermissionCodes.DbMaintenance);
+    }
+
+    [TestMethod]
     public async Task SettingsRepository_LastShopCodeRoundTripsNormalized()
     {
         using var db = TestDb.Create();
@@ -75,14 +135,15 @@ public sealed class RemoteStaffMirrorLoginTests
     private static RemoteStaffMirrorInput BuildMirror(
         string shopCode,
         string staffCode,
-        string credential)
+        string credential,
+        string remoteRoleKey = "cashier")
     {
         return new RemoteStaffMirrorInput
         {
             Credential = credential,
             CredentialVersion = 1,
             DisplayName = "Remote Staff",
-            RemoteRoleKey = "cashier",
+            RemoteRoleKey = remoteRoleKey,
             RemoteShopId = "remote-shop-" + shopCode,
             RemoteStaffId = "remote-staff-" + staffCode,
             ShopCode = shopCode,
