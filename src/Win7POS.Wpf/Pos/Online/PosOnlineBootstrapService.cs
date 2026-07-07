@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Win7POS.Core.Online;
 using Win7POS.Core.Security;
 using Win7POS.Data;
+using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;

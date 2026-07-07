@@ -289,7 +289,7 @@ namespace Win7POS.Data.Online
                 return "payload_hash_mismatch";
             }
 
-            if (batch.AttemptCount != item.AttemptCount + 1)
+            if (batch.AttemptCount > 0 && batch.AttemptCount != item.AttemptCount + 1)
             {
                 return "attempt_count_mismatch";
             }

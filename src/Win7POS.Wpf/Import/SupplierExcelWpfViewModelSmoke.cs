@@ -6,9 +6,9 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using ClosedXML.Excel;
-using Microsoft.Data.Sqlite;
 using Win7POS.Core;
 using Win7POS.Data;
+using Win7POS.Data.Import;
 
 namespace Win7POS.Wpf.Import
 {
@@ -114,27 +114,15 @@ namespace Win7POS.Wpf.Import
 
         private static SupplierSmokeDbProof ReadProof(string barcode)
         {
-            using (var conn = new SqliteConnection("Data Source=" + AppPaths.DbPath))
+            var proof = new SupplierExcelImportProofReader(
+                    new SqliteConnectionFactory(PosDbOptions.Default()))
+                .Read(barcode);
+            return new SupplierSmokeDbProof
             {
-                conn.Open();
-                return new SupplierSmokeDbProof
-                {
-                    ProductRows = ExecuteLong(conn, "SELECT COUNT(1) FROM products WHERE barcode = @barcode", barcode),
-                    ImportPriceHistoryRows = ExecuteLong(conn, "SELECT COUNT(1) FROM product_price_history WHERE barcode = @barcode AND source = 'IMPORT'", barcode),
-                    OutboxRows = ExecuteLong(conn, "SELECT COUNT(1) FROM catalog_import_outbox WHERE status IN ('pending', 'acked')", barcode)
-                };
-            }
-        }
-
-        private static long ExecuteLong(SqliteConnection conn, string sql, string barcode)
-        {
-            using (var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText = sql;
-                cmd.Parameters.AddWithValue("@barcode", barcode);
-                var value = cmd.ExecuteScalar();
-                return Convert.ToInt64(value, CultureInfo.InvariantCulture);
-            }
+                ProductRows = proof.ProductRows,
+                ImportPriceHistoryRows = proof.ImportPriceHistoryRows,
+                OutboxRows = proof.OutboxRows
+            };
         }
 
         private static void CreateSupplierFixture(string path, string format, string source)

@@ -110,7 +110,7 @@ $forbiddenRuntimeUrlScope = @(
     $dialogXaml,
     $dialog,
     $bootstrap,
-    (Read-Text "src/Win7POS.Core/Online/PosAdminWebClient.cs")
+    (Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs")
 ) -join "`n"
 $defaultUrlMatch = [regex]::Match($wpfProject, '<AdminWebDefaultBaseUrl[^>]*>([^<]+)</AdminWebDefaultBaseUrl>')
 
@@ -181,7 +181,7 @@ if ($store -notmatch "ProtectedData\.Protect") { Fail "trusted device store does
 if ($mainWindow -match "ModernMessageDialog\.Show[\s\S]{0,180}ex\.Message") { Fail "startup/user error dialogs must not expose raw exception messages" } else { Pass "startup/user error dialogs are user-facing" }
 if ($firstRunCode -match "ShowError\(msg\)") { Fail "recovery/dev setup must not show raw exception messages" } else { Pass "recovery/dev setup errors are user-facing" }
 if ($firstRunCode -notmatch "finally[\s\S]*PinBox\.Clear\(\)[\s\S]*ConfirmPinBox\.Clear\(\)") { Fail "recovery/dev setup must clear PIN fields in a finally block" } else { Pass "recovery/dev setup clears PIN fields in finally" }
-if ((Read-Text "src/Win7POS.Core/Online/PosAdminWebClient.cs") -notmatch "MaxResponseBodyBytes|ReadResponseBodyAsync") { Fail "Admin Web client must bound response body reads" } else { Pass "Admin Web client bounds response body reads" }
+if ((Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs") -notmatch "MaxResponseBodyBytes|ReadResponseBodyAsync") { Fail "Admin Web client must bound response body reads" } else { Pass "Admin Web client bounds response body reads" }
 
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }
 if ($combined -match "NEXT_PUBLIC_SUPABASE|supabase\.co") { Fail "Supabase direct client/config reference found" }

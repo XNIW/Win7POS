@@ -1,6 +1,6 @@
 # POS / Admin Web / Supabase sync architecture
 
-Status: code-aligned architecture note for branch `fix/win7pos-hardening-phase3`.
+Status: code-aligned architecture note for branch `refactor/ideal-architecture-win7pos`.
 Last updated: 2026-07-06.
 
 ## Logical flow
@@ -22,6 +22,25 @@ flowchart LR
 ```
 
 Win7POS never calls Supabase directly. The POS persists local business changes first, enqueues sync work in SQLite, and sends HTTPS requests only to Admin Web. Admin Web owns Supabase service-role access and redacts audit metadata.
+
+## Local architecture map
+
+```text
+Win7POS.Wpf net48/x86
+  -> UI services, dialogs, printer/spooler adapters, composition root
+  -> Win7POS.Core netstandard2.0 domain rules/contracts
+  -> Win7POS.Data netstandard2.0 adapters/repositories
+  -> SQLite local DB and Admin Web POS API
+```
+
+Layer rules enforced by `scripts/check-architecture-boundaries.ps1`:
+
+- Core has no WPF/UI, SQLite, Dapper, HTTP transport, ClosedXML or ExcelDataReader references.
+- Core owns pure POS/domain contracts: cart, payment/refund/void models, import normalized rows/analyzers, receipt models, report/date logic and online DTO contracts.
+- Data owns infrastructure: SQLite repositories, migrations, transactions, Admin Web HTTP transport, outbox, catalog/sales sync, backup/restore data operations and Excel/HTML workbook readers.
+- WPF owns user interaction only: views, dialogs, viewmodels, owner-safe dialog flow, printer UI/spooler, scanner input and operator status.
+- CLI owns diagnostics/selftests only and calls Core/Data services.
+- No POS project contains direct Supabase client code, Supabase URLs, service-role keys or anon keys.
 
 ## SQLite tables
 
@@ -82,6 +101,8 @@ Admin Web accepts a new idempotency key once, treats same key/hash as duplicate/
 - `CatalogImportOutboxRepository` leases work by `attempt_count` and a 15-minute `in_progress` window.
 - `CatalogImportReconciliationService` recovers expired `in_progress` rows to `retry`, reports `failed_blocked`, and applies barcode-to-remote-product reconciliation without deleting rows.
 - `CatalogImportSyncService` rejects persisted payloads containing `deviceToken`, `sessionToken`, password/PIN/token markers.
+- `Win7POS.Data.Online.PosAdminWebClient` is the only concrete Admin Web HTTP transport in the POS solution; Core keeps only DTO/contracts.
+- Supplier Excel and product DB workbook readers live in `Win7POS.Data` and convert files into Core normalized import rows/workbooks before Core analysis/planning.
 - ACK remote ids update `products.remote_product_id` and `product_price_history.remote_price_id` in the same SQLite transaction as `acked`.
 - `PosCatalogPullService` applies remote products/prices, queues unresolved prices, and replays pending prices after product ids are known.
 - Restore/maintenance refuses restore while `sales_sync_outbox` or `catalog_import_outbox` contain unresolved work.
@@ -90,6 +111,9 @@ Admin Web accepts a new idempotency key once, treats same key/hash as duplicate/
 
 - POS has no direct Supabase client, Supabase URL, anon key, or service-role key.
 - Admin Web service-role access is server-only.
+- Core has no concrete UI/data/transport/file-reader infrastructure.
+- Data has no WPF references.
+- WPF has no direct `Microsoft.Data.Sqlite` or Dapper usage.
 - Persisted catalog import payload does not include `deviceToken`, `sessionToken`, password, PIN, or full workbook path.
 - Supplier Excel apply and catalog outbox enqueue are one SQLite transaction.
 - ACK/retry/block are attempt-token guarded.
@@ -103,6 +127,7 @@ Admin Web accepts a new idempotency key once, treats same key/hash as duplicate/
 - MSTest: catalog outbox idempotency, lease recovery, attempt mismatch, mandatory ACK payload hash/attempt, late retry protection, remote product/price id ACK, late price ACK client-item mapping.
 - CLI: `--catalog-import-outbox-selftest`, `--catalog-import-sync-http-harness`, `--catalog-import-reconciliation-selftest`, `--sqlite-integrity-selftest`, `--db-restore-guard-selftest`.
 - PowerShell gates: catalog import outbox/sync, start-of-day, sync status UX, restore guard, security hardening.
+- Architecture gate: `pwsh -File scripts/check-architecture-boundaries.ps1`.
 - Admin Web foundation: TASK-094 route boundary, transactional RPC migration, service-role-only ledger/RPC, ACK remote id fields.
 
 ## Definition of Done 100%
@@ -156,6 +181,29 @@ Gate F - CI/Release:
 - Admin Web CI and Cloudflare workflow are green on the final branch head.
 - Cloudflare staging deploy uses the current Admin Web head and preserves staging env/bindings.
 - Both PRs remain mergeable, with docs/runbooks updated and no generated or secret-bearing files committed.
+
+## Mac vs Windows workflow
+
+Core/Data/tests can be restored, built and tested on non-Windows machines without WPF/Desktop runtime:
+
+```powershell
+dotnet build src/Win7POS.Core/Win7POS.Core.csproj -c Release
+dotnet build src/Win7POS.Data/Win7POS.Data.csproj -c Release
+dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj -c Release
+pwsh -File scripts/check-architecture-boundaries.ps1
+```
+
+Full validation remains Windows-only for WPF `net48`/x86, Windows printer/spooler behavior and release packaging:
+
+```powershell
+dotnet restore Win7POS.slnx
+pwsh -File scripts/check-dialog-standards.ps1
+pwsh -File scripts/check-architecture-boundaries.ps1
+dotnet build Win7POS.slnx -c Release --no-restore
+dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj -c Release --no-build --no-restore
+dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build -- --selftest --keepdb
+dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86
+```
 
 ## Live gates
 

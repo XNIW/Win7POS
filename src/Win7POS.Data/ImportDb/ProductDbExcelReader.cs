@@ -6,8 +6,9 @@ using System.IO;
 using System.Linq;
 using ClosedXML.Excel;
 using ExcelDataReader;
+using Win7POS.Core.ImportDb;
 
-namespace Win7POS.Core.ImportDb
+namespace Win7POS.Data.ImportDb
 {
     public static class ProductDbExcelReader
     {

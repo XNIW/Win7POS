@@ -1246,6 +1246,7 @@ internal static class Program
             DbInitializer.EnsureCreated(opt);
             var factory = new SqliteConnectionFactory(opt);
             var sales = new SaleRepository(factory);
+            await SeedTask081HarnessSaleIdsAsync(factory, runId).ConfigureAwait(false);
 
             using (var conn = factory.Open())
             {
@@ -5536,6 +5537,36 @@ SELECT last_insert_rowid();";
         }
 
         return saleId;
+    }
+
+    private static async Task SeedTask081HarnessSaleIdsAsync(
+        SqliteConnectionFactory factory,
+        string runId)
+    {
+        var seed = 100000 + (long)(Fnv1a64(runId) % 800000000UL);
+        using (var conn = factory.Open())
+        {
+            await ExecuteSqliteAsync(
+                conn,
+                null,
+                @"DELETE FROM sqlite_sequence WHERE name = 'sales';
+                  INSERT INTO sqlite_sequence(name, seq) VALUES('sales', @seed);",
+                "@seed", seed).ConfigureAwait(false);
+        }
+    }
+
+    private static ulong Fnv1a64(string value)
+    {
+        const ulong offset = 14695981039346656037UL;
+        const ulong prime = 1099511628211UL;
+        var hash = offset;
+        foreach (var ch in value ?? string.Empty)
+        {
+            hash ^= ch;
+            hash *= prime;
+        }
+
+        return hash;
     }
 
     private static PosSalesSyncRequest CreateTask081ConflictRequest(PosSalesSyncRequest original)

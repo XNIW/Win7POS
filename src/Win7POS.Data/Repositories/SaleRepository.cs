@@ -364,6 +364,69 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
             return saleId;
         }
 
+        public async Task<long> InsertRefundOrVoidAsync(
+            Sale refundSale,
+            IReadOnlyList<SaleLine> refundLines,
+            long? originalSaleIdToMarkVoided,
+            string auditAction,
+            Func<long, string> auditDetailsFactory)
+        {
+            if (refundSale == null) throw new ArgumentNullException(nameof(refundSale));
+            if (refundLines == null) throw new ArgumentNullException(nameof(refundLines));
+
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction();
+            try
+            {
+                var saleId = await conn.ExecuteScalarAsync<long>(@"
+INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change)
+VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change);
+SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
+
+                refundSale.Id = saleId;
+                refundSale.ClientSaleId = await EnsureClientSaleIdAsync(conn, tx, saleId).ConfigureAwait(false);
+
+                foreach (var line in refundLines)
+                {
+                    line.SaleId = saleId;
+                }
+
+                await InsertSaleLinesAsync(conn, tx, refundLines).ConfigureAwait(false);
+                await ApplyLocalStockMovementsAsync(conn, tx, refundSale, refundLines).ConfigureAwait(false);
+                await EnqueueSalesSyncOutboxAsync(conn, tx, saleId, refundSale.ClientSaleId).ConfigureAwait(false);
+
+                if (!string.IsNullOrWhiteSpace(auditAction))
+                {
+                    await new AuditLogRepository()
+                        .AppendAsync(
+                            conn,
+                            tx,
+                            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                            auditAction,
+                            auditDetailsFactory == null ? string.Empty : auditDetailsFactory(saleId))
+                        .ConfigureAwait(false);
+                }
+
+                if (originalSaleIdToMarkVoided.HasValue)
+                {
+                    await MarkSaleVoidedAsync(
+                        conn,
+                        tx,
+                        originalSaleIdToMarkVoided.Value,
+                        saleId,
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                }
+
+                tx.Commit();
+                return saleId;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
         public async Task InsertSaleLinesAsync(SqliteConnection conn, SqliteTransaction tx, IReadOnlyList<SaleLine> lines)
         {
             if (lines == null || lines.Count == 0) return;

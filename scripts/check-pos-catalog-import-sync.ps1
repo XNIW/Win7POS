@@ -20,7 +20,7 @@ function Require([string]$label, [string]$text, [string]$pattern) {
     if ($text -match $pattern) { Pass $label } else { Fail $label }
 }
 
-$client = Read-Text "src/Win7POS.Core/Online/PosAdminWebClient.cs"
+$client = Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs"
 $dto = Read-Text "src/Win7POS.Core/Online/PosCatalogImportContract.cs"
 $repository = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
 $reconciliation = Read-Text "src/Win7POS.Data/Online/CatalogImportReconciliationService.cs"

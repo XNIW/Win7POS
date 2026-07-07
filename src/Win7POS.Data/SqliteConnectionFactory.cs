@@ -43,5 +43,10 @@ namespace Win7POS.Data
             }
             return conn;
         }
+
+        public static void ClearAllPools()
+        {
+            SqliteConnection.ClearAllPools();
+        }
     }
 }

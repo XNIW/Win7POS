@@ -66,7 +66,7 @@ function Test-TranslationEntry(
 }
 
 $required = @(
-    "src/Win7POS.Core/Online/PosAdminWebClient.cs",
+    "src/Win7POS.Data/Online/PosAdminWebClient.cs",
     "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs",
     "src/Win7POS.Core/Online/PosAdminWebOptions.cs",
     "src/Win7POS.Wpf/Pos/Online/PosDeviceIdentity.cs",
@@ -86,7 +86,7 @@ if ($fail) {
     exit 1
 }
 
-$client = Read-Text "src/Win7POS.Core/Online/PosAdminWebClient.cs"
+$client = Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs"
 $store = Read-Text "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs"
 $options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
