@@ -804,22 +804,107 @@ namespace Win7POS.Wpf
             return new SolidColorBrush(Color.FromRgb(146, 88, 36));
         }
 
-        private void OnChangeOperatorClick(object sender, RoutedEventArgs e)
+        private async void OnChangeOperatorClick(object sender, RoutedEventArgs e)
         {
-            var loginDlg = new PosOnlineFirstLoginDialog(new SqliteConnectionFactory(PosDbOptions.Default()))
+            await ShowOperatorSwitchOrPosAccessAsync().ConfigureAwait(true);
+        }
+
+        private async Task<bool> ShowOperatorSwitchOrPosAccessAsync()
+        {
+            var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+            var session = EnsureOperatorSession(factory);
+            var switchDlg = new OperatorSwitchDialog(factory, session)
             {
-                Owner = this
+                Owner = DialogOwnerHelper.GetSafeOwner(this)
+            };
+
+            await switchDlg.InitializeAsync().ConfigureAwait(true);
+            switchDlg.ShowDialog();
+
+            if (switchDlg.PosAccessRequested)
+            {
+                return OpenPosAccessForOperatorChange(factory);
+            }
+
+            if (!switchDlg.SwitchSucceeded)
+            {
+                return false;
+            }
+
+            UpdateOperatorDisplay(session);
+            RefreshShellAfterOperatorChange(session);
+            return true;
+        }
+
+        private bool OpenPosAccessForOperatorChange(SqliteConnectionFactory factory)
+        {
+            var loginDlg = new PosOnlineFirstLoginDialog(factory)
+            {
+                Owner = DialogOwnerHelper.GetSafeOwner(this)
             };
             if (loginDlg.ShowDialog() != true ||
                 OperatorSessionHolder.Current == null ||
                 !OperatorSessionHolder.Current.IsLoggedIn)
             {
-                return;
+                return false;
             }
 
             var session = OperatorSessionHolder.Current;
             UpdateOperatorDisplay(session);
             RefreshShellAfterOperatorChange(session);
+            return true;
+        }
+
+        private static IOperatorSession EnsureOperatorSession(SqliteConnectionFactory factory)
+        {
+            if (OperatorSessionHolder.Current == null)
+            {
+                OperatorSessionHolder.Current = new OperatorSession(
+                    new UserRepository(factory),
+                    new SecurityRepository(factory));
+            }
+
+            return OperatorSessionHolder.Current;
+        }
+
+        private async Task<bool> TrySwitchForPermissionAsync(string permissionCode, string message)
+        {
+            if (!PermissionDeniedDialog.ShowSwitchPrompt(this, message))
+            {
+                return false;
+            }
+
+            if (!await ShowOperatorSwitchOrPosAccessAsync().ConfigureAwait(true))
+            {
+                return false;
+            }
+
+            if (HasCurrentPermission(permissionCode))
+            {
+                return true;
+            }
+
+            ModernMessageDialog.Show(
+                this,
+                PosLocalization.Current.Text("common.userPermissionDenied"),
+                message);
+            return false;
+        }
+
+        private static bool HasCurrentPermission(string permissionCode)
+        {
+            var user = OperatorSessionHolder.Current?.CurrentUser;
+            if (user == null || string.IsNullOrWhiteSpace(permissionCode))
+            {
+                return false;
+            }
+
+            if (user.IsAdmin)
+            {
+                return true;
+            }
+
+            return user.PermissionCodes?.Contains(permissionCode) == true;
         }
 
         /// <summary>Dopo cambio operatore: ricaricare permessi, aggiornare UI e uscire da tab non consentiti.</summary>
@@ -874,21 +959,24 @@ namespace Win7POS.Wpf
             }
         }
 
-        private void OnMenuUsersClick(object sender, RoutedEventArgs e)
+        private async void OnMenuUsersClick(object sender, RoutedEventArgs e)
         {
             if (UserManagementViewControl == null || MainTabControl == null) return;
             var session = OperatorSessionHolder.Current;
-            var hasUsersManage = session?.CurrentUser != null && (session.CurrentUser.IsAdmin || session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.UsersManage) == true);
+            var hasUsersManage = HasCurrentPermission(PermissionCodes.UsersManage);
             if (!hasUsersManage)
             {
                 UserManagementViewControl.DataContext = null;
-                ModernMessageDialog.Show(
-                    Application.Current?.MainWindow,
-                    PosLocalization.Current.Text("common.userPermissionDenied"),
-                    PosLocalization.Current.Text("shell.usersPermissionDenied"));
                 SideMenuOverlay.Visibility = Visibility.Collapsed;
+                if (await TrySwitchForPermissionAsync(
+                        PermissionCodes.UsersManage,
+                        PosLocalization.Current.Text("shell.usersPermissionDenied")).ConfigureAwait(true))
+                {
+                    OnMenuUsersClick(sender, e);
+                }
                 return;
             }
+            session = OperatorSessionHolder.Current;
             var currentUsername = session?.CurrentUser?.Username ?? "";
             if (UserManagementViewControl.DataContext is Pos.Dialogs.UserManagementViewModel existingVm &&
                 string.Equals(existingVm.CurrentOperatorUsername, currentUsername, StringComparison.OrdinalIgnoreCase))
@@ -909,10 +997,14 @@ namespace Win7POS.Wpf
             catch (InvalidOperationException ex)
             {
                 _logger.LogWarning("OnMenuUsersClick: permesso negato - " + ex.Message, null);
-                ModernMessageDialog.Show(
-                    Application.Current?.MainWindow,
-                    PosLocalization.Current.Text("common.userPermissionDenied"),
-                    PosLocalization.Current.Text("shell.usersPermissionDenied"));
+                SideMenuOverlay.Visibility = Visibility.Collapsed;
+                if (await TrySwitchForPermissionAsync(
+                        PermissionCodes.UsersManage,
+                        PosLocalization.Current.Text("shell.usersPermissionDenied")).ConfigureAwait(true))
+                {
+                    OnMenuUsersClick(sender, e);
+                }
+                return;
             }
             catch (Exception ex)
             {
@@ -1041,18 +1133,20 @@ namespace Win7POS.Wpf
         private async void OnMenuProdottiClick(object sender, RoutedEventArgs e)
         {
             var session = OperatorSessionHolder.Current;
-            var hasCatalogView = session?.CurrentUser != null &&
-                (session.CurrentUser.IsAdmin || session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.CatalogView) == true);
+            var hasCatalogView = HasCurrentPermission(PermissionCodes.CatalogView);
             if (!hasCatalogView)
             {
-                ModernMessageDialog.Show(
-                    Application.Current?.MainWindow,
-                    PosLocalization.Current.Text("common.userPermissionDenied"),
-                    PosLocalization.Current.Text("shell.productsPermissionDenied"));
                 SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                if (await TrySwitchForPermissionAsync(
+                        PermissionCodes.CatalogView,
+                        PosLocalization.Current.Text("shell.productsPermissionDenied")).ConfigureAwait(true))
+                {
+                    OnMenuProdottiClick(sender, e);
+                }
                 return;
             }
 
+            session = OperatorSessionHolder.Current;
             try
             {
                 var vm = EnsureProductsViewModel(session);
@@ -1112,8 +1206,20 @@ namespace Win7POS.Wpf
             return PosViewControl;
         }
 
-        private void OnMenuDailyReportClick(object sender, RoutedEventArgs e)
+        private async void OnMenuDailyReportClick(object sender, RoutedEventArgs e)
         {
+            if (!HasCurrentPermission(PermissionCodes.DailyCloseView))
+            {
+                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                if (await TrySwitchForPermissionAsync(
+                        PermissionCodes.DailyCloseView,
+                        PosLocalization.Current.Format("common.permissionDeniedOperation", PosLocalization.Current.Text("operations.dailyClose"))).ConfigureAwait(true))
+                {
+                    OnMenuDailyReportClick(sender, e);
+                }
+                return;
+            }
+
             var posVm = GetPosViewModel();
             if (posVm != null && DailyReportViewControl != null)
             {
@@ -1124,9 +1230,21 @@ namespace Win7POS.Wpf
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }
 
-        private void OnMenuDbClick(object sender, RoutedEventArgs e)
+        private async void OnMenuDbClick(object sender, RoutedEventArgs e)
         {
             MainTabControl.SelectedIndex = 0;
+            if (!HasCurrentPermission(PermissionCodes.DbMaintenance))
+            {
+                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                if (await TrySwitchForPermissionAsync(
+                        PermissionCodes.DbMaintenance,
+                        PosLocalization.Current.Format("common.permissionDeniedOperation", PosLocalization.Current.Text("operations.dbMaintenance"))).ConfigureAwait(true))
+                {
+                    OnMenuDbClick(sender, e);
+                }
+                return;
+            }
+
             GetPosViewModel()?.DbMaintenanceCommand?.Execute(null);
             SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
         }

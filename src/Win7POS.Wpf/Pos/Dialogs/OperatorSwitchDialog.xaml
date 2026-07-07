@@ -1,0 +1,63 @@
+<chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.OperatorSwitchDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
+        xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
+        Title="{loc:Loc operator.switch.title}"
+        ShowHeader="False"
+        UseModalOverlay="True"
+        DialogCornerRadius="16"
+        DialogBackground="#F1EDF7"
+        DialogBorderBrush="#D9CEE8"
+        WindowStartupLocation="CenterOwner"
+        SizeToContent="WidthAndHeight"
+        MinWidth="460"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+    <Grid Background="#F1EDF7">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Text="{loc:Loc operator.switch.title}" Style="{StaticResource DialogTitleStyle}"/>
+
+        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="128"/>
+                    <ColumnDefinition Width="*" MinWidth="250"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,14" Text="{loc:Loc operator.switch.helper}" TextWrapping="Wrap" Foreground="#8873A4"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc operator.switch.operator}" Foreground="#666"/>
+                <ComboBox x:Name="OperatorCombo" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" DisplayMemberPath="DisplayText" IsEditable="False"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc operator.login.pin}" Foreground="#666"/>
+                <PasswordBox x:Name="PinBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
+
+                <Border x:Name="StatusBanner" Grid.Row="3" Grid.ColumnSpan="2" Margin="0,2,0,12" Padding="10,8" CornerRadius="8" Background="#F8EAEA" BorderBrush="#E2B7B7" BorderThickness="1" Visibility="Collapsed">
+                    <TextBlock x:Name="StatusText" Foreground="#8A2E2E" TextWrapping="Wrap"/>
+                </Border>
+
+                <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Margin="0,0,0,12" Text="{loc:Loc operator.switch.posAccessHint}" TextWrapping="Wrap" Foreground="#6D617C"/>
+
+                <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+                    <Button x:Name="PosAccessButton" Content="{loc:Loc operator.switch.posAccess}" Margin="0,0,8,0" Click="OnPosAccessClick" Style="{StaticResource DialogCancelButtonStyle}"/>
+                    <Button x:Name="SwitchButton" Content="{loc:Loc operator.switch.switch}" Margin="0,0,8,0" Click="OnSwitchClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
+                    <Button Content="{loc:Loc common.cancel}" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="OnCancelClick"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</chrome:DialogShellWindow>

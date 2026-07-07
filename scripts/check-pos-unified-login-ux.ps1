@@ -84,6 +84,13 @@ else {
         Pass "startup has no legacy login/setup dialog flow"
     }
 
+    if ($loaded -match 'OperatorSwitchDialog') {
+        Fail "startup must not open OperatorSwitchDialog"
+    }
+    else {
+        Pass "startup does not open OperatorSwitchDialog"
+    }
+
     if ($loaded -match 'RunStartOfDaySyncAsync') {
         Pass "startup keeps start-of-day sync after access"
     }
@@ -139,6 +146,14 @@ $dialogCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.x
 Assert-Contains "dialog attempts offline fallback" $dialogCode "TryOfflineSignInAsync"
 Assert-Contains "dialog blocks denied fallback" $dialogCode "onlineDeniedNoOfflineFallback"
 Assert-Contains "dialog logs in session before credential clear path" $dialogCode "LoginLocalUsernameAsync"
+
+$operatorSwitchXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xaml"
+Assert-Contains "operator switch dialog exists" $operatorSwitchXaml 'x:Class="Win7POS.Wpf.Pos.Dialogs.OperatorSwitchDialog"'
+Assert-Contains "operator switch dialog uses safe title" $operatorSwitchXaml 'operator.switch.title'
+
+Assert-Contains "Change/Lock uses operator switch" $main "new OperatorSwitchDialog"
+Assert-Contains "permission denied switch prompt wired" $main "PermissionDeniedDialog.ShowSwitchPrompt"
+Assert-Contains "operator switch can request full POS access" $main "PosAccessRequested"
 
 if ($fail) {
     Write-Host "`nRESULT: FAIL" -ForegroundColor Red

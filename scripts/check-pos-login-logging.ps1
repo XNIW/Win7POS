@@ -41,6 +41,7 @@ function Forbid-Match([string]$label, [string]$text, [string]$pattern) {
 }
 
 $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
+$operatorSwitch = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xaml.cs"
 $logger = Read-Text "src/Win7POS.Wpf/Infrastructure/FileLogger.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 
@@ -57,6 +58,12 @@ Require-Match "POS access bootstrap result" $dialog '"online_bootstrap_result"'
 Require-Match "POS access catalog retry category" $dialog '"pos\.access\.catalog_retry"'
 Require-Match "Start-of-day blocked category" $mainWindow 'category=start_of_day result=blocked reason='
 
+Require-Match "Operator switch category" $operatorSwitch 'category=operator\.switch'
+Require-Match "Operator switch attempt id field" $operatorSwitch 'attemptId='
+Require-Match "Operator switch success result" $operatorSwitch '"success"'
+Require-Match "Operator switch failed result" $operatorSwitch 'result=failed'
+Require-Match "Operator switch cancelled result" $operatorSwitch '"cancelled"'
+
 Require-Match "FileLogger redacts credential keywords" $logger 'pin\|password\|credential'
 Require-Match "FileLogger redacts token keyword" $logger 'trustedDeviceToken\|token\|pin'
 Require-Match "FileLogger redacts bearer auth" $logger 'Authorization\\s\*:\\s\*Bearer'
@@ -66,6 +73,8 @@ Forbid-Match "no credential variable logged by key" $dialog '(?i)credential\s*=\
 Forbid-Match "no pin variable logged by key" $dialog '(?i)pin\s*=\s*"\s*\+\s*pin|pin="\s*\+\s*pin|pin=\s*"\s*\+\s*pin'
 Forbid-Match "no password variable logged by key" $dialog '(?i)password\s*=\s*"\s*\+\s*password|password="\s*\+\s*password|password=\s*"\s*\+\s*password'
 Forbid-Match "no token variable logged by key" $dialog '(?i)token\s*=\s*"\s*\+\s*token|token="\s*\+\s*token|token=\s*"\s*\+\s*token'
+Forbid-Match "operator switch does not log PIN box" $operatorSwitch 'Log(?:\w*)?[\s\S]{0,160}PinBox\.Password'
+Forbid-Match "operator switch does not log pin variable by key" $operatorSwitch '(?i)pin\s*=\s*"\s*\+\s*pin|pin="\s*\+\s*pin|pin=\s*"\s*\+\s*pin'
 
 if ($fail) {
     Write-Host "`nRESULT: FAIL" -ForegroundColor Red

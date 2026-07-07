@@ -30,6 +30,29 @@ namespace Win7POS.Data.Repositories
             return (rows ?? Enumerable.Empty<UserRow>()).Select(r => MapToAccount(r)).ToList();
         }
 
+        public async Task<IReadOnlyList<UserAccount>> ListActiveForOperatorSwitchAsync(string preferredShopCode)
+        {
+            var shop = Normalize(preferredShopCode);
+            using var conn = _factory.Open();
+            var rows = await conn.QueryAsync<UserRow>(
+                @"SELECT u.id AS Id, u.username AS Username, u.display_name AS DisplayName, u.role_id AS RoleId,
+                         u.is_active AS IsActive, u.require_pin_change AS RequirePinChange, u.max_discount_percent AS MaxDiscountPercent,
+                         r.code AS RoleCode, r.name AS RoleName
+                  FROM users u
+                  INNER JOIN roles r ON r.id = u.role_id
+                  WHERE u.is_active = 1
+                  ORDER BY
+                    CASE
+                      WHEN @shop <> '' AND UPPER(TRIM(COALESCE(u.remote_shop_code, ''))) = UPPER(@shop) THEN 0
+                      WHEN TRIM(COALESCE(u.remote_shop_code, '')) = '' THEN 1
+                      ELSE 2
+                    END,
+                    u.display_name,
+                    u.username",
+                new { shop }).ConfigureAwait(false);
+            return (rows ?? Enumerable.Empty<UserRow>()).Select(r => MapToAccount(r)).ToList();
+        }
+
         public async Task<UserAccount> GetByIdAsync(int id)
         {
             using var conn = _factory.Open();
