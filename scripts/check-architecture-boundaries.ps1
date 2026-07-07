@@ -83,6 +83,50 @@ function Test-ProjectReferenceShape {
     }
 }
 
+function Get-ProjectProperty([string]$relativePath, [string]$propertyName) {
+    $fullPath = Join-Path $repoRoot $relativePath
+    if (-not (Test-Path $fullPath)) {
+        Fail "Project missing: $relativePath"
+        return ""
+    }
+
+    [xml]$xml = Get-Content -LiteralPath $fullPath
+    $nodes = $xml.SelectNodes("//PropertyGroup/$propertyName")
+    if ($null -eq $nodes -or $nodes.Count -eq 0) {
+        return ""
+    }
+
+    for ($i = $nodes.Count - 1; $i -ge 0; $i--) {
+        $value = [string]$nodes.Item($i).InnerText
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            return $value.Trim()
+        }
+    }
+
+    return ""
+}
+
+function Test-ProjectProperty([string]$label, [string]$relativePath, [string]$propertyName, [string]$expectedValue) {
+    $actualValue = Get-ProjectProperty $relativePath $propertyName
+    if ([string]::Equals($actualValue, $expectedValue, [StringComparison]::OrdinalIgnoreCase)) {
+        Pass $label
+    }
+    else {
+        Fail "${label}: $relativePath $propertyName expected '$expectedValue' actual '$actualValue'"
+    }
+}
+
+function Test-ProjectTargetShape {
+    Test-ProjectProperty "Core targets netstandard2.0" "src/Win7POS.Core/Win7POS.Core.csproj" "TargetFramework" "netstandard2.0"
+    Test-ProjectProperty "Data targets netstandard2.0" "src/Win7POS.Data/Win7POS.Data.csproj" "TargetFramework" "netstandard2.0"
+    Test-ProjectProperty "Data language version remains C# 8" "src/Win7POS.Data/Win7POS.Data.csproj" "LangVersion" "8.0"
+    Test-ProjectProperty "WPF targets net48" "src/Win7POS.Wpf/Win7POS.Wpf.csproj" "TargetFramework" "net48"
+    Test-ProjectProperty "WPF UseWPF enabled" "src/Win7POS.Wpf/Win7POS.Wpf.csproj" "UseWPF" "true"
+    Test-ProjectProperty "WPF declares x86 platform" "src/Win7POS.Wpf/Win7POS.Wpf.csproj" "Platforms" "x86"
+    Test-ProjectProperty "WPF PlatformTarget is x86" "src/Win7POS.Wpf/Win7POS.Wpf.csproj" "PlatformTarget" "x86"
+    Test-ProjectProperty "WPF Prefer32Bit enabled" "src/Win7POS.Wpf/Win7POS.Wpf.csproj" "Prefer32Bit" "true"
+}
+
 function Test-PayloadBuilderRedaction {
     $badPayloadPattern = "(?i)(deviceToken|sessionToken|trustedDeviceToken|pin|password|credential)"
 
@@ -159,6 +203,7 @@ Test-NoPattern `
 
 Test-PayloadBuilderRedaction
 Test-ProjectReferenceShape
+Test-ProjectTargetShape
 
 if (-not $fail) {
     Pass "Project references remain acyclic and layered"
