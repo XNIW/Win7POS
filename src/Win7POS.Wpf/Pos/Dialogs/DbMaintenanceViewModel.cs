@@ -97,7 +97,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             };
             var owner = DialogOwnerHelper.GetSafeOwner(OwnerWindow);
             if (owner == null)
-                throw new InvalidOperationException("Nessuna finestra owner attiva per il file picker restore DB.");
+                throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreOwnerMissing"));
 
             owner.Activate();
             if (dlg.ShowDialog(owner) != true) return;

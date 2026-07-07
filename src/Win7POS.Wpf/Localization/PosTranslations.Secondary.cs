@@ -227,6 +227,7 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("dbMaintenance.restorePermissionDenied", "DB restore permission denied.", "Permiso restaurar DB denegado.", "Permesso Restore DB negato.", "数据库恢复权限被拒绝。");
             yield return new TranslationEntry("dbMaintenance.selectBackupTitle", "Select DB backup", "Seleccionar backup DB", "Seleziona backup DB", "选择数据库备份");
             yield return new TranslationEntry("dbMaintenance.databaseFileFilter", "Database (*.db)|*.db|All files (*.*)|*.*", "Base de datos (*.db)|*.db|Todos los archivos (*.*)|*.*", "Database (*.db)|*.db|Tutti i file (*.*)|*.*", "数据库 (*.db)|*.db|所有文件 (*.*)|*.*");
+            yield return new TranslationEntry("dbMaintenance.restoreOwnerMissing", "No active owner window for the DB restore file picker.", "No hay ventana owner activa para el selector de restore DB.", "Nessuna finestra owner attiva per il file picker restore DB.", "数据库恢复文件选择器没有活动的所有者窗口。");
             yield return new TranslationEntry("dbMaintenance.restoreCompletedFrom", "Restore completed from: {0}", "Restauracion completada desde: {0}", "Ripristino completato da: {0}", "恢复完成，来源：{0}");
             yield return new TranslationEntry("dbMaintenance.preRestoreBackup", "Pre-restore backup: {0}", "Backup previo a restaurar: {0}", "Backup prima del ripristino: {0}", "恢复前备份：{0}");
             yield return new TranslationEntry("dbMaintenance.integrityCheckResult", "Integrity check: {0}", "Chequeo integridad: {0}", "Integrity check: {0}", "完整性检查：{0}");
