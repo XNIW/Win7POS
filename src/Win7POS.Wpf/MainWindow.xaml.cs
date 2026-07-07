@@ -37,6 +37,7 @@ namespace Win7POS.Wpf
         private const string LastSalesErrorSettingKey = "pos.sales_sync.last_error";
         private readonly TaskCompletionSource<bool> _contentRendered = new TaskCompletionSource<bool>();
         private DispatcherTimer _syncStatusTimer;
+        private DispatcherTimer _networkStatusTimer;
         private bool _backgroundOnlineRefreshQueued;
         private bool _operatorLoginReached;
         private bool _languageSelectionUpdating;
@@ -93,6 +94,7 @@ namespace Win7POS.Wpf
             PosLocalization.Current.LanguageChanged += (_, __) =>
             {
                 UpdateLanguageSelector();
+                UpdateNetworkStatusBadge();
                 QueueSyncStatusRefresh(_languageSettingsFactory);
             };
         }
@@ -197,85 +199,8 @@ namespace Win7POS.Wpf
                     await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
                     StartSyncStatusTimer(factory);
                 }
-
-                _startupPhase = "FirstRun check start";
-                StartupTrace.Write("first-run check start");
-                _logger.LogInfo("FirstRun check start");
-                var needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
-                StartupTrace.Write("first-run check end: required=" + needFirstRun.ToString());
-                _logger.LogInfo("FirstRun check done: required=" + needFirstRun.ToString());
-                await WaitForContentRenderedOrTimeoutAsync().ConfigureAwait(true);
-
-                if (needFirstRun && !App.IsSafeStart)
-                {
-                    if (await TryOnlineBootstrapFirstRunAsync(factory).ConfigureAwait(true))
-                    {
-                        _logger.LogInfo("FirstRun online bootstrap completed; rechecking local operators");
-                        needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
-                        _logger.LogInfo("FirstRun check done: required=" + needFirstRun.ToString());
-                    }
-                }
-
-                if (needFirstRun && App.IsSafeStart)
-                {
-                    StartupTrace.Write("first-run online bootstrap skipped: safe-start");
-                }
-
-                if (needFirstRun)
-                {
-                    var wizard = new FirstRunSetupDialog(options) { Owner = this };
-                    var ok = wizard.ShowDialog() == true;
-
-                    needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
-                    if (!ok || needFirstRun)
-                    {
-                        ModernMessageDialog.Show(
-                            this,
-                            "Win7POS",
-                            PosLocalization.T("firstRun.notCompleted"));
-                        Close();
-                        return;
-                    }
-                }
-
-                var catalogSaleSafe = await PosCatalogPullService.IsCatalogSaleSafeAsync(factory)
-                    .ConfigureAwait(true);
-                if (App.IsSafeStart && !catalogSaleSafe)
-                {
-                    _logger.LogWarning("Safe-start cannot open POS without sale-safe catalog.");
-                    ModernMessageDialog.Show(
-                        this,
-                        "Win7POS",
-                        PosLocalization.T("onlineFirstLogin.catalogIncomplete"));
-                    Close();
-                    return;
-                }
-
-                if (!catalogSaleSafe)
-                {
-                    _logger.LogInfo("Catalog sale-safe missing; opening blocking preparation flow");
-                    if (!await TryOnlineBootstrapFirstRunAsync(factory, resumeCatalogOnly: !needFirstRun).ConfigureAwait(true) ||
-                        !await PosCatalogPullService.IsCatalogSaleSafeAsync(factory).ConfigureAwait(true))
-                    {
-                        ModernMessageDialog.Show(
-                            this,
-                            "Win7POS",
-                            PosLocalization.T("onlineFirstLogin.catalogIncomplete"));
-                        Close();
-                        return;
-                    }
-
-                    needFirstRun = await RequiresFirstRunAsync(factory).ConfigureAwait(true);
-                    if (needFirstRun)
-                    {
-                        ModernMessageDialog.Show(
-                            this,
-                            "Win7POS",
-                            PosLocalization.T("firstRun.notCompleted"));
-                        Close();
-                        return;
-                    }
-                }
+                UpdateNetworkStatusBadge();
+                StartNetworkStatusTimer();
 
                 var userRepo = new UserRepository(factory);
                 if (OperatorSessionHolder.Current == null)
@@ -285,22 +210,26 @@ namespace Win7POS.Wpf
                     OperatorSessionHolder.Current = operatorSession;
                 }
 
-                _logger.LogInfo("OperatorLogin dialog opening");
-                _startupPhase = "OperatorLogin opening";
-                StartupTrace.Write("operator login dialog about to open");
-                var login = new OperatorLoginDialog(factory) { Owner = this };
+                await WaitForContentRenderedOrTimeoutAsync().ConfigureAwait(true);
+
+                _logger.LogInfo("POS access dialog opening");
+                _startupPhase = "POS access opening";
+                StartupTrace.Write("POS access dialog about to open");
+                var login = new PosOnlineFirstLoginDialog(factory) { Owner = this };
                 login.ShowActivated = true;
                 Activate();
                 _operatorLoginReached = true;
-                _startupPhase = "OperatorLogin shown";
-                StartupTrace.Write("operator login dialog shown");
-                if (login.ShowDialog() != true)
+                _startupPhase = "POS access shown";
+                StartupTrace.Write("POS access dialog shown");
+                if (login.ShowDialog() != true ||
+                    OperatorSessionHolder.Current == null ||
+                    !OperatorSessionHolder.Current.IsLoggedIn)
                 {
-                    _logger.LogInfo("OperatorLogin dialog cancelled");
+                    _logger.LogInfo("POS access dialog cancelled or not authenticated");
                     Close();
                     return;
                 }
-                _logger.LogInfo("OperatorLogin dialog accepted");
+                _logger.LogInfo("POS access dialog accepted");
 
                 var session = OperatorSessionHolder.Current;
                 StartOfDaySyncResult startOfDayResult = null;
@@ -349,7 +278,7 @@ namespace Win7POS.Wpf
             catch (Exception ex)
             {
                 StartupTrace.Write("MainWindow startup failed", ex);
-                _logger.LogError(ex, "MainWindow.OnLoadedAsync: avvio fallito (DB/FirstRun/Login)");
+                _logger.LogError(ex, "MainWindow.OnLoadedAsync: avvio fallito (DB/POS access)");
                 try
                 {
                     ModernMessageDialog.Show(this, "Win7POS",
@@ -358,28 +287,6 @@ namespace Win7POS.Wpf
                 catch { }
                 Close();
             }
-        }
-
-        private async Task<bool> TryOnlineBootstrapFirstRunAsync(
-            SqliteConnectionFactory factory,
-            bool resumeCatalogOnly = false)
-        {
-            var dialog = new PosOnlineFirstLoginDialog(factory, resumeCatalogOnly)
-            {
-                Owner = this
-            };
-
-            if (dialog.ShowDialog() != true)
-            {
-                return false;
-            }
-
-            if (!await PosCatalogPullService.IsCatalogSaleSafeAsync(factory).ConfigureAwait(true))
-            {
-                return false;
-            }
-
-            return resumeCatalogOnly || !await RequiresFirstRunAsync(factory).ConfigureAwait(true);
         }
 
         private async Task<StartOfDaySyncResult> RunStartOfDaySyncAsync(SqliteConnectionFactory factory)
@@ -731,7 +638,7 @@ namespace Win7POS.Wpf
             {
                 if (!_operatorLoginReached)
                 {
-                    StartupTrace.Write("startup watchdog warning: operator login not reached within 5s; phase=" + _startupPhase + "; elapsed_ms=" + (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds.ToString("0"));
+                    StartupTrace.Write("startup watchdog warning: POS access not reached within 5s; phase=" + _startupPhase + "; elapsed_ms=" + (DateTimeOffset.UtcNow - startedAt).TotalMilliseconds.ToString("0"));
                 }
             });
         }
@@ -748,7 +655,7 @@ namespace Win7POS.Wpf
                 Task.Delay(TimeSpan.FromSeconds(2))).ConfigureAwait(true);
             if (completed != _contentRendered.Task)
             {
-                StartupTrace.Write("ContentRendered wait timeout; opening operator login");
+                StartupTrace.Write("ContentRendered wait timeout; opening POS access");
             }
         }
 
@@ -758,6 +665,66 @@ namespace Win7POS.Wpf
                 OperatorDisplayText.Text = session != null && session.IsLoggedIn ? session.CurrentDisplayName : "—";
             if (OperatorRoleText != null)
                 OperatorRoleText.Text = session != null && session.IsLoggedIn ? "(" + session.CurrentRoleName + ")" : "";
+        }
+
+        private void StartNetworkStatusTimer()
+        {
+            if (_networkStatusTimer != null)
+            {
+                return;
+            }
+
+            _networkStatusTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(20)
+            };
+            _networkStatusTimer.Tick += (_, __) => UpdateNetworkStatusBadge();
+            _networkStatusTimer.Start();
+        }
+
+        private void UpdateNetworkStatusBadge()
+        {
+            try
+            {
+                var status = NetworkStatusService.Read();
+                var online = status != null && status.IsNetworkAvailable;
+                var foreground = online
+                    ? new SolidColorBrush(Color.FromRgb(46, 125, 50))
+                    : new SolidColorBrush(Color.FromRgb(198, 40, 40));
+
+                if (ShellNetworkStatusText != null)
+                {
+                    ShellNetworkStatusText.Text = PosLocalization.Current.Text(online
+                        ? "access.login.networkOnlineShort"
+                        : "access.login.networkOfflineShort");
+                    ShellNetworkStatusText.Foreground = foreground;
+                }
+
+                if (ShellNetworkStatusBadge != null)
+                {
+                    ShellNetworkStatusBadge.Background = online
+                        ? new SolidColorBrush(Color.FromRgb(232, 242, 237))
+                        : new SolidColorBrush(Color.FromRgb(255, 244, 229));
+                    ShellNetworkStatusBadge.BorderBrush = online
+                        ? new SolidColorBrush(Color.FromRgb(191, 217, 201))
+                        : new SolidColorBrush(Color.FromRgb(239, 190, 130));
+                    ShellNetworkStatusBadge.ToolTip = PosLocalization.Current.Text(online
+                        ? "access.login.networkOnlineDetail"
+                        : "access.login.networkOfflineDetail");
+                }
+
+                if (ShellNetworkWifiArcLarge != null)
+                {
+                    ShellNetworkWifiArcLarge.Stroke = foreground;
+                    ShellNetworkWifiArcSmall.Stroke = foreground;
+                    ShellNetworkWifiDot.Fill = foreground;
+                    ShellNetworkOfflineX.Visibility = online ? Visibility.Collapsed : Visibility.Visible;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("UpdateNetworkStatusBadge skipped.", ex);
+            }
         }
 
         private void StartSyncStatusTimer(SqliteConnectionFactory factory)
@@ -839,9 +806,17 @@ namespace Win7POS.Wpf
 
         private void OnChangeOperatorClick(object sender, RoutedEventArgs e)
         {
-            var loginDlg = new OperatorLoginDialog { Owner = this };
-            if (loginDlg.ShowDialog() != true || OperatorSessionHolder.Current == null)
+            var loginDlg = new PosOnlineFirstLoginDialog(new SqliteConnectionFactory(PosDbOptions.Default()))
+            {
+                Owner = this
+            };
+            if (loginDlg.ShowDialog() != true ||
+                OperatorSessionHolder.Current == null ||
+                !OperatorSessionHolder.Current.IsLoggedIn)
+            {
                 return;
+            }
+
             var session = OperatorSessionHolder.Current;
             UpdateOperatorDisplay(session);
             RefreshShellAfterOperatorChange(session);

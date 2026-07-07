@@ -126,6 +126,25 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("override.selectOperator", "Select an operator from the list.", "Selecciona un operador de la lista.", "Seleziona un operatore dalla lista.", "请从列表中选择操作员。");
             yield return new TranslationEntry("override.invalidCredentials", "Invalid credentials or operator without permission for this operation.", "Credenciales no validas u operador sin permiso para esta operacion.", "Credenziali non valide o operatore senza permesso per questa operazione.", "凭据无效，或操作员无权执行此操作。");
 
+            yield return new TranslationEntry("access.login.title", "POS access", "Acceso POS", "Accesso POS", "POS 访问");
+            yield return new TranslationEntry("access.login.shopCode", "Shop code:", "Codigo local:", "Codice negozio:", "店铺代码：");
+            yield return new TranslationEntry("access.login.staffCode", "Staff code:", "Codigo staff:", "Codice staff:", "员工代码：");
+            yield return new TranslationEntry("access.login.credential", "PIN/password:", "PIN/password:", "PIN/password:", "PIN/密码：");
+            yield return new TranslationEntry("access.login.deviceName", "Device name:", "Nombre dispositivo:", "Nome dispositivo:", "设备名称：");
+            yield return new TranslationEntry("access.login.networkOnline", "Network: Online", "Red: Online", "Rete: Online", "网络：在线");
+            yield return new TranslationEntry("access.login.networkOffline", "Network: Offline", "Red: Offline", "Rete: Offline", "网络：离线");
+            yield return new TranslationEntry("access.login.networkOnlineShort", "Online", "Online", "Online", "在线");
+            yield return new TranslationEntry("access.login.networkOfflineShort", "Offline", "Offline", "Offline", "离线");
+            yield return new TranslationEntry("access.login.networkOnlineDetail", "Wi-Fi/network available.", "Wi-Fi/red disponible.", "Wi-Fi/rete disponibile.", "Wi-Fi/网络可用。");
+            yield return new TranslationEntry("access.login.networkOfflineDetail", "Wi-Fi/network unavailable. Offline access uses saved credentials.", "Wi-Fi/red no disponible. El acceso offline usa credenciales guardadas.", "Wi-Fi/rete non disponibile. L'accesso offline usa credenziali salvate.", "Wi-Fi/网络不可用。离线访问使用已保存凭据。");
+            yield return new TranslationEntry("access.login.offlineNoticeWifiUnavailable", "Wi-Fi/network is not available now; continuing in offline mode.", "Wi-Fi/red no disponible ahora; se continua en modo offline.", "Wi-Fi/rete non disponibile al momento, si continua in modalita offline.", "Wi-Fi/网络当前不可用；继续离线模式。");
+            yield return new TranslationEntry("access.login.offlineNoticeServerUnavailable", "Admin Web connection is unavailable; continuing offline if credentials are already saved.", "Conexion Admin Web no disponible; se continua offline si las credenciales ya estan guardadas.", "Connessione Admin Web non disponibile, si continua offline se le credenziali sono gia salvate.", "Admin Web 连接不可用；如果凭据已保存则继续离线。");
+            yield return new TranslationEntry("access.login.offlineMirrorMissing", "Credentials are not available offline. Connect to the Internet and sign in online first with this staff.", "Credenciales no disponibles offline. Conecta Internet y accede online primero con este staff.", "Credenziali non disponibili offline. Connetti Internet e fai prima un accesso online con questo staff.", "离线凭据不可用。请连接互联网并先使用该员工在线登录。");
+            yield return new TranslationEntry("access.login.onlineDeniedNoOfflineFallback", "Admin Web denied these credentials. Offline fallback is not allowed.", "Admin Web rechazo estas credenciales. No se permite fallback offline.", "Admin Web ha negato queste credenziali. Il fallback offline non e consentito.", "Admin Web 拒绝了这些凭据。不允许离线回退。");
+            yield return new TranslationEntry("access.login.invalidCredentials", "Shop, staff or PIN/password is invalid.", "Local, staff o PIN/password no validos.", "Negozio, staff o PIN/password non validi.", "店铺、员工或 PIN/密码无效。");
+            yield return new TranslationEntry("access.login.signIn", "Sign in", "Acceder", "Accedi", "登录");
+            yield return new TranslationEntry("access.login.advancedSettings", "Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server", "高级设置 / 服务器");
+
             yield return new TranslationEntry("onlineFirstLogin.title", "Connect POS online", "Conectar POS online", "Collega POS online", "连接 POS 在线");
             yield return new TranslationEntry("onlineFirstLogin.serverConfigured", "Admin Web server configured.", "Servidor Admin Web configurado.", "Server Admin Web configurato.", "已配置 Admin Web 服务器。");
             yield return new TranslationEntry("onlineFirstLogin.serverNotConfigured", "Admin Web URL is not configured. Configure the server in advanced settings or with WIN7POS_ADMIN_WEB_BASE_URL.", "URL Admin Web no configurada. Configura el servidor en ajustes avanzados o con WIN7POS_ADMIN_WEB_BASE_URL.", "URL Admin Web non configurato. Configura il server nelle impostazioni avanzate o tramite WIN7POS_ADMIN_WEB_BASE_URL.", "未配置 Admin Web URL。请在高级设置中配置服务器，或使用 WIN7POS_ADMIN_WEB_BASE_URL。");
@@ -158,6 +177,14 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("onlineFirstLogin.setupTitle", "Preparing shop", "Preparando negocio", "Preparazione negozio", "正在准备店铺");
             yield return new TranslationEntry("onlineFirstLogin.setupSubtitle", "Downloading products, prices and settings. This may take a few minutes.", "Descargando productos, precios y configuracion. Puede tardar unos minutos.", "Sto scaricando prodotti, prezzi e impostazioni. Potrebbe richiedere alcuni minuti.", "正在下载商品、价格和设置。可能需要几分钟。");
             yield return new TranslationEntry("onlineFirstLogin.setupStarting", "Preparing local data...", "Preparando datos locales...", "Preparazione dati locali...", "正在准备本地数据...");
+            yield return new TranslationEntry("onlineFirstLogin.phaseConnecting", "Connecting to Admin Web", "Conectando con Admin Web", "Collegamento ad Admin Web", "正在连接 Admin Web");
+            yield return new TranslationEntry("onlineFirstLogin.phaseVerify", "Verifying credentials", "Verificando credenciales", "Verifica credenziali", "正在验证凭据");
+            yield return new TranslationEntry("onlineFirstLogin.phaseDevice", "Linking device", "Vinculando dispositivo", "Collegamento dispositivo", "正在连接设备");
+            yield return new TranslationEntry("onlineFirstLogin.phaseOperator", "Preparing operator", "Preparando operador", "Preparazione operatore", "正在准备操作员");
+            yield return new TranslationEntry("onlineFirstLogin.phaseCatalog", "Downloading catalog", "Descargando catalogo", "Download catalogo", "正在下载目录");
+            yield return new TranslationEntry("onlineFirstLogin.phaseFinalizing", "Preparing local database", "Preparando base local", "Preparazione database locale", "正在准备本地数据库");
+            yield return new TranslationEntry("onlineFirstLogin.phaseReady", "POS ready", "POS listo", "POS pronto", "POS 就绪");
+            yield return new TranslationEntry("onlineFirstLogin.readyMessage", "POS ready. Catalog and credentials updated.", "POS listo. Catalogo y credenciales actualizados.", "POS pronto. Catalogo e credenziali aggiornati.", "POS 已就绪。目录和凭据已更新。");
             yield return new TranslationEntry("onlineFirstLogin.stepAccessVerified", "Access verified", "Acceso verificado", "Accesso verificato", "访问已验证");
             yield return new TranslationEntry("onlineFirstLogin.stepDeviceLinked", "Device linked", "Dispositivo vinculado", "Dispositivo collegato", "设备已连接");
             yield return new TranslationEntry("onlineFirstLogin.stepOperatorConfigured", "Operator configured", "Operador configurado", "Operatore configurato", "操作员已配置");

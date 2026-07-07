@@ -7,6 +7,8 @@ namespace Win7POS.Data.Repositories
 {
     public sealed class SettingsRepository
     {
+        public const string PosLoginLastShopCodeKey = "pos.login.last_shop_code";
+
         private readonly SqliteConnectionFactory _factory;
 
         public SettingsRepository(SqliteConnectionFactory factory)
@@ -68,6 +70,21 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
         public Task SetIntAsync(string key, int value)
         {
             return SetStringAsync(key, value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        public Task<string> GetLastPosLoginShopCodeAsync()
+        {
+            return GetStringAsync(PosLoginLastShopCodeKey);
+        }
+
+        public Task SetLastPosLoginShopCodeAsync(string shopCode)
+        {
+            return SetStringAsync(PosLoginLastShopCodeKey, NormalizeShopCode(shopCode));
+        }
+
+        private static string NormalizeShopCode(string shopCode)
+        {
+            return (shopCode ?? string.Empty).Trim().ToUpperInvariant();
         }
     }
 }

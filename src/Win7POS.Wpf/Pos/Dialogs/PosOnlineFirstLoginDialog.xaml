@@ -1,9 +1,9 @@
 <chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.PosOnlineFirstLoginDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
+        xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
-        Title="{loc:Loc onlineFirstLogin.title}"
+        Title="{loc:Loc access.login.title}"
         ShowHeader="False"
         UseModalOverlay="True"
         DialogCornerRadius="16"
@@ -11,8 +11,7 @@
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="WidthAndHeight"
-        MinWidth="500"
-        MinHeight="430"
+        MinWidth="560"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
     <Grid Background="#F1EDF7">
@@ -22,11 +21,12 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <TextBlock Grid.Row="0" Text="{loc:Loc onlineFirstLogin.title}" Style="{StaticResource DialogTitleStyle}"/>
+        <TextBlock Grid.Row="0" Text="{loc:Loc access.login.title}" Style="{StaticResource DialogTitleStyle}"/>
 
-        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
+        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="16">
             <Grid>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -42,23 +42,41 @@
                     <ColumnDefinition Width="*" MinWidth="260"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock x:Name="ServerStatusText" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,12" TextWrapping="Wrap" Foreground="#2E7D32" Text="{loc:Loc onlineFirstLogin.serverConfigured}"/>
+                <TextBlock x:Name="ServerStatusText" Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="#2E7D32" Text="{loc:Loc onlineFirstLogin.serverConfigured}"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc onlineFirstLogin.shopCode}" Foreground="#666"/>
-                <TextBox x:Name="ShopCodeBox" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
+                <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Margin="0,0,0,12">
+                    <Border x:Name="NetworkStatusBadge" Padding="9,5" CornerRadius="8" Background="#E8F2ED" BorderBrush="#BFD9C9" BorderThickness="1" HorizontalAlignment="Left">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Grid Width="18" Height="16" Margin="0,0,7,0" VerticalAlignment="Center">
+                                <Path x:Name="NetworkWifiArcLarge" Stroke="#2E7D32" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 2,7 C 6,3 12,3 16,7"/>
+                                <Path x:Name="NetworkWifiArcSmall" Stroke="#2E7D32" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 5,10 C 7.5,8 10.5,8 13,10"/>
+                                <Ellipse x:Name="NetworkWifiDot" Width="4" Height="4" Fill="#2E7D32" HorizontalAlignment="Center" VerticalAlignment="Bottom"/>
+                                <Grid x:Name="NetworkOfflineX" Width="8" Height="8" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed">
+                                    <Line X1="1" Y1="1" X2="7" Y2="7" Stroke="#C62828" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                    <Line X1="7" Y1="1" X2="1" Y2="7" Stroke="#C62828" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                </Grid>
+                            </Grid>
+                            <TextBlock x:Name="NetworkStatusText" FontSize="11" FontWeight="SemiBold" Foreground="#2E7D32" Text="{loc:Loc access.login.networkOfflineShort}"/>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock x:Name="NetworkOfflineHintText" Margin="0,6,0,0" Foreground="#9A4B16" TextWrapping="Wrap" Visibility="Collapsed" Text="{loc:Loc access.login.offlineNoticeWifiUnavailable}"/>
+                </StackPanel>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc onlineFirstLogin.staffCode}" Foreground="#666"/>
-                <TextBox x:Name="StaffCodeBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
+                <TextBlock x:Name="ShopCodeLabel" Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc access.login.shopCode}" Foreground="#666"/>
+                <TextBox x:Name="ShopCodeBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
-                <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc onlineFirstLogin.credential}" Foreground="#666"/>
-                <PasswordBox x:Name="CredentialBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
+                <TextBlock x:Name="StaffCodeLabel" Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc access.login.staffCode}" Foreground="#666"/>
+                <TextBox x:Name="StaffCodeBox" Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
-                <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc onlineFirstLogin.deviceName}" Foreground="#666"/>
-                <TextBlock x:Name="DeviceNameText" Grid.Row="4" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,10" Padding="0,6" Foreground="#555" TextWrapping="Wrap"/>
+                <TextBlock x:Name="CredentialLabel" Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc access.login.credential}" Foreground="#666"/>
+                <PasswordBox x:Name="CredentialBox" Grid.Row="4" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
 
-                <TextBlock Grid.Row="5" Grid.ColumnSpan="2" TextWrapping="Wrap" Foreground="#8873A4" Text="{loc:Loc onlineFirstLogin.securityNote}"/>
+                <TextBlock x:Name="DeviceNameLabel" Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc access.login.deviceName}" Foreground="#666"/>
+                <TextBlock x:Name="DeviceNameText" Grid.Row="5" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,0,10" Padding="0,6" Foreground="#555" TextWrapping="Wrap"/>
 
-                <Expander x:Name="AdvancedExpander" Grid.Row="6" Grid.ColumnSpan="2" Margin="0,12,0,0" Header="{loc:Loc onlineFirstLogin.advancedSettings}">
+                <TextBlock x:Name="SecurityNoteText" Grid.Row="6" Grid.ColumnSpan="2" TextWrapping="Wrap" Foreground="#8873A4" Text="{loc:Loc onlineFirstLogin.securityNote}"/>
+
+                <Expander x:Name="AdvancedExpander" Grid.Row="7" Grid.ColumnSpan="2" Margin="0,12,0,0" Header="{loc:Loc access.login.advancedSettings}">
                     <Grid Margin="0,10,0,0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -76,30 +94,75 @@
                     </Grid>
                 </Expander>
 
-                <TextBlock x:Name="StatusText" Grid.Row="7" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="#C62828" TextWrapping="Wrap" Visibility="Collapsed"/>
+                <Border x:Name="StatusBanner" Grid.Row="8" Grid.ColumnSpan="2" Margin="0,10,0,0" Padding="10,8" CornerRadius="8" Background="#F5EDF9" BorderBrush="#DAC9E8" BorderThickness="1" Visibility="Collapsed">
+                    <TextBlock x:Name="StatusText" Foreground="#5E3F86" TextWrapping="Wrap"/>
+                </Border>
 
-                <StackPanel x:Name="ProgressPanel" Grid.Row="8" Grid.ColumnSpan="2" Margin="0,14,0,0" Visibility="Collapsed">
-                    <TextBlock Text="{loc:Loc onlineFirstLogin.setupTitle}" FontSize="18" FontWeight="SemiBold" Foreground="#3F3150"/>
-                    <TextBlock Margin="0,4,0,10" Text="{loc:Loc onlineFirstLogin.setupSubtitle}" Foreground="#665D73" TextWrapping="Wrap"/>
+                <StackPanel x:Name="ProgressPanel" Grid.Row="9" Grid.ColumnSpan="2" Margin="0,10,0,0" Visibility="Collapsed">
+                    <Border Background="#FFFFFF" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="12">
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc onlineFirstLogin.setupTitle}" FontSize="16" FontWeight="SemiBold" Foreground="#3F3150"/>
+                            <TextBlock Margin="0,2,0,8" Text="{loc:Loc onlineFirstLogin.setupSubtitle}" Foreground="#665D73" TextWrapping="Wrap"/>
 
-                    <UniformGrid Columns="1" Margin="0,0,0,10">
-                        <TextBlock x:Name="StepAccessText" Margin="0,1,0,1" Foreground="#514A5E"/>
-                        <TextBlock x:Name="StepDeviceText" Margin="0,1,0,1" Foreground="#514A5E"/>
-                        <TextBlock x:Name="StepOperatorText" Margin="0,1,0,1" Foreground="#514A5E"/>
-                        <TextBlock x:Name="StepCatalogText" Margin="0,1,0,1" Foreground="#514A5E"/>
-                        <TextBlock x:Name="StepFinalizeText" Margin="0,1,0,1" Foreground="#514A5E"/>
-                    </UniformGrid>
+                            <Border Background="#F7F2FB" BorderBrush="#E6D9F0" BorderThickness="1" CornerRadius="8" Padding="9,7" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <TextBlock x:Name="SetupPhaseTitleText" Text="{loc:Loc onlineFirstLogin.phaseConnecting}" FontSize="14" FontWeight="SemiBold" Foreground="#4B2E67"/>
+                                    <TextBlock x:Name="SetupPhaseText" Margin="0,3,0,0" Foreground="#6D617C" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Border>
 
-                    <ProgressBar x:Name="SetupProgressBar" Height="12" IsIndeterminate="True" Minimum="0" Maximum="100"/>
-                    <TextBlock x:Name="SetupPhaseText" Margin="0,8,0,0" Foreground="#514A5E" TextWrapping="Wrap"/>
-                    <TextBlock x:Name="SetupCountsText" Margin="0,4,0,0" Foreground="#7A6F88" TextWrapping="Wrap"/>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="24"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <Border x:Name="StepAccessGlyph" Grid.Row="0" Grid.Column="0" Width="18" Height="18" CornerRadius="9" BorderThickness="1.5" BorderBrush="#B8B0C2" Background="#FFFFFF" VerticalAlignment="Center">
+                                    <TextBlock x:Name="StepAccessGlyphText" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" FontWeight="Bold" Foreground="#B8B0C2"/>
+                                </Border>
+                                <TextBlock x:Name="StepAccessText" Grid.Row="0" Grid.Column="1" Margin="2,1,0,4" Foreground="#514A5E" Text="{loc:Loc onlineFirstLogin.stepAccessVerified}"/>
+
+                                <Border x:Name="StepDeviceGlyph" Grid.Row="1" Grid.Column="0" Width="18" Height="18" CornerRadius="9" BorderThickness="1.5" BorderBrush="#B8B0C2" Background="#FFFFFF" VerticalAlignment="Center">
+                                    <TextBlock x:Name="StepDeviceGlyphText" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" FontWeight="Bold" Foreground="#B8B0C2"/>
+                                </Border>
+                                <TextBlock x:Name="StepDeviceText" Grid.Row="1" Grid.Column="1" Margin="2,1,0,4" Foreground="#514A5E" Text="{loc:Loc onlineFirstLogin.stepDeviceLinked}"/>
+
+                                <Border x:Name="StepOperatorGlyph" Grid.Row="2" Grid.Column="0" Width="18" Height="18" CornerRadius="9" BorderThickness="1.5" BorderBrush="#B8B0C2" Background="#FFFFFF" VerticalAlignment="Center">
+                                    <TextBlock x:Name="StepOperatorGlyphText" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" FontWeight="Bold" Foreground="#B8B0C2"/>
+                                </Border>
+                                <TextBlock x:Name="StepOperatorText" Grid.Row="2" Grid.Column="1" Margin="2,1,0,4" Foreground="#514A5E" Text="{loc:Loc onlineFirstLogin.stepOperatorConfigured}"/>
+
+                                <Border x:Name="StepCatalogGlyph" Grid.Row="3" Grid.Column="0" Width="18" Height="18" CornerRadius="9" BorderThickness="1.5" BorderBrush="#B8B0C2" Background="#FFFFFF" VerticalAlignment="Center">
+                                    <TextBlock x:Name="StepCatalogGlyphText" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" FontWeight="Bold" Foreground="#B8B0C2"/>
+                                </Border>
+                                <TextBlock x:Name="StepCatalogText" Grid.Row="3" Grid.Column="1" Margin="2,1,0,4" Foreground="#514A5E" Text="{loc:Loc onlineFirstLogin.stepCatalogDownload}"/>
+
+                                <Border x:Name="StepFinalizeGlyph" Grid.Row="4" Grid.Column="0" Width="18" Height="18" CornerRadius="9" BorderThickness="1.5" BorderBrush="#B8B0C2" Background="#FFFFFF" VerticalAlignment="Center">
+                                    <TextBlock x:Name="StepFinalizeGlyphText" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="10" FontWeight="Bold" Foreground="#B8B0C2"/>
+                                </Border>
+                                <TextBlock x:Name="StepFinalizeText" Grid.Row="4" Grid.Column="1" Margin="2,1,0,0" Foreground="#514A5E" Text="{loc:Loc onlineFirstLogin.stepFinalizeLocalDb}"/>
+                            </Grid>
+
+                            <ProgressBar x:Name="SetupProgressBar" Height="12" IsIndeterminate="True" Minimum="0" Maximum="100"/>
+                            <Border Margin="0,8,0,0" Padding="8,6" CornerRadius="8" Background="#FAF8FC" BorderBrush="#ECE4F2" BorderThickness="1">
+                                <TextBlock x:Name="SetupCountsText" FontSize="11" Foreground="#6D617C" TextWrapping="Wrap"/>
+                            </Border>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </Grid>
         </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
             <Button x:Name="RetryDownloadButton" Content="{loc:Loc onlineFirstLogin.retryDownload}" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnRetryDownloadClick" Style="{StaticResource DialogActionButtonStyle}" Visibility="Collapsed"/>
-            <Button x:Name="ConnectButton" Content="{loc:Loc onlineFirstLogin.connect}" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnConnectClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
+            <Button x:Name="ConnectButton" Content="{loc:Loc access.login.signIn}" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnConnectClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
             <Button Content="{loc:Loc common.cancel}" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
         </StackPanel>
     </Grid>

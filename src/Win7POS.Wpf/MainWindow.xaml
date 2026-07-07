@@ -46,6 +46,20 @@
                             <TextBlock x:Name="OperatorRoleText" Foreground="#E8FFFFFF" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0" Text=""/>
                         </StackPanel>
                     </Border>
+                    <Border x:Name="ShellNetworkStatusBadge" Background="#E8F2ED" CornerRadius="8" Padding="10,6" Margin="0,0,10,0" BorderBrush="#BFD9C9" BorderThickness="1">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Grid Width="18" Height="16" Margin="0,0,7,0" VerticalAlignment="Center">
+                                <Path x:Name="ShellNetworkWifiArcLarge" Stroke="#2E7D32" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 2,7 C 6,3 12,3 16,7"/>
+                                <Path x:Name="ShellNetworkWifiArcSmall" Stroke="#2E7D32" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 5,10 C 7.5,8 10.5,8 13,10"/>
+                                <Ellipse x:Name="ShellNetworkWifiDot" Width="4" Height="4" Fill="#2E7D32" HorizontalAlignment="Center" VerticalAlignment="Bottom"/>
+                                <Grid x:Name="ShellNetworkOfflineX" Width="8" Height="8" HorizontalAlignment="Right" VerticalAlignment="Top" Visibility="Collapsed">
+                                    <Line X1="1" Y1="1" X2="7" Y2="7" Stroke="#C62828" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                    <Line X1="7" Y1="1" X2="1" Y2="7" Stroke="#C62828" StrokeThickness="1.8" StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                                </Grid>
+                            </Grid>
+                            <TextBlock x:Name="ShellNetworkStatusText" Foreground="#2E7D32" FontSize="11" FontWeight="SemiBold" VerticalAlignment="Center" Text="{loc:Loc access.login.networkOfflineShort}"/>
+                        </StackPanel>
+                    </Border>
                     <Button x:Name="ChangeOperatorButton" Style="{StaticResource HeaderActionButtonStyle}" Click="OnChangeOperatorClick" ToolTip="{loc:Loc shell.changeLockTooltip}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{loc:Loc shell.changeLock}" VerticalAlignment="Center"/>

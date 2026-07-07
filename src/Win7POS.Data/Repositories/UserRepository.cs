@@ -189,6 +189,42 @@ VALUES(@username, @displayName, @pinHash, @pinSalt, @roleId, 1, @requirePinChang
             return await conn.ExecuteScalarAsync<int>("SELECT last_insert_rowid()").ConfigureAwait(false);
         }
 
+        public async Task<string> GetLastRemoteShopCodeAsync()
+        {
+            using var conn = _factory.Open();
+            return await conn.QuerySingleOrDefaultAsync<string>(
+                @"SELECT remote_shop_code
+                  FROM users
+                  WHERE is_active = 1
+                    AND remote_shop_code IS NOT NULL
+                    AND TRIM(remote_shop_code) <> ''
+                  ORDER BY COALESCE(remote_synced_at, updated_at, created_at, 0) DESC, id DESC
+                  LIMIT 1").ConfigureAwait(false);
+        }
+
+        public async Task<string> FindRemoteStaffUsernameAsync(string shopCode, string staffCode)
+        {
+            var shop = Normalize(shopCode);
+            var staff = Normalize(staffCode);
+            if (shop.Length == 0 || staff.Length == 0)
+            {
+                return null;
+            }
+
+            using var conn = _factory.Open();
+            return await conn.QuerySingleOrDefaultAsync<string>(
+                @"SELECT username
+                  FROM users
+                  WHERE is_active = 1
+                    AND remote_shop_code IS NOT NULL
+                    AND remote_staff_code IS NOT NULL
+                    AND UPPER(TRIM(remote_shop_code)) = UPPER(@shop)
+                    AND UPPER(TRIM(remote_staff_code)) = UPPER(@staff)
+                  ORDER BY COALESCE(remote_synced_at, updated_at, created_at, 0) DESC, id DESC
+                  LIMIT 1",
+                new { shop, staff }).ConfigureAwait(false);
+        }
+
         public async Task<int> UpsertRemoteStaffMirrorAsync(RemoteStaffMirrorInput input)
         {
             if (input == null) throw new ArgumentNullException(nameof(input));
