@@ -809,7 +809,7 @@ namespace Win7POS.Wpf
             await ShowOperatorSwitchOrPosAccessAsync().ConfigureAwait(true);
         }
 
-        private async Task<bool> ShowOperatorSwitchOrPosAccessAsync()
+        private async Task<bool> ShowOperatorSwitchOrPosAccessAsync(string requiredPermissionCode = null, string requiredPermissionName = null)
         {
             var factory = new SqliteConnectionFactory(PosDbOptions.Default());
             var session = EnsureOperatorSession(factory);
@@ -818,7 +818,7 @@ namespace Win7POS.Wpf
                 Owner = DialogOwnerHelper.GetSafeOwner(this)
             };
 
-            await switchDlg.InitializeAsync().ConfigureAwait(true);
+            await switchDlg.InitializeAsync(requiredPermissionCode, requiredPermissionName).ConfigureAwait(true);
             switchDlg.ShowDialog();
 
             if (switchDlg.PosAccessRequested)
@@ -867,14 +867,18 @@ namespace Win7POS.Wpf
             return OperatorSessionHolder.Current;
         }
 
-        private async Task<bool> TrySwitchForPermissionAsync(string permissionCode, string message)
+        private async Task<bool> TrySwitchForPermissionAsync(string permissionCode, string message, string actionName)
         {
-            if (!PermissionDeniedDialog.ShowSwitchPrompt(this, message))
+            var missingPermission = PermissionDiagnosticName(permissionCode);
+            var deniedMessage = BuildPermissionDeniedMessage(message, GetCurrentRoleDiagnostic(), missingPermission);
+            LogPermissionDenied(permissionCode, actionName, "initial");
+
+            if (!PermissionDeniedDialog.ShowSwitchPrompt(this, deniedMessage))
             {
                 return false;
             }
 
-            if (!await ShowOperatorSwitchOrPosAccessAsync().ConfigureAwait(true))
+            if (!await ShowOperatorSwitchOrPosAccessAsync(permissionCode, missingPermission).ConfigureAwait(true))
             {
                 return false;
             }
@@ -884,10 +888,11 @@ namespace Win7POS.Wpf
                 return true;
             }
 
+            LogPermissionDenied(permissionCode, actionName, "after_switch");
             ModernMessageDialog.Show(
                 this,
                 PosLocalization.Current.Text("common.userPermissionDenied"),
-                message);
+                BuildPermissionDeniedMessage(message, GetCurrentRoleDiagnostic(), missingPermission));
             return false;
         }
 
@@ -905,6 +910,80 @@ namespace Win7POS.Wpf
             }
 
             return user.PermissionCodes?.Contains(permissionCode) == true;
+        }
+
+        private static string BuildPermissionDeniedMessage(string message, string currentRole, string missingPermission)
+        {
+            var diagnostic = PosLocalization.Current.Format(
+                "permission.denied.diagnostic",
+                string.IsNullOrWhiteSpace(currentRole) ? "none" : currentRole,
+                string.IsNullOrWhiteSpace(missingPermission) ? "unknown" : missingPermission);
+
+            return string.IsNullOrWhiteSpace(message)
+                ? diagnostic
+                : diagnostic + Environment.NewLine + message;
+        }
+
+        private static string GetCurrentRoleDiagnostic()
+        {
+            var user = OperatorSessionHolder.Current?.CurrentUser;
+            var role = user?.RoleCode;
+            if (string.IsNullOrWhiteSpace(role))
+            {
+                role = user?.RoleName;
+            }
+
+            return SafeDiagnosticToken(string.IsNullOrWhiteSpace(role) ? "none" : role);
+        }
+
+        private static string PermissionDiagnosticName(string permissionCode)
+        {
+            switch (permissionCode)
+            {
+                case PermissionCodes.CatalogView: return "CatalogView";
+                case PermissionCodes.CatalogEdit: return "CatalogEdit";
+                case PermissionCodes.CatalogImport: return "CatalogImport";
+                case PermissionCodes.CatalogPriceEdit: return "CatalogPriceEdit";
+                case PermissionCodes.DailyCloseView: return "DailyCloseView";
+                case PermissionCodes.DailyCloseRun: return "DailyCloseRun";
+                case PermissionCodes.DailyClosePrint: return "DailyClosePrint";
+                case PermissionCodes.DbMaintenance: return "DbMaintenance";
+                case PermissionCodes.DbRestore: return "DbRestore";
+                case PermissionCodes.SettingsShop: return "SettingsShop";
+                case PermissionCodes.SettingsPrinter: return "SettingsPrinter";
+                case PermissionCodes.UsersManage: return "UsersManage";
+                case PermissionCodes.RolesManage: return "RolesManage";
+                case PermissionCodes.RegisterView: return "RegisterView";
+                case PermissionCodes.RegisterViewAll: return "RegisterViewAll";
+                default:
+                    return SafeDiagnosticToken(permissionCode);
+            }
+        }
+
+        private static string SafeDiagnosticToken(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "";
+            }
+
+            var chars = value.Trim()
+                .Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' || ch == '.')
+                .Take(96)
+                .ToArray();
+            return new string(chars);
+        }
+
+        private static void LogPermissionDenied(string permissionCode, string actionName, string stage)
+        {
+            var currentRole = SafeDiagnosticToken(GetCurrentRoleDiagnostic());
+            var missingPermission = PermissionDiagnosticName(permissionCode);
+            _logger.LogWarning(
+                "category=permission.denied currentRole=" + currentRole +
+                " missingPermission=" + SafeDiagnosticToken(missingPermission) +
+                " action=" + SafeDiagnosticToken(actionName) +
+                " stage=" + SafeDiagnosticToken(stage),
+                null);
         }
 
         /// <summary>Dopo cambio operatore: ricaricare permessi, aggiornare UI e uscire da tab non consentiti.</summary>
@@ -970,7 +1049,8 @@ namespace Win7POS.Wpf
                 SideMenuOverlay.Visibility = Visibility.Collapsed;
                 if (await TrySwitchForPermissionAsync(
                         PermissionCodes.UsersManage,
-                        PosLocalization.Current.Text("shell.usersPermissionDenied")).ConfigureAwait(true))
+                        PosLocalization.Current.Text("shell.usersPermissionDenied"),
+                        "UsersRoles").ConfigureAwait(true))
                 {
                     OnMenuUsersClick(sender, e);
                 }
@@ -1000,7 +1080,8 @@ namespace Win7POS.Wpf
                 SideMenuOverlay.Visibility = Visibility.Collapsed;
                 if (await TrySwitchForPermissionAsync(
                         PermissionCodes.UsersManage,
-                        PosLocalization.Current.Text("shell.usersPermissionDenied")).ConfigureAwait(true))
+                        PosLocalization.Current.Text("shell.usersPermissionDenied"),
+                        "UsersRoles").ConfigureAwait(true))
                 {
                     OnMenuUsersClick(sender, e);
                 }
@@ -1139,7 +1220,8 @@ namespace Win7POS.Wpf
                 SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
                 if (await TrySwitchForPermissionAsync(
                         PermissionCodes.CatalogView,
-                        PosLocalization.Current.Text("shell.productsPermissionDenied")).ConfigureAwait(true))
+                        PosLocalization.Current.Text("shell.productsPermissionDenied"),
+                        "Products").ConfigureAwait(true))
                 {
                     OnMenuProdottiClick(sender, e);
                 }
@@ -1213,7 +1295,8 @@ namespace Win7POS.Wpf
                 SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
                 if (await TrySwitchForPermissionAsync(
                         PermissionCodes.DailyCloseView,
-                        PosLocalization.Current.Format("common.permissionDeniedOperation", PosLocalization.Current.Text("operations.dailyClose"))).ConfigureAwait(true))
+                        PosLocalization.Current.Format("common.permissionDeniedOperation", PosLocalization.Current.Text("operations.dailyClose")),
+                        "DailyClose").ConfigureAwait(true))
                 {
                     OnMenuDailyReportClick(sender, e);
                 }
@@ -1238,7 +1321,8 @@ namespace Win7POS.Wpf
                 SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
                 if (await TrySwitchForPermissionAsync(
                         PermissionCodes.DbMaintenance,
-                        PosLocalization.Current.Format("common.permissionDeniedOperation", PosLocalization.Current.Text("operations.dbMaintenance"))).ConfigureAwait(true))
+                        PosLocalization.Current.Format("common.permissionDeniedOperation", PosLocalization.Current.Text("operations.dbMaintenance")),
+                        "DatabaseMaintenance").ConfigureAwait(true))
                 {
                     OnMenuDbClick(sender, e);
                 }

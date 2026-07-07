@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
@@ -32,7 +33,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool PosAccessRequested { get; private set; }
         public bool SwitchSucceeded { get; private set; }
 
-        public async Task InitializeAsync()
+        public async Task InitializeAsync(string requiredPermissionCode = null, string requiredPermissionName = null)
         {
             Log("start", "result=shown");
             var userRepo = new UserRepository(_factory);
@@ -45,8 +46,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             var users = await userRepo.ListActiveForOperatorSwitchAsync(shopCode).ConfigureAwait(true);
             var sourceUsers = users ?? Array.Empty<UserAccount>();
-            var items = sourceUsers
+            HashSet<string> eligibleUsernames = null;
+            if (!string.IsNullOrWhiteSpace(requiredPermissionCode))
+            {
+                var eligibleUsers = await userRepo.ListUsersWithPermissionAsync(requiredPermissionCode).ConfigureAwait(true);
+                eligibleUsernames = new HashSet<string>(
+                    (eligibleUsers ?? Array.Empty<UserAccount>())
+                    .Where(x => x != null && !string.IsNullOrWhiteSpace(x.Username))
+                    .Select(x => x.Username),
+                    StringComparer.OrdinalIgnoreCase);
+            }
+
+            var activeUsers = sourceUsers
                 .Where(x => x != null && x.IsActive && !string.IsNullOrWhiteSpace(x.Username))
+                .OrderBy(x => eligibleUsernames != null && !eligibleUsernames.Contains(x.Username) ? 1 : 0);
+            var items = activeUsers
                 .Select(x => new OperatorSwitchItem
                 {
                     Username = x.Username,
@@ -59,8 +73,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (items.Count > 0)
             {
                 OperatorCombo.SelectedIndex = 0;
-                HideStatus();
                 SwitchButton.IsEnabled = true;
+                if (eligibleUsernames != null && eligibleUsernames.Count == 0)
+                {
+                    var missingPermission = string.IsNullOrWhiteSpace(requiredPermissionName)
+                        ? requiredPermissionCode
+                        : requiredPermissionName;
+                    ShowStatus(PosLocalization.F("operator.switch.noEligibleForPermission", missingPermission));
+                    Log("operator_list", "result=no_eligible missingPermission=" + Safe(missingPermission));
+                }
+                else
+                {
+                    HideStatus();
+                }
                 return;
             }
 

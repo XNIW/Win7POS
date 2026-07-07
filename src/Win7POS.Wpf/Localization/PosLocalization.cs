@@ -349,6 +349,7 @@ namespace Win7POS.Wpf.Localization
             new TranslationEntry("common.time", "Date/time:", "Fecha/hora:", "Data/Ora:", "日期/时间："),
             new TranslationEntry("common.total", "Total", "Total", "Totale", "总计"),
             new TranslationEntry("common.userPermissionDenied", "Permission denied", "Permiso denegado", "Permesso negato", "权限被拒绝"),
+            new TranslationEntry("permission.denied.diagnostic", "Permission denied. Current role: {0}. Missing permission: {1}.", "Permiso denegado. Rol actual: {0}. Permiso faltante: {1}.", "Permesso negato. Ruolo corrente: {0}. Permesso mancante: {1}.", "权限被拒绝。当前角色：{0}。缺少权限：{1}。"),
 
             new TranslationEntry("shell.aboutSupport", "About / Support", "Acerca de / Soporte", "About / Support", "关于 / 支持"),
             new TranslationEntry("shell.changeLock", "Change / Lock", "Cambiar / Bloquear", "Cambia / Blocca", "切换 / 锁定"),
@@ -501,6 +502,7 @@ namespace Win7POS.Wpf.Localization
             new TranslationEntry("operator.switch.posAccess", "POS access", "Acceso POS", "Accesso POS", "POS 访问"),
             new TranslationEntry("operator.switch.posAccessHint", "Use POS access only to connect a different shop, recover the device session, or change server settings.", "Usa Acceso POS solo para conectar otro local, recuperar la sesion del dispositivo o cambiar ajustes del servidor.", "Usa Accesso POS solo per collegare un altro negozio, recuperare la sessione dispositivo o cambiare server.", "仅在连接其他店铺、恢复设备会话或更改服务器设置时使用 POS 访问。"),
             new TranslationEntry("operator.switch.noOperators", "No local operators are available. Use POS access to connect this device first.", "No hay operadores locales disponibles. Usa Acceso POS para conectar este dispositivo primero.", "Nessun operatore locale disponibile. Usa Accesso POS per collegare prima il dispositivo.", "没有可用的本地操作员。请先使用 POS 访问连接此设备。"),
+            new TranslationEntry("operator.switch.noEligibleForPermission", "No local operator with {0} is available. Use POS access with an admin/shop_owner online at least once.", "No hay operador local con {0}. Usa Acceso POS con un admin/shop_owner online al menos una vez.", "Nessun operatore locale con {0} disponibile. Usa Accesso POS con admin/shop_owner online almeno una volta.", "没有具备 {0} 的本地操作员。请至少使用 admin/shop_owner 在线 POS 访问一次。"),
             new TranslationEntry("operator.switch.failed", "Operator switch failed. Try again or use POS access.", "Cambio de operador fallido. Intenta nuevamente o usa Acceso POS.", "Cambio operatore fallito. Riprova o usa Accesso POS.", "切换操作员失败。请重试或使用 POS 访问。"),
 
             new TranslationEntry("pos.cart.productHeader", "Product", "Producto", "Prodotto", "商品"),

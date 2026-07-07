@@ -63,6 +63,10 @@ Require-Match "Operator switch attempt id field" $operatorSwitch 'attemptId='
 Require-Match "Operator switch success result" $operatorSwitch '"success"'
 Require-Match "Operator switch failed result" $operatorSwitch 'result=failed'
 Require-Match "Operator switch cancelled result" $operatorSwitch '"cancelled"'
+Require-Match "Permission denied category" $mainWindow 'category=permission\.denied'
+Require-Match "Permission denied current role field" $mainWindow 'currentRole='
+Require-Match "Permission denied missing permission field" $mainWindow 'missingPermission='
+Require-Match "Permission denied action field" $mainWindow 'action='
 
 Require-Match "FileLogger redacts credential keywords" $logger 'pin\|password\|credential'
 Require-Match "FileLogger redacts token keyword" $logger 'trustedDeviceToken\|token\|pin'
@@ -75,6 +79,7 @@ Forbid-Match "no password variable logged by key" $dialog '(?i)password\s*=\s*"\
 Forbid-Match "no token variable logged by key" $dialog '(?i)token\s*=\s*"\s*\+\s*token|token="\s*\+\s*token|token=\s*"\s*\+\s*token'
 Forbid-Match "operator switch does not log PIN box" $operatorSwitch 'Log(?:\w*)?[\s\S]{0,160}PinBox\.Password'
 Forbid-Match "operator switch does not log pin variable by key" $operatorSwitch '(?i)pin\s*=\s*"\s*\+\s*pin|pin="\s*\+\s*pin|pin=\s*"\s*\+\s*pin'
+Forbid-Match "permission denied log has no credential keys" $mainWindow 'category=permission\.denied[^\r\n]*(?i:pin|password|credential|token)'
 
 if ($fail) {
     Write-Host "`nRESULT: FAIL" -ForegroundColor Red
