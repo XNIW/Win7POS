@@ -60,13 +60,39 @@ function Test-TranslationEntry(
     return $true
 }
 
-function Get-MethodBody([string]$Text, [string]$SignaturePattern, [string]$NextSignaturePattern) {
-    $match = [regex]::Match($Text, $SignaturePattern + "[\s\S]*?" + $NextSignaturePattern)
-    if (-not $match.Success) {
+function Get-MethodBody([string]$Text, [string]$SignaturePattern, [string]$NextSignaturePattern = "") {
+    if (-not [string]::IsNullOrWhiteSpace($NextSignaturePattern)) {
+        $match = [regex]::Match($Text, $SignaturePattern + "[\s\S]*?" + $NextSignaturePattern)
+        if ($match.Success) {
+            return $match.Value
+        }
+    }
+
+    $signature = [regex]::Match($Text, $SignaturePattern)
+    if (-not $signature.Success) {
         return ""
     }
 
-    return $match.Value
+    $bodyStart = $Text.IndexOf("{", $signature.Index + $signature.Length, [StringComparison]::Ordinal)
+    if ($bodyStart -lt 0) {
+        return ""
+    }
+
+    $depth = 0
+    for ($i = $bodyStart; $i -lt $Text.Length; $i++) {
+        $ch = $Text[$i]
+        if ($ch -eq "{") {
+            $depth++
+        }
+        elseif ($ch -eq "}") {
+            $depth--
+            if ($depth -eq 0) {
+                return $Text.Substring($signature.Index, ($i - $signature.Index) + 1)
+            }
+        }
+    }
+
+    return ""
 }
 
 function Test-ReleasePackSource([string]$source) {
@@ -195,35 +221,53 @@ else {
 $loadedBody = Get-MethodBody `
     $mainWindow `
     "private\s+async\s+void\s+OnLoadedAsync\s*\([^\)]*\)" `
-    "private\s+async\s+Task<bool>\s+TryOnlineBootstrapFirstRunAsync"
+    "private\s+async\s+Task<StartOfDaySyncResult>\s+RunStartOfDaySyncAsync"
 
 if ([string]::IsNullOrWhiteSpace($loadedBody)) {
     Fail "MainWindow.OnLoadedAsync body not found"
 }
 else {
-    $loginIndex = $loadedBody.IndexOf("OperatorLoginDialog", [StringComparison]::Ordinal)
+    $loginIndex = $loadedBody.IndexOf("PosOnlineFirstLoginDialog", [StringComparison]::Ordinal)
+    $shownIndex = $loadedBody.IndexOf("POS access dialog shown", [StringComparison]::Ordinal)
+    $acceptedIndex = $loadedBody.IndexOf("POS access dialog accepted", [StringComparison]::Ordinal)
+    $showDialogIndex = $loadedBody.IndexOf("login.ShowDialog()", [StringComparison]::Ordinal)
     $refreshIndex = $loadedBody.IndexOf("TryRefreshTrustedPosSessionAsync", [StringComparison]::Ordinal)
     $queueIndex = $loadedBody.IndexOf("QueueBackgroundOnlineRefresh", [StringComparison]::Ordinal)
 
     if ($loginIndex -lt 0) {
-        Fail "operator login dialog missing from startup path"
+        Fail "POS access dialog missing from startup path"
     }
     else {
-        Pass "operator login dialog present in startup path"
+        Pass "POS access dialog present in startup path"
+    }
+
+    if ($loadedBody -notmatch "login\.ShowDialog\(\)\s*!=\s*true" -or
+        $loadedBody -notmatch "OperatorSessionHolder\.Current[\s\S]{0,160}!OperatorSessionHolder\.Current\.IsLoggedIn") {
+        Fail "POS access dialog result/authentication guard missing"
+    }
+    else {
+        Pass "POS access dialog result/authentication guard present"
     }
 
     if ($refreshIndex -ge 0 -and $refreshIndex -lt $loginIndex) {
-        Fail "trusted session refresh runs before operator login"
+        Fail "trusted session refresh runs before POS access"
     }
     else {
-        Pass "no trusted session refresh before operator login"
+        Pass "no trusted session refresh before POS access"
     }
 
-    if ($queueIndex -lt 0 -or $loginIndex -lt 0 -or $queueIndex -lt $loginIndex) {
-        Fail "background online refresh is not queued after operator login"
+    if ($queueIndex -lt 0 -or $acceptedIndex -lt 0 -or $queueIndex -lt $acceptedIndex) {
+        Fail "background online refresh is not queued after POS access acceptance"
     }
     else {
-        Pass "background online refresh queued after operator login"
+        Pass "background online refresh queued after POS access acceptance"
+    }
+
+    if ($shownIndex -lt 0 -or $showDialogIndex -lt 0 -or $shownIndex -gt $showDialogIndex) {
+        Fail "POS access shown marker must be before ShowDialog"
+    }
+    else {
+        Pass "POS access shown marker precedes ShowDialog"
     }
 }
 
@@ -271,10 +315,10 @@ else {
 
 if ($mainWindow -notmatch "WaitForContentRenderedOrTimeoutAsync" -or
     $mainWindow -notmatch "ContentRendered fired") {
-    Fail "operator login is not gated behind visible/rendered shell trace"
+    Fail "POS access is not gated behind visible/rendered shell trace"
 }
 else {
-    Pass "operator login waits for rendered shell signal or timeout"
+    Pass "POS access waits for rendered shell signal or timeout"
 }
 
 $refreshBody = Get-MethodBody `
@@ -346,19 +390,27 @@ else {
     Pass "startup watchdog warning present"
 }
 
-if ($mainWindow -notmatch "TryOnlineBootstrapFirstRunAsync\(factory\)[\s\S]{0,120}ConfigureAwait\(true\)" -or
-    $mainWindow -notmatch "needFirstRun && !App\.IsSafeStart" -or
-    $mainWindow -notmatch "first-run online bootstrap skipped: safe-start") {
-    Fail "safe-start must skip first-run online bootstrap"
+$queueRefreshBody = Get-MethodBody `
+    $mainWindow `
+    "private\s+void\s+QueueBackgroundOnlineRefresh\s*\([^\)]*\)" `
+    "private\s+async\s+Task\s+RunBackgroundOnlineRefreshAsync"
+if ($mainWindow -match "TryOnlineBootstrapFirstRunAsync" -or
+    $loadedBody -notmatch "if\s*\(\s*!App\.IsSafeStart\s*\)[\s\S]{0,220}RunStartOfDaySyncAsync\(factory\)" -or
+    [string]::IsNullOrWhiteSpace($queueRefreshBody) -or
+    $queueRefreshBody -notmatch "if\s*\(\s*App\.IsSafeStart\s*\)[\s\S]{0,160}online refresh skipped: safe-start[\s\S]{0,160}return" -or
+    $mainWindow -notmatch "online refresh skipped: safe-start") {
+    Fail "safe-start must skip automatic startup online refresh"
 }
 else {
-    Pass "safe-start skips first-run online bootstrap"
+    Pass "safe-start skips automatic startup online refresh"
 }
 
 if ($app -notmatch "App\.OnStartup entered" -or
     $mainWindow -notmatch "MainWindow constructor entered" -or
     $mainWindow -notmatch "DbInitializer start" -or
-    $mainWindow -notmatch "OperatorLogin dialog opening" -or
+    $mainWindow -notmatch "POS access dialog opening" -or
+    $mainWindow -notmatch "POS access dialog shown" -or
+    $mainWindow -notmatch "POS access dialog accepted" -or
     $mainWindow -notmatch "BackgroundOnlineRefresh queued") {
     Fail "startup trace markers missing"
 }
