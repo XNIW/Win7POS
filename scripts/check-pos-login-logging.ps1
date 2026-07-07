@@ -1,0 +1,76 @@
+$ErrorActionPreference = "Stop"
+
+$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$fail = $false
+
+function Fail([string]$message) {
+    Write-Host "FAIL: $message" -ForegroundColor Red
+    $script:fail = $true
+}
+
+function Pass([string]$message) {
+    Write-Host "PASS: $message" -ForegroundColor Green
+}
+
+function Read-Text([string]$relativePath) {
+    $path = Join-Path $repoRoot $relativePath
+    if (-not (Test-Path $path)) {
+        Fail "missing file: $relativePath"
+        return ""
+    }
+
+    return [System.IO.File]::ReadAllText($path)
+}
+
+function Require-Match([string]$label, [string]$text, [string]$pattern) {
+    if ($text -match $pattern) {
+        Pass $label
+    }
+    else {
+        Fail "$label missing"
+    }
+}
+
+function Forbid-Match([string]$label, [string]$text, [string]$pattern) {
+    if ($text -match $pattern) {
+        Fail $label
+    }
+    else {
+        Pass $label
+    }
+}
+
+$dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
+$logger = Read-Text "src/Win7POS.Wpf/Infrastructure/FileLogger.cs"
+$mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+
+Require-Match "POS access category" $dialog '"pos\.access"'
+Require-Match "POS access attempt id field" $dialog 'attemptId='
+Require-Match "POS access attempt id generator" $dialog 'CreateAccessAttemptId'
+Require-Match "POS access duration" $dialog 'durationMs='
+Require-Match "POS access start stage" $dialog '"start"'
+Require-Match "POS access end stage" $dialog '"end"'
+Require-Match "POS access offline fallback stage" $dialog '"offline_fallback"'
+Require-Match "POS access catalog sale-safe stage" $dialog '"catalog_sale_safe'
+Require-Match "POS access local login result" $dialog '"local_login_result"'
+Require-Match "POS access bootstrap result" $dialog '"online_bootstrap_result"'
+Require-Match "POS access catalog retry category" $dialog '"pos\.access\.catalog_retry"'
+Require-Match "Start-of-day blocked category" $mainWindow 'category=start_of_day result=blocked reason='
+
+Require-Match "FileLogger redacts credential keywords" $logger 'pin\|password\|credential'
+Require-Match "FileLogger redacts token keyword" $logger 'trustedDeviceToken\|token\|pin'
+Require-Match "FileLogger redacts bearer auth" $logger 'Authorization\\s\*:\\s\*Bearer'
+
+Forbid-Match "no CredentialBox.Password inside log calls" $dialog 'Log(?:Access|CatalogRetry|Info|Warning|Error)[\s\S]{0,160}CredentialBox\.Password'
+Forbid-Match "no credential variable logged by key" $dialog '(?i)credential\s*=\s*"\s*\+\s*credential|credential="\s*\+\s*credential|credential=\s*"\s*\+\s*credential'
+Forbid-Match "no pin variable logged by key" $dialog '(?i)pin\s*=\s*"\s*\+\s*pin|pin="\s*\+\s*pin|pin=\s*"\s*\+\s*pin'
+Forbid-Match "no password variable logged by key" $dialog '(?i)password\s*=\s*"\s*\+\s*password|password="\s*\+\s*password|password=\s*"\s*\+\s*password'
+Forbid-Match "no token variable logged by key" $dialog '(?i)token\s*=\s*"\s*\+\s*token|token="\s*\+\s*token|token=\s*"\s*\+\s*token'
+
+if ($fail) {
+    Write-Host "`nRESULT: FAIL" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "`nRESULT: PASS" -ForegroundColor Green
+exit 0

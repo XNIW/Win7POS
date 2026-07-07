@@ -80,7 +80,10 @@ namespace Win7POS.Wpf.Pos.Online
                     return PosOnlineBootstrapResult.Failure(
                         result.Code,
                         LocalizeOnlineResultMessage(result),
-                        result.Denied);
+                        result.Denied,
+                        result.ClientRequestId,
+                        result.ServerRequestId,
+                        result.CfRay);
                 }
 
                 var response = result.Value;
@@ -90,7 +93,10 @@ namespace Win7POS.Wpf.Pos.Online
                     return PosOnlineBootstrapResult.Failure(
                         "invalid_response",
                         PosLocalization.T("onlineFirstLogin.invalidResponse"),
-                        false);
+                        false,
+                        result.ClientRequestId,
+                        result.ServerRequestId,
+                        result.CfRay);
                 }
 
                 progress?.Report(PosCatalogPullProgress.ForPhase("access_verified"));
@@ -122,7 +128,10 @@ namespace Win7POS.Wpf.Pos.Online
                     return PosOnlineBootstrapResult.Failure(
                         "local_persistence_failed",
                         PosLocalization.T("onlineFirstLogin.localRequestError"),
-                        false);
+                        false,
+                        result.ClientRequestId,
+                        result.ServerRequestId,
+                        result.CfRay);
                 }
 
                 _logger.LogInfo(
@@ -161,7 +170,11 @@ namespace Win7POS.Wpf.Pos.Online
                     if (catalogOutcome.Completed && catalogOutcome.CatalogSaleSafe)
                     {
                         progress?.Report(PosCatalogPullProgress.ForPhase("finalizing"));
-                        return PosOnlineBootstrapResult.Ok(catalogOutcome);
+                        return PosOnlineBootstrapResult.Ok(
+                            catalogOutcome,
+                            result.ClientRequestId,
+                            result.ServerRequestId,
+                            result.CfRay);
                     }
 
                     if (!catalogOutcome.Completed)
@@ -181,7 +194,10 @@ namespace Win7POS.Wpf.Pos.Online
                             : PosLocalization.T("onlineFirstLogin.catalogIncomplete"),
                         catalogOutcome.AuthDenied,
                         !catalogOutcome.AuthDenied,
-                        catalogOutcome);
+                        catalogOutcome,
+                        result.ClientRequestId,
+                        result.ServerRequestId,
+                        result.CfRay);
                 }
                 catch (Exception ex)
                 {
@@ -191,7 +207,10 @@ namespace Win7POS.Wpf.Pos.Online
                         PosLocalization.T("onlineFirstLogin.catalogIncomplete"),
                         false,
                         true,
-                        null);
+                        null,
+                        result.ClientRequestId,
+                        result.ServerRequestId,
+                        result.CfRay);
                 }
             }
             catch (OperationCanceledException)
@@ -289,17 +308,23 @@ namespace Win7POS.Wpf.Pos.Online
             string catalogStatus,
             string catalogLastError,
             bool canOpenPos,
-            bool requiresRetry)
+            bool requiresRetry,
+            string clientRequestId,
+            string serverRequestId,
+            string cfRay)
         {
             CanOpenPos = canOpenPos;
             CatalogCompleted = catalogCompleted;
             CatalogLastError = catalogLastError ?? string.Empty;
             CatalogSaleSafe = catalogSaleSafe;
             CatalogStatus = catalogStatus ?? string.Empty;
+            CfRay = cfRay ?? string.Empty;
+            ClientRequestId = clientRequestId ?? string.Empty;
             Code = code;
             Denied = denied;
             Message = message;
             RequiresRetry = requiresRetry;
+            ServerRequestId = serverRequestId ?? string.Empty;
             Success = success;
         }
 
@@ -308,13 +333,20 @@ namespace Win7POS.Wpf.Pos.Online
         public string CatalogLastError { get; }
         public bool CatalogSaleSafe { get; }
         public string CatalogStatus { get; }
+        public string CfRay { get; }
+        public string ClientRequestId { get; }
         public string Code { get; }
         public bool Denied { get; }
         public string Message { get; }
         public bool RequiresRetry { get; }
+        public string ServerRequestId { get; }
         public bool Success { get; }
 
-        public static PosOnlineBootstrapResult Ok(PosCatalogPullOutcome catalogOutcome)
+        public static PosOnlineBootstrapResult Ok(
+            PosCatalogPullOutcome catalogOutcome,
+            string clientRequestId = null,
+            string serverRequestId = null,
+            string cfRay = null)
         {
             return new PosOnlineBootstrapResult(
                 true,
@@ -326,10 +358,19 @@ namespace Win7POS.Wpf.Pos.Online
                 catalogOutcome?.StatusCode ?? "completed",
                 string.Empty,
                 true,
-                false);
+                false,
+                clientRequestId,
+                serverRequestId,
+                cfRay);
         }
 
-        public static PosOnlineBootstrapResult Failure(string code, string message, bool denied)
+        public static PosOnlineBootstrapResult Failure(
+            string code,
+            string message,
+            bool denied,
+            string clientRequestId = null,
+            string serverRequestId = null,
+            string cfRay = null)
         {
             return new PosOnlineBootstrapResult(
                 false,
@@ -343,7 +384,10 @@ namespace Win7POS.Wpf.Pos.Online
                 string.IsNullOrWhiteSpace(code) ? "failure" : code,
                 string.IsNullOrWhiteSpace(code) ? "failure" : code,
                 false,
-                false);
+                false,
+                clientRequestId,
+                serverRequestId,
+                cfRay);
         }
 
         public static PosOnlineBootstrapResult CatalogIncomplete(
@@ -351,7 +395,10 @@ namespace Win7POS.Wpf.Pos.Online
             string message,
             bool denied,
             bool requiresRetry,
-            PosCatalogPullOutcome catalogOutcome)
+            PosCatalogPullOutcome catalogOutcome,
+            string clientRequestId = null,
+            string serverRequestId = null,
+            string cfRay = null)
         {
             var status = string.IsNullOrWhiteSpace(catalogOutcome?.StatusCode)
                 ? (string.IsNullOrWhiteSpace(code) ? "catalog_incomplete" : code)
@@ -369,7 +416,10 @@ namespace Win7POS.Wpf.Pos.Online
                 status,
                 status,
                 false,
-                requiresRetry && !denied);
+                requiresRetry && !denied,
+                clientRequestId,
+                serverRequestId,
+                cfRay);
         }
     }
 }

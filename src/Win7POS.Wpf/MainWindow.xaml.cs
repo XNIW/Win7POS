@@ -240,7 +240,7 @@ namespace Win7POS.Wpf
                         startOfDayResult = await RunStartOfDaySyncAsync(factory).ConfigureAwait(true);
                         if (startOfDayResult == null || !startOfDayResult.CanOpenPos)
                         {
-                            _logger.LogWarning("Start-of-day sync blocked POS opening: reason=" +
+                            _logger.LogWarning("category=start_of_day result=blocked reason=" +
                                 SafeOnlineCode(startOfDayResult?.BlockingReason));
                             Close();
                             return;

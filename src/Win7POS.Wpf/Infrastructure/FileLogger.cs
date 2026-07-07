@@ -106,11 +106,11 @@ namespace Win7POS.Wpf.Infrastructure
             var sanitized = value ?? string.Empty;
             sanitized = Regex.Replace(
                 sanitized,
-                @"(?i)(sessionToken|deviceToken|trustedDeviceToken|pin|password|credential|pwd|db_password|database password)\s*[:=]\s*\S+",
+                @"(?i)(sessionToken|deviceToken|trustedDeviceToken|token|pin|password|credential|pwd|db_password|database password)\s*[:=]\s*\S+",
                 "$1=[redacted]");
             sanitized = Regex.Replace(
                 sanitized,
-                @"(?i)(""?(sessionToken|deviceToken|trustedDeviceToken|pin|password|credential|pwd|db_password|database password)""?\s*:\s*"")[^""]+("")",
+                @"(?i)(""?(sessionToken|deviceToken|trustedDeviceToken|token|pin|password|credential|pwd|db_password|database password)""?\s*:\s*"")[^""]+("")",
                 "$1[redacted]$3");
             sanitized = Regex.Replace(
                 sanitized,

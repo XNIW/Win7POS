@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -33,6 +35,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _serverOfflineNoticeShown;
         private bool _wifiOfflineNoticeShown;
         private string _activeSetupStep;
+        private string _lastAccessAttemptId;
         private PosAdminWebOptions _lastOptions;
 
         public PosOnlineFirstLoginDialog()
@@ -88,6 +91,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 ShowInfo(PosLocalization.T("onlineFirstLogin.configurationRequired"));
             }
 
+            LogAccessInfo(
+                null,
+                "dialog_open",
+                "result=shown resumeCatalogOnly=" + BoolText(_resumeCatalogOnly) +
+                " adminUrlConfigured=" + BoolText(_lastOptions != null));
             ConnectButton.IsEnabled = true;
             await PrefillShopCodeAsync().ConfigureAwait(true);
 
@@ -113,18 +121,35 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 var settings = new SettingsRepository(_factory);
                 var shopCode = await settings.GetLastPosLoginShopCodeAsync().ConfigureAwait(true);
+                var source = "last_pos_login";
                 if (string.IsNullOrWhiteSpace(shopCode))
                 {
+                    source = "remote_mirror";
                     shopCode = await new UserRepository(_factory)
                         .GetLastRemoteShopCodeAsync()
                         .ConfigureAwait(true);
                 }
 
                 ShopCodeBox.Text = NormalizeCode(shopCode);
+                if (string.IsNullOrWhiteSpace(ShopCodeBox.Text))
+                {
+                    LogAccessInfo(null, "prefill_shop_code", "result=empty");
+                }
+                else
+                {
+                    LogAccessInfo(
+                        null,
+                        "prefill_shop_code",
+                        "result=success source=" + SafeAuditValue(source) +
+                        " shopCode=" + SafeAuditValue(ShopCodeBox.Text));
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogWarning("Prefill shop code skipped.", ex);
+                LogAccessWarning(
+                    null,
+                    "prefill_shop_code",
+                    "result=skipped exceptionType=" + SafeAuditValue(ex.GetType().Name));
             }
         }
 
@@ -146,28 +171,53 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
+            var attemptId = CreateAccessAttemptId();
+            _lastAccessAttemptId = attemptId;
+            var attemptTimer = Stopwatch.StartNew();
+            var attemptFinished = false;
             var shopCode = NormalizeCode(ShopCodeBox.Text);
             var staffCode = NormalizeCode(StaffCodeBox.Text);
             var credential = CredentialBox.Password ?? string.Empty;
+            var network = NetworkStatusService.Read();
+            UpdateNetworkStatusBadge(network);
+            LogAccessInfo(
+                attemptId,
+                "start",
+                "shopCode=" + SafeAuditValue(shopCode) +
+                " staffCode=" + SafeAuditValue(staffCode) +
+                " network=" + NetworkText(network) +
+                " wifiUp=" + BoolText(network != null && network.HasWifiAdapterUp) +
+                " adminUrlConfigured=" + BoolText(!string.IsNullOrWhiteSpace(BaseUrlBox.Text)));
 
             if (shopCode.Length == 0 || staffCode.Length == 0 || credential.Length == 0)
             {
+                LogAccessWarning(
+                    attemptId,
+                    "validation_result",
+                    "result=failed reason=missing_required_fields missingShop=" + BoolText(shopCode.Length == 0) +
+                    " missingStaff=" + BoolText(staffCode.Length == 0) +
+                    " missingAuth=" + BoolText(credential.Length == 0));
                 ShowError(PosLocalization.T("onlineFirstLogin.missingCredentials"));
+                FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "failed", "none", "validation_failed");
                 return;
             }
 
-            var network = NetworkStatusService.Read();
-            UpdateNetworkStatusBadge(network);
             if (!network.IsNetworkAvailable)
             {
                 BeginBusySignIn(WifiOfflineNoticeText());
+                LogAccessWarning(
+                    attemptId,
+                    "offline_fallback",
+                    "reason=network_offline fallback=offline allowed=yes");
                 try
                 {
-                    if (await TryOfflineSignInAsync(shopCode, staffCode, credential).ConfigureAwait(true))
+                    if (await TryOfflineSignInAsync(shopCode, staffCode, credential, attemptId).ConfigureAwait(true))
                     {
+                        FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "success", "offline", string.Empty);
                         return;
                     }
 
+                    FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "failed", "offline", "offline_login_failed");
                     EndBusyAllowFreshLogin();
                     return;
                 }
@@ -180,11 +230,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (!PosAdminWebOptions.TryCreate(BaseUrlBox.Text, out var options, out var reason, out var reasonCode))
             {
+                LogAccessWarning(
+                    attemptId,
+                    "admin_url_result",
+                    "result=failed reason=" + SafeAuditValue(reasonCode) +
+                    " adminUrlConfigured=" + BoolText(!string.IsNullOrWhiteSpace(BaseUrlBox.Text)));
                 ShowError(LocalizeAdminWebReason(reasonCode, reason));
+                FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "failed", "none", "admin_url_invalid");
                 return;
             }
 
             _lastOptions = options;
+            LogAccessInfo(
+                attemptId,
+                "admin_url_result",
+                "result=success adminUrlConfigured=yes adminUrlSource=" + SafeAuditValue(options.BaseUrlSource.ToString()));
             BeginBusySetup(PosLocalization.T("onlineFirstLogin.connecting"));
 
             var keepCredentialForRetry = false;
@@ -214,6 +274,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 using (_activeCts = new CancellationTokenSource(TimeSpan.FromMinutes(6)))
                 {
                     IProgress<PosCatalogPullProgress> progress = new Progress<PosCatalogPullProgress>(UpdateSetupProgress);
+                    LogAccessInfo(attemptId, "online_bootstrap_start", "adminUrlConfigured=yes");
                     var result = await bootstrap.BootstrapAsync(
                         options,
                         request,
@@ -221,32 +282,47 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         _activeCts.Token,
                         progress).ConfigureAwait(true);
 
+                    LogAccessBootstrapResult(attemptId, result);
                     if (result.CanOpenPos)
                     {
-                        if (await CompleteOnlineSignInAsync(shopCode, staffCode, credential).ConfigureAwait(true))
+                        if (await CompleteOnlineSignInAsync(shopCode, staffCode, credential, attemptId, "online").ConfigureAwait(true))
                         {
+                            FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "success", "online", string.Empty);
                             return;
                         }
 
+                        FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "failed", "online", "local_login_or_catalog_blocked");
                         EndBusyAllowFreshLogin();
                         return;
                     }
 
                     if (IsAuthorizationDenied(result))
                     {
+                        LogAccessWarning(
+                            attemptId,
+                            "online_bootstrap_denied",
+                            "result=blocked reason=auth_denied code=" + SafeAuditValue(result.Code));
                         ShowError(PosLocalization.T("access.login.onlineDeniedNoOfflineFallback"));
+                        FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "blocked", "online", "auth_denied");
                         EndBusyAllowFreshLogin();
                         return;
                     }
 
                     if (IsOfflineFallbackAllowed(result.Code))
                     {
+                        LogAccessWarning(
+                            attemptId,
+                            "offline_fallback",
+                            "reason=" + SafeAuditValue(result.Code) +
+                            " fallback=offline allowed=yes");
                         ShowInfo(ServerOfflineNoticeText());
-                        if (await TryOfflineSignInAsync(shopCode, staffCode, credential).ConfigureAwait(true))
+                        if (await TryOfflineSignInAsync(shopCode, staffCode, credential, attemptId).ConfigureAwait(true))
                         {
+                            FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "success", "offline", string.Empty);
                             return;
                         }
 
+                        FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "failed", "offline", "offline_login_failed");
                         EndBusyAllowFreshLogin();
                         return;
                     }
@@ -255,10 +331,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     if (result.RequiresRetry)
                     {
                         keepCredentialForRetry = true;
+                        FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "blocked", "online", "catalog_retry_required");
                         EndBusyKeepPreparation(retryVisible: true);
                         return;
                     }
 
+                    FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "failed", "online", SafeAuditValue(result.Code));
                     EndBusyAllowFreshLogin();
                 }
             }
@@ -266,27 +344,36 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 if (IsVisible)
                 {
+                    LogAccessWarning(attemptId, "online_timeout", "result=timeout fallback=offline");
                     ShowInfo(ServerOfflineNoticeText());
-                    if (await TryOfflineSignInAsync(shopCode, staffCode, credential).ConfigureAwait(true))
+                    if (await TryOfflineSignInAsync(shopCode, staffCode, credential, attemptId).ConfigureAwait(true))
                     {
+                        FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "success", "offline", string.Empty);
                         return;
                     }
 
+                    FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "failed", "offline", "timeout_offline_failed");
                     EndBusyAllowFreshLogin();
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(
-                    "POS access online attempt failed: category=pos.access.online code=exception shopCode=" +
-                    SafeAuditValue(shopCode) + " staffCode=" + SafeAuditValue(staffCode),
-                    ex);
-                ShowInfo(ServerOfflineNoticeText());
-                if (await TryOfflineSignInAsync(shopCode, staffCode, credential).ConfigureAwait(true))
-                {
                     return;
                 }
 
+                FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "cancelled", "online", "dialog_closed");
+            }
+            catch (Exception ex)
+            {
+                LogAccessWarning(
+                    attemptId,
+                    "online_exception",
+                    "result=exception fallback=offline exceptionType=" + SafeAuditValue(ex.GetType().Name),
+                    ex);
+                ShowInfo(ServerOfflineNoticeText());
+                if (await TryOfflineSignInAsync(shopCode, staffCode, credential, attemptId).ConfigureAwait(true))
+                {
+                    FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "success", "offline", string.Empty);
+                    return;
+                }
+
+                FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "failed", "offline", "exception_offline_failed");
                 EndBusyAllowFreshLogin();
             }
             finally
@@ -298,29 +385,39 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     credential = string.Empty;
                     CredentialBox.Clear();
                 }
+
+                if (!attemptFinished)
+                {
+                    FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "cancelled", "unknown", "attempt_exited");
+                }
             }
         }
 
         private async Task<bool> CompleteOnlineSignInAsync(
             string shopCode,
             string staffCode,
-            string credential)
+            string credential,
+            string attemptId,
+            string mode)
         {
+            LogAccessInfo(attemptId, "offline_mirror_start", "mode=" + SafeAuditValue(mode));
             var username = await new UserRepository(_factory)
                 .FindRemoteStaffUsernameAsync(shopCode, staffCode)
                 .ConfigureAwait(true);
             if (string.IsNullOrWhiteSpace(username))
             {
+                LogAccessWarning(attemptId, "offline_mirror_result", "result=missing mode=" + SafeAuditValue(mode));
                 ShowError(PosLocalization.T("access.login.offlineMirrorMissing"));
                 return false;
             }
 
-            if (!await LoginLocalUsernameAsync(username, credential).ConfigureAwait(true))
+            LogAccessInfo(attemptId, "offline_mirror_result", "result=success mode=" + SafeAuditValue(mode));
+            if (!await LoginLocalUsernameAsync(username, credential, attemptId, mode).ConfigureAwait(true))
             {
                 return false;
             }
 
-            if (!await EnsureCatalogSaleSafeForAccessAsync(logoutOnBlock: true).ConfigureAwait(true))
+            if (!await EnsureCatalogSaleSafeForAccessAsync(logoutOnBlock: true, attemptId: attemptId, mode: mode).ConfigureAwait(true))
             {
                 return false;
             }
@@ -336,54 +433,67 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private async Task<bool> TryOfflineSignInAsync(
             string shopCode,
             string staffCode,
-            string credential)
+            string credential,
+            string attemptId)
         {
+            LogAccessInfo(attemptId, "offline_login_start", "shopCode=" + SafeAuditValue(shopCode) + " staffCode=" + SafeAuditValue(staffCode));
             try
             {
+                LogAccessInfo(attemptId, "offline_mirror_start", "mode=offline");
                 var username = await new UserRepository(_factory)
                     .FindRemoteStaffUsernameAsync(shopCode, staffCode)
                     .ConfigureAwait(true);
 
                 if (string.IsNullOrWhiteSpace(username))
                 {
+                    LogAccessWarning(attemptId, "offline_mirror_result", "result=missing mode=offline");
+                    LogAccessWarning(attemptId, "offline_login_result", "result=failed reason=mirror_missing");
                     ShowError(PosLocalization.T("access.login.offlineMirrorMissing"));
                     return false;
                 }
 
-                if (!await LoginLocalUsernameAsync(username, credential).ConfigureAwait(true))
+                LogAccessInfo(attemptId, "offline_mirror_result", "result=success mode=offline");
+                if (!await LoginLocalUsernameAsync(username, credential, attemptId, "offline").ConfigureAwait(true))
                 {
+                    LogAccessWarning(attemptId, "offline_login_result", "result=failed reason=local_login_failed");
                     return false;
                 }
 
-                if (!await EnsureCatalogSaleSafeForAccessAsync(logoutOnBlock: true).ConfigureAwait(true))
+                if (!await EnsureCatalogSaleSafeForAccessAsync(logoutOnBlock: true, attemptId: attemptId, mode: "offline").ConfigureAwait(true))
                 {
+                    LogAccessWarning(attemptId, "offline_login_result", "result=blocked reason=catalog_not_sale_safe");
                     return false;
                 }
 
                 await SaveLastShopCodeAsync(shopCode).ConfigureAwait(true);
-                _logger.LogInfo(
-                    "POS access offline success: category=pos.access.offline shopCode=" +
-                    SafeAuditValue(shopCode) + " staffCode=" + SafeAuditValue(staffCode));
+                LogAccessInfo(attemptId, "offline_login_result", "result=success");
                 DialogResult = true;
                 Close();
                 return true;
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(
-                    "POS access offline attempt failed: category=pos.access.offline code=exception shopCode=" +
-                    SafeAuditValue(shopCode) + " staffCode=" + SafeAuditValue(staffCode),
+                LogAccessWarning(
+                    attemptId,
+                    "offline_login_result",
+                    "result=exception exceptionType=" + SafeAuditValue(ex.GetType().Name),
                     ex);
                 ShowError(PosLocalization.T("access.login.invalidCredentials"));
                 return false;
             }
         }
 
-        private async Task<bool> LoginLocalUsernameAsync(string username, string credential)
+        private async Task<bool> LoginLocalUsernameAsync(
+            string username,
+            string credential,
+            string attemptId,
+            string mode)
         {
+            LogAccessInfo(attemptId, "local_login_start", "mode=" + SafeAuditValue(mode));
             var session = OperatorSessionHolder.Current;
             if (session == null)
             {
+                LogAccessWarning(attemptId, "local_login_result", "result=failed reason=session_missing mode=" + SafeAuditValue(mode));
                 ShowError(PosLocalization.T("operator.login.sessionMissing"));
                 return false;
             }
@@ -392,12 +502,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
             switch (loginResult)
             {
                 case LoginResult.LockedOut:
+                    LogAccessWarning(attemptId, "local_login_result", "result=failed reason=locked_out mode=" + SafeAuditValue(mode));
                     ShowError(PosLocalization.T("operator.login.locked"));
                     return false;
                 case LoginResult.Failed:
+                    LogAccessWarning(attemptId, "local_login_result", "result=failed reason=invalid_credentials mode=" + SafeAuditValue(mode));
                     ShowError(PosLocalization.T("access.login.invalidCredentials"));
                     return false;
                 case LoginResult.Success:
+                    LogAccessInfo(attemptId, "local_login_result", "result=success mode=" + SafeAuditValue(mode));
                     break;
             }
 
@@ -416,6 +529,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (changePinDlg.ShowDialog() != true)
                 {
                     session.LogoutForced();
+                    LogAccessWarning(attemptId, "local_login_result", "result=blocked reason=pin_change_required mode=" + SafeAuditValue(mode));
                     ShowError(PosLocalization.T("operator.login.pinChangeRequired"));
                     return false;
                 }
@@ -424,10 +538,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
             return true;
         }
 
-        private async Task<bool> EnsureCatalogSaleSafeForAccessAsync(bool logoutOnBlock)
+        private async Task<bool> EnsureCatalogSaleSafeForAccessAsync(
+            bool logoutOnBlock,
+            string attemptId,
+            string mode)
         {
+            LogAccessInfo(attemptId, "catalog_sale_safe_start", "mode=" + SafeAuditValue(mode));
             if (await PosCatalogPullService.IsCatalogSaleSafeAsync(_factory).ConfigureAwait(true))
             {
+                LogAccessInfo(attemptId, "catalog_sale_safe_result", "result=success mode=" + SafeAuditValue(mode));
                 return true;
             }
 
@@ -436,6 +555,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 OperatorSessionHolder.Current?.LogoutForced();
             }
 
+            LogAccessWarning(attemptId, "catalog_sale_safe_result", "result=blocked reason=catalog_not_sale_safe mode=" + SafeAuditValue(mode));
             ShowError(PosLocalization.T("onlineFirstLogin.catalogIncomplete"));
             return false;
         }
@@ -466,16 +586,24 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
+            var catalogRetryId = string.IsNullOrWhiteSpace(_lastAccessAttemptId)
+                ? CreateAccessAttemptId()
+                : _lastAccessAttemptId;
+            var retryTimer = Stopwatch.StartNew();
+            var retryFinished = false;
+            LogCatalogRetryInfo(catalogRetryId, "start", "result=started");
             var options = _lastOptions;
             if (options == null &&
                 !PosAdminWebOptions.TryCreate(BaseUrlBox.Text, out options, out var reason, out var reasonCode))
             {
+                FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "failed", SafeAuditValue(reasonCode));
                 ShowError(LocalizeAdminWebReason(reasonCode, reason));
                 EndBusyAllowFreshLogin();
                 return;
             }
 
             _lastOptions = options;
+            LogCatalogRetryInfo(catalogRetryId, "pull_start", "adminUrlConfigured=yes");
             BeginBusySetup(PosLocalization.T("onlineFirstLogin.downloadRetry"));
 
             try
@@ -488,11 +616,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     var outcome = await catalogPull
                         .TryPullInitialCatalogAsync(options, _activeCts.Token, progress)
                         .ConfigureAwait(true);
+                    LogCatalogRetryInfo(
+                        catalogRetryId,
+                        "pull_result",
+                        "result=" + (outcome.Completed && outcome.CatalogSaleSafe ? "success" : "incomplete") +
+                        " code=" + SafeAuditValue(outcome.StatusCode) +
+                        " authDenied=" + BoolText(outcome.AuthDenied) +
+                        " catalogSaleSafe=" + BoolText(outcome.CatalogSaleSafe));
                     if (outcome.Completed && outcome.CatalogSaleSafe)
                     {
                         UpdateSetupProgress(PosCatalogPullProgress.ForPhase("finalizing"));
                         if (_resumeCatalogOnly)
                         {
+                            FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "success", string.Empty);
                             DialogResult = true;
                             Close();
                             return;
@@ -502,12 +638,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         if (await CompleteOnlineSignInAsync(
                                 NormalizeCode(ShopCodeBox.Text),
                                 NormalizeCode(StaffCodeBox.Text),
-                                credential).ConfigureAwait(true))
+                                credential,
+                                catalogRetryId,
+                                "catalog_retry").ConfigureAwait(true))
                         {
                             CredentialBox.Clear();
+                            FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "success", string.Empty);
                             return;
                         }
 
+                        FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "failed", "local_login_or_catalog_blocked");
                         EndBusyAllowFreshLogin();
                         return;
                     }
@@ -518,10 +658,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
                     if (outcome.AuthDenied || RequiresFreshLogin(outcome))
                     {
+                        FinishCatalogRetry(
+                            ref retryFinished,
+                            catalogRetryId,
+                            retryTimer,
+                            "blocked",
+                            outcome.AuthDenied ? "auth_denied" : "fresh_login_required");
                         EndBusyAllowFreshLogin();
                         return;
                     }
 
+                    FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "failed", SafeAuditValue(outcome.StatusCode));
                     EndBusyKeepPreparation(retryVisible: true);
                 }
             }
@@ -529,18 +676,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 if (IsVisible)
                 {
+                    FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "failed", "timeout");
                     ShowError(PosLocalization.T("onlineFirstLogin.timeout"));
                     EndBusyKeepPreparation(retryVisible: true);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                LogCatalogRetryWarning(
+                    catalogRetryId,
+                    "exception",
+                    "result=exception exceptionType=" + SafeAuditValue(ex.GetType().Name),
+                    ex);
+                FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "failed", "exception");
                 ShowError(PosLocalization.T("onlineFirstLogin.connectionFailed"));
                 EndBusyKeepPreparation(retryVisible: true);
             }
             finally
             {
                 _activeCts = null;
+                if (!retryFinished)
+                {
+                    FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "cancelled", "retry_exited");
+                }
             }
         }
 
@@ -955,6 +1113,159 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             _serverOfflineNoticeShown = true;
             return PosLocalization.T("access.login.offlineNoticeServerUnavailable");
+        }
+
+        private void LogAccessBootstrapResult(string attemptId, PosOnlineBootstrapResult result)
+        {
+            var normalizedResult = result != null && result.CanOpenPos
+                ? "success"
+                : result != null && result.Denied
+                    ? "denied"
+                    : "failed";
+            var details =
+                "result=" + normalizedResult +
+                " code=" + SafeAuditValue(result?.Code) +
+                " clientRequestId=" + SafeAuditValue(result?.ClientRequestId) +
+                " serverRequestId=" + SafeAuditValue(result?.ServerRequestId) +
+                " cfRay=" + SafeAuditValue(result?.CfRay) +
+                " catalogStatus=" + SafeAuditValue(result?.CatalogStatus) +
+                " catalogSaleSafe=" + BoolText(result != null && result.CatalogSaleSafe) +
+                " requiresRetry=" + BoolText(result != null && result.RequiresRetry);
+
+            if (result != null && result.CanOpenPos)
+            {
+                LogAccessInfo(attemptId, "online_bootstrap_result", details);
+                return;
+            }
+
+            LogAccessWarning(attemptId, "online_bootstrap_result", details);
+        }
+
+        private void FinishAccessAttempt(
+            ref bool attemptFinished,
+            string attemptId,
+            Stopwatch timer,
+            string result,
+            string mode,
+            string reason)
+        {
+            if (attemptFinished)
+            {
+                return;
+            }
+
+            attemptFinished = true;
+            var details =
+                "result=" + SafeAuditValue(result) +
+                " mode=" + SafeAuditValue(mode) +
+                " durationMs=" + ElapsedMs(timer);
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                details += " reason=" + SafeAuditValue(reason);
+            }
+
+            if (string.Equals(result, "success", StringComparison.OrdinalIgnoreCase))
+            {
+                LogAccessInfo(attemptId, "end", details);
+                return;
+            }
+
+            LogAccessWarning(attemptId, "end", details);
+        }
+
+        private void LogAccessInfo(string attemptId, string stage, string details)
+        {
+            _logger.LogInfo(BuildStructuredLogLine("pos.access", attemptId, stage, details));
+        }
+
+        private void LogAccessWarning(string attemptId, string stage, string details, Exception ex = null)
+        {
+            _logger.LogWarning(BuildStructuredLogLine("pos.access", attemptId, stage, details), ex);
+        }
+
+        private void LogCatalogRetryInfo(string attemptId, string stage, string details)
+        {
+            _logger.LogInfo(BuildStructuredLogLine("pos.access.catalog_retry", attemptId, stage, details));
+        }
+
+        private void LogCatalogRetryWarning(string attemptId, string stage, string details, Exception ex = null)
+        {
+            _logger.LogWarning(BuildStructuredLogLine("pos.access.catalog_retry", attemptId, stage, details), ex);
+        }
+
+        private void FinishCatalogRetry(
+            ref bool retryFinished,
+            string attemptId,
+            Stopwatch timer,
+            string result,
+            string reason)
+        {
+            if (retryFinished)
+            {
+                return;
+            }
+
+            retryFinished = true;
+            var details =
+                "result=" + SafeAuditValue(result) +
+                " durationMs=" + ElapsedMs(timer);
+            if (!string.IsNullOrWhiteSpace(reason))
+            {
+                details += " reason=" + SafeAuditValue(reason);
+            }
+
+            if (string.Equals(result, "success", StringComparison.OrdinalIgnoreCase))
+            {
+                LogCatalogRetryInfo(attemptId, "end", details);
+                return;
+            }
+
+            LogCatalogRetryWarning(attemptId, "end", details);
+        }
+
+        private static string BuildStructuredLogLine(
+            string category,
+            string attemptId,
+            string stage,
+            string details)
+        {
+            var line =
+                "category=" + SafeAuditValue(category);
+            if (!string.IsNullOrWhiteSpace(attemptId))
+            {
+                line += " attemptId=" + SafeAuditValue(attemptId);
+            }
+
+            line += " stage=" + SafeAuditValue(stage);
+
+            if (!string.IsNullOrWhiteSpace(details))
+            {
+                line += " " + details.Trim();
+            }
+
+            return line;
+        }
+
+        private static string CreateAccessAttemptId()
+        {
+            return DateTime.UtcNow.ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture) +
+                "-" +
+                Guid.NewGuid().ToString("N").Substring(0, 6);
+        }
+
+        private static string ElapsedMs(Stopwatch timer)
+        {
+            return (timer?.ElapsedMilliseconds ?? 0L).ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static string BoolText(bool value)
+        {
+            return value ? "yes" : "no";
+        }
+
+        private static string NetworkText(NetworkStatusSnapshot status)
+        {
+            return status != null && status.IsNetworkAvailable ? "online" : "offline";
         }
 
         private void ShowInfo(string message)
