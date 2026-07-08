@@ -222,7 +222,7 @@
                 <Button MinWidth="110" Height="40" Margin="0,0,10,0"
                         Style="{StaticResource AccentButtonStyle}" Command="{Binding SuspendCommand}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
-                        <Path Data="{StaticResource IconExport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <Path Data="{StaticResource IconSuspend}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc payment.suspend}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>

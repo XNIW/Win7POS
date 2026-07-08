@@ -12,7 +12,7 @@
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
         Width="760"
-        Height="560"
+        Height="640"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
     <Grid Margin="0" Background="#F1EDF7">
@@ -27,66 +27,100 @@
             <TextBlock Text="{loc:Loc settings.hubIntro}" Style="{StaticResource MutedTextStyle}"/>
         </StackPanel>
 
-        <UniformGrid Grid.Row="1" Columns="2" Rows="3">
-            <Button Style="{StaticResource SettingsCardButtonStyle}" Click="OnShopDataClick">
-                <StackPanel>
-                    <Path Data="{StaticResource IconShop}" Style="{StaticResource SettingsCardIconPathStyle}"/>
-                    <TextBlock Text="{loc:Loc shell.officialShopData}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                    <TextBlock Text="{loc:Loc settings.cardShopHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Button>
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
 
-            <Button Style="{StaticResource SettingsCardButtonStyle}" Click="OnPrinterSettingsClick">
-                <StackPanel>
-                    <Path Data="{StaticResource IconPrinter}" Style="{StaticResource SettingsCardIconPathStyle}"/>
-                    <TextBlock Text="{loc:Loc shell.printerSettings}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                    <TextBlock Text="{loc:Loc settings.cardPrinterHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Button>
+                    <Button Grid.Row="0" Grid.Column="0" Style="{StaticResource SettingsCardButtonStyle}" Click="OnShopDataClick">
+                        <StackPanel>
+                            <Path Data="{StaticResource IconShop}" Style="{StaticResource SettingsCardIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc shell.officialShopData}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <TextBlock Text="{loc:Loc settings.cardShopHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Button>
 
-            <Button Style="{StaticResource SettingsCardButtonStyle}" Click="OnDatabaseMaintenanceClick">
-                <StackPanel>
-                    <Path Data="{StaticResource IconDatabase}" Style="{StaticResource SettingsCardIconPathStyle}"/>
-                    <TextBlock Text="{loc:Loc operations.dbMaintenance}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                    <TextBlock Text="{loc:Loc settings.cardDatabaseHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Button>
+                    <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource SettingsCardButtonStyle}" Click="OnPrinterSettingsClick">
+                        <StackPanel>
+                            <Path Data="{StaticResource IconPrinter}" Style="{StaticResource SettingsCardIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc shell.printerSettings}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <TextBlock Text="{loc:Loc settings.cardPrinterHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Button>
 
-            <Button Style="{StaticResource SettingsCardButtonStyle}" Click="OnUsersRolesClick">
-                <StackPanel>
-                    <Path Data="{StaticResource IconUsers}" Style="{StaticResource SettingsCardIconPathStyle}"/>
-                    <TextBlock Text="{loc:Loc shell.usersRoles}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                    <TextBlock Text="{loc:Loc settings.cardUsersHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Button>
+                    <Button Grid.Row="1" Grid.Column="0" Style="{StaticResource SettingsCardButtonStyle}" Click="OnDatabaseMaintenanceClick">
+                        <StackPanel>
+                            <Path Data="{StaticResource IconDatabase}" Style="{StaticResource SettingsCardIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc operations.dbMaintenance}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <TextBlock Text="{loc:Loc settings.cardDatabaseHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Button>
 
-            <Border Margin="6"
-                    Padding="14"
-                    Background="White"
-                    BorderBrush="{StaticResource BorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="8">
-                <StackPanel>
-                    <Path Data="{StaticResource IconLanguage}"
-                          Style="{StaticResource SettingsCardIconPathStyle}"
-                          Stroke="{StaticResource PrimaryBrush}"/>
-                    <TextBlock Text="{loc:Loc settings.language}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                    <TextBlock Text="{loc:Loc settings.cardLanguageHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,8"/>
-                    <ComboBox x:Name="LanguageComboBox"
-                              MinHeight="34"
-                              Style="{StaticResource ModernComboBoxStyle}"
-                              SelectionChanged="OnLanguageSelectionChanged"/>
-                </StackPanel>
-            </Border>
+                    <Button Grid.Row="1" Grid.Column="1" Style="{StaticResource SettingsCardButtonStyle}" Click="OnUsersRolesClick">
+                        <StackPanel>
+                            <Path Data="{StaticResource IconUsers}" Style="{StaticResource SettingsCardIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc shell.usersRoles}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <TextBlock Text="{loc:Loc settings.cardUsersHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Button>
 
-            <Button Style="{StaticResource SettingsCardButtonStyle}" Click="OnAboutClick">
-                <StackPanel>
-                    <Path Data="{StaticResource IconHelp}" Style="{StaticResource SettingsCardIconPathStyle}"/>
-                    <TextBlock Text="{loc:Loc shell.aboutSupport}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                    <TextBlock Text="{loc:Loc settings.cardAboutHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Button>
-        </UniformGrid>
+                    <Button Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Style="{StaticResource SettingsCardButtonStyle}" Click="OnAboutClick">
+                        <StackPanel>
+                            <Path Data="{StaticResource IconHelp}" Style="{StaticResource SettingsCardIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc shell.aboutSupport}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <TextBlock Text="{loc:Loc settings.cardAboutHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+
+                <Border x:Name="SettingsLanguagePanel"
+                        Margin="6,10,6,0"
+                        Padding="14"
+                        Background="White"
+                        BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Path Grid.Column="0"
+                              Data="{StaticResource IconLanguage}"
+                              Style="{StaticResource SettingsCardIconPathStyle}"
+                              Fill="{StaticResource PrimaryBrush}"
+                              Stroke="{x:Null}"
+                              Margin="0,0,14,0"
+                              VerticalAlignment="Center"/>
+
+                        <StackPanel Grid.Column="1" Margin="0,0,18,0" VerticalAlignment="Center">
+                            <TextBlock Text="{loc:Loc settings.language}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                            <TextBlock Text="{loc:Loc settings.cardLanguageHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        </StackPanel>
+
+                        <ComboBox x:Name="LanguageComboBox"
+                                  Grid.Column="2"
+                                  Width="220"
+                                  MinHeight="34"
+                                  VerticalAlignment="Center"
+                                  Style="{StaticResource ModernComboBoxStyle}"
+                                  SelectionChanged="OnLanguageSelectionChanged"/>
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
             <Button Style="{StaticResource DialogCancelButtonStyle}"

@@ -694,11 +694,9 @@ namespace Win7POS.Wpf
                         : "access.login.networkOfflineDetail");
                 }
 
-                if (ShellNetworkWifiArcLarge != null)
+                if (ShellNetworkWifiIcon != null)
                 {
-                    ShellNetworkWifiArcLarge.Stroke = foreground;
-                    ShellNetworkWifiArcSmall.Stroke = foreground;
-                    ShellNetworkWifiDot.Fill = foreground;
+                    ShellNetworkWifiIcon.Fill = foreground;
                     ShellNetworkOfflineX.Visibility = online ? Visibility.Collapsed : Visibility.Visible;
                 }
             }

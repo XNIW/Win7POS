@@ -21,6 +21,12 @@
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#6E5C78"/>
     <SolidColorBrush x:Key="ReadOnlySurfaceBrush" Color="#F7F3FA"/>
     <SolidColorBrush x:Key="TableHeaderBrush" Color="#EFE7F5"/>
+    <SolidColorBrush x:Key="DisabledButtonBackgroundBrush" Color="#F1ECF5"/>
+    <SolidColorBrush x:Key="DisabledButtonBorderBrush" Color="#C8B9D2"/>
+    <SolidColorBrush x:Key="DisabledButtonForegroundBrush" Color="#66516E"/>
+    <SolidColorBrush x:Key="FooterDisabledButtonBackgroundBrush" Color="#5B4670"/>
+    <SolidColorBrush x:Key="FooterDisabledButtonBorderBrush" Color="#BDA4CE"/>
+    <SolidColorBrush x:Key="FooterDisabledButtonForegroundBrush" Color="#F8F1FC"/>
 
     <!-- Menu laterale: viola chiaro coerente con palette -->
     <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#F6F1FB"/>
@@ -39,34 +45,7 @@
     <Thickness x:Key="DialogTitleMargin">0,0,0,10</Thickness>
     <system:Double x:Key="DialogActionButtonHeight">42</system:Double>
 
-    <!-- Vector icons: WPF path geometry, no icon fonts/packages for Windows 7 reliability. -->
-    <PathGeometry x:Key="IconAdd" Figures="M 10,3 L 10,17 M 3,10 L 17,10"/>
-    <PathGeometry x:Key="IconEdit" Figures="M 4,14 L 4,17 L 7,17 L 16,8 L 13,5 L 4,14 M 12,6 L 15,9"/>
-    <PathGeometry x:Key="IconDuplicate" Figures="M 7,5 L 16,5 L 16,14 L 7,14 Z M 4,8 L 4,17 L 13,17"/>
-    <PathGeometry x:Key="IconDelete" Figures="M 4,6 L 16,6 M 8,6 L 8,4 L 12,4 L 12,6 M 6,6 L 7,17 L 13,17 L 14,6 M 9,9 L 9,14 M 11,9 L 11,14"/>
-    <PathGeometry x:Key="IconImport" Figures="M 10,3 L 10,12 M 6,8 L 10,12 L 14,8 M 5,15 L 5,17 L 15,17 L 15,15"/>
-    <PathGeometry x:Key="IconExport" Figures="M 10,13 L 10,4 M 6,8 L 10,4 L 14,8 M 5,15 L 5,17 L 15,17 L 15,15"/>
-    <PathGeometry x:Key="IconSearch" Figures="M 9,4 C 6.2,4 4,6.2 4,9 C 4,11.8 6.2,14 9,14 C 11.8,14 14,11.8 14,9 C 14,6.2 11.8,4 9,4 M 13,13 L 17,17"/>
-    <PathGeometry x:Key="IconClear" Figures="M 5,5 L 15,15 M 15,5 L 5,15"/>
-    <PathGeometry x:Key="IconPay" Figures="M 3,6 L 17,6 L 17,15 L 3,15 Z M 3,9 L 17,9 M 6,13 L 9,13"/>
-    <PathGeometry x:Key="IconPrint" Figures="M 6,7 L 6,3 L 14,3 L 14,7 M 5,14 L 3,14 L 3,8 L 17,8 L 17,14 L 15,14 M 6,12 L 14,12 L 14,17 L 6,17 Z"/>
-    <PathGeometry x:Key="IconCashDrawer" Figures="M 3,8 L 17,8 L 17,16 L 3,16 Z M 5,5 L 15,5 L 15,8 M 8,12 L 12,12"/>
-    <PathGeometry x:Key="IconRefund" Figures="M 6,7 L 3,10 L 6,13 M 3,10 L 13,10 C 15.5,10 17,11.5 17,14"/>
-    <PathGeometry x:Key="IconSettings" Figures="M 10,4 L 11,6 L 13,6.5 L 14.5,5.5 L 16,8 L 14.5,9.2 L 14.5,11 L 16,12.2 L 14.5,14.8 L 12.8,14 L 11,15 L 10,17 L 7.5,17 L 6.5,15 L 4.8,14 L 3,14.8 L 1.8,12.2 L 3.3,11 L 3.3,9.2 L 1.8,8 L 3,5.5 L 4.8,6.5 L 6.5,6 L 7.5,4 Z M 10,8 C 8.9,8 8,8.9 8,10 C 8,11.1 8.9,12 10,12 C 11.1,12 12,11.1 12,10 C 12,8.9 11.1,8 10,8"/>
-    <PathGeometry x:Key="IconUsers" Figures="M 7,8 C 5.6,8 4.5,6.9 4.5,5.5 C 4.5,4.1 5.6,3 7,3 C 8.4,3 9.5,4.1 9.5,5.5 C 9.5,6.9 8.4,8 7,8 M 3,16 C 3.4,13.5 4.8,11 7,11 C 9.2,11 10.6,13.5 11,16 M 13,8 C 14.2,8 15.2,7 15.2,5.8 C 15.2,4.6 14.2,3.6 13,3.6 M 12.8,11 C 15,11.2 16.3,13.4 16.7,16"/>
-    <PathGeometry x:Key="IconDatabase" Figures="M 4,6 C 4,4.3 16,4.3 16,6 C 16,7.7 4,7.7 4,6 M 4,6 L 4,14 C 4,15.7 16,15.7 16,14 L 16,6 M 4,10 C 4,11.7 16,11.7 16,10"/>
-    <PathGeometry x:Key="IconPrinter" Figures="M 6,7 L 6,3 L 14,3 L 14,7 M 4,14 L 3,14 L 3,8 L 17,8 L 17,14 L 16,14 M 6,12 L 14,12 L 14,17 L 6,17 Z"/>
-    <PathGeometry x:Key="IconHelp" Figures="M 10,17 L 10,17.2 M 7,7 C 7.2,4.8 9,4 10.5,4 C 12.4,4 14,5.2 14,7 C 14,9.6 10,9.4 10,12"/>
-    <PathGeometry x:Key="IconLock" Figures="M 5,9 L 15,9 L 15,17 L 5,17 Z M 7,9 L 7,6 C 7,4.3 8.3,3 10,3 C 11.7,3 13,4.3 13,6 L 13,9"/>
-    <PathGeometry x:Key="IconSync" Figures="M 5,8 C 6,5.8 8,4.5 10.5,4.5 C 12.6,4.5 14.4,5.6 15.5,7.2 M 15.5,4.5 L 15.5,7.2 L 12.8,7.2 M 15,12 C 14,14.2 12,15.5 9.5,15.5 C 7.4,15.5 5.6,14.4 4.5,12.8 M 4.5,15.5 L 4.5,12.8 L 7.2,12.8"/>
-    <PathGeometry x:Key="IconPrev" Figures="M 12,5 L 7,10 L 12,15"/>
-    <PathGeometry x:Key="IconNext" Figures="M 8,5 L 13,10 L 8,15"/>
-    <PathGeometry x:Key="IconGo" Figures="M 4,10 L 15,10 M 11,6 L 15,10 L 11,14"/>
-    <PathGeometry x:Key="IconProducts" Figures="M 4,6 L 10,3 L 16,6 L 16,14 L 10,17 L 4,14 Z M 4,6 L 10,9 L 16,6 M 10,9 L 10,17"/>
-    <PathGeometry x:Key="IconRegister" Figures="M 4,4 L 16,4 L 16,16 L 4,16 Z M 6,7 L 14,7 M 6,10 L 14,10 M 7,13 L 7,13.2 M 10,13 L 10,13.2 M 13,13 L 13,13.2"/>
-    <PathGeometry x:Key="IconCalendar" Figures="M 5,4 L 5,7 M 15,4 L 15,7 M 3,8 L 17,8 M 4,6 L 16,6 L 16,17 L 4,17 Z M 7,11 L 9,11 M 11,11 L 13,11 M 7,14 L 9,14"/>
-    <PathGeometry x:Key="IconShop" Figures="M 4,8 L 5,4 L 15,4 L 16,8 M 5,8 L 5,17 L 15,17 L 15,8 M 7,17 L 7,12 L 10,12 L 10,17 M 11.5,12 L 13.5,12"/>
-    <PathGeometry x:Key="IconLanguage" Figures="M 4,5 L 12,5 M 8,3 L 8,5 M 6,17 L 10,9 L 14,17 M 7.2,14 L 12.8,14 M 5,8 C 5.8,10 7.2,11.5 10,12 M 11,5 C 10.6,8 8.8,10.5 5,12"/>
+    <!-- Icon geometries are defined in Icons/MaterialSymbols.xaml. -->
 
     <Style x:Key="DialogTitleStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="18"/>
@@ -141,8 +120,7 @@
                 <Setter TargetName="border" Property="Opacity" Value="0.85"/>
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
-                <Setter TargetName="border" Property="Opacity" Value="0.5"/>
-                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                <Setter TargetName="border" Property="Opacity" Value="1"/>
             </Trigger>
         </ControlTemplate.Triggers>
     </ControlTemplate>
@@ -156,8 +134,9 @@
         <Setter Property="Width" Value="16"/>
         <Setter Property="Height" Value="16"/>
         <Setter Property="Stretch" Value="Uniform"/>
-        <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"/>
-        <Setter Property="StrokeThickness" Value="1.8"/>
+        <Setter Property="Fill" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"/>
+        <Setter Property="Stroke" Value="{x:Null}"/>
+        <Setter Property="StrokeThickness" Value="0"/>
         <Setter Property="StrokeStartLineCap" Value="Round"/>
         <Setter Property="StrokeEndLineCap" Value="Round"/>
         <Setter Property="StrokeLineJoin" Value="Round"/>
@@ -180,12 +159,20 @@
         <Setter Property="Template" Value="{StaticResource RoundedButtonTemplate}"/>
         <Setter Property="Background" Value="{StaticResource PrimaryLighterBrush}"/>
         <Setter Property="Foreground" Value="White"/>
-        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="BorderBrush" Value="{StaticResource PrimaryLighterBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="16,10"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="Cursor" Value="Hand"/>
+        <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="{StaticResource DisabledButtonBackgroundBrush}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource DisabledButtonBorderBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource DisabledButtonForegroundBrush}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!-- Secondary action button (Sospendi, Svuota, menu items) -->
@@ -193,11 +180,39 @@
         <Setter Property="Template" Value="{StaticResource RoundedButtonTemplate}"/>
         <Setter Property="Background" Value="{StaticResource PrimaryLightBrush}"/>
         <Setter Property="Foreground" Value="White"/>
-        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="BorderBrush" Value="{StaticResource PrimaryLightBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="12,8"/>
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="Cursor" Value="Hand"/>
+        <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="{StaticResource DisabledButtonBackgroundBrush}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource DisabledButtonBorderBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource DisabledButtonForegroundBrush}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="FooterSecondaryButtonStyle" TargetType="Button" BasedOn="{StaticResource SecondaryButtonStyle}">
+        <Setter Property="Background" Value="#2EFFFFFF"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="BorderBrush" Value="#86FFFFFF"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Style.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#42FFFFFF"/>
+            </Trigger>
+            <Trigger Property="IsPressed" Value="True">
+                <Setter Property="Background" Value="#36FFFFFF"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="{StaticResource FooterDisabledButtonBackgroundBrush}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource FooterDisabledButtonBorderBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource FooterDisabledButtonForegroundBrush}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!-- Accent button (Sospendi in payment) -->
@@ -205,11 +220,19 @@
         <Setter Property="Template" Value="{StaticResource RoundedButtonTemplate}"/>
         <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
         <Setter Property="Foreground" Value="White"/>
-        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="Padding" Value="12,8"/>
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="Cursor" Value="Hand"/>
+        <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="{StaticResource DisabledButtonBackgroundBrush}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource DisabledButtonBorderBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource DisabledButtonForegroundBrush}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!-- Outline/default button -->
@@ -223,6 +246,13 @@
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="Cursor" Value="Hand"/>
+        <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="{StaticResource DisabledButtonBackgroundBrush}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource DisabledButtonBorderBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource DisabledButtonForegroundBrush}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style x:Key="DialogActionButtonStyle" TargetType="Button" BasedOn="{StaticResource PrimaryButtonStyle}">
@@ -253,6 +283,13 @@
         <Setter Property="Cursor" Value="Hand"/>
         <Setter Property="Width" Value="36"/>
         <Setter Property="Height" Value="36"/>
+        <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="{StaticResource DisabledButtonBackgroundBrush}"/>
+                <Setter Property="BorderBrush" Value="{StaticResource DisabledButtonBorderBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource DisabledButtonForegroundBrush}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <!-- Menu item button (left aligned) -->
@@ -320,6 +357,11 @@
             </Trigger>
             <Trigger Property="IsPressed" Value="True">
                 <Setter Property="Background" Value="#33FFFFFF"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="#33FFFFFF"/>
+                <Setter Property="BorderBrush" Value="#99FFFFFF"/>
+                <Setter Property="Foreground" Value="#F8F1FC"/>
             </Trigger>
         </Style.Triggers>
     </Style>

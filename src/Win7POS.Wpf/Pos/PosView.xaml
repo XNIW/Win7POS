@@ -239,13 +239,13 @@
                 </Button>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding OpenDiscountCommand}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
-                        <Path Data="{StaticResource IconEdit}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <Path Data="{StaticResource IconDiscount}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc pos.cart.discount}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
                 <Button MinWidth="120" MinHeight="38" Margin="0,0,0,10" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenChangeQuantityCommand}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
-                        <Path Data="{StaticResource IconEdit}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <Path Data="{StaticResource IconQuantity}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc pos.cart.changeQuantity}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
@@ -264,7 +264,7 @@
                 <Button MinWidth="120" MinHeight="38" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenResoScanCommand}"
                         ToolTip="{loc:Loc pos.cart.refundTooltip}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
-                        <Path Data="{StaticResource IconRefund}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <Path Data="{StaticResource IconReturn}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc pos.cart.refundScanReceipt}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
@@ -288,23 +288,23 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <Button Grid.Column="0" Command="{Binding SuspendCartCommand}"
-                        Style="{StaticResource SecondaryButtonStyle}"
+                        Style="{StaticResource FooterSecondaryButtonStyle}"
                         MinWidth="90" Height="42" Margin="0,0,0,0">
                     <StackPanel Style="{StaticResource IconButtonContent}">
-                        <Path Data="{StaticResource IconExport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <Path Data="{StaticResource IconSuspend}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc pos.cart.suspend}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
                 <Button Grid.Column="1" Command="{Binding RecoverCartCommand}"
-                        Style="{StaticResource SecondaryButtonStyle}"
+                        Style="{StaticResource FooterSecondaryButtonStyle}"
                         MinWidth="90" Height="42" Margin="10,0,0,0">
                     <StackPanel Style="{StaticResource IconButtonContent}">
-                        <Path Data="{StaticResource IconImport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <Path Data="{StaticResource IconRecover}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc pos.cart.recover}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
                 <Button Grid.Column="2" Command="{Binding ClearCartCommand}"
-                        Style="{StaticResource SecondaryButtonStyle}"
+                        Style="{StaticResource FooterSecondaryButtonStyle}"
                         MinWidth="90" Height="42" Margin="10,0,0,0">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
