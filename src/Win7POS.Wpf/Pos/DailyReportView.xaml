@@ -58,12 +58,42 @@
         <!-- Filtri rapidi (pill) -->
         <StackPanel Grid.Row="1" Margin="0,0,0,10">
             <WrapPanel>
-                <Button Content="{loc:Loc common.today}" MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterOggiCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                <Button Content="{loc:Loc common.yesterday}" MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterIeriCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                <Button Content="{loc:Loc common.week}" MinWidth="80" Height="32" Margin="0,0,6,6" Command="{Binding FilterQuestaSettimanaCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                <Button Content="{loc:Loc common.month}" MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterQuestoMeseCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                <Button Content="{loc:Loc common.lastMonth}" MinWidth="88" Height="32" Margin="0,0,6,6" Command="{Binding FilterMeseScorsoCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                <Button Content="{loc:Loc common.year}" MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterAnnoCorrenteCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                <Button MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterOggiCommand}" Style="{StaticResource OutlineButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconCalendar}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.today}" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterIeriCommand}" Style="{StaticResource OutlineButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconCalendar}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.yesterday}" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="80" Height="32" Margin="0,0,6,6" Command="{Binding FilterQuestaSettimanaCommand}" Style="{StaticResource OutlineButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconCalendar}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.week}" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterQuestoMeseCommand}" Style="{StaticResource OutlineButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconCalendar}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.month}" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="88" Height="32" Margin="0,0,6,6" Command="{Binding FilterMeseScorsoCommand}" Style="{StaticResource OutlineButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconCalendar}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.lastMonth}" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="72" Height="32" Margin="0,0,6,6" Command="{Binding FilterAnnoCorrenteCommand}" Style="{StaticResource OutlineButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconCalendar}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.year}" Margin="6,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </WrapPanel>
         </StackPanel>
 
@@ -141,8 +171,18 @@
                                          Text="{Binding DateText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                          Style="{StaticResource ModernTextBoxStyle}"/>
                                 <StackPanel Orientation="Horizontal">
-                                    <Button MinWidth="90" Height="36" Margin="0,0,8,0" Content="{loc:Loc common.load}" Command="{Binding LoadCommand}" Style="{StaticResource PrimaryButtonStyle}" ToolTip="{loc:Loc reports.loadDayTooltip}"/>
-                                    <Button MinWidth="100" Height="36" Content="{loc:Loc common.export}" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" ToolTip="{loc:Loc reports.exportCsvTooltip}"/>
+                                    <Button MinWidth="90" Height="36" Margin="0,0,8,0" Command="{Binding LoadCommand}" Style="{StaticResource PrimaryButtonStyle}" ToolTip="{loc:Loc reports.loadDayTooltip}">
+                                        <StackPanel Style="{StaticResource IconButtonContent}">
+                                            <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                            <TextBlock Text="{loc:Loc common.load}" Margin="8,0,0,0"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button MinWidth="100" Height="36" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" ToolTip="{loc:Loc reports.exportCsvTooltip}">
+                                        <StackPanel Style="{StaticResource IconButtonContent}">
+                                            <Path Data="{StaticResource IconExport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                            <TextBlock Text="{loc:Loc common.export}" Margin="8,0,0,0"/>
+                                        </StackPanel>
+                                    </Button>
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -194,7 +234,12 @@
                                         <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"/>
                                     </ScrollViewer>
                                 </Border>
-                                <Button Grid.Row="2" Content="{loc:Loc common.print}" Height="36" HorizontalAlignment="Stretch" Command="{Binding PrintSummaryCommand}" Style="{StaticResource PrimaryButtonStyle}" ToolTip="{Binding PrintSummaryToolTip, Mode=OneWay}"/>
+                                <Button Grid.Row="2" Height="36" HorizontalAlignment="Stretch" Command="{Binding PrintSummaryCommand}" Style="{StaticResource PrimaryButtonStyle}" ToolTip="{Binding PrintSummaryToolTip, Mode=OneWay}">
+                                    <StackPanel Style="{StaticResource IconButtonContent}">
+                                        <Path Data="{StaticResource IconPrint}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                        <TextBlock Text="{loc:Loc common.print}" Margin="8,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
                             </Grid>
                         </Border>
                         <!-- Vendite per fascia oraria: più largo -->
@@ -282,10 +327,30 @@
                                     <TextBox Text="{Binding HistoryFromText, UpdateSourceTrigger=PropertyChanged}" Width="112" HorizontalContentAlignment="Center" Margin="0,0,12,0" Style="{StaticResource ModernTextBoxStyle}"/>
                                     <TextBlock Text="{loc:Loc common.to}" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
                                     <TextBox Text="{Binding HistoryToText, UpdateSourceTrigger=PropertyChanged}" Width="112" HorizontalContentAlignment="Center" Margin="0,0,16,0" Style="{StaticResource ModernTextBoxStyle}"/>
-                                    <Button Content="{loc:Loc reports.loadHistory}" MinWidth="110" Height="36" Command="{Binding LoadHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" ToolTip="{loc:Loc reports.loadHistoryTooltip}"/>
-                                    <Button Content="{loc:Loc common.export}" MinWidth="100" Height="36" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0" ToolTip="{loc:Loc reports.exportCsvTooltip}"/>
-                                    <Button Content="{loc:Loc common.selectAll}" MinWidth="100" Height="36" Command="{Binding MarkAllHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,6,0" ToolTip="{loc:Loc reports.selectAllTooltip}"/>
-                                    <Button Content="{loc:Loc common.clearSelection}" MinWidth="110" Height="36" Command="{Binding ClearMarkedHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" ToolTip="{loc:Loc reports.clearSelectionTooltip}"/>
+                                    <Button MinWidth="110" Height="36" Command="{Binding LoadHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}" Margin="0,0,8,0" ToolTip="{loc:Loc reports.loadHistoryTooltip}">
+                                        <StackPanel Style="{StaticResource IconButtonContent}">
+                                            <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                            <TextBlock Text="{loc:Loc reports.loadHistory}" Margin="8,0,0,0"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button MinWidth="100" Height="36" Command="{Binding ExportCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,8,0" ToolTip="{loc:Loc reports.exportCsvTooltip}">
+                                        <StackPanel Style="{StaticResource IconButtonContent}">
+                                            <Path Data="{StaticResource IconExport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                            <TextBlock Text="{loc:Loc common.export}" Margin="8,0,0,0"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button MinWidth="100" Height="36" Command="{Binding MarkAllHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,6,0" ToolTip="{loc:Loc reports.selectAllTooltip}">
+                                        <StackPanel Style="{StaticResource IconButtonContent}">
+                                            <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                            <TextBlock Text="{loc:Loc common.selectAll}" Margin="8,0,0,0"/>
+                                        </StackPanel>
+                                    </Button>
+                                    <Button MinWidth="110" Height="36" Command="{Binding ClearMarkedHistoryRowsCommand}" Style="{StaticResource OutlineButtonStyle}" ToolTip="{loc:Loc reports.clearSelectionTooltip}">
+                                        <StackPanel Style="{StaticResource IconButtonContent}">
+                                            <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                            <TextBlock Text="{loc:Loc common.clearSelection}" Margin="8,0,0,0"/>
+                                        </StackPanel>
+                                    </Button>
                                 </StackPanel>
                                 <TextBlock DockPanel.Dock="Right" Text="{Binding HistoryToolbarSummary, Mode=OneWay}" Foreground="#666" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0"/>
                             </DockPanel>
@@ -576,8 +641,13 @@
                                 <CheckBox Grid.Row="3" Content="{loc:Loc reports.showDaysInSummary}" IsChecked="{Binding PrintMarkedDaysDetail, Mode=TwoWay}"
                                           Margin="0,10,0,10" VerticalAlignment="Center"
                                           Visibility="{Binding ShowMultiDaySummary, Converter={StaticResource BoolToVis}}"/>
-                                <Button Grid.Row="4" Content="{Binding PrintButtonText, Mode=OneWay}" Height="36" HorizontalAlignment="Stretch"
-                                        Command="{Binding PrintSelectedHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                                <Button Grid.Row="4" Height="36" HorizontalAlignment="Stretch"
+                                        Command="{Binding PrintSelectedHistoryCommand}" Style="{StaticResource PrimaryButtonStyle}">
+                                    <StackPanel Style="{StaticResource IconButtonContent}">
+                                        <Path Data="{StaticResource IconPrint}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                        <TextBlock Text="{Binding PrintButtonText, Mode=OneWay}" Margin="8,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
                             </Grid>
                         </Border>
                     </Grid>

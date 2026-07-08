@@ -27,7 +27,12 @@
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
             <TextBlock Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="#888" FontSize="10" Margin="0,0,10,0" MaxWidth="380" TextTrimming="CharacterEllipsis"
                        Visibility="{Binding ShowFooterStatus, Converter={StaticResource BoolToVis}}"/>
-            <Button MinWidth="100" Content="{loc:Loc common.close}" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Close_Click"/>
+            <Button MinWidth="100" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Close_Click">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.close}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

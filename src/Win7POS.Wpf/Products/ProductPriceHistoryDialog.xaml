@@ -34,7 +34,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel Grid.Column="0">
-                    <TextBlock Text="Barcode" FontSize="11" Foreground="Gray"/>
+                    <TextBlock Text="{loc:Loc products.barcode}" FontSize="11" Foreground="Gray"/>
                     <TextBlock Text="{Binding Barcode}" FontWeight="SemiBold" FontSize="14"/>
                 </StackPanel>
                 <StackPanel Grid.Column="1" Margin="16,0">
@@ -62,14 +62,24 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" Content="{loc:Loc common.reload}" MinWidth="100" Height="32" Command="{Binding RefreshCommand}" Style="{StaticResource SecondaryButtonStyle}"/>
+                <Button Grid.Column="0" MinWidth="100" Height="32" Command="{Binding RefreshCommand}" Style="{StaticResource SecondaryButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.reload}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0">
                     <TextBlock Text="{loc:Loc priceHistory.newSalePriceClp}" VerticalAlignment="Center" Margin="0,0,8,0"/>
                     <TextBox Text="{Binding NewRetailText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditPrices}" Width="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
                     <TextBlock Text="{loc:Loc priceHistory.newPurchasePrice}" VerticalAlignment="Center" Margin="16,0,8,0"/>
                     <TextBox Text="{Binding NewPurchaseText, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditPrices}" Width="120" MinHeight="28" Style="{StaticResource ModernTextBoxStyle}"/>
                 </StackPanel>
-                <Button Grid.Column="2" Content="{loc:Loc priceHistory.applyPrices}" MinWidth="120" Height="32" Command="{Binding ApplyNewPricesCommand}" Style="{StaticResource PrimaryButtonStyle}"/>
+                <Button Grid.Column="2" MinWidth="120" Height="32" Command="{Binding ApplyNewPricesCommand}" Style="{StaticResource PrimaryButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc priceHistory.applyPrices}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </Grid>
         </Border>
 
@@ -114,7 +124,12 @@
         </GroupBox>
 
         <DockPanel Grid.Row="5" Margin="{StaticResource DialogFooterMargin}">
-            <Button Content="{loc:Loc common.close}" MinWidth="90" HorizontalAlignment="Left" IsCancel="True" Click="Close_Click" Style="{StaticResource DialogCancelButtonStyle}"/>
+            <Button MinWidth="90" HorizontalAlignment="Left" IsCancel="True" Click="Close_Click" Style="{StaticResource DialogCancelButtonStyle}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.close}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
             <TextBlock Text="{Binding StatusMessage}" VerticalAlignment="Center" Margin="12,0" Foreground="Gray"/>
         </DockPanel>
     </Grid>

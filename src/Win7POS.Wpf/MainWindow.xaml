@@ -22,7 +22,7 @@
                 <Button x:Name="HamburgerButton" Grid.Column="0" Width="40" Height="40" Margin="0,0,16,0"
                         Style="{StaticResource HamburgerButtonStyle}"
                         Click="OnHamburgerClick"
-                        ToolTip="Menu">
+                        ToolTip="{loc:Loc shell.menu}">
                     <Button.Content>
                         <Path Stroke="White" StrokeThickness="2" Data="M 6,8 L 26,8 M 6,14 L 26,14 M 6,20 L 26,20"/>
                     </Button.Content>
@@ -62,7 +62,8 @@
                     </Border>
                     <Button x:Name="ChangeOperatorButton" Style="{StaticResource HeaderActionButtonStyle}" Click="OnChangeOperatorClick" ToolTip="{loc:Loc shell.changeLockTooltip}">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{loc:Loc shell.changeLock}" VerticalAlignment="Center"/>
+                            <Path Data="{StaticResource IconLock}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc shell.changeLock}" VerticalAlignment="Center" Margin="8,0,0,0"/>
                         </StackPanel>
                     </Button>
                 </StackPanel>
@@ -102,36 +103,62 @@
 
         <!-- Overlay menu laterale -->
         <Grid x:Name="SideMenuOverlay" Grid.Row="0" Grid.RowSpan="3" Visibility="Collapsed" Background="#80000000" MouseLeftButtonDown="OnOverlayClick">
-            <Border x:Name="SideMenuPanel" Width="280" HorizontalAlignment="Left" Background="{StaticResource SidebarBackgroundBrush}" BorderBrush="{StaticResource SidebarBorderBrush}" BorderThickness="0,0,1,0" CornerRadius="0,0,8,0" MouseLeftButtonDown="OnPanelClick">
+            <Border x:Name="SideMenuPanel"
+                    Width="280"
+                    HorizontalAlignment="Left"
+                    Background="{StaticResource SidebarBackgroundBrush}"
+                    BorderBrush="{StaticResource SidebarBorderBrush}"
+                    BorderThickness="0,0,1,0"
+                    CornerRadius="0,0,8,0"
+                    Focusable="True"
+                    Opacity="0"
+                    Visibility="Collapsed"
+                    MouseLeftButtonDown="OnPanelClick">
+                <Border.RenderTransform>
+                    <TranslateTransform X="-18"/>
+                </Border.RenderTransform>
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Margin="16,24,16,20">
                         <TextBlock Text="{loc:Loc shell.menu}" FontSize="20" FontWeight="SemiBold" Foreground="{StaticResource PrimaryBrush}" Margin="0,0,0,20"/>
 
                         <TextBlock Text="{loc:Loc shell.navigation}" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="POS" Tag="Pos" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPosClick"/>
-                        <Button x:Name="OpenCashDrawerMenuButton" Content="{loc:Loc shell.openCashDrawer}" Tag="OpenCash" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuOpenCashDrawerClick" ToolTip="{loc:Loc shell.openCashDrawerTooltip}"/>
-                        <Button Content="{loc:Loc shell.products}" Tag="Prodotti" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuProdottiClick"/>
+                        <Button Tag="Pos" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPosClick" ToolTip="POS">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconPay}" Style="{StaticResource MenuIconPathStyle}"/>
+                                <TextBlock Text="POS" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Tag="Prodotti" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuProdottiClick" ToolTip="{loc:Loc shell.products}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconProducts}" Style="{StaticResource MenuIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc shell.products}" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </Button>
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
                         <TextBlock Text="{loc:Loc shell.management}" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="{loc:Loc shell.salesRegister}" Tag="SalesRegister" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuSalesRegisterClick"/>
-                        <Button Content="{loc:Loc shell.dailyClose}" Tag="DailyReport" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuDailyReportClick"/>
+                        <Button Tag="SalesRegister" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuSalesRegisterClick" ToolTip="{loc:Loc shell.salesRegister}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconRegister}" Style="{StaticResource MenuIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc shell.salesRegister}" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Tag="DailyReport" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuDailyReportClick" ToolTip="{loc:Loc shell.dailyClose}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconCalendar}" Style="{StaticResource MenuIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc shell.dailyClose}" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </Button>
 
                         <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
                         <TextBlock Text="{loc:Loc shell.settings}" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <TextBlock Text="{loc:Loc settings.language}" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                        <ComboBox x:Name="LanguageComboBox"
-                                  MinHeight="34"
-                                  Margin="0,0,0,10"
-                                  SelectionChanged="OnLanguageSelectionChanged"/>
-                        <Button Content="{loc:Loc shell.officialShopData}" Tag="ShopSettings" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuShopSettingsClick"/>
-                        <Button Content="{loc:Loc shell.printerSettings}" Tag="Printer" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuPrinterClick"/>
-                        <Button Content="{loc:Loc operations.dbMaintenance}" Tag="DbMaintenance" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuDbClick"/>
-                        <Button Content="{loc:Loc shell.usersRoles}" Tag="UsersRoles" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuUsersClick"/>
+                        <Button x:Name="MenuSettingsButton" Tag="Settings" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuSettingsClick" ToolTip="{loc:Loc shell.settings}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconSettings}" Style="{StaticResource MenuIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc shell.settings}" Margin="10,0,0,0"/>
+                            </StackPanel>
+                        </Button>
 
-                        <Separator Margin="0,16,0,16" Background="{StaticResource SidebarBorderBrush}" Height="1"/>
-                        <TextBlock Text="{loc:Loc shell.support}" Foreground="#4B2E67" FontSize="11" FontWeight="SemiBold" Margin="0,0,0,8"/>
-                        <Button Content="{loc:Loc shell.aboutSupport}" Tag="About" Style="{StaticResource SidebarNavButtonStyle}" Click="OnMenuAboutClick"/>
                     </StackPanel>
                 </ScrollViewer>
             </Border>

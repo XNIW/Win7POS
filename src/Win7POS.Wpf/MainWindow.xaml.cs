@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Win7POS.Data;
 using Win7POS.Wpf.Pos;
@@ -40,7 +41,6 @@ namespace Win7POS.Wpf
         private DispatcherTimer _networkStatusTimer;
         private bool _backgroundOnlineRefreshQueued;
         private bool _operatorLoginReached;
-        private bool _languageSelectionUpdating;
         private SqliteConnectionFactory _languageSettingsFactory;
         private string _startupPhase = "constructed";
         private string _productsDataContextOperatorUsername;
@@ -75,25 +75,13 @@ namespace Win7POS.Wpf
 
             Loaded += OnLoadedAsync;
             ContentRendered += OnContentRendered;
+            PreviewKeyDown += OnPreviewKeyDown;
         }
 
         private void InitializeLanguageSelector()
         {
-            if (LanguageComboBox == null)
-            {
-                return;
-            }
-
-            _languageSelectionUpdating = true;
-            LanguageComboBox.ItemsSource = PosLocalization.SupportedLanguages;
-            LanguageComboBox.DisplayMemberPath = "DisplayName";
-            LanguageComboBox.SelectedValuePath = "Code";
-            LanguageComboBox.SelectedValue = PosLocalization.Current.CurrentLanguage;
-            _languageSelectionUpdating = false;
-
             PosLocalization.Current.LanguageChanged += (_, __) =>
             {
-                UpdateLanguageSelector();
                 UpdateNetworkStatusBadge();
                 QueueSyncStatusRefresh(_languageSettingsFactory);
             };
@@ -110,24 +98,17 @@ namespace Win7POS.Wpf
 
         private void UpdateLanguageSelector()
         {
-            if (LanguageComboBox == null)
-            {
-                return;
-            }
-
-            _languageSelectionUpdating = true;
-            LanguageComboBox.SelectedValue = PosLocalization.Current.CurrentLanguage;
-            _languageSelectionUpdating = false;
+            // Language selection now lives in SettingsHubDialog.
         }
 
         private async void OnLanguageSelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (_languageSelectionUpdating)
-            {
-                return;
-            }
+            var selected = (sender as ComboBox)?.SelectedValue as string;
+            await SaveLanguagePreferenceAsync(selected).ConfigureAwait(true);
+        }
 
-            var selected = LanguageComboBox?.SelectedValue as string;
+        private async Task SaveLanguagePreferenceAsync(string selected)
+        {
             if (string.IsNullOrWhiteSpace(selected))
             {
                 return;
@@ -1046,7 +1027,7 @@ namespace Win7POS.Wpf
             if (!hasUsersManage)
             {
                 UserManagementViewControl.DataContext = null;
-                SideMenuOverlay.Visibility = Visibility.Collapsed;
+                SetSideMenuOpen(false);
                 if (await TrySwitchForPermissionAsync(
                         PermissionCodes.UsersManage,
                         PosLocalization.Current.Text("shell.usersPermissionDenied"),
@@ -1063,7 +1044,7 @@ namespace Win7POS.Wpf
             {
                 CurrentMenuKey = "UsersRoles";
                 MainTabControl.SelectedItem = UsersRolesTab;
-                SideMenuOverlay.Visibility = Visibility.Collapsed;
+                SetSideMenuOpen(false);
                 return;
             }
             try
@@ -1077,7 +1058,7 @@ namespace Win7POS.Wpf
             catch (InvalidOperationException ex)
             {
                 _logger.LogWarning("OnMenuUsersClick: permesso negato - " + ex.Message, null);
-                SideMenuOverlay.Visibility = Visibility.Collapsed;
+                SetSideMenuOpen(false);
                 if (await TrySwitchForPermissionAsync(
                         PermissionCodes.UsersManage,
                         PosLocalization.Current.Text("shell.usersPermissionDenied"),
@@ -1095,7 +1076,7 @@ namespace Win7POS.Wpf
                     PosLocalization.Current.Text("shell.usersRoles"),
                     PosLocalization.Current.Text("shell.usersOpenLogError"));
             }
-            SideMenuOverlay.Visibility = Visibility.Collapsed;
+            SetSideMenuOpen(false);
         }
 
         /// <summary>Aggiorna lo sfondo dei pulsanti del menu laterale (voce attiva = SidebarSelectedBrush). Compatibile Win7.</summary>
@@ -1109,6 +1090,8 @@ namespace Win7POS.Wpf
                 if (selectedBrush == null || cardBrush == null) return;
 
                 var key = CurrentMenuKey ?? "";
+                if (key == "ShopSettings" || key == "Printer" || key == "DbMaintenance" || key == "UsersRoles" || key == "About")
+                    key = "Settings";
                 foreach (var btn in FindButtonsByTag(SideMenuPanel))
                 {
                     var tag = btn.Tag?.ToString() ?? "";
@@ -1174,23 +1157,77 @@ namespace Win7POS.Wpf
 
         private void OnHamburgerClick(object sender, RoutedEventArgs e)
         {
-            if (SideMenuOverlay.Visibility == System.Windows.Visibility.Visible)
+            if (SideMenuOverlay.Visibility == Visibility.Visible)
             {
-                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                SetSideMenuOpen(false);
             }
             else
             {
-                // Mantieni evidenziata la sezione attiva: il cassiere vede subito "dove sono"
-                System.Windows.Input.CommandManager.InvalidateRequerySuggested();
-                var cmd = GetPosViewModel()?.OpenCashDrawerCommand;
-                OpenCashDrawerMenuButton.IsEnabled = cmd?.CanExecute(null) ?? false;
-                SideMenuOverlay.Visibility = System.Windows.Visibility.Visible;
+                CommandManager.InvalidateRequerySuggested();
+                UpdateMenuSelectionVisual();
+                SetSideMenuOpen(true);
+            }
+        }
+
+        private void SetSideMenuOpen(bool isOpen)
+        {
+            if (SideMenuOverlay == null || SideMenuPanel == null)
+                return;
+
+            var transform = SideMenuPanel.RenderTransform as TranslateTransform;
+            if (transform == null)
+            {
+                transform = new TranslateTransform();
+                SideMenuPanel.RenderTransform = transform;
+            }
+
+            var duration = TimeSpan.FromMilliseconds(120);
+            if (isOpen)
+            {
+                SideMenuOverlay.Visibility = Visibility.Visible;
+                SideMenuPanel.Visibility = Visibility.Visible;
+                SideMenuPanel.Opacity = 0;
+                transform.X = -18;
+                SideMenuPanel.BeginAnimation(UIElement.OpacityProperty, new DoubleAnimation(1, duration));
+                transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(0, duration));
+                SideMenuPanel.Focus();
+                return;
+            }
+
+            if (SideMenuOverlay.Visibility != Visibility.Visible)
+            {
+                SideMenuOverlay.Visibility = Visibility.Collapsed;
+                SideMenuPanel.Visibility = Visibility.Collapsed;
+                SideMenuPanel.Opacity = 0;
+                transform.X = -18;
+                return;
+            }
+
+            var fade = new DoubleAnimation(0, duration);
+            fade.Completed += (_, __) =>
+            {
+                SideMenuOverlay.Visibility = Visibility.Collapsed;
+                SideMenuPanel.Visibility = Visibility.Collapsed;
+                SideMenuPanel.Opacity = 0;
+                transform.X = -18;
+                HamburgerButton?.Focus();
+            };
+            SideMenuPanel.BeginAnimation(UIElement.OpacityProperty, fade);
+            transform.BeginAnimation(TranslateTransform.XProperty, new DoubleAnimation(-18, duration));
+        }
+
+        private void OnPreviewKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Escape && SideMenuOverlay?.Visibility == Visibility.Visible)
+            {
+                SetSideMenuOpen(false);
+                e.Handled = true;
             }
         }
 
         private void OnOverlayClick(object sender, MouseButtonEventArgs e)
         {
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            SetSideMenuOpen(false);
         }
 
         private void OnPanelClick(object sender, MouseButtonEventArgs e)
@@ -1202,13 +1239,13 @@ namespace Win7POS.Wpf
         {
             CurrentMenuKey = "Pos";
             MainTabControl.SelectedIndex = 0;
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            SetSideMenuOpen(false);
         }
 
         private void OnMenuOpenCashDrawerClick(object sender, RoutedEventArgs e)
         {
             GetPosViewModel()?.OpenCashDrawerCommand?.Execute(null);
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            SetSideMenuOpen(false);
         }
 
         private async void OnMenuProdottiClick(object sender, RoutedEventArgs e)
@@ -1217,7 +1254,7 @@ namespace Win7POS.Wpf
             var hasCatalogView = HasCurrentPermission(PermissionCodes.CatalogView);
             if (!hasCatalogView)
             {
-                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                SetSideMenuOpen(false);
                 if (await TrySwitchForPermissionAsync(
                         PermissionCodes.CatalogView,
                         PosLocalization.Current.Text("shell.productsPermissionDenied"),
@@ -1235,7 +1272,7 @@ namespace Win7POS.Wpf
                 await vm.LoadAsync().ConfigureAwait(true);
                 CurrentMenuKey = "Prodotti";
                 MainTabControl.SelectedItem = ProductsTab;
-                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                SetSideMenuOpen(false);
             }
             catch (Exception ex)
             {
@@ -1244,7 +1281,7 @@ namespace Win7POS.Wpf
                     Application.Current?.MainWindow,
                     PosLocalization.Current.Text("shell.products"),
                     PosLocalization.Current.Text("shell.productsOpenLogError"));
-                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                SetSideMenuOpen(false);
             }
         }
 
@@ -1292,7 +1329,7 @@ namespace Win7POS.Wpf
         {
             if (!HasCurrentPermission(PermissionCodes.DailyCloseView))
             {
-                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                SetSideMenuOpen(false);
                 if (await TrySwitchForPermissionAsync(
                         PermissionCodes.DailyCloseView,
                         PosLocalization.Current.Format("common.permissionDeniedOperation", PosLocalization.Current.Text("operations.dailyClose")),
@@ -1310,7 +1347,43 @@ namespace Win7POS.Wpf
             }
             CurrentMenuKey = "DailyReport";
             MainTabControl.SelectedIndex = 2; // 0=POS, 1=Prodotti, 2=Chiusura cassa, 3=Pagamento
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            SetSideMenuOpen(false);
+        }
+
+        private void OnMenuSettingsClick(object sender, RoutedEventArgs e)
+        {
+            CurrentMenuKey = "Settings";
+            MainTabControl.SelectedIndex = 0;
+            SetSideMenuOpen(false);
+            ShowSettingsHubDialog();
+        }
+
+        private void ShowSettingsHubDialog()
+        {
+            try
+            {
+                var dialog = new SettingsHubDialog
+                {
+                    Owner = DialogOwnerHelper.GetSafeOwner()
+                };
+
+                dialog.ShopDataRequested += (_, __) => OnMenuShopSettingsClick(this, new RoutedEventArgs());
+                dialog.PrinterSettingsRequested += (_, __) => OnMenuPrinterClick(this, new RoutedEventArgs());
+                dialog.DatabaseMaintenanceRequested += (_, __) => OnMenuDbClick(this, new RoutedEventArgs());
+                dialog.UsersRolesRequested += (_, __) => OnMenuUsersClick(this, new RoutedEventArgs());
+                dialog.AboutRequested += (_, __) => OnMenuAboutClick(this, new RoutedEventArgs());
+                dialog.LanguageChangedRequested += async (_, code) => await SaveLanguagePreferenceAsync(code).ConfigureAwait(true);
+
+                dialog.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "MainWindow.ShowSettingsHubDialog: errore apertura Settings hub");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.Current.Text("shell.settings"),
+                    PosLocalization.Current.Text("settings.openLogError"));
+            }
         }
 
         private async void OnMenuDbClick(object sender, RoutedEventArgs e)
@@ -1318,7 +1391,7 @@ namespace Win7POS.Wpf
             MainTabControl.SelectedIndex = 0;
             if (!HasCurrentPermission(PermissionCodes.DbMaintenance))
             {
-                SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+                SetSideMenuOpen(false);
                 if (await TrySwitchForPermissionAsync(
                         PermissionCodes.DbMaintenance,
                         PosLocalization.Current.Format("common.permissionDeniedOperation", PosLocalization.Current.Text("operations.dbMaintenance")),
@@ -1330,7 +1403,7 @@ namespace Win7POS.Wpf
             }
 
             GetPosViewModel()?.DbMaintenanceCommand?.Execute(null);
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            SetSideMenuOpen(false);
         }
 
         private void OnMenuPrinterClick(object sender, RoutedEventArgs e)
@@ -1338,7 +1411,7 @@ namespace Win7POS.Wpf
             CurrentMenuKey = "Printer";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.PrinterSettingsCommand?.Execute(null);
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            SetSideMenuOpen(false);
         }
 
         private void OnMenuShopSettingsClick(object sender, RoutedEventArgs e)
@@ -1346,7 +1419,7 @@ namespace Win7POS.Wpf
             CurrentMenuKey = "ShopSettings";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.OpenShopSettingsCommand?.Execute(null);
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            SetSideMenuOpen(false);
         }
 
         private void OnMenuAboutClick(object sender, RoutedEventArgs e)
@@ -1354,7 +1427,7 @@ namespace Win7POS.Wpf
             CurrentMenuKey = "About";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.AboutSupportCommand?.Execute(null);
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            SetSideMenuOpen(false);
         }
 
         private void OnMenuSalesRegisterClick(object sender, RoutedEventArgs e)
@@ -1362,7 +1435,7 @@ namespace Win7POS.Wpf
             CurrentMenuKey = "SalesRegister";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.OpenSalesRegisterCommand?.Execute(null);
-            SideMenuOverlay.Visibility = System.Windows.Visibility.Collapsed;
+            SetSideMenuOpen(false);
         }
 
         /// <summary>Mostra la schermata Pagamento e attende la chiusura (RequestClose).</summary>
@@ -1390,7 +1463,7 @@ namespace Win7POS.Wpf
             Dispatcher.BeginInvoke(new Action(() =>
             {
                 HamburgerButton.IsEnabled = false;
-                SideMenuOverlay.Visibility = Visibility.Collapsed;
+                SetSideMenuOpen(false);
 
                 PaymentViewControl.DataContext = vm;
                 vm.RequestClose += OnClose;

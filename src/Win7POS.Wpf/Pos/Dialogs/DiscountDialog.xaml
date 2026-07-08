@@ -196,12 +196,22 @@
             <StackPanel Grid.Row="1"
                         Orientation="Horizontal"
                         HorizontalAlignment="Right">
-                <Button Content="{loc:Loc common.cancel}" Margin="0,0,8,0" IsCancel="True"
+                <Button Margin="0,0,8,0" IsCancel="True"
                         Style="{StaticResource DialogCancelButtonStyle}"
-                        Command="{Binding CancelCommand}"/>
-                <Button Content="{loc:Loc common.confirm}" IsDefault="True"
+                        Command="{Binding CancelCommand}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button IsDefault="True"
                         Style="{StaticResource DialogActionButtonStyle}"
-                        Command="{Binding ConfirmCommand}"/>
+                        Command="{Binding ConfirmCommand}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.confirm}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Grid>
     </Grid>

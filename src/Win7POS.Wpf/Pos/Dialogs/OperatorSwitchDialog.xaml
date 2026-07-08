@@ -53,9 +53,24 @@
                 <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Margin="0,0,0,12" Text="{loc:Loc operator.switch.posAccessHint}" TextWrapping="Wrap" Foreground="#6D617C"/>
 
                 <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-                    <Button x:Name="PosAccessButton" Content="{loc:Loc operator.switch.posAccess}" Margin="0,0,8,0" Click="OnPosAccessClick" Style="{StaticResource DialogCancelButtonStyle}"/>
-                    <Button x:Name="SwitchButton" Content="{loc:Loc operator.switch.switch}" Margin="0,0,8,0" Click="OnSwitchClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
-                    <Button Content="{loc:Loc common.cancel}" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="OnCancelClick"/>
+                    <Button x:Name="PosAccessButton" Margin="0,0,8,0" Click="OnPosAccessClick" Style="{StaticResource DialogCancelButtonStyle}">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconRegister}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc operator.switch.posAccess}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button x:Name="SwitchButton" Margin="0,0,8,0" Click="OnSwitchClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconUsers}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc operator.switch.switch}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="OnCancelClick">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>

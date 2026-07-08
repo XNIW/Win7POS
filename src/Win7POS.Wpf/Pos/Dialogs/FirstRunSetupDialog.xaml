@@ -68,8 +68,18 @@
             <TextBlock x:Name="ErrorText" Grid.Row="4" Foreground="#C62828" TextWrapping="Wrap" Visibility="Collapsed" VerticalAlignment="Top" Margin="0,4,0,0"/>
 
             <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-                <Button Content="{loc:Loc common.confirm}" Width="100" Margin="0,0,8,0" Click="OnCreateAdminClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
-                <Button Content="{loc:Loc common.cancel}" Width="100" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
+                <Button MinWidth="120" Margin="0,0,8,0" Click="OnCreateAdminClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.confirm}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="120" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Grid>
         </Border>

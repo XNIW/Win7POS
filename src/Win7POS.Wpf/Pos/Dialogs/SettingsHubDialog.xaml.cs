@@ -1,0 +1,82 @@
+using System;
+using System.Windows;
+using System.Windows.Controls;
+using Win7POS.Wpf.Chrome;
+using Win7POS.Wpf.Localization;
+
+namespace Win7POS.Wpf.Pos.Dialogs
+{
+    public partial class SettingsHubDialog : DialogShellWindow
+    {
+        private bool _languageUpdating;
+
+        public event EventHandler ShopDataRequested;
+        public event EventHandler PrinterSettingsRequested;
+        public event EventHandler DatabaseMaintenanceRequested;
+        public event EventHandler UsersRolesRequested;
+        public event EventHandler AboutRequested;
+        public event EventHandler<string> LanguageChangedRequested;
+
+        public SettingsHubDialog()
+        {
+            InitializeComponent();
+            InitializeLanguageSelector();
+        }
+
+        private void InitializeLanguageSelector()
+        {
+            _languageUpdating = true;
+            LanguageComboBox.ItemsSource = PosLocalization.SupportedLanguages;
+            LanguageComboBox.DisplayMemberPath = "DisplayName";
+            LanguageComboBox.SelectedValuePath = "Code";
+            LanguageComboBox.SelectedValue = PosLocalization.Current.CurrentLanguage;
+            _languageUpdating = false;
+        }
+
+        private void CloseAndRaise(EventHandler handler)
+        {
+            Close();
+            handler?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void OnShopDataClick(object sender, RoutedEventArgs e)
+        {
+            CloseAndRaise(ShopDataRequested);
+        }
+
+        private void OnPrinterSettingsClick(object sender, RoutedEventArgs e)
+        {
+            CloseAndRaise(PrinterSettingsRequested);
+        }
+
+        private void OnDatabaseMaintenanceClick(object sender, RoutedEventArgs e)
+        {
+            CloseAndRaise(DatabaseMaintenanceRequested);
+        }
+
+        private void OnUsersRolesClick(object sender, RoutedEventArgs e)
+        {
+            CloseAndRaise(UsersRolesRequested);
+        }
+
+        private void OnAboutClick(object sender, RoutedEventArgs e)
+        {
+            CloseAndRaise(AboutRequested);
+        }
+
+        private void OnLanguageSelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_languageUpdating)
+                return;
+
+            var selected = LanguageComboBox.SelectedValue as string;
+            if (!string.IsNullOrWhiteSpace(selected))
+                LanguageChangedRequested?.Invoke(this, selected);
+        }
+
+        private void OnCloseClick(object sender, RoutedEventArgs e)
+        {
+            Close();
+        }
+    }
+}

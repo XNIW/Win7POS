@@ -383,6 +383,9 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("products.filterSupplierTooltip", "Filter by supplier", "Filtrar por proveedor", "Filtra per fornitore", "按供应商筛选");
             yield return new TranslationEntry("products.search", "Search:", "Buscar:", "Cerca:", "搜索：");
             yield return new TranslationEntry("products.searchTooltip", "Search text (Enter to search)", "Texto a buscar (Enter para buscar)", "Testo da cercare (Invio per cercare)", "搜索文本（按 Enter 搜索）");
+            yield return new TranslationEntry("products.applyFilters", "Apply filters", "Aplicar filtros", "Applica filtri", "应用筛选");
+            yield return new TranslationEntry("products.noFilters", "No filters.", "Sin filtros.", "Nessun filtro.", "无筛选。");
+            yield return new TranslationEntry("products.filtersDirty", "Filters changed, not applied: {0}", "Filtros cambiados, no aplicados: {0}", "Filtri modificati, non applicati: {0}", "筛选已更改，尚未应用：{0}");
             yield return new TranslationEntry("products.pageStatus", "Found: {0}/{1} | Page {2}/{3}", "Encontrados: {0}/{1} | Pagina {2}/{3}", "Trovati: {0}/{1} | Pagina {2}/{3}", "找到：{0}/{1} | 第 {2}/{3} 页");
             yield return new TranslationEntry("products.filterCategory", "Category = {0}", "Categoria = {0}", "Categoria = {0}", "分类 = {0}");
             yield return new TranslationEntry("products.filterSupplier", "Supplier = {0}", "Proveedor = {0}", "Fornitore = {0}", "供应商 = {0}");

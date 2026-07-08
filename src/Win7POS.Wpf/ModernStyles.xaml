@@ -17,6 +17,10 @@
     <SolidColorBrush x:Key="BackgroundLightBrush" Color="#F8F5FA"/>
     <SolidColorBrush x:Key="CardBgBrush" Color="#FFFFFF"/>
     <SolidColorBrush x:Key="BorderBrush" Color="#E0D8E4"/>
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#201627"/>
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#6E5C78"/>
+    <SolidColorBrush x:Key="ReadOnlySurfaceBrush" Color="#F7F3FA"/>
+    <SolidColorBrush x:Key="TableHeaderBrush" Color="#EFE7F5"/>
 
     <!-- Menu laterale: viola chiaro coerente con palette -->
     <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#F6F1FB"/>
@@ -35,11 +39,57 @@
     <Thickness x:Key="DialogTitleMargin">0,0,0,10</Thickness>
     <system:Double x:Key="DialogActionButtonHeight">42</system:Double>
 
+    <!-- Vector icons: WPF path geometry, no icon fonts/packages for Windows 7 reliability. -->
+    <PathGeometry x:Key="IconAdd" Figures="M 10,3 L 10,17 M 3,10 L 17,10"/>
+    <PathGeometry x:Key="IconEdit" Figures="M 4,14 L 4,17 L 7,17 L 16,8 L 13,5 L 4,14 M 12,6 L 15,9"/>
+    <PathGeometry x:Key="IconDuplicate" Figures="M 7,5 L 16,5 L 16,14 L 7,14 Z M 4,8 L 4,17 L 13,17"/>
+    <PathGeometry x:Key="IconDelete" Figures="M 4,6 L 16,6 M 8,6 L 8,4 L 12,4 L 12,6 M 6,6 L 7,17 L 13,17 L 14,6 M 9,9 L 9,14 M 11,9 L 11,14"/>
+    <PathGeometry x:Key="IconImport" Figures="M 10,3 L 10,12 M 6,8 L 10,12 L 14,8 M 5,15 L 5,17 L 15,17 L 15,15"/>
+    <PathGeometry x:Key="IconExport" Figures="M 10,13 L 10,4 M 6,8 L 10,4 L 14,8 M 5,15 L 5,17 L 15,17 L 15,15"/>
+    <PathGeometry x:Key="IconSearch" Figures="M 9,4 C 6.2,4 4,6.2 4,9 C 4,11.8 6.2,14 9,14 C 11.8,14 14,11.8 14,9 C 14,6.2 11.8,4 9,4 M 13,13 L 17,17"/>
+    <PathGeometry x:Key="IconClear" Figures="M 5,5 L 15,15 M 15,5 L 5,15"/>
+    <PathGeometry x:Key="IconPay" Figures="M 3,6 L 17,6 L 17,15 L 3,15 Z M 3,9 L 17,9 M 6,13 L 9,13"/>
+    <PathGeometry x:Key="IconPrint" Figures="M 6,7 L 6,3 L 14,3 L 14,7 M 5,14 L 3,14 L 3,8 L 17,8 L 17,14 L 15,14 M 6,12 L 14,12 L 14,17 L 6,17 Z"/>
+    <PathGeometry x:Key="IconCashDrawer" Figures="M 3,8 L 17,8 L 17,16 L 3,16 Z M 5,5 L 15,5 L 15,8 M 8,12 L 12,12"/>
+    <PathGeometry x:Key="IconRefund" Figures="M 6,7 L 3,10 L 6,13 M 3,10 L 13,10 C 15.5,10 17,11.5 17,14"/>
+    <PathGeometry x:Key="IconSettings" Figures="M 10,4 L 11,6 L 13,6.5 L 14.5,5.5 L 16,8 L 14.5,9.2 L 14.5,11 L 16,12.2 L 14.5,14.8 L 12.8,14 L 11,15 L 10,17 L 7.5,17 L 6.5,15 L 4.8,14 L 3,14.8 L 1.8,12.2 L 3.3,11 L 3.3,9.2 L 1.8,8 L 3,5.5 L 4.8,6.5 L 6.5,6 L 7.5,4 Z M 10,8 C 8.9,8 8,8.9 8,10 C 8,11.1 8.9,12 10,12 C 11.1,12 12,11.1 12,10 C 12,8.9 11.1,8 10,8"/>
+    <PathGeometry x:Key="IconUsers" Figures="M 7,8 C 5.6,8 4.5,6.9 4.5,5.5 C 4.5,4.1 5.6,3 7,3 C 8.4,3 9.5,4.1 9.5,5.5 C 9.5,6.9 8.4,8 7,8 M 3,16 C 3.4,13.5 4.8,11 7,11 C 9.2,11 10.6,13.5 11,16 M 13,8 C 14.2,8 15.2,7 15.2,5.8 C 15.2,4.6 14.2,3.6 13,3.6 M 12.8,11 C 15,11.2 16.3,13.4 16.7,16"/>
+    <PathGeometry x:Key="IconDatabase" Figures="M 4,6 C 4,4.3 16,4.3 16,6 C 16,7.7 4,7.7 4,6 M 4,6 L 4,14 C 4,15.7 16,15.7 16,14 L 16,6 M 4,10 C 4,11.7 16,11.7 16,10"/>
+    <PathGeometry x:Key="IconPrinter" Figures="M 6,7 L 6,3 L 14,3 L 14,7 M 4,14 L 3,14 L 3,8 L 17,8 L 17,14 L 16,14 M 6,12 L 14,12 L 14,17 L 6,17 Z"/>
+    <PathGeometry x:Key="IconHelp" Figures="M 10,17 L 10,17.2 M 7,7 C 7.2,4.8 9,4 10.5,4 C 12.4,4 14,5.2 14,7 C 14,9.6 10,9.4 10,12"/>
+    <PathGeometry x:Key="IconLock" Figures="M 5,9 L 15,9 L 15,17 L 5,17 Z M 7,9 L 7,6 C 7,4.3 8.3,3 10,3 C 11.7,3 13,4.3 13,6 L 13,9"/>
+    <PathGeometry x:Key="IconSync" Figures="M 5,8 C 6,5.8 8,4.5 10.5,4.5 C 12.6,4.5 14.4,5.6 15.5,7.2 M 15.5,4.5 L 15.5,7.2 L 12.8,7.2 M 15,12 C 14,14.2 12,15.5 9.5,15.5 C 7.4,15.5 5.6,14.4 4.5,12.8 M 4.5,15.5 L 4.5,12.8 L 7.2,12.8"/>
+    <PathGeometry x:Key="IconPrev" Figures="M 12,5 L 7,10 L 12,15"/>
+    <PathGeometry x:Key="IconNext" Figures="M 8,5 L 13,10 L 8,15"/>
+    <PathGeometry x:Key="IconGo" Figures="M 4,10 L 15,10 M 11,6 L 15,10 L 11,14"/>
+    <PathGeometry x:Key="IconProducts" Figures="M 4,6 L 10,3 L 16,6 L 16,14 L 10,17 L 4,14 Z M 4,6 L 10,9 L 16,6 M 10,9 L 10,17"/>
+    <PathGeometry x:Key="IconRegister" Figures="M 4,4 L 16,4 L 16,16 L 4,16 Z M 6,7 L 14,7 M 6,10 L 14,10 M 7,13 L 7,13.2 M 10,13 L 10,13.2 M 13,13 L 13,13.2"/>
+    <PathGeometry x:Key="IconCalendar" Figures="M 5,4 L 5,7 M 15,4 L 15,7 M 3,8 L 17,8 M 4,6 L 16,6 L 16,17 L 4,17 Z M 7,11 L 9,11 M 11,11 L 13,11 M 7,14 L 9,14"/>
+    <PathGeometry x:Key="IconShop" Figures="M 4,8 L 5,4 L 15,4 L 16,8 M 5,8 L 5,17 L 15,17 L 15,8 M 7,17 L 7,12 L 10,12 L 10,17 M 11.5,12 L 13.5,12"/>
+    <PathGeometry x:Key="IconLanguage" Figures="M 4,5 L 12,5 M 8,3 L 8,5 M 6,17 L 10,9 L 14,17 M 7.2,14 L 12.8,14 M 5,8 C 5.8,10 7.2,11.5 10,12 M 11,5 C 10.6,8 8.8,10.5 5,12"/>
+
     <Style x:Key="DialogTitleStyle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="18"/>
         <Setter Property="FontWeight" Value="SemiBold"/>
         <Setter Property="Foreground" Value="#5E3F86"/>
         <Setter Property="Margin" Value="{StaticResource DialogTitleMargin}"/>
+    </Style>
+
+    <Style x:Key="PageTitleTextStyle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="22"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+
+    <Style x:Key="MutedTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <Style x:Key="FormLabelTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
     </Style>
 
     <!-- Stili riusabili per righe/celle selezionabili (evitare duplicazioni nelle viste) -->
@@ -92,9 +142,38 @@
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="border" Property="Opacity" Value="0.5"/>
+                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
             </Trigger>
         </ControlTemplate.Triggers>
     </ControlTemplate>
+
+    <Style x:Key="IconButtonContent" TargetType="{x:Type StackPanel}">
+        <Setter Property="Orientation" Value="Horizontal"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="ButtonIconPathStyle" TargetType="{x:Type Path}">
+        <Setter Property="Width" Value="16"/>
+        <Setter Property="Height" Value="16"/>
+        <Setter Property="Stretch" Value="Uniform"/>
+        <Setter Property="Stroke" Value="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type Button}}}"/>
+        <Setter Property="StrokeThickness" Value="1.8"/>
+        <Setter Property="StrokeStartLineCap" Value="Round"/>
+        <Setter Property="StrokeEndLineCap" Value="Round"/>
+        <Setter Property="StrokeLineJoin" Value="Round"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+    </Style>
+
+    <Style x:Key="MenuIconPathStyle" TargetType="{x:Type Path}" BasedOn="{StaticResource ButtonIconPathStyle}">
+        <Setter Property="Width" Value="18"/>
+        <Setter Property="Height" Value="18"/>
+    </Style>
+
+    <Style x:Key="SettingsCardIconPathStyle" TargetType="{x:Type Path}" BasedOn="{StaticResource ButtonIconPathStyle}">
+        <Setter Property="Width" Value="26"/>
+        <Setter Property="Height" Value="26"/>
+        <Setter Property="Margin" Value="0,0,0,10"/>
+    </Style>
 
     <!-- Primary action button (Paga, Conferma, Recupera) -->
     <Style x:Key="PrimaryButtonStyle" TargetType="Button">
@@ -156,6 +235,12 @@
         <Setter Property="MinWidth" Value="90"/>
     </Style>
 
+    <Style x:Key="MenuIconButtonStyle" TargetType="Button" BasedOn="{StaticResource OutlineButtonStyle}">
+        <Setter Property="MinHeight" Value="36"/>
+        <Setter Property="Padding" Value="12,8"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+    </Style>
+
     <!-- Small icon/quantity button for cart (+ -) -->
     <Style x:Key="SmallRoundButtonStyle" TargetType="Button">
         <Setter Property="Template" Value="{StaticResource RoundedButtonTemplate}"/>
@@ -183,7 +268,7 @@
         </Style.Triggers>
     </Style>
 
-    <!-- Pulsanti menu laterale: viola chiaro, hover. Selected (voce attiva) gestito in code-behind per compatibilità Win7. -->
+    <!-- Pulsanti menu laterale: selected centralizzato in MainWindow per compatibilità Win7. -->
     <Style x:Key="SidebarNavButtonStyle" TargetType="Button" BasedOn="{StaticResource MenuButtonStyle}">
         <Setter Property="Background" Value="{StaticResource SidebarCardBrush}"/>
         <Setter Property="BorderBrush" Value="{StaticResource SidebarBorderBrush}"/>
@@ -243,18 +328,46 @@
     <ControlTemplate x:Key="RoundedTextBoxTemplate" TargetType="TextBox">
         <Border x:Name="border" Background="{TemplateBinding Background}"
                 BorderBrush="{TemplateBinding BorderBrush}"
-                BorderThickness="1"
+                BorderThickness="{TemplateBinding BorderThickness}"
                 CornerRadius="8"
-                Padding="{TemplateBinding Padding}">
-            <ScrollViewer x:Name="PART_ContentHost"/>
+                Padding="0">
+            <ScrollViewer x:Name="PART_ContentHost"
+                          Margin="{TemplateBinding Padding}"
+                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}"/>
         </Border>
+        <ControlTemplate.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter TargetName="border" Property="Opacity" Value="0.70"/>
+            </Trigger>
+        </ControlTemplate.Triggers>
     </ControlTemplate>
 
     <Style x:Key="ModernTextBoxStyle" TargetType="TextBox">
-        <Setter Property="Template" Value="{StaticResource RoundedTextBoxTemplate}"/>
+        <!-- Keep the native TextBox template: it renders typed text reliably on .NET 4.8/Windows 7. -->
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="TextElement.Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="CaretBrush" Value="{StaticResource PrimaryBrush}"/>
+        <Setter Property="SelectionBrush" Value="{StaticResource PrimaryLighterBrush}"/>
+        <Setter Property="SelectionOpacity" Value="0.35"/>
         <Setter Property="Background" Value="White"/>
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
-        <Setter Property="Padding" Value="10,8"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="12,8"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="MinHeight" Value="36"/>
+        <Style.Triggers>
+            <Trigger Property="IsReadOnly" Value="True">
+                <Setter Property="Background" Value="{StaticResource ReadOnlySurfaceBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                <Setter Property="TextElement.Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                <Setter Property="CaretBrush" Value="Transparent"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Opacity" Value="0.70"/>
+                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+                <Setter Property="TextElement.Foreground" Value="{StaticResource TextSecondaryBrush}"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style x:Key="ModernComboBoxStyle" TargetType="ComboBox">
@@ -273,6 +386,126 @@
         <Setter Property="BorderThickness" Value="1"/>
         <Setter Property="CornerRadius" Value="8"/>
         <Setter Property="Padding" Value="14"/>
+    </Style>
+
+    <Style x:Key="PageHeaderCardStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource CardBgBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="16"/>
+    </Style>
+
+    <Style x:Key="FilterPanelStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="14"/>
+    </Style>
+
+    <Style x:Key="FilterChipStyle" TargetType="Border">
+        <Setter Property="Background" Value="#EFE7F5"/>
+        <Setter Property="BorderBrush" Value="{StaticResource PrimaryLighterBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="10,5"/>
+    </Style>
+
+    <Style x:Key="ReadOnlyInfoValueBorderStyle" TargetType="{x:Type Border}">
+        <Setter Property="Background" Value="{StaticResource ReadOnlySurfaceBrush}"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="12,10"/>
+        <Setter Property="MinHeight" Value="42"/>
+    </Style>
+
+    <Style x:Key="ReadOnlyInfoValueTextStyle" TargetType="{x:Type TextBlock}">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
+    </Style>
+
+    <Style x:Key="SettingsCardButtonStyle" TargetType="Button" BasedOn="{StaticResource OutlineButtonStyle}">
+        <Setter Property="MinHeight" Value="128"/>
+        <Setter Property="Margin" Value="6"/>
+        <Setter Property="Padding" Value="14"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+        <Setter Property="Background" Value="White"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+    </Style>
+
+    <Style x:Key="ModernDataGridStyle" TargetType="{x:Type DataGrid}">
+        <Setter Property="Background" Value="White"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+        <Setter Property="HorizontalGridLinesBrush" Value="#ECE4F1"/>
+        <Setter Property="HeadersVisibility" Value="Column"/>
+        <Setter Property="RowHeight" Value="34"/>
+        <Setter Property="RowBackground" Value="White"/>
+        <Setter Property="AlternatingRowBackground" Value="#F7F3FA"/>
+        <Setter Property="EnableRowVirtualization" Value="True"/>
+        <Setter Property="EnableColumnVirtualization" Value="True"/>
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True"/>
+        <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
+        <Setter Property="CanUserAddRows" Value="False"/>
+        <Setter Property="CanUserDeleteRows" Value="False"/>
+        <Setter Property="IsReadOnly" Value="True"/>
+        <Setter Property="ColumnHeaderStyle">
+            <Setter.Value>
+                <Style TargetType="DataGridColumnHeader">
+                    <Setter Property="Background" Value="{StaticResource TableHeaderBrush}"/>
+                    <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+                    <Setter Property="Padding" Value="8,9"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                    <Setter Property="FontSize" Value="12"/>
+                </Style>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="RowStyle">
+            <Setter.Value>
+                <Style TargetType="DataGridRow">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
+                            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                            <Setter Property="BorderBrush" Value="{StaticResource SelectionBorderBrush}"/>
+                            <Setter Property="BorderThickness" Value="3,0,0,0"/>
+                        </Trigger>
+                        <MultiTrigger>
+                            <MultiTrigger.Conditions>
+                                <Condition Property="IsMouseOver" Value="True"/>
+                                <Condition Property="IsSelected" Value="False"/>
+                            </MultiTrigger.Conditions>
+                            <Setter Property="Background" Value="{StaticResource SelectionHoverBrush}"/>
+                        </MultiTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="CellStyle">
+            <Setter.Value>
+                <Style TargetType="DataGridCell">
+                    <Setter Property="Padding" Value="8,0"/>
+                    <Setter Property="VerticalAlignment" Value="Center"/>
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+                    <Setter Property="BorderThickness" Value="0"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
+                            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- Switch ON/OFF per opzioni stampa (touch-friendly, coerente con tema viola) -->

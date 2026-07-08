@@ -44,11 +44,26 @@
             <TextBox x:Name="PathBox" Grid.Column="0" Margin="0,0,8,0" MinHeight="32"
                      Style="{StaticResource ModernTextBoxStyle}"
                      IsReadOnly="True"/>
-            <Button Grid.Column="1" Content="{loc:Loc common.browse}" MinWidth="90" Height="32" Click="Browse_Click"/>
+            <Button Grid.Column="1" MinWidth="90" Height="32" Click="Browse_Click" Style="{StaticResource OutlineButtonStyle}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.browse}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </Grid>
         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-            <Button Content="{loc:Loc common.cancel}" MinWidth="100" Height="42" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click" Style="{StaticResource DialogCancelButtonStyle}"/>
-            <Button Content="{loc:Loc common.export}" MinWidth="100" Height="42" IsDefault="True" Click="Export_Click" Style="{StaticResource DialogActionButtonStyle}"/>
+            <Button MinWidth="100" Height="42" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click" Style="{StaticResource DialogCancelButtonStyle}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button MinWidth="100" Height="42" IsDefault="True" Click="Export_Click" Style="{StaticResource DialogActionButtonStyle}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconExport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.export}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
         </Border>
