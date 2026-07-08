@@ -28,7 +28,14 @@
                     </Button.Content>
                 </Button>
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <TextBlock Foreground="White" FontSize="18" FontWeight="SemiBold" Text="Win7POS"/>
+                    <TextBlock Foreground="White"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               HorizontalAlignment="Left"
+                               TextAlignment="Left"
+                               Text="{Binding ShellTitle, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
+                               TextTrimming="CharacterEllipsis"
+                               MaxWidth="520"/>
                     <Border x:Name="SyncStatusPill" Margin="0,4,16,0" Padding="8,3" CornerRadius="7" Background="#26FFFFFF" BorderBrush="#66FFFFFF" BorderThickness="1" HorizontalAlignment="Left">
                         <TextBlock x:Name="SyncStatusText"
                                    Foreground="White"

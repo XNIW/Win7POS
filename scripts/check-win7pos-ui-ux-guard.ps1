@@ -43,9 +43,15 @@ $appXaml = Read-Text "src/Win7POS.Wpf/App.xaml"
 $materialSymbols = Read-Text "src/Win7POS.Wpf/Icons/MaterialSymbols.xaml"
 $productsView = Read-Text "src/Win7POS.Wpf/Products/ProductsView.xaml"
 $productsViewModel = Read-Text "src/Win7POS.Wpf/Products/ProductsViewModel.cs"
+$productsWorkflow = Read-Text "src/Win7POS.Wpf/Products/ProductsWorkflowService.cs"
+$productRepository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml"
+$mainWindowCode = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $settingsHub = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml"
+$languageDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/LanguageSettingsDialog.xaml"
+$operatorSwitch = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xaml"
 $posView = Read-Text "src/Win7POS.Wpf/Pos/PosView.xaml"
+$posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
 
 Test-ContainsAll "ModernTextBoxStyle readable text/caret/selection" $modernStyles @(
     'x:Key="ModernTextBoxStyle"',
@@ -68,6 +74,7 @@ Test-ContainsAll "Material Symbols Rounded vector icon resources" $materialSymbo
     'https://github.com/google/material-design-icons',
     'x:Key="IconSettings"',
     'x:Key="IconSearch"',
+    'x:Key="IconExpandMore"',
     'x:Key="IconFilterOff"',
     'x:Key="IconSuspend"',
     'x:Key="IconRecover"',
@@ -131,6 +138,15 @@ Test-ContainsAll "disabled button contrast resources" $modernStyles @(
     'x:Key="FooterSecondaryButtonStyle"'
 )
 
+Test-ContainsAll "modern app-wide ComboBox template" $modernStyles @(
+    'x:Key="ModernComboBoxStyle"',
+    'x:Key="ModernComboBoxItemStyle"',
+    'x:Key="ModernComboBoxEditableTextBoxStyle"',
+    'PART_EditableTextBox',
+    'IconExpandMore',
+    '<Style TargetType="{x:Type ComboBox}" BasedOn="{StaticResource ModernComboBoxStyle}"/>'
+)
+
 $buttonTemplateMatch = [regex]::Match(
     $modernStyles,
     '<ControlTemplate x:Key="RoundedButtonTemplate"[\s\S]*?</ControlTemplate>',
@@ -159,11 +175,28 @@ Test-ContainsAll "Settings hub cards available" $settingsHub @(
     'shell.aboutSupport'
 )
 
-Test-ContainsAll "Settings hub language panel is not clipped in card grid" $settingsHub @(
-    '<ScrollViewer Grid.Row="1"',
-    'x:Name="SettingsLanguagePanel"',
-    'Width="220"',
-    'Height="640"'
+Test-ContainsAll "Settings hub language is a normal card" $settingsHub @(
+    'Height="560"',
+    'Click="OnLanguageClick"',
+    'settings.cardLanguageHelp'
+)
+
+if ($settingsHub.IndexOf('<ScrollViewer Grid.Row="1"', [StringComparison]::Ordinal) -ge 0 -or
+    $settingsHub.IndexOf('SettingsLanguagePanel', [StringComparison]::Ordinal) -ge 0 -or
+    $settingsHub.IndexOf('LanguageComboBox', [StringComparison]::Ordinal) -ge 0) {
+    Fail "Settings hub still contains clipped inline language selector or body ScrollViewer"
+}
+else {
+    Pass "Settings hub has no clipped inline language selector"
+}
+
+Test-ContainsAll "Language settings dialog follows dialog resource pattern" $languageDialog @(
+    'LanguageSettingsDialog',
+    'WindowStartupLocation="CenterOwner"',
+    'x:Name="LanguageComboBox"',
+    'DialogActionButtonStyle',
+    'DialogCancelButtonStyle',
+    'DialogFooterMargin'
 )
 
 if ($settingsHub.IndexOf('<UniformGrid Grid.Row="1" Columns="2" Rows="3">', [StringComparison]::Ordinal) -ge 0) {
@@ -190,6 +223,27 @@ Test-ContainsAll "Products searchable filters" $productsView @(
     'StaysOpenOnEdit="True"'
 )
 
+Test-ContainsAll "Products catalog stats are surfaced in header" $productsView @(
+    'CatalogStatsChips',
+    'CatalogStatChipStyle',
+    'ResultSummary'
+)
+
+Test-ContainsAll "Products catalog stats are queried globally" $productRepository @(
+    'ProductCatalogStats',
+    'GetCatalogStatsAsync',
+    'TotalProducts',
+    'TotalCategories',
+    'TotalSuppliers',
+    'TotalStockUnits'
+)
+
+Test-ContainsAll "Products stats refresh with catalog changes" ($productsViewModel + $productsWorkflow) @(
+    'RefreshCatalogStatsAsync',
+    'CatalogStatsChips',
+    'GetCatalogStatsAsync'
+)
+
 Test-ContainsAll "Products filter state kept client-side until apply" $productsViewModel @(
     'ApplyFiltersCommand',
     'ResolveTypedFilterSelections',
@@ -197,6 +251,46 @@ Test-ContainsAll "Products filter state kept client-side until apply" $productsV
     'RefreshFilteredCategories',
     'ClearFiltersCommand'
 )
+
+Test-ContainsAll "Operator switch uses manual staff code" $operatorSwitch @(
+    'x:Name="StaffCodeBox"',
+    'operator.switch.staffCode',
+    'operator.login.pin',
+    'operator.switch.posAccess'
+)
+
+if ($operatorSwitch.IndexOf('OperatorCombo', [StringComparison]::Ordinal) -ge 0) {
+    Fail "Operator switch still forces an operator ComboBox"
+}
+else {
+    Pass "Operator switch no longer requires selecting from a list"
+}
+
+Test-ContainsAll "Shell title is bound to shop title property" ($mainWindow + $mainWindowCode) @(
+    'ShellTitle',
+    'ShopOfficialSnapshotRepository',
+    'GetLastPosLoginShopCodeAsync'
+)
+
+if ($mainWindow.IndexOf('Text="Win7POS"', [StringComparison]::Ordinal) -ge 0) {
+    Fail "MainWindow header still hardcodes Text=`"Win7POS`""
+}
+else {
+    Pass "MainWindow header is not hardcoded to Win7POS"
+}
+
+Test-ContainsAll "POS status is shown as toast, not footer line" ($posView + $posViewModel) @(
+    'IsStatusToastVisible',
+    'StatusToastMessage',
+    'UpdateStatusToast'
+)
+
+if ($posView.IndexOf('Text="{Binding StatusMessage}"', [StringComparison]::Ordinal) -ge 0) {
+    Fail "POS view still binds StatusMessage as a persistent footer line"
+}
+else {
+    Pass "POS initialized/status message is not permanently bound in the footer"
+}
 
 $sidebarKeys = @(
     'OfficialShopDataMenuButton',

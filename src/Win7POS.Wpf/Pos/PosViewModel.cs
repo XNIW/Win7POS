@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
 using System.Globalization;
+using System.Windows.Threading;
 using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Security;
@@ -38,6 +39,9 @@ namespace Win7POS.Wpf.Pos
         private long _total;
         private bool _isBusy;
         private string _statusMessage = string.Empty;
+        private string _statusToastMessage = string.Empty;
+        private bool _isStatusToastVisible;
+        private readonly DispatcherTimer _statusToastTimer;
         private string _receiptPreview = string.Empty;
         private bool _useReceipt42 = true;
         private bool _isLoadingSettings;
@@ -113,7 +117,24 @@ namespace Win7POS.Wpf.Pos
         public string StatusMessage
         {
             get => _statusMessage;
-            set { _statusMessage = value; OnPropertyChanged(); }
+            set
+            {
+                _statusMessage = value ?? string.Empty;
+                OnPropertyChanged();
+                UpdateStatusToast(_statusMessage);
+            }
+        }
+
+        public string StatusToastMessage
+        {
+            get => _statusToastMessage;
+            private set { _statusToastMessage = value ?? string.Empty; OnPropertyChanged(); }
+        }
+
+        public bool IsStatusToastVisible
+        {
+            get => _isStatusToastVisible;
+            private set { _isStatusToastVisible = value; OnPropertyChanged(); }
         }
 
         public string ReceiptPreview
@@ -206,6 +227,12 @@ namespace Win7POS.Wpf.Pos
             _operatorSession = operatorSession;
             _overrideAuthService = overrideAuthService;
             _userRepo = userRepo;
+            _statusToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
+            _statusToastTimer.Tick += (_, __) =>
+            {
+                _statusToastTimer.Stop();
+                IsStatusToastVisible = false;
+            };
 
             AddBarcodeCommand = new AsyncRelayCommand(AddBarcodeAsync, _ => !IsBusy, _logger);
             PayCommand = new AsyncRelayCommand(PayAsync, _ => !IsBusy, _logger);
@@ -319,7 +346,7 @@ namespace Win7POS.Wpf.Pos
                 var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
                 ApplySnapshot(snapshot);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
-                StatusMessage = PosLocalization.Current.Text("pos.status.initialized");
+                StatusMessage = string.Empty;
             }
             catch (Exception ex)
             {
@@ -1778,6 +1805,55 @@ namespace Win7POS.Wpf.Pos
             }
 
             return false;
+        }
+
+        private void UpdateStatusToast(string message)
+        {
+            if (IsQuietStatus(message))
+            {
+                _statusToastTimer.Stop();
+                StatusToastMessage = string.Empty;
+                IsStatusToastVisible = false;
+                return;
+            }
+
+            StatusToastMessage = message;
+            IsStatusToastVisible = true;
+
+            _statusToastTimer.Stop();
+            if (!IsErrorLikeStatus(message))
+            {
+                _statusToastTimer.Start();
+            }
+        }
+
+        private static bool IsQuietStatus(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return true;
+            }
+
+            var trimmed = message.Trim();
+            return string.Equals(trimmed, PosLocalization.Current.Text("pos.status.ready"), StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(trimmed, PosLocalization.Current.Text("pos.status.initialized"), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsErrorLikeStatus(string message)
+        {
+            var value = (message ?? string.Empty).Trim();
+            if (value.Length == 0)
+            {
+                return false;
+            }
+
+            return value.IndexOf("error", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("denied", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("invalid", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("errore", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("fall", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                value.IndexOf("no se pudo", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public void ApplyDiscountSnapshot(PosWorkflowSnapshot snapshot)

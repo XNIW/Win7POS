@@ -1,15 +1,11 @@
 using System;
 using System.Windows;
-using System.Windows.Controls;
 using Win7POS.Wpf.Chrome;
-using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public partial class SettingsHubDialog : DialogShellWindow
     {
-        private bool _languageUpdating;
-
         public event EventHandler ShopDataRequested;
         public event EventHandler PrinterSettingsRequested;
         public event EventHandler DatabaseMaintenanceRequested;
@@ -20,17 +16,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public SettingsHubDialog()
         {
             InitializeComponent();
-            InitializeLanguageSelector();
-        }
-
-        private void InitializeLanguageSelector()
-        {
-            _languageUpdating = true;
-            LanguageComboBox.ItemsSource = PosLocalization.SupportedLanguages;
-            LanguageComboBox.DisplayMemberPath = "DisplayName";
-            LanguageComboBox.SelectedValuePath = "Code";
-            LanguageComboBox.SelectedValue = PosLocalization.Current.CurrentLanguage;
-            _languageUpdating = false;
         }
 
         private void CloseAndRaise(EventHandler handler)
@@ -64,12 +49,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             CloseAndRaise(AboutRequested);
         }
 
-        private void OnLanguageSelectionChanged(object sender, SelectionChangedEventArgs e)
+        private void OnLanguageClick(object sender, RoutedEventArgs e)
         {
-            if (_languageUpdating)
-                return;
-
-            var selected = LanguageComboBox.SelectedValue as string;
+            var selected = LanguageSettingsDialog.ShowDialog(this);
             if (!string.IsNullOrWhiteSpace(selected))
                 LanguageChangedRequested?.Invoke(this, selected);
         }

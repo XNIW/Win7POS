@@ -14,7 +14,7 @@
         MinWidth="460"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
-    <Grid Background="#F1EDF7">
+    <Grid Background="#F1EDF7" FocusManager.FocusedElement="{Binding ElementName=StaffCodeBox}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -40,8 +40,13 @@
 
                 <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Margin="0,0,0,14" Text="{loc:Loc operator.switch.helper}" TextWrapping="Wrap" Foreground="#8873A4"/>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc operator.switch.operator}" Foreground="#666"/>
-                <ComboBox x:Name="OperatorCombo" Grid.Row="1" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" DisplayMemberPath="DisplayText" IsEditable="False"/>
+                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc operator.switch.staffCode}" Foreground="#666"/>
+                <TextBox x:Name="StaffCodeBox"
+                         Grid.Row="1"
+                         Grid.Column="1"
+                         Margin="0,0,0,10"
+                         MinHeight="34"
+                         Style="{StaticResource ModernTextBoxStyle}"/>
 
                 <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc operator.login.pin}" Foreground="#666"/>
                 <PasswordBox x:Name="PinBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
@@ -50,7 +55,10 @@
                     <TextBlock x:Name="StatusText" Foreground="#8A2E2E" TextWrapping="Wrap"/>
                 </Border>
 
-                <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Margin="0,0,0,12" Text="{loc:Loc operator.switch.posAccessHint}" TextWrapping="Wrap" Foreground="#6D617C"/>
+                <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Margin="0,0,0,12">
+                    <TextBlock x:Name="CurrentOperatorText" TextWrapping="Wrap" Foreground="#6D617C"/>
+                    <TextBlock Text="{loc:Loc operator.switch.posAccessHint}" TextWrapping="Wrap" Foreground="#6D617C" Margin="0,6,0,0"/>
+                </StackPanel>
 
                 <StackPanel Grid.Row="5" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
                     <Button x:Name="PosAccessButton" Margin="0,0,8,0" Click="OnPosAccessClick" Style="{StaticResource DialogCancelButtonStyle}">

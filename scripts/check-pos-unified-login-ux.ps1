@@ -150,6 +150,13 @@ Assert-Contains "dialog logs in session before credential clear path" $dialogCod
 $operatorSwitchXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xaml"
 Assert-Contains "operator switch dialog exists" $operatorSwitchXaml 'x:Class="Win7POS.Wpf.Pos.Dialogs.OperatorSwitchDialog"'
 Assert-Contains "operator switch dialog uses safe title" $operatorSwitchXaml 'operator.switch.title'
+Assert-Contains "operator switch uses manual staff code" $operatorSwitchXaml 'x:Name="StaffCodeBox"'
+if ($operatorSwitchXaml.Contains('OperatorCombo')) {
+    Fail "operator switch must not force selecting from OperatorCombo"
+}
+else {
+    Pass "operator switch does not force operator list selection"
+}
 
 Assert-Contains "Change/Lock uses operator switch" $main "new OperatorSwitchDialog"
 Assert-Contains "permission denied switch prompt wired" $main "PermissionDeniedDialog.ShowSwitchPrompt"

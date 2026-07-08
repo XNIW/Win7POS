@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
@@ -49,6 +50,7 @@ namespace Win7POS.Wpf.Products
         public ObservableCollection<SupplierListItem> Suppliers { get; } = new ObservableCollection<SupplierListItem>();
         public ObservableCollection<CategoryListItem> FilteredCategories { get; } = new ObservableCollection<CategoryListItem>();
         public ObservableCollection<SupplierListItem> FilteredSuppliers { get; } = new ObservableCollection<SupplierListItem>();
+        public ObservableCollection<ProductCatalogStatChip> CatalogStatsChips { get; } = new ObservableCollection<ProductCatalogStatChip>();
 
         public int PageSizeValue => PageSize;
         public int PageIndex { get => _pageIndex; set { var v = value < 1 ? 1 : value; if (_pageIndex == v) return; _pageIndex = v; OnPropertyChanged(); RaiseCanExecuteChanged(); } }
@@ -320,6 +322,7 @@ namespace Win7POS.Wpf.Products
             {
                 await LoadCategoriesAsync().ConfigureAwait(true);
                 await LoadSuppliersAsync().ConfigureAwait(true);
+                await RefreshCatalogStatsAsync().ConfigureAwait(true);
                 await ApplyFiltersAsync().ConfigureAwait(true);
             }
             finally
@@ -357,7 +360,50 @@ namespace Win7POS.Wpf.Products
         {
             await LoadCategoriesAsync().ConfigureAwait(true);
             await LoadSuppliersAsync().ConfigureAwait(true);
+            await RefreshCatalogStatsAsync().ConfigureAwait(true);
             await LoadPageAsync().ConfigureAwait(true);
+        }
+
+        private async Task RefreshCatalogStatsAsync()
+        {
+            try
+            {
+                var stats = await _service.GetCatalogStatsAsync().ConfigureAwait(true);
+                SetCatalogStats(stats);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Catalog stats refresh failed.", ex);
+                SetCatalogStats(null);
+            }
+        }
+
+        private void SetCatalogStats(ProductCatalogStats stats)
+        {
+            CatalogStatsChips.Clear();
+            if (stats == null)
+            {
+                AddStatChip("products.stats.products", null);
+                AddStatChip("products.stats.categories", null);
+                AddStatChip("products.stats.suppliers", null);
+                return;
+            }
+
+            AddStatChip("products.stats.products", stats.TotalProducts);
+            AddStatChip("products.stats.categories", stats.TotalCategories);
+            AddStatChip("products.stats.suppliers", stats.TotalSuppliers);
+            AddStatChip("products.stats.stockUnits", stats.TotalStockUnits);
+        }
+
+        private void AddStatChip(string labelKey, long? value)
+        {
+            CatalogStatsChips.Add(new ProductCatalogStatChip
+            {
+                Label = PosLocalization.T(labelKey),
+                Value = value.HasValue
+                    ? value.Value.ToString("N0", CultureInfo.CurrentCulture)
+                    : PosLocalization.T("common.unavailableShort")
+            });
         }
 
         private async Task LoadSuppliersAsync()
@@ -868,6 +914,12 @@ namespace Win7POS.Wpf.Products
         public event PropertyChangedEventHandler PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+        public sealed class ProductCatalogStatChip
+        {
+            public string Label { get; set; }
+            public string Value { get; set; }
+        }
 
         private sealed class AsyncRelayCommand : ICommand
         {

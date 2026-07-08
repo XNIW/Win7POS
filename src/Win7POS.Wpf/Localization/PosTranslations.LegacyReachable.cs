@@ -393,6 +393,10 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("products.filtersSummary", "Filters: {0}", "Filtros: {0}", "Filtri: {0}", "筛选：{0}");
             yield return new TranslationEntry("products.allCategories", "(All)", "(Todas)", "(Tutte)", "（全部）");
             yield return new TranslationEntry("products.allSuppliers", "(All)", "(Todos)", "(Tutti)", "（全部）");
+            yield return new TranslationEntry("products.stats.products", "Products", "Productos", "Prodotti", "商品");
+            yield return new TranslationEntry("products.stats.categories", "Categories", "Categorias", "Categorie", "分类");
+            yield return new TranslationEntry("products.stats.suppliers", "Suppliers", "Proveedores", "Fornitori", "供应商");
+            yield return new TranslationEntry("products.stats.stockUnits", "Stock units", "Unidades stock", "Unita stock", "库存单位");
             yield return new TranslationEntry("products.permissionDenied", "Permission denied: {0}.", "Permiso denegado: {0}.", "Permesso negato: {0}.", "权限被拒绝：{0}。");
             yield return new TranslationEntry("products.operationEditCatalog", "edit catalog", "modificar catalogo", "modifica catalogo", "编辑目录");
             yield return new TranslationEntry("products.operationImportCatalog", "import catalog", "importar catalogo", "import catalogo", "导入目录");

@@ -348,6 +348,7 @@ namespace Win7POS.Wpf.Localization
             new TranslationEntry("common.sale", "Sale:", "Venta:", "Vendita:", "销售："),
             new TranslationEntry("common.time", "Date/time:", "Fecha/hora:", "Data/Ora:", "日期/时间："),
             new TranslationEntry("common.total", "Total", "Total", "Totale", "总计"),
+            new TranslationEntry("common.unavailableShort", "-", "-", "-", "-"),
             new TranslationEntry("common.userPermissionDenied", "Permission denied", "Permiso denegado", "Permesso negato", "权限被拒绝"),
             new TranslationEntry("permission.denied.diagnostic", "Permission denied. Current role: {0}. Missing permission: {1}.", "Permiso denegado. Rol actual: {0}. Permiso faltante: {1}.", "Permesso negato. Ruolo corrente: {0}. Permesso mancante: {1}.", "权限被拒绝。当前角色：{0}。缺少权限：{1}。"),
 
@@ -419,6 +420,7 @@ namespace Win7POS.Wpf.Localization
             new TranslationEntry("sync.versionUnavailable", "version unavailable", "version no disponible", "versione non disponibile", "版本不可用"),
 
             new TranslationEntry("settings.language", "Language", "Idioma", "Lingua", "语言"),
+            new TranslationEntry("settings.languageDialogHelp", "Choose the app language for this POS.", "Elige el idioma de la app para este POS.", "Scegli la lingua dell'app per questo POS.", "选择此 POS 的应用语言。"),
             new TranslationEntry("settings.languageSaved", "Language saved.", "Idioma guardado.", "Lingua salvata.", "语言已保存。"),
             new TranslationEntry("settings.languageSaveError", "Language could not be saved.", "No se pudo guardar el idioma.", "Impossibile salvare la lingua.", "无法保存语言。"),
             new TranslationEntry("settings.openLogError", "Error opening settings. Check the application log.", "Error abriendo configuracion. Revisa el log de la aplicacion.", "Errore apertura impostazioni. Controlla il log applicativo.", "打开设置错误。请检查应用日志。"),
@@ -496,8 +498,15 @@ namespace Win7POS.Wpf.Localization
             new TranslationEntry("operator.login.pinChangeRequired", "PIN change is required before access.", "Debes cambiar el PIN antes de acceder.", "E obbligatorio cambiare il PIN per accedere.", "必须先更改 PIN 才能访问。"),
             new TranslationEntry("operator.login.onlineLinked", "Device connected. The online session will be verified at startup.", "Dispositivo conectado. La sesion online se verificara al iniciar.", "Dispositivo collegato. La sessione online verra verificata all'avvio.", "设备已连接。在线会话将在启动时验证。"),
             new TranslationEntry("operator.switch.title", "Switch operator", "Cambiar operador", "Cambia operatore", "切换操作员"),
-            new TranslationEntry("operator.switch.helper", "Select a local operator and enter the PIN/password for this device.", "Selecciona un operador local e ingresa el PIN/contrasena de este dispositivo.", "Seleziona un operatore locale e inserisci PIN/password per questo dispositivo.", "选择本地操作员并输入此设备的 PIN/密码。"),
+            new TranslationEntry("operator.switch.helper", "Enter staff code and PIN for this device.", "Ingresa codigo de staff y PIN para este dispositivo.", "Inserisci codice staff e PIN per questo dispositivo.", "输入此设备的员工代码和 PIN。"),
             new TranslationEntry("operator.switch.operator", "Operator:", "Operador:", "Operatore:", "操作员："),
+            new TranslationEntry("operator.switch.staffCode", "Staff code:", "Codigo staff:", "Codice staff:", "员工代码："),
+            new TranslationEntry("operator.switch.staffCodeRequired", "Enter a staff code.", "Ingresa un codigo staff.", "Inserisci un codice staff.", "请输入员工代码。"),
+            new TranslationEntry("operator.switch.pinRequired", "Enter the PIN/password.", "Ingresa el PIN/contrasena.", "Inserisci PIN/password.", "请输入 PIN/密码。"),
+            new TranslationEntry("operator.switch.currentOperator", "Current operator: {0} ({1})", "Operador actual: {0} ({1})", "Operatore corrente: {0} ({1})", "当前操作员：{0}（{1}）"),
+            new TranslationEntry("operator.switch.noCurrentOperator", "No operator is currently signed in.", "No hay operador conectado.", "Nessun operatore connesso.", "当前没有操作员登录。"),
+            new TranslationEntry("operator.switch.permissionHint", "Switch to an operator with {0}.", "Cambia a un operador con {0}.", "Passa a un operatore con {0}.", "切换到具备 {0} 的操作员。"),
+            new TranslationEntry("operator.switch.notAvailableOffline", "This operator is not available on this device. Connect online with POS access first, or ask an admin/shop owner to sign in once.", "Este operador no esta disponible en este dispositivo. Conecta online con Acceso POS primero, o pide a un admin/dueno que acceda una vez.", "Questo operatore non e disponibile su questo dispositivo. Collegati online con Accesso POS prima, oppure chiedi a un admin/shop owner di accedere una volta.", "此操作员在本设备不可用。请先通过 POS 访问联网，或请管理员/店主登录一次。"),
             new TranslationEntry("operator.switch.switch", "Switch", "Cambiar", "Cambia", "切换"),
             new TranslationEntry("operator.switch.switchOperator", "Switch operator", "Cambiar operador", "Cambia operatore", "切换操作员"),
             new TranslationEntry("operator.switch.posAccess", "POS access", "Acceso POS", "Accesso POS", "POS 访问"),
@@ -647,5 +656,10 @@ namespace Win7POS.Wpf.Localization
 
         public string Code { get; private set; }
         public string DisplayName { get; private set; }
+
+        public override string ToString()
+        {
+            return DisplayName ?? Code ?? string.Empty;
+        }
     }
 }

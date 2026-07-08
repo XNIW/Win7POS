@@ -45,6 +45,8 @@ namespace Win7POS.Wpf
         private string _startupPhase = "constructed";
         private string _productsDataContextOperatorUsername;
         private PosView PosViewControl;
+        public static readonly DependencyProperty ShellTitleProperty = DependencyProperty.Register(
+            nameof(ShellTitle), typeof(string), typeof(MainWindow), new PropertyMetadata("Win7POS"));
         public static readonly DependencyProperty CurrentMenuKeyProperty = DependencyProperty.Register(
             nameof(CurrentMenuKey), typeof(string), typeof(MainWindow), new PropertyMetadata("Pos", OnCurrentMenuKeyChanged));
 
@@ -59,6 +61,12 @@ namespace Win7POS.Wpf
         {
             get => (string)GetValue(CurrentMenuKeyProperty);
             set => SetValue(CurrentMenuKeyProperty, value);
+        }
+
+        public string ShellTitle
+        {
+            get => (string)GetValue(ShellTitleProperty);
+            set => SetValue(ShellTitleProperty, string.IsNullOrWhiteSpace(value) ? "Win7POS" : value.Trim());
         }
 
         public MainWindow()
@@ -171,6 +179,7 @@ namespace Win7POS.Wpf
 
                 var factory = new SqliteConnectionFactory(options);
                 await LoadLanguagePreferenceAsync(factory).ConfigureAwait(true);
+                await RefreshShellTitleAsync(factory).ConfigureAwait(true);
                 if (App.IsSafeStart)
                 {
                     ApplySafeStartStatus();
@@ -211,6 +220,7 @@ namespace Win7POS.Wpf
                     return;
                 }
                 _logger.LogInfo("POS access dialog accepted");
+                await RefreshShellTitleAsync(factory).ConfigureAwait(true);
 
                 var session = OperatorSessionHolder.Current;
                 StartOfDaySyncResult startOfDayResult = null;
@@ -648,6 +658,40 @@ namespace Win7POS.Wpf
                 OperatorRoleText.Text = session != null && session.IsLoggedIn ? "(" + session.CurrentRoleName + ")" : "";
         }
 
+        private async Task RefreshShellTitleAsync(SqliteConnectionFactory factory = null)
+        {
+            try
+            {
+                factory = factory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+                var official = await new ShopOfficialSnapshotRepository(factory).GetAsync().ConfigureAwait(true);
+                var fallbackCode = await new SettingsRepository(factory).GetLastPosLoginShopCodeAsync().ConfigureAwait(true);
+                var title = FirstNonEmpty(official?.ShopName, fallbackCode, "Win7POS");
+                ShellTitle = title;
+                Title = string.Equals(title, "Win7POS", StringComparison.OrdinalIgnoreCase)
+                    ? "Win7POS"
+                    : title + " - Win7POS";
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("RefreshShellTitleAsync skipped.", ex);
+                ShellTitle = "Win7POS";
+                Title = "Win7POS";
+            }
+        }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            foreach (var value in values ?? Array.Empty<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value.Trim();
+                }
+            }
+
+            return "Win7POS";
+        }
+
         private void StartNetworkStatusTimer()
         {
             if (_networkStatusTimer != null)
@@ -752,6 +796,8 @@ namespace Win7POS.Wpf
                 {
                     SyncStatusPill.Background = StatusBrush(status.ConnectivityState, status.RequiresAttention);
                 }
+
+                await RefreshShellTitleAsync(factory).ConfigureAwait(true);
             }
             catch (Exception ex)
             {
@@ -831,6 +877,7 @@ namespace Win7POS.Wpf
             var session = OperatorSessionHolder.Current;
             UpdateOperatorDisplay(session);
             RefreshShellAfterOperatorChange(session);
+            _ = RefreshShellTitleAsync(factory);
             return true;
         }
 
