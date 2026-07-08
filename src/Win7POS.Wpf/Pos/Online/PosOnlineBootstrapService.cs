@@ -138,17 +138,17 @@ namespace Win7POS.Wpf.Pos.Online
                     "POS online bootstrap success: category=online.bootstrap clientRequestId=" +
                     SafeAuditValue(result.ClientRequestId) +
                     ", serverRequestId=" + SafeAuditValue(result.ServerRequestId) +
-                    ", shopCode=" + SafeAuditValue(response.Shop.ShopCode) +
-                    ", staffCode=" + SafeAuditValue(response.Staff.StaffCode) +
+                    ", shopCodePresent=" + BoolText(!string.IsNullOrWhiteSpace(response.Shop.ShopCode)) +
+                    ", staffCodePresent=" + BoolText(!string.IsNullOrWhiteSpace(response.Staff.StaffCode)) +
                     ", role_key=" + SafeAuditValue(response.Staff.RoleKey));
 
                 var security = new SecurityRepository(_factory);
                 await security.LogEventAsync(
                     SecurityEventCodes.PosOnlineBootstrap,
-                    "shop_code=" + SafeAuditValue(response.Shop.ShopCode) +
-                    ", staff_code=" + SafeAuditValue(response.Staff.StaffCode) +
+                    "shop_code_present=" + BoolText(!string.IsNullOrWhiteSpace(response.Shop.ShopCode)) +
+                    ", staff_code_present=" + BoolText(!string.IsNullOrWhiteSpace(response.Staff.StaffCode)) +
                     ", role_key=" + SafeAuditValue(response.Staff.RoleKey) +
-                    ", remote_staff_id=" + SafeAuditValue(response.Staff.StaffId))
+                    ", remote_staff_id_present=" + BoolText(!string.IsNullOrWhiteSpace(response.Staff.StaffId)))
                     .ConfigureAwait(false);
 
                 try
@@ -273,6 +273,11 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             return normalized;
+        }
+
+        private static string BoolText(bool value)
+        {
+            return value ? "yes" : "no";
         }
 
         private static bool ValidateFirstLoginResponse(PosFirstLoginResponse response)

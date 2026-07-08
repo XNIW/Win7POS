@@ -141,7 +141,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         null,
                         "prefill_shop_code",
                         "result=success source=" + SafeAuditValue(source) +
-                        " shopCode=" + SafeAuditValue(ShopCodeBox.Text));
+                        " shopCodePresent=yes");
                 }
             }
             catch (Exception ex)
@@ -183,8 +183,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             LogAccessInfo(
                 attemptId,
                 "start",
-                "shopCode=" + SafeAuditValue(shopCode) +
-                " staffCode=" + SafeAuditValue(staffCode) +
+                "shopCodeProvided=" + BoolText(shopCode.Length > 0) +
+                " staffCodeProvided=" + BoolText(staffCode.Length > 0) +
                 " network=" + NetworkText(network) +
                 " wifiUp=" + BoolText(network != null && network.HasWifiAdapterUp) +
                 " adminUrlConfigured=" + BoolText(!string.IsNullOrWhiteSpace(BaseUrlBox.Text)));
@@ -436,7 +436,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             string credential,
             string attemptId)
         {
-            LogAccessInfo(attemptId, "offline_login_start", "shopCode=" + SafeAuditValue(shopCode) + " staffCode=" + SafeAuditValue(staffCode));
+            LogAccessInfo(
+                attemptId,
+                "offline_login_start",
+                "shopCodeProvided=" + BoolText(!string.IsNullOrWhiteSpace(shopCode)) +
+                " staffCodeProvided=" + BoolText(!string.IsNullOrWhiteSpace(staffCode)));
             try
             {
                 LogAccessInfo(attemptId, "offline_mirror_start", "mode=offline");
