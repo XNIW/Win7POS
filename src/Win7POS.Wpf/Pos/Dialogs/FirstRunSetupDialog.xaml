@@ -24,7 +24,7 @@
         </Grid.RowDefinitions>
         <TextBlock Grid.Row="0" Text="{loc:Loc firstRun.title}" Style="{StaticResource DialogTitleStyle}"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
-        <Grid>
+        <Grid FocusManager.FocusedElement="{Binding ElementName=DisplayNameBox}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -36,6 +36,10 @@
             </Grid.RowDefinitions>
 
             <TextBlock Grid.Row="0" Text="{loc:Loc firstRun.createLocalAdmin}" FontSize="13" FontWeight="SemiBold" Foreground="#5E3F86"/>
+
+            <Border Grid.Row="1" Margin="0,8,0,0" Padding="10,8" Background="#FFF7E5" BorderBrush="#E5C879" BorderThickness="1" CornerRadius="8">
+                <TextBlock Text="{loc:Loc firstRun.localOnlyWarning}" TextWrapping="Wrap" Foreground="#6B4A00"/>
+            </Border>
 
             <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
@@ -68,7 +72,7 @@
             <TextBlock x:Name="ErrorText" Grid.Row="4" Foreground="#C62828" TextWrapping="Wrap" Visibility="Collapsed" VerticalAlignment="Top" Margin="0,4,0,0"/>
 
             <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-                <Button MinWidth="120" Margin="0,0,8,0" Click="OnCreateAdminClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True">
+                <Button x:Name="CreateAdminButton" MinWidth="120" Margin="0,0,8,0" Click="OnCreateAdminClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True" AutomationProperties.Name="{loc:Loc firstRun.createLocalAdmin}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc common.confirm}" Margin="8,0,0,0"/>

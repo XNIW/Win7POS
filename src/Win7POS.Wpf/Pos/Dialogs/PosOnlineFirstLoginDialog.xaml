@@ -167,10 +167,16 @@
                     <TextBlock Text="{loc:Loc onlineFirstLogin.retryDownload}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
+            <Button x:Name="RecoveryButton" MinWidth="120" Height="42" Margin="0,0,10,0" Click="OnRecoveryClick" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed" AutomationProperties.Name="{loc:Loc access.login.localRecovery}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconDatabase}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock x:Name="RecoveryButtonText" Text="{loc:Loc access.login.localRecovery}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
             <Button x:Name="ConnectButton" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnConnectClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
-                    <TextBlock Text="{loc:Loc access.login.signIn}" Margin="8,0,0,0"/>
+                    <TextBlock x:Name="ConnectButtonText" Text="{loc:Loc access.login.signIn}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
             <Button MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click">

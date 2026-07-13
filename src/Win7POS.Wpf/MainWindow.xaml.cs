@@ -16,6 +16,7 @@ using Win7POS.Data.Repositories;
 using Win7POS.Data.Online;
 using Win7POS.Core;
 using Win7POS.Core.Online;
+using Win7POS.Core.Pos;
 using Win7POS.Core.Security;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
@@ -41,7 +42,10 @@ namespace Win7POS.Wpf
         private DispatcherTimer _networkStatusTimer;
         private bool _backgroundOnlineRefreshQueued;
         private bool _operatorLoginReached;
+        private bool _recoveryMode;
         private SqliteConnectionFactory _languageSettingsFactory;
+        private SqliteConnectionFactory _recoveryFactory;
+        private PosWorkflowService _recoveryWorkflowService;
         private string _startupPhase = "constructed";
         private string _productsDataContextOperatorUsername;
         private PosView PosViewControl;
@@ -131,7 +135,9 @@ namespace Win7POS.Wpf
                     .ConfigureAwait(true);
                 if (GetPosViewModel() != null)
                 {
-                    GetPosViewModel().StatusMessage = PosLocalization.Current.Text("settings.languageSaved");
+                    GetPosViewModel().SetStatus(
+                        PosLocalization.Current.Text("settings.languageSaved"),
+                        PosNoticeSeverity.Success);
                 }
             }
             catch (Exception ex)
@@ -139,24 +145,11 @@ namespace Win7POS.Wpf
                 _logger.LogWarning("OnLanguageSelectionChanged: salvataggio lingua non completato", ex);
                 if (GetPosViewModel() != null)
                 {
-                    GetPosViewModel().StatusMessage = PosLocalization.Current.Text("settings.languageSaveError");
+                    GetPosViewModel().SetStatus(
+                        PosLocalization.Current.Text("settings.languageSaveError"),
+                        PosNoticeSeverity.Error);
                 }
             }
-        }
-
-        /// <summary>True se non esiste almeno un utente loggabile (attivo, con username valido). Copre DB inesistente, users vuota, solo utenti disabilitati.</summary>
-        private async Task<bool> RequiresFirstRunAsync(SqliteConnectionFactory factory)
-        {
-            var userRepo = new UserRepository(factory);
-            var users = await userRepo.ListAsync().ConfigureAwait(true);
-
-            var loginableUsers = users
-                .Where(x => x != null
-                    && !string.IsNullOrWhiteSpace(x.Username)
-                    && x.IsActive)
-                .ToList();
-
-            return loginableUsers.Count == 0;
         }
 
         private async void OnLoadedAsync(object sender, RoutedEventArgs e)
@@ -226,7 +219,16 @@ namespace Win7POS.Wpf
                 StartOfDaySyncResult startOfDayResult = null;
                 if (session != null)
                 {
-                    if (!App.IsSafeStart)
+                    var catalogSaleSafe = await PosCatalogPullService
+                        .IsCatalogSaleSafeAsync(factory)
+                        .ConfigureAwait(true);
+                    var shellMode = PosShellStartupPolicy.Determine(login.AccessMode, catalogSaleSafe);
+
+                    if (shellMode == PosShellMode.Recovery)
+                    {
+                        await EnterRecoveryModeAsync(factory).ConfigureAwait(true);
+                    }
+                    else if (!App.IsSafeStart)
                     {
                         startOfDayResult = await RunStartOfDaySyncAsync(factory).ConfigureAwait(true);
                         if (startOfDayResult == null || !startOfDayResult.CanOpenPos)
@@ -238,7 +240,10 @@ namespace Win7POS.Wpf
                         }
                     }
 
-                    EnsurePosViewCreated();
+                    if (shellMode == PosShellMode.Pos)
+                    {
+                        EnsurePosViewCreated();
+                    }
                     UpdateOperatorDisplay(session);
                     RefreshShellAfterOperatorChange(session);
                     session.SessionChanged += () => Dispatcher.BeginInvoke(new Action(() =>
@@ -248,7 +253,12 @@ namespace Win7POS.Wpf
                     }));
                 }
 
-                if (App.IsSafeStart)
+                if (_recoveryMode)
+                {
+                    StartupTrace.Write("online refresh deferred: recovery mode");
+                    _logger.LogInfo("BackgroundOnlineRefresh deferred: recovery mode");
+                }
+                else if (App.IsSafeStart)
                 {
                     StartupTrace.Write("online refresh skipped: safe-start");
                     _logger.LogInfo("BackgroundOnlineRefresh skipped: safe-start");
@@ -650,6 +660,151 @@ namespace Win7POS.Wpf
             }
         }
 
+        private async Task EnterRecoveryModeAsync(SqliteConnectionFactory factory)
+        {
+            _recoveryMode = true;
+            _recoveryFactory = factory ?? throw new ArgumentNullException(nameof(factory));
+            RecoveryModeBanner.Visibility = Visibility.Visible;
+            RecoveryPlaceholder.Visibility = Visibility.Visible;
+            RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.recoveryModeHelp");
+            SetRecoveryNavigationState(true);
+
+            var session = OperatorSessionHolder.Current;
+            if (HasCurrentPermission(PermissionCodes.CatalogView))
+            {
+                var products = EnsureProductsViewModel(session);
+                await products.LoadAsync().ConfigureAwait(true);
+                CurrentMenuKey = "Prodotti";
+                MainTabControl.SelectedItem = ProductsTab;
+            }
+            else
+            {
+                CurrentMenuKey = "Settings";
+                MainTabControl.SelectedIndex = 0;
+            }
+            SetSideMenuOpen(false);
+            _logger.LogWarning("category=pos.recovery result=entered reason=catalog_not_sale_safe", null);
+        }
+
+        private async Task<bool> ExitRecoveryModeAsync()
+        {
+            var factory = _recoveryFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+            if (!await PosCatalogPullService.IsCatalogSaleSafeAsync(factory).ConfigureAwait(true))
+            {
+                RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.catalogStillUnsafe");
+                return false;
+            }
+
+            StartOfDaySyncResult startOfDayResult = null;
+            if (!App.IsSafeStart)
+            {
+                startOfDayResult = await RunStartOfDaySyncAsync(factory).ConfigureAwait(true);
+                if (startOfDayResult == null || !startOfDayResult.CanOpenPos)
+                {
+                    RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.recoveryModeHelp");
+                    return false;
+                }
+            }
+
+            _recoveryMode = false;
+            RecoveryModeBanner.Visibility = Visibility.Collapsed;
+            RecoveryPlaceholder.Visibility = Visibility.Collapsed;
+            SetRecoveryNavigationState(false);
+            EnsurePosViewCreated();
+            CurrentMenuKey = "Pos";
+            MainTabControl.SelectedIndex = 0;
+            RefreshShellAfterOperatorChange(OperatorSessionHolder.Current);
+
+            if (App.IsSafeStart)
+            {
+                ApplySafeStartStatus();
+            }
+            else if (startOfDayResult == null || startOfDayResult.ShouldContinueInBackground)
+            {
+                QueueBackgroundOnlineRefresh(factory);
+            }
+            else
+            {
+                QueueSyncStatusRefresh(factory);
+            }
+
+            _logger.LogInfo("category=pos.recovery result=completed");
+            return true;
+        }
+
+        private void SetRecoveryNavigationState(bool recoveryMode)
+        {
+            foreach (var button in FindButtonsByTag(SideMenuPanel))
+            {
+                var tag = button.Tag?.ToString() ?? string.Empty;
+                button.IsEnabled = !recoveryMode ||
+                    string.Equals(tag, "Prodotti", StringComparison.Ordinal) ||
+                    string.Equals(tag, "Settings", StringComparison.Ordinal);
+            }
+        }
+
+        private async void OnRetryRecoveryOnlineClick(object sender, RoutedEventArgs e)
+        {
+            if (!_recoveryMode) return;
+
+            var factory = _recoveryFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+            var login = new PosOnlineFirstLoginDialog(factory)
+            {
+                Owner = DialogOwnerHelper.GetSafeOwner(this)
+            };
+            if (login.ShowDialog() != true ||
+                OperatorSessionHolder.Current == null ||
+                !OperatorSessionHolder.Current.IsLoggedIn)
+            {
+                return;
+            }
+
+            UpdateOperatorDisplay(OperatorSessionHolder.Current);
+            RefreshShellAfterOperatorChange(OperatorSessionHolder.Current);
+            await ExitRecoveryModeAsync().ConfigureAwait(true);
+        }
+
+        private async void OnVerifyRecoveryCatalogClick(object sender, RoutedEventArgs e)
+        {
+            if (!_recoveryMode || VerifyRecoveryCatalogButton == null) return;
+
+            VerifyRecoveryCatalogButton.IsEnabled = false;
+            try
+            {
+                var user = OperatorSessionHolder.Current?.CurrentUser;
+                if (user == null)
+                {
+                    RecoveryStatusText.Text = PosLocalization.Current.Text("operator.login.sessionMissing");
+                    return;
+                }
+
+                var factory = _recoveryFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+                var approved = await new CatalogRecoveryRepository(factory)
+                    .TryApproveLocalCatalogAsync(user.Id)
+                    .ConfigureAwait(true);
+                if (!approved)
+                {
+                    RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.catalogStillUnsafe");
+                    return;
+                }
+
+                RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.catalogApproved");
+                await ExitRecoveryModeAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "MainWindow.OnVerifyRecoveryCatalogClick: verification failed");
+                RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.catalogStillUnsafe");
+            }
+            finally
+            {
+                if (_recoveryMode)
+                {
+                    VerifyRecoveryCatalogButton.IsEnabled = true;
+                }
+            }
+        }
+
         private void UpdateOperatorDisplay(IOperatorSession session)
         {
             if (OperatorDisplayText != null)
@@ -878,6 +1033,10 @@ namespace Win7POS.Wpf
             UpdateOperatorDisplay(session);
             RefreshShellAfterOperatorChange(session);
             _ = RefreshShellTitleAsync(factory);
+            if (_recoveryMode && loginDlg.AccessMode == PosAuthenticatedAccessMode.Normal)
+            {
+                _ = ExitRecoveryModeAsync();
+            }
             return true;
         }
 
@@ -1060,7 +1219,7 @@ namespace Win7POS.Wpf
             {
                 ClearProductsViewModel();
                 MainTabControl.SelectedIndex = 0;
-                CurrentMenuKey = "Pos";
+                CurrentMenuKey = _recoveryMode ? "Settings" : "Pos";
             }
         }
 
@@ -1282,6 +1441,14 @@ namespace Win7POS.Wpf
 
         private void OnMenuPosClick(object sender, RoutedEventArgs e)
         {
+            if (_recoveryMode)
+            {
+                CurrentMenuKey = "Prodotti";
+                MainTabControl.SelectedItem = ProductsTab;
+                SetSideMenuOpen(false);
+                return;
+            }
+
             CurrentMenuKey = "Pos";
             MainTabControl.SelectedIndex = 0;
             SetSideMenuOpen(false);
@@ -1289,6 +1456,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuOpenCashDrawerClick(object sender, RoutedEventArgs e)
         {
+            if (_recoveryMode) return;
             GetPosViewModel()?.OpenCashDrawerCommand?.Execute(null);
             SetSideMenuOpen(false);
         }
@@ -1372,6 +1540,12 @@ namespace Win7POS.Wpf
 
         private async void OnMenuDailyReportClick(object sender, RoutedEventArgs e)
         {
+            if (_recoveryMode)
+            {
+                SetSideMenuOpen(false);
+                return;
+            }
+
             if (!HasCurrentPermission(PermissionCodes.DailyCloseView))
             {
                 SetSideMenuOpen(false);
@@ -1407,7 +1581,7 @@ namespace Win7POS.Wpf
         {
             try
             {
-                var dialog = new SettingsHubDialog
+                var dialog = new SettingsHubDialog(_recoveryMode)
                 {
                     Owner = DialogOwnerHelper.GetSafeOwner()
                 };
@@ -1417,6 +1591,7 @@ namespace Win7POS.Wpf
                 dialog.DatabaseMaintenanceRequested += (_, __) => OnMenuDbClick(this, new RoutedEventArgs());
                 dialog.UsersRolesRequested += (_, __) => OnMenuUsersClick(this, new RoutedEventArgs());
                 dialog.AboutRequested += (_, __) => OnMenuAboutClick(this, new RoutedEventArgs());
+                dialog.OnlineAccessRequested += (_, __) => OnRetryRecoveryOnlineClick(this, new RoutedEventArgs());
                 dialog.LanguageChangedRequested += async (_, code) => await SaveLanguagePreferenceAsync(code).ConfigureAwait(true);
 
                 dialog.ShowDialog();
@@ -1447,12 +1622,36 @@ namespace Win7POS.Wpf
                 return;
             }
 
-            GetPosViewModel()?.DbMaintenanceCommand?.Execute(null);
+            if (_recoveryMode)
+            {
+                ShowRecoveryDbMaintenanceDialog();
+            }
+            else
+            {
+                GetPosViewModel()?.DbMaintenanceCommand?.Execute(null);
+            }
             SetSideMenuOpen(false);
+        }
+
+        private void ShowRecoveryDbMaintenanceDialog()
+        {
+            if (_recoveryWorkflowService == null)
+            {
+                _recoveryWorkflowService = new PosWorkflowService();
+            }
+            var vm = new DbMaintenanceViewModel(
+                _recoveryWorkflowService,
+                () => Task.FromResult(HasCurrentPermission(PermissionCodes.DbRestore)));
+            var dialog = new DbMaintenanceDialog(vm)
+            {
+                Owner = DialogOwnerHelper.GetSafeOwner(this)
+            };
+            dialog.ShowDialog();
         }
 
         private void OnMenuPrinterClick(object sender, RoutedEventArgs e)
         {
+            if (_recoveryMode) return;
             CurrentMenuKey = "Printer";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.PrinterSettingsCommand?.Execute(null);
@@ -1461,6 +1660,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuShopSettingsClick(object sender, RoutedEventArgs e)
         {
+            if (_recoveryMode) return;
             CurrentMenuKey = "ShopSettings";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.OpenShopSettingsCommand?.Execute(null);
@@ -1471,12 +1671,32 @@ namespace Win7POS.Wpf
         {
             CurrentMenuKey = "About";
             MainTabControl.SelectedIndex = 0;
-            GetPosViewModel()?.AboutSupportCommand?.Execute(null);
+            if (_recoveryMode)
+            {
+                if (_recoveryWorkflowService == null)
+                {
+                    _recoveryWorkflowService = new PosWorkflowService();
+                }
+                var dialog = new AboutSupportDialog(new AboutSupportViewModel(_recoveryWorkflowService))
+                {
+                    Owner = DialogOwnerHelper.GetSafeOwner(this)
+                };
+                dialog.ShowDialog();
+            }
+            else
+            {
+                GetPosViewModel()?.AboutSupportCommand?.Execute(null);
+            }
             SetSideMenuOpen(false);
         }
 
         private void OnMenuSalesRegisterClick(object sender, RoutedEventArgs e)
         {
+            if (_recoveryMode)
+            {
+                SetSideMenuOpen(false);
+                return;
+            }
             CurrentMenuKey = "SalesRegister";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.OpenSalesRegisterCommand?.Execute(null);

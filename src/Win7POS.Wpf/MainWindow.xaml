@@ -8,6 +8,7 @@
     <Grid Margin="0">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
@@ -75,8 +76,36 @@
             </Grid>
         </Border>
 
+        <Border x:Name="RecoveryModeBanner" Grid.Row="1" Visibility="Collapsed" Background="#FFF4D6" BorderBrush="#D6A93D" BorderThickness="0,0,0,1" Padding="14,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Path Grid.Column="0" Data="{StaticResource IconHelp}" Fill="#8A5A00" Width="22" Height="22" Stretch="Uniform" Margin="0,0,10,0"/>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="{loc:Loc access.login.recoveryModeBanner}" FontWeight="Bold" Foreground="#6B4300"/>
+                    <TextBlock x:Name="RecoveryStatusText" Text="{loc:Loc access.login.recoveryModeHelp}" Foreground="#6B4300" TextWrapping="Wrap"/>
+                </StackPanel>
+                <Button Grid.Column="2" Margin="12,0,8,0" Style="{StaticResource OutlineButtonStyle}" Click="OnRetryRecoveryOnlineClick" AutomationProperties.Name="{loc:Loc access.login.retryOnline}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc access.login.retryOnline}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button x:Name="VerifyRecoveryCatalogButton" Grid.Column="3" Style="{StaticResource PrimaryButtonStyle}" Click="OnVerifyRecoveryCatalogClick" AutomationProperties.Name="{loc:Loc access.login.verifyAgain}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc access.login.verifyAgain}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
+
         <!-- Contenuto principale: TabControl (tab headers nascosti) -->
-        <TabControl x:Name="MainTabControl" Grid.Row="1" Padding="0" BorderThickness="0" SelectedIndex="0" SelectionChanged="MainTabControl_SelectionChanged">
+        <TabControl x:Name="MainTabControl" Grid.Row="2" Padding="0" BorderThickness="0" SelectedIndex="0" SelectionChanged="MainTabControl_SelectionChanged">
             <TabControl.Template>
                 <ControlTemplate TargetType="{x:Type TabControl}">
                     <Grid>
@@ -90,7 +119,15 @@
                 </ControlTemplate>
             </TabControl.Template>
             <TabItem Header="POS">
-                <Grid x:Name="PosTabHost"/>
+                <Grid x:Name="PosTabHost">
+                    <Border x:Name="RecoveryPlaceholder" Visibility="Collapsed" Background="#F7F3FA" Padding="32">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="620">
+                            <Path Data="{StaticResource IconHelp}" Fill="#7B5A93" Width="44" Height="44" Stretch="Uniform" HorizontalAlignment="Center"/>
+                            <TextBlock Text="{loc:Loc access.login.recoveryModeBanner}" Margin="0,16,0,8" FontSize="22" FontWeight="Bold" Foreground="#4B2E67" TextAlignment="Center"/>
+                            <TextBlock Text="{loc:Loc access.login.recoveryModeHelp}" Foreground="#5E5268" TextWrapping="Wrap" TextAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
             </TabItem>
             <TabItem x:Name="ProductsTab" Header="{loc:Loc shell.products}">
                 <prod:ProductsView x:Name="ProductsViewControl"/>

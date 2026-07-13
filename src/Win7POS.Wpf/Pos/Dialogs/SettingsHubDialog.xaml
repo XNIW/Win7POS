@@ -38,7 +38,7 @@
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <Button Grid.Row="0" Grid.Column="0" Style="{StaticResource SettingsCardButtonStyle}" Click="OnShopDataClick">
+            <Button x:Name="ShopDataButton" Grid.Row="0" Grid.Column="0" Style="{StaticResource SettingsCardButtonStyle}" Click="OnShopDataClick">
                 <StackPanel>
                     <Path Data="{StaticResource IconShop}" Style="{StaticResource SettingsCardIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc shell.officialShopData}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
@@ -46,7 +46,7 @@
                 </StackPanel>
             </Button>
 
-            <Button Grid.Row="0" Grid.Column="1" Style="{StaticResource SettingsCardButtonStyle}" Click="OnPrinterSettingsClick">
+            <Button x:Name="PrinterSettingsButton" Grid.Row="0" Grid.Column="1" Style="{StaticResource SettingsCardButtonStyle}" Click="OnPrinterSettingsClick">
                 <StackPanel>
                     <Path Data="{StaticResource IconPrinter}" Style="{StaticResource SettingsCardIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc shell.printerSettings}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
@@ -62,7 +62,7 @@
                 </StackPanel>
             </Button>
 
-            <Button Grid.Row="1" Grid.Column="1" Style="{StaticResource SettingsCardButtonStyle}" Click="OnUsersRolesClick">
+            <Button x:Name="UsersRolesButton" Grid.Row="1" Grid.Column="1" Style="{StaticResource SettingsCardButtonStyle}" Click="OnUsersRolesClick">
                 <StackPanel>
                     <Path Data="{StaticResource IconUsers}" Style="{StaticResource SettingsCardIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc shell.usersRoles}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
@@ -83,6 +83,14 @@
                     <Path Data="{StaticResource IconLanguage}" Style="{StaticResource SettingsCardIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc settings.language}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
                     <TextBlock Text="{loc:Loc settings.cardLanguageHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Button>
+
+            <Button x:Name="OnlineAccessButton" Grid.Row="0" Grid.Column="0" Visibility="Collapsed" Style="{StaticResource SettingsCardButtonStyle}" Click="OnOnlineAccessClick">
+                <StackPanel>
+                    <Path Data="{StaticResource IconSync}" Style="{StaticResource SettingsCardIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc access.login.retryOnline}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="{loc:Loc settings.cardOnlineAccessHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                 </StackPanel>
             </Button>
         </Grid>
