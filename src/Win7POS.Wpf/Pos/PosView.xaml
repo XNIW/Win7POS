@@ -393,18 +393,37 @@
                 MaxWidth="560"
                 Margin="16,0,320,14"
                 Padding="12,10"
-                Background="#FDFBFE"
-                BorderBrush="#DCCFE8"
+                Background="{Binding StatusToastBackground}"
+                BorderBrush="{Binding StatusToastBorderBrush}"
                 BorderThickness="1"
                 CornerRadius="8"
                 Visibility="{Binding IsStatusToastVisible, Converter={StaticResource BoolToVis}}">
-            <TextBlock Text="{Binding StatusToastMessage}"
-                       Foreground="{StaticResource TextPrimaryBrush}"
-                       FontSize="12"
-                       FontWeight="SemiBold"
-                       TextWrapping="Wrap"
-                       TextTrimming="CharacterEllipsis"
-                       ToolTip="{Binding StatusToastMessage}"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Width="24" Height="24" CornerRadius="12" Background="{Binding StatusToastBorderBrush}" Margin="0,0,8,0">
+                    <TextBlock Text="{Binding StatusToastIconText}" Foreground="White" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <TextBlock Grid.Column="1" Text="{Binding StatusToastSeverityText}" Foreground="{Binding StatusToastForeground}" FontSize="12" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Grid.Column="2" Text="{Binding StatusToastMessage}"
+                           Foreground="{Binding StatusToastForeground}"
+                           FontSize="12"
+                           FontWeight="SemiBold"
+                           VerticalAlignment="Center"
+                           TextWrapping="Wrap"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding StatusToastMessage}"/>
+                <Button Grid.Column="3" Width="30" Height="30" Margin="10,0,0,0"
+                        Content="×"
+                        Command="{Binding DismissStatusToastCommand}"
+                        Visibility="{Binding CanDismissStatusToast, Converter={StaticResource BoolToVis}}"
+                        AutomationProperties.Name="{loc:Loc notice.dismiss}"
+                        ToolTip="{loc:Loc notice.dismiss}"/>
+            </Grid>
         </Border>
 
         <!-- Overlay IsBusy: pagamento, stampa, operazioni lunghe -->

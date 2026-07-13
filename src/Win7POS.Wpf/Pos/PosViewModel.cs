@@ -7,6 +7,7 @@ using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Media;
 using System.Globalization;
 using System.Windows.Threading;
 using Win7POS.Core.Models;
@@ -41,6 +42,7 @@ namespace Win7POS.Wpf.Pos
         private string _statusMessage = string.Empty;
         private string _statusToastMessage = string.Empty;
         private bool _isStatusToastVisible;
+        private PosNoticeSeverity _statusToastSeverity = PosNoticeSeverity.Info;
         private readonly DispatcherTimer _statusToastTimer;
         private string _receiptPreview = string.Empty;
         private bool _useReceipt42 = true;
@@ -117,12 +119,7 @@ namespace Win7POS.Wpf.Pos
         public string StatusMessage
         {
             get => _statusMessage;
-            set
-            {
-                _statusMessage = value ?? string.Empty;
-                OnPropertyChanged();
-                UpdateStatusToast(_statusMessage);
-            }
+            set => SetStatus(value, PosNoticeSeverity.Info);
         }
 
         public string StatusToastMessage
@@ -136,6 +133,62 @@ namespace Win7POS.Wpf.Pos
             get => _isStatusToastVisible;
             private set { _isStatusToastVisible = value; OnPropertyChanged(); }
         }
+
+        public PosNoticeSeverity StatusToastSeverity
+        {
+            get => _statusToastSeverity;
+            private set
+            {
+                _statusToastSeverity = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(StatusToastSeverityText));
+                OnPropertyChanged(nameof(StatusToastIconText));
+                OnPropertyChanged(nameof(StatusToastBackground));
+                OnPropertyChanged(nameof(StatusToastBorderBrush));
+                OnPropertyChanged(nameof(StatusToastForeground));
+                OnPropertyChanged(nameof(CanDismissStatusToast));
+            }
+        }
+
+        public string StatusToastSeverityText =>
+            PosLocalization.Current.Text("notice." + StatusToastSeverity.ToString().ToLowerInvariant());
+
+        public string StatusToastIconText
+        {
+            get
+            {
+                switch (StatusToastSeverity)
+                {
+                    case PosNoticeSeverity.Success: return "✓";
+                    case PosNoticeSeverity.Warning: return "!";
+                    case PosNoticeSeverity.Error: return "×";
+                    default: return "i";
+                }
+            }
+        }
+
+        public Brush StatusToastBackground => NoticeBrush(
+            StatusToastSeverity,
+            Color.FromRgb(240, 247, 255),
+            Color.FromRgb(235, 248, 238),
+            Color.FromRgb(255, 248, 225),
+            Color.FromRgb(255, 238, 238));
+
+        public Brush StatusToastBorderBrush => NoticeBrush(
+            StatusToastSeverity,
+            Color.FromRgb(92, 137, 184),
+            Color.FromRgb(63, 132, 77),
+            Color.FromRgb(184, 132, 31),
+            Color.FromRgb(185, 56, 56));
+
+        public Brush StatusToastForeground => NoticeBrush(
+            StatusToastSeverity,
+            Color.FromRgb(38, 77, 117),
+            Color.FromRgb(31, 100, 48),
+            Color.FromRgb(110, 74, 0),
+            Color.FromRgb(126, 31, 31));
+
+        public bool CanDismissStatusToast => PosNoticePolicy.CanDismissManually(StatusToastSeverity);
 
         public string ReceiptPreview
         {
@@ -214,6 +267,7 @@ namespace Win7POS.Wpf.Pos
         public ICommand SuspendCartCommand { get; }
         public ICommand RecoverCartCommand { get; }
         public ICommand OpenUserManagementCommand { get; }
+        public ICommand DismissStatusToastCommand { get; }
 
         /// <summary>Crea un ViewModel per la schermata Chiusura cassa (pagina integrata).</summary>
         public Dialogs.DailyReportViewModel CreateDailyReportViewModel() => new Dialogs.DailyReportViewModel(_service, _overrideAuthService);
@@ -233,6 +287,7 @@ namespace Win7POS.Wpf.Pos
                 _statusToastTimer.Stop();
                 IsStatusToastVisible = false;
             };
+            DismissStatusToastCommand = new RelayCommand(_ => DismissStatusToast());
 
             AddBarcodeCommand = new AsyncRelayCommand(AddBarcodeAsync, _ => !IsBusy, _logger);
             PayCommand = new AsyncRelayCommand(PayAsync, _ => !IsBusy, _logger);
@@ -274,7 +329,7 @@ namespace Win7POS.Wpf.Pos
                     row.RaiseLocalizedProperties();
                 }
             };
-            StatusMessage = PosLocalization.Current.Text("pos.status.ready");
+            SetStatus(PosLocalization.Current.Text("pos.status.ready"), PosNoticeSeverity.Info, suppressToast: true);
         }
 
         private void OnCatalogChanged(string barcode)
@@ -293,11 +348,11 @@ namespace Win7POS.Wpf.Pos
             {
                 var snapshot = await _service.SyncCartLineFromCatalogAsync(barcode).ConfigureAwait(true);
                 ApplySnapshot(snapshot);
-                StatusMessage = snapshot.Status ?? PosLocalization.Current.Text("pos.status.cartSynced");
+                SetStatus(snapshot.Status ?? PosLocalization.Current.Text("pos.status.cartSynced"), PosNoticeSeverity.Info);
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM sync cart line failed");
             }
         }
@@ -308,11 +363,11 @@ namespace Win7POS.Wpf.Pos
             {
                 var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
                 ApplySnapshot(snapshot);
-                StatusMessage = reason;
+                SetStatus(reason, PosNoticeSeverity.Info);
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM refresh cart failed");
             }
         }
@@ -346,11 +401,11 @@ namespace Win7POS.Wpf.Pos
                 var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
                 ApplySnapshot(snapshot);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
-                StatusMessage = string.Empty;
+                SetStatus(string.Empty, PosNoticeSeverity.Info, suppressToast: true);
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM init failed");
             }
             finally
@@ -374,7 +429,7 @@ namespace Win7POS.Wpf.Pos
         private async Task AddBarcodeAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosSell, PosLocalization.Current.Text("sales.kind.sale")); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             var input = (BarcodeInput ?? string.Empty).Trim();
             if (input.Length == 0)
                 return;
@@ -397,12 +452,12 @@ namespace Win7POS.Wpf.Pos
                     await _service.AddByBarcodeAsync(barcodePart).ConfigureAwait(true);
                     var snapshot = await _service.SetQtyAsync(barcodePart, qty).ConfigureAwait(true);
                     ApplySnapshot(snapshot, barcodePart);
-                    StatusMessage = PosLocalization.Current.Format("pos.status.added", barcodePart, qty);
+                    SetStatus(PosLocalization.Current.Format("pos.status.added", barcodePart, qty), PosNoticeSeverity.Success);
                     PendingInputQuantity = null;
                 }
                 catch (Exception ex)
                 {
-                    StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                     _logger.LogError(ex, "POS VM add with qty failed");
                 }
                 finally
@@ -425,12 +480,12 @@ namespace Win7POS.Wpf.Pos
                     if (PendingInputQuantity.HasValue && inputQty > 1)
                         snapshot = await _service.SetQtyAsync(manualKey, inputQty).ConfigureAwait(true);
                     ApplySnapshot(snapshot, manualKey);
-                    StatusMessage = PosLocalization.Current.Format("pos.status.manualAdded", MoneyClp.Format(priceMinor));
+                    SetStatus(PosLocalization.Current.Format("pos.status.manualAdded", MoneyClp.Format(priceMinor)), PosNoticeSeverity.Success);
                     return;
                 }
                 catch (PosException ex) when (ex.Code == PosErrorCode.InvalidPrice)
                 {
-                    StatusMessage = ex.Message;
+                    SetStatus(ex.Message, PosNoticeSeverity.Error);
                     return;
                 }
                 finally
@@ -449,11 +504,11 @@ namespace Win7POS.Wpf.Pos
                 if (PendingInputQuantity.HasValue && inputQty > 1)
                     snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
                 ApplySnapshot(snapshot, input);
-                StatusMessage = PosLocalization.Current.Format("pos.status.productAdded", input);
+                SetStatus(PosLocalization.Current.Format("pos.status.productAdded", input), PosNoticeSeverity.Success);
             }
             catch (PosException ex) when (ex.Code == PosErrorCode.ProductNotFound)
             {
-                StatusMessage = PosLocalization.Current.Format("pos.status.productNotFoundQuickCreate", input);
+                SetStatus(PosLocalization.Current.Format("pos.status.productNotFoundQuickCreate", input), PosNoticeSeverity.Warning);
 
                 if (!(await TryDemandOrOverrideAsync(PermissionCodes.CatalogEdit, PosLocalization.Current.Text("pos.status.quickProductCreate")).ConfigureAwait(true)))
                     return;
@@ -470,22 +525,22 @@ namespace Win7POS.Wpf.Pos
                         if (PendingInputQuantity.HasValue && inputQty > 1)
                             snapshot = await _service.SetQtyAsync(input, inputQty).ConfigureAwait(true);
                         ApplySnapshot(snapshot, input);
-                        StatusMessage = PosLocalization.Current.Format("pos.status.productCreatedAdded", input);
+                        SetStatus(PosLocalization.Current.Format("pos.status.productCreatedAdded", input), PosNoticeSeverity.Success);
                     }
                     catch (Exception createEx)
                     {
-                        StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", createEx.Message);
+                        SetStatus(PosLocalization.Current.Format("common.errorWithMessage", createEx.Message), PosNoticeSeverity.Error);
                         _logger.LogError(createEx, "POS VM add after create failed");
                     }
                 }
             }
             catch (PosException ex)
             {
-                StatusMessage = ex.Message;
+                SetStatus(ex.Message, PosNoticeSeverity.Error);
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM add barcode failed");
             }
             finally
@@ -505,7 +560,7 @@ namespace Win7POS.Wpf.Pos
                 return false;
             PendingInputQuantity = qty;
             BarcodeInput = string.Empty;
-            StatusMessage = PosLocalization.Current.Format("pos.cart.quantityReady", qty);
+            SetStatus(PosLocalization.Current.Format("pos.cart.quantityReady", qty), PosNoticeSeverity.Info);
             return true;
         }
 
@@ -528,7 +583,7 @@ namespace Win7POS.Wpf.Pos
             {
                 if (!int.TryParse(input.Substring(1).Trim(), out var qty) || qty < 0)
                 {
-                    StatusMessage = PosLocalization.Current.Text("pos.status.quantityInvalid");
+                    SetStatus(PosLocalization.Current.Text("pos.status.quantityInvalid"), PosNoticeSeverity.Warning);
                     return true;
                 }
                 if (qty == 0)
@@ -540,11 +595,11 @@ namespace Win7POS.Wpf.Pos
                         var snapshot = await _service.RemoveLineAsync(barcode).ConfigureAwait(true);
                         var preferIndex = indexBefore < CartItems.Count - 1 ? indexBefore : (indexBefore > 0 ? indexBefore - 1 : (int?)null);
                         ApplySnapshot(snapshot, preferBarcode: null, preferIndex: preferIndex);
-                        StatusMessage = PosLocalization.Current.Text("pos.status.lineRemoved");
+                        SetStatus(PosLocalization.Current.Text("pos.status.lineRemoved"), PosNoticeSeverity.Success);
                     }
                     catch (Exception ex)
                     {
-                        StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                         _logger.LogError(ex, "POS VM set qty 0 failed");
                     }
                     return true;
@@ -555,11 +610,11 @@ namespace Win7POS.Wpf.Pos
                     var barcode = SelectedCartItem.Barcode;
                     var snapshot = await _service.SetQtyAsync(barcode, qty).ConfigureAwait(true);
                     ApplySnapshot(snapshot, barcode);
-                    StatusMessage = PosLocalization.Current.Format("pos.status.quantityUpdated", qty);
+                    SetStatus(PosLocalization.Current.Format("pos.status.quantityUpdated", qty), PosNoticeSeverity.Success);
                 }
                 catch (Exception ex)
                 {
-                    StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                     _logger.LogError(ex, "POS VM set qty failed");
                 }
                 finally { IsBusy = false; }
@@ -577,11 +632,11 @@ namespace Win7POS.Wpf.Pos
                         var snapshot = await _service.IncreaseQtyAsync(barcodePlus).ConfigureAwait(true);
                         ApplySnapshot(snapshot, barcodePlus);
                     }
-                    StatusMessage = PosLocalization.Current.Format("pos.status.quantityPlus", deltaPlus);
+                    SetStatus(PosLocalization.Current.Format("pos.status.quantityPlus", deltaPlus), PosNoticeSeverity.Success);
                 }
                 catch (Exception ex)
                 {
-                    StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                     _logger.LogError(ex, "POS VM increase qty failed");
                 }
                 finally { IsBusy = false; }
@@ -601,11 +656,11 @@ namespace Win7POS.Wpf.Pos
                         ApplySnapshot(snapshot, barcodeMinus);
                         current--;
                     }
-                    StatusMessage = PosLocalization.Current.Format("pos.status.quantityMinus", deltaMinus);
+                    SetStatus(PosLocalization.Current.Format("pos.status.quantityMinus", deltaMinus), PosNoticeSeverity.Success);
                 }
                 catch (Exception ex)
                 {
-                    StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                     _logger.LogError(ex, "POS VM decrease qty failed");
                 }
                 finally { IsBusy = false; }
@@ -618,10 +673,10 @@ namespace Win7POS.Wpf.Pos
         private async Task PayAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosPay, PosLocalization.Current.Text("operations.pay")); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             if (CartItems.Count == 0)
             {
-                StatusMessage = PosLocalization.Current.Text("pos.status.cartEmpty");
+                SetStatus(PosLocalization.Current.Text("pos.status.cartEmpty"), PosNoticeSeverity.Warning);
                 return;
             }
 
@@ -663,7 +718,7 @@ namespace Win7POS.Wpf.Pos
                 if (mainWindow == null)
                 {
                     _logger.LogError(null, "MainWindow not available for payment screen.");
-                    StatusMessage = PosLocalization.Current.Text("pos.status.mainWindowUnavailable");
+                    SetStatus(PosLocalization.Current.Text("pos.status.mainWindowUnavailable"), PosNoticeSeverity.Error);
                     RequestFocusBarcode();
                     return;
                 }
@@ -673,7 +728,7 @@ namespace Win7POS.Wpf.Pos
             {
                 _logger.LogError(ex, "Payment screen failed.");
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("pos.status.payError"), PosLocalization.Current.Format("pos.status.payErrorDetail", ex.Message));
-                StatusMessage = PosLocalization.Current.Text("pos.status.payError");
+                SetStatus(PosLocalization.Current.Text("pos.status.payError"), PosNoticeSeverity.Error);
                 RequestFocusBarcode();
                 return;
             }
@@ -686,7 +741,7 @@ namespace Win7POS.Wpf.Pos
 
             if (!ok)
             {
-                StatusMessage = PosLocalization.Current.Text("pos.status.paymentCancelled");
+                SetStatus(PosLocalization.Current.Text("pos.status.paymentCancelled"), PosNoticeSeverity.Info);
                 RequestFocusBarcode();
                 return;
             }
@@ -707,7 +762,7 @@ namespace Win7POS.Wpf.Pos
                     operatorId).ConfigureAwait(true);
                 ApplySnapshot(result.Snapshot);
                 ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
-                StatusMessage = PosLocalization.Current.Format("pos.status.paymentOk", result.SaleCode);
+                SetStatus(PosLocalization.Current.Format("pos.status.paymentOk", result.SaleCode), PosNoticeSeverity.Success);
 
                 await TryAutoOpenDrawerAfterPaymentAsync(vm).ConfigureAwait(true);
 
@@ -738,18 +793,18 @@ namespace Win7POS.Wpf.Pos
                 }
 
                 if (!fiscalPrinted && vm.AutoPrintPdfSii && vm.CardAmountMinor > 0 && vm.CashAmountMinor == 0)
-                StatusMessage = PosLocalization.Current.Format("pos.status.paymentOkCardOnly", result.SaleCode);
+                SetStatus(PosLocalization.Current.Format("pos.status.paymentOkCardOnly", result.SaleCode), PosNoticeSeverity.Warning);
 
                 QueueSalesSyncAfterPayment();
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }
             catch (PosException ex)
             {
-                StatusMessage = ex.Message;
+                SetStatus(ex.Message, PosNoticeSeverity.Error);
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM pay failed");
             }
             finally
@@ -788,7 +843,7 @@ namespace Win7POS.Wpf.Pos
             catch (Exception ex)
             {
                 _logger.LogError(ex, "POS VM auto drawer open failed");
-                StatusMessage = PosLocalization.Current.Text("pos.status.paymentOkDrawerFailed");
+                SetStatus(PosLocalization.Current.Text("pos.status.paymentOkDrawerFailed"), PosNoticeSeverity.Warning);
                 ModernMessageDialog.Show(
                     DialogOwnerHelper.GetSafeOwner(),
                     PosLocalization.Current.Text("printer.cashDrawer"),
@@ -804,16 +859,16 @@ namespace Win7POS.Wpf.Pos
                 var preview = await _service.GetLastReceiptPreviewAsync(UseReceipt42).ConfigureAwait(true);
                 if (string.IsNullOrWhiteSpace(preview))
                 {
-                    StatusMessage = PosLocalization.Current.Text("pos.status.noReceiptPayFirst");
+                    SetStatus(PosLocalization.Current.Text("pos.status.noReceiptPayFirst"), PosNoticeSeverity.Warning);
                     return;
                 }
 
                 ReceiptPreview = preview;
-                StatusMessage = PosLocalization.Current.Text("pos.status.receiptPreviewUpdated");
+                SetStatus(PosLocalization.Current.Text("pos.status.receiptPreviewUpdated"), PosNoticeSeverity.Success);
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM preview failed");
             }
             finally
@@ -849,7 +904,7 @@ namespace Win7POS.Wpf.Pos
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM load recent sales failed");
             }
             finally
@@ -861,7 +916,7 @@ namespace Win7POS.Wpf.Pos
         private async Task ReprintPreviewAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, PosLocalization.Current.Text("printer.reprintReceipt")); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             if (SelectedRecentSale == null) return;
 
             IsBusy = true;
@@ -870,16 +925,16 @@ namespace Win7POS.Wpf.Pos
                 var preview = await _service.GetReceiptPreviewBySaleIdAsync(SelectedRecentSale.SaleId, UseReceipt42).ConfigureAwait(true);
                 if (string.IsNullOrWhiteSpace(preview))
                 {
-                    StatusMessage = PosLocalization.Current.Text("pos.status.saleNotFound");
+                    SetStatus(PosLocalization.Current.Text("pos.status.saleNotFound"), PosNoticeSeverity.Warning);
                     return;
                 }
 
                 ReceiptPreview = preview;
-                StatusMessage = PosLocalization.Current.Format("pos.status.receiptPreviewLoaded", SelectedRecentSale.SaleCode);
+                SetStatus(PosLocalization.Current.Format("pos.status.receiptPreviewLoaded", SelectedRecentSale.SaleCode), PosNoticeSeverity.Success);
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM reprint preview failed");
             }
             finally
@@ -891,10 +946,10 @@ namespace Win7POS.Wpf.Pos
         private async Task PrintSelectedReceiptAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, PosLocalization.Current.Text("printer.printReceipt")); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             if (SelectedRecentSale == null)
             {
-                StatusMessage = PosLocalization.Current.Text("pos.status.selectSale");
+                SetStatus(PosLocalization.Current.Text("pos.status.selectSale"), PosNoticeSeverity.Warning);
                 return;
             }
 
@@ -904,7 +959,7 @@ namespace Win7POS.Wpf.Pos
                 var preview = await _service.GetReceiptPreviewBySaleIdAsync(SelectedRecentSale.SaleId, UseReceipt42).ConfigureAwait(true);
                 if (string.IsNullOrWhiteSpace(preview))
                 {
-                    StatusMessage = PosLocalization.Current.Text("pos.status.receiptUnavailable");
+                    SetStatus(PosLocalization.Current.Text("pos.status.receiptUnavailable"), PosNoticeSeverity.Warning);
                     return;
                 }
 
@@ -913,7 +968,7 @@ namespace Win7POS.Wpf.Pos
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM print selected receipt failed");
             }
             finally
@@ -935,7 +990,7 @@ namespace Win7POS.Wpf.Pos
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM increase qty failed");
             }
             finally
@@ -957,7 +1012,7 @@ namespace Win7POS.Wpf.Pos
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM decrease qty failed");
             }
             finally
@@ -980,7 +1035,7 @@ namespace Win7POS.Wpf.Pos
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM remove line failed");
             }
             finally
@@ -997,11 +1052,11 @@ namespace Win7POS.Wpf.Pos
             {
                 var snapshot = await _service.ClearCartAsync().ConfigureAwait(true);
                 ApplySnapshot(snapshot);
-                StatusMessage = PosLocalization.Current.Text("pos.status.cartCleared");
+                SetStatus(PosLocalization.Current.Text("pos.status.cartCleared"), PosNoticeSeverity.Success);
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM clear cart failed");
             }
             finally
@@ -1024,7 +1079,7 @@ namespace Win7POS.Wpf.Pos
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM increase qty failed");
             }
             finally
@@ -1047,7 +1102,7 @@ namespace Win7POS.Wpf.Pos
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM decrease qty failed");
             }
             finally
@@ -1071,7 +1126,7 @@ namespace Win7POS.Wpf.Pos
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM remove line failed");
             }
             finally
@@ -1084,17 +1139,17 @@ namespace Win7POS.Wpf.Pos
         private async Task BackupDbAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.DbBackup, PosLocalization.Current.Text("operations.dbBackup")); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             IsBusy = true;
             try
             {
                 var outputPath = await _service.BackupDbAsync().ConfigureAwait(true);
                 _operatorSession?.LogSecurityEvent(SecurityEventCodes.DbBackup, "path=" + (outputPath ?? ""));
-                StatusMessage = PosLocalization.Current.Format("pos.status.dbBackupCreated", outputPath);
+                SetStatus(PosLocalization.Current.Format("pos.status.dbBackupCreated", outputPath), PosNoticeSeverity.Success);
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("pos.status.dbBackupError", ex.Message);
+                SetStatus(PosLocalization.Current.Format("pos.status.dbBackupError", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM backup db failed");
             }
             finally
@@ -1129,11 +1184,11 @@ namespace Win7POS.Wpf.Pos
                 try
                 {
                     vm.ReplaceInstalledPrinters(await _service.GetInstalledPrintersAsync().ConfigureAwait(true));
-                    StatusMessage = PosLocalization.Current.Text("printer.printersReloaded");
+                    SetStatus(PosLocalization.Current.Text("printer.printersReloaded"), PosNoticeSeverity.Success);
                 }
                 catch (Exception ex)
                 {
-                    StatusMessage = PosLocalization.Current.Format("printer.discoveryError", ex.Message);
+                    SetStatus(PosLocalization.Current.Format("printer.discoveryError", ex.Message), PosNoticeSeverity.Error);
                     _logger.LogError(ex, "POS VM printer discovery failed");
                 }
             };
@@ -1142,11 +1197,11 @@ namespace Win7POS.Wpf.Pos
                 try
                 {
                     await _service.TestReceiptPrinterAsync(ToPrinterSettings(vm)).ConfigureAwait(true);
-                    StatusMessage = PosLocalization.Current.Text("printer.testPrintSent");
+                    SetStatus(PosLocalization.Current.Text("printer.testPrintSent"), PosNoticeSeverity.Success);
                 }
                 catch (Exception ex)
                 {
-                    StatusMessage = PosLocalization.Current.Format("printer.testPrintError", ex.Message);
+                    SetStatus(PosLocalization.Current.Format("printer.testPrintError", ex.Message), PosNoticeSeverity.Error);
                     ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("printer.testPrint"), ex.Message);
                 }
             };
@@ -1155,11 +1210,11 @@ namespace Win7POS.Wpf.Pos
                 try
                 {
                     await _service.TestCashDrawerAsync(name, cmd).ConfigureAwait(true);
-                    StatusMessage = PosLocalization.Current.Text("printer.commandSent");
+                    SetStatus(PosLocalization.Current.Text("printer.commandSent"), PosNoticeSeverity.Success);
                 }
                 catch (Exception ex)
                 {
-                    StatusMessage = PosLocalization.Current.Format("printer.testError", ex.Message);
+                    SetStatus(PosLocalization.Current.Format("printer.testError", ex.Message), PosNoticeSeverity.Error);
                     ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("printer.testDrawer"), ex.Message);
                 }
             };
@@ -1172,7 +1227,7 @@ namespace Win7POS.Wpf.Pos
             var ok = dlg.ShowDialog() == true;
             if (!ok)
             {
-                StatusMessage = PosLocalization.Current.Text("printer.settingsCancelled");
+                SetStatus(PosLocalization.Current.Text("printer.settingsCancelled"), PosNoticeSeverity.Info);
                 RequestFocusBarcode();
                 return;
             }
@@ -1183,12 +1238,12 @@ namespace Win7POS.Wpf.Pos
             {
                 await _service.SetPrinterSettingsAsync(_printerSettings).ConfigureAwait(true);
                 _printerSettings = await _service.GetPrinterSettingsAsync().ConfigureAwait(true);
-                StatusMessage = PosLocalization.Current.Text("printer.settingsSaved");
+                SetStatus(PosLocalization.Current.Text("printer.settingsSaved"), PosNoticeSeverity.Success);
                 RaiseCanExecuteChanged();
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("printer.settingsSaveError", ex.Message);
+                SetStatus(PosLocalization.Current.Format("printer.settingsSaveError", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM save printer settings failed");
             }
             finally
@@ -1200,14 +1255,14 @@ namespace Win7POS.Wpf.Pos
         private async Task PrintLastReceiptAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, PosLocalization.Current.Text("pos.cart.printLast")); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             IsBusy = true;
             try
             {
                 var text = await _service.GetLastReceiptPreviewAsync(UseReceipt42).ConfigureAwait(true);
                 if (string.IsNullOrWhiteSpace(text))
                 {
-                    StatusMessage = PosLocalization.Current.Text("printer.noReceipt");
+                    SetStatus(PosLocalization.Current.Text("printer.noReceipt"), PosNoticeSeverity.Warning);
                     return;
                 }
 
@@ -1220,7 +1275,7 @@ namespace Win7POS.Wpf.Pos
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("printer.receiptPrintError", ex.Message);
+                SetStatus(PosLocalization.Current.Format("printer.receiptPrintError", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM print last receipt failed");
             }
             finally
@@ -1236,11 +1291,11 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 await _service.OpenCashDrawerAsync().ConfigureAwait(true);
-                StatusMessage = PosLocalization.Current.Text("printer.drawerOpened");
+                SetStatus(PosLocalization.Current.Text("printer.drawerOpened"), PosNoticeSeverity.Success);
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("printer.drawerOpenError", ex.Message);
+                SetStatus(PosLocalization.Current.Format("printer.drawerOpenError", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM open cash drawer failed");
             }
             finally
@@ -1286,15 +1341,17 @@ namespace Win7POS.Wpf.Pos
                     saleCode,
                     automaticAfterSale: automaticAfterSale,
                     explicitUserAction: explicitUserAction).ConfigureAwait(true);
-                StatusMessage = result.SavedCopy
-                    ? PosLocalization.Current.Format("printer.receiptPrintedSaved", result.OutputPath)
-                    : PosLocalization.Current.Text("printer.receiptPrinted");
+                SetStatus(
+                    result.SavedCopy
+                        ? PosLocalization.Current.Format("printer.receiptPrintedSaved", result.OutputPath)
+                        : PosLocalization.Current.Text("printer.receiptPrinted"),
+                    PosNoticeSeverity.Success);
                 return true;
             }
             catch (Exception ex)
             {
                 _lastPrintFailureMessage = ex.Message;
-                StatusMessage = PosLocalization.Current.Format("sales.printFailed", ex.Message);
+                SetStatus(PosLocalization.Current.Format("sales.printFailed", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM print failed");
                 return false;
             }
@@ -1315,13 +1372,13 @@ namespace Win7POS.Wpf.Pos
             }
             catch (InvalidOperationException ex)
             {
-                StatusMessage = ex.Message;
+                SetStatus(ex.Message, PosNoticeSeverity.Error);
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Daily report dialog failed (XAML/binding).");
-                StatusMessage = PosLocalization.Current.Text("pos.status.dailyReportOpenError");
+                SetStatus(PosLocalization.Current.Text("pos.status.dailyReportOpenError"), PosNoticeSeverity.Error);
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("reports.closeTitle"), PosLocalization.Current.Format("common.errorWithMessage", ex.Message));
             }
             RequestFocusBarcode();
@@ -1331,7 +1388,7 @@ namespace Win7POS.Wpf.Pos
         private Task OpenDbMaintenanceAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.DbMaintenance, PosLocalization.Current.Text("operations.dbMaintenance")); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); RequestFocusBarcode(); return Task.CompletedTask; }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); RequestFocusBarcode(); return Task.CompletedTask; }
             var vm = new DbMaintenanceViewModel(_service, async () => await TryDemandOrOverrideAsync(PermissionCodes.DbRestore, PosLocalization.Current.Text("operations.dbRestore")).ConfigureAwait(true));
             var dlg = new DbMaintenanceDialog(vm)
             {
@@ -1358,7 +1415,7 @@ namespace Win7POS.Wpf.Pos
             catch (Exception ex)
             {
                 _logger.LogError(ex, "About/Support dialog failed (XAML/binding).");
-                StatusMessage = PosLocalization.Current.Text("pos.status.aboutOpenError");
+                SetStatus(PosLocalization.Current.Text("pos.status.aboutOpenError"), PosNoticeSeverity.Error);
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("shell.aboutSupport"), PosLocalization.Current.Format("common.errorWithMessage", ex.Message));
             }
             RequestFocusBarcode();
@@ -1376,7 +1433,7 @@ namespace Win7POS.Wpf.Pos
             {
                 if (_overrideAuthService == null)
                 {
-                    StatusMessage = PosLocalization.Current.Format("common.permissionDeniedOperation", operationText);
+                    SetStatus(PosLocalization.Current.Format("common.permissionDeniedOperation", operationText), PosNoticeSeverity.Error);
                     ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), StatusMessage);
                     return false;
                 }
@@ -1400,7 +1457,7 @@ namespace Win7POS.Wpf.Pos
             if (!(await TryDemandOrOverrideAsync(PermissionCodes.PosRefund, PosLocalization.Current.Text("sales.refundVoid")).ConfigureAwait(true))) return;
             if (SelectedRecentSale == null)
             {
-                StatusMessage = PosLocalization.Current.Text("pos.status.selectSale");
+                SetStatus(PosLocalization.Current.Text("pos.status.selectSale"), PosNoticeSeverity.Warning);
                 return;
             }
             await OpenRefundForSaleIdThenRefreshAsync(SelectedRecentSale.SaleId, null).ConfigureAwait(true);
@@ -1423,14 +1480,14 @@ namespace Win7POS.Wpf.Pos
                 var ok = dlg.ShowDialog() == true;
                 if (!ok)
                 {
-                    StatusMessage = PosLocalization.Current.Text("pos.status.refundCancelled");
+                    SetStatus(PosLocalization.Current.Text("pos.status.refundCancelled"), PosNoticeSeverity.Info);
                     return;
                 }
 
                 var req = vm.BuildRequest();
                 if (req.IsFullVoid && !(await TryDemandOrOverrideAsync(PermissionCodes.PosVoidSale, PosLocalization.Current.Text("sales.kind.void")).ConfigureAwait(true)))
                 {
-                    StatusMessage = PosLocalization.Current.Text("pos.status.voidPermissionDenied");
+                    SetStatus(PosLocalization.Current.Text("pos.status.voidPermissionDenied"), PosNoticeSeverity.Error);
                     return;
                 }
 
@@ -1438,14 +1495,14 @@ namespace Win7POS.Wpf.Pos
                 var result = await _service.CreateRefundAsync(req, UseReceipt42, _printerSettings.AutoPrint).ConfigureAwait(true);
                 _operatorSession?.LogSecurityEvent(SecurityEventCodes.Refund, "originalSaleId=" + saleId + " refundCode=" + result.RefundSaleCode);
                 ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
-                StatusMessage = PosLocalization.Current.Format("pos.status.returnCompleted", result.RefundSaleCode);
+                SetStatus(PosLocalization.Current.Format("pos.status.returnCompleted", result.RefundSaleCode), PosNoticeSeverity.Success);
                 await LoadRecentSalesAsync().ConfigureAwait(true);
                 if (registerVm != null && registerVm.LoadCommand.CanExecute(null))
                     registerVm.LoadCommand.Execute(null);
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("pos.status.refundError", ex.Message);
+                SetStatus(PosLocalization.Current.Format("pos.status.refundError", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM refund failed");
             }
             finally
@@ -1491,15 +1548,17 @@ namespace Win7POS.Wpf.Pos
             }
             catch (InvalidOperationException ex)
             {
-                StatusMessage = ex.Message;
+                SetStatus(ex.Message, PosNoticeSeverity.Error);
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Sales register dialog failed (XAML/binding).");
-                StatusMessage = isRefundScanMode
-                    ? PosLocalization.Current.Text("pos.status.refundOpenError")
-                    : PosLocalization.Current.Text("pos.status.salesRegisterOpenError");
+                SetStatus(
+                    isRefundScanMode
+                        ? PosLocalization.Current.Text("pos.status.refundOpenError")
+                        : PosLocalization.Current.Text("pos.status.salesRegisterOpenError"),
+                    PosNoticeSeverity.Error);
                 ModernMessageDialog.Show(
                     DialogOwnerHelper.GetSafeOwner(),
                     isRefundScanMode ? PosLocalization.Current.Text("refund.title") : PosLocalization.Current.Text("sales.register.title"),
@@ -1542,13 +1601,13 @@ namespace Win7POS.Wpf.Pos
             }
             catch (InvalidOperationException ex)
             {
-                StatusMessage = ex.Message;
+                SetStatus(ex.Message, PosNoticeSeverity.Error);
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "User management dialog failed");
-                StatusMessage = PosLocalization.Current.Text("pos.status.usersOpenError");
+                SetStatus(PosLocalization.Current.Text("pos.status.usersOpenError"), PosNoticeSeverity.Error);
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("shell.usersRoles"), PosLocalization.Current.Format("common.errorWithMessage", ex.Message));
             }
             RequestFocusBarcode();
@@ -1569,13 +1628,13 @@ namespace Win7POS.Wpf.Pos
             }
             catch (InvalidOperationException ex)
             {
-                StatusMessage = ex.Message;
+                SetStatus(ex.Message, PosNoticeSeverity.Error);
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Shop settings dialog failed (XAML/binding).");
-                StatusMessage = PosLocalization.Current.Text("pos.status.shopSettingsOpenError");
+                SetStatus(PosLocalization.Current.Text("pos.status.shopSettingsOpenError"), PosNoticeSeverity.Error);
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("settings.shopTitle"), PosLocalization.Current.Format("common.errorWithMessage", ex.Message));
             }
             RequestFocusBarcode();
@@ -1584,7 +1643,7 @@ namespace Win7POS.Wpf.Pos
         private async Task SuspendCartAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosSuspendCart, PosLocalization.Current.Text("operations.suspendCart")); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             IsBusy = true;
             try
             {
@@ -1593,16 +1652,16 @@ namespace Win7POS.Wpf.Pos
                 {
                     var snapshot = await _service.GetSnapshotAsync().ConfigureAwait(true);
                     ApplySnapshot(snapshot);
-                    StatusMessage = result.Message;
+                    SetStatus(result.Message, PosNoticeSeverity.Success);
                 }
                 else
                 {
-                    StatusMessage = result.Message;
+                    SetStatus(result.Message, PosNoticeSeverity.Warning);
                 }
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "Suspend cart failed");
             }
             finally
@@ -1614,11 +1673,11 @@ namespace Win7POS.Wpf.Pos
         private async Task RecoverCartAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosRecoverCart, PosLocalization.Current.Text("operations.recoverCart")); }
-            catch (InvalidOperationException ex) { StatusMessage = ex.Message; ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             var vm = new Dialogs.HeldCartsViewModel(_service, snapshot =>
             {
                 ApplySnapshot(snapshot);
-                StatusMessage = snapshot?.Status ?? PosLocalization.Current.Text("pos.status.cartRecovered");
+                SetStatus(snapshot?.Status ?? PosLocalization.Current.Text("pos.status.cartRecovered"), PosNoticeSeverity.Success);
             });
             var dlg = new Dialogs.HeldCartsDialog(vm) { Owner = DialogOwnerHelper.GetSafeOwner() };
             WindowSizingHelper.CapMaxHeightToOwner(dlg);
@@ -1630,7 +1689,7 @@ namespace Win7POS.Wpf.Pos
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Recover cart LoadAsync failed");
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
             }
 
             dlg.ShowDialog();
@@ -1656,7 +1715,7 @@ namespace Win7POS.Wpf.Pos
                 var product = await productsService.GetByBarcodeDetailsAsync(line.Barcode).ConfigureAwait(true);
                 if (product == null)
                 {
-                    StatusMessage = PosLocalization.Current.Text("pos.status.productNotFound");
+                    SetStatus(PosLocalization.Current.Text("pos.status.productNotFound"), PosNoticeSeverity.Warning);
                     return;
                 }
 
@@ -1669,13 +1728,13 @@ namespace Win7POS.Wpf.Pos
             }
             catch (InvalidOperationException ex)
             {
-                StatusMessage = ex.Message;
+                SetStatus(ex.Message, PosNoticeSeverity.Error);
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "POS full edit product dialog failed.");
-                StatusMessage = PosLocalization.Current.Text("pos.status.productEditError");
+                SetStatus(PosLocalization.Current.Text("pos.status.productEditError"), PosNoticeSeverity.Error);
             }
         }
 
@@ -1712,14 +1771,16 @@ namespace Win7POS.Wpf.Pos
             {
                 var snapshot = await _service.SetQtyByLineAsync(SelectedCartItem.LineKey, qty).ConfigureAwait(true);
                 ApplySnapshot(snapshot);
-                StatusMessage = qty <= 0
-                    ? PosLocalization.Current.Text("pos.status.lineRemoved")
-                    : PosLocalization.Current.Format("pos.status.quantityUpdated", qty);
+                SetStatus(
+                    qty <= 0
+                        ? PosLocalization.Current.Text("pos.status.lineRemoved")
+                        : PosLocalization.Current.Format("pos.status.quantityUpdated", qty),
+                    PosNoticeSeverity.Success);
                 RequestFocusBarcode();
             }
             catch (Exception ex)
             {
-                StatusMessage = PosLocalization.Current.Format("common.errorWithMessage", ex.Message);
+                SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM set line qty failed");
             }
             finally
@@ -1772,7 +1833,7 @@ namespace Win7POS.Wpf.Pos
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Discount dialog failed.");
-                StatusMessage = PosLocalization.Current.Text("pos.status.discountOpenError");
+                SetStatus(PosLocalization.Current.Text("pos.status.discountOpenError"), PosNoticeSeverity.Error);
             }
         }
 
@@ -1807,9 +1868,15 @@ namespace Win7POS.Wpf.Pos
             return false;
         }
 
-        private void UpdateStatusToast(string message)
+        public void SetStatus(
+            string message,
+            PosNoticeSeverity severity,
+            bool suppressToast = false)
         {
-            if (IsQuietStatus(message))
+            _statusMessage = message ?? string.Empty;
+            OnPropertyChanged(nameof(StatusMessage));
+
+            if (suppressToast || string.IsNullOrWhiteSpace(_statusMessage))
             {
                 _statusToastTimer.Stop();
                 StatusToastMessage = string.Empty;
@@ -1817,43 +1884,40 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
-            StatusToastMessage = message;
+            StatusToastSeverity = severity;
+            StatusToastMessage = _statusMessage;
             IsStatusToastVisible = true;
 
             _statusToastTimer.Stop();
-            if (!IsErrorLikeStatus(message))
+            var delay = PosNoticePolicy.GetAutoDismissDelay(severity);
+            if (delay.HasValue)
             {
+                _statusToastTimer.Interval = delay.Value;
                 _statusToastTimer.Start();
             }
         }
 
-        private static bool IsQuietStatus(string message)
+        private void DismissStatusToast()
         {
-            if (string.IsNullOrWhiteSpace(message))
-            {
-                return true;
-            }
-
-            var trimmed = message.Trim();
-            return string.Equals(trimmed, PosLocalization.Current.Text("pos.status.ready"), StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(trimmed, PosLocalization.Current.Text("pos.status.initialized"), StringComparison.OrdinalIgnoreCase);
+            _statusToastTimer.Stop();
+            IsStatusToastVisible = false;
+            RequestFocusBarcode();
         }
 
-        private static bool IsErrorLikeStatus(string message)
+        private static Brush NoticeBrush(
+            PosNoticeSeverity severity,
+            Color info,
+            Color success,
+            Color warning,
+            Color error)
         {
-            var value = (message ?? string.Empty).Trim();
-            if (value.Length == 0)
+            switch (severity)
             {
-                return false;
+                case PosNoticeSeverity.Success: return new SolidColorBrush(success);
+                case PosNoticeSeverity.Warning: return new SolidColorBrush(warning);
+                case PosNoticeSeverity.Error: return new SolidColorBrush(error);
+                default: return new SolidColorBrush(info);
             }
-
-            return value.IndexOf("error", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                value.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                value.IndexOf("denied", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                value.IndexOf("invalid", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                value.IndexOf("errore", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                value.IndexOf("fall", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                value.IndexOf("no se pudo", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         public void ApplyDiscountSnapshot(PosWorkflowSnapshot snapshot)
@@ -1891,7 +1955,7 @@ namespace Win7POS.Wpf.Pos
             OnPropertyChanged(nameof(FinalTotalDisplay));
             OnPropertyChanged(nameof(HasDiscount));
             if (!string.IsNullOrWhiteSpace(snapshot.Status))
-                StatusMessage = snapshot.Status;
+                SetStatus(snapshot.Status, PosNoticeSeverity.Info, suppressToast: true);
             OnPropertyChanged(nameof(ItemsCount));
 
             PosCartLineRow selected = null;
