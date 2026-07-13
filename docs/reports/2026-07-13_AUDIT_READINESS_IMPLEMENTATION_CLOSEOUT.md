@@ -95,7 +95,7 @@ No Android/Kotlin or external component was modified.
 | Release pack completeness (`-WriteManifests`) | PASS | Required files and manifests present; forbidden payload absent |
 | Win7 runtime release validation | PASS | net48/x86 runtime layout and PE validation passed |
 | Online linking validator on `dist\Win7POS` | PASS | Shared docs and `VERSION.txt` provenance passed |
-| Inno Setup installer | NOT RUN | Inno Setup 6 / `ISCC.exe` is not installed on this builder |
+| Inno Setup installer | PASS | Inno Setup 6.7.3 compiled `installer/output/Win7POS-Setup.exe` successfully |
 
 `VERSION.txt` is generated only by `write-release-support-files.ps1` and records full/short SHA, ref, UTC timestamp, configuration, platform, SDK, clean/dirty state and CI run number when applicable. The final pack is generated after the report commit so its `CommitSHA` equals final `HEAD`; the exact value is intentionally taken from the artifact rather than duplicated inside its own commit.
 
@@ -128,5 +128,5 @@ Automatic structural validation passed for 1024-minimum layout constraints, shar
 1. Operator-driven post-patch UI smoke at both target resolutions/DPI values remains required.
 2. Windows 7 SP1 runtime compatibility must still be confirmed on the target OS.
 3. Printer, scanner and cash-drawer behavior remains hardware-dependent.
-4. The installer artifact remains pending until Inno Setup 6 is available.
+4. The generated installer has not yet been installed and exercised on a clean Windows 7 target.
 5. CI workflows were structurally validated locally but not executed remotely because no push/PR was authorized.
