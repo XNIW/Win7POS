@@ -282,7 +282,9 @@ else {
 Test-ContainsAll "POS status is shown as toast, not footer line" ($posView + $posViewModel) @(
     'IsStatusToastVisible',
     'StatusToastMessage',
-    'UpdateStatusToast'
+    'PosNoticeSeverity',
+    'PosNoticePolicy.GetAutoDismissDelay',
+    'DismissStatusToastCommand'
 )
 
 if ($posView.IndexOf('Text="{Binding StatusMessage}"', [StringComparison]::Ordinal) -ge 0) {

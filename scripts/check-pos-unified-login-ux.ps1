@@ -146,6 +146,26 @@ $dialogCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.x
 Assert-Contains "dialog attempts offline fallback" $dialogCode "TryOfflineSignInAsync"
 Assert-Contains "dialog blocks denied fallback" $dialogCode "onlineDeniedNoOfflineFallback"
 Assert-Contains "dialog logs in session before credential clear path" $dialogCode "LoginLocalUsernameAsync"
+Assert-Contains "dialog exposes explicit recovery action" $dialogXaml 'x:Name="RecoveryButton"'
+Assert-Contains "dialog keeps recovery inside unified access" $dialogCode "OnRecoveryClick"
+Assert-Contains "dialog reaches first-run child only from recovery" $dialogCode "new FirstRunSetupDialog(_factory)"
+
+$recoveryPolicy = Read-Text "src/Win7POS.Core/Security/PosAccessRecoveryPolicy.cs"
+Assert-Contains "recovery policy classifies online denial" $recoveryPolicy "IsDenied(failureKind)"
+Assert-Contains "recovery policy returns denied state" $recoveryPolicy "PosAccessNextStep.Denied"
+if ($dialogCode -match 'onlineDeniedNoOfflineFallback[\s\S]{0,500}CanCreateLocalAdmin') {
+    Fail "online denied path must not expose local admin recovery"
+} else {
+    Pass "online denied path does not expose local admin recovery"
+}
+
+Assert-Contains "shell evaluates catalog before PosView" $main "PosShellStartupPolicy.Determine"
+Assert-Contains "shell has controlled recovery mode" $main "EnterRecoveryModeAsync"
+if ($main -notmatch 'if\s*\(shellMode\s*==\s*PosShellMode\.Pos\)[\s\S]{0,180}EnsurePosViewCreated') {
+    Fail "PosView creation must remain inside the sale-safe POS branch"
+} else {
+    Pass "PosView creation remains inside the sale-safe POS branch"
+}
 
 $operatorSwitchXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xaml"
 Assert-Contains "operator switch dialog exists" $operatorSwitchXaml 'x:Class="Win7POS.Wpf.Pos.Dialogs.OperatorSwitchDialog"'

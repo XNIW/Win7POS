@@ -72,19 +72,30 @@ if ($mainXaml -notmatch 'x:Name="PosTabHost"' -or $mainCode -notmatch "private\s
     Pass "POS view lazy host/creation guard present"
 }
 
-$saleSafeGateIndex = Index-OrFail $mainCode "PosCatalogPullService.IsCatalogSaleSafeAsync" "sale-safe gate missing from MainWindow"
+$saleSafeGateIndex = Index-OrFail $mainCode ".IsCatalogSaleSafeAsync(factory)" "sale-safe gate missing from MainWindow"
 $ensurePosIndex = Index-OrFail $mainCode "EnsurePosViewCreated();" "POS lazy creation call missing"
-$operatorLoginIndex = Index-OrFail $mainCode "OperatorLogin dialog opening" "operator login startup marker missing"
-if ($ensurePosIndex -lt $saleSafeGateIndex -or $operatorLoginIndex -lt $saleSafeGateIndex) {
-    Fail "POS view/operator login can start before sale-safe gate"
+$accessDialogIndex = Index-OrFail $mainCode "POS access dialog opening" "unified POS access startup marker missing"
+if ($ensurePosIndex -lt $saleSafeGateIndex -or $accessDialogIndex -gt $saleSafeGateIndex) {
+    Fail "unified access must precede the sale-safe decision and PosView must follow it"
 } else {
-    Pass "POS view/operator login happen after sale-safe gate"
+    Pass "unified access precedes sale-safe decision; PosView creation follows it"
 }
 
-if ($mainCode -notmatch "App\.IsSafeStart\s*&&\s*!catalogSaleSafe" -or $mainCode -notmatch "onlineFirstLogin\.catalogIncomplete") {
-    Fail "safe-start must still block normal POS when catalog is not sale-safe"
+if ($mainCode -notmatch "PosShellStartupPolicy\.Determine" -or
+    $mainCode -notmatch "PosShellMode\.Recovery" -or
+    $mainCode -notmatch "EnterRecoveryModeAsync" -or
+    $mainCode -notmatch "if\s*\(shellMode\s*==\s*PosShellMode\.Pos\)[\s\S]{0,180}EnsurePosViewCreated") {
+    Fail "catalog-unsafe startup must enter recovery without creating PosView"
 } else {
-    Pass "safe-start blocks normal POS without sale-safe catalog"
+    Pass "catalog-unsafe startup enters recovery and blocks normal PosView"
+}
+
+if ($mainCode -notmatch "RecoveryModeBanner\.Visibility\s*=\s*Visibility\.Visible" -or
+    $mainCode -notmatch "OnVerifyRecoveryCatalogClick" -or
+    $mainCode -notmatch "CatalogRecoveryRepository") {
+    Fail "recovery banner or controlled catalog re-verification is missing"
+} else {
+    Pass "recovery banner and controlled re-verification are present"
 }
 
 if ($posView -notmatch "StartInitialize\(\)") {
@@ -107,7 +118,9 @@ if ($dialogCode -notmatch "_busy" -or $dialogCode -notmatch "BeginBusySetup[\s\S
 
 if ($dialogCode -match "result\.Success[\s\S]{0,220}DialogResult\s*=\s*true") {
     Fail "dialog closes on generic Success instead of sale-safe readiness"
-} elseif ($dialogCode -notmatch "result\.CanOpenPos[\s\S]{0,220}DialogResult\s*=\s*true" -or $dialogCode -notmatch "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe[\s\S]{0,220}DialogResult\s*=\s*true") {
+} elseif ($dialogCode -notmatch "if\s*\(result\.CanOpenPos\)" -or
+    $dialogCode -notmatch "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe" -or
+    $dialogCode -notmatch "AccessMode\s*=\s*PosAuthenticatedAccessMode\.Normal") {
     Fail "dialog must close only after CanOpenPos or completed sale-safe retry"
 } else {
     Pass "dialog closes only after sale-safe readiness"

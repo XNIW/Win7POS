@@ -440,12 +440,13 @@ else {
     Pass "catalog pull cancellation persists timeout status"
 }
 
-if ($workflow -notmatch "check-pos-startup-win7-safe\.ps1" -or
-    $workflow -notmatch "check-release-pack-completeness\.ps1[\s\S]*-ReleasePackSource\s+dist/Win7POS") {
+if ($workflow -notmatch "check-required-gates\.ps1" -or
+    $workflow -notmatch "check-release-pack-completeness\.ps1[\s\S]*-ReleasePackSource\s+dist/Win7POS" -or
+    $workflow -notmatch "check-required-gates\.ps1\s+-ReleasePackSource\s+dist/Win7POS") {
     Fail "ReleasePack workflow does not run startup and package validators"
 }
 else {
-    Pass "ReleasePack workflow runs startup and package validators"
+    Pass "ReleasePack workflow runs canonical startup and package validators"
 }
 
 if ($installer -notmatch "(?m)^MinVersion=6\.1sp1\r?$") {

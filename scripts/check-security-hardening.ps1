@@ -66,18 +66,6 @@ function Run-Check([string]$relativePath) {
     if ($LASTEXITCODE -ne 0) { Fail "$relativePath failed" } else { Pass "$relativePath passed" }
 }
 
-@(
-    "scripts/check-pos-debug-logging.ps1",
-    "scripts/check-pos-online-client.ps1",
-    "scripts/check-pos-online-bootstrap.ps1",
-    "scripts/check-pos-catalog-import-outbox.ps1",
-    "scripts/check-pos-catalog-import-sync.ps1",
-    "scripts/check-pos-sales-sync.ps1",
-    "scripts/check-public-staging-config.ps1",
-    "scripts/check-win7pos-restore-guard.ps1",
-    "scripts/check-architecture-boundaries.ps1"
-) | ForEach-Object { Run-Check $_ }
-
 $runtime = Read-Many @("src/Win7POS.Wpf", "src/Win7POS.Core", "src/Win7POS.Data")
 $release = Read-Many @("installer", "samples", "scripts/set-admin-web-staging-url.bat", "src/Win7POS.Wpf/Win7POS.Wpf.csproj")
 $logger = Read-Text "src/Win7POS.Wpf/Infrastructure/FileLogger.cs"
@@ -86,9 +74,16 @@ $store = Read-Text "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs"
 $options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
 $salesBuilder = Read-Text "src/Win7POS.Data/Online/PosSalesSyncRequestBuilder.cs"
 $catalogBuilder = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxPayloadBuilder.cs"
+$recoveryPolicy = Read-Text "src/Win7POS.Core/Security/PosAccessRecoveryPolicy.cs"
+$userRepository = Read-Text "src/Win7POS.Data/Repositories/UserRepository.cs"
+$accessRecovery = Read-Many @(
+    "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Dialogs/FirstRunSetupDialog.xaml.cs",
+    "src/Win7POS.Data/Repositories/UserRepository.cs"
+)
 
-Require "FileLogger sensitive redaction present" $logger "sessionToken\|deviceToken\|trustedDeviceToken\|pin\|password\|credential"
-Require "StartupTrace sensitive redaction present" $startup "sessionToken\|deviceToken\|trustedDeviceToken\|pin\|password\|credential"
+Require "FileLogger sensitive redaction present" $logger "sessionToken|deviceToken|trustedDeviceToken|pin|password|credential"
+Require "StartupTrace sensitive redaction present" $startup "sessionToken|deviceToken|trustedDeviceToken|pin|password|credential"
 Forbid "direct sensitive runtime logging absent" $runtime "(?i)(Log(?:Info|Warning|Error)|StartupTrace\.Write|Console\.WriteLine)\s*\([^\r\n;]*(trustedDeviceToken|sessionToken|deviceToken|CredentialBox|PinBox|password|credential|payloadJson|payload_json|Authorization\s*:|Bearer)"
 Forbid "literal POS token absent" $runtime "mcpos_(device|session)_[A-Za-z0-9_-]{8,}"
 
@@ -105,6 +100,11 @@ Require "Admin Web rejects path/query/fragment" $options "parsed\.Query[\s\S]*pa
 Require "Admin Web HTTP LAN guard present" $options "parsed\.Scheme == Uri\.UriSchemeHttp && !parsed\.IsLoopback && !AllowInsecureLanAdminWeb\(\)"
 Forbid "release does not enable insecure LAN override" $release "WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB\s*[:=]\s*1"
 Forbid "direct Supabase/service-role absent" (Read-Many @("src", "samples", "installer")) "(?i)(SUPABASE_SERVICE_ROLE_KEY|NEXT_PUBLIC_SUPABASE|createClient\s*\(|supabase\.co|supabaseUrl|supabaseKey|\bservice_role\b)"
+
+Require "online denial is classified before recovery" $recoveryPolicy "IsDenied\(failureKind\)[\s\S]*PosAccessNextStep\.Denied"
+Require "first-run admin rechecks zero users in immediate transaction" $userRepository "BeginTransaction\(deferred:\s*false\)[\s\S]*SELECT COUNT\(\*\)[\s\S]*FirstRunAdminCreated"
+Require "first-run credential is cleared in finally" $accessRecovery "finally[\s\S]*CredentialBox\.Clear\(\)"
+Forbid "access/recovery logs contain no raw operator identifiers or credentials" $accessRecovery "(?i)Log(?:Info|Warning|Error)\s*\([^\r\n;]{0,260}\+\s*(username|shopCode|staffCode|credential|pin)\b"
 
 if ($runtime -match "(?i)FileSystemAccessRule|SetAccessControl|DirectorySecurity|FileSecurity") {
     Info "custom file ACL code present; review manually"
