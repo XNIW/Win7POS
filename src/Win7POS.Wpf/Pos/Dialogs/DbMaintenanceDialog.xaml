@@ -49,12 +49,13 @@
                     <TextBox Grid.Row="2" Grid.Column="1" Margin="8,6,0,0" IsReadOnly="True" Text="{Binding ExportsDirectory, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}"/>
 
                     <WrapPanel Grid.Row="3" Grid.ColumnSpan="2" Margin="0,12,0,0">
-                        <Button MinWidth="120" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.backupNow}" Command="{Binding BackupNowCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                        <Button MinWidth="140" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.restoreBackup}" Command="{Binding RestoreBackupCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                        <Button x:Name="BackupNowButton" MinWidth="120" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.backupNow}" Command="{Binding BackupNowCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                        <Button x:Name="RestoreBackupButton" MinWidth="140" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.restoreBackup}" Command="{Binding RestoreBackupCommand}" Style="{StaticResource OutlineButtonStyle}"/>
                         <Button MinWidth="130" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.integrityCheck}" Command="{Binding IntegrityCheckCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                        <Button MinWidth="110" Height="36" Margin="0,0,8,8" Content="VACUUM" Command="{Binding VacuumCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                        <Button MinWidth="170" Height="36" Margin="0,0,8,8" Content="{loc:Loc supplierExcelImport.title}" Command="{Binding SupplierExcelImportCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                        <Button MinWidth="120" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.openFolder}" Command="{Binding OpenFolderCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                        <Button MinWidth="180" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.completeRestoreReview}" Command="{Binding CompleteRestoreReviewCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                        <Button x:Name="VacuumButton" MinWidth="110" Height="36" Margin="0,0,8,8" Content="VACUUM" Command="{Binding VacuumCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                        <Button x:Name="SupplierImportButton" MinWidth="170" Height="36" Margin="0,0,8,8" Content="{loc:Loc supplierExcelImport.title}" Command="{Binding SupplierExcelImportCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                        <Button x:Name="OpenFolderButton" MinWidth="120" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.openFolder}" Command="{Binding OpenFolderCommand}" Style="{StaticResource OutlineButtonStyle}"/>
                     </WrapPanel>
 
                     <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="DimGray" Text="{loc:Loc dbMaintenance.outputResults}"/>

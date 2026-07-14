@@ -43,12 +43,15 @@ namespace Win7POS.Data.Online
             if (string.IsNullOrWhiteSpace(entry.PayloadHash)) throw new ArgumentException("payload hash is required.");
 
             var nowMs = entry.CreatedAt > 0 ? entry.CreatedAt : DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var origin = await OutboxShopBinding.ResolveRequiredAsync(conn, tx).ConfigureAwait(false);
             await conn.ExecuteAsync(@"
 INSERT OR IGNORE INTO catalog_import_outbox(
-  client_import_id, idempotency_key, schema_version, source, payload_json, payload_hash,
+  client_import_id, idempotency_key, schema_version, operation_type,
+  origin_shop_id, origin_shop_code, source, payload_json, payload_hash,
   status, attempt_count, next_retry_at, created_at, updated_at)
 VALUES(
-  @ClientImportId, @IdempotencyKey, @SchemaVersion, @Source, @PayloadJson, @PayloadHash,
+  @ClientImportId, @IdempotencyKey, @SchemaVersion, 'catalog_import',
+  @OriginShopId, @OriginShopCode, @Source, @PayloadJson, @PayloadHash,
   'pending', 0, 0, @NowMs, @NowMs);",
                 new
                 {
@@ -58,6 +61,8 @@ VALUES(
                     entry.Source,
                     entry.PayloadJson,
                     entry.PayloadHash,
+                    OriginShopId = origin.ShopId,
+                    OriginShopCode = origin.ShopCode,
                     NowMs = nowMs
                 },
                 tx).ConfigureAwait(false);
@@ -68,6 +73,9 @@ SELECT
   client_import_id AS ClientImportId,
   idempotency_key AS IdempotencyKey,
   schema_version AS SchemaVersion,
+  operation_type AS OperationType,
+  origin_shop_id AS OriginShopId,
+  origin_shop_code AS OriginShopCode,
   source AS Source,
   payload_hash AS PayloadHash
 FROM catalog_import_outbox
@@ -81,6 +89,9 @@ LIMIT 1;",
             if (!string.Equals(existing.ClientImportId, entry.ClientImportId, StringComparison.Ordinal) ||
                 !string.Equals(existing.IdempotencyKey, entry.IdempotencyKey, StringComparison.Ordinal) ||
                 !string.Equals(existing.SchemaVersion, entry.SchemaVersion, StringComparison.Ordinal) ||
+                !string.Equals(existing.OperationType, "catalog_import", StringComparison.Ordinal) ||
+                !string.Equals(existing.OriginShopId ?? string.Empty, origin.ShopId, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(existing.OriginShopCode, origin.ShopCode, StringComparison.Ordinal) ||
                 !string.Equals(existing.Source, entry.Source, StringComparison.Ordinal) ||
                 !string.Equals(existing.PayloadHash, entry.PayloadHash, StringComparison.Ordinal))
             {
@@ -104,6 +115,9 @@ SELECT
   client_import_id AS ClientImportId,
   idempotency_key AS IdempotencyKey,
   schema_version AS SchemaVersion,
+  operation_type AS OperationType,
+  origin_shop_id AS OriginShopId,
+  origin_shop_code AS OriginShopCode,
   source AS Source,
   payload_json AS PayloadJson,
   payload_hash AS PayloadHash,
@@ -199,6 +213,23 @@ WHERE id = @outboxId
     )
   );",
                     new { outboxId, nowMs, staleInProgressBefore }).ConfigureAwait(false);
+                return rows == 1;
+            }
+        }
+
+        public async Task<bool> MarkOriginBlockedAsync(long outboxId, string errorCode, long nowMs)
+        {
+            using (var conn = _factory.Open())
+            {
+                var rows = await conn.ExecuteAsync(@"
+UPDATE catalog_import_outbox
+SET status = 'failed_blocked',
+    last_error_code = @errorCode,
+    last_error_at = @nowMs,
+    updated_at = @nowMs
+WHERE id = @outboxId
+  AND status IN ('pending', 'retry', 'in_progress');",
+                    new { outboxId, errorCode, nowMs }).ConfigureAwait(false);
                 return rows == 1;
             }
         }
@@ -559,6 +590,9 @@ AND NOT EXISTS (
             public string ClientImportId { get; set; } = string.Empty;
             public long Id { get; set; }
             public string IdempotencyKey { get; set; } = string.Empty;
+            public string OperationType { get; set; } = string.Empty;
+            public string OriginShopCode { get; set; } = string.Empty;
+            public string OriginShopId { get; set; } = string.Empty;
             public string PayloadHash { get; set; } = string.Empty;
             public string SchemaVersion { get; set; } = string.Empty;
             public string Source { get; set; } = string.Empty;
@@ -584,6 +618,9 @@ AND NOT EXISTS (
         public string IdempotencyKey { get; set; } = string.Empty;
         public string LastErrorCode { get; set; } = string.Empty;
         public long NextRetryAt { get; set; }
+        public string OperationType { get; set; } = string.Empty;
+        public string OriginShopCode { get; set; } = string.Empty;
+        public string OriginShopId { get; set; } = string.Empty;
         public string PayloadHash { get; set; } = string.Empty;
         public string PayloadJson { get; set; } = string.Empty;
         public string SchemaVersion { get; set; } = string.Empty;

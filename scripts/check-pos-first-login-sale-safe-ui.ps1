@@ -72,19 +72,23 @@ if ($mainXaml -notmatch 'x:Name="PosTabHost"' -or $mainCode -notmatch "private\s
     Pass "POS view lazy host/creation guard present"
 }
 
-$saleSafeGateIndex = Index-OrFail $mainCode "PosCatalogPullService.IsCatalogSaleSafeAsync" "sale-safe gate missing from MainWindow"
+$accessDialogIndex = Index-OrFail $mainCode "new PosOnlineFirstLoginDialog" "unified POS access dialog missing from MainWindow"
+$accessAcceptedIndex = Index-OrFail $mainCode "if (login.ShowDialog() != true" "unified POS access acceptance gate missing"
 $ensurePosIndex = Index-OrFail $mainCode "EnsurePosViewCreated();" "POS lazy creation call missing"
-$operatorLoginIndex = Index-OrFail $mainCode "OperatorLogin dialog opening" "operator login startup marker missing"
-if ($ensurePosIndex -lt $saleSafeGateIndex -or $operatorLoginIndex -lt $saleSafeGateIndex) {
-    Fail "POS view/operator login can start before sale-safe gate"
+$operatorLoginIndex = Index-OrFail $mainCode "POS access dialog opening" "POS access startup marker missing"
+if ($accessDialogIndex -lt 0 -or $accessAcceptedIndex -lt 0 -or $ensurePosIndex -lt 0 -or $operatorLoginIndex -lt 0 -or
+    $operatorLoginIndex -gt $accessDialogIndex -or $accessDialogIndex -gt $accessAcceptedIndex -or $accessAcceptedIndex -gt $ensurePosIndex) {
+    Fail "POS view can start before the unified access dialog is accepted"
 } else {
-    Pass "POS view/operator login happen after sale-safe gate"
+    Pass "POS view starts only after unified access dialog acceptance"
 }
 
-if ($mainCode -notmatch "App\.IsSafeStart\s*&&\s*!catalogSaleSafe" -or $mainCode -notmatch "onlineFirstLogin\.catalogIncomplete") {
-    Fail "safe-start must still block normal POS when catalog is not sale-safe"
+$safeStartSyncGuardIndex = Index-OrFail $mainCode "if (!App.IsSafeStart)" "safe-start start-of-day guard missing"
+if ($safeStartSyncGuardIndex -lt $accessAcceptedIndex -or $safeStartSyncGuardIndex -gt $ensurePosIndex -or
+    $dialogCode -notmatch "EnsureCatalogSaleSafeForAccessAsync") {
+    Fail "safe-start can bypass unified sale-safe access before normal POS"
 } else {
-    Pass "safe-start blocks normal POS without sale-safe catalog"
+    Pass "safe-start still passes through unified sale-safe access before normal POS"
 }
 
 if ($posView -notmatch "StartInitialize\(\)") {
@@ -107,10 +111,20 @@ if ($dialogCode -notmatch "_busy" -or $dialogCode -notmatch "BeginBusySetup[\s\S
 
 if ($dialogCode -match "result\.Success[\s\S]{0,220}DialogResult\s*=\s*true") {
     Fail "dialog closes on generic Success instead of sale-safe readiness"
-} elseif ($dialogCode -notmatch "result\.CanOpenPos[\s\S]{0,220}DialogResult\s*=\s*true" -or $dialogCode -notmatch "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe[\s\S]{0,220}DialogResult\s*=\s*true") {
-    Fail "dialog must close only after CanOpenPos or completed sale-safe retry"
 } else {
-    Pass "dialog closes only after sale-safe readiness"
+    $completeSignInMethod = [regex]::Match($dialogCode, "private\s+async\s+Task<bool>\s+CompleteOnlineSignInAsync[\s\S]*?private\s+async\s+Task<bool>\s+TryOfflineSignInAsync").Value
+    $catalogRetryMethod = [regex]::Match($dialogCode, "private\s+async\s+Task\s+RunCatalogRetryAsync[\s\S]*?private\s+void\s+BeginBusySetup").Value
+    $initialReadyRoutesThroughGate = $dialogCode -match "result\.CanOpenPos[\s\S]{0,220}CompleteOnlineSignInAsync"
+    $completionRechecksSaleSafe = $completeSignInMethod -match "EnsureCatalogSaleSafeForAccessAsync[\s\S]*DialogResult\s*=\s*true"
+    $retryRequiresSaleSafe = $catalogRetryMethod -match "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe"
+    $resumeOnlyClosesInsideReadyBranch = $catalogRetryMethod -match "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe[\s\S]*_resumeCatalogOnly[\s\S]*DialogResult\s*=\s*true"
+    $normalRetryRoutesThroughGate = $catalogRetryMethod -match "CompleteOnlineSignInAsync"
+    if (-not $initialReadyRoutesThroughGate -or -not $completionRechecksSaleSafe -or -not $retryRequiresSaleSafe -or
+        -not $resumeOnlyClosesInsideReadyBranch -or -not $normalRetryRoutesThroughGate) {
+        Fail "dialog must close only after CanOpenPos or completed sale-safe retry"
+    } else {
+        Pass "dialog closes only after sale-safe readiness"
+    }
 }
 
 if ($dialogCode -notmatch "finally[\s\S]*request\.Credential\s*=\s*string\.Empty[\s\S]*CredentialBox\.Clear\(\)") {

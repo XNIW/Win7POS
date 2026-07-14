@@ -308,7 +308,7 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
     }
 
     [TestMethod]
-    public void CatalogImportSyncService_RemoteBatchValidation_RequiresPayloadHashAndAllowsOmittedAttempt()
+    public void CatalogImportSyncService_RemoteBatchValidation_RequiresPayloadHashAndAttempt()
     {
         var item = new CatalogImportOutboxItem
         {
@@ -326,7 +326,7 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
                 IdempotencyKey = "idempotency-key"
             }));
         Assert.AreEqual(
-            "",
+            "attempt_count_mismatch",
             InvokeRemoteBatchMismatchCode(item, new PosCatalogImportBatchResponse
             {
                 ClientImportId = "client-import",
@@ -360,6 +360,25 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
                 IdempotencyKey = "idempotency-key",
                 PayloadHash = "wrong-hash"
             }));
+    }
+
+    [TestMethod]
+    public void CatalogImportSyncService_ResponseShopMustMatchImmutableOrigin()
+    {
+        var item = new CatalogImportOutboxItem
+        {
+            OriginShopId = "shop-a",
+            OriginShopCode = "SHOP-A"
+        };
+        Assert.AreEqual(string.Empty, InvokeResponseShopMismatchCode(item, new PosCatalogImportResponse
+        {
+            Shop = new PosShopResponse { ShopId = "shop-a", ShopCode = "shop-a" }
+        }));
+        Assert.AreEqual("response_shop_mismatch", InvokeResponseShopMismatchCode(item, new PosCatalogImportResponse
+        {
+            Shop = new PosShopResponse { ShopId = "shop-b", ShopCode = "SHOP-B" }
+        }));
+        Assert.AreEqual("response_shop_mismatch", InvokeResponseShopMismatchCode(item, new PosCatalogImportResponse()));
     }
 
     private static CatalogImportOutboxEntry BuildCatalogEntry(string name, int rowNumber)
@@ -436,6 +455,17 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
         return (string)method!.Invoke(null, new object[] { item, batch })!;
     }
 
+    private static string InvokeResponseShopMismatchCode(
+        CatalogImportOutboxItem item,
+        PosCatalogImportResponse response)
+    {
+        var method = typeof(CatalogImportSyncService).GetMethod(
+            "GetResponseShopMismatchCode",
+            BindingFlags.NonPublic | BindingFlags.Static);
+        Assert.IsNotNull(method);
+        return (string)method!.Invoke(null, new object[] { item, response })!;
+    }
+
     private static async Task AssertThrowsInvalidOperationAsync(Func<Task> action)
     {
         try
@@ -475,6 +505,17 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
             Root = root;
             Factory = new SqliteConnectionFactory(PosDbOptions.ForPath(Path.Combine(root, "pos.db")));
             DbInitializer.EnsureCreated(PosDbOptions.ForPath(Path.Combine(root, "pos.db")));
+            using var conn = Factory.Open();
+            conn.Execute(@"
+INSERT INTO app_settings(key, value) VALUES(@codeKey, 'TEST-SHOP')
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+INSERT INTO app_settings(key, value) VALUES(@idKey, 'test-shop-id')
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                new
+                {
+                    codeKey = OutboxShopBinding.OfficialShopCodeKey,
+                    idKey = OutboxShopBinding.OfficialShopIdKey
+                });
         }
 
         public SqliteConnectionFactory Factory { get; }

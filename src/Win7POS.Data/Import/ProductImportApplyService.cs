@@ -38,6 +38,19 @@ namespace Win7POS.Data.Import
                         .Where(r => r != null && !string.IsNullOrWhiteSpace(r.Name))
                         .ToList();
 
+                    await EnsureDedicatedRowsDoNotTargetRemoteIdentitiesAsync(
+                        conn,
+                        tx,
+                        "suppliers",
+                        "remote_supplier_id",
+                        usableSuppliers.Select(row => row.Id)).ConfigureAwait(false);
+                    await EnsureDedicatedRowsDoNotTargetRemoteIdentitiesAsync(
+                        conn,
+                        tx,
+                        "categories",
+                        "remote_category_id",
+                        usableCategories.Select(row => row.Id)).ConfigureAwait(false);
+
                     var supplierOverwrites = await CountSheetNameOverwritesAsync(conn, tx, "suppliers", usableSuppliers.Select(r => new IdNamePair
                     {
                         Id = r.Id,
@@ -54,7 +67,13 @@ namespace Win7POS.Data.Import
                         foreach (var r in usableSuppliers)
                         {
                             await conn.ExecuteAsync(
-                                "INSERT OR REPLACE INTO suppliers(id, name) VALUES(@Id, @Name)",
+                                @"INSERT INTO suppliers(id, name, is_active)
+VALUES(@Id, @Name, 1)
+ON CONFLICT(id) DO UPDATE SET
+  name = excluded.name,
+  is_active = 1,
+  remote_deleted_at = NULL
+WHERE suppliers.remote_supplier_id IS NULL;",
                                 new { r.Id, r.Name },
                                 tx).ConfigureAwait(false);
                         }
@@ -65,7 +84,13 @@ namespace Win7POS.Data.Import
                         foreach (var r in usableCategories)
                         {
                             await conn.ExecuteAsync(
-                                "INSERT OR REPLACE INTO categories(id, name) VALUES(@Id, @Name)",
+                                @"INSERT INTO categories(id, name, is_active)
+VALUES(@Id, @Name, 1)
+ON CONFLICT(id) DO UPDATE SET
+  name = excluded.name,
+  is_active = 1,
+  remote_deleted_at = NULL
+WHERE categories.remote_category_id IS NULL;",
                                 new { r.Id, r.Name },
                                 tx).ConfigureAwait(false);
                         }
@@ -193,6 +218,41 @@ VALUES(@Barcode, @Timestamp, @Type, @OldPrice, @NewPrice, @Source)",
             }
 
             return count;
+        }
+
+        private static async Task EnsureDedicatedRowsDoNotTargetRemoteIdentitiesAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            Microsoft.Data.Sqlite.SqliteTransaction tx,
+            string tableName,
+            string remoteIdColumn,
+            IEnumerable<int> ids)
+        {
+            var validTarget =
+                (string.Equals(tableName, "suppliers", StringComparison.Ordinal) &&
+                 string.Equals(remoteIdColumn, "remote_supplier_id", StringComparison.Ordinal)) ||
+                (string.Equals(tableName, "categories", StringComparison.Ordinal) &&
+                 string.Equals(remoteIdColumn, "remote_category_id", StringComparison.Ordinal));
+            if (!validTarget)
+            {
+                throw new ArgumentOutOfRangeException(nameof(tableName));
+            }
+
+            var distinctIds = (ids ?? Enumerable.Empty<int>()).Distinct().ToArray();
+            if (distinctIds.Length == 0)
+            {
+                return;
+            }
+
+            var conflicts = await conn.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM " + tableName +
+                " WHERE id IN @ids AND " + remoteIdColumn + " IS NOT NULL",
+                new { ids = distinctIds },
+                tx).ConfigureAwait(false);
+            if (conflicts > 0)
+            {
+                throw new InvalidOperationException(
+                    "Dedicated local catalog rows cannot overwrite remote category or supplier identities.");
+            }
         }
 
         private sealed class IdNamePair

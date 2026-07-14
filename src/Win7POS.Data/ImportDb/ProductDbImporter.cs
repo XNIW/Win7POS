@@ -63,25 +63,76 @@ namespace Win7POS.Data.ImportDb
 
         private static async Task UpsertSuppliersAsync(SqliteConnection conn, SqliteTransaction tx, IReadOnlyList<SupplierRow> rows, bool dryRun)
         {
-            if (dryRun || rows == null || rows.Count == 0) return;
+            if (rows == null || rows.Count == 0) return;
 
             foreach (var r in rows)
             {
                 if (string.IsNullOrWhiteSpace(r.Name)) continue;
-                await conn.ExecuteAsync(@"INSERT OR REPLACE INTO suppliers(id, name) VALUES(@Id, @Name)",
+                await EnsureLocalReferenceTargetAsync(
+                    conn,
+                    tx,
+                    "suppliers",
+                    "remote_supplier_id",
+                    r.Id).ConfigureAwait(false);
+                if (dryRun) continue;
+                await conn.ExecuteAsync(@"INSERT INTO suppliers(id, name)
+VALUES(@Id, @Name)
+ON CONFLICT(id) DO UPDATE SET name = excluded.name
+WHERE suppliers.remote_supplier_id IS NULL
+  AND COALESCE(suppliers.is_active, 1) = 1;",
                     new { r.Id, r.Name }, tx).ConfigureAwait(false);
             }
         }
 
         private static async Task UpsertCategoriesAsync(SqliteConnection conn, SqliteTransaction tx, IReadOnlyList<CategoryRow> rows, bool dryRun)
         {
-            if (dryRun || rows == null || rows.Count == 0) return;
+            if (rows == null || rows.Count == 0) return;
 
             foreach (var r in rows)
             {
                 if (string.IsNullOrWhiteSpace(r.Name)) continue;
-                await conn.ExecuteAsync(@"INSERT OR REPLACE INTO categories(id, name) VALUES(@Id, @Name)",
+                await EnsureLocalReferenceTargetAsync(
+                    conn,
+                    tx,
+                    "categories",
+                    "remote_category_id",
+                    r.Id).ConfigureAwait(false);
+                if (dryRun) continue;
+                await conn.ExecuteAsync(@"INSERT INTO categories(id, name)
+VALUES(@Id, @Name)
+ON CONFLICT(id) DO UPDATE SET name = excluded.name
+WHERE categories.remote_category_id IS NULL
+  AND COALESCE(categories.is_active, 1) = 1;",
                     new { r.Id, r.Name }, tx).ConfigureAwait(false);
+            }
+        }
+
+        private static async Task EnsureLocalReferenceTargetAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            string tableName,
+            string remoteIdColumn,
+            int id)
+        {
+            var validTarget =
+                (string.Equals(tableName, "suppliers", StringComparison.Ordinal) &&
+                 string.Equals(remoteIdColumn, "remote_supplier_id", StringComparison.Ordinal)) ||
+                (string.Equals(tableName, "categories", StringComparison.Ordinal) &&
+                 string.Equals(remoteIdColumn, "remote_category_id", StringComparison.Ordinal));
+            if (!validTarget)
+            {
+                throw new ArgumentOutOfRangeException(nameof(tableName));
+            }
+
+            var blocked = await conn.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM " + tableName +
+                " WHERE id = @id AND (" + remoteIdColumn + " IS NOT NULL OR COALESCE(is_active, 1) = 0)",
+                new { id },
+                tx).ConfigureAwait(false);
+            if (blocked > 0)
+            {
+                throw new InvalidOperationException(
+                    "Local product database import cannot overwrite a remote or inactive category/supplier identity.");
             }
         }
 

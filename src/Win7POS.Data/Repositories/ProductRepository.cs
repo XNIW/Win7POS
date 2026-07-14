@@ -779,7 +779,7 @@ WHERE (
         )
     )
 )
-AND (o.status IN ('pending', 'retry') OR o.status = 'failed_blocked')",
+AND o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked')",
                         new { p.Barcode, RemoteProductId = normalizedRemoteProductId },
                         tx).ConfigureAwait(false) > 0;
 
@@ -1062,7 +1062,7 @@ VALUES(@barcode, @changedAt, 'purchase', @oldPrice, @newPrice, @source)",
                 return existingByName;
 
             await conn.ExecuteAsync(
-                "INSERT OR IGNORE INTO suppliers(name) VALUES(@name)",
+                "INSERT OR IGNORE INTO suppliers(name, is_active) VALUES(@name, 1)",
                 new { name = normalizedName },
                 tx).ConfigureAwait(false);
             return await FindSupplierByNormalizedNameAsync(conn, tx, normalizedName).ConfigureAwait(false)
@@ -1088,7 +1088,7 @@ VALUES(@barcode, @changedAt, 'purchase', @oldPrice, @newPrice, @source)",
                 return existingByName;
 
             await conn.ExecuteAsync(
-                "INSERT OR IGNORE INTO categories(name) VALUES(@name)",
+                "INSERT OR IGNORE INTO categories(name, is_active) VALUES(@name, 1)",
                 new { name = normalizedName },
                 tx).ConfigureAwait(false);
             return await FindCategoryByNormalizedNameAsync(conn, tx, normalizedName).ConfigureAwait(false)
@@ -1101,7 +1101,7 @@ VALUES(@barcode, @changedAt, 'purchase', @oldPrice, @newPrice, @source)",
                 return Task.FromResult<ProductMetaReference>(null);
 
             return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
-                "SELECT id AS Id, name AS Name FROM suppliers WHERE id = @id LIMIT 1",
+                "SELECT id AS Id, name AS Name FROM suppliers WHERE id = @id AND COALESCE(is_active, 1) = 1 LIMIT 1",
                 new { id = supplierId.Value },
                 tx);
         }
@@ -1112,7 +1112,7 @@ VALUES(@barcode, @changedAt, 'purchase', @oldPrice, @newPrice, @source)",
                 return Task.FromResult<ProductMetaReference>(null);
 
             return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
-                "SELECT id AS Id, name AS Name FROM categories WHERE id = @id LIMIT 1",
+                "SELECT id AS Id, name AS Name FROM categories WHERE id = @id AND COALESCE(is_active, 1) = 1 LIMIT 1",
                 new { id = categoryId.Value },
                 tx);
         }
@@ -1122,7 +1122,8 @@ VALUES(@barcode, @changedAt, 'purchase', @oldPrice, @newPrice, @source)",
             return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
                 @"SELECT id AS Id, name AS Name
 FROM suppliers
-WHERE LOWER(TRIM(name)) = LOWER(@name)
+WHERE COALESCE(is_active, 1) = 1
+  AND LOWER(TRIM(name)) = LOWER(@name)
 ORDER BY id ASC
 LIMIT 1",
                 new { name = normalizedName },
@@ -1134,7 +1135,8 @@ LIMIT 1",
             return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
                 @"SELECT id AS Id, name AS Name
 FROM categories
-WHERE LOWER(TRIM(name)) = LOWER(@name)
+WHERE COALESCE(is_active, 1) = 1
+  AND LOWER(TRIM(name)) = LOWER(@name)
 ORDER BY id ASC
 LIMIT 1",
                 new { name = normalizedName },

@@ -85,7 +85,10 @@ namespace Win7POS.Data.Import
             }
 
             var existing = await _conn.QuerySingleOrDefaultAsync<int?>(
-                "SELECT id FROM suppliers WHERE LOWER(TRIM(REPLACE(REPLACE(name, char(10), ' '), char(13), ' '))) = LOWER(@key)",
+                @"SELECT id
+FROM suppliers
+WHERE COALESCE(is_active, 1) = 1
+  AND LOWER(TRIM(REPLACE(REPLACE(name, char(10), ' '), char(13), ' '))) = LOWER(@key)",
                 new { key }, _tx).ConfigureAwait(false);
             if (existing.HasValue)
             {
@@ -95,7 +98,7 @@ namespace Win7POS.Data.Import
             }
 
             var nextId = await _conn.ExecuteScalarAsync<int>("SELECT COALESCE(MAX(id),0)+1 FROM suppliers", null, _tx).ConfigureAwait(false);
-            await _conn.ExecuteAsync("INSERT INTO suppliers(id, name) VALUES(@id, @name)", new { id = nextId, name = key }, _tx).ConfigureAwait(false);
+            await _conn.ExecuteAsync("INSERT INTO suppliers(id, name, is_active) VALUES(@id, @name, 1)", new { id = nextId, name = key }, _tx).ConfigureAwait(false);
             SuppliersCreated++;
             _supplierCache[key] = nextId;
             return nextId;
@@ -115,7 +118,10 @@ namespace Win7POS.Data.Import
             }
 
             var existing = await _conn.QuerySingleOrDefaultAsync<int?>(
-                "SELECT id FROM categories WHERE LOWER(TRIM(REPLACE(REPLACE(name, char(10), ' '), char(13), ' '))) = LOWER(@key)",
+                @"SELECT id
+FROM categories
+WHERE COALESCE(is_active, 1) = 1
+  AND LOWER(TRIM(REPLACE(REPLACE(name, char(10), ' '), char(13), ' '))) = LOWER(@key)",
                 new { key }, _tx).ConfigureAwait(false);
             if (existing.HasValue)
             {
@@ -125,7 +131,7 @@ namespace Win7POS.Data.Import
             }
 
             var nextId = await _conn.ExecuteScalarAsync<int>("SELECT COALESCE(MAX(id),0)+1 FROM categories", null, _tx).ConfigureAwait(false);
-            await _conn.ExecuteAsync("INSERT INTO categories(id, name) VALUES(@id, @name)", new { id = nextId, name = key }, _tx).ConfigureAwait(false);
+            await _conn.ExecuteAsync("INSERT INTO categories(id, name, is_active) VALUES(@id, @name, 1)", new { id = nextId, name = key }, _tx).ConfigureAwait(false);
             CategoriesCreated++;
             _categoryCache[key] = nextId;
             return nextId;

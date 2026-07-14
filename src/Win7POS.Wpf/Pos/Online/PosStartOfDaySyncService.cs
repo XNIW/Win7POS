@@ -60,12 +60,12 @@ namespace Win7POS.Wpf.Pos.Online
                 .ConfigureAwait(false) == true;
             await RefreshOutboxAsync(result, sales, _factory).ConfigureAwait(false);
 
-            if (!result.CatalogSaleSafe)
+            if (!result.CatalogSaleSafe && !result.RestoreNeedsReview)
             {
                 return Block(result, "catalog_not_sale_safe", T("startOfDay.blockCatalogNotSafe"), "database", progress);
             }
 
-            if (result.RestoreNeedsReview)
+            if (result.RestoreNeedsReview && HasAnyUnresolvedOutbox(result))
             {
                 return Block(result, "restore_needs_review", T("startOfDay.blockRestoreReview"), "database", progress);
             }
@@ -80,7 +80,8 @@ namespace Win7POS.Wpf.Pos.Online
                 return Block(result, "catalog_import_blocked", T("startOfDay.blockCatalogImportBlocked"), "outbox", progress);
             }
 
-            if (await HasStoredAuthDeniedAsync(settings).ConfigureAwait(false))
+            if (!result.RestoreNeedsReview &&
+                await HasStoredAuthDeniedAsync(settings).ConfigureAwait(false))
             {
                 return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "session", progress);
             }
@@ -90,6 +91,11 @@ namespace Win7POS.Wpf.Pos.Online
 
             if (!PosAdminWebOptions.TryLoad(out var options, out _))
             {
+                if (result.RestoreNeedsReview)
+                {
+                    return Block(result, "restore_needs_review", T("startOfDay.blockRestoreReview"), "session", progress);
+                }
+
                 return ContinueLocal(
                     result,
                     T("startOfDay.noServerConfig"),
@@ -101,6 +107,11 @@ namespace Win7POS.Wpf.Pos.Online
 
             if (!_store.TryRead(out var trustedSession))
             {
+                if (result.RestoreNeedsReview)
+                {
+                    return Block(result, "restore_needs_review", T("startOfDay.blockRestoreReview"), "session", progress);
+                }
+
                 return ContinueLocal(
                     result,
                     T("startOfDay.noTrustedSession"),
@@ -119,6 +130,11 @@ namespace Win7POS.Wpf.Pos.Online
 
             if (!heartbeatOk)
             {
+                if (result.RestoreNeedsReview)
+                {
+                    return Block(result, "restore_needs_review", T("startOfDay.blockRestoreReview"), "session", progress);
+                }
+
                 return ContinueLocal(
                     result,
                     T("startOfDay.continueBackground"),
@@ -126,6 +142,12 @@ namespace Win7POS.Wpf.Pos.Online
                     requiresOperatorAction: false,
                     "session",
                     progress);
+            }
+
+            if (result.RestoreNeedsReview)
+            {
+                return await RunRestoreReconciliationAsync(result, options, progress, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             Report(progress, "outbox", "active", T("startOfDay.stepOutbox"));
@@ -188,6 +210,91 @@ namespace Win7POS.Wpf.Pos.Online
             Report(progress, "catalog", catalogComplete ? "ok" : "warning", T("startOfDay.stepCatalog"));
             Report(progress, "complete", "ok", result.StatusMessage);
             return result;
+        }
+
+        private async Task<StartOfDaySyncResult> RunRestoreReconciliationAsync(
+            StartOfDaySyncResult result,
+            PosAdminWebOptions options,
+            IProgress<PosStartOfDaySyncProgress> progress,
+            CancellationToken cancellationToken)
+        {
+            Report(progress, "outbox", "ok", T("startOfDay.stepOutbox"));
+            Report(progress, "sales", "ok", T("startOfDay.stepSales"));
+            Report(progress, "catalog-import", "ok", T("startOfDay.stepCatalogImport"));
+            Report(progress, "catalog", "active", T("startOfDay.stepCatalog"));
+
+            var catalogComplete = await TryRestoreCatalogReconciliationAsync(options, result, cancellationToken)
+                .ConfigureAwait(false);
+            if (!catalogComplete)
+            {
+                return Block(result, "restore_needs_review", T("startOfDay.blockRestoreReview"), "catalog", progress);
+            }
+
+            var review = await new RestoreShopSafetyRepository(_factory)
+                .CompleteReviewAsync()
+                .ConfigureAwait(false);
+            if (!review.IsValid)
+            {
+                _logger.LogWarning("Restore reconciliation did not complete: code=" + SafeCode(review.Code));
+                return Block(result, review.Code, T("startOfDay.blockRestoreReview"), "catalog", progress);
+            }
+
+            result.CatalogSaleSafe = await PosCatalogPullService
+                .IsCatalogSaleSafeAsync(_factory)
+                .ConfigureAwait(false);
+            if (!result.CatalogSaleSafe)
+            {
+                return Block(result, "catalog_not_sale_safe", T("startOfDay.blockCatalogNotSafe"), "catalog", progress);
+            }
+
+            result.RestoreNeedsReview = false;
+            result.CanOpenPos = true;
+            result.RequiresOperatorAction = false;
+            result.ShouldContinueInBackground = false;
+            result.BlockingReason = string.Empty;
+            result.CatalogStatus = "completed";
+            result.StatusMessage = T("startOfDay.complete");
+            Report(progress, "catalog", "ok", T("startOfDay.stepCatalog"));
+            Report(progress, "complete", "ok", result.StatusMessage);
+            return result;
+        }
+
+        private async Task<bool> TryRestoreCatalogReconciliationAsync(
+            PosAdminWebOptions options,
+            StartOfDaySyncResult result,
+            CancellationToken cancellationToken)
+        {
+            using (var cts = CreateStepCts(CatalogDeltaTimeout, cancellationToken))
+            {
+                try
+                {
+                    var outcome = await new PosCatalogPullService(_factory)
+                        .TryPullInitialCatalogAsync(options, cts.Token)
+                        .ConfigureAwait(false);
+                    if (!outcome.Completed)
+                    {
+                        result.LastTransientError = SafeCode(outcome.StatusCode);
+                    }
+
+                    return outcome.Completed;
+                }
+                catch (OperationCanceledException)
+                {
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+
+                    result.LastTransientError = "restore_catalog_timeout";
+                    return false;
+                }
+                catch (Exception ex)
+                {
+                    result.LastTransientError = "restore_catalog_exception";
+                    _logger.LogWarning("Restore catalog reconciliation failed.", ex);
+                    return false;
+                }
+            }
         }
 
         private async Task<bool> TryHeartbeatAsync(
@@ -395,6 +502,16 @@ namespace Win7POS.Wpf.Pos.Online
             result.PendingCatalogImports = ToSafeInt(catalogOutbox.Pending + catalogOutbox.InProgress);
             result.RetryCatalogImports = ToSafeInt(catalogOutbox.Retry);
             result.BlockedCatalogImports = ToSafeInt(catalogOutbox.Blocked);
+        }
+
+        private static bool HasAnyUnresolvedOutbox(StartOfDaySyncResult result)
+        {
+            return result.PendingSales > 0 ||
+                result.RetrySales > 0 ||
+                result.BlockedSales > 0 ||
+                result.PendingCatalogImports > 0 ||
+                result.RetryCatalogImports > 0 ||
+                result.BlockedCatalogImports > 0;
         }
 
         private static async Task<bool> HasStoredAuthDeniedAsync(SettingsRepository settings)

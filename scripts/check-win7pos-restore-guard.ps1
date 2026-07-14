@@ -29,8 +29,11 @@ $required = @(
     "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs",
     "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs",
+    "src/Win7POS.Wpf/MainWindow.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
     "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs",
+    "src/Win7POS.Data/Online/AtomicRestoreInstaller.cs",
     "src/Win7POS.Data/Repositories/DbMaintenanceRepository.cs"
 )
 
@@ -51,6 +54,11 @@ $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.Secondar
 $saleRepo = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
 $catalogOutboxRepo = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
 $maintenance = Read-Text "src/Win7POS.Data/Repositories/DbMaintenanceRepository.cs"
+$restoreSafety = Read-Text "src/Win7POS.Data/Online/RestoreShopSafetyRepository.cs"
+$restoreSafetyTests = Read-Text "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs"
+$atomicInstaller = Read-Text "src/Win7POS.Data/Online/AtomicRestoreInstaller.cs"
+$mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$maintenanceDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml.cs"
 $combined = Get-ChildItem -Path (Join-Path $repoRoot "src") -Recurse -File -Include *.cs,*.xaml |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) } |
@@ -63,11 +71,12 @@ $restoreBody = $workflow.Substring($restoreStart, $restoreEnd - $restoreStart)
 $outboxCheck = Index-OrFail $restoreBody "HasUnresolvedSalesSyncOutboxAsync" "restore must check unresolved sales outbox"
 $catalogOutboxCheck = Index-OrFail $restoreBody "_catalogImportOutbox.HasUnresolvedAsync" "restore must check unresolved catalog import outbox"
 $preBackup = Index-OrFail $restoreBody 'CreateDbBackupCopyNoLock("pos_pre_restore_")' "restore must create pre-restore backup"
-$copyRestore = Index-OrFail $restoreBody "File.Copy(backupDbPath, _options.DbPath, true)" "restore must copy selected backup after guard"
+$copyRestore = Index-OrFail $restoreBody "new AtomicRestoreInstaller().InstallAsync" "restore must atomically install the validated copy"
 $ensureCreated = Index-OrFail $restoreBody "DbInitializer.EnsureCreated(_options)" "restore must run migrations after copy"
-$integrity = Index-OrFail $restoreBody "var integrity = await _dbMaintenance.IntegrityCheckAsync()" "restore must run live DB integrity check"
+$integrity = Index-OrFail $restoreBody "integrity = await _dbMaintenance.IntegrityCheckAsync()" "restore must run live DB integrity check"
 $reviewFlag = Index-OrFail $restoreBody "SetBoolAsync(KeyRestoreNeedsSyncReview, true)" "restore must mark sync review required"
 $walCheckpoint = Index-OrFail $restoreBody "WalCheckpointAsync()" "restore must checkpoint WAL before copying live DB"
+$candidateValidation = Index-OrFail $restoreBody "ValidateCandidateAsync" "restore must validate candidate shop binding before copying live DB"
 
 if ($outboxCheck -gt $preBackup -or $catalogOutboxCheck -gt $preBackup -or $preBackup -gt $copyRestore -or $copyRestore -gt $ensureCreated -or $ensureCreated -gt $integrity -or $integrity -gt $reviewFlag) {
     Fail "restore guard order must be outbox checks -> pre-backup -> restore -> migrations -> integrity -> sync-review flag"
@@ -81,10 +90,39 @@ if ($walCheckpoint -gt $preBackup) {
     Pass "restore checkpoints WAL before pre-backup"
 }
 
-if ($saleRepo -notmatch "WHERE status IN \('pending', 'retry', 'failed_blocked'\)") {
-    Fail "unresolved outbox guard must include pending, retry and failed_blocked"
+if ($candidateValidation -gt $copyRestore -or
+    $restoreSafety -notmatch "restore_shop_mismatch" -or
+    $restoreSafety -notmatch "restore_catalog_shop_mismatch" -or
+    $restoreSafety -notmatch "restore_candidate_outbox_unresolved" -or
+    $restoreSafetyTests -notmatch "CandidateValidation_RejectsCrossShopSnapshotAndAnyUnresolvedOutbox" -or
+    $restoreSafetyTests -notmatch "CandidateValidation_RejectsCatalogBindingMismatch") {
+    Fail "restore must reject incoherent official/catalog binding and every unresolved candidate outbox before live DB copy"
 } else {
-    Pass "unresolved outbox guard includes pending/retry/failed_blocked"
+    Pass "restore validates official/catalog binding and rejects every unresolved candidate outbox before copy"
+}
+
+if ($restoreBody -notmatch "File\.Copy\(backupDbPath, tempRestorePath, true\)" -or
+    $restoreBody -notmatch "InstallAsync\([\s\S]*tempRestorePath" -or
+    $restoreBody -match "File\.Copy\(backupDbPath, _options\.DbPath" -or
+    $restoreSafetyTests -notmatch "AtomicInstaller_UsesValidatedCopyAfterSourceMutation") {
+    Fail "restore must install the already-validated temporary copy and cover source TOCTOU"
+} else {
+    Pass "restore installs the validated temporary copy and covers source TOCTOU"
+}
+
+if ($atomicInstaller -notmatch "catch \(Exception installException\)" -or
+    $atomicInstaller -notmatch "File\.Copy\(rollbackDatabasePath, liveDatabasePath, true\)" -or
+    $atomicInstaller -notmatch "DeleteSqliteSidecars" -or
+    $restoreSafetyTests -notmatch "AtomicInstaller_RollsBackOnPostSwapFailure") {
+    Fail "restore post-swap work must roll back the live DB on every failure"
+} else {
+    Pass "restore post-swap work is fail-atomic with failure-injection coverage"
+}
+
+if ($saleRepo -notmatch "WHERE status IN \('pending', 'retry', 'in_progress', 'failed_blocked'\)") {
+    Fail "unresolved outbox guard must include pending, retry, in_progress and failed_blocked"
+} else {
+    Pass "unresolved outbox guard includes pending/retry/in_progress/failed_blocked"
 }
 
 if ($catalogOutboxRepo -notmatch "WHERE status IN \('pending', 'retry', 'in_progress', 'failed_blocked'\)") {
@@ -116,10 +154,13 @@ if ($workflow -notmatch "public async Task<string> BackupDbAsync" -or
 
 if ($startOfDay -notmatch "RestoreNeedsReviewSettingKey" -or
     $startOfDay -notmatch "restore_needs_review" -or
-    $startOfDay -notmatch "Block\(result, `"restore_needs_review`"") {
-    Fail "start-of-day must block restore-needs-review"
+    $startOfDay -notmatch "RunRestoreReconciliationAsync" -or
+    $startOfDay -notmatch "CompleteReviewAsync" -or
+    $mainWindow -notmatch "ShowRestoreReviewRecoveryAsync" -or
+    $maintenanceDialog -notmatch "restoreReviewOnly") {
+    Fail "start-of-day must expose a restricted restore reconciliation/review path before MainWindow closes"
 } else {
-    Pass "start-of-day blocks restore-needs-review"
+    Pass "start-of-day exposes reconciliation and restricted maintenance review before MainWindow closes"
 }
 
 if ($statusReader -notmatch "RestoreNeedsReviewSettingKey" -or
@@ -132,10 +173,20 @@ if ($statusReader -notmatch "RestoreNeedsReviewSettingKey" -or
 
 if ($translations -notmatch "dbMaintenance.restoreBlockedUnresolvedSales" -or
     $translations -notmatch "dbMaintenance.restoreBlockedUnresolvedCatalogImports" -or
-    $translations -notmatch "dbMaintenance.restoreSyncReview") {
+    $translations -notmatch "dbMaintenance.restoreSyncReview" -or
+    $translations -notmatch "dbMaintenance.restoreTrustedShopRequired") {
     Fail "restore user-facing safety messages missing"
 } else {
     Pass "restore user-facing safety messages present"
+}
+
+if ($workflow -notmatch "CompleteRestoreSyncReviewAsync" -or
+    $restoreSafety -notmatch "CompleteReviewAsync" -or
+    $restoreSafety -notmatch "restore_review_catalog_not_reconciled" -or
+    $restoreSafetyTests -notmatch "CompleteReview_RequiresPostRestoreCatalogAndNoUnresolvedOutbox") {
+    Fail "safe restore review completion path missing"
+} else {
+    Pass "restore review completion requires reconciled catalog and resolved outboxes"
 }
 
 if ($combined -match "(?i)\b(TRUNCATE\s+TABLE\s+sales_sync_outbox|DROP\s+TABLE\s+sales_sync_outbox|DELETE\s+FROM\s+sales_sync_outbox)\b") {
