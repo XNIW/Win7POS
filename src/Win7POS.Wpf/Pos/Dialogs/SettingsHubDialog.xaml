@@ -27,16 +27,20 @@
             <TextBlock Text="{loc:Loc settings.hubIntro}" Style="{StaticResource MutedTextStyle}"/>
         </StackPanel>
 
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+        <ScrollViewer Grid.Row="1"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled"
+                      CanContentScroll="False">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
             <Button x:Name="ShopDataButton" Grid.Row="0" Grid.Column="0" Style="{StaticResource SettingsCardButtonStyle}" Click="OnShopDataClick">
                 <StackPanel>
@@ -86,14 +90,15 @@
                 </StackPanel>
             </Button>
 
-            <Button x:Name="OnlineAccessButton" Grid.Row="0" Grid.Column="0" Visibility="Collapsed" Style="{StaticResource SettingsCardButtonStyle}" Click="OnOnlineAccessClick">
-                <StackPanel>
-                    <Path Data="{StaticResource IconSync}" Style="{StaticResource SettingsCardIconPathStyle}"/>
-                    <TextBlock Text="{loc:Loc access.login.retryOnline}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
-                    <TextBlock Text="{loc:Loc settings.cardOnlineAccessHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
-                </StackPanel>
-            </Button>
-        </Grid>
+                <Button x:Name="OnlineAccessButton" Grid.Row="0" Grid.Column="0" Visibility="Collapsed" Style="{StaticResource SettingsCardButtonStyle}" Click="OnOnlineAccessClick">
+                    <StackPanel>
+                        <Path Data="{StaticResource IconSync}" Style="{StaticResource SettingsCardIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc access.login.retryOnline}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                        <TextBlock Text="{loc:Loc settings.cardOnlineAccessHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </ScrollViewer>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
             <Button Style="{StaticResource DialogCancelButtonStyle}"

@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Input;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -13,7 +14,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public RefundDialog(RefundViewModel vm)
         {
             InitializeComponent();
-            // Dimensioni fisse come Registro vendite (980x700 da XAML, NoResize)
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(
+                this,
+                minWidth: 720,
+                minHeight: 520,
+                maxWidthPercent: 0.96,
+                maxHeightPercent: 0.96,
+                allowResize: true);
             ViewModel = vm;
             ViewModel.RequestClose += OnRequestClose;
             DataContext = vm;
@@ -33,27 +40,56 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void CardStorno_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
+            (sender as UIElement)?.Focus();
             if (ViewModel.IsFullVoidEnabled)
                 ViewModel.IsFullVoid = true;
         }
 
         private void CardReso_Click(object sender, System.Windows.Input.MouseButtonEventArgs e)
         {
+            (sender as UIElement)?.Focus();
             ViewModel.IsPartialReturn = true;
+        }
+
+        private void CardStorno_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter && e.Key != Key.Space)
+                return;
+
+            if (ViewModel.IsFullVoidEnabled)
+                ViewModel.IsFullVoid = true;
+            e.Handled = true;
+        }
+
+        private void CardReso_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter && e.Key != Key.Space)
+                return;
+
+            ViewModel.IsPartialReturn = true;
+            e.Handled = true;
         }
 
         private void OnConfirmClick(object sender, RoutedEventArgs e)
         {
-            if (!ViewModel.IsValid) return;
+            TryConfirmWithPrompt();
+        }
+
+        private bool TryConfirmWithPrompt()
+        {
+            if (!ViewModel.IsValid)
+                return false;
+
             if (ViewModel.IsFullVoid)
             {
                 if (!ApplyConfirmDialog.ShowConfirm(
                     this,
                     PosLocalization.T("refund.confirmVoidTitle"),
                     PosLocalization.F("refund.confirmVoidMessage", ViewModel.SaleCodeText)))
-                    return;
+                    return false;
             }
-            ViewModel.TryConfirm();
+
+            return ViewModel.TryConfirm();
         }
 
         private void BarcodeScanBox_KeyDown(object sender, KeyEventArgs e)
@@ -77,7 +113,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var focused = Keyboard.FocusedElement as System.Windows.FrameworkElement;
                 if (focused != null && focused.Name == "BarcodeScanBox")
                     return;
-                if (ViewModel.IsValid && ViewModel.TryConfirm())
+                if (TryConfirmWithPrompt())
                     e.Handled = true;
                 return;
             }

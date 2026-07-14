@@ -159,8 +159,11 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Margin="0,0,0,6" Foreground="Gray"
-                           Text="{Binding DiffItems.Count, StringFormat=Items count: {0}}"/>
+                <TextBlock Grid.Row="0" Margin="0,0,0,6" Foreground="Gray">
+                    <Run Text="{loc:Loc import.itemsCount}"/>
+                    <Run Text=" "/>
+                    <Run Text="{Binding DiffItems.Count}"/>
+                </TextBlock>
                 <DataGrid Grid.Row="1"
                           ItemsSource="{Binding DiffItems}"
                           AutoGenerateColumns="True"
@@ -180,7 +183,11 @@
 
         <!-- Hint -->
         <StackPanel Grid.Row="5" Margin="0,8,0,0">
-            <TextBlock Foreground="Gray" Text="{Binding DbPath, StringFormat=DB: {0}}"/>
+            <TextBlock Foreground="Gray">
+                <Run Text="{loc:Loc import.databasePath}"/>
+                <Run Text=" "/>
+                <Run Text="{Binding DbPath}"/>
+            </TextBlock>
             <TextBlock Foreground="Gray"
                        Text="{loc:Loc import.hint}"/>
         </StackPanel>

@@ -1526,7 +1526,7 @@ namespace Win7POS.Wpf.Pos
         {
             try
             {
-                _permissionService?.Demand(PermissionCodes.RegisterView, "Registro vendite");
+                _permissionService?.Demand(PermissionCodes.RegisterView, PosLocalization.Current.Text("sales.register.title"));
                 var canViewAll = _permissionService?.Has(PermissionCodes.RegisterViewAll) == true;
                 var currentUserId = _operatorSession?.CurrentUser?.Id;
                 System.Collections.Generic.IReadOnlyList<(int id, string displayName)> operators = null;
@@ -1575,12 +1575,15 @@ namespace Win7POS.Wpf.Pos
             vm.CanManageRoles = _permissionService?.Has(PermissionCodes.RolesManage) == true;
             if (_operatorSession != null && _operatorSession.IsLoggedIn)
             {
-                vm.CurrentOperatorDisplay = "Operatore: " + _operatorSession.CurrentDisplayName + " (" + _operatorSession.CurrentRoleName + ")";
+                vm.CurrentOperatorDisplay = PosLocalization.Current.Format(
+                    "operator.switch.currentOperator",
+                    _operatorSession.CurrentDisplayName,
+                    _operatorSession.CurrentRoleName);
                 vm.CurrentOperatorUsername = _operatorSession.CurrentUser?.Username ?? "";
             }
             else
             {
-                vm.CurrentOperatorDisplay = "Operatore: —";
+                vm.CurrentOperatorDisplay = PosLocalization.Current.Text("operator.switch.noCurrentOperator");
                 vm.CurrentOperatorUsername = "";
             }
             return vm;
@@ -1643,7 +1646,7 @@ namespace Win7POS.Wpf.Pos
         private async Task SuspendCartAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosSuspendCart, PosLocalization.Current.Text("operations.suspendCart")); }
-            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); RequestFocusBarcode(); return; }
             IsBusy = true;
             try
             {
@@ -1673,7 +1676,7 @@ namespace Win7POS.Wpf.Pos
         private async Task RecoverCartAsync()
         {
             try { _permissionService?.Demand(PermissionCodes.PosRecoverCart, PosLocalization.Current.Text("operations.recoverCart")); }
-            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
+            catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); RequestFocusBarcode(); return; }
             var vm = new Dialogs.HeldCartsViewModel(_service, snapshot =>
             {
                 ApplySnapshot(snapshot);
@@ -1693,6 +1696,7 @@ namespace Win7POS.Wpf.Pos
             }
 
             dlg.ShowDialog();
+            RequestFocusBarcode();
         }
 
         private static bool CanEditCartLine(PosCartLineRow line)
@@ -1723,7 +1727,6 @@ namespace Win7POS.Wpf.Pos
                 if (ok)
                 {
                     await RefreshCartFromDatabaseAsync(PosLocalization.Current.Text("pos.status.cartUpdatedAfterProductEdit")).ConfigureAwait(true);
-                    RequestFocusBarcode();
                 }
             }
             catch (InvalidOperationException ex)
@@ -1735,6 +1738,10 @@ namespace Win7POS.Wpf.Pos
             {
                 _logger.LogError(ex, "POS full edit product dialog failed.");
                 SetStatus(PosLocalization.Current.Text("pos.status.productEditError"), PosNoticeSeverity.Error);
+            }
+            finally
+            {
+                RequestFocusBarcode();
             }
         }
 
@@ -1754,6 +1761,7 @@ namespace Win7POS.Wpf.Pos
             WindowSizingHelper.CapMaxHeightToOwner(dlg);
             if (dlg.ShowDialog() == true)
                 _ = SetSelectedLineQtyAsync(dlg.Quantity);
+            RequestFocusBarcode();
         }
 
         private void OpenChangeQuantityForLine(PosCartLineRow row)
@@ -1834,6 +1842,10 @@ namespace Win7POS.Wpf.Pos
             {
                 _logger.LogError(ex, "Discount dialog failed.");
                 SetStatus(PosLocalization.Current.Text("pos.status.discountOpenError"), PosNoticeSeverity.Error);
+            }
+            finally
+            {
+                RequestFocusBarcode();
             }
         }
 

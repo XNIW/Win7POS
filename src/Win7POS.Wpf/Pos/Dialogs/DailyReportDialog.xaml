@@ -14,15 +14,19 @@
         ResizeMode="CanResize"
         Width="1100"
         Height="760"
-        MinWidth="900"
-        MinHeight="660">
+        MinWidth="720"
+        MinHeight="520">
     <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <pos:DailyReportView Grid.Row="0" DataContext="{Binding}"/>
+        <ScrollViewer Grid.Row="0"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Disabled">
+        <pos:DailyReportView MinWidth="900" DataContext="{Binding}"/>
+        </ScrollViewer>
 
         <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
             <TextBlock Text="{Binding Status, Mode=OneWay}" VerticalAlignment="Center" Foreground="#888" FontSize="10" Margin="0,0,10,0" MaxWidth="380" TextTrimming="CharacterEllipsis"

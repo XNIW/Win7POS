@@ -10,13 +10,11 @@
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        ResizeMode="NoResize"
+        ResizeMode="CanResize"
         Width="980"
         Height="700"
-        MinWidth="980"
-        MaxWidth="980"
-        MinHeight="700"
-        MaxHeight="700"
+        MinWidth="720"
+        MinHeight="520"
         KeyDown="OnKeyDown">
     <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>
@@ -24,9 +22,9 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="{loc:Loc refund.title}" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,10"/>
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <Grid Margin="0">
+        <TextBlock Grid.Row="0" Text="{loc:Loc refund.title}" Style="{StaticResource DialogTitleStyle}"/>
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto">
+            <Grid Margin="0" MinWidth="700">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
@@ -67,7 +65,9 @@
         <!-- Selettore modalità: due card -->
         <TextBlock Grid.Row="1" Text="{loc:Loc refund.operationType}" FontWeight="SemiBold" FontSize="12" Margin="0,0,0,6"/>
         <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,10">
-            <Border x:Name="CardStorno" Padding="14,10" Margin="0,0,10,0" CornerRadius="6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Cursor="Hand" MouseLeftButtonDown="CardStorno_Click">
+            <Border x:Name="CardStorno" Padding="14,10" Margin="0,0,10,0" CornerRadius="6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Cursor="Hand"
+                    Focusable="True" MouseLeftButtonDown="CardStorno_Click" KeyDown="CardStorno_KeyDown"
+                    AutomationProperties.Name="{loc:Loc refund.fullVoid}">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
@@ -77,6 +77,10 @@
                                 <Setter Property="BorderBrush" Value="#4CAF50"/>
                                 <Setter Property="BorderThickness" Value="2"/>
                             </DataTrigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter Property="BorderBrush" Value="#5E3F86"/>
+                                <Setter Property="BorderThickness" Value="3"/>
+                            </Trigger>
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
@@ -85,7 +89,9 @@
                     <TextBlock Text="{loc:Loc refund.fullVoidHelp}" FontSize="11" Foreground="Gray" Margin="0,2,0,0"/>
                 </StackPanel>
             </Border>
-            <Border x:Name="CardReso" Padding="14,10" Margin="0,0,0,0" CornerRadius="6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Cursor="Hand" MouseLeftButtonDown="CardReso_Click">
+            <Border x:Name="CardReso" Padding="14,10" Margin="0,0,0,0" CornerRadius="6" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Cursor="Hand"
+                    Focusable="True" MouseLeftButtonDown="CardReso_Click" KeyDown="CardReso_KeyDown"
+                    AutomationProperties.Name="{loc:Loc refund.partialReturn}">
                 <Border.Style>
                     <Style TargetType="Border">
                         <Setter Property="Background" Value="{StaticResource BackgroundLightBrush}"/>
@@ -95,6 +101,10 @@
                                 <Setter Property="BorderBrush" Value="#FF9800"/>
                                 <Setter Property="BorderThickness" Value="2"/>
                             </DataTrigger>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter Property="BorderBrush" Value="#5E3F86"/>
+                                <Setter Property="BorderThickness" Value="3"/>
+                            </Trigger>
                         </Style.Triggers>
                     </Style>
                 </Border.Style>
@@ -205,15 +215,15 @@
         </WrapPanel>
             </Grid>
         </ScrollViewer>
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button MinWidth="120" Height="42" Margin="0,0,10,0" Click="OnConfirmClick" Style="{StaticResource PrimaryButtonStyle}"
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+            <Button MinWidth="120" Margin="0,0,10,0" Click="OnConfirmClick" Style="{StaticResource DialogActionButtonStyle}"
                     IsEnabled="{Binding IsValid}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconRefund}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.confirm}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button MinWidth="120" Height="42" IsCancel="True" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}">
+            <Button MinWidth="120" IsCancel="True" Command="{Binding CancelCommand}" Style="{StaticResource DialogCancelButtonStyle}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>

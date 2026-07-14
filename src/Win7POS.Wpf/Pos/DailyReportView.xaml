@@ -41,7 +41,7 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0">
-                <TextBlock Text="{loc:Loc reports.closeTitle}" FontSize="20" FontWeight="SemiBold" Foreground="#333"/>
+                <TextBlock Text="{loc:Loc reports.closeTitle}" Style="{StaticResource DialogTitleStyle}" Margin="0"/>
                 <TextBlock Text="{loc:Loc reports.closeSubtitle}" FontSize="11" Foreground="#666" Margin="0,2,0,0"/>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">

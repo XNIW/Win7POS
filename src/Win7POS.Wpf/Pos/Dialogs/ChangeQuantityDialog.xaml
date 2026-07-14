@@ -34,7 +34,7 @@
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="{loc:Loc quantity.changeTitle}" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,10"/>
+        <TextBlock Grid.Row="0" Text="{loc:Loc quantity.changeTitle}" Style="{StaticResource DialogTitleStyle}"/>
         <TextBlock x:Name="ProductNameText" Grid.Row="1" FontWeight="SemiBold" FontSize="13" Foreground="#5E3F86" TextWrapping="Wrap" Margin="0,0,0,12"/>
         <TextBlock Grid.Row="2" Text="{loc:Loc common.quantity}" Foreground="#666" Margin="0,0,0,6"/>
         <TextBox x:Name="QtyBox" Grid.Row="3" MinHeight="52" FontSize="24" Margin="0,0,0,16"
@@ -56,14 +56,14 @@
             <Button Content="⌫" Style="{StaticResource KeypadBtn}" Click="Backspace_Click"/>
         </UniformGrid>
         </Border>
-        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button MinWidth="90" Height="42" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click" Style="{StaticResource OutlineButtonStyle}">
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+            <Button MinWidth="90" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click" Style="{StaticResource DialogCancelButtonStyle}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button MinWidth="90" Height="42" IsDefault="True" Click="Ok_Click" Style="{StaticResource PrimaryButtonStyle}">
+            <Button MinWidth="90" IsDefault="True" Click="Ok_Click" Style="{StaticResource DialogActionButtonStyle}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.ok}" Margin="8,0,0,0"/>
