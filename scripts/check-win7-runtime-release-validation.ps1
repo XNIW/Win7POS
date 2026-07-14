@@ -198,6 +198,7 @@ if (-not $fail) {
     Require-Text "Release workflow validates Win7 runtime zip" $workflow 'check-win7-runtime-release-validation\.ps1[\s\S]*-ReleasePackSource \$zip'
     Require-Text "Release workflow installs Inno Setup through Chocolatey" $workflow 'choco install innosetup --yes --no-progress'
     Require-Text "Release workflow resolves and exports ISCC" $workflow 'ISCC_EXE=\$iscc[\s\S]*GITHUB_ENV[\s\S]*\$env:ISCC_EXE'
+    Require-Text "Release workflow validates ISCC without a nonzero help command" $workflow 'VersionInfo\.FileVersion[\s\S]*ISCC ready'
 
     if ($workflow -match 'jrsoftware\.org/download\.php|Invoke-WebRequest[\s\S]{0,200}innosetup') {
         Fail "Release workflow must not execute an unverified dynamic Inno Setup download"
