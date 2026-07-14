@@ -20,7 +20,49 @@ namespace Win7POS.Data.Online
                 return "catalog_sync_mode_not_supported";
             }
 
+            var summaryError = ValidateCatalogSummary(response.CatalogSummary);
+            if (!string.IsNullOrWhiteSpace(summaryError))
+            {
+                return summaryError;
+            }
+
             return ValidatePolicy(response.Policy);
+        }
+
+        public static string ValidateCatalogSummary(PosCatalogSummaryResponse summary)
+        {
+            // Older catalog-v2 servers do not emit catalogSummary. Absence is therefore
+            // compatible, but it can only produce an Unverified exactness result.
+            if (summary == null)
+            {
+                return string.Empty;
+            }
+
+            if (IsNegative(summary.Products) ||
+                IsNegative(summary.ActiveProducts) ||
+                IsNegative(summary.Categories) ||
+                IsNegative(summary.Suppliers) ||
+                IsNegative(summary.Prices))
+            {
+                return "catalog_summary_count_invalid";
+            }
+
+            if (summary.Products.HasValue &&
+                summary.ActiveProducts.HasValue &&
+                summary.ActiveProducts.Value > summary.Products.Value)
+            {
+                return "catalog_summary_relationship_invalid";
+            }
+
+            if (!IsSafeSummaryText(summary.Checksum, 256) ||
+                !IsSafeSummaryText(summary.ChecksumAlgorithm, 64) ||
+                (!string.IsNullOrWhiteSpace(summary.ChecksumAlgorithm) &&
+                 string.IsNullOrWhiteSpace(summary.Checksum)))
+            {
+                return "catalog_summary_checksum_invalid";
+            }
+
+            return string.Empty;
         }
 
         public static string ValidatePolicy(PosPolicyResponse policy)
@@ -73,6 +115,21 @@ namespace Win7POS.Data.Online
             }
 
             return string.Empty;
+        }
+
+        private static bool IsNegative(long? value)
+        {
+            return value.HasValue && value.Value < 0;
+        }
+
+        private static bool IsSafeSummaryText(string value, int maximumLength)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return true;
+            }
+
+            return value.Length <= maximumLength && !value.Any(char.IsControl);
         }
     }
 }
