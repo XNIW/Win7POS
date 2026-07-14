@@ -191,6 +191,33 @@ Check-Absent "15. ProductEdit no Loaded hook" (
     Select-String -Path (Join-Path $base "Products/ProductEditDialog.xaml") -Pattern 'Loaded="Window_Loaded"'
 )
 
+Write-Section "16. Shared dialog title/footer resources"
+$resourceMismatches = @()
+$dailyReportViewText = [System.IO.File]::ReadAllText((Join-Path $base "Pos/DailyReportView.xaml"))
+foreach ($file in $dialogXaml) {
+    $text = [System.IO.File]::ReadAllText($file.FullName)
+    $hasSharedTitle = $text.Contains("DialogTitleStyle")
+    if ($file.Name -eq "DailyReportDialog.xaml") {
+        $hasSharedTitle = $hasSharedTitle -or $dailyReportViewText.Contains("DialogTitleStyle")
+    }
+
+    if (-not $hasSharedTitle) {
+        $resourceMismatches += "$($file.FullName) -> missing DialogTitleStyle"
+    }
+    if (-not $text.Contains("DialogFooterMargin")) {
+        $resourceMismatches += "$($file.FullName) -> missing DialogFooterMargin"
+    }
+    if (-not ($text.Contains("DialogActionButtonStyle") -or $text.Contains("DialogCancelButtonStyle"))) {
+        $resourceMismatches += "$($file.FullName) -> missing shared footer button style"
+    }
+}
+if ($resourceMismatches.Count -gt 0) {
+    $resourceMismatches | ForEach-Object { Fail $_ }
+}
+else {
+    Pass ("OK: {0}/{0}" -f $dialogXaml.Count)
+}
+
 if ($fail) {
     Write-Host "`n=== RESULT: FAIL ===" -ForegroundColor Red
     exit 1

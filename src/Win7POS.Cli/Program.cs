@@ -2364,7 +2364,7 @@ CREATE TABLE users (
             "common.cancel"
         })
         {
-            Assert(dialogXaml.IndexOf("Content=\"{loc:Loc " + buttonKey + "}\"", StringComparison.Ordinal) > footerStart,
+            Assert(dialogXaml.IndexOf("Text=\"{loc:Loc " + buttonKey + "}\"", footerStart, StringComparison.Ordinal) > footerStart,
                 "Supplier import footer button must be outside the ScrollViewer: " + buttonKey);
         }
 
@@ -2480,7 +2480,7 @@ CREATE TABLE users (
         AssertText(viewModel, "HeaderSummary", "Step 1/2 header summary missing.");
         AssertText(viewModel, "RowSummary", "Step 1/2 row summary missing.");
         AssertText(viewModel, "SyncErrors", "Step 4 blocker list must expose sync preview errors.");
-        AssertText(viewModel, "Ricalcola Sync DB prima di applicare.", "Apply blocker message must require recalculating Sync DB.");
+        AssertText(viewModel, "supplierExcelImport.recalculateBeforeApply", "Apply blocker message must require recalculating Sync DB.");
         AssertText(workflow, "CreateBackupBeforeApplyAsync", "Apply must create a pre-apply backup.");
         AssertText(workflow, "Warning count", "Apply summary must report warning count.");
         AssertText(workflow, "Skipped", "Apply summary must report skipped count.");

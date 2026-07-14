@@ -212,7 +212,7 @@ Assert-Contains $dialogXaml "supplierExcelImport.identityWarning" "Step 3 identi
 Assert-Contains $localization "Nuovi prodotti senza productName, secondProductName o itemNumber" "Step 3 identity warning translation must mention secondProductName."
 Assert-Contains $viewModel "row.IsSkipped" "Apply must track operator-skipped rows."
 Assert-Contains $viewModel "SyncErrors" "Step 4 blocker list must expose sync preview errors."
-Assert-Contains $viewModel "Ricalcola Sync DB prima di applicare." "Apply blocker must require Sync DB recalculation."
+Assert-Contains $viewModel "supplierExcelImport.recalculateBeforeApply" "Apply blocker must require Sync DB recalculation."
 Assert-Contains $workflow "CreateBackupBeforeApplyAsync" "Apply backup missing."
 Assert-Contains $workflow "WalCheckpointAsync" "Apply backup must checkpoint WAL before copying the DB."
 Assert-Contains $workflow "Warning count" "Apply warning count missing."

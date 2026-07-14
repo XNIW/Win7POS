@@ -52,6 +52,11 @@ $languageDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/LanguageSettingsDialog.
 $operatorSwitch = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xaml"
 $posView = Read-Text "src/Win7POS.Wpf/Pos/PosView.xaml"
 $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
+$refundDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/RefundDialog.xaml"
+$refundDialogCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/RefundDialog.xaml.cs"
+$supplierImport = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml"
+$supplierImportViewModel = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs"
+$importView = Read-Text "src/Win7POS.Wpf/Import/ImportView.xaml"
 
 Test-ContainsAll "ModernTextBoxStyle readable text/caret/selection" $modernStyles @(
     'x:Key="ModernTextBoxStyle"',
@@ -181,13 +186,15 @@ Test-ContainsAll "Settings hub language is a normal card" $settingsHub @(
     'settings.cardLanguageHelp'
 )
 
-if ($settingsHub.IndexOf('<ScrollViewer Grid.Row="1"', [StringComparison]::Ordinal) -ge 0 -or
-    $settingsHub.IndexOf('SettingsLanguagePanel', [StringComparison]::Ordinal) -ge 0 -or
+if ($settingsHub.IndexOf('SettingsLanguagePanel', [StringComparison]::Ordinal) -ge 0 -or
     $settingsHub.IndexOf('LanguageComboBox', [StringComparison]::Ordinal) -ge 0) {
-    Fail "Settings hub still contains clipped inline language selector or body ScrollViewer"
+    Fail "Settings hub still contains the clipped inline language selector"
+}
+elseif ($settingsHub.IndexOf('<ScrollViewer Grid.Row="1"', [StringComparison]::Ordinal) -lt 0) {
+    Fail "Settings hub is missing the low-height safety ScrollViewer"
 }
 else {
-    Pass "Settings hub has no clipped inline language selector"
+    Pass "Settings hub has scroll-safe cards and no clipped inline language selector"
 }
 
 Test-ContainsAll "Language settings dialog follows dialog resource pattern" $languageDialog @(
@@ -316,6 +323,74 @@ if ($sidebarLeaks.Count -gt 0) {
 else {
     Pass "MainWindow sidebar is compact"
 }
+
+Test-ContainsAll "Refund confirmation is shared by mouse and keyboard" $refundDialogCode @(
+    'TryConfirmWithPrompt()',
+    'if (TryConfirmWithPrompt())',
+    'refund.confirmVoidTitle',
+    'refund.confirmVoidMessage'
+)
+
+if ($refundDialogCode.IndexOf('if (ViewModel.IsValid && ViewModel.TryConfirm())', [StringComparison]::Ordinal) -ge 0) {
+    Fail "Refund Enter path still bypasses the full-void confirmation prompt"
+}
+else {
+    Pass "Refund Enter path cannot bypass full-void confirmation"
+}
+
+Test-ContainsAll "Refund remains keyboard-accessible and work-area adaptable" ($refundDialog + $refundDialogCode) @(
+    'ResizeMode="CanResize"',
+    'MinWidth="720"',
+    'HorizontalScrollBarVisibility="Auto"',
+    'CardStorno_KeyDown',
+    'CardReso_KeyDown',
+    'IsKeyboardFocusWithin',
+    'AutomationProperties.Name="{loc:Loc refund.fullVoid}"',
+    'AutomationProperties.Name="{loc:Loc refund.partialReturn}"',
+    'ApplyAdaptiveDialogSizing'
+)
+
+Test-ContainsAll "POS modal exits restore scanner focus" $posViewModel @(
+    'private async Task RecoverCartAsync()',
+    'private async void OpenEditProductExecute(object parameter)',
+    'private void OpenChangeQuantity()',
+    'private async void OpenDiscount()',
+    'finally',
+    'RequestFocusBarcode();'
+)
+
+$legacyImportFormats = @(
+    'StringFormat=Items count:',
+    'StringFormat=DB:',
+    'StringFormat=Foglio',
+    'StringFormat=Nuovi:',
+    'StringFormat=Aggiornati:',
+    'StringFormat=Totale:',
+    'StringFormat=Senza modifiche:',
+    'StringFormat=Skippati:'
+)
+$legacyImportLeaks = @()
+foreach ($needle in $legacyImportFormats) {
+    if ($importView.IndexOf($needle, [StringComparison]::Ordinal) -ge 0 -or
+        $supplierImport.IndexOf($needle, [StringComparison]::Ordinal) -ge 0) {
+        $legacyImportLeaks += $needle
+    }
+}
+if ($legacyImportLeaks.Count -gt 0) {
+    Fail "Reachable import XAML still contains hardcoded summary labels: $($legacyImportLeaks -join ', ')"
+}
+else {
+    Pass "Reachable import summary labels use EN/ES/IT/ZH localization keys"
+}
+
+Test-ContainsAll "Supplier import status path uses localization keys" $supplierImportViewModel @(
+    'supplierExcelImport.statusChooseFile',
+    'supplierExcelImport.statusAnalysisComplete',
+    'supplierExcelImport.recalculateBeforeApply',
+    'supplierExcelImport.statusSyncReady',
+    'supplierExcelImport.markupApplied',
+    'supplierExcelImport.filePickerTitle'
+)
 
 if ($fail) {
     Write-Host "`n=== RESULT: FAIL ===" -ForegroundColor Red
