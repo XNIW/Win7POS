@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using System.Windows;
@@ -29,9 +30,17 @@ namespace Win7POS.Wpf.Products
         private ProductDetailsRow _selectedProduct;
         private CategoryListItem _selectedCategory;
         private SupplierListItem _selectedSupplier;
-        private bool _suppressCategoryRefresh;
-        private bool _suppressSupplierRefresh;
+        private bool _suppressFilterDirty;
+        private bool _suppressSelectorText;
+        private bool _areFiltersDirty;
         private bool _loaded;
+        private string _appliedSearchText = string.Empty;
+        private int? _appliedCategoryId;
+        private int? _appliedSupplierId;
+        private string _categoryFilterText = string.Empty;
+        private string _supplierFilterText = string.Empty;
+        private bool _isCategoryDropdownOpen;
+        private bool _isSupplierDropdownOpen;
         private int _pageIndex = 1;
         private int _totalCount;
         private const int PageSize = 200;
@@ -39,10 +48,13 @@ namespace Win7POS.Wpf.Products
         public ObservableCollection<ProductDetailsRow> Items { get; } = new ObservableCollection<ProductDetailsRow>();
         public ObservableCollection<CategoryListItem> Categories { get; } = new ObservableCollection<CategoryListItem>();
         public ObservableCollection<SupplierListItem> Suppliers { get; } = new ObservableCollection<SupplierListItem>();
+        public ObservableCollection<CategoryListItem> FilteredCategories { get; } = new ObservableCollection<CategoryListItem>();
+        public ObservableCollection<SupplierListItem> FilteredSuppliers { get; } = new ObservableCollection<SupplierListItem>();
+        public ObservableCollection<ProductCatalogStatChip> CatalogStatsChips { get; } = new ObservableCollection<ProductCatalogStatChip>();
 
         public int PageSizeValue => PageSize;
         public int PageIndex { get => _pageIndex; set { var v = value < 1 ? 1 : value; if (_pageIndex == v) return; _pageIndex = v; OnPropertyChanged(); RaiseCanExecuteChanged(); } }
-        public int TotalCount { get => _totalCount; private set { _totalCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalPages)); OnPropertyChanged(nameof(PagingStatus)); RaiseCanExecuteChanged(); } }
+        public int TotalCount { get => _totalCount; private set { _totalCount = value; OnPropertyChanged(); OnPropertyChanged(nameof(TotalPages)); OnPropertyChanged(nameof(PagingStatus)); OnPropertyChanged(nameof(ResultSummary)); RaiseCanExecuteChanged(); } }
         public int TotalPages => Math.Max(1, (TotalCount + PageSize - 1) / PageSize);
         public string PagingStatus => PosLocalization.F(
             "products.pageStatus",
@@ -50,6 +62,8 @@ namespace Win7POS.Wpf.Products
             TotalCount,
             PageIndex,
             TotalPages);
+        public string ResultSummary => PagingStatus;
+        public bool IsEmpty => !IsBusy && Items.Count == 0;
 
         private string _goPageText = "";
         public string GoPageText { get => _goPageText; set { _goPageText = value ?? ""; OnPropertyChanged(); } }
@@ -57,7 +71,15 @@ namespace Win7POS.Wpf.Products
         public string SearchText
         {
             get => _searchText;
-            set { _searchText = value ?? string.Empty; OnPropertyChanged(); OnPropertyChanged(nameof(HasActiveFilters)); OnPropertyChanged(nameof(FilterSummary)); RaiseCanExecuteChanged(); }
+            set
+            {
+                var next = value ?? string.Empty;
+                if (string.Equals(_searchText, next, StringComparison.Ordinal))
+                    return;
+                _searchText = next;
+                OnPropertyChanged();
+                MarkFiltersDirty();
+            }
         }
 
         public string StatusMessage
@@ -69,7 +91,7 @@ namespace Win7POS.Wpf.Products
         public bool IsBusy
         {
             get => _isBusy;
-            set { _isBusy = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
+            set { _isBusy = value; OnPropertyChanged(); OnPropertyChanged(nameof(IsEmpty)); RaiseCanExecuteChanged(); }
         }
 
         public ProductDetailsRow SelectedProduct
@@ -86,13 +108,9 @@ namespace Win7POS.Wpf.Products
                 if (_selectedCategory == value) return;
                 _selectedCategory = value;
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(HasActiveFilters));
-                OnPropertyChanged(nameof(FilterSummary));
-                if (!_suppressCategoryRefresh)
-                {
-                    PageIndex = 1;
-                    _ = SearchAsync();
-                }
+                if (!_suppressSelectorText)
+                    SetCategoryFilterTextFromSelection(value);
+                MarkFiltersDirty();
             }
         }
 
@@ -104,37 +122,124 @@ namespace Win7POS.Wpf.Products
                 if (_selectedSupplier == value) return;
                 _selectedSupplier = value;
                 OnPropertyChanged();
-                OnPropertyChanged(nameof(HasActiveFilters));
-                OnPropertyChanged(nameof(FilterSummary));
-                if (!_suppressSupplierRefresh)
+                if (!_suppressSelectorText)
+                    SetSupplierFilterTextFromSelection(value);
+                MarkFiltersDirty();
+            }
+        }
+
+        public string SupplierFilterText
+        {
+            get => _supplierFilterText;
+            set
+            {
+                var next = value ?? string.Empty;
+                if (string.Equals(_supplierFilterText, next, StringComparison.Ordinal))
+                    return;
+
+                _supplierFilterText = next;
+                OnPropertyChanged();
+                RefreshFilteredSuppliers();
+                if (!_suppressSelectorText)
                 {
-                    PageIndex = 1;
-                    _ = SearchAsync();
+                    SyncSupplierSelectionFromText(next);
+                    IsSupplierDropdownOpen = !string.IsNullOrWhiteSpace(next) && FilteredSuppliers.Count > 0;
+                    MarkFiltersDirty();
                 }
             }
         }
 
+        public string CategoryFilterText
+        {
+            get => _categoryFilterText;
+            set
+            {
+                var next = value ?? string.Empty;
+                if (string.Equals(_categoryFilterText, next, StringComparison.Ordinal))
+                    return;
+
+                _categoryFilterText = next;
+                OnPropertyChanged();
+                RefreshFilteredCategories();
+                if (!_suppressSelectorText)
+                {
+                    SyncCategorySelectionFromText(next);
+                    IsCategoryDropdownOpen = !string.IsNullOrWhiteSpace(next) && FilteredCategories.Count > 0;
+                    MarkFiltersDirty();
+                }
+            }
+        }
+
+        public bool IsSupplierDropdownOpen
+        {
+            get => _isSupplierDropdownOpen;
+            set
+            {
+                if (_isSupplierDropdownOpen == value) return;
+                _isSupplierDropdownOpen = value;
+                OnPropertyChanged();
+            }
+        }
+
+        public bool IsCategoryDropdownOpen
+        {
+            get => _isCategoryDropdownOpen;
+            set
+            {
+                if (_isCategoryDropdownOpen == value) return;
+                _isCategoryDropdownOpen = value;
+                OnPropertyChanged();
+            }
+        }
+
         public bool HasActiveFilters =>
-            !string.IsNullOrWhiteSpace(SearchText) ||
-            (SelectedCategory != null && SelectedCategory.Id != 0) ||
-            (SelectedSupplier != null && SelectedSupplier.Id != 0);
+            AreFiltersDirty ||
+            !string.IsNullOrWhiteSpace(_appliedSearchText) ||
+            _appliedCategoryId.HasValue ||
+            _appliedSupplierId.HasValue;
+
+        public bool AreFiltersDirty
+        {
+            get => _areFiltersDirty;
+            private set
+            {
+                if (_areFiltersDirty == value) return;
+                _areFiltersDirty = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasActiveFilters));
+                OnPropertyChanged(nameof(FilterSummary));
+                RaiseCanExecuteChanged();
+            }
+        }
 
         public string FilterSummary
         {
             get
             {
                 var parts = new System.Collections.Generic.List<string>();
-                if (SelectedCategory != null && SelectedCategory.Id != 0)
-                    parts.Add(PosLocalization.F("products.filterCategory", SelectedCategory.Name ?? ""));
-                if (SelectedSupplier != null && SelectedSupplier.Id != 0)
-                    parts.Add(PosLocalization.F("products.filterSupplier", SelectedSupplier.Name ?? ""));
+                var categoryId = GetPendingCategoryId();
+                var supplierId = GetPendingSupplierId();
+                if (categoryId.HasValue)
+                    parts.Add(PosLocalization.F("products.filterCategory", SelectedCategory?.Name ?? ""));
+                if (supplierId.HasValue)
+                    parts.Add(PosLocalization.F("products.filterSupplier", SelectedSupplier?.Name ?? ""));
                 if (!string.IsNullOrWhiteSpace(SearchText))
                     parts.Add(PosLocalization.F("products.filterText", SearchText.Trim()));
-                return parts.Count == 0 ? "" : PosLocalization.F("products.filtersSummary", string.Join(" | ", parts));
+
+                if (parts.Count == 0)
+                    return AreFiltersDirty
+                        ? PosLocalization.F("products.filtersDirty", PosLocalization.T("products.noFilters"))
+                        : PosLocalization.T("products.noFilters");
+
+                var summary = string.Join(" | ", parts);
+                return AreFiltersDirty
+                    ? PosLocalization.F("products.filtersDirty", summary)
+                    : PosLocalization.F("products.filtersSummary", summary);
             }
         }
 
         public ICommand SearchCommand { get; }
+        public ICommand ApplyFiltersCommand { get; }
         public ICommand RefreshCommand { get; }
         public ICommand NewProductCommand { get; }
         public ICommand EditProductCommand { get; }
@@ -153,7 +258,8 @@ namespace Win7POS.Wpf.Products
         {
             _service = service ?? ProductsWorkflowService.CreateDefault();
             _permissionService = permissionService ?? CreatePermissionService();
-            SearchCommand = new AsyncRelayCommand(SearchAsync, _ => !IsBusy, _logger);
+            ApplyFiltersCommand = new AsyncRelayCommand(ApplyFiltersAsync, _ => !IsBusy, _logger);
+            SearchCommand = ApplyFiltersCommand;
             RefreshCommand = new AsyncRelayCommand(RefreshAsync, _ => !IsBusy, _logger);
             NewProductCommand = new AsyncRelayCommand(NewProductAsync, _ => CanEditCatalog, _logger);
             EditProductCommand = new AsyncRelayCommand(EditProductAsync, _ => CanEditSelectedProduct, _logger);
@@ -216,7 +322,8 @@ namespace Win7POS.Wpf.Products
             {
                 await LoadCategoriesAsync().ConfigureAwait(true);
                 await LoadSuppliersAsync().ConfigureAwait(true);
-                await SearchAsync().ConfigureAwait(true);
+                await RefreshCatalogStatsAsync().ConfigureAwait(true);
+                await ApplyFiltersAsync().ConfigureAwait(true);
             }
             finally
             {
@@ -236,14 +343,16 @@ namespace Win7POS.Wpf.Products
                 .Select(g => g.First())
                 .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
                 Categories.Add(c);
-            _suppressCategoryRefresh = true;
+            _suppressFilterDirty = true;
             try
             {
                 SelectedCategory = Categories.FirstOrDefault(c => c.Id == currentId) ?? Categories.FirstOrDefault();
+                SetCategoryFilterTextFromSelection(SelectedCategory);
+                RefreshFilteredCategories();
             }
             finally
             {
-                _suppressCategoryRefresh = false;
+                _suppressFilterDirty = false;
             }
         }
 
@@ -251,7 +360,50 @@ namespace Win7POS.Wpf.Products
         {
             await LoadCategoriesAsync().ConfigureAwait(true);
             await LoadSuppliersAsync().ConfigureAwait(true);
-            await SearchAsync().ConfigureAwait(true);
+            await RefreshCatalogStatsAsync().ConfigureAwait(true);
+            await LoadPageAsync().ConfigureAwait(true);
+        }
+
+        private async Task RefreshCatalogStatsAsync()
+        {
+            try
+            {
+                var stats = await _service.GetCatalogStatsAsync().ConfigureAwait(true);
+                SetCatalogStats(stats);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Catalog stats refresh failed.", ex);
+                SetCatalogStats(null);
+            }
+        }
+
+        private void SetCatalogStats(ProductCatalogStats stats)
+        {
+            CatalogStatsChips.Clear();
+            if (stats == null)
+            {
+                AddStatChip("products.stats.products", null);
+                AddStatChip("products.stats.categories", null);
+                AddStatChip("products.stats.suppliers", null);
+                return;
+            }
+
+            AddStatChip("products.stats.products", stats.TotalProducts);
+            AddStatChip("products.stats.categories", stats.TotalCategories);
+            AddStatChip("products.stats.suppliers", stats.TotalSuppliers);
+            AddStatChip("products.stats.stockUnits", stats.TotalStockUnits);
+        }
+
+        private void AddStatChip(string labelKey, long? value)
+        {
+            CatalogStatsChips.Add(new ProductCatalogStatChip
+            {
+                Label = PosLocalization.T(labelKey),
+                Value = value.HasValue
+                    ? value.Value.ToString("N0", CultureInfo.CurrentCulture)
+                    : PosLocalization.T("common.unavailableShort")
+            });
         }
 
         private async Task LoadSuppliersAsync()
@@ -266,57 +418,216 @@ namespace Win7POS.Wpf.Products
                 .Select(g => g.First())
                 .OrderBy(x => x.Name, StringComparer.OrdinalIgnoreCase))
                 Suppliers.Add(s);
-            _suppressSupplierRefresh = true;
+            _suppressFilterDirty = true;
             try
             {
                 SelectedSupplier = Suppliers.FirstOrDefault(s => s.Id == currentId) ?? Suppliers.FirstOrDefault();
+                SetSupplierFilterTextFromSelection(SelectedSupplier);
+                RefreshFilteredSuppliers();
             }
             finally
             {
-                _suppressSupplierRefresh = false;
+                _suppressFilterDirty = false;
             }
         }
 
         private async Task ClearFiltersAsync()
         {
-            _suppressCategoryRefresh = true;
-            _suppressSupplierRefresh = true;
+            _suppressFilterDirty = true;
             try
             {
                 SelectedCategory = Categories.FirstOrDefault();
                 SelectedSupplier = Suppliers.FirstOrDefault();
                 SearchText = string.Empty;
+                SupplierFilterText = string.Empty;
+                CategoryFilterText = string.Empty;
+                RefreshFilteredSuppliers();
+                RefreshFilteredCategories();
+                IsSupplierDropdownOpen = false;
+                IsCategoryDropdownOpen = false;
+                _appliedSearchText = string.Empty;
+                _appliedCategoryId = null;
+                _appliedSupplierId = null;
                 PageIndex = 1;
-                OnPropertyChanged(nameof(HasActiveFilters));
-                OnPropertyChanged(nameof(FilterSummary));
+                AreFiltersDirty = false;
             }
             finally
             {
-                _suppressCategoryRefresh = false;
-                _suppressSupplierRefresh = false;
+                _suppressFilterDirty = false;
             }
 
+            OnPropertyChanged(nameof(HasActiveFilters));
+            OnPropertyChanged(nameof(FilterSummary));
             RaiseCanExecuteChanged();
-            await SearchAsync().ConfigureAwait(true);
+            await LoadPageAsync().ConfigureAwait(true);
         }
 
-        private int? GetCategoryIdForSearch()
+        private int? GetPendingCategoryId()
         {
             if (SelectedCategory == null || SelectedCategory.Id == 0) return null;
             return SelectedCategory.Id;
         }
 
-        private int? GetSupplierIdForSearch()
+        private int? GetPendingSupplierId()
         {
             if (SelectedSupplier == null || SelectedSupplier.Id == 0) return null;
             return SelectedSupplier.Id;
         }
 
-        private async Task SearchAsync()
+        private void MarkFiltersDirty()
         {
+            if (_suppressFilterDirty)
+                return;
+
+            AreFiltersDirty = true;
+            OnPropertyChanged(nameof(HasActiveFilters));
+            OnPropertyChanged(nameof(FilterSummary));
+            RaiseCanExecuteChanged();
+        }
+
+        private async Task ApplyFiltersAsync()
+        {
+            ResolveTypedFilterSelections();
+            _appliedSearchText = SearchText ?? string.Empty;
+            _appliedCategoryId = GetPendingCategoryId();
+            _appliedSupplierId = GetPendingSupplierId();
+            AreFiltersDirty = false;
+            IsSupplierDropdownOpen = false;
+            IsCategoryDropdownOpen = false;
             PageIndex = 1;
             SelectedProduct = null;
-            await LoadPageAsync().ConfigureAwait(false);
+            await LoadPageAsync().ConfigureAwait(true);
+            OnPropertyChanged(nameof(HasActiveFilters));
+            OnPropertyChanged(nameof(FilterSummary));
+        }
+
+        private void SetSupplierFilterTextFromSelection(SupplierListItem value)
+        {
+            _suppressSelectorText = true;
+            try
+            {
+                SupplierFilterText = value == null || value.Id == 0 ? string.Empty : value.Name ?? string.Empty;
+            }
+            finally
+            {
+                _suppressSelectorText = false;
+            }
+        }
+
+        private void SetCategoryFilterTextFromSelection(CategoryListItem value)
+        {
+            _suppressSelectorText = true;
+            try
+            {
+                CategoryFilterText = value == null || value.Id == 0 ? string.Empty : value.Name ?? string.Empty;
+            }
+            finally
+            {
+                _suppressSelectorText = false;
+            }
+        }
+
+        private void SyncSupplierSelectionFromText(string text)
+        {
+            var match = FindExactSupplier(text);
+            if (match != null)
+            {
+                SelectedSupplier = match;
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(text))
+                SelectedSupplier = Suppliers.FirstOrDefault();
+            else if (SelectedSupplier != null && !string.Equals(SelectedSupplier.Name ?? string.Empty, text, StringComparison.OrdinalIgnoreCase))
+            {
+                _suppressSelectorText = true;
+                try
+                {
+                    SelectedSupplier = null;
+                }
+                finally
+                {
+                    _suppressSelectorText = false;
+                }
+            }
+        }
+
+        private void SyncCategorySelectionFromText(string text)
+        {
+            var match = FindExactCategory(text);
+            if (match != null)
+            {
+                SelectedCategory = match;
+                return;
+            }
+
+            if (string.IsNullOrWhiteSpace(text))
+                SelectedCategory = Categories.FirstOrDefault();
+            else if (SelectedCategory != null && !string.Equals(SelectedCategory.Name ?? string.Empty, text, StringComparison.OrdinalIgnoreCase))
+            {
+                _suppressSelectorText = true;
+                try
+                {
+                    SelectedCategory = null;
+                }
+                finally
+                {
+                    _suppressSelectorText = false;
+                }
+            }
+        }
+
+        private void ResolveTypedFilterSelections()
+        {
+            var supplier = FindExactSupplier(SupplierFilterText) ?? (FilteredSuppliers.Count == 1 ? FilteredSuppliers[0] : null);
+            if (supplier != null)
+                SelectedSupplier = supplier;
+
+            var category = FindExactCategory(CategoryFilterText) ?? (FilteredCategories.Count == 1 ? FilteredCategories[0] : null);
+            if (category != null)
+                SelectedCategory = category;
+        }
+
+        private SupplierListItem FindExactSupplier(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return Suppliers.FirstOrDefault();
+
+            var trimmed = text.Trim();
+            return Suppliers.FirstOrDefault(x => string.Equals(x.Name ?? string.Empty, trimmed, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private CategoryListItem FindExactCategory(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return Categories.FirstOrDefault();
+
+            var trimmed = text.Trim();
+            return Categories.FirstOrDefault(x => string.Equals(x.Name ?? string.Empty, trimmed, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private void RefreshFilteredSuppliers()
+        {
+            var text = SupplierFilterText?.Trim() ?? string.Empty;
+            FilteredSuppliers.Clear();
+            foreach (var supplier in Suppliers.Where(x => MatchesFilterText(x?.Name, text)))
+                FilteredSuppliers.Add(supplier);
+        }
+
+        private void RefreshFilteredCategories()
+        {
+            var text = CategoryFilterText?.Trim() ?? string.Empty;
+            FilteredCategories.Clear();
+            foreach (var category in Categories.Where(x => MatchesFilterText(x?.Name, text)))
+                FilteredCategories.Add(category);
+        }
+
+        private static bool MatchesFilterText(string name, string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return true;
+
+            return (name ?? string.Empty).IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private async Task LoadPageAsync()
@@ -324,11 +635,11 @@ namespace Win7POS.Wpf.Products
             IsBusy = true;
             try
             {
-                var categoryId = GetCategoryIdForSearch();
-                var supplierId = GetSupplierIdForSearch();
-                TotalCount = await _service.CountDetailsAsync(SearchText, categoryId, supplierId).ConfigureAwait(true);
+                var categoryId = _appliedCategoryId;
+                var supplierId = _appliedSupplierId;
+                TotalCount = await _service.CountDetailsAsync(_appliedSearchText, categoryId, supplierId).ConfigureAwait(true);
                 var offset = (PageIndex - 1) * PageSize;
-                var rows = await _service.SearchDetailsPageAsync(SearchText, PageSize, offset, categoryId, supplierId).ConfigureAwait(true);
+                var rows = await _service.SearchDetailsPageAsync(_appliedSearchText, PageSize, offset, categoryId, supplierId).ConfigureAwait(true);
                 Items.Clear();
                 foreach (var p in rows)
                 {
@@ -350,6 +661,8 @@ namespace Win7POS.Wpf.Products
                 }
                 StatusMessage = PagingStatus;
                 OnPropertyChanged(nameof(PagingStatus));
+                OnPropertyChanged(nameof(ResultSummary));
+                OnPropertyChanged(nameof(IsEmpty));
                 RaiseCanExecuteChanged();
             }
             catch (Exception ex)
@@ -582,6 +895,7 @@ namespace Win7POS.Wpf.Products
         private void RaiseCanExecuteChanged()
         {
             (SearchCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (ApplyFiltersCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (RefreshCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (NewProductCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (EditProductCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
@@ -600,6 +914,12 @@ namespace Win7POS.Wpf.Products
         public event PropertyChangedEventHandler PropertyChanged;
         private void OnPropertyChanged([CallerMemberName] string name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+        public sealed class ProductCatalogStatChip
+        {
+            public string Label { get; set; }
+            public string Value { get; set; }
+        }
 
         private sealed class AsyncRelayCommand : ICommand
         {

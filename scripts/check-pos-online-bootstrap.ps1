@@ -76,6 +76,7 @@ $required = @(
     "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs",
     "src/Win7POS.Data/DbInitializer.cs",
     "src/Win7POS.Data/Repositories/UserRepository.cs"
+    "src/Win7POS.Core/Security/PosAccessRecoveryPolicy.cs"
 )
 
 foreach ($path in $required) {
@@ -101,6 +102,7 @@ $catalogPull = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $store = Read-Text "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs"
 $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $userRepo = Read-Text "src/Win7POS.Data/Repositories/UserRepository.cs"
+$recoveryPolicy = Read-Text "src/Win7POS.Core/Security/PosAccessRecoveryPolicy.cs"
 $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.csproj |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) } |
@@ -114,11 +116,15 @@ $forbiddenRuntimeUrlScope = @(
 ) -join "`n"
 $defaultUrlMatch = [regex]::Match($wpfProject, '<AdminWebDefaultBaseUrl[^>]*>([^<]+)</AdminWebDefaultBaseUrl>')
 
-if ($mainWindow -notmatch "TryOnlineBootstrapFirstRunAsync") { Fail "fresh install does not try online bootstrap before recovery wizard" } else { Pass "fresh install online bootstrap present" }
-if ($mainWindow -notmatch "FirstRunSetupDialog") { Fail "recovery/dev first-run wizard removed" } else { Pass "recovery/dev first-run wizard retained" }
+if ([regex]::Matches($mainWindow, 'new\s+PosOnlineFirstLoginDialog\b').Count -lt 1) { Fail "startup unified POS access dialog missing" } else { Pass "startup uses unified POS access dialog" }
+if ($mainWindow -match "FirstRunSetupDialog|TryOnlineBootstrapFirstRunAsync") { Fail "MainWindow must not recreate the legacy first-run dialog chain" } else { Pass "MainWindow has no legacy first-run dialog chain" }
+if ($dialog -notmatch "new\s+FirstRunSetupDialog\(_factory\)" -or $dialog -notmatch "OnRecoveryClick") { Fail "FirstRunSetupDialog is not reachable as an explicit child recovery action" } else { Pass "explicit child recovery entry point retained" }
+if ($dialog -notmatch "PosAccessRecoveryPolicy\.Evaluate" -or
+    $recoveryPolicy -notmatch "IsDenied\(failureKind\)" -or
+    $recoveryPolicy -notmatch "PosAccessNextStep\.Denied") { Fail "anti-denial recovery policy missing" } else { Pass "anti-denial recovery policy present" }
 if (-not ((Has-VisibleCopyOrLocKey $firstRun "Recovery/dev" "firstRun.title") -and (Test-TranslationEntry $translations "firstRun.title" @("Recovery/dev")))) { Fail "FirstRunSetupDialog is not labelled as recovery/dev" } else { Pass "FirstRunSetupDialog labelled recovery/dev" }
 if ($dialogXaml -match "Indirizzo pannello") { Fail "online bootstrap must not expose the panel URL in the normal operator flow" } else { Pass "panel URL removed from normal operator flow" }
-if (-not ((Has-Literal $dialogXaml "AdvancedExpander") -and (Has-Literal $dialogXaml 'x:Name="BaseUrlBox"') -and (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "onlineFirstLogin.advancedSettings") -and (Has-VisibleCopyOrLocKey $dialogXaml "Server Admin Web configurato" "onlineFirstLogin.serverConfigured") -and (Test-TranslationEntry $translations "onlineFirstLogin.advancedSettings" @("Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server")) -and (Test-TranslationEntry $translations "onlineFirstLogin.serverConfigured" @("Admin Web server configured", "Servidor Admin Web configurado", "Server Admin Web configurato")))) { Fail "online bootstrap must keep Admin Web URL under advanced server settings" } else { Pass "advanced server settings present" }
+if (-not ((Has-Literal $dialogXaml "AdvancedExpander") -and (Has-Literal $dialogXaml 'x:Name="BaseUrlBox"') -and (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "access.login.advancedSettings") -and (Has-VisibleCopyOrLocKey $dialogXaml "Server Admin Web configurato" "onlineFirstLogin.serverConfigured") -and (Test-TranslationEntry $translations "access.login.advancedSettings" @("Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server")) -and (Test-TranslationEntry $translations "onlineFirstLogin.serverConfigured" @("Admin Web server configured", "Servidor Admin Web configurado", "Server Admin Web configurato")))) { Fail "online bootstrap must keep Admin Web URL under advanced server settings" } else { Pass "advanced server settings present" }
 if ($options -notmatch "TryLoadPackagedDefault" -or $options -notmatch "TryReadPackagedDefaultBaseUrl" -or $options -notmatch "PosAdminWebBaseUrlSource") { Fail "packaged default URL resolver/source model missing" } else { Pass "packaged default URL resolver/source model present" }
 if ($wpfProject -notmatch "AdminWebEnvironment" -or $wpfProject -notmatch "AdminWebDefaultBaseUrl" -or $wpfProject -notmatch "AssemblyMetadataAttribute") { Fail "MSBuild packaged default metadata missing" } else { Pass "MSBuild packaged default metadata present" }
 if (-not $defaultUrlMatch.Success) {
@@ -170,10 +176,10 @@ if ($bootstrap -notmatch "CanOpenPos" -or $bootstrap -notmatch "CatalogSaleSafe"
 if ($bootstrap -notmatch "IProgress<PosCatalogPullProgress>" -or $catalogPull -notmatch "IProgress<PosCatalogPullProgress>" -or $dialog -notmatch "UpdateSetupProgress") { Fail "catalog/bootstrap progress callback missing" } else { Pass "catalog/bootstrap progress callback present" }
 if ($dialogXaml -notmatch "ProgressPanel" -or $dialogXaml -notmatch "SetupProgressBar" -or $dialogXaml -notmatch "RetryDownloadButton" -or $dialog -notmatch "RunCatalogRetryAsync") { Fail "blocking preparation progress/retry UI missing" } else { Pass "blocking preparation progress/retry UI present" }
 if ($dialog -match "result\.Success[\s\S]{0,180}DialogResult\s*=\s*true") { Fail "online dialog closes on generic Success instead of CanOpenPos/sale-safe" } else { Pass "online dialog does not close on generic Success" }
-if ($dialog -notmatch "result\.CanOpenPos[\s\S]{0,180}DialogResult\s*=\s*true") { Fail "online dialog must close only after CanOpenPos" } else { Pass "online dialog closes after CanOpenPos" }
+if ($dialog -notmatch "if\s*\(result\.CanOpenPos\)" -or $dialog -notmatch "AccessMode\s*=\s*PosAuthenticatedAccessMode\.Normal") { Fail "online dialog must distinguish normal sale-safe access from recovery" } else { Pass "online dialog distinguishes sale-safe access from recovery" }
 if ($catalogPull -notmatch "pos\.catalog\.sale_safe_at" -or $catalogPull -notmatch "pos\.catalog\.initial_completed_at") { Fail "catalog sale-safe completion settings missing" } else { Pass "catalog sale-safe completion settings present" }
 if ($catalogPull -notmatch "result\.Denied\s*&&\s*clearStoredStateOnDenied[\s\S]{0,120}_store\.Clear\(\)") { Fail "catalog trust clear must be guarded by auth denied" } else { Pass "catalog trust clear guarded by auth denied" }
-if ($dialog -match "TimeSpan\.FromSeconds\(20\)") { Fail "online first-login dialog timeout is too short for large initial catalog" } else { Pass "online first-login dialog no longer uses 20s bootstrap timeout" }
+if ($dialog -notmatch "CancellationTokenSource\(TimeSpan\.FromMinutes\(6\)\)") { Fail "online first-login/catalog timeout must allow the large initial catalog" } else { Pass "online first-login/catalog uses the long bootstrap timeout" }
 if ($userRepo -notmatch "UpsertRemoteStaffMirrorAsync") { Fail "UserRepository remote staff upsert missing" } else { Pass "UserRepository remote staff upsert present" }
 if ($initializer -notmatch "remote_staff_id") { Fail "remote staff id column missing" } else { Pass "remote staff id column present" }
 if ($initializer -notmatch "remote_credential_version") { Fail "remote credential version column missing" } else { Pass "remote credential version column present" }

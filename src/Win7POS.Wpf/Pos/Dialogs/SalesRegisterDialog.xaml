@@ -92,7 +92,12 @@
                                  Style="{StaticResource ModernTextBoxStyle}"
                                  KeyDown="CodeSearchBox_KeyDown"
                                  ToolTip="{loc:Loc sales.codeTooltip}"/>
-                        <Button Grid.Column="3" Content="{loc:Loc common.reload}" MinWidth="90" Height="34" Command="{Binding LoadCommand}" Style="{StaticResource OutlineButtonStyle}" VerticalAlignment="Center"/>
+                        <Button Grid.Column="3" MinWidth="90" Height="34" Command="{Binding LoadCommand}" Style="{StaticResource OutlineButtonStyle}" VerticalAlignment="Center">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc common.reload}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
                     </Grid>
 
                     <!-- Lista scontrini -->
@@ -202,12 +207,27 @@
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Content="{loc:Loc common.close}" HorizontalAlignment="Left"
+                        <Button Grid.Column="0" HorizontalAlignment="Left"
                                 IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}"
-                                Click="Close_Click"/>
+                                Click="Close_Click">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc common.close}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
                         <StackPanel Grid.Column="1" Orientation="Horizontal">
-                            <Button Content="{loc:Loc common.print}" MinWidth="110" Command="{Binding PrintCommand}" Style="{StaticResource DialogCancelButtonStyle}" Margin="0,0,10,0"/>
-                            <Button Content="{loc:Loc sales.refundVoid}" MinWidth="140" Command="{Binding RefundCommand}" Style="{StaticResource DialogActionButtonStyle}"/>
+                            <Button MinWidth="110" Command="{Binding PrintCommand}" Style="{StaticResource DialogCancelButtonStyle}" Margin="0,0,10,0">
+                                <StackPanel Style="{StaticResource IconButtonContent}">
+                                    <Path Data="{StaticResource IconPrint}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                    <TextBlock Text="{loc:Loc common.print}" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                            <Button MinWidth="140" Command="{Binding RefundCommand}" Style="{StaticResource DialogActionButtonStyle}">
+                                <StackPanel Style="{StaticResource IconButtonContent}">
+                                    <Path Data="{StaticResource IconRefund}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                    <TextBlock Text="{loc:Loc sales.refundVoid}" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
                         </StackPanel>
                     </Grid>
                 </Grid>

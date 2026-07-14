@@ -29,7 +29,12 @@
             <import:ImportView x:Name="ImportViewControl"/>
         </Border>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button Content="{loc:Loc common.cancel}" MinWidth="110" Height="42" IsCancel="True" Style="{StaticResource OutlineButtonStyle}" Click="Annulla_Click"/>
+            <Button MinWidth="110" Height="42" IsCancel="True" Style="{StaticResource OutlineButtonStyle}" Click="Annulla_Click">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

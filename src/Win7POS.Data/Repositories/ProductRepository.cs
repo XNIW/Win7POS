@@ -232,6 +232,54 @@ LEFT JOIN product_meta m ON m.barcode = p.barcode
             return await conn.ExecuteScalarAsync<int>(sql, new { q, like, categoryId = categoryId ?? 0, supplierId = supplierId ?? 0 }).ConfigureAwait(false);
         }
 
+        public async Task<ProductCatalogStats> GetCatalogStatsAsync()
+        {
+            using var conn = _factory.Open();
+            var productStats = await conn.QuerySingleAsync<ProductCatalogStats>(@"
+SELECT
+  COUNT(1) AS TotalProducts,
+  COALESCE(SUM(COALESCE(m.stock_qty, 0)), 0) AS TotalStockUnits,
+  COALESCE(SUM(CASE WHEN COALESCE(m.stock_qty, 0) <= 0 THEN 1 ELSE 0 END), 0) AS ZeroStockProducts
+FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode
+WHERE COALESCE(p.is_active, 1) = 1").ConfigureAwait(false);
+
+            productStats.TotalCategories = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM categories WHERE TRIM(COALESCE(name, '')) <> ''")
+                .ConfigureAwait(false);
+            productStats.TotalSuppliers = await conn.ExecuteScalarAsync<int>(
+                "SELECT COUNT(1) FROM suppliers WHERE TRIM(COALESCE(name, '')) <> ''")
+                .ConfigureAwait(false);
+
+            if (productStats.TotalCategories == 0)
+            {
+                productStats.TotalCategories = await conn.ExecuteScalarAsync<int>(@"
+SELECT COUNT(1)
+FROM (
+  SELECT DISTINCT LOWER(TRIM(COALESCE(m.category_name, ''))) AS name
+  FROM products p
+  LEFT JOIN product_meta m ON m.barcode = p.barcode
+  WHERE COALESCE(p.is_active, 1) = 1
+    AND TRIM(COALESCE(m.category_name, '')) <> ''
+)").ConfigureAwait(false);
+            }
+
+            if (productStats.TotalSuppliers == 0)
+            {
+                productStats.TotalSuppliers = await conn.ExecuteScalarAsync<int>(@"
+SELECT COUNT(1)
+FROM (
+  SELECT DISTINCT LOWER(TRIM(COALESCE(m.supplier_name, ''))) AS name
+  FROM products p
+  LEFT JOIN product_meta m ON m.barcode = p.barcode
+  WHERE COALESCE(p.is_active, 1) = 1
+    AND TRIM(COALESCE(m.supplier_name, '')) <> ''
+)").ConfigureAwait(false);
+            }
+
+            return productStats;
+        }
+
         public async Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsPageAsync(string query, int limit, int offset, int? categoryId = null, int? supplierId = null)
         {
             if (limit <= 0) limit = 200;
@@ -1340,5 +1388,14 @@ VALUES(@barcode, @changedAt, 'retail', @oldPrice, @newPrice, @source)",
         {
             return new RemotePriceHistoryApplyResult(false, false);
         }
+    }
+
+    public sealed class ProductCatalogStats
+    {
+        public int TotalProducts { get; set; }
+        public int TotalCategories { get; set; }
+        public int TotalSuppliers { get; set; }
+        public long TotalStockUnits { get; set; }
+        public int ZeroStockProducts { get; set; }
     }
 }

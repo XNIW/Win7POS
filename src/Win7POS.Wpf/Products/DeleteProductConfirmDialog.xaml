@@ -35,10 +35,20 @@
             </Grid>
         </Border>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-            <Button Content="{loc:Loc common.cancel}" MinWidth="120" Height="42" Margin="0,0,12,0" IsCancel="True"
-                    Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
-            <Button Content="{loc:Loc common.delete}" MinWidth="120" Height="42" IsDefault="True"
-                    Style="{StaticResource DialogActionButtonStyle}" Click="Elimina_Click"/>
+            <Button MinWidth="120" Height="42" Margin="0,0,12,0" IsCancel="True"
+                    Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button MinWidth="120" Height="42" IsDefault="True"
+                    Style="{StaticResource DialogActionButtonStyle}" Click="Elimina_Click">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconDelete}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.delete}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

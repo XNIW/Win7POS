@@ -32,8 +32,18 @@
                 <TextBlock x:Name="MessageText" Grid.Row="0" TextWrapping="Wrap" FontSize="14" Foreground="#444" LineHeight="22" Margin="0,0,0,28"/>
 
                 <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-                    <Button Content="{loc:Loc common.ok}" Margin="0,0,8,0" IsDefault="True" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="OnOkClick"/>
-                    <Button Content="{loc:Loc operator.switch.switchOperator}" Style="{StaticResource DialogActionButtonStyle}" Click="OnSwitchClick"/>
+                    <Button Margin="0,0,8,0" IsDefault="True" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="OnOkClick">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc common.ok}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource DialogActionButtonStyle}" Click="OnSwitchClick">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconUsers}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc operator.switch.switchOperator}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>

@@ -29,8 +29,13 @@
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{loc:Loc import.file}" VerticalAlignment="Center" Margin="0,0,12,0" FontWeight="SemiBold"/>
                 <TextBox Grid.Column="1" Text="{Binding SelectedPath, UpdateSourceTrigger=PropertyChanged}" MinHeight="36" Style="{StaticResource ModernTextBoxStyle}"/>
-                <Button Grid.Column="2" Content="{loc:Loc common.browse}" Margin="12,0,0,0" MinWidth="100" Style="{StaticResource OutlineButtonStyle}"
-                        Command="{Binding BrowseCommand}"/>
+                <Button Grid.Column="2" Margin="12,0,0,0" MinWidth="100" Style="{StaticResource OutlineButtonStyle}"
+                        Command="{Binding BrowseCommand}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.browse}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </Grid>
         </Border>
 
@@ -104,10 +109,20 @@
                 <ColumnDefinition Width="16"/>
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
-            <Button Content="{loc:Loc import.analyze}" MinWidth="120" MinHeight="36" Style="{StaticResource PrimaryButtonStyle}"
-                    Command="{Binding AnalyzeCommand}"/>
-            <Button Grid.Column="1" Content="{loc:Loc import.apply}" Margin="10,0,0,0" MinWidth="120" MinHeight="36" Style="{StaticResource SecondaryButtonStyle}"
-                    Command="{Binding ApplyCommand}"/>
+            <Button MinWidth="120" MinHeight="36" Style="{StaticResource PrimaryButtonStyle}"
+                    Command="{Binding AnalyzeCommand}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc import.analyze}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button Grid.Column="1" Margin="10,0,0,0" MinWidth="120" MinHeight="36" Style="{StaticResource SecondaryButtonStyle}"
+                    Command="{Binding ApplyCommand}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconImport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc import.apply}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
             <ProgressBar Grid.Column="3" Height="16" VerticalAlignment="Center"
                          IsIndeterminate="True">
                 <ProgressBar.Style>

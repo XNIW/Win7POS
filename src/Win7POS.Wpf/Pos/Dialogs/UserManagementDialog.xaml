@@ -56,9 +56,11 @@
                                     </Style>
                                 </TextBlock.Style>
                             </TextBlock>
-                            <Button Grid.Column="1" Content="✕" Width="28" Height="28" Margin="2,0,0,0" Command="{Binding ClearFilterCommand}"
+                            <Button Grid.Column="1" Width="28" Height="28" Margin="2,0,0,0" Command="{Binding ClearFilterCommand}"
                                     ToolTip="{loc:Loc users.clearFilter}" Style="{StaticResource OutlineButtonStyle}" Padding="0" FontSize="12" VerticalAlignment="Center"
-                                    Visibility="{Binding IsFilterActive, Converter={StaticResource BoolToVis}}"/>
+                                    Visibility="{Binding IsFilterActive, Converter={StaticResource BoolToVis}}">
+                                <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}" Width="12" Height="12"/>
+                            </Button>
                         </Grid>
                         <ListBox ItemsSource="{Binding FilteredUsers}" SelectedItem="{Binding SelectedUser, Mode=TwoWay}"
                                  MinHeight="140" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}">
@@ -115,7 +117,12 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
-                        <Button Content="{loc:Loc users.newUser}" Command="{Binding NewUserCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" Padding="12,6" Margin="0,8,0,0"/>
+                        <Button Command="{Binding NewUserCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Left" Padding="12,6" Margin="0,8,0,0">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconAdd}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc users.newUser}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
                     </StackPanel>
                 </Border>
 
@@ -155,10 +162,30 @@
                         </ListBox>
                         <TextBlock Text="{Binding SelectedRoleSystemInfo}" FontSize="11" Foreground="#6B5B73" Margin="0,6,0,0" TextWrapping="Wrap"/>
                         <WrapPanel Margin="0,8,0,0" Visibility="{Binding CanManageRoles, Converter={StaticResource BoolToVis}}">
-                            <Button Content="{loc:Loc users.newRole}" Command="{Binding NewRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8"/>
-                            <Button Content="{loc:Loc users.duplicate}" Command="{Binding DuplicateRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="{loc:Loc users.duplicateRoleTooltip}"/>
-                            <Button Content="{loc:Loc users.rename}" Command="{Binding RenameRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="{Binding RenameRoleToolTip}"/>
-                            <Button Content="{loc:Loc common.delete}" Command="{Binding DeleteRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="{Binding DeleteRoleToolTip}"/>
+                            <Button Command="{Binding NewRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8">
+                                <StackPanel Style="{StaticResource IconButtonContent}">
+                                    <Path Data="{StaticResource IconAdd}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                    <TextBlock Text="{loc:Loc users.newRole}" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding DuplicateRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="{loc:Loc users.duplicateRoleTooltip}">
+                                <StackPanel Style="{StaticResource IconButtonContent}">
+                                    <Path Data="{StaticResource IconDuplicate}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                    <TextBlock Text="{loc:Loc users.duplicate}" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding RenameRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="{Binding RenameRoleToolTip}">
+                                <StackPanel Style="{StaticResource IconButtonContent}">
+                                    <Path Data="{StaticResource IconEdit}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                    <TextBlock Text="{loc:Loc users.rename}" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding DeleteRoleCommand}" Style="{StaticResource OutlineButtonStyle}" Padding="8,6" Margin="0,0,8,8" ToolTip="{Binding DeleteRoleToolTip}">
+                                <StackPanel Style="{StaticResource IconButtonContent}">
+                                    <Path Data="{StaticResource IconDelete}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                    <TextBlock Text="{loc:Loc common.delete}" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
                         </WrapPanel>
                     </StackPanel>
                 </Border>
@@ -204,9 +231,24 @@
                                 <TextBlock Text="{loc:Loc users.leaveEmptyNoChange}" FontSize="11" Foreground="#8A7C93" Margin="0,4,0,0"/>
                             </StackPanel>
                             <StackPanel Grid.Row="5" Grid.Column="1" Orientation="Horizontal" Margin="0,4,0,0">
-                                <Button Content="{loc:Loc users.saveUser}" Command="{Binding SaveUserCommand}" MinWidth="90" Height="36" Margin="0,0,8,0" Style="{StaticResource PrimaryButtonStyle}"/>
-                                <Button Content="{loc:Loc users.cancelChanges}" Command="{Binding CancelUserChangesCommand}" MinWidth="90" Height="36" Margin="0,0,8,0" Style="{StaticResource OutlineButtonStyle}"/>
-                                <Button Content="{loc:Loc users.resetPin}" Command="{Binding ResetPinCommand}" MinWidth="90" Height="36" Style="{StaticResource OutlineButtonStyle}"/>
+                                <Button Command="{Binding SaveUserCommand}" MinWidth="90" Height="36" Margin="0,0,8,0" Style="{StaticResource PrimaryButtonStyle}">
+                                    <StackPanel Style="{StaticResource IconButtonContent}">
+                                        <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                        <TextBlock Text="{loc:Loc users.saveUser}" Margin="8,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding CancelUserChangesCommand}" MinWidth="90" Height="36" Margin="0,0,8,0" Style="{StaticResource OutlineButtonStyle}">
+                                    <StackPanel Style="{StaticResource IconButtonContent}">
+                                        <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                        <TextBlock Text="{loc:Loc users.cancelChanges}" Margin="8,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Command="{Binding ResetPinCommand}" MinWidth="90" Height="36" Style="{StaticResource OutlineButtonStyle}">
+                                    <StackPanel Style="{StaticResource IconButtonContent}">
+                                        <Path Data="{StaticResource IconLock}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                        <TextBlock Text="{loc:Loc users.resetPin}" Margin="8,0,0,0"/>
+                                    </StackPanel>
+                                </Button>
                             </StackPanel>
                         </Grid>
                     </StackPanel>
@@ -242,14 +284,24 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
-                        <Button Grid.Row="2" Visibility="{Binding CanSaveSelectedRolePermissions, Converter={StaticResource BoolToVis}}" Content="{loc:Loc users.saveRolePermissions}" Command="{Binding SaveRolePermissionsCommand}" Style="{StaticResource OutlineButtonStyle}" HorizontalAlignment="Left" Margin="0,12,0,0" ToolTip="{Binding SaveRolePermissionsToolTip}"/>
+                        <Button Grid.Row="2" Visibility="{Binding CanSaveSelectedRolePermissions, Converter={StaticResource BoolToVis}}" Command="{Binding SaveRolePermissionsCommand}" Style="{StaticResource OutlineButtonStyle}" HorizontalAlignment="Left" Margin="0,12,0,0" ToolTip="{Binding SaveRolePermissionsToolTip}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc users.saveRolePermissions}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
                     </Grid>
                 </Border>
             </Grid>
 
             <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="{StaticResource DialogFooterMargin}" Foreground="Gray" FontSize="11" Text="{Binding Status, Mode=OneWay}"/>
             <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-                <Button Content="{loc:Loc common.close}" IsCancel="True" Click="OnCloseClick" Style="{StaticResource DialogCancelButtonStyle}"/>
+                <Button IsCancel="True" Click="OnCloseClick" Style="{StaticResource DialogCancelButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.close}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Grid>
 </chrome:DialogShellWindow>

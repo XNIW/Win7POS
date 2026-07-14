@@ -143,7 +143,7 @@
                     <StaticResource ResourceKey="SelectableDataGridCellStyle"/>
                 </DataGrid.CellStyle>
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" IsReadOnly="True" Width="110"/>
+                    <DataGridTextColumn Header="{loc:Loc pos.cart.barcode}" Binding="{Binding Barcode}" IsReadOnly="True" Width="110"/>
                     <DataGridTextColumn Header="{loc:Loc refund.name}" Binding="{Binding Name}" IsReadOnly="True" Width="*"/>
                     <DataGridTextColumn Header="{loc:Loc refund.sold}" Binding="{Binding SoldQty}" IsReadOnly="True" Width="60"/>
                     <DataGridTextColumn Header="{loc:Loc refund.alreadyReturned}" Binding="{Binding RefundedQty}" IsReadOnly="True" Width="60"/>
@@ -175,20 +175,50 @@
         <WrapPanel Grid.Row="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,10">
             <TextBlock Text="{loc:Loc common.cash}" VerticalAlignment="Center" Margin="0,0,6,0"/>
             <TextBox x:Name="CashRefundBox" Width="90" Margin="0,0,12,0" Text="{Binding CashRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" VerticalAlignment="Center"/>
-            <Button Content="{loc:Loc refund.allCash}" Command="{Binding AllCashCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0"/>
+            <Button Command="{Binding AllCashCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconCashDrawer}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc refund.allCash}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
             <TextBlock Text="{loc:Loc common.card}" VerticalAlignment="Center" Margin="0,0,6,0"/>
             <TextBox Width="90" Margin="0,0,12,0" Text="{Binding CardRefund, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}" VerticalAlignment="Center"/>
-            <Button Content="{loc:Loc refund.allCard}" Command="{Binding AllCardCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0"/>
-            <Button Content="{loc:Loc refund.splitHalf}" Command="{Binding SplitHalfCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0" ToolTip="{loc:Loc refund.splitTooltip}"/>
-            <Button Content="{loc:Loc refund.zero}" Command="{Binding ZeroRefundCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0"/>
+            <Button Command="{Binding AllCardCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconPay}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc refund.allCard}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button Command="{Binding SplitHalfCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0" ToolTip="{loc:Loc refund.splitTooltip}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconDuplicate}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc refund.splitHalf}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button Command="{Binding ZeroRefundCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,12,0">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc refund.zero}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
             <TextBlock VerticalAlignment="Center" Foreground="#C62828" Text="{Binding MissingText}" FontWeight="SemiBold" Margin="0,0,0,0" TextTrimming="CharacterEllipsis" MaxWidth="280"/>
         </WrapPanel>
             </Grid>
         </ScrollViewer>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button MinWidth="120" Height="42" Margin="0,0,10,0" Content="{loc:Loc common.confirm}" Click="OnConfirmClick" Style="{StaticResource PrimaryButtonStyle}"
-                    IsEnabled="{Binding IsValid}"/>
-            <Button MinWidth="120" Height="42" Content="{loc:Loc common.cancel}" IsCancel="True" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+            <Button MinWidth="120" Height="42" Margin="0,0,10,0" Click="OnConfirmClick" Style="{StaticResource PrimaryButtonStyle}"
+                    IsEnabled="{Binding IsValid}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconRefund}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.confirm}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button MinWidth="120" Height="42" IsCancel="True" Command="{Binding CancelCommand}" Style="{StaticResource OutlineButtonStyle}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

@@ -5,6 +5,7 @@
   <Application.Resources>
     <ResourceDictionary>
       <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Icons/MaterialSymbols.xaml"/>
         <ResourceDictionary Source="ModernStyles.xaml"/>
         <ResourceDictionary Source="Themes/DialogChrome.xaml"/>
       </ResourceDictionary.MergedDictionaries>

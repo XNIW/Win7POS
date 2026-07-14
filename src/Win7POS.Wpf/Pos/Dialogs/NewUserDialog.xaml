@@ -42,8 +42,18 @@
             <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,10" Text="{loc:Loc users.role}" Foreground="#666"/>
             <ComboBox x:Name="RoleCombo" Grid.Row="3" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" DisplayMemberPath="Name"/>
             <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-                <Button Content="{loc:Loc common.create}" Margin="0,0,8,0" Click="OnCreateClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
-                <Button Content="{loc:Loc common.cancel}" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
+                <Button Margin="0,0,8,0" Click="OnCreateClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconAdd}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.create}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Grid>
         </Border>

@@ -153,8 +153,108 @@ namespace Win7POS.Data.Repositories
         public async Task<bool> HasAnyUsersAsync()
         {
             using var conn = _factory.Open();
-            var count = await conn.ExecuteScalarAsync<long>("SELECT COUNT(*) FROM users").ConfigureAwait(false);
-            return count > 0;
+            var exists = await conn.ExecuteScalarAsync<long>("SELECT EXISTS(SELECT 1 FROM users LIMIT 1)").ConfigureAwait(false);
+            return exists == 1;
+        }
+
+        public async Task<PosUserBootstrapState> GetBootstrapStateAsync()
+        {
+            using var conn = _factory.Open();
+            return await conn.QuerySingleAsync<PosUserBootstrapState>(@"
+SELECT
+    COUNT(*) AS TotalUserRows,
+    COALESCE(SUM(CASE
+        WHEN is_active = 1 AND TRIM(COALESCE(username, '')) <> '' THEN 1
+        ELSE 0
+    END), 0) AS ActiveLoginableUsers,
+    COALESCE(SUM(CASE
+        WHEN is_active = 1
+         AND TRIM(COALESCE(username, '')) <> ''
+         AND TRIM(COALESCE(remote_staff_id, '')) <> ''
+         AND TRIM(COALESCE(remote_staff_code, '')) <> ''
+         AND TRIM(COALESCE(remote_shop_code, '')) <> '' THEN 1
+        ELSE 0
+    END), 0) AS ActiveRemoteMirrors
+FROM users").ConfigureAwait(false);
+        }
+
+        public async Task<FirstRunAdminCreateResult> TryCreateFirstRunAdminAsync(
+            string username,
+            string displayName,
+            string pinHash,
+            string pinSalt)
+        {
+            if (string.IsNullOrWhiteSpace(username)) throw new ArgumentException("Username is empty.", nameof(username));
+            if (string.IsNullOrWhiteSpace(displayName)) throw new ArgumentException("Display name is empty.", nameof(displayName));
+            if (string.IsNullOrWhiteSpace(pinHash)) throw new ArgumentException("PIN hash is empty.", nameof(pinHash));
+            if (string.IsNullOrWhiteSpace(pinSalt)) throw new ArgumentException("PIN salt is empty.", nameof(pinSalt));
+
+            var now = UnixTime.NowSeconds();
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction(deferred: false);
+            try
+            {
+                var existingUsers = await conn.ExecuteScalarAsync<long>(
+                    "SELECT COUNT(*) FROM users",
+                    transaction: tx).ConfigureAwait(false);
+                if (existingUsers != 0)
+                {
+                    tx.Rollback();
+                    return FirstRunAdminCreateResult.NotEligible();
+                }
+
+                var adminRoleId = await conn.ExecuteScalarAsync<int?>(
+                    "SELECT id FROM roles WHERE LOWER(code) = 'admin' LIMIT 1",
+                    transaction: tx).ConfigureAwait(false);
+                if (!adminRoleId.HasValue)
+                {
+                    throw new InvalidOperationException("Admin role is missing.");
+                }
+
+                await conn.ExecuteAsync(@"
+INSERT INTO users(
+    username, display_name, pin_hash, pin_salt, role_id, is_active,
+    require_pin_change, max_discount_percent, created_at, updated_at)
+VALUES(
+    @username, @displayName, @pinHash, @pinSalt, @roleId, 1,
+    0, 0, @now, @now)",
+                    new
+                    {
+                        username = username.Trim(),
+                        displayName = displayName.Trim(),
+                        pinHash,
+                        pinSalt,
+                        roleId = adminRoleId.Value,
+                        now
+                    },
+                    tx).ConfigureAwait(false);
+
+                var userId = await conn.ExecuteScalarAsync<int>(
+                    "SELECT last_insert_rowid()",
+                    transaction: tx).ConfigureAwait(false);
+
+                await conn.ExecuteAsync(@"
+INSERT INTO security_events(ts, user_id, event_type, details)
+VALUES(@now, @userId, @userCreated, 'source=local_recovery');
+INSERT INTO security_events(ts, user_id, event_type, details)
+VALUES(@now, @userId, @firstRunCreated, 'source=local_recovery');",
+                    new
+                    {
+                        now,
+                        userId,
+                        userCreated = SecurityEventCodes.UserCreated,
+                        firstRunCreated = SecurityEventCodes.FirstRunAdminCreated
+                    },
+                    tx).ConfigureAwait(false);
+
+                tx.Commit();
+                return FirstRunAdminCreateResult.Created(userId);
+            }
+            catch
+            {
+                try { tx.Rollback(); } catch { }
+                throw;
+            }
         }
 
         /// <summary>Elenco utenti attivi con ruolo admin. Per autorizzazioni riservate ai soli amministratori.</summary>
@@ -587,5 +687,27 @@ UPDATE users SET pin_hash = @pinHash, pin_salt = @pinSalt, require_pin_change = 
         public string RemoteStaffId { get; set; }
         public string ShopCode { get; set; }
         public string StaffCode { get; set; }
+    }
+
+    public sealed class FirstRunAdminCreateResult
+    {
+        private FirstRunAdminCreateResult(bool created, int? userId)
+        {
+            CreatedSuccessfully = created;
+            UserId = userId;
+        }
+
+        public bool CreatedSuccessfully { get; }
+        public int? UserId { get; }
+
+        public static FirstRunAdminCreateResult Created(int userId)
+        {
+            return new FirstRunAdminCreateResult(true, userId);
+        }
+
+        public static FirstRunAdminCreateResult NotEligible()
+        {
+            return new FirstRunAdminCreateResult(false, null);
+        }
     }
 }

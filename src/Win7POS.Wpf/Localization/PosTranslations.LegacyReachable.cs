@@ -107,6 +107,9 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("firstRun.usernameInUse", "Username already in use.", "Username ya en uso.", "Username gia in uso.", "用户名已被使用。");
             yield return new TranslationEntry("firstRun.usernameInUseChooseAnother", "Username already in use. Choose another one.", "Username ya en uso. Elige otro.", "Username gia in uso. Scegline un altro.", "用户名已被使用。请选择其他用户名。");
             yield return new TranslationEntry("firstRun.localSetupFailed", "Local setup was not completed. Check the application log.", "Configuracion local no completada. Revisa el log de la aplicacion.", "Configurazione locale non completata. Controlla il log applicativo.", "本地设置未完成。请检查应用日志。");
+            yield return new TranslationEntry("firstRun.localOnlyWarning", "This administrator is local to this PC and is not linked to Admin Web. Sales stay disabled until the catalog is verified.", "Este administrador es local a este PC y no esta vinculado a Admin Web. Las ventas siguen deshabilitadas hasta verificar el catalogo.", "Questo amministratore e locale a questo PC e non e collegato ad Admin Web. Le vendite restano disabilitate fino alla verifica del catalogo.", "此管理员仅属于本机，未关联 Admin Web。在目录验证前销售保持禁用。");
+            yield return new TranslationEntry("firstRun.noLongerEligible", "Local administrator recovery is no longer available because the database already contains a user. Use restore or Admin Web support.", "La recuperacion de administrador local ya no esta disponible porque la base contiene un usuario. Usa restauracion o soporte Admin Web.", "Il recovery amministratore locale non e piu disponibile perche il database contiene gia un utente. Usa ripristino o supporto Admin Web.", "数据库中已存在用户，本地管理员恢复不再可用。请使用还原或 Admin Web 支持。");
+            yield return new TranslationEntry("firstRun.sessionFailed", "The local administrator was created, but the recovery session could not start. Return to POS access and sign in locally.", "El administrador local fue creado, pero no se pudo iniciar la sesion de recuperacion. Vuelve al acceso POS e inicia sesion localmente.", "L'amministratore locale e stato creato, ma la sessione recovery non e partita. Torna all'accesso POS ed esegui l'accesso locale.", "本地管理员已创建，但无法启动恢复会话。请返回 POS 访问并在本地登录。");
 
             yield return new TranslationEntry("heldCarts.title", "Suspended receipts", "Boletas suspendidas", "Scontrini sospesi", "挂起小票");
             yield return new TranslationEntry("heldCarts.preview", "Preview", "Vista previa", "Anteprima", "预览");
@@ -144,6 +147,18 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("access.login.invalidCredentials", "Shop, staff or PIN/password is invalid.", "Local, staff o PIN/password no validos.", "Negozio, staff o PIN/password non validi.", "店铺、员工或 PIN/密码无效。");
             yield return new TranslationEntry("access.login.signIn", "Sign in", "Acceder", "Accedi", "登录");
             yield return new TranslationEntry("access.login.advancedSettings", "Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server", "高级设置 / 服务器");
+            yield return new TranslationEntry("access.login.retryOnline", "Retry online", "Reintentar online", "Riprova online", "重试在线连接");
+            yield return new TranslationEntry("access.login.localRecovery", "Local recovery", "Recuperacion local", "Recovery locale", "本地恢复");
+            yield return new TranslationEntry("access.login.localRecoveryHelp", "Admin Web is unavailable. You may create one local administrator on this new database. This does not bypass an online denial.", "Admin Web no esta disponible. Puedes crear un administrador local en esta base nueva. Esto no evita una denegacion online.", "Admin Web non e disponibile. Puoi creare un solo amministratore locale su questo database nuovo. Non aggira un diniego online.", "Admin Web 不可用。可在此新数据库中创建一个本地管理员，但不能绕过在线拒绝。");
+            yield return new TranslationEntry("access.login.localUsername", "Local username:", "Usuario local:", "Username locale:", "本地用户名：");
+            yield return new TranslationEntry("access.login.localRecoverySignIn", "Local recovery sign-in", "Acceso de recuperacion local", "Accesso recovery locale", "本地恢复登录");
+            yield return new TranslationEntry("access.login.existingUsersDisabled", "This database contains users, but none can sign in. Local administrator creation is blocked. Restore a backup or contact Admin Web support.", "Esta base contiene usuarios, pero ninguno puede acceder. La creacion de administrador local esta bloqueada. Restaura un backup o contacta soporte Admin Web.", "Il database contiene utenti, ma nessuno puo accedere. La creazione di un amministratore locale e bloccata. Ripristina un backup o contatta il supporto Admin Web.", "数据库中存在用户但均无法登录。本地管理员创建已阻止。请还原备份或联系 Admin Web 支持。");
+            yield return new TranslationEntry("access.login.recoveryModeBanner", "Recovery mode - sales disabled", "Modo recuperacion - ventas deshabilitadas", "Modalita recovery - vendite disabilitate", "恢复模式 - 销售已禁用");
+            yield return new TranslationEntry("access.login.recoveryModeHelp", "Use Products/Import or database maintenance, then verify the catalog again.", "Usa Productos/Importar o mantenimiento de base y luego verifica el catalogo otra vez.", "Usa Prodotti/Import o manutenzione database, poi verifica nuovamente il catalogo.", "请使用商品/导入或数据库维护，然后重新验证目录。");
+            yield return new TranslationEntry("access.login.verifyAgain", "Verify again", "Verificar otra vez", "Verifica nuovamente", "重新验证");
+            yield return new TranslationEntry("access.login.catalogStillUnsafe", "The catalog still has no active product with a valid sale price. Sales remain disabled.", "El catalogo aun no tiene productos activos con precio de venta valido. Las ventas siguen deshabilitadas.", "Il catalogo non contiene ancora prodotti attivi con prezzo di vendita valido. Le vendite restano disabilitate.", "目录中仍没有具有有效售价的活动商品。销售保持禁用。");
+            yield return new TranslationEntry("access.login.catalogApproved", "Catalog verified. POS sales are now enabled.", "Catalogo verificado. Las ventas POS estan habilitadas.", "Catalogo verificato. Le vendite POS sono ora abilitate.", "目录已验证。POS 销售现已启用。");
+            yield return new TranslationEntry("pos.toast.dismiss", "Dismiss notification", "Cerrar notificacion", "Chiudi notifica", "关闭通知");
 
             yield return new TranslationEntry("onlineFirstLogin.title", "Connect POS online", "Conectar POS online", "Collega POS online", "连接 POS 在线");
             yield return new TranslationEntry("onlineFirstLogin.serverConfigured", "Admin Web server configured.", "Servidor Admin Web configurado.", "Server Admin Web configurato.", "已配置 Admin Web 服务器。");
@@ -383,6 +398,9 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("products.filterSupplierTooltip", "Filter by supplier", "Filtrar por proveedor", "Filtra per fornitore", "按供应商筛选");
             yield return new TranslationEntry("products.search", "Search:", "Buscar:", "Cerca:", "搜索：");
             yield return new TranslationEntry("products.searchTooltip", "Search text (Enter to search)", "Texto a buscar (Enter para buscar)", "Testo da cercare (Invio per cercare)", "搜索文本（按 Enter 搜索）");
+            yield return new TranslationEntry("products.applyFilters", "Apply filters", "Aplicar filtros", "Applica filtri", "应用筛选");
+            yield return new TranslationEntry("products.noFilters", "No filters.", "Sin filtros.", "Nessun filtro.", "无筛选。");
+            yield return new TranslationEntry("products.filtersDirty", "Filters changed, not applied: {0}", "Filtros cambiados, no aplicados: {0}", "Filtri modificati, non applicati: {0}", "筛选已更改，尚未应用：{0}");
             yield return new TranslationEntry("products.pageStatus", "Found: {0}/{1} | Page {2}/{3}", "Encontrados: {0}/{1} | Pagina {2}/{3}", "Trovati: {0}/{1} | Pagina {2}/{3}", "找到：{0}/{1} | 第 {2}/{3} 页");
             yield return new TranslationEntry("products.filterCategory", "Category = {0}", "Categoria = {0}", "Categoria = {0}", "分类 = {0}");
             yield return new TranslationEntry("products.filterSupplier", "Supplier = {0}", "Proveedor = {0}", "Fornitore = {0}", "供应商 = {0}");
@@ -390,6 +408,10 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("products.filtersSummary", "Filters: {0}", "Filtros: {0}", "Filtri: {0}", "筛选：{0}");
             yield return new TranslationEntry("products.allCategories", "(All)", "(Todas)", "(Tutte)", "（全部）");
             yield return new TranslationEntry("products.allSuppliers", "(All)", "(Todos)", "(Tutti)", "（全部）");
+            yield return new TranslationEntry("products.stats.products", "Products", "Productos", "Prodotti", "商品");
+            yield return new TranslationEntry("products.stats.categories", "Categories", "Categorias", "Categorie", "分类");
+            yield return new TranslationEntry("products.stats.suppliers", "Suppliers", "Proveedores", "Fornitori", "供应商");
+            yield return new TranslationEntry("products.stats.stockUnits", "Stock units", "Unidades stock", "Unita stock", "库存单位");
             yield return new TranslationEntry("products.permissionDenied", "Permission denied: {0}.", "Permiso denegado: {0}.", "Permesso negato: {0}.", "权限被拒绝：{0}。");
             yield return new TranslationEntry("products.operationEditCatalog", "edit catalog", "modificar catalogo", "modifica catalogo", "编辑目录");
             yield return new TranslationEntry("products.operationImportCatalog", "import catalog", "importar catalogo", "import catalogo", "导入目录");

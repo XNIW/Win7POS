@@ -64,11 +64,15 @@
                                 <ColumnDefinition Width="Auto"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
-                            <Button Content="{loc:Loc supplierExcelImport.chooseExcelButton}"
-                                    MinWidth="180"
+                            <Button MinWidth="180"
                                     Height="42"
                                     Command="{Binding BrowseCommand}"
-                                    Style="{StaticResource DialogActionButtonStyle}"/>
+                                    Style="{StaticResource DialogActionButtonStyle}">
+                                <StackPanel Style="{StaticResource IconButtonContent}">
+                                    <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                    <TextBlock Text="{loc:Loc supplierExcelImport.chooseExcelButton}" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
                             <TextBox Grid.Column="1"
                                      Margin="14,0,0,0"
                                      Height="42"
@@ -229,7 +233,12 @@
                         <TextBlock Text="{loc:Loc supplierExcelImport.roundTo}" VerticalAlignment="Center" Margin="0,0,6,0"/>
                         <ComboBox Width="80" Height="32" ItemsSource="{Binding RoundToOptions}" SelectedItem="{Binding RoundTo, Mode=TwoWay}" Style="{StaticResource ModernComboBoxStyle}" Margin="0,0,12,0"/>
                         <CheckBox Content="{loc:Loc supplierExcelImport.onlyEmptyRetailPrice}" IsChecked="{Binding ApplyOnlyEmptyRetailPrice, Mode=TwoWay}" VerticalAlignment="Center" Margin="0,0,12,0"/>
-                        <Button Content="{loc:Loc supplierExcelImport.applyMarkup}" MinWidth="120" Height="34" Command="{Binding ApplyMarkupCommand}" Style="{StaticResource DialogActionButtonStyle}"/>
+                        <Button MinWidth="120" Height="34" Command="{Binding ApplyMarkupCommand}" Style="{StaticResource DialogActionButtonStyle}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc supplierExcelImport.applyMarkup}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
                     </WrapPanel>
                 </Border>
 
@@ -370,18 +379,48 @@
             </Grid.ColumnDefinitions>
             <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Foreground="#5E3F86"/>
             <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="{loc:Loc supplierExcelImport.back}" MinWidth="100" Height="42" Margin="0,0,8,0"
-                        Command="{Binding BackCommand}" Style="{StaticResource DialogCancelButtonStyle}"/>
-                <Button Content="{loc:Loc supplierExcelImport.analyze}" MinWidth="100" Height="42" Margin="0,0,8,0"
-                        Command="{Binding AnalyzeCommand}" Visibility="{Binding IsStep1, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogCancelButtonStyle}"/>
-                <Button Content="{loc:Loc supplierExcelImport.next}" MinWidth="100" Height="42" Margin="0,0,8,0"
-                        Command="{Binding NextCommand}" Visibility="{Binding IsStep2, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}"/>
-                <Button Content="{loc:Loc supplierExcelImport.continueSyncDb}" MinWidth="150" Height="42" Margin="0,0,8,0"
-                        Command="{Binding SyncPreviewCommand}" Visibility="{Binding IsStep3, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}"/>
-                <Button Content="{loc:Loc supplierExcelImport.confirmApply}" MinWidth="150" Height="42" Margin="0,0,8,0"
-                        Command="{Binding ApplyCommand}" Visibility="{Binding IsStep4, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}"/>
-                <Button Content="{loc:Loc common.cancel}" MinWidth="100" Height="42" IsCancel="True"
-                        Command="{Binding CancelCommand}" Style="{StaticResource DialogCancelButtonStyle}"/>
+                <Button MinWidth="100" Height="42" Margin="0,0,8,0"
+                        Command="{Binding BackCommand}" Style="{StaticResource DialogCancelButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconPrev}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.back}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="100" Height="42" Margin="0,0,8,0"
+                        Command="{Binding AnalyzeCommand}" Visibility="{Binding IsStep1, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogCancelButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.analyze}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="100" Height="42" Margin="0,0,8,0"
+                        Command="{Binding NextCommand}" Visibility="{Binding IsStep2, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <TextBlock Text="{loc:Loc supplierExcelImport.next}" Margin="0,0,8,0"/>
+                        <Path Data="{StaticResource IconNext}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="150" Height="42" Margin="0,0,8,0"
+                        Command="{Binding SyncPreviewCommand}" Visibility="{Binding IsStep3, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.continueSyncDb}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="150" Height="42" Margin="0,0,8,0"
+                        Command="{Binding ApplyCommand}" Visibility="{Binding IsStep4, Converter={StaticResource BoolToVis}}" Style="{StaticResource DialogActionButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconImport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc supplierExcelImport.confirmApply}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="100" Height="42" IsCancel="True"
+                        Command="{Binding CancelCommand}" Style="{StaticResource DialogCancelButtonStyle}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Grid>
     </Grid>

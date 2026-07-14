@@ -11,10 +11,10 @@
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        Width="560"
-        Height="720"
-        MinWidth="500"
-        MinHeight="520"
+        Width="620"
+        Height="700"
+        MinWidth="560"
+        MinHeight="560"
         ResizeMode="CanResize"
         ShowInTaskbar="False">
     <Grid Margin="0" Background="#F1EDF7">
@@ -23,79 +23,145 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="{loc:Loc settings.shopTitle}" Style="{StaticResource DialogTitleStyle}" Margin="0,0,0,10"/>
+
+        <DockPanel Grid.Row="0" Margin="0,0,0,10">
+            <Border DockPanel.Dock="Right" Style="{StaticResource FilterChipStyle}" VerticalAlignment="Center">
+                <TextBlock Text="{loc:Loc settings.readOnlyBadge}" Style="{StaticResource MutedTextStyle}" FontWeight="SemiBold"/>
+            </Border>
+            <TextBlock Text="{loc:Loc settings.shopTitle}" Style="{StaticResource DialogTitleStyle}"/>
+        </DockPanel>
+
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="150"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc settings.shopReadOnly}"
+                               TextWrapping="Wrap"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Margin="0,0,0,16"/>
 
-                    <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="{loc:Loc settings.shopReadOnly}" TextWrapping="Wrap" Foreground="#5F4A71" Margin="0,0,0,12"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc settings.shopName}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding Name}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.shopName}"/>
-                    <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Name}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc settings.shopCode}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding ShopCode}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.shopCode}"/>
-                    <TextBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" Text="{Binding ShopCode}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc settings.address}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding Address}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.address}"/>
-                    <TextBox Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Address}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc settings.city}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding City}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="4" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.city}"/>
-                    <TextBox Grid.Row="4" Grid.Column="1" Margin="0,0,0,8" Text="{Binding City}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc settings.companyRut}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding Rut}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="5" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.companyRut}"/>
-                    <TextBox Grid.Row="5" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Rut}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc settings.businessGiro}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding BusinessGiro}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="6" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.businessGiro}"/>
-                    <TextBox Grid.Row="6" Grid.Column="1" Margin="0,0,0,8" Text="{Binding BusinessGiro}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc settings.phone}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding Phone}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="7" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.phone}"/>
-                    <TextBox Grid.Row="7" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Phone}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc settings.receiptFooter}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding Footer}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="8" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.receiptFooter}"/>
-                    <TextBox Grid.Row="8" Grid.Column="1" Margin="0,0,0,8" Text="{Binding Footer}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="170"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc settings.lastBoleta}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding FiscalBoletaNumberText}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="9" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc settings.lastBoleta}"/>
-                    <TextBox Grid.Row="9" Grid.Column="1" Margin="0,0,0,8" Text="{Binding FiscalBoletaNumberText}" IsReadOnly="{Binding IsReadOnly}" Style="{StaticResource ModernTextBoxStyle}"/>
-
-                    <TextBlock Grid.Row="10" Grid.ColumnSpan="2" Margin="0,6,0,0" Foreground="#4A3D56" Text="{Binding ShopStatusText, Mode=OneWay}"/>
-                    <TextBlock Grid.Row="11" Grid.ColumnSpan="2" Margin="0,6,0,0" Foreground="#4A3D56" Text="{Binding OfficialSourceText, Mode=OneWay}"/>
-                    <TextBlock Grid.Row="12" Grid.ColumnSpan="2" Margin="0,6,0,0" Foreground="#4A3D56" Text="{Binding LastOfficialSyncText, Mode=OneWay}"/>
-                    <TextBlock Grid.Row="13" Grid.ColumnSpan="2" Margin="0,12,0,0" FontWeight="SemiBold" Foreground="#3C2F48" Text="{Binding SyncStatusText, Mode=OneWay}"/>
-                    <TextBlock Grid.Row="14" Grid.ColumnSpan="2" Margin="0,6,0,0" Foreground="#4A3D56" Text="{Binding CatalogSyncText, Mode=OneWay}" TextWrapping="Wrap"/>
-                    <TextBlock Grid.Row="15" Grid.ColumnSpan="2" Margin="0,6,0,0" Foreground="#4A3D56" Text="{Binding SalesSyncText, Mode=OneWay}"/>
-                    <TextBlock Grid.Row="16" Grid.ColumnSpan="2" Margin="0,6,0,0" Foreground="#4A3D56" Text="{Binding PendingSalesText, Mode=OneWay}"/>
-                    <TextBlock Grid.Row="17" Grid.ColumnSpan="2" Margin="0,6,0,0" Foreground="#4A3D56" Text="{Binding DeviceStatusText, Mode=OneWay}" TextWrapping="Wrap"/>
-                    <TextBlock Grid.Row="18" Grid.ColumnSpan="2" Margin="0,12,0,0" Foreground="Gray" Text="{Binding Status, Mode=OneWay}" TextWrapping="Wrap"/>
-                </Grid>
+                    <Border Style="{StaticResource DialogPanelStyle}" Margin="0,4,0,0">
+                        <StackPanel>
+                            <TextBlock Text="{Binding ShopStatusText, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding OfficialSourceText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding LastOfficialSyncText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding SyncStatusText, Mode=OneWay}" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" Margin="0,12,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding CatalogSyncText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding SalesSyncText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding PendingSalesText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding DeviceStatusText, Mode=OneWay}" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,0" TextWrapping="Wrap"/>
+                            <TextBlock Text="{Binding Status, Mode=OneWay}" Foreground="#777" Margin="0,12,0,0" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
             </ScrollViewer>
         </Border>
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button Content="{loc:Loc common.close}" MinWidth="100" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Close_Click"/>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+            <Button MinWidth="100" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Close_Click">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.close}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

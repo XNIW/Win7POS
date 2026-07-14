@@ -1,7 +1,7 @@
 <chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.AboutSupportDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
+        xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
         Title="{loc:Loc support.title}"
         ShowHeader="False"
@@ -22,55 +22,120 @@
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        <TextBlock Grid.Row="0" Text="{loc:Loc support.title}" FontSize="18" FontWeight="SemiBold" Foreground="#5E3F86" Margin="0,0,0,10"/>
+        <TextBlock Grid.Row="0" Text="{loc:Loc support.title}" Style="{StaticResource DialogTitleStyle}"/>
         <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="130"/>
-                        <ColumnDefinition Width="*" MinWidth="240"/>
-                    </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc support.version}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding VersionText, Mode=OneWay}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" Text="{loc:Loc support.version}" VerticalAlignment="Center" FontWeight="SemiBold"/>
-                    <TextBox Grid.Row="0" Grid.Column="1" Margin="10,0,0,0" IsReadOnly="True" Text="{Binding VersionText, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32" Padding="8,6"/>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc support.dbPath}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding DbPath, Mode=OneWay}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,8,0,0" Text="{loc:Loc support.dbPath}" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="1" Grid.Column="1" Margin="10,8,0,0" IsReadOnly="True" Text="{Binding DbPath, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32" Padding="8,6"/>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc support.logsDirectory}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding LogsDirectory, Mode=OneWay}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,8,0,0" Text="{loc:Loc support.logsDirectory}" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="2" Grid.Column="1" Margin="10,8,0,0" IsReadOnly="True" Text="{Binding LogsDirectory, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32" Padding="8,6"/>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc support.backupsDirectory}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding BackupsDirectory, Mode=OneWay}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="3" Grid.Column="0" Margin="0,8,0,0" Text="{loc:Loc support.backupsDirectory}" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="3" Grid.Column="1" Margin="10,8,0,0" IsReadOnly="True" Text="{Binding BackupsDirectory, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32" Padding="8,6"/>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc support.exportsDirectory}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding ExportsDirectory, Mode=OneWay}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="4" Grid.Column="0" Margin="0,8,0,0" Text="{loc:Loc support.exportsDirectory}" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="4" Grid.Column="1" Margin="10,8,0,0" IsReadOnly="True" Text="{Binding ExportsDirectory, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32" Padding="8,6"/>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc support.printer}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding PrinterName, Mode=OneWay}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="5" Grid.Column="0" Margin="0,8,0,0" Text="{loc:Loc support.printer}" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="5" Grid.Column="1" Margin="10,8,0,0" IsReadOnly="True" Text="{Binding PrinterName, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32" Padding="8,6"/>
+                    <Grid Margin="0,0,0,8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="150"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{loc:Loc support.autoPrint}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,10,0"/>
+                        <Border Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}">
+                            <TextBlock Text="{Binding AutoPrintText, Mode=OneWay}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                        </Border>
+                    </Grid>
 
-                    <TextBlock Grid.Row="6" Grid.Column="0" Margin="0,8,0,0" Text="{loc:Loc support.autoPrint}" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="6" Grid.Column="1" Margin="10,8,0,0" IsReadOnly="True" Text="{Binding AutoPrintText, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}" MinHeight="32" Padding="8,6"/>
-
-                    <TextBlock Grid.Row="7" Grid.ColumnSpan="2" Margin="0,10,0,0" Foreground="#666" Text="{Binding Status}" TextWrapping="Wrap" FontSize="11"/>
-                </Grid>
+                    <TextBlock Margin="0,10,0,0"
+                               Foreground="{StaticResource TextSecondaryBrush}"
+                               Text="{Binding Status}"
+                               TextWrapping="Wrap"
+                               FontSize="11"/>
+                </StackPanel>
             </ScrollViewer>
         </Border>
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button MinWidth="110" Height="42" Margin="0,0,8,0" Content="{loc:Loc support.openDataFolder}" Command="{Binding OpenDataFolderCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-            <Button MinWidth="110" Height="42" Margin="0,0,8,0" Content="{loc:Loc support.openLogFolder}" Command="{Binding OpenLogFolderCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-            <Button MinWidth="88" Height="42" Margin="0,0,8,0" Content="{loc:Loc support.copyInfo}" Command="{Binding CopyInfoCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-            <Button MinWidth="88" Height="42" Content="{loc:Loc common.close}" IsCancel="True" Style="{StaticResource OutlineButtonStyle}" Click="Close_Click"/>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+            <Button MinWidth="132" Height="42" Margin="0,0,8,0" Command="{Binding OpenDataFolderCommand}" Style="{StaticResource OutlineButtonStyle}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc support.openDataFolder}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button MinWidth="132" Height="42" Margin="0,0,8,0" Command="{Binding OpenLogFolderCommand}" Style="{StaticResource OutlineButtonStyle}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc support.openLogFolder}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button MinWidth="104" Height="42" Margin="0,0,8,0" Command="{Binding CopyInfoCommand}" Style="{StaticResource OutlineButtonStyle}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconDuplicate}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc support.copyInfo}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button MinWidth="96" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Close_Click">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.close}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

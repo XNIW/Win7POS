@@ -53,8 +53,18 @@
         </UniformGrid>
         </Border>
         <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
-            <Button Content="{loc:Loc common.cancel}" MinWidth="90" Height="42" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click" Style="{StaticResource OutlineButtonStyle}"/>
-            <Button Content="{loc:Loc common.ok}" MinWidth="90" Height="42" IsDefault="True" Click="Ok_Click" Style="{StaticResource PrimaryButtonStyle}"/>
+            <Button MinWidth="90" Height="42" Margin="0,0,10,0" IsCancel="True" Click="Cancel_Click" Style="{StaticResource OutlineButtonStyle}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button MinWidth="90" Height="42" IsDefault="True" Click="Ok_Click" Style="{StaticResource PrimaryButtonStyle}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.ok}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

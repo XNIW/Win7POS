@@ -127,6 +127,29 @@ if (-not $fail) {
         }
     }
 
+    $forbiddenExtensions = @(".pdb", ".cs", ".xaml", ".csproj", ".sln", ".slnx", ".db", ".sqlite", ".sqlite3")
+    $forbiddenPayload = Get-ChildItem -Path $root -Recurse -File -ErrorAction Stop |
+        Where-Object {
+            $forbiddenExtensions -contains $_.Extension.ToLowerInvariant() -or
+            $_.Name -match '(?i)^(pos-admin-web\.config|.*production.*\.(json|config|txt)|.*(?:token|secret).*(?:json|config|txt))$'
+        }
+    if ($forbiddenPayload) {
+        Fail "ReleasePack contains source, debug, DB, production config or secret-like files: $($forbiddenPayload.Name -join ', ')"
+    }
+    else {
+        Pass "ReleasePack excludes source, debug, DB, production config and secret-like files"
+    }
+
+    $textPayload = Get-ChildItem -Path $root -Recurse -File -ErrorAction Stop |
+        Where-Object { $_.Extension.ToLowerInvariant() -in @(".txt", ".json", ".config", ".xml", ".bat", ".cmd", ".ps1") }
+    $secretLeak = $textPayload | Select-String -Pattern '(?i)(SUPABASE_SERVICE_ROLE_KEY|\bservice_role\b|mcpos_(device|session)_[A-Za-z0-9_-]{8,}|Authorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/-]{8,})'
+    if ($secretLeak) {
+        Fail "ReleasePack contains a token/service-role marker"
+    }
+    else {
+        Pass "ReleasePack text contains no token/service-role marker"
+    }
+
     if ($WriteManifests) {
         if ($tempDir) {
             Fail "-WriteManifests requires a folder source, not a zip"

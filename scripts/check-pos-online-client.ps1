@@ -94,7 +94,6 @@ $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.
 $dialogXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml"
 $wpfProject = Read-Text "src/Win7POS.Wpf/Win7POS.Wpf.csproj"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs"
-$operatorDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorLoginDialog.xaml.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $userRepo = Read-Text "src/Win7POS.Data/Repositories/UserRepository.cs"
 $taskCombined = @(
@@ -105,8 +104,6 @@ $taskCombined = @(
     (Read-Text "src/Win7POS.Wpf/Pos/Online/PosDeviceIdentity.cs"),
     $dialogXaml,
     $dialog,
-    (Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorLoginDialog.xaml"),
-    $operatorDialog,
     $mainWindow
 ) -join "`n"
 $baseUrlScope = @(
@@ -114,7 +111,6 @@ $baseUrlScope = @(
     $options,
     $bootstrap,
     $dialog,
-    $operatorDialog,
     $mainWindow
 ) -join "`n"
 $forbiddenRuntimeUrlScope = @(
@@ -122,7 +118,6 @@ $forbiddenRuntimeUrlScope = @(
     $bootstrap,
     $dialog,
     $dialogXaml,
-    $operatorDialog,
     $mainWindow
 ) -join "`n"
 $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.csproj |
@@ -159,7 +154,7 @@ if (-not $defaultUrlMatch.Success) {
 if ($options -notmatch "WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB" -or $options -notmatch "AllowInsecureLanAdminWeb") { Fail "insecure LAN override guard missing" } else { Pass "insecure LAN override guard present" }
 if ($options -notmatch "parsed\.UserInfo" -or $options -notmatch "senza username o password") { Fail "base URL credentials guard missing" } else { Pass "base URL credentials rejected" }
 if ($dialogXaml -match "Indirizzo pannello") { Fail "normal online link dialog still exposes URL field copy" } else { Pass "normal online link dialog hides URL field copy" }
-if (-not ((Has-Literal $dialogXaml "AdvancedExpander") -and (Has-Literal $dialogXaml 'x:Name="BaseUrlBox"') -and (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "onlineFirstLogin.advancedSettings") -and (Has-VisibleCopyOrLocKey $dialogXaml "URL Admin Web" "onlineFirstLogin.adminWebUrl") -and (Test-TranslationEntry $translations "onlineFirstLogin.advancedSettings" @("Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server")) -and (Test-TranslationEntry $translations "onlineFirstLogin.adminWebUrl" @("Admin Web URL", "URL Admin Web")))) { Fail "advanced server URL settings missing" } else { Pass "advanced server URL settings present" }
+if (-not ((Has-Literal $dialogXaml "AdvancedExpander") -and (Has-Literal $dialogXaml 'x:Name="BaseUrlBox"') -and (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "access.login.advancedSettings") -and (Has-VisibleCopyOrLocKey $dialogXaml "URL Admin Web" "onlineFirstLogin.adminWebUrl") -and (Test-TranslationEntry $translations "access.login.advancedSettings" @("Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server")) -and (Test-TranslationEntry $translations "onlineFirstLogin.adminWebUrl" @("Admin Web URL", "URL Admin Web")))) { Fail "advanced server URL settings missing" } else { Pass "advanced server URL settings present" }
 if ($dialog -notmatch "PosDeviceIdentity\.GetStableDisplayName") { Fail "device display name is not generated automatically" } else { Pass "device display name generated automatically" }
 if ($dialog -notmatch "PosOnlineBootstrapService") { Fail "first-login dialog does not use bootstrap service" } else { Pass "first-login dialog uses bootstrap service" }
 if ($dialog -notmatch "finally[\s\S]*request\.Credential\s*=\s*string\.Empty[\s\S]*credential\s*=\s*string\.Empty[\s\S]*CredentialBox\.Clear\(\)") { Fail "first-login dialog does not clear PIN/password in finally" } else { Pass "first-login dialog clears PIN/password in finally" }
@@ -167,7 +162,7 @@ if ($bootstrap -notmatch "new\s+PosAdminWebClient" -or $bootstrap -notmatch "Fir
 if ($bootstrap -notmatch "SaveFirstLogin" -or $store -notmatch "ProtectedDeviceSecret" -or $store -notmatch "ProtectedSessionSecret") { Fail "bootstrap does not save trusted tokens through protected store" } else { Pass "trusted tokens saved through protected store" }
 if ($store -match 'DataMember\(Name\s*=\s*"(trustedDeviceToken|deviceToken|sessionToken)"') { Fail "trusted store may persist raw token fields" } else { Pass "trusted store does not persist raw token field names" }
 if ($userRepo -notmatch "PinHelper\.HashPin\(input\.Credential") { Fail "remote staff credential is not hashed for local mirror" } else { Pass "remote staff credential hashed for local mirror" }
-if ($operatorDialog -notmatch "PosOnlineFirstLoginDialog") { Fail "operator login does not expose online link" } else { Pass "operator login exposes online link" }
+if ($mainWindow -notmatch "new\s+PosOnlineFirstLoginDialog" -or $dialog -notmatch "PosOnlineBootstrapService") { Fail "unified POS access flow is not wired to the online client" } else { Pass "unified POS access flow uses online bootstrap client" }
 if ($mainWindow -notmatch "TryRefreshTrustedPosSessionAsync") { Fail "startup heartbeat missing" } else { Pass "startup heartbeat present" }
 
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }

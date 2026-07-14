@@ -98,9 +98,20 @@ if ($stepScrollStart -lt 0 -or $stepScrollEnd -lt 0 -or $footerStart -lt 0 -or $
     throw "Supplier import footer must stay outside the step ScrollViewer."
 }
 foreach ($buttonKey in @("supplierExcelImport.back", "supplierExcelImport.analyze", "supplierExcelImport.next", "supplierExcelImport.continueSyncDb", "supplierExcelImport.confirmApply", "common.cancel")) {
-    $buttonIndex = $dialogXaml.IndexOf("Content=`"{loc:Loc $buttonKey}`"", [System.StringComparison]::Ordinal)
+    $buttonIndex = $dialogXaml.IndexOf("{loc:Loc $buttonKey}", $footerStart, [System.StringComparison]::Ordinal)
     if ($buttonIndex -lt $footerStart) {
         throw "Supplier import footer button '$buttonKey' must be outside the ScrollViewer."
+    }
+
+    $buttonStart = $dialogXaml.LastIndexOf("<Button", $buttonIndex, [System.StringComparison]::Ordinal)
+    $buttonEnd = if ($buttonStart -ge 0) { $dialogXaml.IndexOf("</Button>", $buttonStart, [System.StringComparison]::Ordinal) } else { -1 }
+    if ($buttonStart -lt $footerStart -or $buttonEnd -lt $buttonIndex) {
+        throw "Supplier import footer localization '$buttonKey' must belong to a footer Button."
+    }
+
+    $buttonMarkup = $dialogXaml.Substring($buttonStart, $buttonEnd + 9 - $buttonStart)
+    if ($buttonMarkup -notmatch '(Command|Click)\s*=') {
+        throw "Supplier import footer button '$buttonKey' must be wired to a command or click handler."
     }
 }
 

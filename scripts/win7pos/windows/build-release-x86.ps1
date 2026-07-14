@@ -4,6 +4,7 @@ param(
     [switch]$SkipRestore,
     [switch]$SkipBuild,
     [switch]$BuildInstaller,
+    [switch]$AllowDirty,
     [switch]$DryRun
 )
 
@@ -85,13 +86,31 @@ function Find-MSBuild {
 }
 
 function Find-Dotnet {
+    $candidates = New-Object System.Collections.Generic.List[string]
+    if ($env:WIN7POS_DOTNET_EXE -and (Test-Path -LiteralPath $env:WIN7POS_DOTNET_EXE -PathType Leaf)) {
+        $candidates.Add((Resolve-Path -LiteralPath $env:WIN7POS_DOTNET_EXE).Path) | Out-Null
+    }
+
     if ($env:DOTNET_ROOT) {
         $candidate = Join-Path $env:DOTNET_ROOT "dotnet.exe"
-        if (Test-Path $candidate) { return (Resolve-Path $candidate).Path }
+        if (Test-Path $candidate) { $candidates.Add((Resolve-Path $candidate).Path) | Out-Null }
     }
 
     $fromPath = Get-CommandPath "dotnet.exe"
-    if ($fromPath) { return $fromPath }
+    if ($fromPath) { $candidates.Add($fromPath) | Out-Null }
+
+    $buildMachineFallback = "C:\Dev\dotnet10\dotnet.exe"
+    if (Test-Path -LiteralPath $buildMachineFallback -PathType Leaf) {
+        $candidates.Add((Resolve-Path -LiteralPath $buildMachineFallback).Path) | Out-Null
+    }
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        $sdk = Get-DotnetSdkVersion $candidate
+        if ($sdk -match '^10\.0\.3\d{2}$') {
+            return $candidate
+        }
+        Write-Warning "Skipping incompatible dotnet candidate: $candidate (SDK '$sdk')"
+    }
 
     return $null
 }
@@ -313,83 +332,20 @@ function Write-ReleaseSupportFiles {
         return
     }
 
-    $branch = Get-GitValue @("rev-parse", "--abbrev-ref", "HEAD")
-    $commit = Get-GitValue @("rev-parse", "HEAD")
-    $shortCommit = if ($commit -and $commit.Length -ge 12) { $commit.Substring(0, 12) } else { $commit }
-    $builtAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss zzz"
-
-    $versionLines = @(
-        "Win7POS Windows x86 release pack",
-        "BuiltAt=$builtAt",
-        "Branch=$branch",
-        "Commit=$commit",
-        "ShortCommit=$shortCommit",
-        "Configuration=$Configuration",
-        "Platform=$Platform"
+    $writer = Join-Path $RepoRoot "scripts\win7pos\windows\write-release-support-files.ps1"
+    Invoke-LoggedCommand (Get-CommandPath "pwsh.exe") @(
+        "-NoProfile",
+        "-File",
+        $writer,
+        "-OutputDirectory",
+        $DistDir,
+        "-Configuration",
+        $Configuration,
+        "-Platform",
+        $Platform,
+        "-SdkVersion",
+        $DotnetVersion
     )
-    Set-Content -Path (Join-Path $DistDir "VERSION.txt") -Value $versionLines -Encoding ASCII
-
-    $readmeLines = @(
-        "Win7POS Windows x86 release pack",
-        "",
-        "Run:",
-        "1. Keep this folder intact.",
-        "2. Start Win7POS.Wpf.exe.",
-        "3. Use a test data directory for QA; do not copy production databases into this pack.",
-        "",
-        "Windows 7 prerequisites:",
-        "- Windows 7 SP1 or later.",
-        "- .NET Framework 4.8 installed.",
-        "- Microsoft Visual C++ Runtime x86 installed. The installer and Win7 preflight fail if this runtime is missing.",
-        "- Run check-win7-prereqs.ps1 on the target machine before smoke testing.",
-        "",
-        "Admin Web staging helper:",
-        "- Run set-admin-web-staging-url.bat from this folder to write %ProgramData%\Win7POS\pos-admin-web.config for staging.",
-        "- Do not store real tokens, PINs, passwords, or production config in this folder.",
-        "",
-        "Expected smoke checks:",
-        "- App starts.",
-        "- SQLite native dependency loads.",
-        "- Operator login uses test credentials only.",
-        "- Cash/card sale is saved to the local test database.",
-        "- Backup/restore is tested only on test data."
-    )
-    Set-Content -Path (Join-Path $DistDir "README_RUN.txt") -Value $readmeLines -Encoding ASCII
-
-    $checklistLines = @(
-        "Win7POS release checklist",
-        "",
-        "[ ] Win7POS.Wpf.exe starts on the target Windows machine.",
-        "[ ] e_sqlite3.dll is present and DB startup succeeds.",
-        "[ ] No *.pdb files are present.",
-        "[ ] No source files are present.",
-        "[ ] No production DB, token, PIN, password, or secret is present.",
-        "[ ] Test data directory is used for QA.",
-        "[ ] Operator login works with test-only credentials.",
-        "[ ] Cash sale is saved.",
-        "[ ] Card sale is saved if supported.",
-        "[ ] Print/reprint behavior is verified with available hardware or documented as unavailable.",
-        "[ ] Backup creates a DB copy.",
-        "[ ] Restore guard blocks unresolved outbox sales.",
-        "[ ] Final smoke result is recorded in docs/reports."
-    )
-    Set-Content -Path (Join-Path $DistDir "RELEASE_CHECKLIST.txt") -Value $checklistLines -Encoding ASCII
-
-    $helperSource = Join-Path $RepoRoot "scripts\set-admin-web-staging-url.bat"
-    if (Test-Path $helperSource) {
-        Copy-Item -Path $helperSource -Destination (Join-Path $DistDir "set-admin-web-staging-url.bat") -Force
-    }
-    else {
-        Add-WarningMessage "Admin Web staging helper not found: $helperSource"
-    }
-
-    $win7PrereqSource = Join-Path $RepoRoot "scripts\win7-smoke\check-win7-prereqs.ps1"
-    if (Test-Path $win7PrereqSource) {
-        Copy-Item -Path $win7PrereqSource -Destination (Join-Path $DistDir "check-win7-prereqs.ps1") -Force
-    }
-    else {
-        Add-WarningMessage "Win7 prereq checker not found: $win7PrereqSource"
-    }
 }
 
 function Show-DropSummary {
@@ -446,6 +402,19 @@ try {
 
     Set-Location $RepoRoot
 
+    if (-not $DryRun) {
+        $gitStatus = & git -C $RepoRoot status --porcelain 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            throw "Git status is required to create a provenance-safe release pack."
+        }
+        if ($gitStatus -and -not $AllowDirty) {
+            throw "Working tree is dirty. Commit the intended changes or use -AllowDirty for a non-official local pack."
+        }
+        if ($gitStatus -and $AllowDirty) {
+            Add-WarningMessage "Building an explicitly allowed dirty local pack."
+        }
+    }
+
     if (-not (Test-Path $ProjectPath)) {
         throw "Project file not found: $ProjectPath"
     }
@@ -464,6 +433,12 @@ try {
 
     $DotnetPath = Find-Dotnet
     $DotnetVersion = Get-DotnetSdkVersion $DotnetPath
+    if (-not $DotnetPath) {
+        throw "Compatible .NET SDK not found. Set WIN7POS_DOTNET_EXE, DOTNET_ROOT, PATH, or install 10.0.301 under C:\Dev\dotnet10."
+    }
+    if ($DotnetVersion -notmatch '^10\.0\.3\d{2}$') {
+        throw "Selected dotnet SDK '$DotnetVersion' is incompatible. Win7POS requires the .NET 10.0.3xx feature band from global.json."
+    }
     $UseDotnetCli = Test-NeedsDotnetCli
     if ($UseDotnetCli) {
         if (-not $DotnetPath) {
@@ -475,7 +450,8 @@ try {
     Write-Host "Repo root: $RepoRoot"
     Write-Host "Project: $ProjectPath"
     Write-Host "MSBuild: $MsBuildPath"
-    if ($DotnetPath) { Write-Host "dotnet: $DotnetPath ($DotnetVersion)" }
+    Write-Host "Selected dotnet executable: $DotnetPath"
+    Write-Host "Selected dotnet SDK: $DotnetVersion"
     Write-Host "Configuration: $Configuration"
     Write-Host "Platform: $Platform"
 
@@ -557,6 +533,20 @@ try {
         $exe = Join-Path $DistDir "Win7POS.Wpf.exe"
         if (-not (Test-Path $exe)) {
             throw "Expected executable not found after copy: $exe"
+        }
+
+        $currentCommit = Get-GitValue @("rev-parse", "HEAD")
+        $versionText = [System.IO.File]::ReadAllText((Join-Path $DistDir "VERSION.txt"))
+        if (-not $currentCommit -or $versionText -notmatch ("(?m)^CommitSHA=" + [regex]::Escape($currentCommit) + "\s*$")) {
+            throw "VERSION.txt does not match the build repository HEAD."
+        }
+
+        $forbiddenPayload = Get-ChildItem -LiteralPath $DistDir -Recurse -File | Where-Object {
+            $_.Extension -in @(".pdb", ".cs", ".xaml", ".csproj", ".db", ".sqlite", ".sln", ".slnx") -or
+            $_.Name -match '(?i)(token|secret|production).*(json|config|txt)$'
+        }
+        if ($forbiddenPayload) {
+            throw "Release pack contains forbidden source, database, debug or secret-like files: $($forbiddenPayload.Name -join ', ')"
         }
     }
 
