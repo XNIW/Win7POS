@@ -66,6 +66,8 @@ if ($saleRepo -notmatch "GetSalesSyncOutboxSummaryAsync" -or $statusReader -notm
 if ($statusReader -notmatch "last_error" -or $statusReader -notmatch "SalesErrorText") { Fail "sales sync errors must surface in status reader" } else { Pass "sales sync errors surface in status reader" }
 
 if ($builder -notmatch "SerializeRedacted" -or $builder -notmatch "DeviceToken = null" -or $builder -notmatch "SessionToken = null") { Fail "sales sync payload persistence must redact tokens" } else { Pass "sales sync payload persistence redacts tokens" }
+if ($saleRepo -notmatch "SerializeCanonical" -or $saleRepo -notmatch "payload_hash" -or $sync -notmatch "Sha256Hex\(item\.PayloadJson\)" -or $sync -notmatch "payload_hash_mismatch") { Fail "sales payload/hash immutability missing" } else { Pass "sales payload/hash are immutable from enqueue through retry" }
+if ($saleRepo -notmatch "IsReversalDependencyReadyAsync" -or $saleRepo -notmatch "ValidateReversalBoundaryAsync" -or $sync -notmatch "original_sale_not_acked") { Fail "refund/void original sale dependency missing" } else { Pass "refund/void wait for coherent acknowledged original sale" }
 if ($salesScope -match "DELETE\s+FROM\s+sales_sync_outbox") { Fail "destructive sales_sync_outbox cleanup detected" } else { Pass "no destructive outbox cleanup detected" }
 if ($salesScope -match "DROP\s+TABLE\s+sales_sync_outbox") { Fail "destructive sales_sync_outbox drop detected" } else { Pass "no outbox drop detected" }
 

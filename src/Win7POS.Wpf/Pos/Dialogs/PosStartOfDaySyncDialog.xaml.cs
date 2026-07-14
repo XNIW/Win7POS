@@ -4,6 +4,8 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using Win7POS.Data;
+using Win7POS.Data.Online;
+using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Online;
@@ -66,7 +68,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (OperationCanceledException)
             {
-                if (!_userCancelling)
+                if (!_userCancelling &&
+                    await new SettingsRepository(_factory)
+                        .GetBoolAsync(RestoreShopSafetyRepository.RestoreNeedsReviewKey)
+                        .ConfigureAwait(true) == true)
+                {
+                    Result = new StartOfDaySyncResult
+                    {
+                        CanOpenPos = false,
+                        RequiresOperatorAction = true,
+                        BlockingReason = "restore_needs_review",
+                        StatusMessage = PosLocalization.T("startOfDay.blockRestoreReview"),
+                        RestoreNeedsReview = true,
+                    };
+                    ApplyResult(Result);
+                }
+                else if (!_userCancelling)
                 {
                     Result = new StartOfDaySyncResult
                     {

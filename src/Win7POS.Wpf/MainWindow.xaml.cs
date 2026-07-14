@@ -242,6 +242,10 @@ namespace Win7POS.Wpf
                         {
                             _logger.LogWarning("category=start_of_day result=blocked reason=" +
                                 SafeOnlineCode(startOfDayResult?.BlockingReason));
+                            if (startOfDayResult?.RestoreNeedsReview == true)
+                            {
+                                await ShowRestoreReviewRecoveryAsync().ConfigureAwait(true);
+                            }
                             Close();
                             return;
                         }
@@ -307,6 +311,28 @@ namespace Win7POS.Wpf
                     BlockingReason = "operator_cancelled",
                     StatusMessage = PosLocalization.T("startOfDay.exit")
                 };
+        }
+
+        private async Task ShowRestoreReviewRecoveryAsync()
+        {
+            if (!HasCurrentPermission(PermissionCodes.DbMaintenance) &&
+                !await TrySwitchForPermissionAsync(
+                    PermissionCodes.DbMaintenance,
+                    PosLocalization.Current.Format(
+                        "common.permissionDeniedOperation",
+                        PosLocalization.Current.Text("operations.dbMaintenance")),
+                    "RestoreReview").ConfigureAwait(true))
+            {
+                return;
+            }
+
+            var vm = new DbMaintenanceViewModel(new PosWorkflowService());
+            var dialog = new DbMaintenanceDialog(vm, restoreReviewOnly: true)
+            {
+                Owner = this
+            };
+            WindowSizingHelper.CapMaxHeightToOwner(dialog);
+            dialog.ShowDialog();
         }
 
         private void QueueBackgroundOnlineRefresh(SqliteConnectionFactory factory)

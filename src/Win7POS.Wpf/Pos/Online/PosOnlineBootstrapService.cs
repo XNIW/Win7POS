@@ -99,9 +99,72 @@ namespace Win7POS.Wpf.Pos.Online
                         result.CfRay);
                 }
 
-                progress?.Report(PosCatalogPullProgress.ForPhase("access_verified"));
+                var policyCompatibility = PosOnlineCompatibilityValidator.ValidatePolicy(response.Policy);
+                if (!string.IsNullOrWhiteSpace(policyCompatibility))
+                {
+                    _logger.LogWarning(
+                        "POS online bootstrap incompatible policy: code=" +
+                        SafeAuditValue(policyCompatibility));
+                    return PosOnlineBootstrapResult.Failure(
+                        policyCompatibility,
+                        PosLocalization.T("onlineFirstLogin.invalidResponse"),
+                        false,
+                        result.ClientRequestId,
+                        result.ServerRequestId,
+                        result.CfRay);
+                }
+
+                PosShopTransitionDecision shopTransition;
                 try
                 {
+                    PosTrustedDeviceSession trustedSession = null;
+                    _trustedDeviceStore.TryRead(out trustedSession);
+                    shopTransition = await new PosShopTransitionGuard(_factory)
+                        .EvaluateAsync(
+                            trustedSession?.ShopId,
+                            trustedSession?.ShopCode,
+                            response.Shop.ShopId,
+                            response.Shop.ShopCode)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("POS online bootstrap local shop transition check failed.", ex);
+                    return PosOnlineBootstrapResult.Failure(
+                        "local_persistence_failed",
+                        PosLocalization.T("onlineFirstLogin.localRequestError"),
+                        false,
+                        result.ClientRequestId,
+                        result.ServerRequestId,
+                        result.CfRay);
+                }
+
+                if (!shopTransition.Allowed)
+                {
+                    _logger.LogWarning(
+                        "POS online bootstrap shop transition blocked: category=online.bootstrap.shop_transition code=" +
+                        SafeAuditValue(shopTransition.Code) +
+                        ", unresolvedOutbox=" + BoolText(shopTransition.HasUnresolvedOutbox));
+                    return PosOnlineBootstrapResult.Failure(
+                        shopTransition.Code,
+                        PosLocalization.T("onlineFirstLogin.localRequestError"),
+                        false,
+                        result.ClientRequestId,
+                        result.ServerRequestId,
+                        result.CfRay);
+                }
+
+                progress?.Report(PosCatalogPullProgress.ForPhase("access_verified"));
+                IDisposable shopTransitionLease = null;
+                try
+                {
+                    if (shopTransition.RequiresCatalogReset)
+                    {
+                        shopTransitionLease = await new PosShopTransitionGuard(_factory)
+                            .ApplyAuthorizedTransitionAndHoldAsync(shopTransition)
+                            .ConfigureAwait(false);
+                    }
+
                     await PosOnlineShopSnapshot.SaveAsync(_factory, response.Shop).ConfigureAwait(false);
                     await PosOnlinePolicySnapshot.SaveAsync(_factory, response.Policy).ConfigureAwait(false);
                     _trustedDeviceStore.SaveFirstLogin(response);
@@ -132,6 +195,10 @@ namespace Win7POS.Wpf.Pos.Online
                         result.ClientRequestId,
                         result.ServerRequestId,
                         result.CfRay);
+                }
+                finally
+                {
+                    shopTransitionLease?.Dispose();
                 }
 
                 _logger.LogInfo(
@@ -298,6 +365,7 @@ namespace Win7POS.Wpf.Pos.Online
                    !string.IsNullOrWhiteSpace(response.Staff.StaffId) &&
                    !string.IsNullOrWhiteSpace(response.Staff.StaffCode) &&
                    response.Shop != null &&
+                   !string.IsNullOrWhiteSpace(response.Shop.ShopId) &&
                    !string.IsNullOrWhiteSpace(response.Shop.ShopCode);
         }
     }

@@ -19,6 +19,7 @@ function Read-Text([string]$relativePath) {
 
 $required = @(
     "src/Win7POS.Data/Online/PosAdminWebClient.cs",
+    "src/Win7POS.Data/Online/CatalogShopStateRepository.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs"
 )
@@ -35,8 +36,16 @@ if ($fail) {
 
 $client = (Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs") + "`n" + (Read-Text "src/Win7POS.Core/Online/PosOnlineTransportContracts.cs")
 $service = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
+$shopState = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.cs"
+$fullRefresh = Read-Text "src/Win7POS.Data/Online/CatalogFullRefreshReconciler.cs"
+$compatibility = Read-Text "src/Win7POS.Data/Online/PosOnlineCompatibilityValidator.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $repository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
+$categoryRepository = Read-Text "src/Win7POS.Data/Repositories/CategoryRepository.cs"
+$supplierRepository = Read-Text "src/Win7POS.Data/Repositories/SupplierRepository.cs"
+$categorySupplierResolver = Read-Text "src/Win7POS.Data/Import/CategorySupplierResolver.cs"
+$productImportApply = Read-Text "src/Win7POS.Data/Import/ProductImportApplyService.cs"
+$productDbImporter = Read-Text "src/Win7POS.Data/ImportDb/ProductDbImporter.cs"
 $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.csproj |
@@ -77,10 +86,21 @@ if ($service -notmatch "completed" -or $service -notmatch "partial_has_more" -or
 if ($service -notmatch "pos\.catalog\.sale_safe_at" -or $service -notmatch "pos\.catalog\.initial_completed_at" -or $service -notmatch "CountActiveRemoteProductsAsync") { Fail "catalog sale-safe readiness markers missing" } else { Pass "catalog sale-safe readiness markers present" }
 if ($service -notmatch "has_more_not_drained") { Fail "catalog HasMore cap error code missing" } else { Pass "catalog HasMore cap error code present" }
 if ($service -notmatch "lastResponse\.HasMore[\s\S]*StoreCatalogFailureAsync\(CatalogHasMoreNotDrainedCode\)[\s\S]*PosCatalogPullOutcome\.Failure") { Fail "catalog HasMore after cap is not treated as failure/partial outcome" } else { Pass "catalog HasMore after cap fails visibly" }
-if ($service -notmatch "cursorSaved=true") { Fail "catalog partial HasMore log must state cursor is preserved" } else { Pass "catalog partial HasMore log states cursor preserved" }
+if ($service -notmatch "cursorSaved=" -or $service -notmatch "!fullRefresh") { Fail "catalog partial HasMore log must distinguish resumable delta from restartable full refresh" } else { Pass "catalog partial HasMore log distinguishes delta/full-refresh cursor persistence" }
 if ($service -notmatch "CatalogPullWithRetryAsync") { Fail "catalog pull retry helper missing" } else { Pass "catalog pull retry helper present" }
 if ($service -notmatch "Task.Delay") { Fail "catalog pull backoff missing" } else { Pass "catalog pull backoff present" }
-if ($service -notmatch "SyncCursor = await LoadLastCursorAsync") { Fail "catalog pull syncCursor request missing" } else { Pass "catalog pull syncCursor request present" }
+if ($service -notmatch "SyncCursor\s*=\s*page\s*==\s*1\s*\?\s*binding\.Cursor" -or $service -notmatch "EnsureAndLoadCursorAsync") { Fail "catalog pull syncCursor is not loaded from shop-bound state" } else { Pass "catalog pull syncCursor uses shop-bound state" }
+$capturedSessionCheckIndex = $service.IndexOf("ValidateCapturedSessionAsync")
+$bindingIndex = $service.IndexOf("EnsureAndLoadCursorAsync")
+$networkIndex = $service.IndexOf("new PosAdminWebClient")
+if ($capturedSessionCheckIndex -lt 0 -or $bindingIndex -lt 0 -or $networkIndex -lt 0 -or $capturedSessionCheckIndex -gt $bindingIndex -or $capturedSessionCheckIndex -gt $networkIndex -or $shopState -notmatch "catalog_session_shop_changed") { Fail "captured catalog session must be revalidated inside the transition barrier before bind/network" } else { Pass "captured catalog session is revalidated before bind/network" }
+if ($shopState -notmatch "pos\.catalog\.bound_shop_id" -or $shopState -notmatch "pos\.catalog\.bound_shop_code" -or $shopState -notmatch "Catalog state shop binding mismatch") { Fail "persistent catalog shop binding missing" } else { Pass "persistent catalog shop binding present" }
+if ($service -notmatch "responseShopError[\s\S]*response_shop_mismatch[\s\S]*ApplyCatalogAsync") { Fail "catalog response shop must be validated before local apply" } else { Pass "catalog response shop validated before local apply" }
+if ($service -notmatch "CatalogFullRefreshReconciler" -or $fullRefresh -notmatch "NOT EXISTS" -or $fullRefresh -notmatch "remote_product_id" -or $fullRefresh -notmatch "remote_category_id" -or $fullRefresh -notmatch "remote_supplier_id") { Fail "full_refresh reconciliation missing" } else { Pass "full_refresh reconciles remote rows absent from authoritative snapshot" }
+if ($service -notmatch "ValidateCatalogPull" -or $compatibility -notmatch "catalog_schema_not_supported" -or $compatibility -notmatch "catalog_capability_not_supported" -or $compatibility -notmatch "policy_contract_not_supported") { Fail "catalog schema/policy/capability fail-closed validation missing" } else { Pass "catalog schema, policy and capabilities fail closed" }
+if ($compatibility -match '"incremental"' -or $compatibility -notmatch '"delta"' -or $compatibility -notmatch '"full_refresh"') { Fail "catalog compatibility must accept only actual Admin sync modes delta/full_refresh" } else { Pass "catalog compatibility accepts only Admin delta/full_refresh modes" }
+if ($compatibility -notmatch "SalesSync \?\? string\.Empty" -or $compatibility -notmatch "sales_sync_contract_not_supported") { Fail "SalesSync capability must be mandatory and exact" } else { Pass "SalesSync capability is mandatory and exact" }
+if ($shopState -notmatch "StoreLastSyncAsync" -or $shopState -notmatch "StoreSaleSafeAsync" -or $shopState -notmatch "BeginTransaction") { Fail "catalog cursor/sale-safe writes are not transactionally shop-bound" } else { Pass "catalog cursor/sale-safe writes are transactionally shop-bound" }
 if ($client -notmatch 'DataMember\(Name = "syncCursor"') { Fail "catalog pull syncCursor wire field missing" } else { Pass "catalog pull syncCursor wire field present" }
 if ($client -notmatch 'DataMember\(Name = "catalogVersion"') { Fail "catalog version wire field missing" } else { Pass "catalog version wire field present" }
 if ($client -notmatch 'DataMember\(Name = "hasMore"') { Fail "hasMore wire field missing" } else { Pass "hasMore wire field present" }
@@ -92,11 +112,20 @@ if ($repository -notmatch "remote_price_id" -or $initializer -notmatch "remote_p
 if ($repository -notmatch "remote_deleted_at") { Fail "remote tombstone column missing in repository" } else { Pass "remote tombstone column used in repository" }
 if ($repository -notmatch "ApplyRemoteProductTombstoneAsync") { Fail "remote product tombstone apply missing" } else { Pass "remote product tombstone apply present" }
 if ($repository -notmatch "CanonicalizeRemoteProductBeforeUpsertAsync" -or $repository -notmatch "DeactivateRemoteProductDuplicatesAsync" -or $repository -notmatch "remote_product_id\s*=\s*@remoteProductId[\s\S]{0,160}barcode\s*<>\s*@barcode") { Fail "remote product upsert must canonicalize remote_product_id and deactivate duplicate active barcodes" } else { Pass "remote product upsert canonicalizes remote_product_id duplicates" }
-if ($repository -notmatch "hasPendingLocalStock" -or $repository -notmatch "sales_sync_outbox" -or $repository -notmatch "'pending', 'retry'" -or $repository -notmatch "failed_blocked" -or $repository -notmatch "stockQtyToWrite = existingStock") { Fail "catalog upsert must preserve stock_qty when local pending/retry/blocked stock movements exist" } else { Pass "catalog upsert preserves pending local stock" }
+if ($repository -notmatch "hasPendingLocalStock" -or $repository -notmatch "sales_sync_outbox" -or $repository -notmatch "'pending', 'retry', 'in_progress', 'failed_blocked'" -or $repository -notmatch "stockQtyToWrite = existingStock") { Fail "catalog upsert must preserve stock_qty when unresolved local stock movements exist" } else { Pass "catalog upsert preserves unresolved local stock" }
 $tombstoneMethod = [regex]::Match($repository, "ApplyRemoteProductTombstoneAsync[\s\S]*?UpsertRemotePriceHistoryAsync").Value
 if ($tombstoneMethod -notmatch "is_active\s*=\s*0" -or $tombstoneMethod -notmatch "remote_deleted_at") { Fail "product tombstone must soft-delete/inactivate products" } else { Pass "product tombstone is soft-delete/inactive" }
 if ($tombstoneMethod -match "DELETE\s+FROM") { Fail "product tombstone must not purge rows" } else { Pass "product tombstone does not purge rows" }
-if ($service -notmatch "category/supplier tombstones are diagnostic-only") { Fail "category/supplier tombstone limitation must be logged/diagnostic" } else { Pass "category/supplier tombstone limitation documented in diagnostics" }
+if ($service -notmatch "categoryRepository\.UpsertRemoteAsync" -or $service -notmatch "supplierRepository\.UpsertRemoteAsync") { Fail "remote category/supplier identities are not persisted" } else { Pass "remote category/supplier identities persisted" }
+if ($service -notmatch "categoryRepository\.ApplyRemoteTombstoneAsync" -or $service -notmatch "supplierRepository\.ApplyRemoteTombstoneAsync") { Fail "category/supplier tombstones are not applied" } else { Pass "category/supplier tombstones applied" }
+if ($categoryRepository -notmatch "remote_category_id" -or $categoryRepository -notmatch "remote_deleted_at" -or $categoryRepository -notmatch "is_active\s*=\s*0") { Fail "category remote identity/tombstone state missing" } else { Pass "category remote identity/tombstone state present" }
+if ($supplierRepository -notmatch "remote_supplier_id" -or $supplierRepository -notmatch "remote_deleted_at" -or $supplierRepository -notmatch "is_active\s*=\s*0") { Fail "supplier remote identity/tombstone state missing" } else { Pass "supplier remote identity/tombstone state present" }
+if ($categoryRepository -match "DELETE\s+FROM\s+categories" -or $supplierRepository -match "DELETE\s+FROM\s+suppliers") { Fail "category/supplier tombstones must not purge reference rows" } else { Pass "category/supplier tombstones are non-destructive" }
+if ($initializer -notmatch "remote_category_id" -or $initializer -notmatch "remote_supplier_id" -or $initializer -notmatch "idx_categories_remote_category_id" -or $initializer -notmatch "idx_suppliers_remote_supplier_id") { Fail "category/supplier remote identity migration or indexes missing" } else { Pass "category/supplier remote identity migration present" }
+$localReferenceWriters = @($categorySupplierResolver, $productImportApply, $productDbImporter, $repository) -join "`n"
+if ($localReferenceWriters -match "INSERT\s+OR\s+REPLACE\s+INTO\s+(categories|suppliers)") { Fail "local import can destructively replace remote category/supplier identity" } else { Pass "local import does not replace remote category/supplier identity" }
+if ($categorySupplierResolver -notmatch "COALESCE\(is_active, 1\) = 1" -or $repository -notmatch "COALESCE\(is_active, 1\) = 1") { Fail "local reference resolution can reuse remote tombstones" } else { Pass "local reference resolution excludes remote tombstones" }
+if ($productImportApply -notmatch "remote_supplier_id" -or $productImportApply -notmatch "remote_category_id" -or $productDbImporter -notmatch "remote_supplier_id" -or $productDbImporter -notmatch "remote_category_id") { Fail "local import remote-identity collision guards missing" } else { Pass "local import remote-identity collision guards present" }
 if ($initializer -notmatch "remote_product_id") { Fail "remote product id column missing in db initializer" } else { Pass "remote product id column present" }
 if ($initializer -notmatch "remote_deleted_at") { Fail "remote tombstone column missing in db initializer" } else { Pass "remote tombstone column present" }
 if ($initializer -notmatch "is_active") { Fail "active product column missing in db initializer" } else { Pass "active product column present" }

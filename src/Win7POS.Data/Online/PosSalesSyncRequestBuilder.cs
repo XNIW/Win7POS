@@ -32,15 +32,50 @@ namespace Win7POS.Data.Online
             if (lines == null) throw new ArgumentNullException(nameof(lines));
             if (sales == null) throw new ArgumentNullException(nameof(sales));
 
+            var bindingError = OutboxShopBinding.GetMismatchCode(
+                item.OriginShopId,
+                item.OriginShopCode,
+                trustedSession.ShopId,
+                trustedSession.ShopCode);
+            if (!string.IsNullOrWhiteSpace(bindingError))
+            {
+                throw new InvalidOperationException(bindingError);
+            }
+
             var remoteProductIds = await sales
                 .GetRemoteProductIdsAsync(
                     lines.Where(line => line.ProductId.HasValue).Select(line => line.ProductId.Value))
                 .ConfigureAwait(false);
+            var request = BuildCanonical(item, sale, lines, remoteProductIds);
+            request.AppVersion = appVersion;
+            request.DeviceToken = trustedSession.DeviceToken;
+            request.PosSessionId = trustedSession.PosSessionId;
+            request.SessionToken = trustedSession.SessionToken;
+            request.ShopDeviceId = trustedSession.ShopDeviceId;
+            return request;
+        }
+
+        public static PosSalesSyncRequest BuildCanonical(
+            SalesSyncOutboxItem item,
+            Sale sale,
+            IReadOnlyList<SaleLine> lines,
+            IReadOnlyDictionary<long, string> remoteProductIds)
+        {
+            if (item == null) throw new ArgumentNullException(nameof(item));
+            if (sale == null) throw new ArgumentNullException(nameof(sale));
+            if (lines == null) throw new ArgumentNullException(nameof(lines));
+            if (remoteProductIds == null) throw new ArgumentNullException(nameof(remoteProductIds));
+
             var saleKind = sale.Kind == (int)SaleKind.Void
                 ? "void"
                 : sale.Kind == (int)SaleKind.Refund
                     ? "refund"
                     : "sale";
+            if (!string.Equals(item.SchemaVersion, SchemaVersion, StringComparison.Ordinal) ||
+                !string.Equals(item.OperationType, saleKind, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("outbox_operation_mismatch");
+            }
             var businessDate = DateTimeOffset
                 .FromUnixTimeMilliseconds(sale.CreatedAt)
                 .LocalDateTime
@@ -66,14 +101,11 @@ namespace Win7POS.Data.Online
 
             return new PosSalesSyncRequest
             {
-                AppVersion = appVersion,
                 Batch = new PosSalesSyncBatchRequest
                 {
                     ClientBatchId = clientBatchId,
                     IdempotencyKey = clientBatchId,
                 },
-                DeviceToken = trustedSession.DeviceToken,
-                PosSessionId = trustedSession.PosSessionId,
                 Sales = new[]
                 {
                     new PosSalesSyncSaleRequest
@@ -118,9 +150,7 @@ namespace Win7POS.Data.Online
                     }
                 },
                 SchemaVersion = SchemaVersion,
-                SessionToken = trustedSession.SessionToken,
-                ShopCode = trustedSession.ShopCode,
-                ShopDeviceId = trustedSession.ShopDeviceId,
+                ShopCode = item.OriginShopCode,
             };
         }
 
@@ -131,20 +161,29 @@ namespace Win7POS.Data.Online
                 return "{}";
             }
 
-            var redacted = new PosSalesSyncRequest
+            return SerializeCanonical(request);
+        }
+
+        public static string SerializeCanonical(PosSalesSyncRequest request)
+        {
+            if (request == null)
             {
-                AppVersion = request.AppVersion,
+                return "{}";
+            }
+
+            var canonical = new PosSalesSyncRequest
+            {
                 Batch = request.Batch,
                 DeviceToken = null,
-                PosSessionId = request.PosSessionId,
+                PosSessionId = null,
                 Sales = request.Sales,
                 SchemaVersion = request.SchemaVersion,
                 SessionToken = null,
                 ShopCode = request.ShopCode,
-                ShopDeviceId = request.ShopDeviceId,
+                ShopDeviceId = null,
             };
 
-            return Serialize(redacted);
+            return Serialize(canonical);
         }
 
         public static string Sha256Hex(string value)
@@ -159,6 +198,27 @@ namespace Win7POS.Data.Online
                 }
 
                 return sb.ToString();
+            }
+        }
+
+        public static PosSalesSyncRequest DeserializeCanonical(string payloadJson)
+        {
+            if (string.IsNullOrWhiteSpace(payloadJson))
+            {
+                return null;
+            }
+
+            try
+            {
+                var serializer = new DataContractJsonSerializer(typeof(PosSalesSyncRequest));
+                using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(payloadJson)))
+                {
+                    return serializer.ReadObject(stream) as PosSalesSyncRequest;
+                }
+            }
+            catch
+            {
+                return null;
             }
         }
 

@@ -106,6 +106,9 @@ internal static class Program
         [JsonPropertyName("shopCode")]
         public string ShopCode { get; set; } = string.Empty;
 
+        [JsonPropertyName("shopId")]
+        public string ShopId { get; set; } = string.Empty;
+
         [JsonPropertyName("shopDeviceId")]
         public string ShopDeviceId { get; set; } = string.Empty;
     }
@@ -942,7 +945,7 @@ internal static class Program
 
         try
         {
-            DbInitializer.EnsureCreated(opt);
+            await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(opt);
             var sales = new SaleRepository(factory);
 
@@ -1079,13 +1082,13 @@ internal static class Program
                 await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 10,
                 "Catalog pull should preserve local stock while sales sync outbox is pending.");
 
-            var redactedPayload = "{\"schemaVersion\":\"pos-sales-ledger-v2\",\"deviceToken\":null,\"sessionToken\":null}";
-            await sales.PrepareSalesSyncAttemptAsync(
+            Assert(await sales.PrepareSalesSyncAttemptAsync(
                 pending[0].Id,
-                "task081-batch-acked",
-                redactedPayload,
-                "sha256:task081",
-                nowMs + 4000).ConfigureAwait(false);
+                pending[0].ClientBatchId,
+                pending[0].PayloadJson,
+                pending[0].PayloadHash,
+                nowMs + 4000,
+                pending[0].AttemptCount).ConfigureAwait(false), "Ack row prepare failed immutable payload guard.");
             Assert(await ReadOutboxAttemptCountAsync(factory, pending[0].Id).ConfigureAwait(false) == 1, "Outbox attempt was not incremented.");
             Assert(
                 !(await ReadOutboxPayloadAsync(factory, pending[0].Id).ConfigureAwait(false)).Contains("secret", StringComparison.OrdinalIgnoreCase),
@@ -1096,24 +1099,41 @@ internal static class Program
                 pending[0].SaleId,
                 "server-batch-task081",
                 "server-sale-task081",
-                nowMs + 5000).ConfigureAwait(false);
+                nowMs + 5000,
+                pending[0].AttemptCount + 1).ConfigureAwait(false);
             Assert(await ReadOutboxStatusAsync(factory, pending[0].Id).ConfigureAwait(false) == "acked", "Ack did not update outbox status.");
             Assert(await ReadSaleSyncStatusAsync(factory, pending[0].SaleId).ConfigureAwait(false) == "acked", "Ack did not update sale sync status.");
 
+            Assert(await sales.PrepareSalesSyncAttemptAsync(
+                pending[1].Id,
+                pending[1].ClientBatchId,
+                pending[1].PayloadJson,
+                pending[1].PayloadHash,
+                nowMs + 4000,
+                pending[1].AttemptCount).ConfigureAwait(false), "Retry row prepare failed immutable payload guard.");
             await sales.MarkSalesSyncRetryAsync(
                 pending[1].Id,
                 pending[1].SaleId,
                 "transient_network",
                 nowMs + 6000,
-                nowMs + 5000).ConfigureAwait(false);
+                nowMs + 5000,
+                pending[1].AttemptCount + 1).ConfigureAwait(false);
             Assert(await ReadOutboxStatusAsync(factory, pending[1].Id).ConfigureAwait(false) == "retry", "Retry did not update outbox status.");
             Assert(await ReadSaleSyncStatusAsync(factory, pending[1].SaleId).ConfigureAwait(false) == "retry", "Retry did not update sale sync status.");
 
+            Assert(await sales.PrepareSalesSyncAttemptAsync(
+                pending[2].Id,
+                pending[2].ClientBatchId,
+                pending[2].PayloadJson,
+                pending[2].PayloadHash,
+                nowMs + 4000,
+                pending[2].AttemptCount).ConfigureAwait(false), "Blocked row prepare failed immutable payload guard.");
             await sales.MarkSalesSyncBlockedAsync(
                 pending[2].Id,
                 pending[2].SaleId,
                 "validation_failed",
-                nowMs + 5000).ConfigureAwait(false);
+                nowMs + 5000,
+                pending[2].AttemptCount + 1).ConfigureAwait(false);
             Assert(await ReadOutboxStatusAsync(factory, pending[2].Id).ConfigureAwait(false) == "failed_blocked", "Blocked did not update outbox status.");
             Assert(await ReadSaleSyncStatusAsync(factory, pending[2].SaleId).ConfigureAwait(false) == "blocked", "Blocked did not update sale sync status.");
 
@@ -1145,7 +1165,7 @@ internal static class Program
 
         try
         {
-            DbInitializer.EnsureCreated(opt);
+            await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(opt);
             var repository = new ShopOfficialSnapshotRepository(factory);
 
@@ -1243,8 +1263,12 @@ internal static class Program
 
         try
         {
-            DbInitializer.EnsureCreated(opt);
+            await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(opt);
+            await SeedHarnessOfficialShopAsync(
+                factory,
+                FirstNonEmpty(harnessSession.ShopId, harnessSession.ShopCode),
+                harnessSession.ShopCode).ConfigureAwait(false);
             var sales = new SaleRepository(factory);
             await SeedTask081HarnessSaleIdsAsync(factory, runId).ConfigureAwait(false);
 
@@ -1401,7 +1425,8 @@ internal static class Program
                         request.Batch.ClientBatchId,
                         payloadJson,
                         PosSalesSyncRequestBuilder.Sha256Hex(payloadJson),
-                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        item.AttemptCount).ConfigureAwait(false);
 
                     var result = await client.SalesSyncAsync(request, CancellationToken.None).ConfigureAwait(false);
                     Assert(result.Success && result.Value != null && result.Value.Ok, "Expected Admin Web to accept Win7POS HTTP sale sync.");
@@ -1419,7 +1444,8 @@ internal static class Program
                         item.SaleId,
                         accepted.Batch?.PosSalesSyncBatchId,
                         ack.PosSaleId,
-                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        item.AttemptCount + 1).ConfigureAwait(false);
                 }
 
                 var pendingAfterAccepted = await sales
@@ -1477,7 +1503,8 @@ internal static class Program
                     deniedRequest.Batch.ClientBatchId,
                     deniedPayload,
                     PosSalesSyncRequestBuilder.Sha256Hex(deniedPayload),
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    deniedOutbox.AttemptCount).ConfigureAwait(false);
                 var denied = await client.SalesSyncAsync(deniedRequest, CancellationToken.None).ConfigureAwait(false);
                 Assert(!denied.Success && denied.Denied, "Expected denied auth response for bad trusted device token.");
                 await sales.MarkSalesSyncRetryAsync(
@@ -1485,7 +1512,8 @@ internal static class Program
                     deniedOutbox.SaleId,
                     "auth_denied",
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + 60000,
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    deniedOutbox.AttemptCount + 1).ConfigureAwait(false);
                 Assert(await ReadSaleSyncStatusAsync(factory, deniedSaleId).ConfigureAwait(false) == "retry", "Denied sale did not remain retryable.");
                 Assert(await ReadOutboxStatusAsync(factory, deniedOutbox.Id).ConfigureAwait(false) == "retry", "Denied outbox did not remain retryable.");
             }
@@ -1535,7 +1563,7 @@ internal static class Program
 
         try
         {
-            DbInitializer.EnsureCreated(opt);
+            await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(opt);
             await PullAndApplyCatalogAsync(
                 options,
@@ -1614,8 +1642,12 @@ internal static class Program
 
         try
         {
-            DbInitializer.EnsureCreated(opt);
+            await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(opt);
+            await SeedHarnessOfficialShopAsync(
+                factory,
+                FirstNonEmpty(harnessSession.ShopId, harnessSession.ShopCode),
+                harnessSession.ShopCode).ConfigureAwait(false);
             var sales = new SaleRepository(factory);
 
             using (var conn = factory.Open())
@@ -1700,7 +1732,8 @@ internal static class Program
                 offlineRequest.Batch.ClientBatchId,
                 offlinePayload,
                 PosSalesSyncRequestBuilder.Sha256Hex(offlinePayload),
-                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                pending[0].AttemptCount).ConfigureAwait(false);
 
             if (!PosAdminWebOptions.TryCreate("http://127.0.0.1:9", out var offlineOptions, out _))
             {
@@ -1718,7 +1751,8 @@ internal static class Program
                     saleId,
                     offlineResult.Code ?? "network_error",
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() - 1,
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    pending[0].AttemptCount + 1).ConfigureAwait(false);
             }
 
             Assert(await ReadOutboxStatusAsync(factory, pending[0].Id).ConfigureAwait(false) == "retry", "Offline outbox did not move to retry.");
@@ -1744,7 +1778,8 @@ internal static class Program
                     reconnectRequest.Batch.ClientBatchId,
                     reconnectPayload,
                     PosSalesSyncRequestBuilder.Sha256Hex(reconnectPayload),
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    retryPending[0].AttemptCount).ConfigureAwait(false);
 
                 var accepted = await client.SalesSyncAsync(reconnectRequest, CancellationToken.None).ConfigureAwait(false);
                 Assert(
@@ -1759,7 +1794,8 @@ internal static class Program
                     saleId,
                     acceptedValue.Batch?.PosSalesSyncBatchId,
                     ack?.PosSaleId,
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    retryPending[0].AttemptCount + 1).ConfigureAwait(false);
 
                 var duplicate = await client.SalesSyncAsync(reconnectRequest, CancellationToken.None).ConfigureAwait(false);
                 Assert(duplicate.Success && duplicate.Value != null && duplicate.Value.Ok, "Reconnect duplicate retry was not idempotent.");
@@ -1797,7 +1833,7 @@ internal static class Program
         {
             await CreateTask083LegacyDbAsync(opt.DbPath).ConfigureAwait(false);
 
-            DbInitializer.EnsureCreated(opt);
+            await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
 
             var factory = new SqliteConnectionFactory(opt);
             using (var conn = factory.Open())
@@ -2514,7 +2550,7 @@ CREATE TABLE users (
             var workbookPath = Path.Combine(tempRoot, "supplier-operational-selftest.xlsx");
             WriteSupplierApplyWorkbook(workbookPath);
 
-            DbInitializer.EnsureCreated(options);
+            await InitializeHarnessDbAsync(options).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(options);
             var table = SupplierExcelImportReader.ReadFirstWorksheet(workbookPath);
             var existingProducts = await new ProductRepository(factory).ListAllDetailsAsync().ConfigureAwait(false);
@@ -2788,7 +2824,7 @@ CREATE TABLE users (
         {
             Directory.CreateDirectory(tempRoot);
             var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
-            DbInitializer.EnsureCreated(options);
+            await InitializeHarnessDbAsync(options).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(options);
             var repository = new CatalogImportOutboxRepository(factory);
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -2855,7 +2891,7 @@ CREATE TABLE users (
         {
             Directory.CreateDirectory(tempRoot);
             var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
-            DbInitializer.EnsureCreated(options);
+            await InitializeHarnessDbAsync(options).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(options);
             var repository = new CatalogImportOutboxRepository(factory);
             var reconciliation = new CatalogImportReconciliationService(factory);
@@ -2920,14 +2956,29 @@ CREATE TABLE users (
         {
             Directory.CreateDirectory(tempRoot);
             var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
-            DbInitializer.EnsureCreated(options);
+            await InitializeHarnessDbAsync(options).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(options);
             var repository = new CatalogImportOutboxRepository(factory);
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var realSessionMode = !string.IsNullOrWhiteSpace(parameters.SessionJsonPath);
+            var session = realSessionMode
+                ? ToTrustedSession(ReadCatalogImportHarnessSession(parameters.SessionJsonPath))
+                : new PosTrustedDeviceSession
+                {
+                    DeviceToken = "device-token-harness",
+                    PosSessionId = "pos-session-harness",
+                    SessionToken = "session-token-harness",
+                    ShopCode = "SHOP-HARNESS",
+                    ShopDeviceId = "shop-device-harness",
+                    ShopId = "shop-harness-id",
+                };
+            await SeedHarnessOfficialShopAsync(
+                factory,
+                FirstNonEmpty(session.ShopId, session.ShopCode),
+                session.ShopCode).ConfigureAwait(false);
             var scenarios = realSessionMode
                 ? new[] { "accepted-" + Guid.NewGuid().ToString("N").Substring(0, 12) }
-                : new[] { "accepted", "duplicate", "idempotent", "validation_failed", "conflict", "mismatch", "idempotency_mismatch", "auth_denied", "timeout" };
+                : new[] { "accepted", "duplicate", "idempotent", "validation_failed", "conflict", "mismatch", "idempotency_mismatch", "shop_mismatch", "auth_denied", "timeout" };
             var ids = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             for (var i = 0; i < scenarios.Length; i++)
             {
@@ -2944,17 +2995,6 @@ CREATE TABLE users (
             }
 
             Assert(PosAdminWebOptions.TryCreate(baseUrl, out var adminOptions, out var reason), "Invalid Admin Web URL for catalog import harness: " + reason);
-            var session = realSessionMode
-                ? ToTrustedSession(ReadCatalogImportHarnessSession(parameters.SessionJsonPath))
-                : new PosTrustedDeviceSession
-                {
-                    DeviceToken = "device-token-harness",
-                    PosSessionId = "pos-session-harness",
-                    SessionToken = "session-token-harness",
-                    ShopCode = "SHOP-HARNESS",
-                    ShopDeviceId = "shop-device-harness",
-                };
-
             using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(realSessionMode ? 30 : 2)))
             {
                 var result = await new CatalogImportSyncService(factory)
@@ -2972,7 +3012,7 @@ CREATE TABLE users (
                 {
                     Assert(result.Total == scenarios.Length, "Catalog import sync must process all seeded rows.");
                     Assert(result.Acked == 3, "Accepted/duplicate/idempotent rows must be acked.");
-                    Assert(result.Blocked == 4, "Validation/conflict/mismatch/idempotency rows must be blocked.");
+                    Assert(result.Blocked == 5, "Validation/conflict/mismatch/idempotency/shop rows must be blocked.");
                     Assert(result.Retried == 2, "Auth/timeout rows must be retry.");
                     Assert(result.RequiresTrustClear, "Auth denied response must request trust clear.");
                 }
@@ -2992,6 +3032,7 @@ CREATE TABLE users (
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["conflict"]).ConfigureAwait(false) == "failed_blocked", "conflict status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["mismatch"]).ConfigureAwait(false) == "failed_blocked", "mismatch status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["idempotency_mismatch"]).ConfigureAwait(false) == "failed_blocked", "idempotency mismatch status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["shop_mismatch"]).ConfigureAwait(false) == "failed_blocked", "shop mismatch status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["auth_denied"]).ConfigureAwait(false) == "retry", "auth_denied status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["timeout"]).ConfigureAwait(false) == "retry", "timeout status mismatch.");
                 var acceptedBarcode = CatalogImportHarnessBarcode("accepted", 1);
@@ -3035,7 +3076,7 @@ CREATE TABLE users (
         {
             Directory.CreateDirectory(tempRoot);
             var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
-            DbInitializer.EnsureCreated(options);
+            await InitializeHarnessDbAsync(options).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(options);
 
             var sw = Stopwatch.StartNew();
@@ -3145,7 +3186,7 @@ CREATE TABLE users (
         {
             Directory.CreateDirectory(tempRoot);
             var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
-            DbInitializer.EnsureCreated(options);
+            await InitializeHarnessDbAsync(options).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(options);
             await new ProductRepository(factory).UpsertAsync(new Product { Barcode = "SQLITE-INTEGRITY", Name = "SQLite Integrity", UnitPrice = 100 }).ConfigureAwait(false);
             await new CatalogImportOutboxRepository(factory)
@@ -3174,7 +3215,7 @@ CREATE TABLE users (
         {
             Directory.CreateDirectory(tempRoot);
             var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
-            DbInitializer.EnsureCreated(options);
+            await InitializeHarnessDbAsync(options).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(options);
             var repository = new CatalogImportOutboxRepository(factory);
             await repository.EnqueueAsync(BuildCatalogImportOutboxEntry("restore_guard", 1, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds())).ConfigureAwait(false);
@@ -3182,13 +3223,18 @@ CREATE TABLE users (
 
             var root = FindRepoRoot();
             var workflow = ReadRepoFile(root, "src/Win7POS.Wpf/Pos/PosWorkflowService.cs");
+            var atomicInstaller = ReadRepoFile(root, "src/Win7POS.Data/Online/AtomicRestoreInstaller.cs");
             var catalogRepository = ReadRepoFile(root, "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs");
             var restoreCheck = workflow.IndexOf("_catalogImportOutbox.HasUnresolvedAsync", StringComparison.Ordinal);
-            var copyIndex = workflow.IndexOf("File.Copy(backupDbPath, _options.DbPath, true)", StringComparison.Ordinal);
+            var installIndex = workflow.IndexOf("new AtomicRestoreInstaller().InstallAsync", StringComparison.Ordinal);
+            var candidateValidationIndex = workflow.IndexOf("ValidateCandidateAsync", StringComparison.Ordinal);
             var preBackupIndex = workflow.IndexOf("CreateDbBackupCopyNoLock(\"pos_pre_restore_\"", StringComparison.Ordinal);
             Assert(restoreCheck >= 0, "Restore flow must check catalog import outbox.");
-            Assert(copyIndex > restoreCheck, "Restore must check catalog import outbox before live DB copy.");
+            Assert(installIndex > restoreCheck, "Restore must check catalog import outbox before live DB install.");
+            Assert(candidateValidationIndex > restoreCheck && candidateValidationIndex < installIndex, "Restore candidate must be validated before live DB install.");
             Assert(preBackupIndex > restoreCheck, "Restore must check catalog import outbox before pre-restore backup/copy flow.");
+            Assert(workflow.Contains("InstallAsync(\n                        tempRestorePath", StringComparison.Ordinal), "Restore must install the already-validated temporary copy.");
+            Assert(atomicInstaller.Contains("File.Copy(rollbackDatabasePath, liveDatabasePath, true)", StringComparison.Ordinal), "Restore install must roll back every post-swap failure.");
             Assert(workflow.Contains("dbMaintenance.restoreBlockedUnresolvedCatalogImports", StringComparison.Ordinal), "Restore flow must use catalog import blocked message.");
             Assert(catalogRepository.Contains("'pending', 'retry', 'in_progress', 'failed_blocked'", StringComparison.Ordinal), "Catalog import unresolved guard must include pending/retry/in_progress/failed_blocked.");
             Console.WriteLine("DB RESTORE GUARD SELFTEST PASS");
@@ -4266,7 +4312,7 @@ END;").ConfigureAwait(false);
         Console.WriteLine($"DB dir writable: {File.Exists(probePath)}");
         if (File.Exists(probePath)) File.Delete(probePath);
 
-        DbInitializer.EnsureCreated(opt);
+        await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
         var factory = new SqliteConnectionFactory(opt);
         var products = new ProductRepository(factory);
         var sales = new SaleRepository(factory);
@@ -4501,7 +4547,7 @@ END;").ConfigureAwait(false);
             throw new InvalidOperationException("Invalid date format. Use yyyy-MM-dd.");
         var opt = ResolveDbOptions(dbPath);
         Console.WriteLine($"DB path: {opt.DbPath}");
-        DbInitializer.EnsureCreated(opt);
+        await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
         var service = new DailyTakingsService(new SalesQueryAdapter(new SaleRepository(new SqliteConnectionFactory(opt))));
         PrintDailyTakings(date.Date, await service.GetForDateAsync(date.Date));
     }
@@ -4523,7 +4569,7 @@ END;").ConfigureAwait(false);
         var analysis = ImportAnalyzer.Analyze(parse);
         var opt = ResolveDbOptions(parameters.DbPath);
         Console.WriteLine($"DB path: {opt.DbPath}");
-        DbInitializer.EnsureCreated(opt);
+        await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
         var products = new ProductRepository(new SqliteConnectionFactory(opt));
         var diff = await new ImportDiffer(new ProductSnapshotLookupAdapter(products)).DiffAsync(UniqueRows(parse.Rows), parameters.MaxItems);
 
@@ -4547,7 +4593,7 @@ END;").ConfigureAwait(false);
         var rows = UniqueRows(parse.Rows);
         var opt = ResolveDbOptions(parameters.DbPath);
         Console.WriteLine($"DB path: {opt.DbPath}");
-        DbInitializer.EnsureCreated(opt);
+        await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
 
         var products = new ProductRepository(new SqliteConnectionFactory(opt));
         var diff = await new ImportDiffer(new ProductSnapshotLookupAdapter(products)).DiffAsync(rows, parameters.MaxItems);
@@ -4579,7 +4625,7 @@ END;").ConfigureAwait(false);
     {
         var opt = ResolveDbOptions(dbPath);
         Console.WriteLine($"DB path: {opt.DbPath}");
-        DbInitializer.EnsureCreated(opt);
+        await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
         var products = await new ProductRepository(new SqliteConnectionFactory(opt)).ListAllAsync();
         var dir = Path.GetDirectoryName(Path.GetFullPath(outputPath));
         if (!string.IsNullOrWhiteSpace(dir)) Directory.CreateDirectory(dir);
@@ -4596,7 +4642,7 @@ END;").ConfigureAwait(false);
     {
         var opt = ResolveDbOptions(dbPath);
         Console.WriteLine($"DB path: {opt.DbPath}");
-        DbInitializer.EnsureCreated(opt);
+        await InitializeHarnessDbAsync(opt).ConfigureAwait(false);
         var checkpoint = await new DbMaintenanceRepository(new SqliteConnectionFactory(opt))
             .WalCheckpointAsync()
             .ConfigureAwait(false);
@@ -5299,6 +5345,7 @@ SELECT last_insert_rowid();";
             SessionToken = session.SessionToken,
             ShopCode = session.ShopCode,
             ShopDeviceId = session.ShopDeviceId,
+            ShopId = FirstNonEmpty(session.ShopId, session.ShopCode),
         };
     }
 
@@ -5311,7 +5358,31 @@ SELECT last_insert_rowid();";
             SessionToken = session.SessionToken,
             ShopCode = session.ShopCode,
             ShopDeviceId = session.ShopDeviceId,
+            ShopId = FirstNonEmpty(session.ShopId, session.ShopCode),
         };
+    }
+
+    private static async Task InitializeHarnessDbAsync(PosDbOptions options)
+    {
+        DbInitializer.EnsureCreated(options);
+        await SeedHarnessOfficialShopAsync(
+            new SqliteConnectionFactory(options),
+            "cli-harness-shop-id",
+            "CLI-HARNESS-SHOP").ConfigureAwait(false);
+    }
+
+    private static Task SeedHarnessOfficialShopAsync(
+        SqliteConnectionFactory factory,
+        string shopId,
+        string shopCode)
+    {
+        return new ShopOfficialSnapshotRepository(factory).SaveAsync(new OfficialShopSnapshot
+        {
+            ShopCode = shopCode,
+            ShopId = shopId,
+            ShopName = shopCode,
+            Source = "cli_harness"
+        });
     }
 
     private static string FirstNonEmpty(params string[] values)
@@ -5970,7 +6041,12 @@ SELECT last_insert_rowid();";
                     },
                     ServerImportId = "server-" + scenario,
                     ServerRequestId = "server-request-" + scenario,
-                    ServerTime = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)
+                    ServerTime = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
+                    Shop = new PosShopResponse
+                    {
+                        ShopCode = scenario == "shop_mismatch" ? "SHOP-OTHER" : "SHOP-HARNESS",
+                        ShopId = scenario == "shop_mismatch" ? "shop-other-id" : "shop-harness-id"
+                    }
                 };
                 await WriteJsonAsync(stream, 200, SerializeDataContract(response), cancellationToken).ConfigureAwait(false);
             }
@@ -5978,7 +6054,7 @@ SELECT last_insert_rowid();";
 
         private static string ScenarioFromBody(string body)
         {
-            foreach (var scenario in new[] { "validation_failed", "auth_denied", "idempotent", "duplicate", "conflict", "idempotency_mismatch", "mismatch", "timeout", "accepted" })
+            foreach (var scenario in new[] { "validation_failed", "auth_denied", "idempotent", "duplicate", "conflict", "idempotency_mismatch", "shop_mismatch", "mismatch", "timeout", "accepted" })
             {
                 if ((body ?? string.Empty).IndexOf(scenario, StringComparison.OrdinalIgnoreCase) >= 0)
                 {

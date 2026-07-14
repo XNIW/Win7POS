@@ -158,6 +158,9 @@ namespace Win7POS.Core.Online
 
         [DataMember(Name = "serverTime")]
         public string ServerTime { get; set; }
+
+        [DataMember(Name = "shop")]
+        public PosShopResponse Shop { get; set; }
     }
 
     [DataContract]

@@ -1,12 +1,15 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Text.RegularExpressions;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core;
+using Win7POS.Core.Online;
 using Win7POS.Core.Security;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Data
 {
@@ -30,6 +33,7 @@ namespace Win7POS.Data
                 CreateBaseTables(conn, tx);
                 EnsureMigrations(conn, tx);
                 CreateDependentTables(conn, tx);
+                BackfillLegacyOutboxBindings(conn, tx);
                 EnsureIndexes(conn, tx);
                 SeedSecurity(conn, tx);
                 tx.Commit();
@@ -98,13 +102,21 @@ CREATE TABLE IF NOT EXISTS audit_log (
 );
 
 CREATE TABLE IF NOT EXISTS suppliers (
-  id   INTEGER PRIMARY KEY,
-  name TEXT NOT NULL
+  id                 INTEGER PRIMARY KEY,
+  name               TEXT NOT NULL,
+  remote_supplier_id TEXT NULL,
+  remote_updated_at  TEXT NULL,
+  remote_deleted_at  TEXT NULL,
+  is_active          INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS categories (
-  id   INTEGER PRIMARY KEY,
-  name TEXT NOT NULL
+  id                 INTEGER PRIMARY KEY,
+  name               TEXT NOT NULL,
+  remote_category_id TEXT NULL,
+  remote_updated_at  TEXT NULL,
+  remote_deleted_at  TEXT NULL,
+  is_active          INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS product_meta (
@@ -225,6 +237,14 @@ CREATE TABLE IF NOT EXISTS security_events (
             EnsureColumn(conn, tx, "products", "remote_product_id", "TEXT NULL");
             EnsureColumn(conn, tx, "products", "remote_deleted_at", "TEXT NULL");
             EnsureColumn(conn, tx, "products", "is_active", "INTEGER NOT NULL DEFAULT 1");
+            EnsureColumn(conn, tx, "categories", "remote_category_id", "TEXT NULL");
+            EnsureColumn(conn, tx, "categories", "remote_updated_at", "TEXT NULL");
+            EnsureColumn(conn, tx, "categories", "remote_deleted_at", "TEXT NULL");
+            EnsureColumn(conn, tx, "categories", "is_active", "INTEGER NOT NULL DEFAULT 1");
+            EnsureColumn(conn, tx, "suppliers", "remote_supplier_id", "TEXT NULL");
+            EnsureColumn(conn, tx, "suppliers", "remote_updated_at", "TEXT NULL");
+            EnsureColumn(conn, tx, "suppliers", "remote_deleted_at", "TEXT NULL");
+            EnsureColumn(conn, tx, "suppliers", "is_active", "INTEGER NOT NULL DEFAULT 1");
             EnsureColumn(conn, tx, "product_price_history", "old_price", "INTEGER NULL");
             EnsureColumn(conn, tx, "product_price_history", "source", "TEXT NULL");
             EnsureColumn(conn, tx, "product_price_history", "remote_price_id", "TEXT NULL");
@@ -252,6 +272,10 @@ CREATE TABLE IF NOT EXISTS sales_sync_outbox (
   client_sale_id TEXT NOT NULL UNIQUE,
   client_batch_id TEXT NULL,
   idempotency_key TEXT NOT NULL UNIQUE,
+  schema_version TEXT NOT NULL DEFAULT 'pos-sales-ledger-v2',
+  operation_type TEXT NOT NULL DEFAULT 'sale',
+  origin_shop_id TEXT NULL,
+  origin_shop_code TEXT NULL,
   payload_json TEXT NULL,
   payload_hash TEXT NULL,
   status TEXT NOT NULL DEFAULT 'pending',
@@ -272,6 +296,9 @@ CREATE TABLE IF NOT EXISTS catalog_import_outbox (
   client_import_id TEXT NOT NULL,
   idempotency_key TEXT NOT NULL,
   schema_version TEXT NOT NULL DEFAULT 'pos-catalog-import-v1',
+  operation_type TEXT NOT NULL DEFAULT 'catalog_import',
+  origin_shop_id TEXT NULL,
+  origin_shop_code TEXT NULL,
   source TEXT NOT NULL DEFAULT 'supplier_excel',
   payload_json TEXT NOT NULL,
   payload_hash TEXT NOT NULL,
@@ -311,6 +338,10 @@ CREATE TABLE IF NOT EXISTS remote_catalog_pending_prices (
             EnsureColumn(conn, tx, "sales_sync_outbox", "client_sale_id", "TEXT NULL");
             EnsureColumn(conn, tx, "sales_sync_outbox", "client_batch_id", "TEXT NULL");
             EnsureColumn(conn, tx, "sales_sync_outbox", "idempotency_key", "TEXT NULL");
+            EnsureColumn(conn, tx, "sales_sync_outbox", "schema_version", "TEXT NOT NULL DEFAULT 'pos-sales-ledger-v2'");
+            EnsureColumn(conn, tx, "sales_sync_outbox", "operation_type", "TEXT NOT NULL DEFAULT 'sale'");
+            EnsureColumn(conn, tx, "sales_sync_outbox", "origin_shop_id", "TEXT NULL");
+            EnsureColumn(conn, tx, "sales_sync_outbox", "origin_shop_code", "TEXT NULL");
             EnsureColumn(conn, tx, "sales_sync_outbox", "payload_json", "TEXT NULL");
             EnsureColumn(conn, tx, "sales_sync_outbox", "payload_hash", "TEXT NULL");
             EnsureColumn(conn, tx, "sales_sync_outbox", "status", "TEXT NOT NULL DEFAULT 'pending'");
@@ -327,6 +358,9 @@ CREATE TABLE IF NOT EXISTS remote_catalog_pending_prices (
             EnsureColumn(conn, tx, "catalog_import_outbox", "client_import_id", "TEXT NOT NULL DEFAULT ''");
             EnsureColumn(conn, tx, "catalog_import_outbox", "idempotency_key", "TEXT NOT NULL DEFAULT ''");
             EnsureColumn(conn, tx, "catalog_import_outbox", "schema_version", "TEXT NOT NULL DEFAULT 'pos-catalog-import-v1'");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "operation_type", "TEXT NOT NULL DEFAULT 'catalog_import'");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "origin_shop_id", "TEXT NULL");
+            EnsureColumn(conn, tx, "catalog_import_outbox", "origin_shop_code", "TEXT NULL");
             EnsureColumn(conn, tx, "catalog_import_outbox", "source", "TEXT NOT NULL DEFAULT 'supplier_excel'");
             EnsureColumn(conn, tx, "catalog_import_outbox", "payload_json", "TEXT NOT NULL DEFAULT ''");
             EnsureColumn(conn, tx, "catalog_import_outbox", "payload_hash", "TEXT NOT NULL DEFAULT ''");
@@ -348,6 +382,160 @@ CREATE TABLE IF NOT EXISTS remote_catalog_pending_prices (
             EnsureColumn(conn, tx, "remote_catalog_pending_prices", "effective_at", "TEXT NOT NULL DEFAULT ''");
             EnsureColumn(conn, tx, "remote_catalog_pending_prices", "source", "TEXT NULL");
             EnsureColumn(conn, tx, "remote_catalog_pending_prices", "created_at", "TEXT NOT NULL DEFAULT ''");
+        }
+
+        private static void BackfillLegacyOutboxBindings(SqliteConnection conn, SqliteTransaction tx)
+        {
+            conn.Execute(@"
+UPDATE sales_sync_outbox
+SET schema_version = @SalesSchemaVersion
+WHERE TRIM(COALESCE(schema_version, '')) = '';
+
+UPDATE sales_sync_outbox
+SET operation_type = CASE COALESCE((SELECT kind FROM sales WHERE sales.id = sales_sync_outbox.sale_id), 0)
+      WHEN 1 THEN 'refund'
+      WHEN 2 THEN 'void'
+      ELSE 'sale'
+    END
+WHERE TRIM(COALESCE(operation_type, '')) = ''
+   OR (
+     operation_type = 'sale'
+     AND COALESCE((SELECT kind FROM sales WHERE sales.id = sales_sync_outbox.sale_id), 0) IN (1, 2)
+   );
+
+UPDATE catalog_import_outbox
+SET schema_version = @CatalogImportSchemaVersion
+WHERE TRIM(COALESCE(schema_version, '')) = '';
+
+UPDATE catalog_import_outbox
+SET operation_type = 'catalog_import'
+WHERE TRIM(COALESCE(operation_type, '')) = '';",
+                new
+                {
+                    SalesSchemaVersion = PosOnlineContract.SalesSchemaVersion,
+                    CatalogImportSchemaVersion = PosOnlineContract.CatalogImportSchemaVersion
+                },
+                tx);
+
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var legacySales = conn.Query<LegacySalesOutboxRow>(@"
+SELECT
+  id AS Id,
+  sale_id AS SaleId,
+  client_sale_id AS ClientSaleId,
+  client_batch_id AS ClientBatchId,
+  idempotency_key AS IdempotencyKey,
+  schema_version AS SchemaVersion,
+  operation_type AS OperationType,
+  payload_json AS PayloadJson,
+  payload_hash AS PayloadHash
+FROM sales_sync_outbox
+WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked')
+  AND TRIM(COALESCE(origin_shop_code, '')) = '';",
+                    transaction: tx)
+                .ToArray();
+
+            foreach (var legacy in legacySales)
+            {
+                var provenShopCode = TryReadLegacySalesOriginShopCode(legacy);
+                if (provenShopCode.Length > 0)
+                {
+                    conn.Execute(@"
+UPDATE sales_sync_outbox
+SET origin_shop_code = @provenShopCode,
+    updated_at = CASE WHEN updated_at <= 0 THEN @nowMs ELSE updated_at END
+WHERE id = @id
+  AND TRIM(COALESCE(origin_shop_code, '')) = '';",
+                        new { id = legacy.Id, nowMs, provenShopCode },
+                        tx);
+                    continue;
+                }
+
+                conn.Execute(@"
+UPDATE sales_sync_outbox
+SET status = 'failed_blocked',
+    last_error_code = 'legacy_origin_ambiguous',
+    last_error_at = @nowMs,
+    updated_at = @nowMs
+WHERE id = @id
+  AND TRIM(COALESCE(origin_shop_code, '')) = '';
+
+UPDATE sales
+SET sync_status = 'blocked'
+WHERE id = @saleId;",
+                    new { id = legacy.Id, saleId = legacy.SaleId, nowMs },
+                    tx);
+            }
+
+            conn.Execute(@"
+UPDATE catalog_import_outbox
+SET status = 'failed_blocked',
+    last_error_code = 'legacy_origin_ambiguous',
+    last_error_at = @nowMs,
+    updated_at = @nowMs
+WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked')
+  AND TRIM(COALESCE(origin_shop_code, '')) = '';",
+                new { nowMs },
+                tx);
+        }
+
+        private static string TryReadLegacySalesOriginShopCode(LegacySalesOutboxRow row)
+        {
+            if (row == null ||
+                string.IsNullOrWhiteSpace(row.PayloadJson) ||
+                string.IsNullOrWhiteSpace(row.PayloadHash) ||
+                !string.Equals(
+                    PosSalesSyncRequestBuilder.Sha256Hex(row.PayloadJson),
+                    row.PayloadHash.Trim(),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var serializer = new DataContractJsonSerializer(typeof(PosSalesSyncRequest));
+                using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(row.PayloadJson)))
+                {
+                    var request = serializer.ReadObject(stream) as PosSalesSyncRequest;
+                    var sale = request?.Sales != null && request.Sales.Length == 1
+                        ? request.Sales[0]
+                        : null;
+                    var shopCode = OutboxShopBinding.NormalizeCode(request?.ShopCode);
+                    if (request == null ||
+                        sale == null ||
+                        request.Batch == null ||
+                        shopCode.Length == 0 ||
+                        !string.Equals(request.SchemaVersion, row.SchemaVersion, StringComparison.Ordinal) ||
+                        !string.Equals(sale.ClientSaleId, row.ClientSaleId, StringComparison.Ordinal) ||
+                        !string.Equals(sale.IdempotencyKey, row.IdempotencyKey, StringComparison.Ordinal) ||
+                        !string.Equals(sale.Kind, row.OperationType, StringComparison.Ordinal) ||
+                        (!string.IsNullOrWhiteSpace(row.ClientBatchId) &&
+                         !string.Equals(request.Batch.ClientBatchId, row.ClientBatchId, StringComparison.Ordinal)))
+                    {
+                        return string.Empty;
+                    }
+
+                    return shopCode;
+                }
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private sealed class LegacySalesOutboxRow
+        {
+            public string ClientBatchId { get; set; }
+            public string ClientSaleId { get; set; }
+            public long Id { get; set; }
+            public string IdempotencyKey { get; set; }
+            public string OperationType { get; set; }
+            public string PayloadHash { get; set; }
+            public string PayloadJson { get; set; }
+            public long SaleId { get; set; }
+            public string SchemaVersion { get; set; }
         }
 
         private static void EnsureIndexes(SqliteConnection conn, SqliteTransaction tx)
@@ -387,6 +575,10 @@ CREATE INDEX IF NOT EXISTS idx_security_events_ts ON security_events(ts);
 CREATE INDEX IF NOT EXISTS idx_products_remote_product_id ON products(remote_product_id);
 CREATE INDEX IF NOT EXISTS idx_products_active_barcode ON products(is_active, barcode);
 CREATE INDEX IF NOT EXISTS idx_products_active_remote_product_id ON products(remote_product_id) WHERE COALESCE(is_active, 1) = 1;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_remote_category_id ON categories(remote_category_id) WHERE remote_category_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_categories_active_name ON categories(is_active, name);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_remote_supplier_id ON suppliers(remote_supplier_id) WHERE remote_supplier_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_suppliers_active_name ON suppliers(is_active, name);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_remote_staff_id ON users(remote_staff_id) WHERE remote_staff_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_remote_shop_staff ON users(remote_shop_code, remote_staff_code);
 ", transaction: tx);

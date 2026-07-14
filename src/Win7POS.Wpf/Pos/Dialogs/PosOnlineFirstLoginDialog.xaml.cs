@@ -11,6 +11,7 @@ using System.Windows.Threading;
 using Win7POS.Core.Online;
 using Win7POS.Core.Security;
 using Win7POS.Data;
+using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
@@ -443,6 +444,24 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 " staffCodeProvided=" + BoolText(!string.IsNullOrWhiteSpace(staffCode)));
             try
             {
+                PosTrustedDeviceSession trustedSession = null;
+                _trustedDeviceStore.TryRead(out trustedSession);
+                var offlineShopAuthorized = await new PosShopTransitionGuard(_factory)
+                    .IsOfflineShopAuthorizedAsync(
+                        trustedSession?.ShopId,
+                        trustedSession?.ShopCode,
+                        shopCode)
+                    .ConfigureAwait(true);
+                if (!offlineShopAuthorized)
+                {
+                    LogAccessWarning(
+                        attemptId,
+                        "offline_login_result",
+                        "result=blocked reason=shop_identity_mismatch");
+                    ShowError(PosLocalization.T("access.login.offlineMirrorMissing"));
+                    return false;
+                }
+
                 LogAccessInfo(attemptId, "offline_mirror_start", "mode=offline");
                 var username = await new UserRepository(_factory)
                     .FindRemoteStaffUsernameAsync(shopCode, staffCode)

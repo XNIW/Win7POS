@@ -182,15 +182,15 @@ if ($dialogXaml -match "x:Name=`"DeviceNameBox`"") {
 }
 
 $hasCredentialFields =
-    (Has-VisibleCopyOrLocKey $dialogXaml "Codice negozio" "onlineFirstLogin.shopCode") -and
-    (Has-VisibleCopyOrLocKey $dialogXaml "Codice staff" "onlineFirstLogin.staffCode") -and
-    (Has-VisibleCopyOrLocKey $dialogXaml "PIN/password" "onlineFirstLogin.credential") -and
+    (Has-VisibleCopyOrLocKey $dialogXaml "Codice negozio" "access.login.shopCode") -and
+    (Has-VisibleCopyOrLocKey $dialogXaml "Codice staff" "access.login.staffCode") -and
+    (Has-VisibleCopyOrLocKey $dialogXaml "PIN/password" "access.login.credential") -and
     (Has-Literal $dialogXaml 'x:Name="ShopCodeBox"') -and
     (Has-Literal $dialogXaml 'x:Name="StaffCodeBox"') -and
     (Has-Literal $dialogXaml 'x:Name="CredentialBox"') -and
-    (Test-TranslationEntry $translations "onlineFirstLogin.shopCode" @("Shop code", "Codigo local", "Codice negozio")) -and
-    (Test-TranslationEntry $translations "onlineFirstLogin.staffCode" @("Staff code", "Codigo staff", "Codice staff")) -and
-    (Test-TranslationEntry $translations "onlineFirstLogin.credential" @("PIN/password"))
+    (Test-TranslationEntry $translations "access.login.shopCode" @("Shop code", "Codigo local", "Codice negozio")) -and
+    (Test-TranslationEntry $translations "access.login.staffCode" @("Staff code", "Codigo staff", "Codice staff")) -and
+    (Test-TranslationEntry $translations "access.login.credential" @("PIN/password"))
 if (-not $hasCredentialFields) {
     Fail "normal online linking dialog must show shop code, staff code and PIN/password"
 } else {
@@ -200,9 +200,9 @@ if (-not $hasCredentialFields) {
 $hasAdvancedSettings =
     (Has-Literal $dialogXaml "AdvancedExpander") -and
     (Has-Literal $dialogXaml 'x:Name="BaseUrlBox"') -and
-    (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "onlineFirstLogin.advancedSettings") -and
+    (Has-VisibleCopyOrLocKey $dialogXaml "Impostazioni avanzate / Server" "access.login.advancedSettings") -and
     (Has-VisibleCopyOrLocKey $dialogXaml "URL Admin Web" "onlineFirstLogin.adminWebUrl") -and
-    (Test-TranslationEntry $translations "onlineFirstLogin.advancedSettings" @("Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server")) -and
+    (Test-TranslationEntry $translations "access.login.advancedSettings" @("Advanced settings / Server", "Configuracion avanzada / Servidor", "Impostazioni avanzate / Server")) -and
     (Test-TranslationEntry $translations "onlineFirstLogin.adminWebUrl" @("Admin Web URL", "URL Admin Web"))
 if (-not $hasAdvancedSettings) {
     Fail "advanced server settings must expose Admin Web base URL for support"
