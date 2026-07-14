@@ -1147,10 +1147,7 @@ internal static class Program
         }
         finally
         {
-            if (!keepDb && File.Exists(opt.DbPath))
-            {
-                File.Delete(opt.DbPath);
-            }
+            await CleanupSelfTestDbAsync(opt.DbPath, keepDb).ConfigureAwait(false);
         }
     }
 
@@ -1222,14 +1219,7 @@ internal static class Program
         }
         finally
         {
-            if (!keepDb && File.Exists(opt.DbPath))
-            {
-                File.Delete(opt.DbPath);
-            }
-            else if (keepDb)
-            {
-                Console.WriteLine($"KEEPDB: {opt.DbPath}");
-            }
+            await CleanupSelfTestDbAsync(opt.DbPath, keepDb).ConfigureAwait(false);
         }
     }
 
@@ -1523,10 +1513,7 @@ internal static class Program
         }
         finally
         {
-            if (!parameters.KeepDb && File.Exists(opt.DbPath))
-            {
-                File.Delete(opt.DbPath);
-            }
+            await CleanupSelfTestDbAsync(opt.DbPath, parameters.KeepDb).ConfigureAwait(false);
         }
     }
 
@@ -1607,9 +1594,9 @@ internal static class Program
         }
         finally
         {
-            if (ownsDb && !parameters.KeepDb && File.Exists(opt.DbPath))
+            if (ownsDb)
             {
-                File.Delete(opt.DbPath);
+                await CleanupSelfTestDbAsync(opt.DbPath, parameters.KeepDb).ConfigureAwait(false);
             }
         }
     }
@@ -1813,10 +1800,7 @@ internal static class Program
         }
         finally
         {
-            if (!parameters.KeepDb && File.Exists(opt.DbPath))
-            {
-                File.Delete(opt.DbPath);
-            }
+            await CleanupSelfTestDbAsync(opt.DbPath, parameters.KeepDb).ConfigureAwait(false);
         }
     }
 
@@ -3233,7 +3217,12 @@ CREATE TABLE users (
             Assert(installIndex > restoreCheck, "Restore must check catalog import outbox before live DB install.");
             Assert(candidateValidationIndex > restoreCheck && candidateValidationIndex < installIndex, "Restore candidate must be validated before live DB install.");
             Assert(preBackupIndex > restoreCheck, "Restore must check catalog import outbox before pre-restore backup/copy flow.");
-            Assert(workflow.Contains("InstallAsync(\n                        tempRestorePath", StringComparison.Ordinal), "Restore must install the already-validated temporary copy.");
+            Assert(
+                System.Text.RegularExpressions.Regex.IsMatch(
+                    workflow,
+                    @"InstallAsync\s*\(\s*tempRestorePath",
+                    System.Text.RegularExpressions.RegexOptions.CultureInvariant),
+                "Restore must install the already-validated temporary copy.");
             Assert(atomicInstaller.Contains("File.Copy(rollbackDatabasePath, liveDatabasePath, true)", StringComparison.Ordinal), "Restore install must roll back every post-swap failure.");
             Assert(workflow.Contains("dbMaintenance.restoreBlockedUnresolvedCatalogImports", StringComparison.Ordinal), "Restore flow must use catalog import blocked message.");
             Assert(catalogRepository.Contains("'pending', 'retry', 'in_progress', 'failed_blocked'", StringComparison.Ordinal), "Catalog import unresolved guard must include pending/retry/in_progress/failed_blocked.");
