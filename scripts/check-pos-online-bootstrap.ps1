@@ -157,7 +157,7 @@ if ($validationIndex -lt 0 -or $mirrorIndex -lt 0 -or $validationIndex -gt $mirr
 } else {
     Pass "bootstrap validates trusted/session payload before local staff mirror"
 }
-$validationPattern = "ValidateFirstLoginResponse[\s\S]*TrustedDeviceToken[\s\S]*Session[\s\S]*SessionToken[\s\S]*PosSessionId[\s\S]*ShopDeviceId[\s\S]*StaffId[\s\S]*StaffCode[\s\S]*ShopCode"
+$validationPattern = "ValidateFirstLoginResponse[\s\S]*TrustedDeviceToken[\s\S]*Session[\s\S]*SessionToken[\s\S]*PosSessionId[\s\S]*ShopDeviceId[\s\S]*StaffId[\s\S]*StaffCode[\s\S]*ShopId[\s\S]*ShopCode"
 if ($bootstrap -notmatch $validationPattern) { Fail "bootstrap first-login validation must cover tokens, session, device, staff and shop fields" } else { Pass "bootstrap first-login validation covers required fields" }
 if ($bootstrap -notmatch "response\.Ok" -or $bootstrap -notmatch "Device\.Trusted" -or $bootstrap -notmatch "Device\.Status" -or $bootstrap -notmatch "Policy" -or $bootstrap -notmatch "ContractVersion") { Fail "bootstrap first-login validation must require ok, trusted active device and policy contract" } else { Pass "bootstrap validates ok/trusted device/policy contract" }
 $shopSnapshotIndex = $bootstrap.IndexOf("PosOnlineShopSnapshot.SaveAsync")
@@ -168,6 +168,16 @@ if ($shopSnapshotIndex -lt 0 -or $policySnapshotIndex -lt 0 -or $saveTrustIndex 
 } else {
     Pass "bootstrap persists shop/policy/trust before local staff mirror"
 }
+$transitionCheckIndex = $bootstrap.IndexOf(".EvaluateAsync(")
+$transitionBlockIndex = $bootstrap.IndexOf("if (!shopTransition.Allowed)")
+$transitionResetIndex = $bootstrap.IndexOf("ApplyAuthorizedTransitionAndHoldAsync")
+if ($transitionCheckIndex -lt 0 -or $transitionBlockIndex -lt 0 -or $transitionResetIndex -lt 0 -or
+    $transitionCheckIndex -gt $transitionBlockIndex -or $transitionBlockIndex -gt $shopSnapshotIndex -or
+    $transitionResetIndex -gt $shopSnapshotIndex -or $transitionResetIndex -gt $saveTrustIndex) {
+    Fail "shop transition/outbox guard must fail closed before snapshot and trusted-device persistence"
+} else {
+    Pass "shop transition/outbox guard precedes snapshot and trusted-device persistence"
+}
 if ($bootstrap -notmatch "_trustedDeviceStore\.Clear\(\)" -or $bootstrap -notmatch "local_persistence_failed") { Fail "bootstrap must clear trust when local trust/mirror persistence fails" } else { Pass "bootstrap clears trust on local persistence failure" }
 if ($bootstrap -notmatch "TryPullInitialCatalogAsync" -or $catalogPull -notmatch "TryPullInitialCatalogAsync") { Fail "bootstrap does not use initial catalog pull path" } else { Pass "initial catalog pull path used" }
 if ($catalogPull -notmatch "pos.catalog.bootstrap_status" -or $catalogPull -notmatch "partial_has_more" -or $catalogPull -notmatch "failed_auth_denied") { Fail "initial catalog pull must persist bootstrap catalog status" } else { Pass "initial catalog pull persists bootstrap catalog status" }
@@ -177,9 +187,12 @@ if ($bootstrap -notmatch "IProgress<PosCatalogPullProgress>" -or $catalogPull -n
 if ($dialogXaml -notmatch "ProgressPanel" -or $dialogXaml -notmatch "SetupProgressBar" -or $dialogXaml -notmatch "RetryDownloadButton" -or $dialog -notmatch "RunCatalogRetryAsync") { Fail "blocking preparation progress/retry UI missing" } else { Pass "blocking preparation progress/retry UI present" }
 if ($dialog -match "result\.Success[\s\S]{0,180}DialogResult\s*=\s*true") { Fail "online dialog closes on generic Success instead of CanOpenPos/sale-safe" } else { Pass "online dialog does not close on generic Success" }
 if ($dialog -notmatch "if\s*\(result\.CanOpenPos\)" -or $dialog -notmatch "AccessMode\s*=\s*PosAuthenticatedAccessMode\.Normal") { Fail "online dialog must distinguish normal sale-safe access from recovery" } else { Pass "online dialog distinguishes sale-safe access from recovery" }
+if ($dialog -notmatch "result\.CanOpenPos[\s\S]{0,220}CompleteOnlineSignInAsync") { Fail "online dialog must route CanOpenPos through completion gate" } else { Pass "CanOpenPos routes through completion gate" }
+$completeSignInMethod = [regex]::Match($dialog, "private\s+async\s+Task<bool>\s+CompleteOnlineSignInAsync[\s\S]*?private\s+async\s+Task<bool>\s+TryOfflineSignInAsync").Value
+if ($completeSignInMethod -notmatch "EnsureCatalogSaleSafeForAccessAsync[\s\S]*DialogResult\s*=\s*true") { Fail "online completion must recheck sale-safe catalog before closing" } else { Pass "online completion rechecks sale-safe catalog before closing" }
 if ($catalogPull -notmatch "pos\.catalog\.sale_safe_at" -or $catalogPull -notmatch "pos\.catalog\.initial_completed_at") { Fail "catalog sale-safe completion settings missing" } else { Pass "catalog sale-safe completion settings present" }
 if ($catalogPull -notmatch "result\.Denied\s*&&\s*clearStoredStateOnDenied[\s\S]{0,120}_store\.Clear\(\)") { Fail "catalog trust clear must be guarded by auth denied" } else { Pass "catalog trust clear guarded by auth denied" }
-if ($dialog -notmatch "CancellationTokenSource\(TimeSpan\.FromMinutes\(6\)\)") { Fail "online first-login/catalog timeout must allow the large initial catalog" } else { Pass "online first-login/catalog uses the long bootstrap timeout" }
+if ($dialog -notmatch "new\s+CancellationTokenSource\(TimeSpan\.FromMinutes\(6\)\)") { Fail "online first-login/catalog timeout must allow the large initial catalog" } else { Pass "online first-login/catalog uses the long bootstrap timeout" }
 if ($userRepo -notmatch "UpsertRemoteStaffMirrorAsync") { Fail "UserRepository remote staff upsert missing" } else { Pass "UserRepository remote staff upsert present" }
 if ($initializer -notmatch "remote_staff_id") { Fail "remote staff id column missing" } else { Pass "remote staff id column present" }
 if ($initializer -notmatch "remote_credential_version") { Fail "remote credential version column missing" } else { Pass "remote credential version column present" }

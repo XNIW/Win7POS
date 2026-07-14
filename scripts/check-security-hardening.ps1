@@ -82,8 +82,12 @@ $accessRecovery = Read-Many @(
     "src/Win7POS.Data/Repositories/UserRepository.cs"
 )
 
-Require "FileLogger sensitive redaction present" $logger "sessionToken|deviceToken|trustedDeviceToken|pin|password|credential"
-Require "StartupTrace sensitive redaction present" $startup "sessionToken|deviceToken|trustedDeviceToken|pin|password|credential"
+foreach ($field in @("sessionToken", "deviceToken", "trustedDeviceToken", "pin", "password", "credential")) {
+    Require "FileLogger redacts $field" $logger ([regex]::Escape($field))
+    Require "StartupTrace redacts $field" $startup ([regex]::Escape($field))
+}
+Require "FileLogger applies regex redaction" $logger "Regex\.Replace[\s\S]*\[redacted\]"
+Require "StartupTrace applies regex redaction" $startup "Regex\.Replace[\s\S]*\[redacted\]"
 Forbid "direct sensitive runtime logging absent" $runtime "(?i)(Log(?:Info|Warning|Error)|StartupTrace\.Write|Console\.WriteLine)\s*\([^\r\n;]*(trustedDeviceToken|sessionToken|deviceToken|CredentialBox|PinBox|password|credential|payloadJson|payload_json|Authorization\s*:|Bearer)"
 Forbid "literal POS token absent" $runtime "mcpos_(device|session)_[A-Za-z0-9_-]{8,}"
 

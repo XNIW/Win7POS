@@ -3,6 +3,7 @@ namespace Win7POS.Core.Online
     public static class PosOnlineContract
     {
         public const string CatalogCapabilityVersion = "catalog-v2";
+        public const int CatalogPullSchemaVersion = 2;
         public const string CatalogImportSchemaVersion = "pos-catalog-import-v1";
         public const string PaymentCard = "card";
         public const string PaymentCash = "cash";

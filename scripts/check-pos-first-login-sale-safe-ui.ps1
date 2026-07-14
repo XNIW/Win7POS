@@ -118,12 +118,26 @@ if ($dialogCode -notmatch "_busy" -or $dialogCode -notmatch "BeginBusySetup[\s\S
 
 if ($dialogCode -match "result\.Success[\s\S]{0,220}DialogResult\s*=\s*true") {
     Fail "dialog closes on generic Success instead of sale-safe readiness"
-} elseif ($dialogCode -notmatch "if\s*\(result\.CanOpenPos\)" -or
-    $dialogCode -notmatch "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe" -or
-    $dialogCode -notmatch "AccessMode\s*=\s*PosAuthenticatedAccessMode\.Normal") {
-    Fail "dialog must close only after CanOpenPos or completed sale-safe retry"
 } else {
-    Pass "dialog closes only after sale-safe readiness"
+    $completeSignInMethod = [regex]::Match($dialogCode, "private\s+async\s+Task<bool>\s+CompleteOnlineSignInAsync[\s\S]*?private\s+async\s+Task<bool>\s+TryOfflineSignInAsync").Value
+    $catalogRetryMethod = [regex]::Match($dialogCode, "private\s+async\s+Task\s+RunCatalogRetryAsync[\s\S]*?private\s+void\s+BeginBusySetup").Value
+    $initialReadyRoutesThroughGate = $dialogCode -match "result\.CanOpenPos[\s\S]{0,220}CompleteOnlineSignInAsync"
+    $completionRechecksSaleSafe = $completeSignInMethod -match "EnsureCatalogSaleSafeForAccessAsync[\s\S]*DialogResult\s*=\s*true"
+    $retryRequiresSaleSafe = $catalogRetryMethod -match "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe"
+    $resumeOnlyClosesInsideReadyBranch = $catalogRetryMethod -match "outcome\.Completed\s*&&\s*outcome\.CatalogSaleSafe[\s\S]*_resumeCatalogOnly[\s\S]*DialogResult\s*=\s*true"
+    $normalRetryRoutesThroughGate = $catalogRetryMethod -match "CompleteOnlineSignInAsync"
+    if (-not $initialReadyRoutesThroughGate -or -not $completionRechecksSaleSafe -or -not $retryRequiresSaleSafe -or
+        -not $resumeOnlyClosesInsideReadyBranch -or -not $normalRetryRoutesThroughGate) {
+        Fail "dialog must close only after CanOpenPos or completed sale-safe retry"
+    } else {
+        Pass "dialog closes only after sale-safe readiness"
+    }
+}
+
+if ($dialogCode -notmatch "AccessMode\s*=\s*PosAuthenticatedAccessMode\.Normal") {
+    Fail "dialog must distinguish normal sale-safe access from recovery"
+} else {
+    Pass "dialog distinguishes normal sale-safe access from recovery"
 }
 
 if ($dialogCode -notmatch "finally[\s\S]*request\.Credential\s*=\s*string\.Empty[\s\S]*CredentialBox\.Clear\(\)") {

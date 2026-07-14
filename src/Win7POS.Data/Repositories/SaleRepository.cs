@@ -8,11 +8,14 @@ using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
 using Win7POS.Core.Online;
 using Win7POS.Core.Pos;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
 {
     public sealed class SaleRepository
     {
+        public const long SalesSyncInProgressLeaseMilliseconds = 15 * 60 * 1000L;
+
         private readonly SqliteConnectionFactory _factory;
 
         public SaleRepository(SqliteConnectionFactory factory) => _factory = factory;
@@ -26,6 +29,8 @@ namespace Win7POS.Data.Repositories
             {
                 if (sale.Kind == 0)
                     sale.Kind = (int)SaleKind.Sale;
+
+                await ValidateReversalBoundaryAsync(conn, tx, sale, lines).ConfigureAwait(false);
 
                 var saleId = await conn.ExecuteScalarAsync<long>(@"
 INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change, operator_id)
@@ -343,6 +348,15 @@ ORDER BY l.id ASC",
             long paidCardMinor,
             long changeMinor)
         {
+            if (req == null || req.OriginalSaleId <= 0)
+                throw new InvalidOperationException("Refund requires an existing original sale.");
+            var originalKind = await conn.ExecuteScalarAsync<int?>(
+                "SELECT kind FROM sales WHERE id = @originalSaleId;",
+                new { originalSaleId = req.OriginalSaleId },
+                tx).ConfigureAwait(false);
+            if (originalKind != (int)SaleKind.Sale)
+                throw new InvalidOperationException("Refund original sale is missing or incoherent.");
+
             var sale = new Sale
             {
                 Code = "R" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
@@ -378,6 +392,7 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
             try
             {
+                await ValidateReversalBoundaryAsync(conn, tx, refundSale, refundLines).ConfigureAwait(false);
                 var saleId = await conn.ExecuteScalarAsync<long>(@"
 INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change)
 VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change);
@@ -539,12 +554,71 @@ WHERE barcode = @barcode;",
                 : clientSaleId.Trim();
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var idempotencyKey = normalizedClientSaleId + ":" + PosOnlineContract.SalesSchemaVersion;
+            var origin = await OutboxShopBinding.ResolveRequiredAsync(conn, tx).ConfigureAwait(false);
+            var saleKind = await conn.ExecuteScalarAsync<int>(
+                "SELECT kind FROM sales WHERE id = @saleId;",
+                new { saleId },
+                tx).ConfigureAwait(false);
+            var operationType = GetOperationType(saleKind);
+            var persistedSale = await conn.QuerySingleAsync<Sale>(@"
+SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind,
+       related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId,
+       voided_at AS VoidedAt, reason, total, paidCash, paidCard, change,
+       operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted,
+       sync_status AS SyncStatus
+FROM sales
+WHERE id = @saleId;",
+                new { saleId },
+                tx).ConfigureAwait(false);
+            var persistedLines = (await conn.QueryAsync<SaleLine>(@"
+SELECT id, saleId, productId, barcode, name, quantity, unitPrice, lineTotal,
+       related_original_line_id AS RelatedOriginalLineId
+FROM sale_lines
+WHERE saleId = @saleId
+ORDER BY id ASC;",
+                new { saleId },
+                tx).ConfigureAwait(false)).ToArray();
+            var productIds = persistedLines
+                .Where(line => line.ProductId.HasValue)
+                .Select(line => line.ProductId.Value)
+                .Distinct()
+                .ToArray();
+            var remoteProductIds = productIds.Length == 0
+                ? new Dictionary<long, string>()
+                : (await conn.QueryAsync<RemoteProductIdRow>(@"
+SELECT id AS ProductId, remote_product_id AS RemoteProductId
+FROM products
+WHERE id IN @productIds;",
+                    new { productIds },
+                    tx).ConfigureAwait(false))
+                    .Where(row => !string.IsNullOrWhiteSpace(row.RemoteProductId))
+                    .ToDictionary(row => row.ProductId, row => row.RemoteProductId);
+            var canonicalItem = new SalesSyncOutboxItem
+            {
+                ClientSaleId = normalizedClientSaleId,
+                IdempotencyKey = idempotencyKey,
+                OperationType = operationType,
+                OriginShopCode = origin.ShopCode,
+                OriginShopId = origin.ShopId,
+                SaleId = saleId,
+                SchemaVersion = PosOnlineContract.SalesSchemaVersion
+            };
+            var canonicalRequest = PosSalesSyncRequestBuilder.BuildCanonical(
+                canonicalItem,
+                persistedSale,
+                persistedLines,
+                remoteProductIds);
+            var clientBatchId = canonicalRequest.Batch.ClientBatchId;
+            var payloadJson = PosSalesSyncRequestBuilder.SerializeCanonical(canonicalRequest);
+            var payloadHash = PosSalesSyncRequestBuilder.Sha256Hex(payloadJson);
 
             await conn.ExecuteAsync(@"
 INSERT OR IGNORE INTO sales_sync_outbox(
-  sale_id, client_sale_id, idempotency_key, status, created_at, updated_at)
+  sale_id, client_sale_id, client_batch_id, idempotency_key, schema_version, operation_type,
+  origin_shop_id, origin_shop_code, payload_json, payload_hash, status, created_at, updated_at)
 VALUES(
-  @saleId, @clientSaleId, @idempotencyKey, 'pending', @nowMs, @nowMs);
+  @saleId, @clientSaleId, @clientBatchId, @idempotencyKey, @schemaVersion, @operationType,
+  @originShopId, @originShopCode, @payloadJson, @payloadHash, 'pending', @nowMs, @nowMs);
 
 UPDATE sales
 SET sync_status = CASE
@@ -557,9 +631,44 @@ WHERE id = @saleId;",
                 {
                     saleId,
                     clientSaleId = normalizedClientSaleId,
+                    clientBatchId,
                     idempotencyKey,
+                    schemaVersion = PosOnlineContract.SalesSchemaVersion,
+                    operationType,
+                    originShopId = origin.ShopId,
+                    originShopCode = origin.ShopCode,
+                    payloadHash,
+                    payloadJson,
                     nowMs
                 }, tx).ConfigureAwait(false);
+
+            var existing = await conn.QuerySingleAsync<SalesSyncBindingRow>(@"
+SELECT
+  client_sale_id AS ClientSaleId,
+  client_batch_id AS ClientBatchId,
+  idempotency_key AS IdempotencyKey,
+  schema_version AS SchemaVersion,
+  operation_type AS OperationType,
+  origin_shop_id AS OriginShopId,
+  origin_shop_code AS OriginShopCode,
+  payload_hash AS PayloadHash,
+  payload_json AS PayloadJson
+FROM sales_sync_outbox
+WHERE sale_id = @saleId;",
+                new { saleId },
+                tx).ConfigureAwait(false);
+            if (!string.Equals(existing.ClientSaleId, normalizedClientSaleId, StringComparison.Ordinal) ||
+                !string.Equals(existing.IdempotencyKey, idempotencyKey, StringComparison.Ordinal) ||
+                !string.Equals(existing.SchemaVersion, PosOnlineContract.SalesSchemaVersion, StringComparison.Ordinal) ||
+                !string.Equals(existing.OperationType, operationType, StringComparison.Ordinal) ||
+                !string.Equals(existing.OriginShopId ?? string.Empty, origin.ShopId, StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(existing.OriginShopCode, origin.ShopCode, StringComparison.Ordinal) ||
+                !string.Equals(existing.ClientBatchId, clientBatchId, StringComparison.Ordinal) ||
+                !string.Equals(existing.PayloadJson, payloadJson, StringComparison.Ordinal) ||
+                !string.Equals(existing.PayloadHash, payloadHash, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Sales sync outbox idempotency conflict.");
+            }
         }
 
         public async Task<IReadOnlyList<SalesSyncOutboxItem>> GetPendingSalesSyncOutboxAsync(int take, long nowMs)
@@ -568,6 +677,7 @@ WHERE id = @saleId;",
             if (take > 50) take = 50;
 
             using var conn = _factory.Open();
+            var staleInProgressBefore = nowMs - SalesSyncInProgressLeaseMilliseconds;
             var rows = await conn.QueryAsync<SalesSyncOutboxItem>(@"
 SELECT
   id AS Id,
@@ -575,17 +685,28 @@ SELECT
   client_sale_id AS ClientSaleId,
   client_batch_id AS ClientBatchId,
   idempotency_key AS IdempotencyKey,
+  schema_version AS SchemaVersion,
+  operation_type AS OperationType,
+  origin_shop_id AS OriginShopId,
+  origin_shop_code AS OriginShopCode,
+  payload_json AS PayloadJson,
   payload_hash AS PayloadHash,
   status AS Status,
   attempt_count AS AttemptCount,
   next_retry_at AS NextRetryAt,
   last_error_code AS LastErrorCode
 FROM sales_sync_outbox
-WHERE status IN ('pending', 'retry')
-  AND next_retry_at <= @nowMs
+WHERE (
+    status IN ('pending', 'retry')
+    AND next_retry_at <= @nowMs
+  )
+  OR (
+    status = 'in_progress'
+    AND COALESCE(last_attempt_at, updated_at, 0) <= @staleInProgressBefore
+  )
 ORDER BY id ASC
 LIMIT @take",
-                new { take, nowMs }).ConfigureAwait(false);
+                new { take, nowMs, staleInProgressBefore }).ConfigureAwait(false);
             return rows.ToList();
         }
 
@@ -617,6 +738,7 @@ LIMIT 1;").ConfigureAwait(false);
             {
                 Acked = CountFor("acked"),
                 Blocked = CountFor("failed_blocked"),
+                InProgress = CountFor("in_progress"),
                 LastAckedAt = lastAckedAt,
                 Pending = CountFor("pending"),
                 Retry = CountFor("retry")
@@ -629,9 +751,57 @@ LIMIT 1;").ConfigureAwait(false);
             var count = await conn.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1)
 FROM sales_sync_outbox
-WHERE status IN ('pending', 'retry', 'failed_blocked');").ConfigureAwait(false);
+WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked');").ConfigureAwait(false);
 
             return count > 0;
+        }
+
+        public async Task<bool> IsReversalDependencyReadyAsync(long saleId)
+        {
+            using var conn = _factory.Open();
+            var row = await conn.QuerySingleOrDefaultAsync<ReversalDependencyRow>(@"
+SELECT
+  current.kind AS Kind,
+  current.related_sale_id AS RelatedSaleId,
+  original.kind AS OriginalKind,
+  original_outbox.status AS OriginalOutboxStatus,
+  original_outbox.origin_shop_id AS OriginalOriginShopId,
+  original_outbox.origin_shop_code AS OriginalOriginShopCode,
+  current_outbox.origin_shop_id AS CurrentOriginShopId,
+  current_outbox.origin_shop_code AS CurrentOriginShopCode,
+  official_id.value AS OfficialShopId,
+  official_code.value AS OfficialShopCode
+FROM sales current
+LEFT JOIN sales original ON original.id = current.related_sale_id
+LEFT JOIN sales_sync_outbox original_outbox ON original_outbox.sale_id = original.id
+LEFT JOIN sales_sync_outbox current_outbox ON current_outbox.sale_id = current.id
+LEFT JOIN app_settings official_id ON official_id.key = 'pos.official_shop.shop_id'
+LEFT JOIN app_settings official_code ON official_code.key = 'pos.official_shop.shop_code'
+WHERE current.id = @saleId;",
+                new { saleId }).ConfigureAwait(false);
+            if (row == null)
+            {
+                return false;
+            }
+
+            if (row.Kind != (int)SaleKind.Refund && row.Kind != (int)SaleKind.Void)
+            {
+                return true;
+            }
+
+            return row.RelatedSaleId.HasValue &&
+                row.OriginalKind == (int)SaleKind.Sale &&
+                string.Equals(row.OriginalOutboxStatus, "acked", StringComparison.Ordinal) &&
+                string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
+                    row.OriginalOriginShopId,
+                    row.OriginalOriginShopCode,
+                    row.CurrentOriginShopId,
+                    row.CurrentOriginShopCode)) &&
+                string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
+                    row.OriginalOriginShopId,
+                    row.OriginalOriginShopCode,
+                    row.OfficialShopId,
+                    row.OfficialShopCode));
         }
 
         public async Task<IReadOnlyDictionary<long, string>> GetRemoteProductIdsAsync(IEnumerable<long> productIds)
@@ -655,37 +825,61 @@ WHERE status IN ('pending', 'retry', 'failed_blocked');").ConfigureAwait(false);
                 .ToDictionary(row => row.ProductId, row => row.RemoteProductId);
         }
 
-        public async Task PrepareSalesSyncAttemptAsync(
+        public async Task<bool> PrepareSalesSyncAttemptAsync(
             long outboxId,
             string clientBatchId,
             string payloadJson,
             string payloadHash,
-            long nowMs)
+            long nowMs,
+            int expectedAttemptCount)
         {
             using var conn = _factory.Open();
-            await conn.ExecuteAsync(@"
+            var staleInProgressBefore = nowMs - SalesSyncInProgressLeaseMilliseconds;
+            var rows = await conn.ExecuteAsync(@"
 UPDATE sales_sync_outbox
-SET client_batch_id = @clientBatchId,
-    payload_json = @payloadJson,
-    payload_hash = @payloadHash,
+SET status = 'in_progress',
     attempt_count = attempt_count + 1,
     last_attempt_at = @nowMs,
     updated_at = @nowMs
 WHERE id = @outboxId
-  AND status IN ('pending', 'retry');",
-                new { outboxId, clientBatchId, payloadJson, payloadHash, nowMs }).ConfigureAwait(false);
+  AND attempt_count = @expectedAttemptCount
+  AND client_batch_id = @clientBatchId
+  AND payload_json = @payloadJson
+  AND payload_hash = @payloadHash
+  AND (
+    (
+      status IN ('pending', 'retry')
+      AND next_retry_at <= @nowMs
+    )
+    OR (
+      status = 'in_progress'
+      AND COALESCE(last_attempt_at, updated_at, 0) <= @staleInProgressBefore
+    )
+  );",
+                new
+                {
+                    outboxId,
+                    clientBatchId,
+                    payloadJson,
+                    payloadHash,
+                    nowMs,
+                    expectedAttemptCount,
+                    staleInProgressBefore
+                }).ConfigureAwait(false);
+            return rows == 1;
         }
 
-        public async Task MarkSalesSyncAckedAsync(
+        public async Task<bool> MarkSalesSyncAckedAsync(
             long outboxId,
             long saleId,
             string serverBatchId,
             string serverSaleId,
-            long nowMs)
+            long nowMs,
+            int expectedAttemptCount)
         {
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
-            await conn.ExecuteAsync(@"
+            var rows = await conn.ExecuteAsync(@"
 UPDATE sales_sync_outbox
 SET status = 'acked',
     server_batch_id = @serverBatchId,
@@ -693,41 +887,93 @@ SET status = 'acked',
     last_error_code = NULL,
     last_error_at = NULL,
     updated_at = @nowMs
-WHERE id = @outboxId;
+WHERE id = @outboxId
+  AND status = 'in_progress'
+  AND attempt_count = @expectedAttemptCount;",
+                new { outboxId, saleId, serverBatchId, serverSaleId, nowMs, expectedAttemptCount }, tx).ConfigureAwait(false);
+            if (rows != 1)
+            {
+                tx.Rollback();
+                return false;
+            }
 
-UPDATE sales
-SET sync_status = 'acked'
-WHERE id = @saleId;",
-                new { outboxId, saleId, serverBatchId, serverSaleId, nowMs }, tx).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                "UPDATE sales SET sync_status = 'acked' WHERE id = @saleId;",
+                new { saleId },
+                tx).ConfigureAwait(false);
             tx.Commit();
+            return true;
         }
 
-        public async Task MarkSalesSyncRetryAsync(
+        public async Task<bool> MarkSalesSyncRetryAsync(
             long outboxId,
             long saleId,
             string errorCode,
             long nextRetryAt,
-            long nowMs)
+            long nowMs,
+            int expectedAttemptCount)
         {
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
-            await conn.ExecuteAsync(@"
+            var rows = await conn.ExecuteAsync(@"
 UPDATE sales_sync_outbox
 SET status = 'retry',
     next_retry_at = @nextRetryAt,
     last_error_code = @errorCode,
     last_error_at = @nowMs,
     updated_at = @nowMs
-WHERE id = @outboxId;
+WHERE id = @outboxId
+  AND status = 'in_progress'
+  AND attempt_count = @expectedAttemptCount;",
+                new { outboxId, saleId, errorCode, nextRetryAt, nowMs, expectedAttemptCount }, tx).ConfigureAwait(false);
+            if (rows != 1)
+            {
+                tx.Rollback();
+                return false;
+            }
 
-UPDATE sales
-SET sync_status = 'retry'
-WHERE id = @saleId;",
-                new { outboxId, saleId, errorCode, nextRetryAt, nowMs }, tx).ConfigureAwait(false);
+            await conn.ExecuteAsync(
+                "UPDATE sales SET sync_status = 'retry' WHERE id = @saleId;",
+                new { saleId },
+                tx).ConfigureAwait(false);
             tx.Commit();
+            return true;
         }
 
-        public async Task MarkSalesSyncBlockedAsync(
+        public async Task<bool> MarkSalesSyncBlockedAsync(
+            long outboxId,
+            long saleId,
+            string errorCode,
+            long nowMs,
+            int expectedAttemptCount)
+        {
+            using var conn = await _factory.OpenAsync().ConfigureAwait(false);
+            using var tx = conn.BeginTransaction();
+            var rows = await conn.ExecuteAsync(@"
+UPDATE sales_sync_outbox
+SET status = 'failed_blocked',
+    last_error_code = @errorCode,
+    last_error_at = @nowMs,
+    updated_at = @nowMs
+WHERE id = @outboxId
+  AND status = 'in_progress'
+  AND attempt_count = @expectedAttemptCount;",
+                new { outboxId, saleId, errorCode, nowMs, expectedAttemptCount }, tx).ConfigureAwait(false);
+            if (rows != 1)
+            {
+                tx.Rollback();
+                return false;
+            }
+
+            await conn.ExecuteAsync(
+                "UPDATE sales SET sync_status = 'blocked' WHERE id = @saleId;",
+                new { saleId },
+                tx).ConfigureAwait(false);
+            tx.Commit();
+            return true;
+        }
+
+        public async Task<bool> MarkSalesSyncOriginBlockedAsync(
             long outboxId,
             long saleId,
             string errorCode,
@@ -735,24 +981,112 @@ WHERE id = @saleId;",
         {
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
-            await conn.ExecuteAsync(@"
+            var rows = await conn.ExecuteAsync(@"
 UPDATE sales_sync_outbox
-	SET status = 'failed_blocked',
+SET status = 'failed_blocked',
     last_error_code = @errorCode,
     last_error_at = @nowMs,
     updated_at = @nowMs
-WHERE id = @outboxId;
+WHERE id = @outboxId
+  AND status IN ('pending', 'retry', 'in_progress');",
+                new { outboxId, errorCode, nowMs }, tx).ConfigureAwait(false);
+            if (rows == 1)
+            {
+                await conn.ExecuteAsync(
+                    "UPDATE sales SET sync_status = 'blocked' WHERE id = @saleId;",
+                    new { saleId },
+                    tx).ConfigureAwait(false);
+            }
 
-UPDATE sales
-SET sync_status = 'blocked'
-WHERE id = @saleId;",
-                new { outboxId, saleId, errorCode, nowMs }, tx).ConfigureAwait(false);
             tx.Commit();
+            return rows == 1;
+        }
+
+        private static string GetOperationType(int saleKind)
+        {
+            return saleKind == (int)SaleKind.Void
+                ? "void"
+                : saleKind == (int)SaleKind.Refund
+                    ? "refund"
+                    : "sale";
         }
 
         private static string BuildClientSaleId(long saleId)
         {
             return "win7pos-sale-" + saleId.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static async Task ValidateReversalBoundaryAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            Sale sale,
+            IReadOnlyList<SaleLine> lines)
+        {
+            if (sale == null) throw new ArgumentNullException(nameof(sale));
+            if (sale.Kind != (int)SaleKind.Refund && sale.Kind != (int)SaleKind.Void)
+            {
+                return;
+            }
+
+            if (!sale.RelatedSaleId.HasValue || sale.RelatedSaleId.Value <= 0)
+            {
+                throw new InvalidOperationException("Reversal requires an existing original sale.");
+            }
+
+            var originalKind = await conn.ExecuteScalarAsync<int?>(
+                "SELECT kind FROM sales WHERE id = @originalSaleId;",
+                new { originalSaleId = sale.RelatedSaleId.Value },
+                tx).ConfigureAwait(false);
+            if (originalKind != (int)SaleKind.Sale)
+            {
+                throw new InvalidOperationException("Reversal original sale is missing or incoherent.");
+            }
+
+            var ackedOrigin = await conn.QuerySingleOrDefaultAsync<OriginalAckBindingRow>(@"
+SELECT
+  status AS Status,
+  origin_shop_id AS OriginShopId,
+  origin_shop_code AS OriginShopCode
+FROM sales_sync_outbox
+WHERE sale_id = @originalSaleId;",
+                new { originalSaleId = sale.RelatedSaleId.Value },
+                tx).ConfigureAwait(false);
+            if (string.Equals(ackedOrigin?.Status, "acked", StringComparison.Ordinal))
+            {
+                var official = await OutboxShopBinding.ResolveRequiredAsync(conn, tx).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
+                    ackedOrigin.OriginShopId,
+                    ackedOrigin.OriginShopCode,
+                    official.ShopId,
+                    official.ShopCode)))
+                {
+                    throw new InvalidOperationException("Reversal original ACK belongs to a different official shop.");
+                }
+            }
+
+            var originalLineIds = (lines ?? Array.Empty<SaleLine>())
+                .Where(line => line != null && line.RelatedOriginalLineId.HasValue)
+                .Select(line => line.RelatedOriginalLineId.Value)
+                .Distinct()
+                .ToArray();
+            if (originalLineIds.Length > 0)
+            {
+                var matched = await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM sale_lines
+WHERE saleId = @originalSaleId
+  AND id IN @originalLineIds;",
+                    new
+                    {
+                        originalSaleId = sale.RelatedSaleId.Value,
+                        originalLineIds
+                    },
+                    tx).ConfigureAwait(false);
+                if (matched != originalLineIds.Length)
+                {
+                    throw new InvalidOperationException("Reversal lines do not belong to the original sale.");
+                }
+            }
         }
 
         private static async Task<long> InsertSaleLineAsync(
@@ -804,10 +1138,11 @@ SELECT last_insert_rowid();", line, tx).ConfigureAwait(false);
     {
         public long Acked { get; set; }
         public long Blocked { get; set; }
+        public long InProgress { get; set; }
         public long? LastAckedAt { get; set; }
         public long Pending { get; set; }
         public long Retry { get; set; }
-        public long PendingOrRetry => Pending + Retry;
+        public long PendingOrRetry => Pending + Retry + InProgress;
     }
 
     internal sealed class SalesSyncStatusCount
@@ -836,6 +1171,11 @@ SELECT last_insert_rowid();", line, tx).ConfigureAwait(false);
         public string ClientSaleId { get; set; }
         public string ClientBatchId { get; set; }
         public string IdempotencyKey { get; set; }
+        public string SchemaVersion { get; set; }
+        public string OperationType { get; set; }
+        public string OriginShopId { get; set; }
+        public string OriginShopCode { get; set; }
+        public string PayloadJson { get; set; }
         public string PayloadHash { get; set; }
         public string Status { get; set; }
         public int AttemptCount { get; set; }
@@ -843,9 +1183,43 @@ SELECT last_insert_rowid();", line, tx).ConfigureAwait(false);
         public string LastErrorCode { get; set; }
     }
 
+    internal sealed class SalesSyncBindingRow
+    {
+        public string ClientBatchId { get; set; }
+        public string ClientSaleId { get; set; }
+        public string IdempotencyKey { get; set; }
+        public string OperationType { get; set; }
+        public string OriginShopCode { get; set; }
+        public string OriginShopId { get; set; }
+        public string PayloadHash { get; set; }
+        public string PayloadJson { get; set; }
+        public string SchemaVersion { get; set; }
+    }
+
     internal sealed class RemoteProductIdRow
     {
         public long ProductId { get; set; }
         public string RemoteProductId { get; set; }
+    }
+
+    internal sealed class ReversalDependencyRow
+    {
+        public int Kind { get; set; }
+        public long? RelatedSaleId { get; set; }
+        public int? OriginalKind { get; set; }
+        public string OriginalOutboxStatus { get; set; }
+        public string OriginalOriginShopId { get; set; }
+        public string OriginalOriginShopCode { get; set; }
+        public string CurrentOriginShopId { get; set; }
+        public string CurrentOriginShopCode { get; set; }
+        public string OfficialShopId { get; set; }
+        public string OfficialShopCode { get; set; }
+    }
+
+    internal sealed class OriginalAckBindingRow
+    {
+        public string Status { get; set; }
+        public string OriginShopId { get; set; }
+        public string OriginShopCode { get; set; }
     }
 }

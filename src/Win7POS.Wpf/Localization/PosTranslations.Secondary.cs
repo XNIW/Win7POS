@@ -220,6 +220,7 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("dbMaintenance.backupNow", "Backup now", "Respaldar ahora", "Esegui backup", "立即备份");
             yield return new TranslationEntry("dbMaintenance.restoreBackup", "Restore backup...", "Restaurar backup...", "Ripristina backup...", "恢复备份...");
             yield return new TranslationEntry("dbMaintenance.integrityCheck", "Integrity check", "Chequeo integridad", "Controllo integrita", "完整性检查");
+            yield return new TranslationEntry("dbMaintenance.completeRestoreReview", "Complete restore review", "Completar revision restore", "Completa review restore", "完成恢复复核");
             yield return new TranslationEntry("dbMaintenance.openFolder", "Open folder", "Abrir carpeta", "Apri cartella", "打开文件夹");
             yield return new TranslationEntry("dbMaintenance.outputResults", "Output / results:", "Salida / resultados:", "Output / risultati:", "输出 / 结果：");
             yield return new TranslationEntry("dbMaintenance.backupCreated", "Backup created: {0}", "Backup creado: {0}", "Backup creato: {0}", "备份已创建：{0}");
@@ -235,6 +236,9 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("dbMaintenance.restoreSyncReview", "Sync status: restore is allowed only after verifying that no unsynced outbox sales exist. Review sync before new sales.", "Estado sync: restore permitido solo despues de verificar que no existan ventas outbox no sincronizadas. Revisar sync antes de nuevas ventas.", "Stato sync: restore consentito solo dopo verifica che non esistano vendite outbox non sincronizzate. Rivedere sync prima di nuove vendite.", "同步状态：仅在确认没有未同步的 outbox 销售后才允许恢复。新销售前请复核同步。");
             yield return new TranslationEntry("dbMaintenance.restoreCompletedMessage", "Restore completed. A pre-restore backup was created. Verify sync status and restart the app.", "Restauracion completada. Se creo un backup previo. Verifica estado sync y reinicia la app.", "Ripristino completato. E stato creato un backup prima del ripristino. Verificare stato sincronizzazione e riavviare l'app.", "恢复完成。已创建恢复前备份。请验证同步状态并重启应用。");
             yield return new TranslationEntry("dbMaintenance.restoreFailed", "Restore failed: {0}", "Restauracion fallida: {0}", "Ripristino fallito: {0}", "恢复失败：{0}");
+            yield return new TranslationEntry("dbMaintenance.restoreReviewCompleted", "Restore sync review completed.", "Revision sync de restore completada.", "Review sync del restore completata.", "恢复同步复核已完成。");
+            yield return new TranslationEntry("dbMaintenance.restoreReviewFailed", "Restore review not complete: {0}", "Revision restore no completada: {0}", "Review restore non completata: {0}", "恢复复核尚未完成：{0}");
+            yield return new TranslationEntry("dbMaintenance.restoreTrustedShopRequired", "Restore requires a trusted official shop binding.", "La restauracion requiere una vinculacion oficial de tienda confiable.", "Il ripristino richiede un'associazione ufficiale e attendibile del negozio.", "恢复需要可信的官方门店绑定。");
             yield return new TranslationEntry("dbMaintenance.integrityCheckFailed", "Integrity check failed: {0}", "Chequeo integridad fallido: {0}", "Integrity check fallito: {0}", "完整性检查失败：{0}");
             yield return new TranslationEntry("dbMaintenance.vacuumCompleted", "VACUUM completed.", "VACUUM completado.", "VACUUM completato.", "VACUUM 已完成。");
             yield return new TranslationEntry("dbMaintenance.vacuumFailed", "VACUUM failed: {0}", "VACUUM fallido: {0}", "VACUUM fallito: {0}", "VACUUM 失败：{0}");

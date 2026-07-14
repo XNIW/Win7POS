@@ -1,5 +1,6 @@
 using System;
 using System.Threading.Tasks;
+using Dapper;
 using Win7POS.Core.Receipt;
 
 namespace Win7POS.Data.Repositories
@@ -57,11 +58,13 @@ namespace Win7POS.Data.Repositories
     public sealed class ShopOfficialSnapshotRepository
     {
         private const string KeyPrefix = "pos.official_shop.";
+        private readonly SqliteConnectionFactory _factory;
         private readonly SettingsRepository _settings;
 
         public ShopOfficialSnapshotRepository(SqliteConnectionFactory factory)
         {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
+            _factory = factory;
             _settings = new SettingsRepository(factory);
         }
 
@@ -98,21 +101,26 @@ namespace Win7POS.Data.Repositories
                 ? DateTimeOffset.UtcNow.ToString("O")
                 : snapshot.SyncedAtUtc.Trim();
 
-            await SetAsync("business_address", snapshot.BusinessAddress).ConfigureAwait(false);
-            await SetAsync("business_city", snapshot.BusinessCity).ConfigureAwait(false);
-            await SetAsync("business_giro", snapshot.BusinessGiro).ConfigureAwait(false);
-            await SetAsync("business_phone", snapshot.BusinessPhone).ConfigureAwait(false);
-            await SetAsync("company_rut", snapshot.CompanyRut).ConfigureAwait(false);
-            await _settings.SetBoolAsync(Key("fiscal_locked"), snapshot.FiscalIdentityLockedByPlatform).ConfigureAwait(false);
-            await SetAsync("footer", snapshot.Footer).ConfigureAwait(false);
-            await SetAsync("legal_representative_rut", snapshot.LegalRepresentativeRut).ConfigureAwait(false);
-            await SetAsync("shop_code", snapshot.ShopCode).ConfigureAwait(false);
-            await SetAsync("shop_id", snapshot.ShopId).ConfigureAwait(false);
-            await SetAsync("shop_name", snapshot.ShopName).ConfigureAwait(false);
-            await SetAsync("shop_status", snapshot.ShopStatus).ConfigureAwait(false);
-            await SetAsync("source", string.IsNullOrWhiteSpace(snapshot.Source) ? "supabase_admin_server" : snapshot.Source).ConfigureAwait(false);
-            await SetAsync("synced_at_utc", syncedAt).ConfigureAwait(false);
-            await SetAsync("updated_at", snapshot.UpdatedAt).ConfigureAwait(false);
+            using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction())
+            {
+                await SetAsync(conn, tx, "business_address", snapshot.BusinessAddress).ConfigureAwait(false);
+                await SetAsync(conn, tx, "business_city", snapshot.BusinessCity).ConfigureAwait(false);
+                await SetAsync(conn, tx, "business_giro", snapshot.BusinessGiro).ConfigureAwait(false);
+                await SetAsync(conn, tx, "business_phone", snapshot.BusinessPhone).ConfigureAwait(false);
+                await SetAsync(conn, tx, "company_rut", snapshot.CompanyRut).ConfigureAwait(false);
+                await SetAsync(conn, tx, "fiscal_locked", snapshot.FiscalIdentityLockedByPlatform ? "1" : "0").ConfigureAwait(false);
+                await SetAsync(conn, tx, "footer", snapshot.Footer).ConfigureAwait(false);
+                await SetAsync(conn, tx, "legal_representative_rut", snapshot.LegalRepresentativeRut).ConfigureAwait(false);
+                await SetAsync(conn, tx, "shop_code", snapshot.ShopCode).ConfigureAwait(false);
+                await SetAsync(conn, tx, "shop_id", snapshot.ShopId).ConfigureAwait(false);
+                await SetAsync(conn, tx, "shop_name", snapshot.ShopName).ConfigureAwait(false);
+                await SetAsync(conn, tx, "shop_status", snapshot.ShopStatus).ConfigureAwait(false);
+                await SetAsync(conn, tx, "source", string.IsNullOrWhiteSpace(snapshot.Source) ? "supabase_admin_server" : snapshot.Source).ConfigureAwait(false);
+                await SetAsync(conn, tx, "synced_at_utc", syncedAt).ConfigureAwait(false);
+                await SetAsync(conn, tx, "updated_at", snapshot.UpdatedAt).ConfigureAwait(false);
+                tx.Commit();
+            }
         }
 
         private Task<string> GetAsync(string suffix)
@@ -120,9 +128,18 @@ namespace Win7POS.Data.Repositories
             return _settings.GetStringAsync(Key(suffix));
         }
 
-        private Task SetAsync(string suffix, string value)
+        private static Task<int> SetAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            Microsoft.Data.Sqlite.SqliteTransaction tx,
+            string suffix,
+            string value)
         {
-            return _settings.SetStringAsync(Key(suffix), value ?? string.Empty);
+            return conn.ExecuteAsync(@"
+INSERT INTO app_settings(key, value)
+VALUES(@key, @value)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                new { key = Key(suffix), value = value ?? string.Empty },
+                tx);
         }
 
         private static string Key(string suffix)

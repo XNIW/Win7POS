@@ -83,6 +83,28 @@ namespace Win7POS.Data.Online
             CancellationToken cancellationToken)
         {
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var bindingError = OutboxShopBinding.GetMismatchCode(
+                item.OriginShopId,
+                item.OriginShopCode,
+                trustedSession.ShopId,
+                trustedSession.ShopCode);
+            if (string.IsNullOrWhiteSpace(bindingError) &&
+                !string.Equals(item.OperationType, "catalog_import", StringComparison.Ordinal))
+            {
+                bindingError = "operation_type_mismatch";
+            }
+
+            if (!string.IsNullOrWhiteSpace(bindingError))
+            {
+                if (await _outbox.MarkOriginBlockedAsync(item.Id, bindingError, nowMs).ConfigureAwait(false))
+                {
+                    run.Blocked++;
+                    run.LastErrorCode = bindingError;
+                }
+
+                return;
+            }
+
             if (!await _outbox.PrepareAttemptAsync(item.Id, nowMs).ConfigureAwait(false))
             {
                 return;
@@ -105,7 +127,7 @@ namespace Win7POS.Data.Online
             }
 
             var request = validation.Request;
-            AttachTrust(request, trustedSession);
+            AttachTrust(request, trustedSession, item);
             AttachAttemptMetadata(request, item, preparedAttempt);
 
             var response = await client.CatalogImportAsync(request, cancellationToken).ConfigureAwait(false);
@@ -120,6 +142,22 @@ namespace Win7POS.Data.Online
             if (remote == null || !remote.Ok)
             {
                 await MarkRemoteFailureAsync(item, preparedAttempt, remoteCode, false, run).ConfigureAwait(false);
+                return;
+            }
+
+            var responseShopError = GetResponseShopMismatchCode(item, remote);
+            if (!string.IsNullOrWhiteSpace(responseShopError))
+            {
+                if (await _outbox.MarkBlockedAsync(
+                    item.Id,
+                    "response_shop_mismatch",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    preparedAttempt).ConfigureAwait(false))
+                {
+                    run.Blocked++;
+                    run.LastErrorCode = "response_shop_mismatch";
+                }
+
                 return;
             }
 
@@ -289,12 +327,30 @@ namespace Win7POS.Data.Online
                 return "payload_hash_mismatch";
             }
 
-            if (batch.AttemptCount > 0 && batch.AttemptCount != item.AttemptCount + 1)
+            if (batch.AttemptCount != item.AttemptCount + 1)
             {
                 return "attempt_count_mismatch";
             }
 
             return string.Empty;
+        }
+
+        private static string GetResponseShopMismatchCode(
+            CatalogImportOutboxItem item,
+            PosCatalogImportResponse response)
+        {
+            if (item == null || response == null)
+            {
+                return "response_shop_mismatch";
+            }
+
+            return string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
+                item.OriginShopId,
+                item.OriginShopCode,
+                response.Shop?.ShopId,
+                response.Shop?.ShopCode))
+                ? string.Empty
+                : "response_shop_mismatch";
         }
 
         private static CatalogImportAckResult BuildAckResult(
@@ -424,12 +480,15 @@ namespace Win7POS.Data.Online
             return FirstNonEmpty(localBarcode, serverBarcode);
         }
 
-        private static void AttachTrust(PosCatalogImportRequest request, PosTrustedDeviceSession trustedSession)
+        private static void AttachTrust(
+            PosCatalogImportRequest request,
+            PosTrustedDeviceSession trustedSession,
+            CatalogImportOutboxItem item)
         {
             request.DeviceToken = TrimOrNull(trustedSession.DeviceToken);
             request.PosSessionId = TrimOrNull(trustedSession.PosSessionId);
             request.SessionToken = TrimOrNull(trustedSession.SessionToken);
-            request.ShopCode = TrimOrNull(trustedSession.ShopCode);
+            request.ShopCode = TrimOrNull(item.OriginShopCode);
             request.ShopDeviceId = TrimOrNull(trustedSession.ShopDeviceId);
         }
 

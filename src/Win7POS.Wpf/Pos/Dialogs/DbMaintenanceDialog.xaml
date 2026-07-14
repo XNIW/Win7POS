@@ -55,13 +55,13 @@
                     </Border>
 
                     <WrapPanel Grid.Row="3" Grid.ColumnSpan="2" Margin="0,12,0,0">
-                        <Button MinWidth="132" Height="36" Margin="0,0,8,8" Command="{Binding BackupNowCommand}" Style="{StaticResource OutlineButtonStyle}">
+                        <Button x:Name="BackupNowButton" MinWidth="132" Height="36" Margin="0,0,8,8" Command="{Binding BackupNowCommand}" Style="{StaticResource OutlineButtonStyle}">
                             <StackPanel Style="{StaticResource IconButtonContent}">
                                 <Path Data="{StaticResource IconDatabase}" Style="{StaticResource ButtonIconPathStyle}"/>
                                 <TextBlock Text="{loc:Loc dbMaintenance.backupNow}" Margin="8,0,0,0"/>
                             </StackPanel>
                         </Button>
-                        <Button MinWidth="150" Height="36" Margin="0,0,8,8" Command="{Binding RestoreBackupCommand}" Style="{StaticResource OutlineButtonStyle}">
+                        <Button x:Name="RestoreBackupButton" MinWidth="150" Height="36" Margin="0,0,8,8" Command="{Binding RestoreBackupCommand}" Style="{StaticResource OutlineButtonStyle}">
                             <StackPanel Style="{StaticResource IconButtonContent}">
                                 <Path Data="{StaticResource IconImport}" Style="{StaticResource ButtonIconPathStyle}"/>
                                 <TextBlock Text="{loc:Loc dbMaintenance.restoreBackup}" Margin="8,0,0,0"/>
@@ -73,19 +73,20 @@
                                 <TextBlock Text="{loc:Loc dbMaintenance.integrityCheck}" Margin="8,0,0,0"/>
                             </StackPanel>
                         </Button>
-                        <Button MinWidth="110" Height="36" Margin="0,0,8,8" Command="{Binding VacuumCommand}" Style="{StaticResource OutlineButtonStyle}">
+                        <Button MinWidth="190" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.completeRestoreReview}" Command="{Binding CompleteRestoreReviewCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                        <Button x:Name="VacuumButton" MinWidth="110" Height="36" Margin="0,0,8,8" Command="{Binding VacuumCommand}" Style="{StaticResource OutlineButtonStyle}">
                             <StackPanel Style="{StaticResource IconButtonContent}">
                                 <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                                 <TextBlock Text="VACUUM" Margin="8,0,0,0"/>
                             </StackPanel>
                         </Button>
-                        <Button MinWidth="178" Height="36" Margin="0,0,8,8" Command="{Binding SupplierExcelImportCommand}" Style="{StaticResource OutlineButtonStyle}">
+                        <Button x:Name="SupplierImportButton" MinWidth="178" Height="36" Margin="0,0,8,8" Command="{Binding SupplierExcelImportCommand}" Style="{StaticResource OutlineButtonStyle}">
                             <StackPanel Style="{StaticResource IconButtonContent}">
                                 <Path Data="{StaticResource IconImport}" Style="{StaticResource ButtonIconPathStyle}"/>
                                 <TextBlock Text="{loc:Loc supplierExcelImport.title}" Margin="8,0,0,0"/>
                             </StackPanel>
                         </Button>
-                        <Button MinWidth="132" Height="36" Margin="0,0,8,8" Command="{Binding OpenFolderCommand}" Style="{StaticResource OutlineButtonStyle}">
+                        <Button x:Name="OpenFolderButton" MinWidth="132" Height="36" Margin="0,0,8,8" Command="{Binding OpenFolderCommand}" Style="{StaticResource OutlineButtonStyle}">
                             <StackPanel Style="{StaticResource IconButtonContent}">
                                 <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
                                 <TextBlock Text="{loc:Loc dbMaintenance.openFolder}" Margin="8,0,0,0"/>

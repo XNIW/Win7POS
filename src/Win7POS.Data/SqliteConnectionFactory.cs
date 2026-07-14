@@ -10,6 +10,8 @@ namespace Win7POS.Data
 
         public SqliteConnectionFactory(PosDbOptions opt) => _opt = opt;
 
+        public string DbPath => _opt.DbPath;
+
         private static string BuildConnectionString(string dbPath)
         {
             var cs = new SqliteConnectionStringBuilder

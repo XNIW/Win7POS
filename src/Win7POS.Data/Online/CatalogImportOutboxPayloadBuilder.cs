@@ -169,7 +169,8 @@ namespace Win7POS.Data.Online
 
         private static string RedactFileName(string sourceFileName)
         {
-            var name = Path.GetFileName(sourceFileName ?? string.Empty);
+            var portablePath = (sourceFileName ?? string.Empty).Replace('\\', '/');
+            var name = Path.GetFileName(portablePath);
             return TrimOrNull(name, 120);
         }
 

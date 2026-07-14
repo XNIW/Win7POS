@@ -31,6 +31,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             BackupNowCommand = new AsyncRelayCommand(BackupNowAsync, _ => !IsBusy);
             RestoreBackupCommand = new AsyncRelayCommand(RestoreBackupAsync, _ => !IsBusy);
             IntegrityCheckCommand = new AsyncRelayCommand(IntegrityCheckAsync, _ => !IsBusy);
+            CompleteRestoreReviewCommand = new AsyncRelayCommand(CompleteRestoreReviewAsync, _ => !IsBusy);
             VacuumCommand = new AsyncRelayCommand(VacuumAsync, _ => !IsBusy);
             SupplierExcelImportCommand = new RelayCommand(_ => OpenSupplierExcelImport(), _ => !IsBusy);
             OpenFolderCommand = new RelayCommand(_ => OpenFolder(), _ => !IsBusy);
@@ -55,6 +56,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand BackupNowCommand { get; }
         public ICommand RestoreBackupCommand { get; }
         public ICommand IntegrityCheckCommand { get; }
+        public ICommand CompleteRestoreReviewCommand { get; }
         public ICommand VacuumCommand { get; }
         public ICommand SupplierExcelImportCommand { get; }
         public ICommand OpenFolderCommand { get; }
@@ -137,6 +139,24 @@ namespace Win7POS.Wpf.Pos.Dialogs
             catch (Exception ex)
             {
                 Append(PosLocalization.F("dbMaintenance.integrityCheckFailed", ex.Message));
+            }
+            finally
+            {
+                IsBusy = false;
+            }
+        }
+
+        private async Task CompleteRestoreReviewAsync()
+        {
+            IsBusy = true;
+            try
+            {
+                await _service.CompleteRestoreSyncReviewAsync().ConfigureAwait(true);
+                Append(PosLocalization.T("dbMaintenance.restoreReviewCompleted"));
+            }
+            catch (Exception ex)
+            {
+                Append(PosLocalization.F("dbMaintenance.restoreReviewFailed", ex.Message));
             }
             finally
             {
