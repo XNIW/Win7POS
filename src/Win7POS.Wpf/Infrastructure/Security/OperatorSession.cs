@@ -2,9 +2,11 @@ using System;
 using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using Win7POS.Core.Online;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
+using Win7POS.Wpf.Pos.Online;
 using Sec = Win7POS.Core.Security.SecurityEventCodes;
 
 namespace Win7POS.Wpf.Infrastructure.Security
@@ -13,12 +15,22 @@ namespace Win7POS.Wpf.Infrastructure.Security
     {
         private readonly UserRepository _userRepo;
         private readonly SecurityRepository _securityRepo;
+        private readonly PosOfflineAuthorizationLeaseGuard _authorizationLeaseGuard;
         private UserAccount _currentUser;
 
         public OperatorSession(UserRepository userRepo, SecurityRepository securityRepo)
+            : this(userRepo, securityRepo, new PosOfflineAuthorizationLeaseGuard())
+        {
+        }
+
+        internal OperatorSession(
+            UserRepository userRepo,
+            SecurityRepository securityRepo,
+            PosOfflineAuthorizationLeaseGuard authorizationLeaseGuard)
         {
             _userRepo = userRepo ?? throw new ArgumentNullException(nameof(userRepo));
             _securityRepo = securityRepo ?? throw new ArgumentNullException(nameof(securityRepo));
+            _authorizationLeaseGuard = authorizationLeaseGuard ?? throw new ArgumentNullException(nameof(authorizationLeaseGuard));
         }
 
         public UserAccount CurrentUser => _currentUser;
@@ -26,6 +38,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
         public bool CurrentUserIsAdmin => _currentUser?.IsAdmin ?? false;
         public string CurrentDisplayName => _currentUser?.DisplayName ?? "—";
         public string CurrentRoleName => _currentUser?.RoleName ?? "—";
+        public string LastAuthorizationFailureCode { get; private set; } = string.Empty;
 
         public event Action SessionChanged;
         public event PropertyChangedEventHandler PropertyChanged;
@@ -34,6 +47,13 @@ namespace Win7POS.Wpf.Infrastructure.Security
         {
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(pin))
                 return LoginResult.Failed;
+
+            var authorization = EvaluateAuthorizationLease();
+            if (!authorization.Allowed)
+            {
+                LogAuthorizationDenied(authorization.Code);
+                return LoginResult.AuthorizationExpired;
+            }
 
             var result = await _userRepo.VerifyPinAsync(username, pin).ConfigureAwait(true);
             if (result.User == null)
@@ -53,6 +73,32 @@ namespace Win7POS.Wpf.Infrastructure.Security
             _ = _securityRepo.LogEventAsync(Sec.LoginSuccess, "userId=" + result.User.Id + ", username=" + result.User.Username);
             RaiseSessionChanged();
             return LoginResult.Success;
+        }
+
+        public PosOfflineAuthorizationLeaseDecision EvaluateAuthorizationLease()
+        {
+            var decision = _authorizationLeaseGuard.Evaluate();
+            LastAuthorizationFailureCode = decision.Allowed
+                ? string.Empty
+                : decision.Code ?? "authorization_lease_denied";
+            return decision;
+        }
+
+        public bool EnsureAuthorizationValid()
+        {
+            var decision = EvaluateAuthorizationLease();
+            if (decision.Allowed)
+            {
+                return true;
+            }
+
+            LogAuthorizationDenied(decision.Code);
+            if (_currentUser != null)
+            {
+                LogoutForced();
+            }
+
+            return false;
         }
 
         public void Logout()
@@ -93,6 +139,25 @@ namespace Win7POS.Wpf.Infrastructure.Security
         {
             _currentUser = user;
             RaiseSessionChanged();
+        }
+
+        private void LogAuthorizationDenied(string code)
+        {
+            _ = _securityRepo.LogEventAsync(
+                Sec.PosAuthorizationLeaseDenied,
+                "code=" + SafeCode(code),
+                _currentUser?.Id);
+        }
+
+        private static string SafeCode(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (normalized.Length > 64)
+            {
+                normalized = normalized.Substring(0, 64);
+            }
+
+            return normalized;
         }
 
         private void RaiseSessionChanged()

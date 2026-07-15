@@ -38,6 +38,8 @@ namespace Win7POS.Wpf
         private readonly TaskCompletionSource<bool> _contentRendered = new TaskCompletionSource<bool>();
         private DispatcherTimer _syncStatusTimer;
         private DispatcherTimer _networkStatusTimer;
+        private DispatcherTimer _authorizationLeaseTimer;
+        private bool _authorizationLeaseBlockHandled;
         private bool _backgroundOnlineRefreshQueued;
         private bool _operatorLoginReached;
         private bool _languageSelectionUpdating;
@@ -75,6 +77,7 @@ namespace Win7POS.Wpf
 
             Loaded += OnLoadedAsync;
             ContentRendered += OnContentRendered;
+            Closed += (_, __) => _authorizationLeaseTimer?.Stop();
         }
 
         private void InitializeLanguageSelector()
@@ -235,6 +238,7 @@ namespace Win7POS.Wpf
                 StartOfDaySyncResult startOfDayResult = null;
                 if (session != null)
                 {
+                    RefreshAuthorizationLeaseSchedule(session);
                     if (!App.IsSafeStart)
                     {
                         startOfDayResult = await RunStartOfDaySyncAsync(factory).ConfigureAwait(true);
@@ -249,6 +253,12 @@ namespace Win7POS.Wpf
                             Close();
                             return;
                         }
+                    }
+
+                    if (!session.EnsureAuthorizationValid())
+                    {
+                        HandleAuthorizationLeaseDenied(session);
+                        return;
                     }
 
                     EnsurePosViewCreated();
@@ -766,9 +776,76 @@ namespace Win7POS.Wpf
             };
             _syncStatusTimer.Tick += async (_, __) =>
             {
+                var session = OperatorSessionHolder.Current;
+                if (session != null && session.IsLoggedIn)
+                {
+                    RefreshAuthorizationLeaseSchedule(session);
+                    if (!session.IsLoggedIn)
+                    {
+                        return;
+                    }
+                }
+
                 await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
             };
             _syncStatusTimer.Start();
+        }
+
+        private void RefreshAuthorizationLeaseSchedule(IOperatorSession session)
+        {
+            if (session == null)
+            {
+                return;
+            }
+
+            var decision = session.EvaluateAuthorizationLease();
+            if (!decision.Allowed ||
+                !decision.EffectiveExpiresAt.HasValue ||
+                !decision.EstimatedServerNow.HasValue)
+            {
+                HandleAuthorizationLeaseDenied(session);
+                return;
+            }
+
+            var remaining = decision.EffectiveExpiresAt.Value - decision.EstimatedServerNow.Value;
+            if (remaining <= TimeSpan.Zero)
+            {
+                HandleAuthorizationLeaseDenied(session);
+                return;
+            }
+
+            if (_authorizationLeaseTimer == null)
+            {
+                _authorizationLeaseTimer = new DispatcherTimer();
+                _authorizationLeaseTimer.Tick += (_, __) =>
+                {
+                    _authorizationLeaseTimer.Stop();
+                    RefreshAuthorizationLeaseSchedule(OperatorSessionHolder.Current);
+                };
+            }
+
+            _authorizationLeaseTimer.Stop();
+            _authorizationLeaseTimer.Interval = remaining < TimeSpan.FromMilliseconds(1)
+                ? TimeSpan.FromMilliseconds(1)
+                : remaining;
+            _authorizationLeaseTimer.Start();
+        }
+
+        private void HandleAuthorizationLeaseDenied(IOperatorSession session)
+        {
+            _authorizationLeaseTimer?.Stop();
+            session?.EnsureAuthorizationValid();
+            if (_authorizationLeaseBlockHandled)
+            {
+                return;
+            }
+
+            _authorizationLeaseBlockHandled = true;
+            ModernMessageDialog.Show(
+                this,
+                PosLocalization.Current.Text("access.login.title"),
+                PosLocalization.Current.Text("access.login.authorizationExpired"));
+            Close();
         }
 
         private async Task RefreshSyncStatusStripAsync(SqliteConnectionFactory factory = null)
@@ -876,6 +953,7 @@ namespace Win7POS.Wpf
             }
 
             var session = OperatorSessionHolder.Current;
+            RefreshAuthorizationLeaseSchedule(session);
             UpdateOperatorDisplay(session);
             RefreshShellAfterOperatorChange(session);
             return true;
@@ -924,7 +1002,13 @@ namespace Win7POS.Wpf
 
         private static bool HasCurrentPermission(string permissionCode)
         {
-            var user = OperatorSessionHolder.Current?.CurrentUser;
+            var session = OperatorSessionHolder.Current;
+            if (session == null || !session.EnsureAuthorizationValid())
+            {
+                return false;
+            }
+
+            var user = session.CurrentUser;
             if (user == null || string.IsNullOrWhiteSpace(permissionCode))
             {
                 return false;
@@ -1026,7 +1110,15 @@ namespace Win7POS.Wpf
                 UserManagementViewControl.DataContext = null;
             }
 
-            if (session?.CurrentUser == null) return;
+            if (session?.CurrentUser == null)
+            {
+                ClearProductsViewModel();
+                UserManagementViewControl.DataContext = null;
+                DailyReportViewControl.DataContext = null;
+                MainTabControl.SelectedIndex = 0;
+                CurrentMenuKey = "Pos";
+                return;
+            }
             var hasUsersManage = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.UsersManage) == true);
             var hasDailyCloseView = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.DailyCloseView) == true);
             var hasCatalogView = session.CurrentUser.IsAdmin || (session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.CatalogView) == true);

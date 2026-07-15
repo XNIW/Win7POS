@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Win7POS.Core.Security;
+using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Infrastructure.Security
 {
@@ -17,6 +18,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
         public bool Has(string permissionCode)
         {
             if (string.IsNullOrEmpty(permissionCode)) return false;
+            if (!_session.EnsureAuthorizationValid()) return false;
             var user = _session.CurrentUser;
             if (user == null) return false;
             if (user.IsAdmin) return true;
@@ -26,15 +28,34 @@ namespace Win7POS.Wpf.Infrastructure.Security
 
         public void Demand(string permissionCode, string operationText)
         {
+            if (!_session.EnsureAuthorizationValid())
+            {
+                throw new PosAuthorizationLeaseException(
+                    _session.LastAuthorizationFailureCode,
+                    PosLocalization.T("access.login.authorizationExpired"));
+            }
+
             if (!Has(permissionCode))
                 throw new InvalidOperationException("Permesso negato: " + (operationText ?? permissionCode));
         }
 
         public bool CanOverride(string permissionCode)
         {
+            if (!_session.EnsureAuthorizationValid()) return false;
             var user = _session.CurrentUser;
             if (user == null) return false;
             return user.CanOverride && Has(PermissionCodes.SecurityOverride);
         }
+    }
+
+    public sealed class PosAuthorizationLeaseException : InvalidOperationException
+    {
+        public PosAuthorizationLeaseException(string code, string message)
+            : base(message)
+        {
+            Code = code ?? string.Empty;
+        }
+
+        public string Code { get; }
     }
 }

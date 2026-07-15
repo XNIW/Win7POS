@@ -264,6 +264,9 @@ namespace Win7POS.Core.Online
         [DataMember(Name = "clientLineId")]
         public string ClientLineId { get; set; }
 
+        [DataMember(Name = "clientOriginalLineId", EmitDefaultValue = false)]
+        public string ClientOriginalLineId { get; set; }
+
         [DataMember(Name = "linePosition")]
         public int LinePosition { get; set; }
 
@@ -333,6 +336,9 @@ namespace Win7POS.Core.Online
         [DataMember(Name = "policy", EmitDefaultValue = false)]
         public PosPolicyResponse Policy { get; set; }
 
+        [DataMember(Name = "serverTime")]
+        public string ServerTime { get; set; }
+
         [DataMember(Name = "session")]
         public PosSessionResponse Session { get; set; }
 
@@ -351,6 +357,9 @@ namespace Win7POS.Core.Online
     {
         [DataMember(Name = "ok")]
         public bool Ok { get; set; }
+
+        [DataMember(Name = "serverTime")]
+        public string ServerTime { get; set; }
 
         [DataMember(Name = "session")]
         public PosSessionResponse Session { get; set; }

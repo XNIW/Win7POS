@@ -17,10 +17,10 @@ su questa revisione.
 - Repository: `https://github.com/XNIW/Win7POS.git`
 - Branch di consegna: `main`
 - Commit implementazione immutabile:
-  `94bb9573544811ef97c45f74b4ccf3ac85dc10de`
+  `138b3e64d82558e069bb04920bfda62e5d642b72`
 - URL commit:
-  `https://github.com/XNIW/Win7POS/commit/94bb9573544811ef97c45f74b4ccf3ac85dc10de`
-- Data pubblicazione Mac: `2026-07-14`.
+  `https://github.com/XNIW/Win7POS/commit/138b3e64d82558e069bb04920bfda62e5d642b72`
+- Data pubblicazione Mac: `2026-07-15`.
 - La normalizzazione portabile del basename in
   `CatalogImportOutboxPayloadBuilder.cs`, già presente localmente prima della
   lane, è stata preservata semanticamente e inclusa nella revisione pubblicata.
@@ -89,6 +89,22 @@ non distruttivi; gli import locali non sovrascrivono identità remote e non
 riattivano reference tombstoned per collisione di nome. Gli upsert con timestamp
 normalizzato minore o uguale al tombstone, inclusi ISO equivalenti, sono stale.
 
+L'autorizzazione offline è ora una lease fail-closed di massimo 12 ore. Il
+client salva il `serverTime` autenticato ricevuto da first-login/heartbeat,
+l'istante locale di ricezione e l'expiry della sessione nel trusted store
+protetto DPAPI; timestamp legacy incompleti, rollback dell'orologio o scadenza
+esatta negano l'accesso. Un unico guard di processo mantiene un high-water e
+protegge login PIN locale, permessi cached, override, cambio operatore e commit
+finale della vendita. La finestra attiva pianifica inoltre la scadenza precisa.
+Un diniego online esplicito cancella il trust senza cancellare outbox, catalogo
+o mirror locali.
+
+Ogni nuova riga refund/void inviata al server include additivamente
+`clientOriginalLineId`, derivato dalla riga originale SQLite già validata. Un
+reversal legacy senza binding completo viene bloccato in preflight prima della
+rete con `reversal_original_line_missing`; sale normali e contratti esistenti
+restano compatibili.
+
 ## File modificati
 
 - Migrazioni/data: `DbInitializer.cs`, `SaleRepository.cs`,
@@ -109,20 +125,30 @@ normalizzato minore o uguale al tombstone, inclusi ISO equivalenti, sono stale.
 - CLI/test: `Program.cs`, `SupplierImportDataTests.cs`,
   `OutboxShopBindingTests.cs`, `PosShopTransitionGuardTests.cs`,
   `RemoteCatalogReferenceTombstoneTests.cs`, `CatalogSafetyInvariantTests.cs`,
-  `RestoreShopSafetyTests.cs`.
+  `RestoreShopSafetyTests.cs`, `PosOfflineAuthorizationLeasePolicyTests.cs` e
+  `PosSalesSyncRequestBuilderTests.cs`.
+- Lease/reversal: `PosOfflineAuthorizationLeasePolicy.cs`,
+  `PosOfflineAuthorizationLeaseGuard.cs`, `PosTrustedDeviceSession.cs`,
+  `PosTrustedDeviceStore.cs`, `OperatorSession.cs`, `PermissionService.cs`,
+  `OverrideAuthService.cs`, dialog access/switch, `PosViewModel.cs`,
+  `PosOnlineTransportContracts.cs`, `PosSalesSyncRequestBuilder.cs` e
+  `PosSalesSyncService.cs`.
 - Scanner: catalog import/pull, first login, bootstrap/client/linking, security,
-  restore e il nuovo `scripts/check-pos-outbox-shop-binding.ps1`.
+  restore, `scripts/check-pos-outbox-shop-binding.ps1` e il nuovo
+  `scripts/check-pos-offline-authorization-lease.ps1`.
 
-Le liste tracked/untracked e gli artefatti di trasferimento sono stati
-rigenerati sul diff finale revisionato. La patch completa conserva anche la
-modifica preesistente dichiarata; la patch lane la esclude e non la attribuisce.
+Le liste tracked/untracked e gli artefatti di protezione sono stati verificati
+sul diff finale revisionato prima di fetch e branch. La patch completa e
+l'archivio dei cinque untracked ricostruiscono la sorgente iniziale; la piccola
+patch successiva conserva la sola correzione del fixture TASK-081.
 
 ## Evidence Mac reale
 
 | Controllo | Risultato |
 | --- | --- |
 | `dotnet build` Core/Data/CLI Release | PASS, zero warning/error |
-| `dotnet test tests/Win7POS.Core.Tests/... -c Release --no-restore` | PASS, 69/69 |
+| `dotnet test tests/Win7POS.Core.Tests/... -c Release --no-restore` | PASS, 82/82 |
+| filtri lease/reversal/tombstone/shop binding | PASS, 27/27 |
 | filtro `CapturedSession_IsRejectedAfterWaitingBehindShopTransition` | PASS, 1/1; nessun HTTP/apply/bind A e shop B intatto |
 | filtro `RemoteCatalogReferenceTombstoneTests` | PASS, 5/5 |
 | CLI `--selftest` | PASS, `自检 PASS` |
@@ -131,9 +157,10 @@ modifica preesistente dichiarata; la patch lane la esclude e non la attribuisce.
 | CLI catalog outbox/reconciliation/fake HTTP harness | PASS |
 | CLI SQLite integrity/restore guard | PASS |
 | WPF Release x86/net48 | PASS, zero warning/error |
-| tutti i 29 `scripts/check-*.ps1` statici | PASS |
+| tutti i 30 `scripts/check-*.ps1` statici | PASS |
+| scanner lease offline/reversal line binding | PASS, 22/22 controlli |
 | catalog/sales/restore/outbox/security/staging scanner rafforzati | PASS |
-| patch completa/lane applicate con `git apply --check --binary` su `git archive HEAD` | PASS |
+| patch completa/untracked ricostruiti su `git archive HEAD`; hash del fix harness verificato | PASS |
 | release completeness/runtime validator, folder e ZIP | PASS |
 | `unzip -t`, PE candidate x86, nessun PDB/CLI/source/DB nel pack | PASS |
 | `git diff --check` | PASS |
@@ -156,24 +183,27 @@ Artefatti primari verificati dal test 1:
 
 | Artefatto | SHA256 | Uso |
 | --- | --- | --- |
-| `Win7POS-ASUS-runtime-candidate-20260714.zip` | `71d4eccbfbb2bf78cd9a8394406fe2445f9a184624de8515f5f2596cf5b38dda` | runtime candidate x86/net48, ZIP flat |
-| `win7pos-wave1.patch` | `952bc9ed14414e57efbec7bf90ba927cca9072e1a3963c18728d8daf088b0a30` | patch binaria tracked lane, esclusa la modifica preesistente |
-| `win7pos-wave1-untracked-sources.tar.gz` | `e2a28570e9ad15eab2aa9fe9303a1fd9870a99c004f57e6784490b03ba304787` | nuovi sorgenti/test/scanner |
+| `Win7POS-ASUS-runtime-candidate-20260714.zip` | `b80cebc63954a423c6abb9b64e9aa02ed4b1c165b96e2a85bd963c4a8ecb4ede` | runtime candidate x86/net48 rigenerato dal commit implementazione, ZIP flat |
+| `Win7POS-release-pack/Win7POS.Wpf.exe` | `ce02c7945474b9c022e333d29615283b053b1ea3ddee8c8c22b5a79ce49069fa` | eseguibile PE x86 candidato |
+| `Win7POS-release-pack/VERSION.txt` | `989ae871aa566235f671fb678e6409a29409557c1f6b1a26c0077c222261f1b3` | identità sorgente e classificazione runtime |
 
-Artefatti supplementari inclusi nel manifest globale:
+Artefatti supplementari di protezione pubblicazione, conservati fuori Git:
 
 | Artefatto | SHA256 | Uso |
 | --- | --- | --- |
-| `win7pos-working-tree.patch` | `7280c8adb999d84f32ba76afc2abad0033260080098ef3a5262f3bc154f1d1ae` | patch binaria completa dei tracked, inclusa la modifica preesistente dichiarata |
+| `canonical-working-tree.patch` | `0463d942de2e098b5e052356f06c01af5964241fc3675f4164fa5092b1231ff2` | patch binaria completa protetta prima di fetch/branch |
+| `canonical-untracked-sources.tar.gz` | `fe60510f4d005743f974ea4569a32507ec51c5fcb0814b1c5cc60436f4081952` | cinque nuovi sorgenti/test/scanner protetti |
+| `post-gate-harness-fix.patch` | `91d36b8ead0a2ba7335334f3805c290ffc7ca1a24e0e99c5c38a47bd78bc051c` | correzione fixture TASK-081 dopo il gate iniziale |
 | `pos-admin-web.config.sample` | `74ae3f21e20ac2c199d7752dad89044827cd85e8b8289d06756ce7bd65a0bea3` | esempio staging senza secret |
 | `run-pos-smoke.bat` | `6400094cd51e951998dff19b80be41be01de6d0cfedd68625361972bc37ff7e6` | launcher smoke ASUS riusato dal repository |
 
 Trasferire l'intera cartella usando `ARTIFACT-FILES.txt` e `SHA256SUMS.txt`,
 ricalcolare SHA256 sul Builder/ASUS e fermarsi in caso di mismatch. Per
-ricostruire l'intera working tree applicare `win7pos-working-tree.patch` e poi
-estrarre l'archivio untracked; per la sola lane applicare invece
-`win7pos-wave1.patch` e lo stesso archivio. Non applicare entrambe le patch. Non
-copiare database reali, directory `%ProgramData%` esistenti, file
+recuperare una sorgente pre-pubblicazione usare soltanto il bundle di protezione
+`win7pos-release-publication-20260715` e verificare prima il relativo
+`SHA256SUMS.txt`. Le vecchie patch wave1 nel bundle storico sono superate dalla
+`main` pubblicata e non vanno applicate. Non copiare database reali, directory
+`%ProgramData%` esistenti, file
 trusted-device, log utenti o credential store.
 
 Dopo il pull della `main` pubblicata le patch sono soltanto recovery evidence:
@@ -189,7 +219,7 @@ non applicarle al checkout Asus.
 5. Eseguire `git pull --ff-only origin main`.
 6. Verificare che `git rev-parse HEAD` corrisponda alla SHA `origin/main`
    comunicata con la pubblicazione e che
-   `git merge-base --is-ancestor 94bb9573544811ef97c45f74b4ccf3ac85dc10de HEAD`
+   `git merge-base --is-ancestor 138b3e64d82558e069bb04920bfda62e5d642b72 HEAD`
    termini con exit code `0`.
 7. Eseguire restore/build/test Windows sul sorgente appena scaricato.
 8. Eseguire il runtime Windows 7 e i test 1–30 sotto indicati.
@@ -245,9 +275,9 @@ Per ogni test registrare comando/azione, timestamp, risultato
    Stato: `DEFERRED_TO_CODEX_ASUS`.
 6. **Cold start x86** — app parte senza crash, errore SQLite native o blocco UI; log startup redatto disponibile.
    Stato: `DEFERRED_TO_CODEX_ASUS`.
-7. **First login shop A** — shop/staff/PIN fixture validi aprono POS solo dopo catalogo sale-safe.
+7. **First login shop A** — shop/staff/PIN fixture validi aprono POS solo dopo catalogo sale-safe e salvano il `serverTime` autenticato della lease.
    Stato: `DEFERRED_TO_CODEX_ASUS`.
-8. **Restart trusted session** — chiusura/riavvio riusa DPAPI e heartbeat senza chiedere o mostrare token.
+8. **Restart trusted/offline lease** — chiusura/riavvio riusa DPAPI e heartbeat senza mostrare token; offline consente operazioni soltanto entro 12 ore e blocca scadenza esatta, timestamp legacy incompleto e rollback dell'orologio.
    Stato: `DEFERRED_TO_CODEX_ASUS`.
 9. **Catalog full pull** — primo pull drena `hasMore`, riconcilia/inattiva i remote assenti, applica prodotti/prezzi/reference e crea sale-safe.
    Stato: `DEFERRED_TO_CODEX_ASUS`.
@@ -257,9 +287,9 @@ Per ogni test registrare comando/azione, timestamp, risultato
     Stato: `DEFERRED_TO_CODEX_ASUS`.
 12. **Card sale** — vendita card salva correttamente ed evita stampa automatica/default non autorizzata.
     Stato: `DEFERRED_TO_CODEX_ASUS`.
-13. **Partial refund** — refund conserva original sale, quantità residua e `operation_type=refund`.
+13. **Partial refund** — refund conserva original sale/riga, quantità residua, `operation_type=refund` e `clientOriginalLineId` corretto.
     Stato: `DEFERRED_TO_CODEX_ASUS`.
-14. **Full void** — void completo è una sola inversione idempotente con `operation_type=void`.
+14. **Full void** — void completo è una sola inversione idempotente con `operation_type=void` e `clientOriginalLineId`; un reversal legacy privo del binding si blocca prima di HTTP.
     Stato: `DEFERRED_TO_CODEX_ASUS`.
 15. **Sales origin binding** — riga outbox contiene shop A id/code, schema, client id/idempotency e hash redatto.
     Stato: `DEFERRED_TO_CODEX_ASUS`.

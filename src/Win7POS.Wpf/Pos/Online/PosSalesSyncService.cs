@@ -152,6 +152,12 @@ namespace Win7POS.Wpf.Pos.Online
                             continue;
                         }
 
+                        if (!PosSalesSyncRequestBuilder.HasCompleteReversalBindings(request))
+                        {
+                            await MarkPreflightBlockedAsync(item, "reversal_original_line_missing", nowMs).ConfigureAwait(false);
+                            continue;
+                        }
+
                         request.AppVersion = typeof(PosSalesSyncService).Assembly.GetName().Version?.ToString();
                         request.DeviceToken = trustedSession.DeviceToken;
                         request.PosSessionId = trustedSession.PosSessionId;

@@ -997,6 +997,7 @@ internal static class Program
             Assert(await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 8, "Sale decrement did not update stock to 8.");
             Assert(await ReadMovementKindAsync(factory, saleId).ConfigureAwait(false) == "sale_decrement", "Sale movement kind mismatch.");
             Assert(await ReadMovementDeltaAsync(factory, saleId).ConfigureAwait(false) == -2, "Sale movement quantity mismatch.");
+            var originalLine = (await sales.GetLinesBySaleIdAsync(saleId).ConfigureAwait(false)).Single();
 
             var refundId = await sales.InsertSaleAsync(
                 new Sale
@@ -1020,6 +1021,7 @@ internal static class Program
                         ProductId = productId,
                         Quantity = 1,
                         UnitPrice = 1000,
+                        RelatedOriginalLineId = originalLine.Id,
                     },
                 }).ConfigureAwait(false);
             Assert(await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 9, "Refund increment did not update stock to 9.");
@@ -1048,6 +1050,7 @@ internal static class Program
                         ProductId = productId,
                         Quantity = 1,
                         UnitPrice = 1000,
+                        RelatedOriginalLineId = originalLine.Id,
                     },
                 }).ConfigureAwait(false);
             Assert(await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 10, "Void reverse did not restore stock to 10.");

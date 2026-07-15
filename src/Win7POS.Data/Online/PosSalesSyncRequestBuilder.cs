@@ -228,15 +228,22 @@ namespace Win7POS.Data.Online
             string saleKind,
             IReadOnlyDictionary<long, string> remoteProductIds)
         {
+            var isReversal =
+                string.Equals(saleKind, "refund", StringComparison.Ordinal) ||
+                string.Equals(saleKind, "void", StringComparison.Ordinal);
+            if (isReversal &&
+                (!line.RelatedOriginalLineId.HasValue || line.RelatedOriginalLineId.Value <= 0))
+            {
+                throw new InvalidOperationException("reversal_original_line_missing");
+            }
+
             var barcode = line.Barcode ?? string.Empty;
             var isDiscount = DiscountKeys.IsDiscount(barcode);
             var isManual = barcode.StartsWith(DiscountKeys.ManualPrefix, StringComparison.Ordinal);
             var lineType = isDiscount ? "discount" : "item";
             var signedAmount = line.LineTotal;
 
-            if ((string.Equals(saleKind, "refund", StringComparison.Ordinal) ||
-                 string.Equals(saleKind, "void", StringComparison.Ordinal)) &&
-                signedAmount > 0)
+            if (isReversal && signedAmount > 0)
             {
                 signedAmount = -Math.Abs(signedAmount);
             }
@@ -270,6 +277,9 @@ namespace Win7POS.Data.Online
                 AmountClp = signedAmount,
                 Barcode = TrimOrNull(barcode, 80),
                 ClientLineId = "line-" + line.Id.ToString(CultureInfo.InvariantCulture),
+                ClientOriginalLineId = isReversal
+                    ? "line-" + line.RelatedOriginalLineId.Value.ToString(CultureInfo.InvariantCulture)
+                    : null,
                 LinePosition = index + 1,
                 LineType = lineType,
                 LocalProductId = line.ProductId.HasValue
@@ -281,6 +291,29 @@ namespace Win7POS.Data.Online
                 StockQuantityDelta = stockQuantityDelta,
                 UnitAmountClp = Math.Abs(line.UnitPrice),
             };
+        }
+
+        public static bool HasCompleteReversalBindings(PosSalesSyncRequest request)
+        {
+            var sales = request?.Sales;
+            if (sales == null || sales.Length != 1 || sales[0] == null)
+            {
+                return false;
+            }
+
+            var sale = sales[0];
+            if (!string.Equals(sale.Kind, "refund", StringComparison.Ordinal) &&
+                !string.Equals(sale.Kind, "void", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            return !string.IsNullOrWhiteSpace(sale.ClientOriginalSaleId) &&
+                sale.Lines != null &&
+                sale.Lines.Length > 0 &&
+                sale.Lines.All(line =>
+                    line != null &&
+                    !string.IsNullOrWhiteSpace(line.ClientOriginalLineId));
         }
 
         private static PosSalesSyncPayment[] BuildPayments(Sale sale)

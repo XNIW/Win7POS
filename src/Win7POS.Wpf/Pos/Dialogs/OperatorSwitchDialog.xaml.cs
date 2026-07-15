@@ -140,6 +140,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     return;
                 }
 
+                if (result == LoginResult.AuthorizationExpired)
+                {
+                    ShowStatus(PosLocalization.T("access.login.authorizationExpired"));
+                    Log(
+                        "login_result",
+                        "result=blocked reason=authorization_lease_denied code=" +
+                        Safe(_session.LastAuthorizationFailureCode));
+                    return;
+                }
+
                 var reason = result == LoginResult.LockedOut ? "locked" : "invalid";
                 ShowStatus(result == LoginResult.LockedOut
                     ? PosLocalization.T("operator.login.locked")

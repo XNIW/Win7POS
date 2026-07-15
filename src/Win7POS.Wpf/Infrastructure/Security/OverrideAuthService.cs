@@ -14,14 +14,21 @@ namespace Win7POS.Wpf.Infrastructure.Security
     public sealed class OverrideAuthService : IOverrideAuthService
     {
         private readonly UserRepository _userRepo;
+        private readonly IOperatorSession _session;
 
-        public OverrideAuthService(UserRepository userRepo)
+        public OverrideAuthService(UserRepository userRepo, IOperatorSession session)
         {
             _userRepo = userRepo ?? throw new ArgumentNullException(nameof(userRepo));
+            _session = session ?? throw new ArgumentNullException(nameof(session));
         }
 
         public async Task<(bool ok, int? authorizerUserId)> RequestOverrideAsync(string operationText, string requiredPermissionCode)
         {
+            if (!EnsureAuthorizationValid())
+            {
+                return (false, null);
+            }
+
             var authorizableUsers = await _userRepo.ListUsersWithPermissionAsync(requiredPermissionCode).ConfigureAwait(true);
             if (authorizableUsers == null || authorizableUsers.Count == 0)
             {
@@ -45,6 +52,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
 
             async Task<(bool ok, int? userId)> VerifyAsync(string username, string pin)
             {
+                if (!_session.EnsureAuthorizationValid()) return (false, null);
                 var result = await _userRepo.VerifyPinAsync(username, pin).ConfigureAwait(true);
                 var account = result?.User;
                 if (account == null) return (false, null);
@@ -64,6 +72,11 @@ namespace Win7POS.Wpf.Infrastructure.Security
 
         public async Task<(bool ok, int? authorizerUserId)> RequestAdminOverrideAsync(string operationText)
         {
+            if (!EnsureAuthorizationValid())
+            {
+                return (false, null);
+            }
+
             var authorizableUsers = await _userRepo.ListAdminUsersAsync().ConfigureAwait(true);
             if (authorizableUsers == null || authorizableUsers.Count == 0)
             {
@@ -87,6 +100,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
 
             async Task<(bool ok, int? userId)> VerifyAsync(string username, string pin)
             {
+                if (!_session.EnsureAuthorizationValid()) return (false, null);
                 var result = await _userRepo.VerifyPinAsync(username, pin).ConfigureAwait(true);
                 var account = result?.User;
                 if (account == null) return (false, null);
@@ -99,6 +113,20 @@ namespace Win7POS.Wpf.Infrastructure.Security
             };
             var ok = dlg.ShowDialog() == true;
             return ok ? (true, dlg.AuthorizerUserId) : (false, null);
+        }
+
+        private bool EnsureAuthorizationValid()
+        {
+            if (_session.EnsureAuthorizationValid())
+            {
+                return true;
+            }
+
+            ModernMessageDialog.Show(
+                DialogOwnerHelper.GetSafeOwner(),
+                PosLocalization.T("override.title"),
+                PosLocalization.T("access.login.authorizationExpired"));
+            return false;
         }
     }
 }

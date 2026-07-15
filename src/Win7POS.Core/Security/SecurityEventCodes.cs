@@ -14,6 +14,7 @@ namespace Win7POS.Core.Security
         public const string UserCreated = "user_created";
         public const string FirstRunAdminCreated = "first_run_admin_created";
         public const string PosOnlineBootstrap = "pos_online_bootstrap";
+        public const string PosAuthorizationLeaseDenied = "pos_authorization_lease_denied";
         public const string UserUpdated = "user_updated";
         public const string UserEnabled = "user_enabled";
         public const string UserDisabled = "user_disabled";
