@@ -18,7 +18,7 @@ dated reports under `docs/reports/`.
 | ASUS-W7POS-009 | Done | Support POS Admin staff role mapping | `9bf33c9` | `pos_admin`, `staff_admin`, and `shop_owner_staff` map to local admin; manager remains manager; Core tests pass. |
 | ASUS-W7POS-010 | Done | E2E review of POS Admin staff role | Validated at `9bf33c9` and revalidated in ASUS-W7POS-011 | Redacted POS Admin staff online/offline smoke pass; admin areas open; switch negative case not run because the smoke data dir had only one local POS Admin operator. |
 | ASUS-W7POS-011 | Done | Final review and closeout | This final closeout commit | Tasks 001-010 closed, final report created, gates/release drop/smoke/log scan complete, logging redaction bug fixed. |
-| ASUS-W7POS-012 | Pending external runtime | Shop-scoped sync runtime validation, 30-test matrix | `94bb9573544811ef97c45f74b4ccf3ac85dc10de` | `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-2026-07-14.md`; Mac static/build/test gates pass, runtime remains `EXTERNAL_TEST_PENDING_CODEX_ASUS`. |
+| ASUS-W7POS-012 | Pending external runtime | Shop-scoped sync, offline authorization lease and reversal line-binding runtime validation, 30-test matrix | `138b3e64d82558e069bb04920bfda62e5d642b72` | `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-2026-07-14.md`; Mac static/build/test gates pass, runtime remains `EXTERNAL_TEST_PENDING_CODEX_ASUS`. |
 
 ## External Hardware Pending
 
