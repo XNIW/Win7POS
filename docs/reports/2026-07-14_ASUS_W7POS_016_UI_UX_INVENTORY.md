@@ -3,16 +3,18 @@
 ## Esito della lane
 
 - Data revisione: 2026-07-14, host Windows (timezone `-04:00`).
-- Branch lane: `codex/asus-ui-ux`.
-- SHA iniziale: `00a3fe00c72d57fe4af1b2febda942cac035b7f8`.
-- Commit remediation: `aa64ed9b` (`fix(ui): close reachable WPF usability gaps`).
-- Commit checker: `fb4c0f2b` (`test(ui): enforce dialog and supplier UX invariants`).
+- Branch integrato: `integration/asus-catalog-ui-runtime-20260714`.
+- Closure software commit: `bb4178b506afe5ebc86313f010e2271ca8075f84`.
 - Inventario statico: **42/42 artefatti XAML** censiti.
 - Superfici interattive: **38/38 raggiungibili** da bootstrap, shell, tab, comandi POS, impostazioni o flow nested.
 - Dialog: **31/31** derivano da `DialogShellWindow` e passano gli invarianti statici owner/sizing/chrome.
 - P0 trovati: **0**.
 - P1 statici residui noti dopo la remediation: **0**.
-- Matrice visuale e screenshot: **BLOCKED_EXTERNAL / non eseguita in questa lane**. Non viene dichiarato PASS visuale.
+- Diagnostica catalogo e repair: modalità ultima sync, versione, completeness, conteggi sintetici, repair required e comando autorizzato sono integrati in Shop Settings con localizzazione EN/ES/IT/ZH.
+- Guard di chiusura repair: pulsante Close, Escape e Alt+F4 non possono chiudere il dialog mentre il repair è in corso.
+- Sale readiness: status UI e persistenza della vendita ordinaria usano lo stesso evaluatore con reason code, evitando divergenze fra indicatore e barriera transazionale.
+- Lifecycle: il ViewModel del dialog implementa `IDisposable`, si disiscrive dal cambio lingua e rilascia `OwnerWindow`; il busy del repair è separato dagli altri stati UI.
+- Matrice visuale autenticata e screenshot DPI: **BLOCKED_EXTERNAL / non eseguita**. Non viene dichiarato PASS visuale.
 
 L'esito complessivo di ASUS-W7POS-016 resta `BLOCKED_EXTERNAL` finché la matrice visuale non viene eseguita su un runtime autenticato, con profili display controllati e hardware multi-monitor quando disponibile. La parte software, inventario, remediation localizzata e gate statici è completata e validata.
 
@@ -20,18 +22,19 @@ L'esito complessivo di ASUS-W7POS-016 resta `BLOCKED_EXTERNAL` finché la matric
 
 | Task | Stato | Commit | Evidenza | Note |
 |---|---|---|---|---|
-| ASUS-W7POS-016-D1 inventario XAML e reachability | DONE | `aa64ed9b`, `fb4c0f2b` | 42 XAML: 38 superfici, `App`, 3 resource dictionary | Tutte le superfici class-backed hanno un entrypoint raggiungibile |
-| ASUS-W7POS-016-D2 remediation P0/P1 | DONE | `aa64ed9b` | build x86 e gate UI verdi | Fix localizzati; nessuna nuova dipendenza UI |
-| ASUS-W7POS-016-D3 regression checker | DONE | `fb4c0f2b` | dialog 31/31, UI guard, supplier UI selftest | Il checker supplier mantiene l'invariante footer fuori dallo `ScrollViewer` |
-| ASUS-W7POS-016-D4 matrice visuale/screenshot | BLOCKED_EXTERNAL | — | 0 profili display eseguiti; 0 screenshot prodotti | Mancano fixture autenticata/staging e ambiente Win7/DPI/multi-monitor controllato |
+| ASUS-W7POS-016-D1 inventario XAML e reachability | DONE | `bb4178b` | 42 XAML: 38 superfici, `App`, 3 resource dictionary | Tutte le superfici class-backed hanno un entrypoint raggiungibile |
+| ASUS-W7POS-016-D2 remediation P0/P1 | DONE | `bb4178b` | build x86 e gate UI verdi | Fix localizzati; nessuna nuova dipendenza UI |
+| ASUS-W7POS-016-D3 sync status, catalog repair e closing guard | DONE | `bb4178b` | dialog 31/31 e `check-pos-sync-status-ux.ps1` | Repair solo per ruolo autorizzato; conferma owner-safe; chiusura bloccata durante l'operazione |
+| ASUS-W7POS-016-D4 regression checker | DONE | `bb4178b` | dialog/UI/supplier guard | Il checker supplier mantiene l'invariante footer fuori dallo `ScrollViewer` |
+| ASUS-W7POS-016-D5 matrice visuale autenticata/screenshot | BLOCKED_EXTERNAL | — | 0 profili display autenticati eseguiti; 0 screenshot della matrice | Mancano credenziali staging e ambiente Win7/DPI/multi-monitor controllato |
 
 ## Inventario completo delle superfici interattive
 
-Legenda: `OK` indica revisione statica senza modifica; `FIX` indica una remediation inclusa in `aa64ed9b`; `RISERVATO` indica inventario/reachability senza modifica perché il file appartiene all'orchestratore.
+Legenda: `OK` indica revisione statica senza modifica; `FIX` indica una remediation integrata nel branch corrente.
 
 | # | XAML | Tipo | Classificazione e reachability | Esito statico |
 |---:|---|---|---|---|
-| 1 | `MainWindow.xaml` | `Window` | Shell principale e recovery shell; creato dal bootstrap `App`; ospita tutti i tab principali | OK; code-behind riservato all'orchestratore |
+| 1 | `MainWindow.xaml` | `Window` | Shell principale e recovery shell; creato dal bootstrap `App`; ospita tutti i tab principali | OK |
 | 2 | `Pos/PosView.xaml` | `UserControl` | POS; creato lazy da `MainWindow` solo dopo il gate sale-safe | OK; focus scanner verificato anche sui path ViewModel toccati |
 | 3 | `Products/ProductsView.xaml` | `UserControl` | Catalogo prodotti; tab `ProductsTab` di `MainWindow` | OK |
 | 4 | `Import/ImportView.xaml` | `UserControl` | Import generale; contenuto di `ImportDataDialog` | FIX: label conteggio e database localizzate |
@@ -49,7 +52,7 @@ Legenda: `OK` indica revisione statica senza modifica; `FIX` indica una remediat
 | 16 | `Pos/Dialogs/RoleEditDialog.xaml` | `DialogShellWindow` | Crea/duplica/rinomina ruolo; nested da user management | OK |
 | 17 | `Pos/Dialogs/SettingsHubDialog.xaml` | `DialogShellWindow` | Hub impostazioni; menu shell | FIX: body scroll-safe a bassa altezza |
 | 18 | `Pos/Dialogs/LanguageSettingsDialog.xaml` | `DialogShellWindow` | Lingua; card dell'hub impostazioni | OK |
-| 19 | `Pos/Dialogs/ShopSettingsDialog.xaml` | `DialogShellWindow` | Dati shop readonly; comando POS/impostazioni | RISERVATO: inventariato, nessuna modifica |
+| 19 | `Pos/Dialogs/ShopSettingsDialog.xaml` | `DialogShellWindow` | Dati shop readonly, diagnostica exactness e repair catalogo; comando POS/impostazioni | FIX: status/completeness/conteggi localizzati, repair autorizzato con conferma, closing guard durante busy |
 | 20 | `Pos/Dialogs/PrinterSettingsDialog.xaml` | `DialogShellWindow` | Stampante; comando POS/impostazioni | OK |
 | 21 | `Pos/Dialogs/DbMaintenanceDialog.xaml` | `DialogShellWindow` | Database, backup/restore e accesso import fornitori; shell/recovery/POS | OK |
 | 22 | `Pos/Dialogs/AboutSupportDialog.xaml` | `DialogShellWindow` | Informazioni/supporto; shell e POS | OK |
@@ -90,8 +93,8 @@ Totale: 38 superfici interattive + `App.xaml` + 3 resource dictionary = **42 art
 | Positioning e clamp | Nessun `Left`/`Top`, `Loaded` di positioning o clamp fuori dalla base | PASS statico |
 | Work area/clipping | Refund e DailyReport adattivi; SettingsHub scroll-safe; footer supplier fuori dallo scroll | PASS statico, visuale da eseguire |
 | Focus e tastiera | Refund card Enter/Space + focus visuale; Enter full-void non bypassa conferma; focus barcode ripristinato dopo i modal toccati | PASS statico |
-| Escape/default/double-submit | `IsCancel`/`IsDefault` presenti dove previsto; first-login double-submit gate verde | PASS statico |
-| Localizzazione EN/ES/IT/ZH | Rimosse label/status hardcoded dai due import raggiungibili; nuove chiavi valorizzate nelle quattro lingue | PASS per i path toccati |
+| Escape/default/double-submit | `IsCancel`/`IsDefault` presenti dove previsto; first-login double-submit gate verde; Shop Settings blocca Close/Escape/Alt+F4 durante repair | PASS statico |
+| Localizzazione EN/ES/IT/ZH | Import e diagnostica/repair catalogo usano chiavi valorizzate nelle quattro lingue | PASS per i path toccati |
 | Contrasto e distinzione non solo colore | Risorse disabled/vector icon e focus border verificate dal guard | PASS statico, visuale da eseguire |
 | Nessuna nuova dipendenza Win10+ | Solo WPF/.NET Framework e risorse esistenti | PASS |
 
@@ -109,6 +112,10 @@ La revisione statica non certifica dimensioni pixel, resa font, contrasto effett
 | UI-016-06 | Label e status import visibili erano hardcoded in italiano/inglese | Chiavi EN/ES/IT/ZH per import generale e supplier Excel | UI guard + build |
 | UI-016-07 | Alcuni dialog raggiungibili non usavano titolo/footer/button shared | Allineamento localizzato alle risorse standard; checker 31/31 | dialog checker |
 | UI-016-08 | Il supplier CLI selftest cercava erroneamente il testo nel `Content` del `Button`, mentre i button corretti usano icon + `TextBlock` | Il test cerca il `TextBlock` localizzato dopo il footer e continua a verificare footer fuori dallo `ScrollViewer` | supplier CLI selftest |
+| UI-016-09 | Lo stato exactness catalogo e il repair non erano osservabili dalla UI shop | Aggiunti modalità/versione/completeness/conteggi/repair required e comando full repair solo autorizzato, con conferma non distruttiva e owner sicuro | sync-status UI checker + build |
+| UI-016-10 | Il dialog poteva essere chiuso mentre il full repair era in corso | `CanClose` disabilita Close e `OnClosing` annulla Escape/Alt+F4 durante `IsRepairBusy` | sync-status UI checker + build |
+| UI-016-11 | Status e persistenza vendita potevano valutare readiness con logiche separate | Unico evaluatore sale-safety con reason code condiviso da UI e barriera transazionale | sync-status/sales checker + Core tests |
+| UI-016-12 | Il ViewModel tratteneva subscription lingua e owner oltre la vita del dialog | `IDisposable`, unsubscribe esplicito e clear di `OwnerWindow` alla chiusura | sync-status UI checker + build |
 
 ## Matrice visuale
 
@@ -132,15 +139,15 @@ Usare la procedura canonica in `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-20
 
 ## Validazione eseguita
 
-Eseguita il 2026-07-14 sul branch della lane:
+Eseguita il 2026-07-14 sul branch integrato; i conteggi consolidati finali sono riportati nel closeout:
 
 | Comando | Risultato |
 |---|---|
-| `C:\Dev\dotnet10\dotnet.exe build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86` | PASS, 0 warning, 0 errori, output `net48/win-x86` |
+| `C:\Dev\dotnet10\dotnet.exe build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86` | PASS, 0 warning, 0 errori, output `bin\x86\Release\net48` |
 | `pwsh -NoProfile -File scripts/check-dialog-standards.ps1` | PASS, shared dialog resources 31/31 |
 | `pwsh -NoProfile -File scripts/check-win7pos-ui-ux-guard.ps1` | PASS |
 | `pwsh -NoProfile -File scripts/check-supplier-excel-wizard.ps1` | PASS |
-| `C:\Dev\dotnet10\dotnet.exe run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release -- --supplier-excel-ui-selftest` | PASS |
+| CLI supplier Excel UI selftest | PASS intermedio storico; non usato come gate finale diretto. Il gate finale supplier apply passa dal publish Release isolato; l'apphost in-tree è bloccato da Windows Application Control `0x800711C7` |
 | `pwsh -NoProfile -File scripts/check-product-dialog-free-text.ps1` | PASS |
 | `pwsh -NoProfile -File scripts/check-pos-unified-login-ux.ps1` | PASS |
 | `pwsh -NoProfile -File scripts/check-pos-sync-status-ux.ps1` | PASS |
@@ -149,8 +156,8 @@ Eseguita il 2026-07-14 sul branch della lane:
 
 ## Perimetro e rischi residui
 
-- Nessuna modifica a `PosCatalogPullService.cs`, workflow CI o `MainWindow.xaml.cs`.
-- `ShopSettingsDialog.xaml`, `ShopSettingsDialog.xaml.cs` e `ShopSettingsViewModel.cs` sono stati esclusi dalle modifiche come concordato; la superficie è presente solo nell'inventario.
+- `ShopSettingsDialog.xaml`, `ShopSettingsDialog.xaml.cs` e `ShopSettingsViewModel.cs` sono ora parte della remediation integrata per exactness/repair e closing guard.
+- Il repair richiama direttamente il workflow catalogo integrato; non resta alcun handoff applicativo separato.
 - Nessuno screenshot è stato acquisito e nessun comportamento su Windows 7 reale, stampante, scanner o multi-monitor è stato certificato da questa lane.
 - La matrice runtime può ancora trovare problemi P1 dipendenti da font/DPI/contenuto; l'affermazione “zero P0/P1” è limitata ai difetti rilevabili dalla review statica e dai gate eseguiti.
-- Il build completo della solution e la suite canonica complessiva appartengono all'orchestratore; questa lane ha eseguito il build WPF x86 e tutti i gate UI direttamente interessati.
+- La matrice autenticata 1024×768/1366×768 a 100%/125%, 1024×600 best-effort e multi-monitor resta `BLOCKED_EXTERNAL`; nessun PASS visuale viene inferito dai checker statici.

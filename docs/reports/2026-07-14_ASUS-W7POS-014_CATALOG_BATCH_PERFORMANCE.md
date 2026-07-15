@@ -1,225 +1,113 @@
 # ASUS-W7POS-014 — Catalog SQLite batch apply
 
+- Date: 2026-07-14
+- Branch: `integration/asus-catalog-ui-runtime-20260714`
+- Closure software commit: `bb4178b506afe5ebc86313f010e2271ca8075f84`
+
+## Outcome
+
+The catalog apply path uses one SQLite connection and one transaction per page or controlled batch, reuses prepared product/meta statements, orders references before products, and keeps product/meta, remote-reference mapping, prices, pending-price replay, and tombstones inside the same atomic boundary. SQLite writes remain single-writer.
+
+The controlled local comparison exceeds the indicative 2× target. The final synthetic 19,762-row run also covers page apply, immutable price ownership, full reconciliation, and exactness verification and finishes `Verified` in all three iterations. These numbers are not an authenticated staging full refresh and are not proof that staging contains exactly 19,762 products.
+
 ## Task ledger
 
 | Task | State | Commit | Evidence | Notes |
 |---|---|---|---|---|
-| ASUS-W7POS-014.1 | DONE | `3ed7a9a` | One connection and transaction per catalog page; prepared product/meta commands; cached references | `PosCatalogPullService.cs` intentionally not edited |
-| ASUS-W7POS-014.2 | DONE | `31a6f36` | 98/98 Core tests; local before/after benchmark; synthetic 19,762-row run | Staging credentials/catalog were not available in this lane |
+| ASUS-W7POS-014.1 batch apply implementation | DONE | `bb4178b` | One connection/transaction per page; prepared statements; rollback and retry tests | Integrated with `PosCatalogPullService`; service integration complete |
+| ASUS-W7POS-014.2 controlled apply benchmark | DONE | `bb4178b` | `catalog-performance-final-closure-2000.trx` | Closure code; legacy and batch inputs cross the same price-ownership invariants |
+| ASUS-W7POS-014.3 19,762 apply-only scale probes | DONE | `bb4178b` | `catalog-performance-final-19762.trx`, `catalog-performance-final-19762-paged.trx` | Historical pre-closure synthetic probes; not staging exactness evidence |
+| ASUS-W7POS-014.4 apply + reconcile + verify benchmark | DONE | `bb4178b` | `catalog-performance-final-closure-19762-paged-full.trx` | Closure code; 19,762 products/prices; 20 pages; three `Verified` iterations |
+| ASUS-W7POS-014.5 authenticated staging full refresh | BLOCKED_EXTERNAL | — | staging login is unavailable without credentials | Expected product count from the brief is 19,762; it was not observed by this benchmark |
 
-## Implementation
+## Implementation invariants
 
-`RemoteCatalogBatchRepository.ApplyAsync(RemoteCatalogBatch, CancellationToken)` applies, in order, categories, suppliers, products/meta, pending prices, tombstones, prices, and a final pending-price replay on one SQLite connection and one transaction. Product/meta statements are explicitly prepared and reused. Active category and supplier references are loaded once per page, removing product-level reference lookup N+1 queries.
+`RemoteCatalogBatchRepository.ApplyAsync(RemoteCatalogBatch, CancellationToken)` applies categories, suppliers, products/meta and their persistent remote-reference mapping, pending-price replay, tombstones, and prices on one connection and transaction. A page commits only when all rows are coherent; otherwise it rolls back.
 
-Cancellation is checked before the page transaction. After the transaction starts, the page either commits or rolls back; cancellation is not reported after a durable commit. Rollback is best-effort so a rollback exception cannot hide the original apply error.
+The integrated path also preserves:
 
-The pending-stock cache records both barcode and existing `remote_product_id` before product identity changes. This preserves local stock with unresolved sale outbox entries even when the server changes a product barcode.
+- unresolved-outbox stock across remote barcode changes;
+- canonical remote identities and duplicate suppression;
+- cross-page category/supplier reference relinking;
+- incremental reference relinking limited to page-affected products through indexed temporary target tables;
+- pending remote-price queue/replay and remote price-ID idempotency;
+- immutable remote-price ownership with append-only quarantine for ambiguous legacy evidence during authoritative repair;
+- non-destructive tombstones;
+- safe cancellation at batch boundaries;
+- fail-closed skipped-row accounting consumed by the pull service.
 
-## Controlled local benchmark
+## Controlled local benchmark — 2,000 products
 
-Environment: Windows `10.0.26200`, .NET SDK `10.0.301`, isolated fresh SQLite database per iteration. The timed region contains 40 categories, 40 suppliers, 2,000 products, and 2,000 prices. Input construction and database initialization are outside the timed region. Each result finished with exactly 2,000 active remote products, 2,000 price rows, zero pending prices, and a 1,286,144-byte DB.
+Environment: Windows `10.0.26200`, .NET SDK `10.0.301`, fresh isolated SQLite database for each iteration. Each timed run receives 40 categories, 40 suppliers, 2,000 products, and 2,000 prices. Input construction and schema initialization are outside the timed region.
 
-Command:
-
-```powershell
-$env:WIN7POS_RUN_CATALOG_BENCHMARK='1'
-Remove-Item Env:WIN7POS_CATALOG_BENCHMARK_MODE -ErrorAction SilentlyContinue
-Remove-Item Env:WIN7POS_CATALOG_BENCHMARK_ROWS -ErrorAction SilentlyContinue
-Remove-Item Env:WIN7POS_CATALOG_BENCHMARK_ITERATIONS -ErrorAction SilentlyContinue
-C:\Dev\dotnet10\dotnet.exe test tests\Win7POS.Core.Tests\Win7POS.Core.Tests.csproj `
-  -c Release --no-build --no-restore `
-  --filter FullyQualifiedName~CatalogBatchPerformanceTests `
-  --logger "trx;LogFileName=catalog-performance-post-review.trx" `
-  --results-directory artifacts\catalog-performance
-```
+Evidence: `C:\Dev\Win7POS-QA\2026-07-14_ASUS_RUNTIME\evidence\catalog-performance-final-closure-2000.trx`.
 
 | Mode | Iteration | Elapsed ms | Product rows/s | CPU ms | Working set bytes | DB bytes |
 |---|---:|---:|---:|---:|---:|---:|
-| legacy per-row | 1 | 12,784.599 | 156.44 | 4,546.875 | 92,000,256 | 1,286,144 |
-| legacy per-row | 2 | 14,313.914 | 139.72 | 4,718.750 | 90,161,152 | 1,286,144 |
-| legacy per-row | 3 | 12,604.613 | 158.67 | 4,562.500 | 88,813,568 | 1,286,144 |
-| page batch | 1 | 88.416 | 22,620.39 | 93.750 | 89,870,336 | 1,286,144 |
-| page batch | 2 | 81.484 | 24,544.67 | 78.125 | 91,541,504 | 1,286,144 |
-| page batch | 3 | 81.523 | 24,532.83 | 78.125 | 91,512,832 | 1,286,144 |
+| legacy per-row | 1 | 16,798.825 | 119.06 | 8,406.250 | 87,535,616 | 1,572,864 |
+| legacy per-row | 2 | 17,324.898 | 115.44 | 7,968.750 | 91,426,816 | 1,572,864 |
+| legacy per-row | 3 | 18,043.834 | 110.84 | 8,109.375 | 89,567,232 | 1,572,864 |
+| page batch | 1 | 308.594 | 6,481.00 | 296.875 | 94,367,744 | 1,847,296 |
+| page batch | 2 | 319.620 | 6,257.42 | 437.500 | 104,366,080 | 1,847,296 |
+| page batch | 3 | 299.818 | 6,670.72 | 312.500 | 104,878,080 | 1,847,296 |
 
-Median wall time improved from 12,784.599 ms to 81.523 ms (`156.82x`). Median throughput improved from 156.44 to 24,532.83 product rows/s (`156.82x`). Median CPU time improved from 4,562.500 ms to 78.125 ms (`58.4x`). Median working set increased by about 1.50%; final database size and row counts were identical.
+Median wall time improves from 17,324.898 ms to 308.594 ms (`56.14×`), and median throughput from 115.44 to 6,481.00 product rows/s (`56.14×`). Median CPU improves from 8,109.375 ms to 312.500 ms (`25.95×`). Median working set rises about 16.52%.
 
-The original pre-change product-only probe, before the batch API existed, measured 2,000 products at 6,758.078 / 9,870.071 / 8,257.987 ms. The controlled comparison above supersedes that probe because it uses identical product, price, and reference inputs for both modes.
+The batch database is 17.45% larger because it additionally persists the authoritative product-reference map. Both modes also persist immutable remote-price ownership. Therefore database-size equality is not claimed; both modes still finish with exactly 2,000 products, 2,000 price rows, and zero pending prices.
 
-## Synthetic 19,762-row batch
+## Synthetic 19,762-row apply-only probes
 
-This is a deterministic local scale test, not a staging full refresh and not proof of staging exactness.
+These historical scale probes use deterministic generated data and predate the final immutable-price-ownership hardening. They do not include HTTP, parsing, full-refresh reconciliation, exactness evaluation, staging latency, or UI responsiveness; the final full-path measurement is in the next section.
 
-Command additions before the same test command:
+### Single batch
 
-```powershell
-$env:WIN7POS_CATALOG_BENCHMARK_MODE='batch'
-$env:WIN7POS_CATALOG_BENCHMARK_ROWS='19762'
-$env:WIN7POS_CATALOG_BENCHMARK_ITERATIONS='3'
-```
+Evidence: `C:\Dev\Win7POS-QA\2026-07-14_ASUS_RUNTIME\evidence\catalog-performance-final-19762.trx`.
 
 | Iteration | Products | Prices | Pending | Elapsed ms | Product rows/s | CPU ms | Working set bytes | DB bytes |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| 1 | 19,762 | 19,762 | 0 | 1,200.809 | 16,457.24 | 1,703.125 | 102,232,064 | 10,125,312 |
-| 2 | 19,762 | 19,762 | 0 | 727.502 | 27,164.18 | 984.375 | 119,115,776 | 10,125,312 |
-| 3 | 19,762 | 19,762 | 0 | 733.240 | 26,951.62 | 859.375 | 122,159,104 | 10,125,312 |
+| 1 | 19,762 | 19,762 | 0 | 1,432.182 | 13,798.53 | 1,593.750 | 105,787,392 | 12,820,480 |
+| 2 | 19,762 | 19,762 | 0 | 963.944 | 20,501.18 | 1,234.375 | 125,059,072 | 12,820,480 |
+| 3 | 19,762 | 19,762 | 0 | 933.313 | 21,174.03 | 1,125.000 | 133,881,856 | 12,820,480 |
 
-## Regression and build evidence
+Median: 963.944 ms and 20,501.18 product rows/s.
 
-```text
-C:\Dev\dotnet10\dotnet.exe test tests\Win7POS.Core.Tests\Win7POS.Core.Tests.csproj -c Release --no-restore
-PASS: 98/98
+### Paged batch, 1,000 products per page
 
-C:\Dev\dotnet10\dotnet.exe build src\Win7POS.Wpf\Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
-PASS: net48 / x86, 0 warnings, 0 errors
+Evidence: `C:\Dev\Win7POS-QA\2026-07-14_ASUS_RUNTIME\evidence\catalog-performance-final-19762-paged.trx`.
 
-git diff --check
-PASS
-```
+| Iteration | Page size | Products | Prices | Pending | Elapsed ms | Product rows/s | CPU ms | Working set bytes | DB bytes |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 1 | 1,000 | 19,762 | 19,762 | 0 | 2,837.760 | 6,963.94 | 3,296.875 | 109,408,256 | 12,820,480 |
+| 2 | 1,000 | 19,762 | 19,762 | 0 | 2,286.283 | 8,643.72 | 2,250.000 | 124,866,560 | 12,820,480 |
+| 3 | 1,000 | 19,762 | 19,762 | 0 | 2,352.709 | 8,399.68 | 2,484.375 | 132,075,520 | 12,820,480 |
 
-Dedicated regression coverage proves:
+Median: 2,352.709 ms and 8,399.68 product rows/s. The paged run is the closer apply-only proxy for the production page limit, while still remaining synthetic.
 
-- full rollback when the second product fails mid-page;
-- clean retry after rollback and idempotent retry of an already committed page;
-- remote identity canonicalization without duplicate active remote rows;
-- unresolved-outbox stock preservation across a remote barcode change;
-- pending remote-price queue and replay in the page transaction;
-- soft tombstones for products, categories, and suppliers;
-- cancellation before the page boundary writes nothing.
+## Final closure synthetic 19,762-row full path
 
-## Required orchestrator patch
+This final integrated run uses 20 pages of at most 1,000 products. The timed region includes page apply, immutable `remote_price_id` ownership, authoritative product-reference persistence/relink, pending-price replay, full reconciliation, invariant audit, and exactness evaluation. It excludes HTTP, JSON parsing, staging latency, and WPF rendering.
 
-`src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs` is orchestrator-owned and was not modified. On base `00a3fe0`, change the call at line 315 to:
+Evidence: `C:\Dev\Win7POS-QA\2026-07-14_ASUS_RUNTIME\evidence\catalog-performance-final-closure-19762-paged-full.trx`.
 
-```csharp
-var applyStats = await ApplyCatalogAsync(result.Value, cancellationToken)
-    .ConfigureAwait(false);
-```
+| Iteration | Products | Prices | Pending | Completeness | Elapsed ms | Product rows/s | CPU ms | Working set bytes | DB bytes |
+|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|
+| 1 | 19,762 | 19,762 | 0 | Verified | 5,436.762 | 3,634.88 | 6,140.625 | 161,939,456 | 15,253,504 |
+| 2 | 19,762 | 19,762 | 0 | Verified | 4,747.793 | 4,162.36 | 4,937.500 | 175,218,688 | 15,253,504 |
+| 3 | 19,762 | 19,762 | 0 | Verified | 4,704.507 | 4,200.65 | 4,812.500 | 174,350,336 | 15,253,504 |
 
-Replace the method at lines 555–708 with the following exact adapter:
+Median: 4,747.793 ms, 4,162.36 product rows/s, 4,937.500 ms CPU, and 174,350,336 bytes working set. Every iteration ends with exactly 19,762 active products, 19,762 price-history rows, zero pending prices, and completeness `Verified` against the deterministic summary.
 
-```csharp
-private async Task<CatalogApplyStats> ApplyCatalogAsync(
-    PosCatalogPullResponse response,
-    CancellationToken cancellationToken)
-{
-    var catalog = response.Catalog;
-    var products = catalog.Products ?? Array.Empty<PosCatalogProductResponse>();
-    var priceRows = catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>();
-    var categories = BuildCategoryMap(catalog.Categories);
-    var suppliers = BuildSupplierMap(catalog.Suppliers);
-    var batch = new RemoteCatalogBatch
-    {
-        Categories = (catalog.Categories ?? Array.Empty<PosCatalogCategoryResponse>())
-            .Where(item => item != null)
-            .Select(item => new RemoteCatalogCategoryWrite
-            {
-                RemoteCategoryId = Normalize(item.CategoryId),
-                Name = Normalize(item.Name),
-                RemoteUpdatedAt = Normalize(item.UpdatedAt)
-            })
-            .ToArray(),
-        Suppliers = (catalog.Suppliers ?? Array.Empty<PosCatalogSupplierResponse>())
-            .Where(item => item != null)
-            .Select(item => new RemoteCatalogSupplierWrite
-            {
-                RemoteSupplierId = Normalize(item.SupplierId),
-                Name = Normalize(item.Name),
-                RemoteUpdatedAt = Normalize(item.UpdatedAt)
-            })
-            .ToArray(),
-        Products = products
-            .Where(item => item != null)
-            .Select(item =>
-            {
-                var barcode = Normalize(item.Barcode);
-                return new RemoteCatalogProductWrite
-                {
-                    ArticleCode = Normalize(item.ItemNumber),
-                    Barcode = barcode,
-                    CategoryName = NameFor(categories, item.CategoryId),
-                    Name = FirstNonEmpty(item.ProductName, item.SecondProductName, barcode),
-                    PurchasePrice = ToInt(item.PurchasePrice),
-                    RemoteProductId = Normalize(item.ProductId),
-                    SecondName = Normalize(item.SecondProductName),
-                    StockQuantity = ToInt(item.StockQuantity),
-                    SupplierName = NameFor(suppliers, item.SupplierId),
-                    UnitPrice = ToLong(item.RetailPrice)
-                };
-            })
-            .Where(item => item.Barcode.Length > 0)
-            .ToArray(),
-        ProductTombstones = (catalog.Tombstones?.Products ?? Array.Empty<PosCatalogProductTombstoneResponse>())
-            .Where(item => item != null)
-            .Select(item => new RemoteCatalogProductTombstoneWrite
-            {
-                RemoteProductId = Normalize(item.ProductId),
-                RemoteDeletedAt = Normalize(item.DeletedAt)
-            })
-            .ToArray(),
-        CategoryTombstones = (catalog.Tombstones?.Categories ?? Array.Empty<PosCatalogCategoryTombstoneResponse>())
-            .Where(item => item != null)
-            .Select(item => new RemoteCatalogCategoryTombstoneWrite
-            {
-                RemoteCategoryId = Normalize(item.CategoryId),
-                RemoteDeletedAt = Normalize(item.DeletedAt),
-                RemoteUpdatedAt = Normalize(item.UpdatedAt)
-            })
-            .ToArray(),
-        SupplierTombstones = (catalog.Tombstones?.Suppliers ?? Array.Empty<PosCatalogSupplierTombstoneResponse>())
-            .Where(item => item != null)
-            .Select(item => new RemoteCatalogSupplierTombstoneWrite
-            {
-                RemoteSupplierId = Normalize(item.SupplierId),
-                RemoteDeletedAt = Normalize(item.DeletedAt),
-                RemoteUpdatedAt = Normalize(item.UpdatedAt)
-            })
-            .ToArray(),
-        Prices = priceRows
-            .Where(item => item != null)
-            .Select(item => new RemoteCatalogPriceWrite
-            {
-                RemoteProductId = Normalize(item.ProductId),
-                RemotePriceId = Normalize(item.PriceId),
-                Type = Normalize(item.Type),
-                Price = ToInt(item.Price),
-                EffectiveAt = Normalize(item.EffectiveAt),
-                Source = Normalize(item.Source)
-            })
-            .ToArray()
-    };
+Profiling during integration exposed two expression-wrapped product-identity joins that prevented SQLite from using `idx_products_remote_product_id`. Both now compare the already-canonical `remote_product_id` directly; the catalog checker guards the page reference-cleanup path against reintroducing the per-row `TRIM` scan.
 
-    var applied = await new RemoteCatalogBatchRepository(_factory)
-        .ApplyAsync(batch, cancellationToken)
-        .ConfigureAwait(false);
-    var tombstonesReceived =
-        (catalog.Tombstones?.Products?.Length ?? 0) +
-        (catalog.Tombstones?.Categories?.Length ?? 0) +
-        (catalog.Tombstones?.Suppliers?.Length ?? 0);
+## Validation and remaining evidence
 
-    if (tombstonesReceived > 0)
-    {
-        _logger.LogInfo(
-            "Catalog tombstones received: count=" + tombstonesReceived.ToString() +
-            ", appliedProducts=" + applied.ProductTombstonesApplied.ToString() +
-            ", appliedCategories=" + applied.CategoryTombstonesApplied.ToString() +
-            ", appliedSuppliers=" + applied.SupplierTombstonesApplied.ToString() +
-            "; local purge disabled; tombstones are stored as inactive rows.");
-    }
+Local regression coverage passes for rollback, clean retry, duplicate identity, pending stock across remote barcode changes and later batches, pending remote prices, tombstones, cancellation, cross-page reference relinking, price-ID collision handling, ACK wildcard precedence, and batch skipped-row accounting. The final consolidated count is `152/152`; release/gate provenance is recorded in the closeout report and external post-commit evidence.
 
-    return new CatalogApplyStats
-    {
-        CategoryRowsReceived = catalog.Categories?.Length ?? 0,
-        PendingPriceRowsApplied = applied.PendingPricesApplied,
-        PriceRowsApplied = applied.PricesApplied,
-        PriceRowsQueued = applied.PricesQueued,
-        PriceRowsReceived = priceRows.Length,
-        SupplierRowsReceived = catalog.Suppliers?.Length ?? 0,
-        TombstonesApplied = applied.TombstonesApplied,
-        TombstonesReceived = tombstonesReceived,
-        UpdatedProducts = applied.ProductsApplied
-    };
-}
-```
+The following must not be inferred from the tables above:
 
-After applying the adapter, rerun the WPF build and the service-level catalog pull tests. A real staging full refresh still requires the staging service/credentials and must not be inferred from the local synthetic 19,762-row result.
+- authenticated Admin Console count or category/supplier totals;
+- staging SQLite exactness against 19,762;
+- end-to-end `hasMore=false` runtime proof;
+- absence of UI freeze during a real staging pull.
+
+Those staging items remain `BLOCKED_EXTERNAL` until credentials and the authorized staging fixture are available. The final local apply + reconcile + verify benchmark is complete; it is synthetic evidence and does not replace the blocked staging runtime proof.
