@@ -4,6 +4,7 @@ using Dapper;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Win7POS.Core.Models;
 using Win7POS.Core.Online;
+using Win7POS.Core.Pos;
 using Win7POS.Data;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
@@ -20,7 +21,7 @@ public sealed class OutboxShopBindingTests
         await SaveShopAsync(db.Factory, "shop-a", "shop-a");
         var sales = new SaleRepository(db.Factory);
 
-        var originalSaleId = await InsertSaleAsync(sales, "SALE-A", SaleKind.Sale);
+        var originalSaleId = await InsertSaleAsync(sales, "SALE-A", SaleKind.Sale, originalQuantity: 2);
         await InsertSaleAsync(sales, "REFUND-A", SaleKind.Refund, originalSaleId);
         await InsertSaleAsync(sales, "VOID-A", SaleKind.Void, originalSaleId);
 
@@ -140,7 +141,11 @@ SET origin_shop_id = '', origin_shop_code = '';");
         using var ambiguousDb = TestDb.Create();
         await SaveShopAsync(ambiguousDb.Factory, "shop-a", "SHOP-A");
         var ambiguousSales = new SaleRepository(ambiguousDb.Factory);
-        var originalId = await InsertSaleAsync(ambiguousSales, "LEGACY-SALE", SaleKind.Sale);
+        var originalId = await InsertSaleAsync(
+            ambiguousSales,
+            "LEGACY-SALE",
+            SaleKind.Sale,
+            originalQuantity: 2);
         await InsertSaleAsync(ambiguousSales, "LEGACY-REFUND", SaleKind.Refund, originalId);
         await InsertSaleAsync(ambiguousSales, "LEGACY-VOID", SaleKind.Void, originalId);
         await InsertLegacyCatalogRowAsync(ambiguousDb.Factory, "ambiguous");
@@ -285,11 +290,205 @@ UPDATE sale_lines SET name = 'Mutated line' WHERE saleId = @saleId;",
         Assert.AreEqual(stockBefore, await verify.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM local_stock_movements;"));
     }
 
+    [TestMethod]
+    public async Task ReversalEconomics_DiscountedTaxedSaleEmitsItemOnlyPartialAndFullVoid()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var sales = new SaleRepository(db.Factory);
+        var originalId = await InsertOriginalWithAdjustmentsAsync(
+            sales,
+            "ECON-ORIGINAL",
+            quantity: 2,
+            unitPrice: 100,
+            discount: 20,
+            tax: 10);
+        var originalItem = (await sales.GetLinesBySaleIdAsync(originalId))
+            .Single(line => !DiscountKeys.IsEconomicAdjustment(line.Barcode));
+
+        var returnable = await sales.GetReturnableLinesAsync(originalId);
+        Assert.AreEqual(1, returnable.Count);
+        Assert.AreEqual(originalItem.Id, returnable.Single().OriginalLineId);
+
+        var refundId = await InsertReversalAsync(
+            sales,
+            "ECON-REFUND",
+            SaleKind.Refund,
+            originalId,
+            originalItem,
+            quantity: 1,
+            total: -95);
+        var refund = await GetPersistedRequestAsync(db.Factory, refundId);
+        AssertReversalEconomics(refund, gross: 100, discount: 10, tax: 5, net: -95);
+
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(
+                "UPDATE sales_sync_outbox SET status = 'acked' WHERE sale_id IN (@originalId, @refundId);",
+                new { originalId, refundId });
+        }
+
+        var voidId = await InsertReversalAsync(
+            sales,
+            "ECON-VOID",
+            SaleKind.Void,
+            originalId,
+            originalItem,
+            quantity: 1,
+            total: -95);
+        var voidRequest = await GetPersistedRequestAsync(db.Factory, voidId);
+        AssertReversalEconomics(voidRequest, gross: 100, discount: 10, tax: 5, net: -95);
+        Assert.AreEqual(0, (await sales.GetReturnableLinesAsync(originalId)).Single().RemainingQty);
+    }
+
+    [TestMethod]
+    public async Task ReversalEconomics_SuccessiveRoundingIsProspectiveAndSyncIsOrdered()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var sales = new SaleRepository(db.Factory);
+        var originalId = await InsertOriginalWithAdjustmentsAsync(
+            sales,
+            "ROUND-ORIGINAL",
+            quantity: 3,
+            unitPrice: 2,
+            discount: 1,
+            tax: 0);
+        var originalItem = (await sales.GetLinesBySaleIdAsync(originalId))
+            .Single(line => !DiscountKeys.IsEconomicAdjustment(line.Barcode));
+        var firstId = await InsertReversalAsync(
+            sales,
+            "ROUND-FIRST",
+            SaleKind.Refund,
+            originalId,
+            originalItem,
+            quantity: 1,
+            total: -2);
+        var secondId = await InsertReversalAsync(
+            sales,
+            "ROUND-SECOND",
+            SaleKind.Refund,
+            originalId,
+            originalItem,
+            quantity: 1,
+            total: -1);
+
+        AssertReversalEconomics(
+            await GetPersistedRequestAsync(db.Factory, firstId),
+            gross: 2,
+            discount: 0,
+            tax: 0,
+            net: -2);
+        AssertReversalEconomics(
+            await GetPersistedRequestAsync(db.Factory, secondId),
+            gross: 2,
+            discount: 1,
+            tax: 0,
+            net: -1);
+
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(
+                "UPDATE sales_sync_outbox SET status = 'acked' WHERE sale_id = @originalId;",
+                new { originalId });
+        }
+        Assert.IsFalse(await sales.IsReversalDependencyReadyAsync(secondId));
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(
+                "UPDATE sales_sync_outbox SET status = 'acked' WHERE sale_id = @firstId;",
+                new { firstId });
+        }
+        Assert.IsTrue(await sales.IsReversalDependencyReadyAsync(secondId));
+
+        var finalId = await InsertReversalAsync(
+            sales,
+            "ROUND-FINAL",
+            SaleKind.Void,
+            originalId,
+            originalItem,
+            quantity: 1,
+            total: -2);
+        AssertReversalEconomics(
+            await GetPersistedRequestAsync(db.Factory, finalId),
+            gross: 2,
+            discount: 0,
+            tax: 0,
+            net: -2);
+    }
+
+    [TestMethod]
+    public async Task ReversalEconomics_LegacyGrossOnlyPayloadFailsClosedWithoutMutation()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var sales = new SaleRepository(db.Factory);
+        var originalId = await InsertOriginalWithAdjustmentsAsync(
+            sales,
+            "LEGACY-ECON-ORIGINAL",
+            quantity: 2,
+            unitPrice: 100,
+            discount: 20,
+            tax: 0);
+        var originalItem = (await sales.GetLinesBySaleIdAsync(originalId))
+            .Single(line => !DiscountKeys.IsEconomicAdjustment(line.Barcode));
+        var refundId = await InsertReversalAsync(
+            sales,
+            "LEGACY-ECON-REFUND",
+            SaleKind.Refund,
+            originalId,
+            originalItem,
+            quantity: 1,
+            total: -90);
+
+        string legacyPayload;
+        string legacyHash;
+        using (var conn = db.Factory.Open())
+        {
+            legacyPayload = (await conn.ExecuteScalarAsync<string>(
+                "SELECT payload_json FROM sales_sync_outbox WHERE sale_id = @refundId;",
+                new { refundId }))!;
+            var legacy = PosSalesSyncRequestBuilder.DeserializeCanonical(legacyPayload);
+            var syncedSale = legacy.Sales.Single();
+            syncedSale.Amounts.DiscountClp = 0;
+            syncedSale.Amounts.NetClp = -100;
+            syncedSale.Amounts.PaidClp = -100;
+            syncedSale.Payments.Single().AmountClp = -100;
+            legacyPayload = PosSalesSyncRequestBuilder.SerializeCanonical(legacy);
+            legacyHash = PosSalesSyncRequestBuilder.Sha256Hex(legacyPayload);
+            await conn.ExecuteAsync(@"
+UPDATE sales_sync_outbox
+SET payload_json = @legacyPayload, payload_hash = @legacyHash
+WHERE sale_id = @refundId;",
+                new { refundId, legacyPayload, legacyHash });
+        }
+
+        var request = PosSalesSyncRequestBuilder.DeserializeCanonical(legacyPayload);
+        Assert.AreEqual(
+            ReversalEconomicsPolicy.MismatchCode,
+            await sales.GetPersistedReversalEconomicsErrorAsync(refundId, request));
+        using (var conn = db.Factory.Open())
+        {
+            var persisted = await conn.QuerySingleAsync<SalesSyncOutboxItem>(@"
+SELECT payload_json AS PayloadJson, payload_hash AS PayloadHash
+FROM sales_sync_outbox
+WHERE sale_id = @refundId;",
+                new { refundId });
+            Assert.AreEqual(legacyPayload, persisted.PayloadJson);
+            Assert.AreEqual(legacyHash, persisted.PayloadHash);
+        }
+
+        var historyError = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            sales.GetReversalEconomicsSnapshotAsync(originalId));
+        Assert.AreEqual(ReversalEconomicsPolicy.InvalidHistoryCode, historyError.Message);
+    }
+
     private static async Task<long> InsertSaleAsync(
         SaleRepository sales,
         string code,
         SaleKind kind,
-        long? relatedSaleId = null)
+        long? relatedSaleId = null,
+        int originalQuantity = 1)
     {
         long? relatedOriginalLineId = null;
         if (kind != SaleKind.Sale && relatedSaleId.HasValue)
@@ -304,8 +503,8 @@ UPDATE sale_lines SET name = 'Mutated line' WHERE saleId = @saleId;",
                 CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 Kind = (int)kind,
                 RelatedSaleId = relatedSaleId,
-                Total = kind == SaleKind.Sale ? 100 : -100,
-                PaidCash = kind == SaleKind.Sale ? 100 : -100
+                Total = kind == SaleKind.Sale ? 100L * originalQuantity : -100,
+                PaidCash = kind == SaleKind.Sale ? 100L * originalQuantity : -100
             },
             new[]
             {
@@ -313,11 +512,125 @@ UPDATE sale_lines SET name = 'Mutated line' WHERE saleId = @saleId;",
                 {
                     Barcode = "TEST-001",
                     Name = "Test",
-                    Quantity = 1,
+                    Quantity = kind == SaleKind.Sale ? originalQuantity : 1,
                     UnitPrice = 100,
                     RelatedOriginalLineId = relatedOriginalLineId
                 }
             });
+    }
+
+    private static async Task<long> InsertOriginalWithAdjustmentsAsync(
+        SaleRepository sales,
+        string code,
+        int quantity,
+        long unitPrice,
+        long discount,
+        long tax)
+    {
+        var gross = quantity * unitPrice;
+        var lines = new List<SaleLine>
+        {
+            new SaleLine
+            {
+                Barcode = "ECON-ITEM",
+                Name = "Economic item",
+                Quantity = quantity,
+                UnitPrice = unitPrice
+            }
+        };
+        if (discount > 0)
+        {
+            lines.Add(new SaleLine
+            {
+                Barcode = DiscountKeys.CartPrefix + "TEST",
+                Name = "Discount",
+                Quantity = 1,
+                UnitPrice = -discount
+            });
+        }
+        if (tax > 0)
+        {
+            lines.Add(new SaleLine
+            {
+                Barcode = DiscountKeys.TaxPrefix + "TEST",
+                Name = "Tax",
+                Quantity = 1,
+                UnitPrice = tax
+            });
+        }
+
+        var net = gross - discount + tax;
+        return await sales.InsertSaleAsync(
+            new Sale
+            {
+                Code = code,
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Kind = (int)SaleKind.Sale,
+                Total = net,
+                PaidCash = net
+            },
+            lines);
+    }
+
+    private static Task<long> InsertReversalAsync(
+        SaleRepository sales,
+        string code,
+        SaleKind kind,
+        long originalId,
+        SaleLine originalLine,
+        int quantity,
+        long total)
+    {
+        return sales.InsertSaleAsync(
+            new Sale
+            {
+                Code = code,
+                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Kind = (int)kind,
+                RelatedSaleId = originalId,
+                Total = total,
+                PaidCash = total
+            },
+            new[]
+            {
+                new SaleLine
+                {
+                    Barcode = originalLine.Barcode,
+                    Name = originalLine.Name,
+                    ProductId = originalLine.ProductId,
+                    Quantity = quantity,
+                    UnitPrice = originalLine.UnitPrice,
+                    RelatedOriginalLineId = originalLine.Id
+                }
+            });
+    }
+
+    private static async Task<PosSalesSyncRequest> GetPersistedRequestAsync(
+        SqliteConnectionFactory factory,
+        long saleId)
+    {
+        using var conn = factory.Open();
+        var payload = await conn.ExecuteScalarAsync<string>(
+            "SELECT payload_json FROM sales_sync_outbox WHERE sale_id = @saleId;",
+            new { saleId });
+        return PosSalesSyncRequestBuilder.DeserializeCanonical(payload);
+    }
+
+    private static void AssertReversalEconomics(
+        PosSalesSyncRequest request,
+        long gross,
+        long discount,
+        long tax,
+        long net)
+    {
+        var sale = request.Sales.Single();
+        Assert.IsTrue(sale.Lines.All(line => line.LineType == "item"));
+        Assert.AreEqual(gross, sale.Amounts.GrossClp);
+        Assert.AreEqual(discount, sale.Amounts.DiscountClp);
+        Assert.AreEqual(tax, sale.Amounts.TaxClp);
+        Assert.AreEqual(net, sale.Amounts.NetClp);
+        Assert.AreEqual(net, sale.Amounts.PaidClp);
+        Assert.AreEqual(net, sale.Payments.Sum(payment => payment.AmountClp));
     }
 
     private static async Task SaveShopAsync(SqliteConnectionFactory factory, string shopId, string shopCode)

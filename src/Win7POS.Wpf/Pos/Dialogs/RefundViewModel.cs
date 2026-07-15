@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using Win7POS.Core.Models;
+using Win7POS.Core.Pos;
 using Win7POS.Core.Util;
 using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Localization;
@@ -22,6 +23,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public RefundViewModel(RefundPreviewModel preview)
         {
             Preview = preview ?? throw new ArgumentNullException(nameof(preview));
+            if (Preview.Economics == null)
+                throw new ArgumentException(ReversalEconomicsPolicy.InvalidOriginalCode, nameof(preview));
             foreach (var x in preview.Lines)
             {
                 var row = new RefundLineRow
@@ -130,9 +133,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             get
             {
-                if (IsFullVoid)
-                    return Lines.Sum(x => (long)x.RemainingQty * x.UnitPriceMinor);
-                return Lines.Where(x => x.QtyToRefund > 0).Sum(x => (long)x.QtyToRefund * x.UnitPriceMinor);
+                var gross = IsFullVoid
+                    ? Lines.Sum(x => (long)x.RemainingQty * x.UnitPriceMinor)
+                    : Lines
+                        .Where(x => x.QtyToRefund > 0)
+                        .Sum(x => (long)x.QtyToRefund * x.UnitPriceMinor);
+                return gross == 0
+                    ? 0
+                    : -ReversalEconomicsPolicy.Calculate(Preview.Economics, gross).NetClp;
             }
         }
 

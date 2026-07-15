@@ -46,7 +46,23 @@ namespace Win7POS.Data.Online
                 .GetRemoteProductIdsAsync(
                     lines.Where(line => line.ProductId.HasValue).Select(line => line.ProductId.Value))
                 .ConfigureAwait(false);
-            var request = BuildCanonical(item, sale, lines, remoteProductIds);
+            ReversalEconomicsResult reversalEconomics = null;
+            if (sale.Kind == (int)SaleKind.Refund || sale.Kind == (int)SaleKind.Void)
+            {
+                if (!sale.RelatedSaleId.HasValue)
+                {
+                    throw new InvalidOperationException(ReversalEconomicsPolicy.InvalidOriginalCode);
+                }
+
+                var snapshot = await sales
+                    .GetReversalEconomicsSnapshotExcludingAsync(sale.RelatedSaleId.Value, sale.Id)
+                    .ConfigureAwait(false);
+                reversalEconomics = ReversalEconomicsPolicy.Calculate(
+                    snapshot,
+                    ReversalEconomicsPolicy.CalculateItemGross(lines));
+            }
+
+            var request = BuildCanonical(item, sale, lines, remoteProductIds, reversalEconomics);
             request.AppVersion = appVersion;
             request.DeviceToken = trustedSession.DeviceToken;
             request.PosSessionId = trustedSession.PosSessionId;
@@ -59,7 +75,8 @@ namespace Win7POS.Data.Online
             SalesSyncOutboxItem item,
             Sale sale,
             IReadOnlyList<SaleLine> lines,
-            IReadOnlyDictionary<long, string> remoteProductIds)
+            IReadOnlyDictionary<long, string> remoteProductIds,
+            ReversalEconomicsResult reversalEconomics = null)
         {
             if (item == null) throw new ArgumentNullException(nameof(item));
             if (sale == null) throw new ArgumentNullException(nameof(sale));
@@ -71,10 +88,16 @@ namespace Win7POS.Data.Online
                 : sale.Kind == (int)SaleKind.Refund
                     ? "refund"
                     : "sale";
+            var isReversal = !string.Equals(saleKind, "sale", StringComparison.Ordinal);
             if (!string.Equals(item.SchemaVersion, SchemaVersion, StringComparison.Ordinal) ||
                 !string.Equals(item.OperationType, saleKind, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("outbox_operation_mismatch");
+            }
+            if (isReversal && lines.Any(line =>
+                line == null || DiscountKeys.IsEconomicAdjustment(line.Barcode)))
+            {
+                throw new InvalidOperationException(ReversalEconomicsPolicy.MismatchCode);
             }
             var businessDate = DateTimeOffset
                 .FromUnixTimeMilliseconds(sale.CreatedAt)
@@ -93,7 +116,38 @@ namespace Win7POS.Data.Online
             var discountClp = syncLines
                 .Where(line => string.Equals(line.LineType, "discount", StringComparison.Ordinal))
                 .Sum(line => Math.Abs(line.AmountClp));
+            var taxClp = syncLines
+                .Where(line => string.Equals(line.LineType, "tax", StringComparison.Ordinal))
+                .Sum(line => Math.Abs(line.AmountClp));
             var payments = BuildPayments(sale);
+            if (!isReversal)
+            {
+                try
+                {
+                    if (sale.Total != checked(checked(grossClp - discountClp) + taxClp))
+                    {
+                        throw new InvalidOperationException("sale_economics_mismatch");
+                    }
+                }
+                catch (OverflowException)
+                {
+                    throw new InvalidOperationException("sale_economics_mismatch");
+                }
+            }
+            else
+            {
+                if (reversalEconomics == null ||
+                    reversalEconomics.GrossClp != grossClp ||
+                    reversalEconomics.NetClp != sale.Total ||
+                    sale.Change != 0 ||
+                    payments.Sum(payment => payment.AmountClp) != sale.Total)
+                {
+                    throw new InvalidOperationException(ReversalEconomicsPolicy.MismatchCode);
+                }
+
+                discountClp = reversalEconomics.DiscountClp;
+                taxClp = reversalEconomics.TaxClp;
+            }
             var clientSaleId = string.IsNullOrWhiteSpace(sale.ClientSaleId)
                 ? item.ClientSaleId
                 : sale.ClientSaleId;
@@ -117,7 +171,7 @@ namespace Win7POS.Data.Online
                             GrossClp = grossClp,
                             NetClp = sale.Total,
                             PaidClp = payments.Sum(payment => payment.AmountClp),
-                            TaxClp = 0,
+                            TaxClp = taxClp,
                         },
                         BusinessDate = businessDate,
                         ClientOriginalSaleId =
@@ -239,8 +293,9 @@ namespace Win7POS.Data.Online
 
             var barcode = line.Barcode ?? string.Empty;
             var isDiscount = DiscountKeys.IsDiscount(barcode);
+            var isTax = DiscountKeys.IsTax(barcode);
             var isManual = barcode.StartsWith(DiscountKeys.ManualPrefix, StringComparison.Ordinal);
-            var lineType = isDiscount ? "discount" : "item";
+            var lineType = isDiscount ? "discount" : isTax ? "tax" : "item";
             var signedAmount = line.LineTotal;
 
             if (isReversal && signedAmount > 0)
@@ -251,13 +306,17 @@ namespace Win7POS.Data.Online
             {
                 signedAmount = -Math.Abs(signedAmount);
             }
+            else if (isTax)
+            {
+                signedAmount = Math.Abs(signedAmount);
+            }
             else if (string.Equals(saleKind, "sale", StringComparison.Ordinal))
             {
                 signedAmount = Math.Abs(signedAmount);
             }
 
             var stockQuantityDelta = 0;
-            if (!isDiscount && !isManual && line.ProductId.HasValue)
+            if (!isDiscount && !isTax && !isManual && line.ProductId.HasValue)
             {
                 stockQuantityDelta =
                     string.Equals(saleKind, "refund", StringComparison.Ordinal) ||
@@ -313,7 +372,104 @@ namespace Win7POS.Data.Online
                 sale.Lines.Length > 0 &&
                 sale.Lines.All(line =>
                     line != null &&
+                    string.Equals(line.LineType, "item", StringComparison.Ordinal) &&
                     !string.IsNullOrWhiteSpace(line.ClientOriginalLineId));
+        }
+
+        public static bool HasExpectedReversalEconomics(
+            PosSalesSyncRequest request,
+            ReversalEconomicsResult expected)
+        {
+            var sales = request?.Sales;
+            if (expected == null || sales == null || sales.Length != 1 || sales[0] == null)
+            {
+                return false;
+            }
+
+            var sale = sales[0];
+            if ((!string.Equals(sale.Kind, "refund", StringComparison.Ordinal) &&
+                 !string.Equals(sale.Kind, "void", StringComparison.Ordinal)) ||
+                sale.Amounts == null ||
+                sale.Lines == null ||
+                sale.Lines.Length == 0 ||
+                sale.Payments == null ||
+                !HasCompleteReversalBindings(request))
+            {
+                return false;
+            }
+
+            try
+            {
+                var gross = sale.Lines.Aggregate(0L, (total, line) =>
+                {
+                    if (line == null ||
+                        !string.Equals(line.LineType, "item", StringComparison.Ordinal) ||
+                        line.Quantity <= 0 ||
+                        line.UnitAmountClp < 0 ||
+                        line.AmountClp >= 0 ||
+                        line.AmountClp != -checked((long)line.Quantity * line.UnitAmountClp))
+                    {
+                        throw new InvalidOperationException(ReversalEconomicsPolicy.MismatchCode);
+                    }
+
+                    return checked(total + Math.Abs(line.AmountClp));
+                });
+                var paid = sale.Payments.Aggregate(
+                    0L,
+                    (total, payment) => checked(total + (payment?.AmountClp ?? long.MaxValue)));
+
+                return gross == expected.GrossClp &&
+                    sale.Amounts.GrossClp == expected.GrossClp &&
+                    sale.Amounts.DiscountClp == expected.DiscountClp &&
+                    sale.Amounts.TaxClp == expected.TaxClp &&
+                    sale.Amounts.NetClp == expected.NetClp &&
+                    sale.Amounts.PaidClp == expected.NetClp &&
+                    sale.Amounts.ChangeClp == 0 &&
+                    paid == expected.NetClp &&
+                    expected.NetClp == -checked(
+                        checked(expected.GrossClp - expected.DiscountClp) + expected.TaxClp) &&
+                    sale.Payments.All(payment => payment != null && payment.ChangeClp == 0);
+            }
+            catch (Exception ex) when (ex is OverflowException || ex is ArgumentOutOfRangeException)
+            {
+                return false;
+            }
+        }
+
+        public static bool TryGetReversalGross(PosSalesSyncRequest request, out long grossClp)
+        {
+            grossClp = 0;
+            var sales = request?.Sales;
+            if (sales == null || sales.Length != 1 || sales[0] == null ||
+                sales[0].Lines == null || sales[0].Lines.Length == 0 ||
+                (!string.Equals(sales[0].Kind, "refund", StringComparison.Ordinal) &&
+                 !string.Equals(sales[0].Kind, "void", StringComparison.Ordinal)))
+            {
+                return false;
+            }
+
+            try
+            {
+                foreach (var line in sales[0].Lines)
+                {
+                    if (line == null ||
+                        !string.Equals(line.LineType, "item", StringComparison.Ordinal) ||
+                        line.AmountClp >= 0)
+                    {
+                        grossClp = 0;
+                        return false;
+                    }
+
+                    grossClp = checked(grossClp + Math.Abs(line.AmountClp));
+                }
+
+                return grossClp > 0;
+            }
+            catch (OverflowException)
+            {
+                grossClp = 0;
+                return false;
+            }
         }
 
         private static PosSalesSyncPayment[] BuildPayments(Sale sale)

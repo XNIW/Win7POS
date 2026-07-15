@@ -158,6 +158,15 @@ namespace Win7POS.Wpf.Pos.Online
                             continue;
                         }
 
+                        var economicsError = await _sales
+                            .GetPersistedReversalEconomicsErrorAsync(item.SaleId, request)
+                            .ConfigureAwait(false);
+                        if (!string.IsNullOrWhiteSpace(economicsError))
+                        {
+                            await MarkPreflightBlockedAsync(item, economicsError, nowMs).ConfigureAwait(false);
+                            continue;
+                        }
+
                         request.AppVersion = typeof(PosSalesSyncService).Assembly.GetName().Version?.ToString();
                         request.DeviceToken = trustedSession.DeviceToken;
                         request.PosSessionId = trustedSession.PosSessionId;

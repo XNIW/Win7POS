@@ -14,6 +14,7 @@ namespace Win7POS.Core.Pos
         public const string CartPrefix = "DISC:CART:";
         public const string LinePrefix = "DISC:LINE:";
         public const string CartPctPrefix = "DISC:CART:PCT:";
+        public const string TaxPrefix = "TAX:";
         public const string ManualPrefix = "MANUAL:";
 
         public static bool IsDiscount(string barcode)
@@ -24,8 +25,17 @@ namespace Win7POS.Core.Pos
         public static bool IsReservedPrefix(string barcode)
         {
             return !string.IsNullOrEmpty(barcode) &&
-                (barcode.StartsWith(Prefix, StringComparison.Ordinal) || barcode.StartsWith(ManualPrefix, StringComparison.Ordinal));
+                (barcode.StartsWith(Prefix, StringComparison.Ordinal) ||
+                 barcode.StartsWith(TaxPrefix, StringComparison.Ordinal) ||
+                 barcode.StartsWith(ManualPrefix, StringComparison.Ordinal));
         }
+
+        public static bool IsTax(string barcode)
+        {
+            return !string.IsNullOrEmpty(barcode) && barcode.StartsWith(TaxPrefix, StringComparison.Ordinal);
+        }
+
+        public static bool IsEconomicAdjustment(string barcode) => IsDiscount(barcode) || IsTax(barcode);
 
         public static string BuildCartPct(int percent) => CartPctPrefix + percent;
 

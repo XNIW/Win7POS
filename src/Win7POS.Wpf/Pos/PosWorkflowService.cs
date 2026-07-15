@@ -956,6 +956,9 @@ namespace Win7POS.Wpf.Pos
                     throw new InvalidOperationException(PosLocalization.T("refund.onlyNormalSalesRefundable"));
 
                 var lines = await _sales.GetReturnableLinesAsync(originalSaleId).ConfigureAwait(false);
+                var economics = await _sales
+                    .GetReversalEconomicsSnapshotAsync(originalSaleId)
+                    .ConfigureAwait(false);
                 var rows = lines.Select(x => new RefundPreviewLine
                 {
                     OriginalLineId = x.OriginalLineId,
@@ -968,6 +971,10 @@ namespace Win7POS.Wpf.Pos
                     RemainingQty = x.RemainingQty,
                     QtyToRefund = 0
                 }).ToList();
+                var remainingGross = rows.Sum(x => (long)x.RemainingQty * x.UnitPriceMinor);
+                var maxRefundable = remainingGross == 0
+                    ? 0
+                    : -ReversalEconomicsPolicy.Calculate(economics, remainingGross).NetClp;
 
                 return new RefundPreviewModel
                 {
@@ -976,8 +983,9 @@ namespace Win7POS.Wpf.Pos
                     OriginalCreatedAtMs = sale.CreatedAt,
                     OriginalTotalMinor = sale.Total,
                     IsAlreadyVoided = sale.VoidedBySaleId.HasValue,
+                    Economics = economics,
                     Lines = rows,
-                    MaxRefundableMinor = rows.Sum(x => x.RemainingQty * x.UnitPriceMinor)
+                    MaxRefundableMinor = maxRefundable
                 };
             }
             finally
@@ -1002,6 +1010,9 @@ namespace Win7POS.Wpf.Pos
                     throw new InvalidOperationException(PosLocalization.T("refund.saleNotRefundable"));
 
                 var returnable = await _sales.GetReturnableLinesAsync(req.OriginalSaleId).ConfigureAwait(false);
+                var economics = await _sales
+                    .GetReversalEconomicsSnapshotAsync(req.OriginalSaleId)
+                    .ConfigureAwait(false);
                 var returnableMap = returnable.ToDictionary(x => x.OriginalLineId, x => x);
                 if (returnableMap.Count == 0)
                     throw new InvalidOperationException(PosLocalization.T("refund.noRefundableLines"));
@@ -1050,7 +1061,11 @@ namespace Win7POS.Wpf.Pos
                 if (selected.Count == 0)
                     throw new InvalidOperationException(PosLocalization.T("refund.noSelectedLines"));
 
-                var refundPositiveTotal = selected.Sum(x => x.QtyToRefund * x.UnitPriceMinor);
+                var selectedGross = selected.Sum(x => (long)x.QtyToRefund * x.UnitPriceMinor);
+                if (selectedGross <= 0)
+                    throw new InvalidOperationException(PosLocalization.T("refund.invalidTotal"));
+                var allocation = ReversalEconomicsPolicy.Calculate(economics, selectedGross);
+                var refundPositiveTotal = -allocation.NetClp;
                 if (refundPositiveTotal <= 0)
                     throw new InvalidOperationException(PosLocalization.T("refund.invalidTotal"));
 
@@ -1068,7 +1083,7 @@ namespace Win7POS.Wpf.Pos
                     Kind = req.IsFullVoid ? (int)SaleKind.Void : (int)SaleKind.Refund,
                     RelatedSaleId = original.Id,
                     Reason = (req.Reason ?? string.Empty).Trim(),
-                    Total = -Math.Abs(refundPositiveTotal),
+                    Total = allocation.NetClp,
                     PaidCash = -Math.Abs(cash),
                     PaidCard = -Math.Abs(card),
                     Change = 0
@@ -2146,6 +2161,7 @@ namespace Win7POS.Wpf.Pos
         public long OriginalCreatedAtMs { get; set; }
         public long OriginalTotalMinor { get; set; }
         public bool IsAlreadyVoided { get; set; }
+        public ReversalEconomicsSnapshot Economics { get; set; }
         public long MaxRefundableMinor { get; set; }
         public List<RefundPreviewLine> Lines { get; set; } = new List<RefundPreviewLine>();
     }

@@ -265,12 +265,13 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
 SELECT COALESCE(SUM(ABS(sl.quantity)), 0)
 FROM sale_lines sl
 JOIN sales s ON s.id = sl.saleId
-WHERE s.kind = @kindRefund
+WHERE s.kind IN (@kindRefund, @kindVoid)
   AND s.related_sale_id = @originalSaleId
   AND sl.related_original_line_id = @originalLineId",
                 new
                 {
                     kindRefund = (int)SaleKind.Refund,
+                    kindVoid = (int)SaleKind.Void,
                     originalSaleId,
                     originalLineId
                 }).ConfigureAwait(false);
@@ -293,14 +294,23 @@ SELECT
     SELECT SUM(ABS(rl.quantity))
     FROM sale_lines rl
     JOIN sales rs ON rs.id = rl.saleId
-    WHERE rs.kind = @kindRefund
+    WHERE rs.kind IN (@kindRefund, @kindVoid)
       AND rs.related_sale_id = @saleId
       AND rl.related_original_line_id = l.id
   ), 0) AS RefundedQty
 FROM sale_lines l
 WHERE l.saleId = @saleId
+  AND COALESCE(l.barcode, '') NOT LIKE @discountPrefix
+  AND COALESCE(l.barcode, '') NOT LIKE @taxPrefix
 ORDER BY l.id ASC",
-                new { saleId, kindRefund = (int)SaleKind.Refund }).ConfigureAwait(false);
+                new
+                {
+                    saleId,
+                    kindRefund = (int)SaleKind.Refund,
+                    kindVoid = (int)SaleKind.Void,
+                    discountPrefix = DiscountKeys.Prefix + "%",
+                    taxPrefix = DiscountKeys.TaxPrefix + "%"
+                }).ConfigureAwait(false);
 
             var list = rows.ToList();
             foreach (var x in list)
@@ -309,6 +319,63 @@ ORDER BY l.id ASC",
                 if (x.RemainingQty < 0) x.RemainingQty = 0;
             }
             return list;
+        }
+
+        public async Task<ReversalEconomicsSnapshot> GetReversalEconomicsSnapshotAsync(long originalSaleId)
+        {
+            using var conn = await _factory.OpenAsync().ConfigureAwait(false);
+            return await PosReversalEconomicsReader
+                .LoadAsync(conn, null, originalSaleId, null)
+                .ConfigureAwait(false);
+        }
+
+        internal async Task<ReversalEconomicsSnapshot> GetReversalEconomicsSnapshotExcludingAsync(
+            long originalSaleId,
+            long excludedReversalSaleId)
+        {
+            using var conn = await _factory.OpenAsync().ConfigureAwait(false);
+            return await PosReversalEconomicsReader
+                .LoadAsync(conn, null, originalSaleId, excludedReversalSaleId)
+                .ConfigureAwait(false);
+        }
+
+        public async Task<string> GetPersistedReversalEconomicsErrorAsync(
+            long saleId,
+            PosSalesSyncRequest request)
+        {
+            using var conn = await _factory.OpenAsync().ConfigureAwait(false);
+            var row = await conn.QuerySingleOrDefaultAsync<PersistedReversalRow>(@"
+SELECT kind AS Kind, related_sale_id AS RelatedSaleId, total AS SaleTotal
+FROM sales
+WHERE id = @saleId;",
+                new { saleId }).ConfigureAwait(false);
+            if (row == null ||
+                (row.Kind != (int)SaleKind.Refund && row.Kind != (int)SaleKind.Void))
+            {
+                return null;
+            }
+
+            if (!row.RelatedSaleId.HasValue ||
+                !PosSalesSyncRequestBuilder.TryGetReversalGross(request, out var grossClp))
+            {
+                return ReversalEconomicsPolicy.MismatchCode;
+            }
+
+            try
+            {
+                var snapshot = await PosReversalEconomicsReader
+                    .LoadAsync(conn, null, row.RelatedSaleId.Value, saleId)
+                    .ConfigureAwait(false);
+                var expected = ReversalEconomicsPolicy.Calculate(snapshot, grossClp);
+                return row.SaleTotal == expected.NetClp &&
+                    PosSalesSyncRequestBuilder.HasExpectedReversalEconomics(request, expected)
+                        ? null
+                        : ReversalEconomicsPolicy.MismatchCode;
+            }
+            catch (InvalidOperationException ex) when (IsReversalEconomicsCode(ex.Message))
+            {
+                return ex.Message;
+            }
         }
 
         public async Task MarkSaleVoidedAsync(long originalSaleId, long refundSaleId, long nowMs)
@@ -492,7 +559,7 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
                 var barcode = (line.Barcode ?? string.Empty).Trim();
                 if (barcode.Length == 0 ||
                     line.Quantity == 0 ||
-                    DiscountKeys.IsDiscount(barcode) ||
+                    DiscountKeys.IsEconomicAdjustment(barcode) ||
                     barcode.StartsWith(DiscountKeys.ManualPrefix, StringComparison.Ordinal))
                 {
                     continue;
@@ -603,11 +670,29 @@ WHERE id IN @productIds;",
                 SaleId = saleId,
                 SchemaVersion = PosOnlineContract.SalesSchemaVersion
             };
+            ReversalEconomicsResult reversalEconomics = null;
+            if (persistedSale.Kind == (int)SaleKind.Refund ||
+                persistedSale.Kind == (int)SaleKind.Void)
+            {
+                if (!persistedSale.RelatedSaleId.HasValue)
+                {
+                    throw new InvalidOperationException(ReversalEconomicsPolicy.InvalidOriginalCode);
+                }
+
+                var snapshot = await PosReversalEconomicsReader
+                    .LoadAsync(conn, tx, persistedSale.RelatedSaleId.Value, persistedSale.Id)
+                    .ConfigureAwait(false);
+                reversalEconomics = ReversalEconomicsPolicy.Calculate(
+                    snapshot,
+                    ReversalEconomicsPolicy.CalculateItemGross(persistedLines));
+            }
+
             var canonicalRequest = PosSalesSyncRequestBuilder.BuildCanonical(
                 canonicalItem,
                 persistedSale,
                 persistedLines,
-                remoteProductIds);
+                remoteProductIds,
+                reversalEconomics);
             var clientBatchId = canonicalRequest.Batch.ClientBatchId;
             var payloadJson = PosSalesSyncRequestBuilder.SerializeCanonical(canonicalRequest);
             var payloadHash = PosSalesSyncRequestBuilder.Sha256Hex(payloadJson);
@@ -770,7 +855,16 @@ SELECT
   current_outbox.origin_shop_id AS CurrentOriginShopId,
   current_outbox.origin_shop_code AS CurrentOriginShopCode,
   official_id.value AS OfficialShopId,
-  official_code.value AS OfficialShopCode
+  official_code.value AS OfficialShopCode,
+  (
+    SELECT COUNT(1)
+    FROM sales prior
+    LEFT JOIN sales_sync_outbox prior_outbox ON prior_outbox.sale_id = prior.id
+    WHERE prior.related_sale_id = current.related_sale_id
+      AND prior.kind IN (@kindRefund, @kindVoid)
+      AND prior.id < current.id
+      AND COALESCE(prior_outbox.status, '') <> 'acked'
+  ) AS PriorReversalNotAcked
 FROM sales current
 LEFT JOIN sales original ON original.id = current.related_sale_id
 LEFT JOIN sales_sync_outbox original_outbox ON original_outbox.sale_id = original.id
@@ -778,7 +872,12 @@ LEFT JOIN sales_sync_outbox current_outbox ON current_outbox.sale_id = current.i
 LEFT JOIN app_settings official_id ON official_id.key = 'pos.official_shop.shop_id'
 LEFT JOIN app_settings official_code ON official_code.key = 'pos.official_shop.shop_code'
 WHERE current.id = @saleId;",
-                new { saleId }).ConfigureAwait(false);
+                new
+                {
+                    saleId,
+                    kindRefund = (int)SaleKind.Refund,
+                    kindVoid = (int)SaleKind.Void
+                }).ConfigureAwait(false);
             if (row == null)
             {
                 return false;
@@ -792,6 +891,7 @@ WHERE current.id = @saleId;",
             return row.RelatedSaleId.HasValue &&
                 row.OriginalKind == (int)SaleKind.Sale &&
                 string.Equals(row.OriginalOutboxStatus, "acked", StringComparison.Ordinal) &&
+                row.PriorReversalNotAcked == 0 &&
                 string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
                     row.OriginalOriginShopId,
                     row.OriginalOriginShopCode,
@@ -1011,6 +1111,14 @@ WHERE id = @outboxId
                     : "sale";
         }
 
+        private static bool IsReversalEconomicsCode(string code)
+        {
+            return string.Equals(code, ReversalEconomicsPolicy.InvalidOriginalCode, StringComparison.Ordinal) ||
+                string.Equals(code, ReversalEconomicsPolicy.InvalidHistoryCode, StringComparison.Ordinal) ||
+                string.Equals(code, ReversalEconomicsPolicy.PriorSyncUnresolvedCode, StringComparison.Ordinal) ||
+                string.Equals(code, ReversalEconomicsPolicy.MismatchCode, StringComparison.Ordinal);
+        }
+
         private static string BuildClientSaleId(long saleId)
         {
             return "win7pos-sale-" + saleId.ToString(CultureInfo.InvariantCulture);
@@ -1064,28 +1172,97 @@ WHERE sale_id = @originalSaleId;",
                 }
             }
 
-            var originalLineIds = (lines ?? Array.Empty<SaleLine>())
-                .Where(line => line != null && line.RelatedOriginalLineId.HasValue)
+            var reversalLines = (lines ?? Array.Empty<SaleLine>()).ToArray();
+            if (reversalLines.Length == 0 || reversalLines.Any(line =>
+                line == null ||
+                line.Quantity <= 0 ||
+                line.UnitPrice < 0 ||
+                DiscountKeys.IsEconomicAdjustment(line.Barcode) ||
+                !line.RelatedOriginalLineId.HasValue ||
+                line.RelatedOriginalLineId.Value <= 0))
+            {
+                throw new InvalidOperationException(ReversalEconomicsPolicy.MismatchCode);
+            }
+
+            var originalLineIds = reversalLines
                 .Select(line => line.RelatedOriginalLineId.Value)
                 .Distinct()
                 .ToArray();
-            if (originalLineIds.Length > 0)
-            {
-                var matched = await conn.ExecuteScalarAsync<long>(@"
-SELECT COUNT(1)
-FROM sale_lines
-WHERE saleId = @originalSaleId
-  AND id IN @originalLineIds;",
+            var originalLines = (await conn.QueryAsync<BoundaryOriginalLineRow>(@"
+SELECT
+  original.id AS OriginalLineId,
+  original.quantity AS SoldQty,
+  original.unitPrice AS UnitPrice,
+  original.barcode AS Barcode,
+  COALESCE(SUM(CASE WHEN reversal_sale.id IS NOT NULL THEN ABS(reversal.quantity) ELSE 0 END), 0) AS ReversedQty
+FROM sale_lines original
+LEFT JOIN sale_lines reversal ON reversal.related_original_line_id = original.id
+LEFT JOIN sales reversal_sale ON reversal_sale.id = reversal.saleId
+  AND reversal_sale.related_sale_id = @originalSaleId
+  AND reversal_sale.kind IN (@kindRefund, @kindVoid)
+WHERE original.saleId = @originalSaleId
+  AND original.id IN @originalLineIds
+GROUP BY original.id, original.quantity, original.unitPrice, original.barcode;",
                     new
                     {
                         originalSaleId = sale.RelatedSaleId.Value,
-                        originalLineIds
+                        originalLineIds,
+                        kindRefund = (int)SaleKind.Refund,
+                        kindVoid = (int)SaleKind.Void
                     },
-                    tx).ConfigureAwait(false);
-                if (matched != originalLineIds.Length)
+                    tx).ConfigureAwait(false)).ToArray();
+            if (originalLines.Length != originalLineIds.Length)
+            {
+                throw new InvalidOperationException("Reversal lines do not belong to the original sale.");
+            }
+
+            var originalById = originalLines.ToDictionary(line => line.OriginalLineId);
+            foreach (var group in reversalLines.GroupBy(line => line.RelatedOriginalLineId.Value))
+            {
+                var source = originalById[group.Key];
+                long requestedQty;
+                try
                 {
-                    throw new InvalidOperationException("Reversal lines do not belong to the original sale.");
+                    requestedQty = group.Aggregate(
+                        0L,
+                        (total, line) => checked(total + (long)line.Quantity));
                 }
+                catch (OverflowException)
+                {
+                    throw new InvalidOperationException(ReversalEconomicsPolicy.MismatchCode);
+                }
+
+                if (DiscountKeys.IsEconomicAdjustment(source.Barcode) ||
+                    group.Any(line => line.UnitPrice != source.UnitPrice) ||
+                    requestedQty > source.SoldQty - source.ReversedQty)
+                {
+                    throw new InvalidOperationException(ReversalEconomicsPolicy.MismatchCode);
+                }
+            }
+
+            var snapshot = await PosReversalEconomicsReader
+                .LoadAsync(conn, tx, sale.RelatedSaleId.Value, null)
+                .ConfigureAwait(false);
+            var economics = ReversalEconomicsPolicy.Calculate(
+                snapshot,
+                ReversalEconomicsPolicy.CalculateItemGross(reversalLines));
+            long paidTotal;
+            try
+            {
+                paidTotal = checked(sale.PaidCash + sale.PaidCard);
+            }
+            catch (OverflowException)
+            {
+                throw new InvalidOperationException(ReversalEconomicsPolicy.MismatchCode);
+            }
+
+            if (sale.Total != economics.NetClp ||
+                sale.PaidCash > 0 ||
+                sale.PaidCard > 0 ||
+                sale.Change != 0 ||
+                paidTotal != sale.Total)
+            {
+                throw new InvalidOperationException(ReversalEconomicsPolicy.MismatchCode);
             }
         }
 
@@ -1214,6 +1391,23 @@ SELECT last_insert_rowid();", line, tx).ConfigureAwait(false);
         public string CurrentOriginShopCode { get; set; }
         public string OfficialShopId { get; set; }
         public string OfficialShopCode { get; set; }
+        public long PriorReversalNotAcked { get; set; }
+    }
+
+    internal sealed class PersistedReversalRow
+    {
+        public int Kind { get; set; }
+        public long? RelatedSaleId { get; set; }
+        public long SaleTotal { get; set; }
+    }
+
+    internal sealed class BoundaryOriginalLineRow
+    {
+        public string Barcode { get; set; }
+        public long OriginalLineId { get; set; }
+        public long ReversedQty { get; set; }
+        public long SoldQty { get; set; }
+        public long UnitPrice { get; set; }
     }
 
     internal sealed class OriginalAckBindingRow
