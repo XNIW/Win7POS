@@ -1,4 +1,5 @@
 using System.Threading.Tasks;
+using Win7POS.Core.Online;
 using Win7POS.Core.Security;
 
 namespace Win7POS.Wpf.Infrastructure.Security
@@ -7,7 +8,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
     {
         Success,
         Failed,
-        LockedOut
+        LockedOut,
+        AuthorizationExpired
     }
 
     public interface IOperatorSession
@@ -17,9 +19,14 @@ namespace Win7POS.Wpf.Infrastructure.Security
         bool CurrentUserIsAdmin { get; }
         string CurrentDisplayName { get; }
         string CurrentRoleName { get; }
+        string LastAuthorizationFailureCode { get; }
 
         /// <summary>Esegue login con username e PIN. Ritorna l'esito dell'autenticazione.</summary>
         Task<LoginResult> LoginAsync(string username, string pin);
+
+        PosOfflineAuthorizationLeaseDecision EvaluateAuthorizationLease();
+
+        bool EnsureAuthorizationValid();
 
         void Logout();
 

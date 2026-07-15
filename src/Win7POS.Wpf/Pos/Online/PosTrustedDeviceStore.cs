@@ -46,6 +46,7 @@ namespace Win7POS.Wpf.Pos.Online
                 session = new PosTrustedDeviceSession
                 {
                     DeviceToken = UnprotectToString(state.ProtectedDeviceSecret),
+                    LastOkLocalAt = state.LastOkLocalAt,
                     LastOkServerAt = state.LastOkServerAt,
                     PosSessionId = state.PosSessionId,
                     SessionExpiresAt = state.SessionExpiresAt,
@@ -78,10 +79,22 @@ namespace Win7POS.Wpf.Pos.Online
                 throw new ArgumentNullException(nameof(response));
             }
 
+            var localReceiptAt = DateTimeOffset.UtcNow;
+            var candidate = new PosTrustedDeviceSession
+            {
+                LastOkLocalAt = localReceiptAt.ToString("O"),
+                LastOkServerAt = response.ServerTime,
+                PosSessionId = response.Session.PosSessionId,
+                SessionExpiresAt = response.Session.ExpiresAt,
+                ShopDeviceId = response.Device.ShopDeviceId
+            };
+            EnsureFreshLease(candidate, localReceiptAt);
+
             var state = new StoredTrustedDeviceState
             {
                 FormatVersion = CurrentFormatVersion,
-                LastOkServerAt = DateTimeOffset.UtcNow.ToString("O"),
+                LastOkLocalAt = candidate.LastOkLocalAt,
+                LastOkServerAt = candidate.LastOkServerAt,
                 PosSessionId = response.Session.PosSessionId,
                 ProtectedDeviceSecret = ProtectString(response.TrustedDeviceToken),
                 ProtectedSessionSecret = ProtectString(response.Session.SessionToken),
@@ -111,10 +124,22 @@ namespace Win7POS.Wpf.Pos.Online
                 ? session.SessionToken
                 : response.Session.SessionToken;
 
+            var localReceiptAt = DateTimeOffset.UtcNow;
+            var candidate = new PosTrustedDeviceSession
+            {
+                LastOkLocalAt = localReceiptAt.ToString("O"),
+                LastOkServerAt = response.ServerTime,
+                PosSessionId = response.Session.PosSessionId,
+                SessionExpiresAt = response.Session.ExpiresAt,
+                ShopDeviceId = session.ShopDeviceId
+            };
+            EnsureFreshLease(candidate, localReceiptAt);
+
             var state = new StoredTrustedDeviceState
             {
                 FormatVersion = CurrentFormatVersion,
-                LastOkServerAt = DateTimeOffset.UtcNow.ToString("O"),
+                LastOkLocalAt = candidate.LastOkLocalAt,
+                LastOkServerAt = candidate.LastOkServerAt,
                 PosSessionId = response.Session.PosSessionId,
                 ProtectedDeviceSecret = ProtectString(session.DeviceToken),
                 ProtectedSessionSecret = ProtectString(sessionToken),
@@ -131,6 +156,17 @@ namespace Win7POS.Wpf.Pos.Online
             };
 
             SaveState(state);
+        }
+
+        private static void EnsureFreshLease(
+            PosTrustedDeviceSession session,
+            DateTimeOffset localReceiptAt)
+        {
+            var decision = PosOfflineAuthorizationLeasePolicy.Evaluate(session, localReceiptAt);
+            if (!decision.Allowed)
+            {
+                throw new InvalidDataException("Invalid POS authorization lease: " + decision.Code);
+            }
         }
 
         public void Clear()
@@ -233,6 +269,9 @@ namespace Win7POS.Wpf.Pos.Online
 
             [DataMember(Name = "lastOkServerAt")]
             public string LastOkServerAt { get; set; }
+
+            [DataMember(Name = "lastOkLocalAt", EmitDefaultValue = false)]
+            public string LastOkLocalAt { get; set; }
 
             [DataMember(Name = "posSessionId")]
             public string PosSessionId { get; set; }

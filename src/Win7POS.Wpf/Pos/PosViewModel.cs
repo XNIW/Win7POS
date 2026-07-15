@@ -664,6 +664,20 @@ namespace Win7POS.Wpf.Pos
                 return;
             }
 
+            try
+            {
+                _permissionService?.Demand(PermissionCodes.PosPay, PosLocalization.Current.Text("operations.pay"));
+            }
+            catch (PosAuthorizationLeaseException ex)
+            {
+                StatusMessage = ex.Message;
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.Current.Text("common.userPermissionDenied"),
+                    ex.Message);
+                return;
+            }
+
             IsBusy = true;
             try
             {
@@ -1345,6 +1359,15 @@ namespace Win7POS.Wpf.Pos
                 _permissionService?.Demand(permissionCode, operationText);
                 return true;
             }
+            catch (PosAuthorizationLeaseException ex)
+            {
+                StatusMessage = ex.Message;
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.Current.Text("common.userPermissionDenied"),
+                    ex.Message);
+                return false;
+            }
             catch (InvalidOperationException)
             {
                 if (_overrideAuthService == null)
@@ -1401,6 +1424,16 @@ namespace Win7POS.Wpf.Pos
                 }
 
                 var req = vm.BuildRequest();
+                if (_operatorSession == null || !_operatorSession.EnsureAuthorizationValid())
+                {
+                    StatusMessage = PosLocalization.Current.Text("access.login.authorizationExpired");
+                    ModernMessageDialog.Show(
+                        DialogOwnerHelper.GetSafeOwner(),
+                        PosLocalization.Current.Text("common.userPermissionDenied"),
+                        StatusMessage);
+                    return;
+                }
+
                 if (req.IsFullVoid && !(await TryDemandOrOverrideAsync(PermissionCodes.PosVoidSale, PosLocalization.Current.Text("sales.kind.void")).ConfigureAwait(true)))
                 {
                     StatusMessage = PosLocalization.Current.Text("pos.status.voidPermissionDenied");

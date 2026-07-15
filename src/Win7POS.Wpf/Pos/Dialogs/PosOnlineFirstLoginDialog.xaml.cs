@@ -299,6 +299,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
                     if (IsAuthorizationDenied(result))
                     {
+                        _trustedDeviceStore.Clear();
                         LogAccessWarning(
                             attemptId,
                             "online_bootstrap_denied",
@@ -524,6 +525,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var loginResult = await session.LoginAsync(username, credential).ConfigureAwait(true);
             switch (loginResult)
             {
+                case LoginResult.AuthorizationExpired:
+                    LogAccessWarning(
+                        attemptId,
+                        "local_login_result",
+                        "result=blocked reason=authorization_lease_denied code=" +
+                        SafeAuditValue(session.LastAuthorizationFailureCode) +
+                        " mode=" + SafeAuditValue(mode));
+                    ShowError(PosLocalization.T("access.login.authorizationExpired"));
+                    return false;
                 case LoginResult.LockedOut:
                     LogAccessWarning(attemptId, "local_login_result", "result=failed reason=locked_out mode=" + SafeAuditValue(mode));
                     ShowError(PosLocalization.T("operator.login.locked"));

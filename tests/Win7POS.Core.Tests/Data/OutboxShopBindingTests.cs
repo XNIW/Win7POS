@@ -37,6 +37,15 @@ ORDER BY id;")).ToArray();
         Assert.IsTrue(rows.All(row => row.OriginShopId == "shop-a"));
         Assert.IsTrue(rows.All(row => row.OriginShopCode == "SHOP-A"));
         Assert.IsTrue(rows.All(row => row.SchemaVersion == PosOnlineContract.SalesSchemaVersion));
+
+        var payloads = (await conn.QueryAsync<string>(
+            "SELECT payload_json FROM sales_sync_outbox ORDER BY id;")).ToArray();
+        var normal = PosSalesSyncRequestBuilder.DeserializeCanonical(payloads[0]);
+        var refund = PosSalesSyncRequestBuilder.DeserializeCanonical(payloads[1]);
+        var voidRequest = PosSalesSyncRequestBuilder.DeserializeCanonical(payloads[2]);
+        Assert.IsNull(normal.Sales.Single().Lines.Single().ClientOriginalLineId);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(refund.Sales.Single().Lines.Single().ClientOriginalLineId));
+        Assert.IsFalse(string.IsNullOrWhiteSpace(voidRequest.Sales.Single().Lines.Single().ClientOriginalLineId));
     }
 
     [TestMethod]
@@ -282,6 +291,12 @@ UPDATE sale_lines SET name = 'Mutated line' WHERE saleId = @saleId;",
         SaleKind kind,
         long? relatedSaleId = null)
     {
+        long? relatedOriginalLineId = null;
+        if (kind != SaleKind.Sale && relatedSaleId.HasValue)
+        {
+            relatedOriginalLineId = (await sales.GetLinesBySaleIdAsync(relatedSaleId.Value)).Single().Id;
+        }
+
         return await sales.InsertSaleAsync(
             new Sale
             {
@@ -299,7 +314,8 @@ UPDATE sale_lines SET name = 'Mutated line' WHERE saleId = @saleId;",
                     Barcode = "TEST-001",
                     Name = "Test",
                     Quantity = 1,
-                    UnitPrice = 100
+                    UnitPrice = 100,
+                    RelatedOriginalLineId = relatedOriginalLineId
                 }
             });
     }

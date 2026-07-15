@@ -215,7 +215,7 @@ namespace Win7POS.Wpf.Pos
                 OperatorSessionHolder.Current = operatorSession;
             }
             var permissionService = new PermissionService(operatorSession);
-            var overrideAuthService = new OverrideAuthService(userRepo);
+            var overrideAuthService = new OverrideAuthService(userRepo, operatorSession);
             return new PosViewModel(service, logger, permissionService, operatorSession, overrideAuthService, userRepo);
         }
     }

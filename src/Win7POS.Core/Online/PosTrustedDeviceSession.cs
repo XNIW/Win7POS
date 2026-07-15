@@ -3,6 +3,7 @@ namespace Win7POS.Core.Online
     public sealed class PosTrustedDeviceSession
     {
         public string DeviceToken { get; set; }
+        public string LastOkLocalAt { get; set; }
         public string LastOkServerAt { get; set; }
         public string PosSessionId { get; set; }
         public string SessionExpiresAt { get; set; }

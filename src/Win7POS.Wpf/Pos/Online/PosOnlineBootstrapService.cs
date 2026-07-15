@@ -352,7 +352,9 @@ namespace Win7POS.Wpf.Pos.Online
             return response != null &&
                    response.Ok &&
                    !string.IsNullOrWhiteSpace(response.TrustedDeviceToken) &&
+                   !string.IsNullOrWhiteSpace(response.ServerTime) &&
                    response.Session != null &&
+                   !string.IsNullOrWhiteSpace(response.Session.ExpiresAt) &&
                    !string.IsNullOrWhiteSpace(response.Session.SessionToken) &&
                    !string.IsNullOrWhiteSpace(response.Session.PosSessionId) &&
                    response.Device != null &&

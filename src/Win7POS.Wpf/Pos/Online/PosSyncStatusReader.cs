@@ -130,6 +130,14 @@ namespace Win7POS.Wpf.Pos.Online
                 return "not_connected";
             }
 
+            var authorization = PosOfflineAuthorizationLeasePolicy.Evaluate(
+                session,
+                DateTimeOffset.UtcNow);
+            if (!authorization.Allowed)
+            {
+                return "reconnect";
+            }
+
             if (TryParseIso(session.SessionExpiresAt, out var expiresAt) &&
                 expiresAt <= DateTimeOffset.UtcNow)
             {
