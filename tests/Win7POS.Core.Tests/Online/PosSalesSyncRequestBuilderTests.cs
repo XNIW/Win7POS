@@ -17,7 +17,8 @@ public sealed class PosSalesSyncRequestBuilderTests
             Item("refund"),
             Sale(SaleKind.Refund),
             new[] { Line(relatedOriginalLineId: 44) },
-            new Dictionary<long, string>());
+            new Dictionary<long, string>(),
+            Economics(gross: 1000, net: -1000));
 
         var line = request.Sales.Single().Lines.Single();
         Assert.AreEqual("line-44", line.ClientOriginalLineId);
@@ -69,6 +70,96 @@ public sealed class PosSalesSyncRequestBuilderTests
         Assert.IsFalse(PosSalesSyncRequestBuilder.HasCompleteReversalBindings(legacy));
     }
 
+    [TestMethod]
+    public void BuildCanonical_ReversalIsItemOnlyWithAllocatedHeaderAndExactPayment()
+    {
+        var sale = Sale(SaleKind.Refund);
+        sale.Total = -950;
+        sale.PaidCash = -600;
+        sale.PaidCard = -350;
+
+        var request = PosSalesSyncRequestBuilder.BuildCanonical(
+            Item("refund"),
+            sale,
+            new[] { Line(relatedOriginalLineId: 44) },
+            new Dictionary<long, string>(),
+            Economics(gross: 1000, discount: 100, tax: 50, net: -950));
+
+        var syncedSale = request.Sales.Single();
+        Assert.IsTrue(syncedSale.Lines.All(line => line.LineType == "item"));
+        Assert.AreEqual(1000, syncedSale.Amounts.GrossClp);
+        Assert.AreEqual(100, syncedSale.Amounts.DiscountClp);
+        Assert.AreEqual(50, syncedSale.Amounts.TaxClp);
+        Assert.AreEqual(-950, syncedSale.Amounts.NetClp);
+        Assert.AreEqual(-950, syncedSale.Amounts.PaidClp);
+        Assert.AreEqual(-950, syncedSale.Payments.Sum(payment => payment.AmountClp));
+        Assert.IsTrue(PosSalesSyncRequestBuilder.HasExpectedReversalEconomics(
+            request,
+            Economics(gross: 1000, discount: 100, tax: 50, net: -950)));
+    }
+
+    [TestMethod]
+    public void BuildCanonical_RejectsPseudoAdjustmentInReversal()
+    {
+        var line = Line(relatedOriginalLineId: 44);
+        line.Barcode = DiscountKeys.Prefix + "CART";
+
+        var error = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            PosSalesSyncRequestBuilder.BuildCanonical(
+                Item("refund"),
+                Sale(SaleKind.Refund),
+                new[] { line },
+                new Dictionary<long, string>(),
+                Economics(gross: 1000, net: -1000)));
+
+        Assert.AreEqual(ReversalEconomicsPolicy.MismatchCode, error.Message);
+    }
+
+    [TestMethod]
+    public void BuildCanonical_RejectsReversalPaymentDifferentFromNet()
+    {
+        var sale = Sale(SaleKind.Void);
+        sale.PaidCash = -999;
+
+        var error = Assert.ThrowsExactly<InvalidOperationException>(() =>
+            PosSalesSyncRequestBuilder.BuildCanonical(
+                Item("void"),
+                sale,
+                new[] { Line(relatedOriginalLineId: 44) },
+                new Dictionary<long, string>(),
+                Economics(gross: 1000, net: -1000)));
+
+        Assert.AreEqual(ReversalEconomicsPolicy.MismatchCode, error.Message);
+    }
+
+    [TestMethod]
+    public void BuildCanonical_NormalSaleCarriesDiscountAndTaxHeader()
+    {
+        var sale = Sale(SaleKind.Sale);
+        sale.Total = 950;
+        sale.PaidCash = 950;
+        var discount = Line(relatedOriginalLineId: null);
+        discount.Barcode = DiscountKeys.CartPrefix + "TEST";
+        discount.UnitPrice = -100;
+        discount.LineTotal = -100;
+        var tax = Line(relatedOriginalLineId: null);
+        tax.Barcode = DiscountKeys.TaxPrefix + "TEST";
+        tax.UnitPrice = 50;
+        tax.LineTotal = 50;
+
+        var request = PosSalesSyncRequestBuilder.BuildCanonical(
+            Item("sale"),
+            sale,
+            new[] { Line(relatedOriginalLineId: null), discount, tax },
+            new Dictionary<long, string>());
+
+        var amounts = request.Sales.Single().Amounts;
+        Assert.AreEqual(1000, amounts.GrossClp);
+        Assert.AreEqual(100, amounts.DiscountClp);
+        Assert.AreEqual(50, amounts.TaxClp);
+        Assert.AreEqual(950, amounts.NetClp);
+    }
+
     private static SalesSyncOutboxItem Item(string operation)
     {
         return new SalesSyncOutboxItem
@@ -107,6 +198,21 @@ public sealed class PosSalesSyncRequestBuilderTests
             Quantity = 1,
             RelatedOriginalLineId = relatedOriginalLineId,
             UnitPrice = 1000
+        };
+    }
+
+    private static ReversalEconomicsResult Economics(
+        long gross,
+        long discount = 0,
+        long tax = 0,
+        long net = 0)
+    {
+        return new ReversalEconomicsResult
+        {
+            GrossClp = gross,
+            DiscountClp = discount,
+            TaxClp = tax,
+            NetClp = net
         };
     }
 }

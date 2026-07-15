@@ -319,3 +319,14 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Release pack esterno rigenerato dall'output WPF x86, completezza/runtime validator e `unzip -t` PASS; ZIP SHA-256 `b80cebc63954a423c6abb9b64e9aa02ed4b1c165b96e2a85bd963c4a8ecb4ede`.
 - Handoff aggiornato in-place: `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-2026-07-14.md`; nessun documento equivalente duplicato.
 - Classificazione runtime invariata: `EXTERNAL_TEST_PENDING_CODEX_ASUS`; test Windows/UTM/hardware 1-30 restano `DEFERRED_TO_CODEX_ASUS`.
+
+## 2026-07-15 - Parità economica refund/void con RPC Admin
+- Branch di integrazione: `integration/win7pos-reversal-economics-20260715` da `origin/main` @ `0d6eaff0870014a93b29f184e868d6a619d67387`.
+- Commit implementazione: `dc162aeff484b576ef21565338cf3d5d492285d4` (`fix: align reversal economics with Admin contract`).
+- Contratto economico: gross derivato dalle sole righe item; discount/tax reversal allocati sul gross cumulativo con arrotondamento PostgreSQL `numeric` half-away; quota corrente calcolata come target cumulativo meno quota precedente effettiva; net `-(gross-discount+tax)`.
+- Fail-closed: originale e reversal precedenti riletti dal payload outbox immutabile con verifica SHA256; storia gross-only/corrotta/bloccata rifiutata senza riscrivere payload/hash; invio di reversal successive serializzato sugli ACK precedenti dello stesso originale.
+- Workflow: pseudo-righe `DISC:*`/`TAX:*` escluse da selezione e binding; preview, dialog, payment, totale locale e payload condividono la stessa policy; reversal inviate item-only con header `gross/discount/tax/net/paid` coerente.
+- Gate Mac reali: Core/Data tests Release 95/95; policy mirata 6/6; integrazione discounted+taxed partial/full, successive rounding/ACK e legacy immutabile 3/3; WPF x86/net48 e Core/Data/CLI Release PASS zero warning/error; CLI selftest e TASK-081 sales harness PASS; 31/31 scanner `check-*.ps1` PASS, nuovo scanner economics 12/12; `git diff --check` PASS.
+- Release pack esterno rigenerato dal commit implementazione: cartella e ZIP completezza/runtime/startup/linking PASS, `unzip -t` PASS, PE32/x86, nessun PDB/CLI/source/DB; ZIP SHA-256 `9e489fcbcc770159ea99f748b3feb38c05d28ec4f409719a382e054455d4cd84`.
+- Handoff aggiornato in-place: `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-2026-07-14.md`; nessun duplicato.
+- Runtime invariato: `EXTERNAL_TEST_PENDING_CODEX_ASUS`; test Windows 7/UTM/staging autenticato/hardware 1-30 restano `DEFERRED_TO_CODEX_ASUS`, mai dichiarati PASS da Mac.
