@@ -88,7 +88,7 @@ evidence finale esterna:
 | CLI, 7 harness canonici | PASS | Publish Release isolato in evidence e avvio DLL con `C:\Dev\dotnet10\dotnet.exe`; l'apphost in-tree è bloccato da Application Control `0x800711C7`, documentato in `smart-app-control-cli.txt` |
 | 28 checker non-release | PASS | Eseguiti individualmente sul diff di closure |
 | 3 checker pack-aware / 31 totali | PASS post-commit | Completeness, runtime validation e required gates su folder/ZIP; output autorevole in `final-release-evidence.txt` |
-| Package audit | PASS | Nessun pacchetto vulnerabile/deprecato nei 6 progetti; fallback secret scan senza finding; scanner dedicati non installati |
+| Package audit | PASS | Nessun pacchetto vulnerabile/deprecato nei 5 progetti solution più il progetto performance standalone; fallback secret scan senza finding; scanner dedicati non installati |
 
 Comandi canonici finali:
 
@@ -239,7 +239,19 @@ Get-FileHash 'C:\Win7POSTest\handoff\Win7POS-ASUS-runtime-candidate-20260714.zip
 - Comando riproducibile:
 
 ```powershell
-$env:WIN7POS_DOTNET_EXE='C:\Dev\dotnet10\dotnet.exe'; $env:ISCC_EXE=(Resolve-Path "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe").Path; powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win7pos\windows\build-release-x86.ps1 -BuildInstaller
+$env:WIN7POS_DOTNET_EXE='C:\Dev\dotnet10\dotnet.exe'
+$env:ISCC_EXE=(Resolve-Path "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe").Path
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win7pos\windows\build-release-x86.ps1 -BuildInstaller
+pwsh -NoProfile -File scripts\check-release-pack-completeness.ps1 -ReleasePackSource dist\Win7POS -WriteManifests
+& $env:ISCC_EXE installer\Win7POS.iss
+$zip = "dist\Win7POS_$((Get-Date).ToString('yyyyMMdd_HHmmss')).zip"
+if (Test-Path $zip) { throw "Release ZIP already exists: $zip" }
+Compress-Archive -Path dist\Win7POS\* -DestinationPath $zip -CompressionLevel Optimal
+pwsh -NoProfile -File scripts\check-release-pack-completeness.ps1 -ReleasePackSource dist\Win7POS
+pwsh -NoProfile -File scripts\check-win7-runtime-release-validation.ps1 -ReleasePackSource dist\Win7POS
+pwsh -NoProfile -File scripts\check-required-gates.ps1 -ReleasePackSource dist\Win7POS
+pwsh -NoProfile -File scripts\check-release-pack-completeness.ps1 -ReleasePackSource $zip
+pwsh -NoProfile -File scripts\check-win7-runtime-release-validation.ps1 -ReleasePackSource $zip
 ```
 
 ### Test 6 — Cold start x86 (PASS)
@@ -296,11 +308,13 @@ Stop-Process -Name Win7POS.Wpf -ErrorAction SilentlyContinue; & 'C:\Dev\Win7POS\
 ### Test 9 — Catalog full pull esatto
 
 - Causa: accesso Admin/POS staging assente; conteggi autorevoli category,
-  supplier e price non disponibili; nessun DB staging drenato.
+  supplier e price non disponibili; nessun DB staging drenato né risposta
+  autenticata dalla quale stabilire presenza e canonicalizzazione checksum.
 - Evidenza: screenshot login; directory evidence priva di screenshot conteggi o
   export SQLite staging.
 - Completato comunque: contratto summary, full drain, audit exactness,
-  riconciliazione, identity map, sale barrier e test mismatch/duplicate/orphan.
+  riconciliazione, identity map, sale barrier e test mismatch/duplicate/orphan;
+  un eventuale checksum non comparabile resta correttamente `Unverified`.
 - Prossimo comando esatto, usando la fixture interattiva e il data dir QA:
 
 ```powershell

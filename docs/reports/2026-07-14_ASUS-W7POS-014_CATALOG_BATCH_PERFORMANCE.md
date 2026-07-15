@@ -16,7 +16,7 @@ The controlled local comparison exceeds the indicative 2× target. The final syn
 |---|---|---|---|---|
 | ASUS-W7POS-014.1 batch apply implementation | DONE | `bb4178b` | One connection/transaction per page; prepared statements; rollback and retry tests | Integrated with `PosCatalogPullService`; service integration complete |
 | ASUS-W7POS-014.2 controlled apply benchmark | DONE | `bb4178b` | `catalog-performance-final-closure-2000.trx` | Closure code; legacy and batch inputs cross the same price-ownership invariants |
-| ASUS-W7POS-014.3 19,762 apply-only scale probes | DONE | `bb4178b` | `catalog-performance-final-19762.trx`, `catalog-performance-final-19762-paged.trx` | Historical pre-closure synthetic probes; not staging exactness evidence |
+| ASUS-W7POS-014.3 19,762 apply-only scale probes | DONE | `259484c` | `catalog-performance-final-19762.trx`, `catalog-performance-final-19762-paged.trx` | Historical pre-closure synthetic probes, reviewed again at closure `bb4178b`; not staging exactness evidence |
 | ASUS-W7POS-014.4 apply + reconcile + verify benchmark | DONE | `bb4178b` | `catalog-performance-final-closure-19762-paged-full.trx` | Closure code; 19,762 products/prices; 20 pages; three `Verified` iterations |
 | ASUS-W7POS-014.5 authenticated staging full refresh | BLOCKED_EXTERNAL | — | staging login is unavailable without credentials | Expected product count from the brief is 19,762; it was not observed by this benchmark |
 

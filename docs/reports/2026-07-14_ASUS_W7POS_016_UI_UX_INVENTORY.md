@@ -113,7 +113,7 @@ La revisione statica non certifica dimensioni pixel, resa font, contrasto effett
 | UI-016-07 | Alcuni dialog raggiungibili non usavano titolo/footer/button shared | Allineamento localizzato alle risorse standard; checker 31/31 | dialog checker |
 | UI-016-08 | Il supplier CLI selftest cercava erroneamente il testo nel `Content` del `Button`, mentre i button corretti usano icon + `TextBlock` | Il test cerca il `TextBlock` localizzato dopo il footer e continua a verificare footer fuori dallo `ScrollViewer` | supplier CLI selftest |
 | UI-016-09 | Lo stato exactness catalogo e il repair non erano osservabili dalla UI shop | Aggiunti modalità/versione/completeness/conteggi/repair required e comando full repair solo autorizzato, con conferma non distruttiva e owner sicuro | sync-status UI checker + build |
-| UI-016-10 | Il dialog poteva essere chiuso mentre il full repair era in corso | `CanClose` disabilita Close e `OnClosing` annulla Escape/Alt+F4 durante `IsRepairBusy` | sync-status UI checker + build |
+| UI-016-10 | Il dialog poteva essere chiuso mentre il full repair era in corso | `CanClose` disabilita Close e `OnClosing` annulla Escape/Alt+F4 durante `IsRepairInProgress` | sync-status UI checker + build |
 | UI-016-11 | Status e persistenza vendita potevano valutare readiness con logiche separate | Unico evaluatore sale-safety con reason code condiviso da UI e barriera transazionale | sync-status/sales checker + Core tests |
 | UI-016-12 | Il ViewModel tratteneva subscription lingua e owner oltre la vita del dialog | `IDisposable`, unsubscribe esplicito e clear di `OwnerWindow` alla chiusura | sync-status UI checker + build |
 

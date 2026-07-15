@@ -362,7 +362,8 @@ non è stata eseguita e non è dichiarata PASS.
 Il pack obsoleto dello snapshot (`CommitSHA=a9c0ab3...`) è stato sostituito da
 una build da worktree pulito post-commit. Il flusso finale include manifest,
 ricompilazione Inno dopo i manifest, ZIP univoco e validator folder/ZIP. Comando
-riproducibile:
+base; la sequenza riproducibile completa è nella sezione PASS del test 3
+dell'handoff canonico:
 
 ```powershell
 $env:WIN7POS_DOTNET_EXE='C:\Dev\dotnet10\dotnet.exe'; $env:ISCC_EXE=(Resolve-Path "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe").Path; powershell -NoProfile -ExecutionPolicy Bypass -File scripts\win7pos\windows\build-release-x86.ps1 -BuildInstaller
@@ -411,7 +412,7 @@ automaticamente un secret.
 | Rischio | Stato | Impatto | Prossima azione |
 |---|---|---|---|
 | Exactness staging non osservata | BLOCKED_EXTERNAL | Non è possibile affermare 19.762/Verified o zero duplicati/orfani reali | completare test 7 e 9 con fixture autorizzata |
-| Contract Admin checksum/canonicalizzazione non confermato | BLOCKED_EXTERNAL | checksum presente ma non comparabile resta correttamente Unverified | acquisire risposta redatta e specifica canonicalizzazione |
+| Contract Admin checksum/canonicalizzazione non confermato | BLOCKED_EXTERNAL | un eventuale checksum, se presente ma non comparabile, resta correttamente Unverified | acquisire risposta redatta e specifica canonicalizzazione; dettaglio e comando coincidono con test 9 nell'handoff |
 | Restart/reconnect/cross-shop reali | BLOCKED_EXTERNAL | fake harness non rileva comportamento del servizio reale | eseguire test 8, 10, 17, 18, 22 |
 | UI visual/DPI | BLOCKED_EXTERNAL | possibile clipping/font/translation expansion non rilevabile staticamente | eseguire sei profili UI |
 | Win7 | BLOCKED_EXTERNAL | compatibilità runtime/driver non certificata | usare PC/VM Win7 SP1 |
