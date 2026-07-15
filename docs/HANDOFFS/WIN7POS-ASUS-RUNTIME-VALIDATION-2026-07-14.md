@@ -17,9 +17,9 @@ su questa revisione.
 - Repository: `https://github.com/XNIW/Win7POS.git`
 - Branch di consegna: `main`
 - Commit implementazione immutabile:
-  `138b3e64d82558e069bb04920bfda62e5d642b72`
+  `dc162aeff484b576ef21565338cf3d5d492285d4`
 - URL commit:
-  `https://github.com/XNIW/Win7POS/commit/138b3e64d82558e069bb04920bfda62e5d642b72`
+  `https://github.com/XNIW/Win7POS/commit/dc162aeff484b576ef21565338cf3d5d492285d4`
 - Data pubblicazione Mac: `2026-07-15`.
 - La normalizzazione portabile del basename in
   `CatalogImportOutboxPayloadBuilder.cs`, già presente localmente prima della
@@ -105,6 +105,19 @@ reversal legacy senza binding completo viene bloccato in preflight prima della
 rete con `reversal_original_line_missing`; sale normali e contratti esistenti
 restano compatibili.
 
+Refund e void ora condividono anche la stessa economia autorevole del RPC
+Admin. Il gross è sempre la somma delle sole righe item; `DISC:*` e `TAX:*`
+restano fuori da selezione, binding e payload reversal. Discount e tax della
+quota corrente sono la differenza tra il target cumulativo proporzionale e la
+quota precedente effettiva, con arrotondamento PostgreSQL `numeric` half-away
+from zero. Ogni payload precedente viene riletto dall'outbox immutabile,
+verificato contro SHA256 e ricalcolato in ordine sale id. Una storia legacy
+gross-only, corrotta, bloccata o economicamente incoerente fallisce chiusa senza
+riscrivere payload/hash. Le reversal offline coerenti possono essere create in
+sequenza, ma il drain invia la successiva solo dopo l'ACK di tutte le precedenti
+dello stesso originale. Header `gross/discount/tax/net/paid`, payment e totale
+locale devono coincidere prima di enqueue e nuovamente prima della rete.
+
 ## File modificati
 
 - Migrazioni/data: `DbInitializer.cs`, `SaleRepository.cs`,
@@ -131,11 +144,14 @@ restano compatibili.
   `PosOfflineAuthorizationLeaseGuard.cs`, `PosTrustedDeviceSession.cs`,
   `PosTrustedDeviceStore.cs`, `OperatorSession.cs`, `PermissionService.cs`,
   `OverrideAuthService.cs`, dialog access/switch, `PosViewModel.cs`,
-  `PosOnlineTransportContracts.cs`, `PosSalesSyncRequestBuilder.cs` e
+  `PosOnlineTransportContracts.cs`, `ReversalEconomicsPolicy.cs`,
+  `PosReversalEconomicsReader.cs`, `PosSalesSyncRequestBuilder.cs`,
+  `SaleRepository.cs`, `RefundViewModel.cs`, `PosWorkflowService.cs` e
   `PosSalesSyncService.cs`.
 - Scanner: catalog import/pull, first login, bootstrap/client/linking, security,
   restore, `scripts/check-pos-outbox-shop-binding.ps1` e il nuovo
-  `scripts/check-pos-offline-authorization-lease.ps1`.
+  `scripts/check-pos-offline-authorization-lease.ps1`, oltre a
+  `scripts/check-pos-reversal-economics.ps1`.
 
 Le liste tracked/untracked e gli artefatti di protezione sono stati verificati
 sul diff finale revisionato prima di fetch e branch. La patch completa e
@@ -147,8 +163,10 @@ patch successiva conserva la sola correzione del fixture TASK-081.
 | Controllo | Risultato |
 | --- | --- |
 | `dotnet build` Core/Data/CLI Release | PASS, zero warning/error |
-| `dotnet test tests/Win7POS.Core.Tests/... -c Release --no-restore` | PASS, 82/82 |
+| `dotnet test tests/Win7POS.Core.Tests/... -c Release --no-restore` | PASS, 95/95 |
 | filtri lease/reversal/tombstone/shop binding | PASS, 27/27 |
+| policy economics reversal mirata | PASS, 6/6: discount/tax, no-discount, half-away, partial successive, full residual, storia incoerente |
+| integrazione payload/partial/full/legacy | PASS, 3/3: item-only, header/payment esatti, ACK ordering, payload/hash legacy invariati |
 | filtro `CapturedSession_IsRejectedAfterWaitingBehindShopTransition` | PASS, 1/1; nessun HTTP/apply/bind A e shop B intatto |
 | filtro `RemoteCatalogReferenceTombstoneTests` | PASS, 5/5 |
 | CLI `--selftest` | PASS, `自检 PASS` |
@@ -157,8 +175,9 @@ patch successiva conserva la sola correzione del fixture TASK-081.
 | CLI catalog outbox/reconciliation/fake HTTP harness | PASS |
 | CLI SQLite integrity/restore guard | PASS |
 | WPF Release x86/net48 | PASS, zero warning/error |
-| tutti i 30 `scripts/check-*.ps1` statici | PASS |
+| tutti i 31 `scripts/check-*.ps1` statici | PASS |
 | scanner lease offline/reversal line binding | PASS, 22/22 controlli |
+| scanner economia reversal | PASS, 12/12 controlli |
 | catalog/sales/restore/outbox/security/staging scanner rafforzati | PASS |
 | patch completa/untracked ricostruiti su `git archive HEAD`; hash del fix harness verificato | PASS |
 | release completeness/runtime validator, folder e ZIP | PASS |
@@ -183,9 +202,11 @@ Artefatti primari verificati dal test 1:
 
 | Artefatto | SHA256 | Uso |
 | --- | --- | --- |
-| `Win7POS-ASUS-runtime-candidate-20260714.zip` | `b80cebc63954a423c6abb9b64e9aa02ed4b1c165b96e2a85bd963c4a8ecb4ede` | runtime candidate x86/net48 rigenerato dal commit implementazione, ZIP flat |
-| `Win7POS-release-pack/Win7POS.Wpf.exe` | `ce02c7945474b9c022e333d29615283b053b1ea3ddee8c8c22b5a79ce49069fa` | eseguibile PE x86 candidato |
-| `Win7POS-release-pack/VERSION.txt` | `989ae871aa566235f671fb678e6409a29409557c1f6b1a26c0077c222261f1b3` | identità sorgente e classificazione runtime |
+| `Win7POS-ASUS-runtime-candidate-20260714.zip` | `9e489fcbcc770159ea99f748b3feb38c05d28ec4f409719a382e054455d4cd84` | runtime candidate x86/net48 rigenerato dal commit implementazione, ZIP flat |
+| `Win7POS-release-pack/Win7POS.Wpf.exe` | `c7d03302a3bc4fd52e15eb46deb467efe41ea044e4f022af5c8aa9bd3e5c36a9` | eseguibile PE x86 candidato |
+| `Win7POS-release-pack/Win7POS.Core.dll` | `892b25aaff16845af6621f8b7d6667d32e3f6b128077156bd86f4b465cc2259d` | policy proporzionale condivisa |
+| `Win7POS-release-pack/Win7POS.Data.dll` | `b8040ef4e3ccbf774962c2ea244e1366e3123f3fbe74b83c2bb8e6ace37f25fd` | reader/builder/repository reversal |
+| `Win7POS-release-pack/VERSION.txt` | `148c38e807a77bbcc36c83cc943fe55463c910734ec5e7d08d6296b17a08d2b3` | identità sorgente e classificazione runtime |
 
 Artefatti supplementari di protezione pubblicazione, conservati fuori Git:
 
@@ -219,7 +240,7 @@ non applicarle al checkout Asus.
 5. Eseguire `git pull --ff-only origin main`.
 6. Verificare che `git rev-parse HEAD` corrisponda alla SHA `origin/main`
    comunicata con la pubblicazione e che
-   `git merge-base --is-ancestor 138b3e64d82558e069bb04920bfda62e5d642b72 HEAD`
+   `git merge-base --is-ancestor dc162aeff484b576ef21565338cf3d5d492285d4 HEAD`
    termini con exit code `0`.
 7. Eseguire restore/build/test Windows sul sorgente appena scaricato.
 8. Eseguire il runtime Windows 7 e i test 1–30 sotto indicati.
@@ -289,7 +310,10 @@ Per ogni test registrare comando/azione, timestamp, risultato
     Stato: `DEFERRED_TO_CODEX_ASUS`.
 13. **Partial refund** — refund conserva original sale/riga, quantità residua, `operation_type=refund` e `clientOriginalLineId` corretto.
     Stato: `DEFERRED_TO_CODEX_ASUS`.
-14. **Full void** — void completo è una sola inversione idempotente con `operation_type=void` e `clientOriginalLineId`; un reversal legacy privo del binding si blocca prima di HTTP.
+14. **Full void** — void completo è una sola inversione idempotente con
+    `operation_type=void`, sole righe item, `clientOriginalLineId` e quota
+    discount/tax residua esatta; un reversal legacy privo del binding o con
+    economia gross-only si blocca prima di HTTP senza mutare payload/hash.
     Stato: `DEFERRED_TO_CODEX_ASUS`.
 15. **Sales origin binding** — riga outbox contiene shop A id/code, schema, client id/idempotency e hash redatto.
     Stato: `DEFERRED_TO_CODEX_ASUS`.
