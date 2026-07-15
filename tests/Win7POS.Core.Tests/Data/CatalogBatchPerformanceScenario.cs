@@ -2,7 +2,9 @@ using System.Diagnostics;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Data;
+using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 
 namespace Win7POS.Core.Tests.Data;
@@ -12,13 +14,20 @@ public static class CatalogBatchPerformanceScenario
     public static async Task<IReadOnlyList<CatalogBatchPerformanceSample>> RunAsync(
         string mode,
         int rows,
-        int iterations)
+        int iterations,
+        int pageSize = 1000)
     {
         var normalizedMode = (mode ?? string.Empty).Trim().ToLowerInvariant();
-        if (normalizedMode != "legacy" && normalizedMode != "batch")
-            throw new ArgumentException("Mode must be 'legacy' or 'batch'.", nameof(mode));
+        if (normalizedMode != "legacy" && normalizedMode != "batch" &&
+            normalizedMode != "batch-paged" && normalizedMode != "batch-paged-full")
+        {
+            throw new ArgumentException(
+                "Mode must be 'legacy', 'batch', 'batch-paged' or 'batch-paged-full'.",
+                nameof(mode));
+        }
         if (rows <= 0) throw new ArgumentOutOfRangeException(nameof(rows));
         if (iterations <= 0) throw new ArgumentOutOfRangeException(nameof(iterations));
+        if (pageSize <= 0) throw new ArgumentOutOfRangeException(nameof(pageSize));
 
         SQLitePCL.Batteries_V2.Init();
         var samples = new List<CatalogBatchPerformanceSample>(iterations);
@@ -58,7 +67,7 @@ public static class CatalogBatchPerformanceScenario
                         productWrites,
                         priceWrites);
                 }
-                else
+                else if (normalizedMode == "batch")
                 {
                     await new RemoteCatalogBatchRepository(factory).ApplyAsync(new RemoteCatalogBatch
                     {
@@ -67,6 +76,64 @@ public static class CatalogBatchPerformanceScenario
                         Products = productWrites,
                         Prices = priceWrites
                     });
+                }
+                else
+                {
+                    var repository = new RemoteCatalogBatchRepository(factory);
+                    for (var offset = 0; offset < rows; offset += pageSize)
+                    {
+                        await repository.ApplyAsync(new RemoteCatalogBatch
+                        {
+                            AuthoritativeFullRefresh = normalizedMode == "batch-paged-full",
+                            Categories = offset == 0
+                                ? categoryWrites
+                                : Array.Empty<RemoteCatalogCategoryWrite>(),
+                            Suppliers = offset == 0
+                                ? supplierWrites
+                                : Array.Empty<RemoteCatalogSupplierWrite>(),
+                            Products = productWrites.Skip(offset).Take(pageSize).ToArray(),
+                            Prices = priceWrites.Skip(offset).Take(pageSize).ToArray()
+                        });
+                    }
+                }
+
+                var completeness = "not_evaluated";
+                if (normalizedMode == "batch-paged-full")
+                {
+                    var exactness = await new CatalogFullRefreshReconciler(factory)
+                        .ReconcileAndVerifyAsync(
+                            productWrites.Select(product => product.RemoteProductId),
+                            categoryWrites.Select(category => category.RemoteCategoryId),
+                            supplierWrites.Select(supplier => supplier.RemoteSupplierId),
+                            "2026-07-14T10:00:00Z",
+                            new PosCatalogSummaryResponse
+                            {
+                                Products = rows,
+                                ActiveProducts = rows,
+                                Categories = categoryWrites.Count,
+                                Suppliers = supplierWrites.Count,
+                                Prices = priceWrites.Count
+                            },
+                            new CatalogExactnessRunContext
+                            {
+                                CatalogVersion = "benchmark-catalog-v1",
+                                CategoryRowsReceived = categoryWrites.Count,
+                                DurationMilliseconds = Math.Max(1L, stopwatch.ElapsedMilliseconds),
+                                HasMore = false,
+                                Pages = (rows + pageSize - 1) / pageSize,
+                                PriceRowsAccepted = priceWrites.Count,
+                                PriceRowsReceived = priceWrites.Count,
+                                ProductRowsReceived = productWrites.Count,
+                                SupplierRowsReceived = supplierWrites.Count,
+                                SyncCursor = "benchmark-final-cursor",
+                                SyncMode = "full_refresh"
+                            }).ConfigureAwait(false);
+                    completeness = exactness.Status.ToString();
+                    if (exactness.Status != CatalogCompletenessStatus.Verified)
+                    {
+                        throw new InvalidOperationException(
+                            "Synthetic full reconciliation failed: " + exactness.Code);
+                    }
                 }
 
                 stopwatch.Stop();
@@ -77,6 +144,7 @@ public static class CatalogBatchPerformanceScenario
                     CpuMilliseconds = (process.TotalProcessorTime - cpuBefore).TotalMilliseconds,
                     DatabaseBytes = new FileInfo(dbPath).Length,
                     ElapsedMilliseconds = stopwatch.Elapsed.TotalMilliseconds,
+                    ExactnessStatus = completeness,
                     Iteration = iteration,
                     PendingPriceCount = await verify.ExecuteScalarAsync<long>(
                         "SELECT COUNT(1) FROM remote_catalog_pending_prices;"),
@@ -196,6 +264,8 @@ public static class CatalogBatchPerformanceScenario
                     UnitPrice = 100 + i,
                     ArticleCode = $"ITEM-{i:D8}",
                     PurchasePrice = 50 + i,
+                    RemoteCategoryId = $"category-{reference:D3}",
+                    RemoteSupplierId = $"supplier-{reference:D3}",
                     SupplierName = $"Supplier {reference:D3}",
                     CategoryName = $"Category {reference:D3}",
                     StockQuantity = i,
@@ -226,6 +296,7 @@ public sealed class CatalogBatchPerformanceSample
     public double CpuMilliseconds { get; set; }
     public long DatabaseBytes { get; set; }
     public double ElapsedMilliseconds { get; set; }
+    public string ExactnessStatus { get; set; } = string.Empty;
     public int Iteration { get; set; }
     public long PendingPriceCount { get; set; }
     public long PriceCount { get; set; }
@@ -237,6 +308,7 @@ public sealed class CatalogBatchPerformanceSample
     {
         return
             $"iteration={Iteration} products={ProductCount} prices={PriceCount} pending={PendingPriceCount} " +
+            $"completeness={ExactnessStatus} " +
             $"elapsed_ms={ElapsedMilliseconds:F3} rows_per_sec={Rows / (ElapsedMilliseconds / 1000d):F2} " +
             $"cpu_ms={CpuMilliseconds:F3} working_set_bytes={WorkingSetBytes} db_bytes={DatabaseBytes}";
     }

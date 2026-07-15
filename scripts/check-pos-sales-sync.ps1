@@ -20,6 +20,7 @@ function Read-Text([string]$relativePath) {
 $required = @(
     "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Online/CatalogShopStateRepository.cs",
     "src/Win7POS.Data/Online/PosSalesSyncRequestBuilder.cs",
     "src/Win7POS.Data/DbInitializer.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
@@ -37,6 +38,7 @@ if ($fail) {
 
 $sync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $saleRepo = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$catalogState = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.cs"
 $builder = Read-Text "src/Win7POS.Data/Online/PosSalesSyncRequestBuilder.cs"
 $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
@@ -58,6 +60,17 @@ if ($sync -notmatch "validation_failed" -or $sync -notmatch "conflict") { Fail "
 if ($sync -notmatch "duplicate" -or $sync -notmatch "idempotent" -or $sync -notmatch "acked" -or $sync -notmatch "synced") { Fail "duplicate/idempotent ack statuses missing" } else { Pass "duplicate/idempotent ack statuses accepted" }
 
 if ($saleRepo -notmatch "InsertSaleAsync" -or $saleRepo -notmatch "ApplyLocalStockMovementsAsync" -or $saleRepo -notmatch "EnqueueSalesSyncOutboxAsync" -or $saleRepo -notmatch "tx\.Commit\(\)") { Fail "sale save must persist sale, stock movement and outbox in one transaction" } else { Pass "sale save persists sale, stock and outbox together" }
+if ($saleRepo -notmatch "sale\.Kind\s*==\s*\(int\)SaleKind\.Sale" -or
+    $saleRepo -notmatch "RequireSaleSafeForOrdinarySaleAsync\(conn, tx\)" -or
+    $catalogState -notmatch "catalog_sale_blocked_binding_partial" -or
+    $catalogState -notmatch "catalog_sale_blocked_repair_required" -or
+    $catalogState -notmatch "catalog_sale_blocked_not_sale_safe" -or
+    $catalogState -notmatch "catalog_sale_blocked_exactness_shop_mismatch" -or
+    $saleRepo.IndexOf("RequireSaleSafeForOrdinarySaleAsync(conn, tx)") -gt $saleRepo.IndexOf("ApplyLocalStockMovementsAsync")) {
+    Fail "ordinary sale persistence must enforce catalog sale-safe state inside the sale transaction before stock/outbox writes"
+} else {
+    Pass "ordinary sale persistence enforces catalog sale-safe state atomically before stock/outbox writes"
+}
 if ($saleRepo -notmatch "INSERT OR IGNORE INTO sales_sync_outbox" -or $saleRepo -notmatch "idempotency_key") { Fail "outbox enqueue/idempotency missing" } else { Pass "outbox enqueue/idempotency present" }
 if ($initializer -notmatch "sales_sync_outbox" -or $initializer -notmatch "sale_id\s+INTEGER NOT NULL UNIQUE" -or $initializer -notmatch "client_sale_id TEXT NOT NULL UNIQUE" -or $initializer -notmatch "idempotency_key TEXT NOT NULL UNIQUE") { Fail "new DB outbox uniqueness constraints missing" } else { Pass "new DB outbox uniqueness constraints present" }
 if ($initializer -notmatch "idx_sales_client_sale_id_unique") { Fail "legacy sales client_sale_id unique index missing" } else { Pass "legacy sales client_sale_id unique index present" }

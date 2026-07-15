@@ -194,6 +194,28 @@ public sealed class SupplierImportDataTests
         Assert.AreEqual("server-request-remote", await ScalarStringAsync(db.Factory, "SELECT COALESCE(server_request_id, '') FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
         Assert.AreEqual("remote-product-5", await ScalarStringAsync(db.Factory, "SELECT COALESCE(remote_product_id, '') FROM products WHERE barcode = 'CAT-5'"));
         Assert.AreEqual("remote-price-5", await ScalarStringAsync(db.Factory, "SELECT COALESCE(remote_price_id, '') FROM product_price_history WHERE barcode = 'CAT-5' ORDER BY id DESC LIMIT 1"));
+        Assert.AreEqual("remote-product-5", await ScalarStringAsync(db.Factory, @"
+SELECT remote_product_id
+FROM remote_catalog_price_ownership
+WHERE remote_price_id = 'remote-price-5';"));
+
+        var effectiveAt = await ScalarStringAsync(db.Factory, @"
+SELECT timestamp
+FROM product_price_history
+WHERE remote_price_id = 'remote-price-5';");
+        var replay = await products.UpsertOrQueueRemotePriceHistoryAsync(
+            "remote-product-5",
+            "remote-price-5",
+            "retail",
+            180,
+            effectiveAt,
+            "IMPORT");
+        Assert.IsTrue(replay.Applied);
+        Assert.IsFalse(replay.Queued);
+        Assert.AreEqual(1, await ScalarLongAsync(db.Factory, @"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE remote_price_id = 'remote-price-5';"));
     }
 
     [TestMethod]
@@ -204,6 +226,12 @@ public sealed class SupplierImportDataTests
         var nowMs = 1767225600000L;
         var entry = BuildCatalogEntry("late-price-ack", 6);
         var outboxId = await repository.EnqueueAsync(entry);
+        await new ProductRepository(db.Factory).UpsertAsync(new Product
+        {
+            Barcode = "CAT-6",
+            Name = "Late ACK product",
+            UnitPrice = 180
+        });
         using (var conn = db.Factory.Open())
         {
             await conn.ExecuteAsync(@"
@@ -228,6 +256,15 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
         {
             ServerImportId = "server-import-late-price",
             ServerRequestId = "server-request-late-price",
+            RemoteProductIds = new[]
+            {
+                new CatalogImportRemoteProductId
+                {
+                    Barcode = "CAT-6",
+                    ClientItemId = "test-import-late-price-ack-item",
+                    RemoteProductId = "remote-product-late-price"
+                }
+            },
             RemotePriceIds = new[]
             {
                 new CatalogImportRemotePriceId
@@ -247,6 +284,177 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
         Assert.AreEqual(
             "",
             await ScalarStringAsync(db.Factory, "SELECT COALESCE(remote_price_id, '') FROM product_price_history WHERE barcode = 'CAT-6' AND catalog_import_client_item_id IS NULL ORDER BY id DESC LIMIT 1"));
+        Assert.AreEqual(
+            "remote-product-late-price",
+            await ScalarStringAsync(db.Factory, @"
+SELECT remote_product_id
+FROM remote_catalog_price_ownership
+WHERE remote_price_id = 'remote-price-original';"));
+    }
+
+    [TestMethod]
+    public async Task CatalogImportOutboxRepository_AckRemotePriceWithoutOwnerRollsBackAckAndMapping()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogImportOutboxRepository(db.Factory);
+        var nowMs = 1767225600000L;
+        var entry = BuildCatalogEntry("missing-price-owner", 7);
+        var outboxId = await repository.EnqueueAsync(entry);
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+INSERT INTO product_price_history(
+  barcode, timestamp, type, old_price, new_price, source,
+  catalog_import_client_item_id, catalog_import_idempotency_key)
+VALUES(
+  'CAT-7', '2026-01-01T00:00:01Z', 'retail', NULL, 280, 'IMPORT',
+  @clientItemId, @idempotencyKey);",
+                new
+                {
+                    clientItemId = "test-import-missing-price-owner-item",
+                    idempotencyKey = entry.IdempotencyKey
+                });
+        }
+
+        Assert.IsTrue(await repository.PrepareAttemptAsync(outboxId, nowMs));
+        var ack = new CatalogImportAckResult
+        {
+            ServerImportId = "server-import-missing-owner",
+            ServerRequestId = "server-request-missing-owner",
+            RemotePriceIds = new[]
+            {
+                new CatalogImportRemotePriceId
+                {
+                    Barcode = "CAT-7",
+                    ClientItemId = "test-import-missing-price-owner-item",
+                    PriceType = "retail",
+                    RemotePriceId = "remote-price-missing-owner"
+                }
+            }
+        };
+
+        await AssertThrowsInvalidOperationAsync(() =>
+            repository.MarkAckedAsync(outboxId, ack, nowMs + 1000, expectedAttemptCount: 1));
+        Assert.AreEqual("in_progress", await ScalarStringAsync(db.Factory,
+            "SELECT status FROM catalog_import_outbox WHERE id = " + outboxId.ToString(CultureInfo.InvariantCulture)));
+        Assert.AreEqual("", await ScalarStringAsync(db.Factory, @"
+SELECT COALESCE(remote_price_id, '')
+FROM product_price_history
+WHERE barcode = 'CAT-7';"));
+        Assert.AreEqual(0, await ScalarLongAsync(db.Factory, @"
+SELECT COUNT(1)
+FROM remote_catalog_price_ownership
+WHERE remote_price_id = 'remote-price-missing-owner';"));
+    }
+
+    [TestMethod]
+    public async Task CatalogImportOutboxRepository_UnmatchedRemotePriceMappingRollsBackAck()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogImportOutboxRepository(db.Factory);
+        var nowMs = 1767225600000L;
+        var entry = BuildCatalogEntry("unmatched-price", 8);
+        var outboxId = await repository.EnqueueAsync(entry);
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+INSERT INTO products(barcode, name, unitPrice, remote_product_id, is_active)
+VALUES('CAT-8', 'Unmatched mapping product', 380, 'remote-product-8', 1);");
+        }
+
+        Assert.IsTrue(await repository.PrepareAttemptAsync(outboxId, nowMs));
+        var ack = new CatalogImportAckResult
+        {
+            ServerImportId = "server-import-unmatched",
+            ServerRequestId = "server-request-unmatched",
+            RemotePriceIds = new[]
+            {
+                new CatalogImportRemotePriceId
+                {
+                    Barcode = "CAT-8",
+                    ClientItemId = "test-import-unmatched-price-item",
+                    PriceType = "retail",
+                    RemotePriceId = "remote-price-unmatched"
+                }
+            }
+        };
+
+        await AssertThrowsInvalidOperationAsync(() =>
+            repository.MarkAckedAsync(outboxId, ack, nowMs + 1000, expectedAttemptCount: 1));
+        Assert.AreEqual("in_progress", await ScalarStringAsync(db.Factory,
+            "SELECT status FROM catalog_import_outbox WHERE id = " + outboxId.ToString(CultureInfo.InvariantCulture)));
+        Assert.AreEqual(0, await ScalarLongAsync(db.Factory, @"
+SELECT COUNT(1)
+FROM remote_catalog_price_ownership
+WHERE remote_price_id = 'remote-price-unmatched';"));
+    }
+
+    [TestMethod]
+    public async Task CatalogImportOutboxRepository_ConflictingExistingRemotePriceMappingRollsBackAck()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogImportOutboxRepository(db.Factory);
+        var nowMs = 1767225600000L;
+        var entry = BuildCatalogEntry("conflicting-price", 9);
+        var outboxId = await repository.EnqueueAsync(entry);
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+INSERT INTO products(barcode, name, unitPrice, remote_product_id, is_active)
+VALUES('CAT-9', 'Conflicting mapping product', 480, 'remote-product-9', 1);
+
+INSERT INTO product_price_history(
+  barcode, timestamp, type, old_price, new_price, source,
+  catalog_import_client_item_id, catalog_import_idempotency_key)
+VALUES(
+  'CAT-9', '2026-01-01T00:00:01Z', 'retail', NULL, 480, 'IMPORT',
+  @clientItemId, @idempotencyKey);
+
+INSERT INTO product_price_history(
+  barcode, timestamp, type, old_price, new_price, source, remote_price_id)
+VALUES(
+  'CAT-9', '2026-01-01T00:00:02Z', 'PURCHASE', NULL, 280, 'IMPORT',
+  'remote-price-conflicting');
+
+INSERT INTO remote_catalog_price_ownership(remote_price_id, remote_product_id)
+VALUES('remote-price-conflicting', 'remote-product-9');",
+                new
+                {
+                    clientItemId = "test-import-conflicting-price-item",
+                    idempotencyKey = entry.IdempotencyKey
+                });
+        }
+
+        Assert.IsTrue(await repository.PrepareAttemptAsync(outboxId, nowMs));
+        var ack = new CatalogImportAckResult
+        {
+            ServerImportId = "server-import-conflicting",
+            ServerRequestId = "server-request-conflicting",
+            RemotePriceIds = new[]
+            {
+                new CatalogImportRemotePriceId
+                {
+                    Barcode = "CAT-9",
+                    ClientItemId = "test-import-conflicting-price-item",
+                    PriceType = "retail",
+                    RemotePriceId = "remote-price-conflicting"
+                }
+            }
+        };
+
+        await AssertThrowsInvalidOperationAsync(() =>
+            repository.MarkAckedAsync(outboxId, ack, nowMs + 1000, expectedAttemptCount: 1));
+        Assert.AreEqual("in_progress", await ScalarStringAsync(db.Factory,
+            "SELECT status FROM catalog_import_outbox WHERE id = " + outboxId.ToString(CultureInfo.InvariantCulture)));
+        Assert.AreEqual("", await ScalarStringAsync(db.Factory, @"
+SELECT COALESCE(remote_price_id, '')
+FROM product_price_history
+WHERE catalog_import_client_item_id = 'test-import-conflicting-price-item';"));
+        Assert.AreEqual(1, await ScalarLongAsync(db.Factory, @"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE remote_price_id = 'remote-price-conflicting'
+  AND type = 'PURCHASE';"));
     }
 
     [TestMethod]
@@ -305,6 +513,159 @@ VALUES('CAT-6', '2026-01-01T00:00:02Z', 'retail', 180, 190, 'IMPORT');",
 
         Assert.AreEqual("CAT-LOCAL", ack.RemoteProductIds.Single().Barcode);
         Assert.AreEqual("CAT-LOCAL", ack.RemotePriceIds.Single().Barcode);
+    }
+
+    [TestMethod]
+    public async Task CatalogImportSyncService_ExplicitPriceMapWinsLegacyItemAndPersistsOwner()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogImportOutboxRepository(db.Factory);
+        var products = new ProductRepository(db.Factory);
+        var nowMs = 1767225600000L;
+        var entry = BuildCatalogEntry("explicit-price-precedence", 10);
+        var outboxId = await repository.EnqueueAsync(entry);
+        await products.UpsertAsync(new Product
+        {
+            Barcode = "CAT-10",
+            Name = "Explicit price precedence",
+            UnitPrice = 580
+        });
+        await products.InsertPriceHistoryAsync("CAT-10", "retail", 580, "IMPORT");
+        Assert.IsTrue(await repository.PrepareAttemptAsync(outboxId, nowMs));
+
+        const string clientItemId = "test-import-explicit-price-precedence-item";
+        var request = new PosCatalogImportRequest
+        {
+            Items = new[]
+            {
+                new PosCatalogImportItemRequest
+                {
+                    Barcode = "CAT-10",
+                    ClientItemId = clientItemId
+                }
+            }
+        };
+        var remote = new PosCatalogImportResponse
+        {
+            Batch = new PosCatalogImportBatchResponse(),
+            RemoteProductIds = new[]
+            {
+                new PosCatalogImportRemoteProductIdAck
+                {
+                    Barcode = "CAT-10",
+                    ClientItemId = clientItemId,
+                    RemoteProductId = "remote-product-explicit"
+                }
+            },
+            RemotePriceIds = new[]
+            {
+                new PosCatalogImportRemotePriceIdAck
+                {
+                    Barcode = "CAT-10",
+                    ClientItemId = clientItemId,
+                    RemotePriceId = "remote-price-explicit"
+                }
+            },
+            Items = new[]
+            {
+                new PosCatalogImportItemAck
+                {
+                    Barcode = "CAT-10",
+                    ClientItemId = clientItemId,
+                    PriceType = "retail",
+                    RemotePriceId = "remote-price-legacy"
+                }
+            },
+            ServerImportId = "server-import-explicit",
+            ServerRequestId = "server-request-explicit"
+        };
+        var ack = InvokeBuildAckResult(
+            new CatalogImportOutboxItem
+            {
+                ClientImportId = entry.ClientImportId,
+                IdempotencyKey = entry.IdempotencyKey,
+                PayloadHash = entry.PayloadHash
+            },
+            request,
+            remote);
+
+        Assert.AreEqual(1, ack.RemotePriceIds.Count);
+        Assert.AreEqual("remote-price-explicit", ack.RemotePriceIds.Single().RemotePriceId);
+        Assert.IsTrue(await repository.MarkAckedAsync(
+            outboxId,
+            ack,
+            nowMs + 1000,
+            expectedAttemptCount: 1));
+        Assert.AreEqual("acked", await ScalarStringAsync(db.Factory,
+            "SELECT status FROM catalog_import_outbox WHERE id = " + outboxId.ToString(CultureInfo.InvariantCulture)));
+        Assert.AreEqual("remote-price-explicit", await ScalarStringAsync(db.Factory, @"
+SELECT COALESCE(remote_price_id, '')
+FROM product_price_history
+WHERE barcode = 'CAT-10'
+ORDER BY id DESC
+LIMIT 1;"));
+        Assert.AreEqual(0, await ScalarLongAsync(db.Factory, @"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE remote_price_id = 'remote-price-legacy';"));
+        Assert.AreEqual("remote-product-explicit", await ScalarStringAsync(db.Factory, @"
+SELECT remote_product_id
+FROM remote_catalog_price_ownership
+WHERE remote_price_id = 'remote-price-explicit';"));
+    }
+
+    [TestMethod]
+    public void CatalogImportSyncService_ExplicitTypedPriceMapWinsLegacyWildcardItem()
+    {
+        const string clientItemId = "test-import-explicit-typed-price-item";
+        var request = new PosCatalogImportRequest
+        {
+            Items = new[]
+            {
+                new PosCatalogImportItemRequest
+                {
+                    Barcode = "CAT-11",
+                    ClientItemId = clientItemId
+                }
+            }
+        };
+        var remote = new PosCatalogImportResponse
+        {
+            Batch = new PosCatalogImportBatchResponse(),
+            RemotePriceIds = new[]
+            {
+                new PosCatalogImportRemotePriceIdAck
+                {
+                    Barcode = "CAT-11",
+                    ClientItemId = clientItemId,
+                    PriceType = "retail",
+                    RemotePriceId = "remote-price-explicit-typed"
+                }
+            },
+            Items = new[]
+            {
+                new PosCatalogImportItemAck
+                {
+                    Barcode = "CAT-11",
+                    ClientItemId = clientItemId,
+                    RemotePriceId = "remote-price-legacy-wildcard"
+                }
+            }
+        };
+
+        var ack = InvokeBuildAckResult(
+            new CatalogImportOutboxItem
+            {
+                ClientImportId = "client-import",
+                IdempotencyKey = "idempotency-key",
+                PayloadHash = "payload-hash"
+            },
+            request,
+            remote);
+
+        Assert.AreEqual(1, ack.RemotePriceIds.Count);
+        Assert.AreEqual("remote-price-explicit-typed", ack.RemotePriceIds.Single().RemotePriceId);
+        Assert.AreEqual("retail", ack.RemotePriceIds.Single().PriceType);
     }
 
     [TestMethod]

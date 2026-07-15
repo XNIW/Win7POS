@@ -1621,7 +1621,9 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 if (!(await TryDemandOrOverrideAsync(PermissionCodes.SettingsShop, PosLocalization.Current.Text("operations.shopSettings")).ConfigureAwait(true))) { RequestFocusBarcode(); return; }
-                var vm = new Dialogs.ShopSettingsViewModel(_service);
+                var vm = new Dialogs.ShopSettingsViewModel(
+                    _service,
+                    _permissionService?.Has(PermissionCodes.DbMaintenance) == true);
                 var dlg = new Dialogs.ShopSettingsDialog(vm)
                 {
                     Owner = DialogOwnerHelper.GetSafeOwner()

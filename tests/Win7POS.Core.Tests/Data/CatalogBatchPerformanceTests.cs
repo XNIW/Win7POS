@@ -20,22 +20,26 @@ public sealed class CatalogBatchPerformanceTests
 
         var rows = PositiveEnvironmentInt("WIN7POS_CATALOG_BENCHMARK_ROWS", 2000);
         var iterations = PositiveEnvironmentInt("WIN7POS_CATALOG_BENCHMARK_ITERATIONS", 3);
+        var pageSize = PositiveEnvironmentInt("WIN7POS_CATALOG_BENCHMARK_PAGE_SIZE", 1000);
         var requestedMode = (Environment.GetEnvironmentVariable("WIN7POS_CATALOG_BENCHMARK_MODE") ?? string.Empty)
             .Trim()
             .ToLowerInvariant();
-        var modes = requestedMode == "legacy" || requestedMode == "batch"
+        var modes = requestedMode == "legacy" || requestedMode == "batch" ||
+                    requestedMode == "batch-paged" || requestedMode == "batch-paged-full"
             ? new[] { requestedMode }
             : new[] { "legacy", "batch" };
         foreach (var mode in modes)
         {
             TestContext.WriteLine(
-                $"mode={mode} rows={rows} prices={rows} references=40 iterations={iterations}");
-            var samples = await CatalogBatchPerformanceScenario.RunAsync(mode, rows, iterations);
+                $"mode={mode} rows={rows} prices={rows} references=40 iterations={iterations} page_size={pageSize}");
+            var samples = await CatalogBatchPerformanceScenario.RunAsync(mode, rows, iterations, pageSize);
             foreach (var sample in samples)
             {
                 Assert.AreEqual(rows, sample.ProductCount);
                 Assert.AreEqual(rows, sample.PriceCount);
                 Assert.AreEqual(0L, sample.PendingPriceCount);
+                if (mode == "batch-paged-full")
+                    Assert.AreEqual("Verified", sample.ExactnessStatus);
                 TestContext.WriteLine(sample.ToEvidenceLine());
             }
         }

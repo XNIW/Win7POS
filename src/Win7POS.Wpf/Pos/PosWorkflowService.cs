@@ -1528,6 +1528,32 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
+        public async Task<PosCatalogPullOutcome> RepairCatalogAsync(
+            CancellationToken cancellationToken = default(CancellationToken),
+            IProgress<PosCatalogPullProgress> progress = null)
+        {
+            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                if (!PosAdminWebOptions.TryLoad(out var options, out _))
+                {
+                    return PosCatalogPullOutcome.Failure(
+                        "pos_admin_web_configuration_missing",
+                        authDenied: false,
+                        hasMore: false,
+                        pagesProcessed: 0);
+                }
+
+                return await new PosCatalogPullService(_factory)
+                    .TryRepairCatalogAsync(options, cancellationToken, progress)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                _gate.Release();
+            }
+        }
+
         public async Task<int> GetFiscalBoletaNumberAsync()
         {
             await _gate.WaitAsync().ConfigureAwait(false);

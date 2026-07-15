@@ -97,6 +97,13 @@ WHERE NOT EXISTS (
   WHERE incoming.id = TRIM(remote_catalog_pending_prices.remote_product_id)
 );",
                     transaction: tx).ConfigureAwait(false);
+                await conn.ExecuteAsync(@"
+DELETE FROM remote_catalog_product_references
+WHERE NOT EXISTS (
+  SELECT 1 FROM temp_full_product_ids incoming
+  WHERE incoming.id = TRIM(remote_catalog_product_references.remote_product_id)
+);",
+                    transaction: tx).ConfigureAwait(false);
 
                 var result = await LoadAuditAsync(conn, tx).ConfigureAwait(false);
                 result.DeactivatedCategories = deactivatedCategories;
@@ -114,6 +121,40 @@ WHERE NOT EXISTS (
                 result.DistinctAuthoritativeSupplierIds = suppliers.Values.Count;
                 result.DuplicateAuthoritativeSupplierIds = suppliers.DuplicateCount;
                 result.InvalidAuthoritativeSupplierIds = suppliers.InvalidCount;
+                tx.Commit();
+                return result;
+            }
+        }
+
+        public async Task<CatalogFullRefreshResult> AuditCurrentAsync()
+        {
+            using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction())
+            {
+                await conn.ExecuteAsync(@"
+CREATE TEMP TABLE IF NOT EXISTS temp_full_product_ids (id TEXT PRIMARY KEY);
+CREATE TEMP TABLE IF NOT EXISTS temp_full_category_ids (id TEXT PRIMARY KEY);
+CREATE TEMP TABLE IF NOT EXISTS temp_full_supplier_ids (id TEXT PRIMARY KEY);
+DELETE FROM temp_full_product_ids;
+DELETE FROM temp_full_category_ids;
+DELETE FROM temp_full_supplier_ids;
+INSERT OR IGNORE INTO temp_full_product_ids(id)
+SELECT TRIM(remote_product_id)
+FROM products
+WHERE TRIM(COALESCE(remote_product_id, '')) <> ''
+  AND COALESCE(is_active, 1) = 1;
+INSERT OR IGNORE INTO temp_full_category_ids(id)
+SELECT TRIM(remote_category_id)
+FROM categories
+WHERE TRIM(COALESCE(remote_category_id, '')) <> ''
+  AND COALESCE(is_active, 1) = 1;
+INSERT OR IGNORE INTO temp_full_supplier_ids(id)
+SELECT TRIM(remote_supplier_id)
+FROM suppliers
+WHERE TRIM(COALESCE(remote_supplier_id, '')) <> ''
+  AND COALESCE(is_active, 1) = 1;",
+                    transaction: tx).ConfigureAwait(false);
+                var result = await LoadAuditAsync(conn, tx).ConfigureAwait(false);
                 tx.Commit();
                 return result;
             }
@@ -201,12 +242,56 @@ SELECT
    FROM product_meta m
    LEFT JOIN categories c ON c.id = m.category_id
    WHERE m.category_id IS NOT NULL
-     AND c.id IS NULL) AS OrphanCategoryReferences,
+      AND c.id IS NULL) AS OrphanCategoryReferences,
   (SELECT COUNT(1)
    FROM product_meta m
    LEFT JOIN suppliers s ON s.id = m.supplier_id
    WHERE m.supplier_id IS NOT NULL
-     AND s.id IS NULL) AS OrphanSupplierReferences,
+      AND s.id IS NULL) AS OrphanSupplierReferences,
+  (SELECT COUNT(1)
+   FROM products p
+   LEFT JOIN remote_catalog_product_references r
+     ON r.remote_product_id = TRIM(p.remote_product_id)
+   WHERE TRIM(COALESCE(p.remote_product_id, '')) <> ''
+     AND COALESCE(p.is_active, 1) = 1
+     AND r.remote_product_id IS NULL) AS RemoteProductsWithoutReferenceMap,
+  (SELECT COUNT(1)
+   FROM remote_catalog_product_references r
+   LEFT JOIN products p
+     ON p.remote_product_id = TRIM(r.remote_product_id)
+   WHERE p.id IS NULL) AS ReferenceMapsWithoutProduct,
+  (SELECT COUNT(1)
+   FROM products p
+   JOIN product_meta m ON m.barcode = p.barcode
+   JOIN remote_catalog_product_references r
+     ON r.remote_product_id = TRIM(p.remote_product_id)
+   LEFT JOIN categories c
+     ON c.remote_category_id = TRIM(r.remote_category_id)
+    AND COALESCE(c.is_active, 1) = 1
+   WHERE TRIM(COALESCE(p.remote_product_id, '')) <> ''
+     AND COALESCE(p.is_active, 1) = 1
+     AND (
+       (TRIM(COALESCE(r.remote_category_id, '')) = '' AND m.category_id IS NOT NULL)
+       OR
+       (TRIM(COALESCE(r.remote_category_id, '')) <> '' AND
+        (c.id IS NULL OR m.category_id IS NULL OR m.category_id <> c.id))
+     )) AS InvalidCategoryReferenceMappings,
+  (SELECT COUNT(1)
+   FROM products p
+   JOIN product_meta m ON m.barcode = p.barcode
+   JOIN remote_catalog_product_references r
+     ON r.remote_product_id = TRIM(p.remote_product_id)
+   LEFT JOIN suppliers s
+     ON s.remote_supplier_id = TRIM(r.remote_supplier_id)
+    AND COALESCE(s.is_active, 1) = 1
+   WHERE TRIM(COALESCE(p.remote_product_id, '')) <> ''
+     AND COALESCE(p.is_active, 1) = 1
+     AND (
+       (TRIM(COALESCE(r.remote_supplier_id, '')) = '' AND m.supplier_id IS NOT NULL)
+       OR
+       (TRIM(COALESCE(r.remote_supplier_id, '')) <> '' AND
+        (s.id IS NULL OR m.supplier_id IS NULL OR m.supplier_id <> s.id))
+     )) AS InvalidSupplierReferenceMappings,
   (SELECT COUNT(1)
    FROM product_meta m
    JOIN products p ON p.barcode = m.barcode
@@ -273,12 +358,17 @@ SELECT
             await conn.ExecuteAsync(
                 "CREATE TEMP TABLE IF NOT EXISTS " + table + " (id TEXT PRIMARY KEY); DELETE FROM " + table + ";",
                 transaction: tx).ConfigureAwait(false);
+            using var insert = conn.CreateCommand();
+            insert.Transaction = tx;
+            insert.CommandText = "INSERT INTO " + table + "(id) VALUES(@value);";
+            var parameter = insert.CreateParameter();
+            parameter.ParameterName = "@value";
+            insert.Parameters.Add(parameter);
+            insert.Prepare();
             foreach (var value in values)
             {
-                await conn.ExecuteAsync(
-                    "INSERT INTO " + table + "(id) VALUES(@value);",
-                    new { value },
-                    tx).ConfigureAwait(false);
+                parameter.Value = value;
+                await insert.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
         }
 
@@ -344,6 +434,9 @@ SELECT
         public long DurationMilliseconds { get; set; }
         public bool HasMore { get; set; }
         public int Pages { get; set; }
+        public long DuplicatePriceRows { get; set; }
+        public long InvalidPriceRows { get; set; }
+        public long? PriceRowsAccepted { get; set; }
         public long? PriceRowsReceived { get; set; }
         public long? ProductRowsReceived { get; set; }
         public long? CategoryRowsReceived { get; set; }
@@ -429,12 +522,25 @@ SELECT
 
             if (run.DurationMilliseconds < 0 ||
                 run.TombstonesReceived < 0 ||
+                run.DuplicatePriceRows < 0 ||
+                run.InvalidPriceRows < 0 ||
+                IsNegative(run.PriceRowsAccepted) ||
                 IsNegative(run.ProductRowsReceived) ||
                 IsNegative(run.CategoryRowsReceived) ||
                 IsNegative(run.SupplierRowsReceived) ||
                 IsNegative(run.PriceRowsReceived))
             {
                 return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_run_evidence_invalid", true);
+            }
+
+            if (run.InvalidPriceRows > 0)
+            {
+                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_invalid_price_rows", true);
+            }
+
+            if (run.DuplicatePriceRows > 0)
+            {
+                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_duplicate_price_rows", true);
             }
 
             if (run.ProductRowsReceived.HasValue &&
@@ -455,10 +561,28 @@ SELECT
                 return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_supplier_row_evidence_mismatch", true);
             }
 
-            var invariantError = FirstInvariantError(audit);
+            var invariantError = FindInvariantError(audit);
             if (invariantError.Length > 0)
             {
                 return Set(result, CatalogCompletenessStatus.Mismatch, invariantError, true);
+            }
+
+            // Reconciliation owns the authoritative identity sets even when an older
+            // server omits catalogSummary. Those sets must still map one-for-one to the
+            // active local mirror; otherwise Unverified could hide a collapsed row.
+            if (audit.DistinctAuthoritativeProductIds != audit.DistinctActiveRemoteProductIds)
+            {
+                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_authoritative_products_not_applied", true);
+            }
+
+            if (audit.DistinctAuthoritativeCategoryIds != audit.DistinctActiveRemoteCategoryIds)
+            {
+                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_authoritative_categories_not_applied", true);
+            }
+
+            if (audit.DistinctAuthoritativeSupplierIds != audit.DistinctActiveRemoteSupplierIds)
+            {
+                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_authoritative_suppliers_not_applied", true);
             }
 
             if (summary == null)
@@ -508,6 +632,16 @@ SELECT
                 return Set(result, CatalogCompletenessStatus.Unverified, "catalog_prices_evidence_missing", false);
             }
 
+            if (!run.PriceRowsAccepted.HasValue)
+            {
+                return Set(result, CatalogCompletenessStatus.Unverified, "catalog_prices_applied_evidence_missing", false);
+            }
+
+            if (run.PriceRowsAccepted.Value != run.PriceRowsReceived.Value)
+            {
+                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_prices_not_fully_applied", true);
+            }
+
             if (summary.Prices.Value != run.PriceRowsReceived.Value)
             {
                 return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_prices_count_mismatch", true);
@@ -516,21 +650,31 @@ SELECT
             var expectedChecksum = Normalize(summary.Checksum);
             if (expectedChecksum.Length > 0)
             {
+                var expectedAlgorithm = Normalize(summary.ChecksumAlgorithm);
+                if (!string.Equals(expectedAlgorithm, "sha256", StringComparison.OrdinalIgnoreCase))
+                {
+                    return Set(result, CatalogCompletenessStatus.Unverified, "catalog_checksum_algorithm_unsupported", false);
+                }
+
+                if (!IsSha256Hex(expectedChecksum))
+                {
+                    return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_summary_checksum_invalid", true);
+                }
+
                 var actualChecksum = Normalize(run.ActualChecksum);
                 if (actualChecksum.Length == 0)
                 {
                     return Set(result, CatalogCompletenessStatus.Unverified, "catalog_checksum_unverifiable", false);
                 }
 
-                var expectedAlgorithm = Normalize(summary.ChecksumAlgorithm);
                 var actualAlgorithm = Normalize(run.ActualChecksumAlgorithm);
-                if (expectedAlgorithm.Length > 0 &&
-                    !string.Equals(expectedAlgorithm, actualAlgorithm, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(actualAlgorithm, "sha256", StringComparison.OrdinalIgnoreCase) ||
+                    !IsSha256Hex(actualChecksum))
                 {
                     return Set(result, CatalogCompletenessStatus.Unverified, "catalog_checksum_algorithm_unsupported", false);
                 }
 
-                if (!string.Equals(expectedChecksum, actualChecksum, StringComparison.Ordinal))
+                if (!string.Equals(expectedChecksum, actualChecksum, StringComparison.OrdinalIgnoreCase))
                 {
                     return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_checksum_mismatch", true);
                 }
@@ -539,8 +683,9 @@ SELECT
             return Set(result, CatalogCompletenessStatus.Verified, "catalog_exactness_verified", false);
         }
 
-        private static string FirstInvariantError(CatalogFullRefreshResult audit)
+        public static string FindInvariantError(CatalogFullRefreshResult audit)
         {
+            if (audit == null) return "catalog_audit_missing";
             if (audit.InvalidAuthoritativeProductIds > 0) return "catalog_invalid_product_ids";
             if (audit.InvalidAuthoritativeCategoryIds > 0) return "catalog_invalid_category_ids";
             if (audit.InvalidAuthoritativeSupplierIds > 0) return "catalog_invalid_supplier_ids";
@@ -552,6 +697,10 @@ SELECT
             if (audit.DuplicateActiveRemoteSupplierIds > 0) return "catalog_duplicate_local_supplier_ids";
             if (audit.DuplicateActiveBarcodes > 0) return "catalog_duplicate_active_barcodes";
             if (audit.RemoteProductsWithoutMeta > 0) return "catalog_product_meta_missing";
+            if (audit.RemoteProductsWithoutReferenceMap > 0) return "catalog_product_reference_map_missing";
+            if (audit.ReferenceMapsWithoutProduct > 0) return "catalog_product_reference_map_orphaned";
+            if (audit.InvalidCategoryReferenceMappings > 0) return "catalog_category_reference_mapping_invalid";
+            if (audit.InvalidSupplierReferenceMappings > 0) return "catalog_supplier_reference_mapping_invalid";
             if (audit.InvalidActiveRemoteProducts > 0) return "catalog_active_products_invalid";
             if (audit.OrphanCategoryReferences > 0) return "catalog_category_references_orphaned";
             if (audit.OrphanSupplierReferences > 0) return "catalog_supplier_references_orphaned";
@@ -576,6 +725,12 @@ SELECT
         private static bool IsNegative(long? value)
         {
             return value.HasValue && value.Value < 0;
+        }
+
+        private static bool IsSha256Hex(string value)
+        {
+            var normalized = Normalize(value);
+            return normalized.Length == 64 && normalized.All(Uri.IsHexDigit);
         }
 
         private static CatalogExactnessResult Set(
@@ -623,9 +778,11 @@ SELECT
         public long InactiveRemoteSuppliers { get; set; }
         public long InactiveSupplierReferences { get; set; }
         public long InvalidActiveRemoteProducts { get; set; }
+        public long InvalidCategoryReferenceMappings { get; set; }
         public long InvalidAuthoritativeCategoryIds { get; set; }
         public long InvalidAuthoritativeProductIds { get; set; }
         public long InvalidAuthoritativeSupplierIds { get; set; }
+        public long InvalidSupplierReferenceMappings { get; set; }
         public long NonAuthoritativeActiveCategories { get; set; }
         public long NonAuthoritativeActiveProducts { get; set; }
         public long NonAuthoritativeActiveSuppliers { get; set; }
@@ -636,6 +793,8 @@ SELECT
         public long ReceivedProductIds { get; set; }
         public long ReceivedSupplierIds { get; set; }
         public long RemotePriceHistoryRows { get; set; }
+        public long RemoteProductsWithoutReferenceMap { get; set; }
+        public long ReferenceMapsWithoutProduct { get; set; }
         public long RemoteProductsWithoutMeta { get; set; }
     }
 }

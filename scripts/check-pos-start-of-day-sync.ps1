@@ -144,7 +144,7 @@ $retryIndex = Index-OrFail $statusReader 'if (outbox.Retry > 0 || catalogOutbox.
 $pendingIndex = Index-OrFail $statusReader 'if (outbox.PendingOrRetry > 0 || catalogOutbox.PendingOrRetry > 0)' "status pending priority missing"
 $catalogIndex = Index-OrFail $statusReader 'if (CatalogRequiresAttention' "status catalog attention priority missing"
 $syncIndex = Index-OrFail $statusReader 'if (salesSyncInProgress)' "status sync-in-progress priority missing"
-$readyIndex = Index-OrFail $statusReader 'if (!string.IsNullOrWhiteSpace(catalogSaleSafeAt))' "status catalog-ready priority missing"
+$readyIndex = Index-OrFail $statusReader 'if (catalogSaleSafety.IsSaleSafe && !string.IsNullOrWhiteSpace(catalogSaleSafeAt))' "status catalog-ready priority missing"
 if ($authIndex -gt $blockedIndex -or $blockedIndex -gt $retryIndex -or $retryIndex -gt $pendingIndex -or $pendingIndex -gt $catalogIndex -or $catalogIndex -gt $syncIndex -or $syncIndex -gt $readyIndex) {
     Fail "status priority must be auth -> blocked -> retry -> pending -> catalog attention -> sync in progress -> catalog ready"
 } else {

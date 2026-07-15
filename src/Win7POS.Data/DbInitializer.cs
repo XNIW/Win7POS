@@ -324,6 +324,38 @@ CREATE TABLE IF NOT EXISTS remote_catalog_pending_prices (
   source    TEXT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS remote_catalog_product_references (
+  remote_product_id  TEXT PRIMARY KEY NOT NULL,
+  remote_category_id TEXT NULL,
+  remote_supplier_id TEXT NULL
+);
+
+CREATE TABLE IF NOT EXISTS remote_catalog_price_ownership (
+  remote_price_id   TEXT PRIMARY KEY NOT NULL,
+  remote_product_id TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS remote_catalog_price_evidence_quarantine (
+  id                              INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  evidence_kind                   TEXT NOT NULL,
+  evidence_row_id                 INTEGER NOT NULL,
+  remote_price_id                 TEXT NOT NULL,
+  remote_product_id               TEXT NULL,
+  barcode                         TEXT NULL,
+  effective_at                    TEXT NOT NULL,
+  type                            TEXT NOT NULL,
+  old_price                       INTEGER NULL,
+  price                           INTEGER NOT NULL,
+  source                          TEXT NULL,
+  catalog_import_client_item_id   TEXT NULL,
+  catalog_import_idempotency_key  TEXT NULL,
+  original_created_at             TEXT NULL,
+  authoritative_remote_product_id TEXT NOT NULL,
+  reason                          TEXT NOT NULL,
+  quarantined_at                  TEXT NOT NULL,
+  UNIQUE(evidence_kind, evidence_row_id, remote_price_id)
+);
 ", transaction: tx);
 
             EnsureColumn(conn, tx, "local_stock_movements", "movement_key", "TEXT NULL");
@@ -382,6 +414,33 @@ CREATE TABLE IF NOT EXISTS remote_catalog_pending_prices (
             EnsureColumn(conn, tx, "remote_catalog_pending_prices", "effective_at", "TEXT NOT NULL DEFAULT ''");
             EnsureColumn(conn, tx, "remote_catalog_pending_prices", "source", "TEXT NULL");
             EnsureColumn(conn, tx, "remote_catalog_pending_prices", "created_at", "TEXT NOT NULL DEFAULT ''");
+
+            // Older pending rows already carry the remote product owner and can be
+            // backfilled conservatively. History-only rows cannot: their barcode may
+            // have been renamed/reused, so they remain unclaimed and fail closed.
+            conn.Execute(@"
+INSERT OR IGNORE INTO remote_catalog_price_ownership(
+  remote_price_id,
+  remote_product_id)
+SELECT
+  evidence.remote_price_id,
+  MIN(evidence.remote_product_id)
+FROM (
+  SELECT
+    TRIM(pending.remote_price_id) AS remote_price_id,
+    TRIM(pending.remote_product_id) AS remote_product_id
+  FROM remote_catalog_pending_prices pending
+  WHERE TRIM(COALESCE(pending.remote_price_id, '')) <> ''
+    AND TRIM(COALESCE(pending.remote_product_id, '')) <> ''
+    AND NOT EXISTS (
+      SELECT 1
+      FROM product_price_history history
+      WHERE TRIM(COALESCE(history.remote_price_id, '')) =
+            TRIM(COALESCE(pending.remote_price_id, ''))
+    )
+) evidence
+GROUP BY evidence.remote_price_id
+HAVING COUNT(DISTINCT evidence.remote_product_id) = 1;", transaction: tx);
         }
 
         private static void BackfillLegacyOutboxBindings(SqliteConnection conn, SqliteTransaction tx)
@@ -570,6 +629,10 @@ ON remote_catalog_pending_prices(remote_price_id) WHERE remote_price_id IS NOT N
 CREATE UNIQUE INDEX IF NOT EXISTS idx_pending_remote_price_fallback
 ON remote_catalog_pending_prices(remote_product_id, type, effective_at, price, coalesce(source,'')) WHERE remote_price_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_pending_remote_price_product ON remote_catalog_pending_prices(remote_product_id);
+CREATE INDEX IF NOT EXISTS idx_remote_price_ownership_product ON remote_catalog_price_ownership(remote_product_id);
+CREATE INDEX IF NOT EXISTS idx_remote_price_quarantine_remote_id ON remote_catalog_price_evidence_quarantine(remote_price_id);
+CREATE INDEX IF NOT EXISTS idx_remote_product_refs_category ON remote_catalog_product_references(remote_category_id);
+CREATE INDEX IF NOT EXISTS idx_remote_product_refs_supplier ON remote_catalog_product_references(remote_supplier_id);
 CREATE INDEX IF NOT EXISTS idx_held_cart_lines_holdId ON held_cart_lines(holdId);
 CREATE INDEX IF NOT EXISTS idx_security_events_ts ON security_events(ts);
 CREATE INDEX IF NOT EXISTS idx_products_remote_product_id ON products(remote_product_id);

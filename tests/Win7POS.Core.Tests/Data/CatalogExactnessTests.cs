@@ -6,6 +6,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Win7POS.Core.Online;
 using Win7POS.Data;
 using Win7POS.Data.Online;
+using Win7POS.Data.Repositories;
 
 namespace Win7POS.Core.Tests.Data;
 
@@ -17,7 +18,8 @@ public sealed class CatalogExactnessTests
     {
         var legacy = Deserialize<PosCatalogPullResponse>(@"{
   ""schemaVersion"": 2,
-  ""syncMode"": ""full_refresh""
+  ""syncMode"": ""full_refresh"",
+  ""catalog"": {}
 }");
         legacy.Policy = ValidPolicy();
 
@@ -26,7 +28,7 @@ public sealed class CatalogExactnessTests
 
         var response = ValidCatalogResponse();
         response.CatalogSummary = Summary(products: 2, categories: 1, suppliers: 1, prices: 3);
-        response.CatalogSummary.Checksum = "checksum-value";
+        response.CatalogSummary.Checksum = new string('a', 64);
         response.CatalogSummary.ChecksumAlgorithm = "sha256";
         var json = Serialize(response);
         var roundTrip = Deserialize<PosCatalogPullResponse>(json);
@@ -37,7 +39,7 @@ public sealed class CatalogExactnessTests
         Assert.AreEqual(1L, roundTrip.CatalogSummary.Categories);
         Assert.AreEqual(1L, roundTrip.CatalogSummary.Suppliers);
         Assert.AreEqual(3L, roundTrip.CatalogSummary.Prices);
-        Assert.AreEqual("checksum-value", roundTrip.CatalogSummary.Checksum);
+        Assert.AreEqual(new string('a', 64), roundTrip.CatalogSummary.Checksum);
         Assert.AreEqual("sha256", roundTrip.CatalogSummary.ChecksumAlgorithm);
     }
 
@@ -62,6 +64,78 @@ public sealed class CatalogExactnessTests
         response.CatalogSummary.ChecksumAlgorithm = "sha256";
         Assert.AreEqual(
             "catalog_summary_checksum_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response = ValidCatalogResponse();
+        response.CatalogSummary = Summary(products: 1, categories: 0, suppliers: 0, prices: 0);
+        response.CatalogSummary.Checksum = new string('a', 64);
+        Assert.AreEqual(
+            "catalog_summary_checksum_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+    }
+
+    [TestMethod]
+    public void CatalogVersionValidator_RejectsValuesThatCannotRoundTripCheckpoint()
+    {
+        var response = ValidCatalogResponse();
+        response.CatalogVersion = new string('v', 128);
+        Assert.AreEqual(string.Empty, PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response.CatalogVersion = new string('v', 129);
+        Assert.AreEqual(
+            "catalog_version_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response.CatalogVersion = "catalog\u0001version";
+        Assert.AreEqual(
+            "catalog_version_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response.CatalogVersion = " catalog-v1";
+        Assert.AreEqual(
+            "catalog_version_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response.CatalogVersion = "catalog-v1 ";
+        Assert.AreEqual(
+            "catalog_version_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+    }
+
+    [TestMethod]
+    public void CatalogRowValidator_RejectsDuplicateRemoteIdsWithinOnePage()
+    {
+        var response = ValidCatalogResponse();
+        response.SyncMode = "delta";
+        response.Catalog.Products = new[]
+        {
+            ValidProductRow("product-1", "BARCODE-1"),
+            ValidProductRow("product-1", "BARCODE-2")
+        };
+        Assert.AreEqual(
+            "catalog_duplicate_product_ids",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response = ValidCatalogResponse();
+        response.SyncMode = "delta";
+        response.Catalog.Categories = new[]
+        {
+            new PosCatalogCategoryResponse { CategoryId = "category-1", Name = "First" },
+            new PosCatalogCategoryResponse { CategoryId = " category-1 ", Name = "Second" }
+        };
+        Assert.AreEqual(
+            "catalog_duplicate_category_ids",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response = ValidCatalogResponse();
+        response.SyncMode = "delta";
+        response.Catalog.Suppliers = new[]
+        {
+            new PosCatalogSupplierResponse { SupplierId = "supplier-1", Name = "First" },
+            new PosCatalogSupplierResponse { SupplierId = "supplier-1", Name = "Second" }
+        };
+        Assert.AreEqual(
+            "catalog_duplicate_supplier_ids",
             PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
     }
 
@@ -173,7 +247,7 @@ VALUES('ORPHAN-META', 9999);");
         Assert.AreEqual("catalog_has_more_not_drained", partial.Code);
         Assert.IsTrue(partial.RepairRequired);
 
-        summary.Checksum = "expected-checksum";
+        summary.Checksum = new string('a', 64);
         summary.ChecksumAlgorithm = "sha256";
         var noChecksum = CatalogExactnessVerifier.Evaluate(
             summary,
@@ -183,15 +257,118 @@ VALUES('ORPHAN-META', 9999);");
         Assert.AreEqual("catalog_checksum_unverifiable", noChecksum.Code);
 
         var mismatchContext = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2);
-        mismatchContext.ActualChecksum = "other-checksum";
+        mismatchContext.ActualChecksum = new string('b', 64);
         mismatchContext.ActualChecksumAlgorithm = "sha256";
         var checksumMismatch = CatalogExactnessVerifier.Evaluate(summary, audit, mismatchContext);
         Assert.AreEqual(CatalogCompletenessStatus.Mismatch, checksumMismatch.Status);
         Assert.AreEqual("catalog_checksum_mismatch", checksumMismatch.Code);
 
-        mismatchContext.ActualChecksum = "expected-checksum";
+        mismatchContext.ActualChecksum = new string('a', 64);
         var checksumVerified = CatalogExactnessVerifier.Evaluate(summary, audit, mismatchContext);
         Assert.AreEqual(CatalogCompletenessStatus.Verified, checksumVerified.Status);
+    }
+
+    [TestMethod]
+    public void CatalogRowValidator_RejectsMalformedRowsBeforeAnyApply()
+    {
+        var response = ValidCatalogResponse();
+        response.Catalog.Products = new[]
+        {
+            new PosCatalogProductResponse
+            {
+                ProductId = "product-1",
+                Barcode = string.Empty,
+                RetailPrice = 100
+            }
+        };
+        Assert.AreEqual(
+            "catalog_product_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response = ValidCatalogResponse();
+        response.Catalog.Prices = new[]
+        {
+            new PosCatalogPriceResponse
+            {
+                PriceId = string.Empty,
+                ProductId = "product-1",
+                Type = "retail",
+                Price = 100
+            }
+        };
+        Assert.AreEqual(
+            "catalog_price_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response = ValidCatalogResponse();
+        response.Catalog.Tombstones = new PosCatalogTombstonesResponse
+        {
+            Suppliers = new[]
+            {
+                new PosCatalogSupplierTombstoneResponse { SupplierId = " " }
+            }
+        };
+        Assert.AreEqual(
+            "catalog_supplier_tombstone_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+    }
+
+    [TestMethod]
+    public async Task InvalidDuplicateOrSkippedPriceEvidence_CannotBecomeVerified()
+    {
+        using var db = TestDb.Create();
+        var audit = await CreateCleanAuditAsync(db);
+        var summary = Summary(products: 2, categories: 1, suppliers: 1, prices: 2);
+
+        var invalid = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2);
+        invalid.InvalidPriceRows = 1;
+        invalid.PriceRowsAccepted = 1;
+        var invalidResult = CatalogExactnessVerifier.Evaluate(summary, audit, invalid);
+        Assert.AreEqual(CatalogCompletenessStatus.Mismatch, invalidResult.Status);
+        Assert.AreEqual("catalog_invalid_price_rows", invalidResult.Code);
+
+        var duplicate = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2);
+        duplicate.DuplicatePriceRows = 1;
+        var duplicateResult = CatalogExactnessVerifier.Evaluate(summary, audit, duplicate);
+        Assert.AreEqual(CatalogCompletenessStatus.Mismatch, duplicateResult.Status);
+        Assert.AreEqual("catalog_duplicate_price_rows", duplicateResult.Code);
+
+        var skipped = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2);
+        skipped.PriceRowsAccepted = 1;
+        var skippedResult = CatalogExactnessVerifier.Evaluate(summary, audit, skipped);
+        Assert.AreEqual(CatalogCompletenessStatus.Mismatch, skippedResult.Status);
+        Assert.AreEqual("catalog_prices_not_fully_applied", skippedResult.Code);
+    }
+
+    [TestMethod]
+    public async Task LegacySummaryCannotHideMissingAuthoritativeIdentityOrOrphanReferenceMap()
+    {
+        using var db = TestDb.Create();
+        var audit = await CreateCleanAuditAsync(db);
+        audit.DistinctActiveRemoteProductIds = 1;
+        audit.ActiveRemoteProducts = 1;
+
+        var collapsed = CatalogExactnessVerifier.Evaluate(
+            null,
+            audit,
+            CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2));
+        Assert.AreEqual(CatalogCompletenessStatus.Mismatch, collapsed.Status);
+        Assert.AreEqual("catalog_authoritative_products_not_applied", collapsed.Code);
+        Assert.IsTrue(collapsed.RepairRequired);
+
+        using (var seed = db.Factory.Open())
+        {
+            await seed.ExecuteAsync(@"
+INSERT INTO remote_catalog_product_references(remote_product_id)
+VALUES('orphan-reference-map');
+INSERT INTO products(barcode, name, unitPrice, remote_product_id, is_active)
+VALUES('WHITESPACE-REMOTE', 'Whitespace identity', 100, '   ', 1);");
+        }
+
+        var current = await new CatalogFullRefreshReconciler(db.Factory).AuditCurrentAsync();
+        Assert.AreEqual(1L, current.ReferenceMapsWithoutProduct);
+        Assert.AreEqual("catalog_product_reference_map_orphaned", CatalogExactnessVerifier.FindInvariantError(current));
+        Assert.AreEqual(2L, await new ProductRepository(db.Factory).CountActiveRemoteProductsAsync());
     }
 
     [TestMethod]
@@ -209,6 +386,23 @@ VALUES('ORPHAN-META', 9999);");
             context);
 
         await state.StoreExactnessAsync("shop-a", "SHOP-A", verified, binding.Epoch);
+        using (var verifyEvidence = db.Factory.Open())
+        {
+            Assert.AreEqual("2", await verifyEvidence.ExecuteScalarAsync<string>(
+                "SELECT value FROM app_settings WHERE key = 'pos.catalog.exactness.accepted_prices';"));
+            Assert.AreEqual("0", await verifyEvidence.ExecuteScalarAsync<string>(
+                "SELECT value FROM app_settings WHERE key = 'pos.catalog.exactness.invalid_prices';"));
+            Assert.AreEqual("0", await verifyEvidence.ExecuteScalarAsync<string>(
+                "SELECT value FROM app_settings WHERE key = 'pos.catalog.exactness.duplicate_prices';"));
+        }
+        Assert.IsTrue(await state.StorePullCursorAsync(
+            "shop-a",
+            "SHOP-A",
+            "verified-full-cursor",
+            "2026-07-14T03:00:00Z",
+            binding.Epoch,
+            "full_refresh",
+            authoritativeSnapshotCommitted: true));
         await state.StoreSaleSafeAsync(
             "shop-a",
             "SHOP-A",
@@ -226,6 +420,15 @@ VALUES('ORPHAN-META', 9999);");
         var persisted = await state.LoadExactnessAsync();
         Assert.AreEqual(CatalogCompletenessStatus.Mismatch, persisted.Status);
         Assert.IsTrue(persisted.RepairRequired);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            state.StorePullCursorAsync(
+                "shop-a",
+                "SHOP-A",
+                "unsafe-full-cursor",
+                "2026-07-14T04:00:00Z",
+                binding.Epoch,
+                "full_refresh",
+                authoritativeSnapshotCommitted: true));
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             state.StoreSaleSafeAsync(
                 "shop-a",
@@ -328,6 +531,294 @@ VALUES('ORPHAN-META', 9999);");
         Assert.IsTrue(exactness.RepairRequired);
     }
 
+    [TestMethod]
+    public async Task DeltaCheckpoint_PersistsSnapshotPinsAcrossRunsAndClearsAtBoundary()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db, "shop-a", "SHOP-A");
+        var stateRepository = new CatalogShopStateRepository(db.Factory);
+        var binding = await stateRepository.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        var cursorA = CatalogShopStateRepository.FingerprintValue("delta-cursor-a");
+        var cursorB = CatalogShopStateRepository.FingerprintValue("delta-cursor-b");
+        var summary = CatalogShopStateRepository.FingerprintValue("summary-v1");
+
+        Assert.IsTrue(await stateRepository.StorePullCursorAsync(
+            "shop-a",
+            "SHOP-A",
+            "delta-cursor-b",
+            "2026-07-14T03:00:00Z",
+            binding.Epoch,
+            "delta",
+            authoritativeSnapshotCommitted: false,
+            new CatalogDeltaChainCheckpoint
+            {
+                CatalogVersion = "catalog-v1",
+                CursorFingerprints = new[] { cursorA, cursorB },
+                HasMore = true,
+                SummaryFingerprint = summary,
+                SummaryPinned = true,
+                SyncMode = "delta"
+            }));
+
+        var persisted = await stateRepository.LoadDeltaChainAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch);
+        Assert.IsTrue(persisted.IsValid);
+        Assert.AreEqual(string.Empty, persisted.Code);
+        Assert.IsTrue(persisted.HasState);
+        CollectionAssert.AreEquivalent(
+            new[] { cursorA, cursorB },
+            persisted.CursorFingerprints.ToArray());
+        Assert.AreEqual(string.Empty, persisted.GetSnapshotMismatchCode(
+            "catalog-v1", summary, true, "delta"));
+        Assert.AreEqual("catalog_version_changed_across_runs", persisted.GetSnapshotMismatchCode(
+            "catalog-v2", summary, true, "delta"));
+        Assert.AreEqual("catalog_summary_changed_across_runs", persisted.GetSnapshotMismatchCode(
+            "catalog-v1", CatalogShopStateRepository.FingerprintValue("summary-v2"), true, "delta"));
+        Assert.AreEqual("catalog_summary_missing_across_runs", persisted.GetSnapshotMismatchCode(
+            "catalog-v1", string.Empty, false, "delta"));
+        Assert.AreEqual("catalog_sync_mode_changed_across_runs", persisted.GetSnapshotMismatchCode(
+            "catalog-v1", summary, true, "full_refresh"));
+
+        Assert.IsTrue(await stateRepository.StorePullCursorAsync(
+            "shop-a",
+            "SHOP-A",
+            "delta-final",
+            "2026-07-14T03:01:00Z",
+            binding.Epoch,
+            "delta",
+            authoritativeSnapshotCommitted: false,
+            new CatalogDeltaChainCheckpoint
+            {
+                CatalogVersion = "catalog-v1",
+                CursorFingerprints = new[]
+                {
+                    cursorA,
+                    cursorB,
+                    CatalogShopStateRepository.FingerprintValue("delta-final")
+                },
+                HasMore = false,
+                SummaryFingerprint = summary,
+                SummaryPinned = true,
+                SyncMode = "delta"
+            }));
+        Assert.IsFalse((await stateRepository.LoadDeltaChainAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch)).HasState);
+    }
+
+    [TestMethod]
+    public async Task DeltaCheckpoint_CorruptionIsReportedWithoutDiscardingIndividualBadFields()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db, "shop-a", "SHOP-A");
+        var repository = new CatalogShopStateRepository(db.Factory);
+        var binding = await repository.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        var cursorFingerprint = CatalogShopStateRepository.FingerprintValue("delta-cursor");
+
+        async Task StoreValidAsync()
+        {
+            Assert.IsTrue(await repository.StorePullCursorAsync(
+                "shop-a",
+                "SHOP-A",
+                "delta-cursor",
+                "2026-07-14T03:00:00Z",
+                binding.Epoch,
+                "delta",
+                authoritativeSnapshotCommitted: false,
+                new CatalogDeltaChainCheckpoint
+                {
+                    CatalogVersion = "catalog-v1",
+                    CursorFingerprints = new[] { cursorFingerprint },
+                    HasMore = true,
+                    SummaryFingerprint = string.Empty,
+                    SummaryPinned = false,
+                    SyncMode = "delta"
+                }));
+        }
+
+        async Task AssertInvalidAsync(string expectedCode)
+        {
+            var state = await repository.LoadDeltaChainAsync("shop-a", "SHOP-A", binding.Epoch);
+            Assert.IsFalse(state.IsValid);
+            Assert.IsFalse(state.HasState);
+            Assert.AreEqual(expectedCode, state.Code);
+        }
+
+        await StoreValidAsync();
+        var legacyWithoutSummary = await repository.LoadDeltaChainAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch);
+        Assert.IsTrue(legacyWithoutSummary.IsValid);
+        Assert.AreEqual(string.Empty, legacyWithoutSummary.GetSnapshotMismatchCode(
+            "catalog-v1",
+            string.Empty,
+            summaryPresent: false,
+            syncMode: "delta"));
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(
+                "DELETE FROM app_settings WHERE key = @key;",
+                new { key = CatalogShopStateRepository.DeltaChainSummaryPinnedKey });
+        }
+        await AssertInvalidAsync(CatalogShopStateRepository.DeltaChainPartialCode);
+
+        await StoreValidAsync();
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(
+                "UPDATE app_settings SET value = 'true' WHERE key = @key;",
+                new { key = CatalogShopStateRepository.DeltaChainActiveKey });
+        }
+        await AssertInvalidAsync(CatalogShopStateRepository.DeltaChainActiveInvalidCode);
+
+        await StoreValidAsync();
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(
+                "UPDATE app_settings SET value = 'true' WHERE key = @key;",
+                new { key = CatalogShopStateRepository.DeltaChainSummaryPinnedKey });
+        }
+        await AssertInvalidAsync(CatalogShopStateRepository.DeltaChainSummaryInvalidCode);
+
+        await StoreValidAsync();
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(
+                "UPDATE app_settings SET value = value || ';not-a-fingerprint' WHERE key = @key;",
+                new { key = CatalogShopStateRepository.DeltaChainCursorFingerprintsKey });
+        }
+        await AssertInvalidAsync(CatalogShopStateRepository.DeltaChainCursorEvidenceInvalidCode);
+
+        await StoreValidAsync();
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(
+                "UPDATE app_settings SET value = @value WHERE key = @key;",
+                new
+                {
+                    key = CatalogShopStateRepository.DeltaChainCatalogVersionKey,
+                    value = new string('v', 129)
+                });
+        }
+        await AssertInvalidAsync(CatalogShopStateRepository.DeltaChainCatalogVersionInvalidCode);
+    }
+
+    [TestMethod]
+    public async Task DeltaCheckpoint_NonCanonicalVersionCannotAdvanceCursor()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db, "shop-a", "SHOP-A");
+        var repository = new CatalogShopStateRepository(db.Factory);
+        var binding = await repository.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        await repository.StoreLastSyncAsync(
+            "shop-a",
+            "SHOP-A",
+            "cursor-before-invalid-version",
+            "2026-07-14T03:00:00Z",
+            binding.Epoch,
+            "delta");
+
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            repository.StorePullCursorAsync(
+                "shop-a",
+                "SHOP-A",
+                "cursor-after-invalid-version",
+                "2026-07-14T03:01:00Z",
+                binding.Epoch,
+                "delta",
+                authoritativeSnapshotCommitted: false,
+                new CatalogDeltaChainCheckpoint
+                {
+                    CatalogVersion = " catalog-v1 ",
+                    CursorFingerprints = new[]
+                    {
+                        CatalogShopStateRepository.FingerprintValue("cursor-after-invalid-version")
+                    },
+                    HasMore = true,
+                    SyncMode = "delta"
+                }));
+        StringAssert.Contains(
+            exception.Message,
+            CatalogShopStateRepository.DeltaChainCatalogVersionInvalidCode);
+
+        var afterFailure = await repository.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        Assert.AreEqual("cursor-before-invalid-version", afterFailure.Cursor);
+        var checkpoint = await repository.LoadDeltaChainAsync("shop-a", "SHOP-A", binding.Epoch);
+        Assert.IsTrue(checkpoint.IsValid);
+        Assert.IsFalse(checkpoint.HasState);
+    }
+
+    [TestMethod]
+    public async Task DeltaCheckpoint_CursorLimitRejectsAndRollsBackCursorAtomically()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db, "shop-a", "SHOP-A");
+        var repository = new CatalogShopStateRepository(db.Factory);
+        var binding = await repository.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        var acceptedVersion = new string('v', 128);
+        var acceptedFingerprints = Enumerable.Range(
+                0,
+                CatalogShopStateRepository.MaxDeltaChainCursorFingerprints - 1)
+            .Select(index => CatalogShopStateRepository.FingerprintValue("cursor-" + index))
+            .ToArray();
+
+        Assert.IsTrue(await repository.StorePullCursorAsync(
+            "shop-a",
+            "SHOP-A",
+            "cursor-at-limit",
+            "2026-07-14T03:00:00Z",
+            binding.Epoch,
+            "delta",
+            authoritativeSnapshotCommitted: false,
+            new CatalogDeltaChainCheckpoint
+            {
+                CatalogVersion = acceptedVersion,
+                CursorFingerprints = acceptedFingerprints,
+                HasMore = true,
+                SyncMode = "delta"
+            }));
+
+        var atLimit = await repository.LoadDeltaChainAsync("shop-a", "SHOP-A", binding.Epoch);
+        Assert.IsTrue(atLimit.IsValid);
+        Assert.AreEqual(acceptedVersion, atLimit.CatalogVersion);
+        Assert.AreEqual(
+            CatalogShopStateRepository.MaxDeltaChainCursorFingerprints,
+            atLimit.CursorFingerprints.Count);
+
+        var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            repository.StorePullCursorAsync(
+                "shop-a",
+                "SHOP-A",
+                "cursor-over-limit",
+                "2026-07-14T03:01:00Z",
+                binding.Epoch,
+                "delta",
+                authoritativeSnapshotCommitted: false,
+                new CatalogDeltaChainCheckpoint
+                {
+                    CatalogVersion = acceptedVersion,
+                    CursorFingerprints = atLimit.CursorFingerprints,
+                    HasMore = true,
+                    SyncMode = "delta"
+                }));
+        StringAssert.Contains(exception.Message, CatalogShopStateRepository.DeltaChainCursorLimitCode);
+
+        var afterFailure = await repository.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        Assert.AreEqual("cursor-at-limit", afterFailure.Cursor);
+        var checkpointAfterFailure = await repository.LoadDeltaChainAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch);
+        Assert.IsTrue(checkpointAfterFailure.IsValid);
+        Assert.AreEqual(
+            CatalogShopStateRepository.MaxDeltaChainCursorFingerprints,
+            checkpointAfterFailure.CursorFingerprints.Count);
+    }
+
     private static async Task<CatalogFullRefreshResult> CreateCleanAuditAsync(TestDb db)
     {
         await SeedCleanCatalogAsync(db);
@@ -351,7 +842,11 @@ VALUES('BARCODE-1', 'Product 1', 100, 'product-1', 1),
       ('BARCODE-2', 'Product 2', 200, 'product-2', 1);
 INSERT OR IGNORE INTO product_meta(barcode, category_id, supplier_id)
 VALUES('BARCODE-1', 101, 201),
-      ('BARCODE-2', 101, 201);");
+      ('BARCODE-2', 101, 201);
+INSERT OR IGNORE INTO remote_catalog_product_references(
+  remote_product_id, remote_category_id, remote_supplier_id)
+VALUES('product-1', 'category-1', 'supplier-1'),
+      ('product-2', 'category-1', 'supplier-1');");
     }
 
     private static CatalogExactnessRunContext CompleteContext(
@@ -367,6 +862,7 @@ VALUES('BARCODE-1', 101, 201),
             DurationMilliseconds = 1000,
             HasMore = false,
             Pages = 1,
+            PriceRowsAccepted = prices,
             PriceRowsReceived = prices,
             ProductRowsReceived = products,
             SupplierRowsReceived = suppliers,
@@ -391,10 +887,22 @@ VALUES('BARCODE-1', 101, 201),
         };
     }
 
+    private static PosCatalogProductResponse ValidProductRow(string productId, string barcode)
+    {
+        return new PosCatalogProductResponse
+        {
+            Barcode = barcode,
+            ProductId = productId,
+            ProductName = "Product " + barcode,
+            RetailPrice = 100
+        };
+    }
+
     private static PosCatalogPullResponse ValidCatalogResponse()
     {
         return new PosCatalogPullResponse
         {
+            Catalog = new PosCatalogPayload(),
             Policy = ValidPolicy(),
             SchemaVersion = PosOnlineContract.CatalogPullSchemaVersion,
             SyncMode = "full_refresh"

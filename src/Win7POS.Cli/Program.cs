@@ -3019,6 +3019,44 @@ CREATE TABLE users (
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["shop_mismatch"]).ConfigureAwait(false) == "failed_blocked", "shop mismatch status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["auth_denied"]).ConfigureAwait(false) == "retry", "auth_denied status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["timeout"]).ConfigureAwait(false) == "retry", "timeout status mismatch.");
+
+                var retryExhaustionId = ids["timeout"];
+                using (var conn = factory.Open())
+                {
+                    await ExecuteSqliteAsync(
+                        conn,
+                        null,
+                        @"UPDATE catalog_import_outbox
+                          SET status = 'retry',
+                              attempt_count = 11,
+                              next_retry_at = 0,
+                              last_attempt_at = NULL,
+                              updated_at = @nowMs
+                          WHERE id = @outboxId;",
+                        "@nowMs", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        "@outboxId", retryExhaustionId).ConfigureAwait(false);
+                }
+
+                Assert(
+                    await ReadCatalogImportOutboxAttemptCountAsync(factory, retryExhaustionId).ConfigureAwait(false) == 11,
+                    "Retry exhaustion fixture must start at attempt 11.");
+                using (var exhaustionCts = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+                {
+                    var exhaustion = await new CatalogImportSyncService(factory)
+                        .SyncPendingAsync(adminOptions, session, 1, exhaustionCts.Token)
+                        .ConfigureAwait(false);
+                    Assert(exhaustion.Total == 1, "Retry exhaustion run must process exactly one row.");
+                    Assert(exhaustion.Prepared == 1, "Retry exhaustion run must prepare exactly one transient attempt.");
+                    Assert(exhaustion.Blocked == 1, "Attempt 12 must transition the transient row to failed_blocked.");
+                    Assert(exhaustion.Retried == 0, "Attempt 12 must not schedule another retry.");
+                }
+
+                Assert(
+                    await ReadCatalogImportOutboxStatusAsync(factory, retryExhaustionId).ConfigureAwait(false) == "failed_blocked",
+                    "Retry exhaustion status mismatch.");
+                Assert(
+                    await ReadCatalogImportOutboxAttemptCountAsync(factory, retryExhaustionId).ConfigureAwait(false) == 12,
+                    "Retry exhaustion must stop at attempt 12 without looping.");
                 var acceptedBarcode = CatalogImportHarnessBarcode("accepted", 1);
                 Assert(
                     await ReadProductRemoteProductIdAsync(factory, acceptedBarcode).ConfigureAwait(false) == "remote-product-map-accepted",
@@ -3929,6 +3967,18 @@ VALUES(
         }
     }
 
+    private static async Task<long> ReadCatalogImportOutboxAttemptCountAsync(SqliteConnectionFactory factory, long outboxId)
+    {
+        using (var conn = factory.Open())
+        {
+            return await ScalarLongAsync(
+                conn,
+                null,
+                "SELECT attempt_count FROM catalog_import_outbox WHERE id = @outboxId",
+                "@outboxId", outboxId).ConfigureAwait(false);
+        }
+    }
+
     private static async Task<string> ReadCatalogImportOutboxPayloadAsync(SqliteConnectionFactory factory, long outboxId)
     {
         using (var conn = factory.Open())
@@ -3963,7 +4013,7 @@ VALUES(
                 @"SELECT COALESCE(remote_price_id, '')
 FROM product_price_history
 WHERE barcode = @barcode
-  AND type = @priceType
+  AND LOWER(type) = LOWER(@priceType)
 ORDER BY id DESC
 LIMIT 1",
                 "@barcode", barcode,

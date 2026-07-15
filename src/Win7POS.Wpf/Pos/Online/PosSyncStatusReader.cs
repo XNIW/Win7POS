@@ -61,6 +61,12 @@ namespace Win7POS.Wpf.Pos.Online
             var lastCatalogVersion = await settings.GetStringAsync(LastCatalogVersionSettingKey).ConfigureAwait(false);
             var catalogBootstrapStatus = await settings.GetStringAsync(CatalogBootstrapStatusSettingKey).ConfigureAwait(false);
             var catalogSaleSafeAt = await settings.GetStringAsync(CatalogSaleSafeAtSettingKey).ConfigureAwait(false);
+            var catalogSyncMode = await settings.GetStringAsync(CatalogShopStateRepository.LastSyncModeKey).ConfigureAwait(false);
+            var catalogState = new CatalogShopStateRepository(_factory);
+            var catalogExactness = await catalogState.LoadExactnessAsync().ConfigureAwait(false);
+            var catalogSaleSafety = await catalogState
+                .EvaluateSaleSafetyForOfficialShopAsync()
+                .ConfigureAwait(false);
             var lastSales = await settings.GetStringAsync(LastSalesSyncSettingKey).ConfigureAwait(false);
             var lastSalesError = await settings.GetStringAsync(LastSalesErrorSettingKey).ConfigureAwait(false);
             var salesSyncInProgress = await settings.GetBoolAsync(SalesSyncInProgressSettingKey).ConfigureAwait(false) == true;
@@ -77,15 +83,33 @@ namespace Win7POS.Wpf.Pos.Online
                 catalogOutbox.Blocked > 0 ||
                 restoreNeedsReview ||
                 !string.IsNullOrWhiteSpace(policyWarning) ||
+                !catalogSaleSafety.IsSaleSafe ||
+                catalogExactness.Status != CatalogCompletenessStatus.Verified ||
+                catalogExactness.RepairRequired ||
                 CatalogRequiresAttention(catalogBootstrapStatus, lastCatalogError, lastCatalogHasMore) ||
                 !string.IsNullOrWhiteSpace(lastSalesError);
             var connectivityState = ConnectivityState(trustedSession);
 
             return new PosSyncStatusSnapshot
             {
-                CatalogBootstrapText = CatalogBootstrapText(catalogBootstrapStatus, lastCatalogHasMore, lastCatalogError, catalogSaleSafeAt),
+                CatalogBootstrapText = CatalogBootstrapText(
+                    catalogBootstrapStatus,
+                    lastCatalogHasMore,
+                    lastCatalogError,
+                    catalogSaleSafeAt,
+                    catalogSaleSafety),
+                CatalogCompletenessText = CatalogCompletenessText(catalogExactness),
+                CatalogCountsText = CatalogCountsText(catalogExactness),
                 CatalogErrorText = T("sync.lastCatalogError") + ": " + SafeCode(lastCatalogError),
-                CatalogReadinessText = CatalogReadinessText(catalogSaleSafeAt, catalogBootstrapStatus),
+                CatalogRepairRequired = catalogExactness.RepairRequired || catalogExactness.Status == CatalogCompletenessStatus.Mismatch,
+                CatalogRepairText = CatalogRepairText(catalogExactness, catalogSaleSafety),
+                CatalogReadinessText = CatalogReadinessText(
+                    catalogSaleSafeAt,
+                    catalogBootstrapStatus,
+                    catalogSaleSafety),
+                CatalogSaleSafe = catalogSaleSafety.IsSaleSafe,
+                CatalogSaleSafetyCode = SafeCode(catalogSaleSafety.ReasonCode),
+                CatalogSyncModeText = CatalogSyncModeText(catalogSyncMode),
                 CatalogVersionText = T("sync.catalog") + ": " + (string.IsNullOrWhiteSpace(lastCatalogVersion) ? T("sync.versionUnavailable") : lastCatalogVersion.Trim()),
                 ConnectivityState = connectivityState,
                 ConnectivityText = ConnectivityText(connectivityState),
@@ -114,7 +138,9 @@ namespace Win7POS.Wpf.Pos.Online
                     lastCatalogError,
                     lastCatalogHasMore,
                     catalogSaleSafeAt,
-                    lastSalesError)
+                    lastSalesError,
+                    catalogExactness,
+                    catalogSaleSafety)
             };
         }
 
@@ -197,7 +223,9 @@ namespace Win7POS.Wpf.Pos.Online
             string lastCatalogError,
             bool lastCatalogHasMore,
             string catalogSaleSafeAt,
-            string lastSalesError)
+            string lastSalesError,
+            CatalogExactnessState catalogExactness,
+            CatalogSaleSafetyEvaluation catalogSaleSafety)
         {
             if (string.Equals((catalogBootstrapStatus ?? string.Empty).Trim(), "failed_auth_denied", StringComparison.OrdinalIgnoreCase))
             {
@@ -256,6 +284,20 @@ namespace Win7POS.Wpf.Pos.Online
                     " | " + T("sync.lastCatalogError") + ": " + SafeCode(lastCatalogError);
             }
 
+            if (catalogSaleSafety == null || !catalogSaleSafety.IsSaleSafe)
+            {
+                return T("sync.requiresAttention") +
+                    " | " + CatalogSaleSafetyText(catalogSaleSafety) +
+                    " | " + ConnectivityText(connectivityState);
+            }
+
+            if (catalogExactness == null || catalogExactness.Status != CatalogCompletenessStatus.Verified)
+            {
+                return T("sync.requiresAttention") +
+                    " | " + CatalogCompletenessText(catalogExactness) +
+                    " | " + ConnectivityText(connectivityState);
+            }
+
             if (salesSyncInProgress)
             {
                 return T("sync.inProgress") +
@@ -271,7 +313,7 @@ namespace Win7POS.Wpf.Pos.Online
                     " | " + PendingOutboxText(outbox, catalogOutbox);
             }
 
-            if (!string.IsNullOrWhiteSpace(catalogSaleSafeAt))
+            if (catalogSaleSafety.IsSaleSafe && !string.IsNullOrWhiteSpace(catalogSaleSafeAt))
             {
                 return ConnectivityText(connectivityState) +
                     " | " + T("sync.catalogReady") +
@@ -365,10 +407,13 @@ namespace Win7POS.Wpf.Pos.Online
             string bootstrapStatus,
             bool lastCatalogHasMore,
             string lastCatalogError,
-            string catalogSaleSafeAt)
+            string catalogSaleSafeAt,
+            CatalogSaleSafetyEvaluation catalogSaleSafety)
         {
             var status = SafeCode(bootstrapStatus);
-            if (!string.IsNullOrWhiteSpace(catalogSaleSafeAt) &&
+            if (catalogSaleSafety != null &&
+                catalogSaleSafety.IsSaleSafe &&
+                !string.IsNullOrWhiteSpace(catalogSaleSafeAt) &&
                 string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
             {
                 return T("sync.catalogBootstrap") + ": " + T("sync.catalogSaleSafe") +
@@ -402,9 +447,14 @@ namespace Win7POS.Wpf.Pos.Online
             return T("sync.catalogBootstrap") + ": " + status;
         }
 
-        private static string CatalogReadinessText(string catalogSaleSafeAt, string bootstrapStatus)
+        private static string CatalogReadinessText(
+            string catalogSaleSafeAt,
+            string bootstrapStatus,
+            CatalogSaleSafetyEvaluation catalogSaleSafety)
         {
-            if (!string.IsNullOrWhiteSpace(catalogSaleSafeAt))
+            if (catalogSaleSafety != null &&
+                catalogSaleSafety.IsSaleSafe &&
+                !string.IsNullOrWhiteSpace(catalogSaleSafeAt))
             {
                 return T("sync.catalogReady") + ": " + FormatIso(catalogSaleSafeAt);
             }
@@ -419,7 +469,102 @@ namespace Win7POS.Wpf.Pos.Online
                 return T("sync.catalogUpdating");
             }
 
-            return T("sync.catalogNeverDownloaded");
+            return CatalogSaleSafetyText(catalogSaleSafety);
+        }
+
+        private static string CatalogCompletenessText(CatalogExactnessState exactness)
+        {
+            var status = exactness?.Status ?? CatalogCompletenessStatus.Unverified;
+            string statusText;
+            switch (status)
+            {
+                case CatalogCompletenessStatus.Verified:
+                    statusText = T("sync.catalogCompletenessVerified");
+                    break;
+                case CatalogCompletenessStatus.Mismatch:
+                    statusText = T("sync.catalogCompletenessMismatch");
+                    break;
+                default:
+                    statusText = T("sync.catalogCompletenessUnverified");
+                    break;
+            }
+
+            var text = T("sync.catalogCompleteness") + ": " + statusText;
+            if (!string.IsNullOrWhiteSpace(exactness?.VerifiedAt) && status == CatalogCompletenessStatus.Verified)
+            {
+                text += " | " + T("sync.catalogVerifiedAt") + ": " + FormatIso(exactness.VerifiedAt);
+            }
+
+            if (!string.IsNullOrWhiteSpace(exactness?.Code) && status != CatalogCompletenessStatus.Verified)
+            {
+                text += " | " + T("sync.reason") + ": " + SafeCode(exactness.Code);
+            }
+
+            return text;
+        }
+
+        private static string CatalogCountsText(CatalogExactnessState exactness)
+        {
+            if (exactness == null || string.IsNullOrWhiteSpace(exactness.EvaluatedAt))
+            {
+                return T("sync.catalogLocalCounts") + ": " + T("sync.unavailable");
+            }
+
+            return T("sync.catalogLocalCounts") + ": " +
+                T("sync.products") + " " + (exactness?.ActiveProducts ?? 0).ToString(CultureInfo.InvariantCulture) +
+                " | " + T("sync.categories") + " " + (exactness?.ActiveCategories ?? 0).ToString(CultureInfo.InvariantCulture) +
+                " | " + T("sync.suppliers") + " " + (exactness?.ActiveSuppliers ?? 0).ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static string CatalogSyncModeText(string syncMode)
+        {
+            var normalized = (syncMode ?? string.Empty).Trim();
+            string modeText;
+            if (string.Equals(normalized, "full_refresh", StringComparison.OrdinalIgnoreCase))
+            {
+                modeText = T("sync.catalogModeFullRefresh");
+            }
+            else if (string.Equals(normalized, "delta", StringComparison.OrdinalIgnoreCase))
+            {
+                modeText = T("sync.catalogModeDelta");
+            }
+            else
+            {
+                modeText = T("sync.unavailable");
+            }
+
+            return T("sync.catalogSyncMode") + ": " + modeText;
+        }
+
+        private static string CatalogRepairText(
+            CatalogExactnessState exactness,
+            CatalogSaleSafetyEvaluation catalogSaleSafety)
+        {
+            if (exactness != null &&
+                (exactness.RepairRequired || exactness.Status == CatalogCompletenessStatus.Mismatch))
+            {
+                return T("sync.catalogRepairRequired") +
+                    " | " + T("sync.reason") + ": " + SafeCode(exactness.Code);
+            }
+
+            if (catalogSaleSafety == null || !catalogSaleSafety.IsSaleSafe)
+            {
+                return CatalogSaleSafetyText(catalogSaleSafety);
+            }
+
+            if (exactness == null || exactness.Status == CatalogCompletenessStatus.Unverified)
+            {
+                return T("sync.catalogVerificationPending");
+            }
+
+            return T("sync.catalogRepairNotRequired");
+        }
+
+        private static string CatalogSaleSafetyText(CatalogSaleSafetyEvaluation evaluation)
+        {
+            return T("sync.catalogNotSaleSafe") +
+                " | " + T("sync.reason") + ": " +
+                SafeCode(evaluation?.ReasonCode);
         }
 
         private static string SalesAttentionText(SalesSyncOutboxSummary outbox, bool restoreNeedsReview)
@@ -557,8 +702,15 @@ namespace Win7POS.Wpf.Pos.Online
     public sealed class PosSyncStatusSnapshot
     {
         public string CatalogBootstrapText { get; set; } = string.Empty;
+        public string CatalogCompletenessText { get; set; } = string.Empty;
+        public string CatalogCountsText { get; set; } = string.Empty;
         public string CatalogErrorText { get; set; } = string.Empty;
+        public bool CatalogRepairRequired { get; set; }
+        public string CatalogRepairText { get; set; } = string.Empty;
         public string CatalogReadinessText { get; set; } = string.Empty;
+        public bool CatalogSaleSafe { get; set; }
+        public string CatalogSaleSafetyCode { get; set; } = string.Empty;
+        public string CatalogSyncModeText { get; set; } = string.Empty;
         public string CatalogVersionText { get; set; } = string.Empty;
         public string ConnectivityState { get; set; } = string.Empty;
         public string ConnectivityText { get; set; } = string.Empty;

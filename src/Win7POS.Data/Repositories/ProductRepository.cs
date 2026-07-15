@@ -35,6 +35,35 @@ namespace Win7POS.Data.Repositories
             public string Type { get; set; } = string.Empty;
         }
 
+        private sealed class RemotePriceHistoryRow
+        {
+            public string Barcode { get; set; } = string.Empty;
+            public string EffectiveAt { get; set; } = string.Empty;
+            public int Price { get; set; }
+            public string Source { get; set; } = string.Empty;
+            public string Type { get; set; } = string.Empty;
+        }
+
+        private enum RemotePriceIdEvidenceState
+        {
+            Collision,
+            Applied,
+            Queued
+        }
+
+        private sealed class RemotePriceIdEvidence
+        {
+            public string EffectiveAt { get; set; } = string.Empty;
+            public long? PendingId { get; set; }
+            public RemotePriceIdEvidenceState State { get; set; }
+        }
+
+        internal sealed class PendingRemotePriceReplayResult
+        {
+            public int Applied { get; set; }
+            public HashSet<long> CollisionIds { get; } = new HashSet<long>();
+        }
+
         public async Task<Product> GetByBarcodeAsync(string barcode)
         {
             using var conn = _factory.Open();
@@ -470,21 +499,29 @@ WHERE remote_product_id = @remoteProductId
             if (normalizedRemoteProductId.Length == 0 || normalizedType.Length == 0 || price < 0)
                 return RemotePriceHistoryApplyResult.Skipped();
 
-            var normalizedTimestamp = string.IsNullOrWhiteSpace(timestamp)
-                ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-                : timestamp.Trim();
             var normalizedSource = string.IsNullOrWhiteSpace(source) ? "remote_catalog" : source.Trim();
             var normalizedRemotePriceId = (remotePriceId ?? string.Empty).Trim();
             using var conn = _factory.Open();
-            return await UpsertOrQueueRemotePriceHistoryInTransactionAsync(
-                conn,
-                null,
-                normalizedRemoteProductId,
-                normalizedRemotePriceId,
-                normalizedType,
-                price,
-                normalizedTimestamp,
-                normalizedSource).ConfigureAwait(false);
+            using var tx = conn.BeginTransaction();
+            try
+            {
+                var result = await UpsertOrQueueRemotePriceHistoryInTransactionAsync(
+                    conn,
+                    tx,
+                    normalizedRemoteProductId,
+                    normalizedRemotePriceId,
+                    normalizedType,
+                    price,
+                    timestamp,
+                    normalizedSource).ConfigureAwait(false);
+                tx.Commit();
+                return result;
+            }
+            catch
+            {
+                try { tx.Rollback(); } catch { }
+                throw;
+            }
         }
 
         internal static async Task<RemotePriceHistoryApplyResult> UpsertOrQueueRemotePriceHistoryInTransactionAsync(
@@ -507,6 +544,19 @@ WHERE remote_product_id = @remoteProductId
                 : timestamp.Trim();
             var normalizedSource = string.IsNullOrWhiteSpace(source) ? "remote_catalog" : source.Trim();
             var normalizedRemotePriceId = (remotePriceId ?? string.Empty).Trim();
+            if (normalizedRemotePriceId.Length > 0)
+            {
+                var storedOwner = await LoadRemotePriceOwnerAsync(
+                    conn,
+                    tx,
+                    normalizedRemotePriceId).ConfigureAwait(false);
+                if (storedOwner.Length > 0 &&
+                    !string.Equals(storedOwner, normalizedRemoteProductId, StringComparison.Ordinal))
+                {
+                    return RemotePriceHistoryApplyResult.Skipped();
+                }
+            }
+
             var barcode = await conn.QuerySingleOrDefaultAsync<string>(
                 @"SELECT barcode
 	FROM products
@@ -519,7 +569,7 @@ WHERE remote_product_id = @remoteProductId
 
             if (string.IsNullOrWhiteSpace(barcode))
             {
-                await QueuePendingRemotePriceAsync(
+                var queuedRows = await QueuePendingRemotePriceAsync(
                     conn,
                     normalizedRemoteProductId,
                     normalizedRemotePriceId,
@@ -528,10 +578,55 @@ WHERE remote_product_id = @remoteProductId
                     normalizedTimestamp,
                     normalizedSource,
                     tx).ConfigureAwait(false);
-                return RemotePriceHistoryApplyResult.QueuedOk();
+                if (normalizedRemotePriceId.Length == 0)
+                {
+                    return RemotePriceHistoryApplyResult.QueuedOk();
+                }
+
+                if (queuedRows > 0)
+                {
+                    if (!await StoreRemotePriceOwnershipAsync(
+                            conn,
+                            tx,
+                            normalizedRemotePriceId,
+                            normalizedRemoteProductId).ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException("catalog_remote_price_owner_write_conflict");
+                    }
+
+                    return RemotePriceHistoryApplyResult.QueuedOk();
+                }
+
+                var evidence = await EvaluateRemotePriceIdEvidenceAsync(
+                    conn,
+                    tx,
+                    normalizedRemoteProductId,
+                    normalizedRemotePriceId,
+                    normalizedType,
+                    price,
+                    timestamp,
+                    normalizedTimestamp,
+                    normalizedSource).ConfigureAwait(false);
+                if (evidence.State == RemotePriceIdEvidenceState.Applied)
+                {
+                    await DeleteRemotePriceIdEvidencePendingAsync(
+                        conn,
+                        tx,
+                        evidence,
+                        normalizedRemoteProductId,
+                        normalizedRemotePriceId,
+                        normalizedType,
+                        price,
+                        normalizedSource).ConfigureAwait(false);
+                    return RemotePriceHistoryApplyResult.AppliedOk();
+                }
+
+                return evidence.State == RemotePriceIdEvidenceState.Queued
+                    ? RemotePriceHistoryApplyResult.QueuedOk()
+                    : RemotePriceHistoryApplyResult.Skipped();
             }
 
-            await InsertRemotePriceHistoryAsync(
+            var insertedRows = await InsertRemotePriceHistoryAsync(
                 conn,
                 tx,
                 barcode.Trim(),
@@ -539,36 +634,661 @@ WHERE remote_product_id = @remoteProductId
                 normalizedType,
                 price,
                 normalizedTimestamp,
-                normalizedSource).ConfigureAwait(false);
+                normalizedSource,
+                normalizedRemoteProductId).ConfigureAwait(false);
 
-            await DeletePendingRemotePriceAsync(
+            if (normalizedRemotePriceId.Length == 0)
+            {
+                await DeletePendingRemotePriceAsync(
+                    conn,
+                    tx,
+                    null,
+                    normalizedRemoteProductId,
+                    normalizedRemotePriceId,
+                    normalizedType,
+                    price,
+                    normalizedTimestamp,
+                    normalizedSource).ConfigureAwait(false);
+                return RemotePriceHistoryApplyResult.AppliedOk();
+            }
+
+            if (insertedRows > 0)
+            {
+                if (!await StoreRemotePriceOwnershipAsync(
+                        conn,
+                        tx,
+                        normalizedRemotePriceId,
+                        normalizedRemoteProductId).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException("catalog_remote_price_owner_write_conflict");
+                }
+
+                await DeletePendingRemotePriceAsync(
+                    conn,
+                    tx,
+                    null,
+                    normalizedRemoteProductId,
+                    normalizedRemotePriceId,
+                    normalizedType,
+                    price,
+                    normalizedTimestamp,
+                    normalizedSource).ConfigureAwait(false);
+                return RemotePriceHistoryApplyResult.AppliedOk();
+            }
+
+            var conflictEvidence = await EvaluateRemotePriceIdEvidenceAsync(
                 conn,
                 tx,
-                null,
                 normalizedRemoteProductId,
                 normalizedRemotePriceId,
                 normalizedType,
                 price,
+                timestamp,
                 normalizedTimestamp,
+                normalizedSource).ConfigureAwait(false);
+            if (conflictEvidence.State == RemotePriceIdEvidenceState.Collision)
+            {
+                return RemotePriceHistoryApplyResult.Skipped();
+            }
+
+            if (conflictEvidence.State == RemotePriceIdEvidenceState.Queued)
+            {
+                var retryInsertedRows = await InsertRemotePriceHistoryAsync(
+                    conn,
+                    tx,
+                    barcode.Trim(),
+                    normalizedRemotePriceId,
+                    normalizedType,
+                    price,
+                    conflictEvidence.EffectiveAt,
+                    normalizedSource,
+                    normalizedRemoteProductId).ConfigureAwait(false);
+                if (retryInsertedRows == 0)
+                {
+                    conflictEvidence = await EvaluateRemotePriceIdEvidenceAsync(
+                        conn,
+                        tx,
+                        normalizedRemoteProductId,
+                        normalizedRemotePriceId,
+                        normalizedType,
+                        price,
+                        conflictEvidence.EffectiveAt,
+                        conflictEvidence.EffectiveAt,
+                        normalizedSource).ConfigureAwait(false);
+                    if (conflictEvidence.State != RemotePriceIdEvidenceState.Applied)
+                    {
+                        return RemotePriceHistoryApplyResult.Skipped();
+                    }
+                }
+            }
+
+            await DeleteRemotePriceIdEvidencePendingAsync(
+                conn,
+                tx,
+                conflictEvidence,
+                normalizedRemoteProductId,
+                normalizedRemotePriceId,
+                normalizedType,
+                price,
                 normalizedSource).ConfigureAwait(false);
 
             return RemotePriceHistoryApplyResult.AppliedOk();
         }
 
+        private static async Task<RemotePriceIdEvidence> EvaluateRemotePriceIdEvidenceAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            string remoteProductId,
+            string remotePriceId,
+            string type,
+            int price,
+            string requestedEffectiveAt,
+            string fallbackEffectiveAt,
+            string source)
+        {
+            var existingHistory = await LoadRemotePriceHistoryAsync(
+                conn,
+                tx,
+                remotePriceId).ConfigureAwait(false);
+            var existingPending = await LoadPendingRemotePriceAsync(
+                conn,
+                tx,
+                remotePriceId).ConfigureAwait(false);
+            if (!await EnsureRemotePriceOwnershipForEvidenceAsync(
+                    conn,
+                    tx,
+                    remotePriceId,
+                    remoteProductId,
+                    existingPending).ConfigureAwait(false))
+            {
+                return new RemotePriceIdEvidence { State = RemotePriceIdEvidenceState.Collision };
+            }
+
+            var effectiveAt = string.IsNullOrWhiteSpace(requestedEffectiveAt)
+                ? existingHistory?.EffectiveAt ?? existingPending?.EffectiveAt ?? fallbackEffectiveAt
+                : fallbackEffectiveAt;
+
+            if (existingHistory != null)
+            {
+                var historyMatches = RemotePriceHistoryMatches(
+                    existingHistory,
+                    type,
+                    price,
+                    effectiveAt,
+                    source);
+                if (!historyMatches ||
+                    (existingPending != null && !PendingRemotePriceMatches(
+                        existingPending,
+                        remoteProductId,
+                        type,
+                        price,
+                        effectiveAt,
+                        source)))
+                {
+                    return new RemotePriceIdEvidence { State = RemotePriceIdEvidenceState.Collision };
+                }
+
+                return new RemotePriceIdEvidence
+                {
+                    EffectiveAt = effectiveAt,
+                    PendingId = existingPending?.Id,
+                    State = RemotePriceIdEvidenceState.Applied
+                };
+            }
+
+            if (existingPending != null && PendingRemotePriceMatches(
+                    existingPending,
+                    remoteProductId,
+                    type,
+                    price,
+                    effectiveAt,
+                    source))
+            {
+                return new RemotePriceIdEvidence
+                {
+                    EffectiveAt = effectiveAt,
+                    PendingId = existingPending.Id,
+                    State = RemotePriceIdEvidenceState.Queued
+                };
+            }
+
+            return new RemotePriceIdEvidence { State = RemotePriceIdEvidenceState.Collision };
+        }
+
+        private static Task DeleteRemotePriceIdEvidencePendingAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            RemotePriceIdEvidence evidence,
+            string remoteProductId,
+            string remotePriceId,
+            string type,
+            int price,
+            string source)
+        {
+            if (!evidence.PendingId.HasValue)
+            {
+                return Task.FromResult(0);
+            }
+
+            return DeletePendingRemotePriceAsync(
+                conn,
+                tx,
+                evidence.PendingId,
+                remoteProductId,
+                remotePriceId,
+                type,
+                price,
+                evidence.EffectiveAt,
+                source);
+        }
+
+        private static Task<RemotePriceHistoryRow> LoadRemotePriceHistoryAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            string remotePriceId)
+        {
+            return conn.QuerySingleOrDefaultAsync<RemotePriceHistoryRow>(@"
+SELECT
+  barcode AS Barcode,
+  timestamp AS EffectiveAt,
+  type AS Type,
+  new_price AS Price,
+  COALESCE(source, '') AS Source
+FROM product_price_history
+WHERE remote_price_id = @remotePriceId
+LIMIT 1",
+                new { remotePriceId },
+                tx);
+        }
+
+        private static Task<PendingRemotePriceRow> LoadPendingRemotePriceAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            string remotePriceId)
+        {
+            return conn.QuerySingleOrDefaultAsync<PendingRemotePriceRow>(@"
+SELECT
+  id AS Id,
+  remote_price_id AS RemotePriceId,
+  remote_product_id AS RemoteProductId,
+  type AS Type,
+  price AS Price,
+  effective_at AS EffectiveAt,
+  COALESCE(source, '') AS Source
+FROM remote_catalog_pending_prices
+WHERE remote_price_id = @remotePriceId
+LIMIT 1",
+                new { remotePriceId },
+                tx);
+        }
+
+        /// <summary>
+        /// Resolves legacy price-id evidence only while applying an authoritative full refresh.
+        /// The original history/pending evidence is copied to an append-only quarantine table;
+        /// history rows are retained with a cleared remote id, and only then is the authoritative
+        /// owner adopted. Ordinary delta/retry paths never call this method and remain fail-closed.
+        /// </summary>
+        internal static async Task<bool> PrepareAuthoritativeRemotePriceRepairAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            string remoteProductId,
+            string remotePriceId,
+            string type,
+            int price,
+            string timestamp,
+            string source)
+        {
+            if (conn == null) throw new ArgumentNullException(nameof(conn));
+            if (tx == null) throw new ArgumentNullException(nameof(tx));
+
+            var normalizedRemoteProductId = (remoteProductId ?? string.Empty).Trim();
+            var normalizedRemotePriceId = (remotePriceId ?? string.Empty).Trim();
+            var normalizedType = (type ?? string.Empty).Trim().ToUpperInvariant();
+            if (normalizedRemoteProductId.Length == 0 ||
+                normalizedRemotePriceId.Length == 0 ||
+                normalizedType.Length == 0 ||
+                price < 0)
+            {
+                return false;
+            }
+
+            var normalizedTimestamp = string.IsNullOrWhiteSpace(timestamp)
+                ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                : timestamp.Trim();
+            var normalizedSource = string.IsNullOrWhiteSpace(source)
+                ? "remote_catalog"
+                : source.Trim();
+            var existingHistory = await LoadRemotePriceHistoryAsync(
+                conn,
+                tx,
+                normalizedRemotePriceId).ConfigureAwait(false);
+            var existingPending = await LoadPendingRemotePriceAsync(
+                conn,
+                tx,
+                normalizedRemotePriceId).ConfigureAwait(false);
+            var storedOwner = await LoadRemotePriceOwnerAsync(
+                conn,
+                tx,
+                normalizedRemotePriceId).ConfigureAwait(false);
+            if (storedOwner.Length > 0 &&
+                !string.Equals(storedOwner, normalizedRemoteProductId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (existingHistory == null && existingPending == null)
+            {
+                return true;
+            }
+
+            var effectiveAt = string.IsNullOrWhiteSpace(timestamp)
+                ? existingHistory?.EffectiveAt ?? existingPending?.EffectiveAt ?? normalizedTimestamp
+                : normalizedTimestamp;
+            var historyMatches = existingHistory != null && RemotePriceHistoryMatches(
+                existingHistory,
+                normalizedType,
+                price,
+                effectiveAt,
+                normalizedSource);
+            var pendingMatches = existingPending != null && PendingRemotePriceMatches(
+                existingPending,
+                normalizedRemoteProductId,
+                normalizedType,
+                price,
+                effectiveAt,
+                normalizedSource);
+
+            if (storedOwner.Length > 0)
+            {
+                // Once ownership exists, the id is immutable. Even an authoritative
+                // full refresh may not quarantine or rewrite same-owner tuple drift.
+                return (existingHistory == null || historyMatches) &&
+                    (existingPending == null || pendingMatches);
+            }
+
+            if (storedOwner.Length == 0 && existingHistory == null && pendingMatches)
+            {
+                // A pending row records its remote product id explicitly and remains
+                // sufficient immutable ownership evidence without quarantine.
+                return true;
+            }
+
+            var quarantinedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+            const string reason = "authoritative_full_refresh_rebind";
+            await conn.ExecuteAsync(@"
+INSERT OR IGNORE INTO remote_catalog_price_evidence_quarantine(
+  evidence_kind,
+  evidence_row_id,
+  remote_price_id,
+  remote_product_id,
+  barcode,
+  effective_at,
+  type,
+  old_price,
+  price,
+  source,
+  catalog_import_client_item_id,
+  catalog_import_idempotency_key,
+  original_created_at,
+  authoritative_remote_product_id,
+  reason,
+  quarantined_at)
+SELECT
+  'history',
+  id,
+  remote_price_id,
+  NULL,
+  barcode,
+  timestamp,
+  type,
+  old_price,
+  new_price,
+  source,
+  catalog_import_client_item_id,
+  catalog_import_idempotency_key,
+  NULL,
+  @remoteProductId,
+  @reason,
+  @quarantinedAt
+FROM product_price_history
+WHERE remote_price_id = @remotePriceId;",
+                new
+                {
+                    remotePriceId = normalizedRemotePriceId,
+                    remoteProductId = normalizedRemoteProductId,
+                    reason,
+                    quarantinedAt
+                },
+                tx).ConfigureAwait(false);
+            await conn.ExecuteAsync(@"
+INSERT OR IGNORE INTO remote_catalog_price_evidence_quarantine(
+  evidence_kind,
+  evidence_row_id,
+  remote_price_id,
+  remote_product_id,
+  barcode,
+  effective_at,
+  type,
+  old_price,
+  price,
+  source,
+  catalog_import_client_item_id,
+  catalog_import_idempotency_key,
+  original_created_at,
+  authoritative_remote_product_id,
+  reason,
+  quarantined_at)
+SELECT
+  'pending',
+  id,
+  remote_price_id,
+  remote_product_id,
+  NULL,
+  effective_at,
+  type,
+  NULL,
+  price,
+  source,
+  NULL,
+  NULL,
+  created_at,
+  @remoteProductId,
+  @reason,
+  @quarantinedAt
+FROM remote_catalog_pending_prices
+WHERE remote_price_id = @remotePriceId;",
+                new
+                {
+                    remotePriceId = normalizedRemotePriceId,
+                    remoteProductId = normalizedRemoteProductId,
+                    reason,
+                    quarantinedAt
+                },
+                tx).ConfigureAwait(false);
+
+            // History is never deleted. Clearing only the ambiguous remote id allows
+            // the authoritative row to establish a canonical identity while the
+            // quarantine table retains the complete pre-repair evidence.
+            await conn.ExecuteAsync(@"
+UPDATE product_price_history
+SET remote_price_id = NULL
+WHERE remote_price_id = @remotePriceId;
+
+DELETE FROM remote_catalog_pending_prices
+WHERE remote_price_id = @remotePriceId;",
+                new { remotePriceId = normalizedRemotePriceId },
+                tx).ConfigureAwait(false);
+
+            if (!await StoreRemotePriceOwnershipAsync(
+                    conn,
+                    tx,
+                    normalizedRemotePriceId,
+                    normalizedRemoteProductId).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("catalog_remote_price_owner_repair_conflict");
+            }
+
+            // Reuse an exact unbound history tuple for the current authoritative
+            // product when possible. Otherwise the normal apply path inserts a fresh
+            // canonical row and leaves the retained legacy row unbound.
+            await conn.ExecuteAsync(@"
+UPDATE product_price_history
+SET remote_price_id = @remotePriceId
+WHERE id = (
+  SELECT history.id
+  FROM product_price_history history
+  JOIN products product
+    ON product.barcode = history.barcode
+  WHERE history.remote_price_id IS NULL
+    AND product.remote_product_id = @remoteProductId
+    AND COALESCE(product.is_active, 1) = 1
+    AND history.timestamp = @effectiveAt
+    AND history.type = @type
+    AND history.new_price = @price
+    AND COALESCE(history.source, '') = @source
+  ORDER BY history.id DESC
+  LIMIT 1
+)
+AND NOT EXISTS (
+  SELECT 1
+  FROM product_price_history existing
+  WHERE existing.remote_price_id = @remotePriceId
+);",
+                new
+                {
+                    remotePriceId = normalizedRemotePriceId,
+                    remoteProductId = normalizedRemoteProductId,
+                    effectiveAt,
+                    type = normalizedType,
+                    price,
+                    source = normalizedSource
+                },
+                tx).ConfigureAwait(false);
+            return true;
+        }
+
+        private static async Task<string> LoadRemotePriceOwnerAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            string remotePriceId)
+        {
+            return (await conn.QuerySingleOrDefaultAsync<string>(@"
+SELECT remote_product_id
+FROM remote_catalog_price_ownership
+WHERE remote_price_id = @remotePriceId
+LIMIT 1",
+                new { remotePriceId = (remotePriceId ?? string.Empty).Trim() },
+                tx).ConfigureAwait(false) ?? string.Empty).Trim();
+        }
+
+        private static async Task<bool> EnsureRemotePriceOwnershipForEvidenceAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            string remotePriceId,
+            string remoteProductId,
+            PendingRemotePriceRow pending)
+        {
+            var normalizedRemotePriceId = (remotePriceId ?? string.Empty).Trim();
+            var normalizedRemoteProductId = (remoteProductId ?? string.Empty).Trim();
+            if (normalizedRemotePriceId.Length == 0 || normalizedRemoteProductId.Length == 0)
+            {
+                return false;
+            }
+
+            var storedOwner = await LoadRemotePriceOwnerAsync(
+                conn,
+                tx,
+                normalizedRemotePriceId).ConfigureAwait(false);
+            if (storedOwner.Length > 0)
+            {
+                return string.Equals(storedOwner, normalizedRemoteProductId, StringComparison.Ordinal);
+            }
+
+            if (pending == null)
+            {
+                // Legacy history rows do not record their remote product owner. The
+                // current barcode owner is not immutable evidence because barcodes may
+                // be renamed and later reused, so history-only evidence stays unclaimed.
+                return false;
+            }
+
+            var pendingOwner = (pending.RemoteProductId ?? string.Empty).Trim();
+            if (!string.Equals(pendingOwner, normalizedRemoteProductId, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return await StoreRemotePriceOwnershipAsync(
+                conn,
+                tx,
+                normalizedRemotePriceId,
+                normalizedRemoteProductId).ConfigureAwait(false);
+        }
+
+        internal static async Task<bool> StoreRemotePriceOwnershipAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            string remotePriceId,
+            string remoteProductId)
+        {
+            var normalizedRemotePriceId = (remotePriceId ?? string.Empty).Trim();
+            var normalizedRemoteProductId = (remoteProductId ?? string.Empty).Trim();
+            if (normalizedRemotePriceId.Length == 0 || normalizedRemoteProductId.Length == 0)
+            {
+                return false;
+            }
+
+            var matchingOwners = await conn.ExecuteScalarAsync<long>(@"
+INSERT OR IGNORE INTO remote_catalog_price_ownership(
+  remote_price_id,
+  remote_product_id)
+VALUES(@remotePriceId, @remoteProductId);
+SELECT COUNT(1)
+FROM remote_catalog_price_ownership
+WHERE remote_price_id = @remotePriceId
+  AND TRIM(remote_product_id) = @remoteProductId;",
+                new
+                {
+                    remotePriceId = normalizedRemotePriceId,
+                    remoteProductId = normalizedRemoteProductId
+                },
+                tx).ConfigureAwait(false);
+            return matchingOwners == 1;
+        }
+
+        private static bool RemotePriceHistoryMatches(
+            RemotePriceHistoryRow existing,
+            string type,
+            int price,
+            string effectiveAt,
+            string source)
+        {
+            if (existing == null ||
+                !string.Equals(existing.Type, type, StringComparison.Ordinal) ||
+                existing.Price != price ||
+                !string.Equals(existing.EffectiveAt, effectiveAt, StringComparison.Ordinal) ||
+                !string.Equals(existing.Source, source, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool PendingRemotePriceMatches(
+            PendingRemotePriceRow existing,
+            string remoteProductId,
+            string type,
+            int price,
+            string effectiveAt,
+            string source)
+        {
+            return existing != null &&
+                   string.Equals(
+                       (existing.RemoteProductId ?? string.Empty).Trim(),
+                       remoteProductId,
+                       StringComparison.Ordinal) &&
+                   string.Equals(
+                       (existing.Type ?? string.Empty).Trim().ToUpperInvariant(),
+                       type,
+                       StringComparison.Ordinal) &&
+                   existing.Price == price &&
+                   string.Equals(
+                       (existing.EffectiveAt ?? string.Empty).Trim(),
+                       effectiveAt,
+                       StringComparison.Ordinal) &&
+                   string.Equals(
+                       (existing.Source ?? string.Empty).Trim(),
+                       source,
+                       StringComparison.Ordinal);
+        }
+
         public async Task<int> ApplyPendingRemotePricesAsync()
         {
             using var conn = _factory.Open();
-            return await ApplyPendingRemotePricesInTransactionAsync(conn, null).ConfigureAwait(false);
+            using var tx = conn.BeginTransaction();
+            try
+            {
+                var replay = await ApplyPendingRemotePricesInTransactionAsync(conn, tx).ConfigureAwait(false);
+                tx.Commit();
+                return replay.Applied;
+            }
+            catch
+            {
+                try { tx.Rollback(); } catch { }
+                throw;
+            }
         }
 
-        internal static async Task<int> ApplyPendingRemotePricesInTransactionAsync(
+        internal static async Task<PendingRemotePriceReplayResult> ApplyPendingRemotePricesInTransactionAsync(
             SqliteConnection conn,
             SqliteTransaction tx)
         {
-            var applied = 0;
+            var result = new PendingRemotePriceReplayResult();
 
             while (true)
             {
+                var blockedByRemotePriceIdCollision = false;
                 var rows = (await conn.QueryAsync<PendingRemotePriceRow>(@"
 	SELECT
 	  p.id AS Id,
@@ -600,16 +1320,73 @@ WHERE remote_product_id = @remoteProductId
 
                 foreach (var row in rows)
                 {
-                    await InsertRemotePriceHistoryAsync(
+                    var normalizedType = (row.Type ?? string.Empty).Trim().ToUpperInvariant();
+                    var normalizedEffectiveAt = string.IsNullOrWhiteSpace(row.EffectiveAt)
+                        ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                        : row.EffectiveAt.Trim();
+                    var normalizedSource = string.IsNullOrWhiteSpace(row.Source)
+                        ? "remote_catalog"
+                        : row.Source.Trim();
+                    var normalizedRemotePriceId = (row.RemotePriceId ?? string.Empty).Trim();
+                    if (normalizedRemotePriceId.Length > 0)
+                    {
+                        var storedOwner = await LoadRemotePriceOwnerAsync(
+                            conn,
+                            tx,
+                            normalizedRemotePriceId).ConfigureAwait(false);
+                        if (storedOwner.Length > 0 &&
+                            !string.Equals(
+                                storedOwner,
+                                (row.RemoteProductId ?? string.Empty).Trim(),
+                                StringComparison.Ordinal))
+                        {
+                            result.CollisionIds.Add(row.Id);
+                            blockedByRemotePriceIdCollision = true;
+                            continue;
+                        }
+                    }
+
+                    var insertedRows = await InsertRemotePriceHistoryAsync(
                         conn,
                         tx,
                         row.Barcode,
                         row.RemotePriceId,
-                        row.Type,
+                        normalizedType,
                         row.Price,
-                        row.EffectiveAt,
-                        string.IsNullOrWhiteSpace(row.Source) ? "remote_catalog" : row.Source)
+                        normalizedEffectiveAt,
+                        normalizedSource,
+                        (row.RemoteProductId ?? string.Empty).Trim())
                         .ConfigureAwait(false);
+
+                    if (normalizedRemotePriceId.Length > 0 && insertedRows == 0)
+                    {
+                        var evidence = await EvaluateRemotePriceIdEvidenceAsync(
+                            conn,
+                            tx,
+                            (row.RemoteProductId ?? string.Empty).Trim(),
+                            normalizedRemotePriceId,
+                            normalizedType,
+                            row.Price,
+                            row.EffectiveAt,
+                            normalizedEffectiveAt,
+                            normalizedSource).ConfigureAwait(false);
+                        if (evidence.State != RemotePriceIdEvidenceState.Applied)
+                        {
+                            result.CollisionIds.Add(row.Id);
+                            blockedByRemotePriceIdCollision = true;
+                            continue;
+                        }
+                    }
+                    else if (normalizedRemotePriceId.Length > 0 &&
+                        !await StoreRemotePriceOwnershipAsync(
+                                conn,
+                                tx,
+                                normalizedRemotePriceId,
+                                (row.RemoteProductId ?? string.Empty).Trim())
+                            .ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException("catalog_remote_price_owner_write_conflict");
+                    }
 
                     await DeletePendingRemotePriceAsync(
                         conn,
@@ -621,16 +1398,16 @@ WHERE remote_product_id = @remoteProductId
                         row.Price,
                         row.EffectiveAt,
                         row.Source).ConfigureAwait(false);
-                    applied += 1;
+                    result.Applied += 1;
                 }
 
-                if (rows.Count < PendingRemotePriceReplayBatchSize)
+                if (blockedByRemotePriceIdCollision || rows.Count < PendingRemotePriceReplayBatchSize)
                 {
                     break;
                 }
             }
 
-            return applied;
+            return result;
         }
 
         public async Task<long> CountActiveRemoteProductsAsync()
@@ -640,7 +1417,7 @@ WHERE remote_product_id = @remoteProductId
 SELECT COUNT(1)
 FROM products
 WHERE COALESCE(is_active, 1) = 1
-  AND COALESCE(remote_product_id, '') <> ''").ConfigureAwait(false);
+  AND TRIM(COALESCE(remote_product_id, '')) <> ''").ConfigureAwait(false);
         }
 
         private static Task<int> InsertRemotePriceHistoryAsync(
@@ -651,8 +1428,16 @@ WHERE COALESCE(is_active, 1) = 1
             string type,
             int price,
             string timestamp,
-            string source)
+            string source,
+            string remoteProductId)
         {
+            var normalizedRemotePriceId = (remotePriceId ?? string.Empty).Trim();
+            var normalizedRemoteProductId = (remoteProductId ?? string.Empty).Trim();
+            var normalizedTimestamp = string.IsNullOrWhiteSpace(timestamp)
+                ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                : timestamp.Trim();
+            var normalizedType = (type ?? string.Empty).Trim().ToUpperInvariant();
+            var normalizedSource = string.IsNullOrWhiteSpace(source) ? "remote_catalog" : source.Trim();
             return conn.ExecuteAsync(@"
 INSERT OR IGNORE INTO product_price_history(
     barcode,
@@ -662,24 +1447,47 @@ INSERT OR IGNORE INTO product_price_history(
     new_price,
     source,
     remote_price_id)
-VALUES(
+SELECT
     @barcode,
     @timestamp,
     @type,
     NULL,
     @price,
     @source,
-    NULLIF(@remotePriceId, ''))",
+    NULLIF(@remotePriceId, '')
+WHERE (
+      @remotePriceId = ''
+      OR NOT EXISTS (
+        SELECT 1
+        FROM remote_catalog_price_ownership ownership
+        WHERE ownership.remote_price_id = @remotePriceId
+          AND TRIM(ownership.remote_product_id) <> @remoteProductId
+      )
+   )
+  AND (
+      @remotePriceId = ''
+      OR NOT EXISTS (
+        SELECT 1
+        FROM remote_catalog_pending_prices
+        WHERE remote_price_id = @remotePriceId
+          AND NOT (
+              TRIM(COALESCE(remote_product_id, '')) = @remoteProductId
+              AND type = @type
+              AND price = @price
+              AND effective_at = @timestamp
+              AND COALESCE(source, '') = @source
+          )
+      )
+   )",
                 new
                 {
                     barcode = (barcode ?? string.Empty).Trim(),
-                    timestamp = string.IsNullOrWhiteSpace(timestamp)
-                        ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-                        : timestamp.Trim(),
-                    type = (type ?? string.Empty).Trim().ToUpperInvariant(),
+                    timestamp = normalizedTimestamp,
+                    type = normalizedType,
                     price,
-                    source = string.IsNullOrWhiteSpace(source) ? "remote_catalog" : source.Trim(),
-                    remotePriceId = (remotePriceId ?? string.Empty).Trim()
+                    source = normalizedSource,
+                    remotePriceId = normalizedRemotePriceId,
+                    remoteProductId = normalizedRemoteProductId
                 },
                 tx);
         }
@@ -694,6 +1502,12 @@ VALUES(
             string source,
             SqliteTransaction tx)
         {
+            var normalizedRemotePriceId = (remotePriceId ?? string.Empty).Trim();
+            var normalizedTimestamp = string.IsNullOrWhiteSpace(timestamp)
+                ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                : timestamp.Trim();
+            var normalizedType = (type ?? string.Empty).Trim().ToUpperInvariant();
+            var normalizedSource = string.IsNullOrWhiteSpace(source) ? "remote_catalog" : source.Trim();
             return conn.ExecuteAsync(@"
 INSERT OR IGNORE INTO remote_catalog_pending_prices(
     remote_price_id,
@@ -703,24 +1517,39 @@ INSERT OR IGNORE INTO remote_catalog_pending_prices(
     effective_at,
     source,
     created_at)
-VALUES(
+SELECT
     NULLIF(@remotePriceId, ''),
     @remoteProductId,
     @type,
     @price,
     @effectiveAt,
     @source,
-    @createdAt)",
+    @createdAt
+WHERE (
+      @remotePriceId = ''
+      OR NOT EXISTS (
+        SELECT 1
+        FROM remote_catalog_price_ownership ownership
+        WHERE ownership.remote_price_id = @remotePriceId
+          AND TRIM(ownership.remote_product_id) <> @remoteProductId
+      )
+   )
+  AND (
+      @remotePriceId = ''
+      OR NOT EXISTS (
+        SELECT 1
+        FROM product_price_history
+        WHERE remote_price_id = @remotePriceId
+      )
+   )",
                 new
                 {
-                    remotePriceId = (remotePriceId ?? string.Empty).Trim(),
+                    remotePriceId = normalizedRemotePriceId,
                     remoteProductId = (remoteProductId ?? string.Empty).Trim(),
-                    type = (type ?? string.Empty).Trim().ToUpperInvariant(),
+                    type = normalizedType,
                     price,
-                    effectiveAt = string.IsNullOrWhiteSpace(timestamp)
-                        ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-                        : timestamp.Trim(),
-                    source = string.IsNullOrWhiteSpace(source) ? "remote_catalog" : source.Trim(),
+                    effectiveAt = normalizedTimestamp,
+                    source = normalizedSource,
                     createdAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
                 },
                 tx);
@@ -748,9 +1577,25 @@ VALUES(
             var normalizedRemotePriceId = (remotePriceId ?? string.Empty).Trim();
             if (normalizedRemotePriceId.Length > 0)
             {
-                return conn.ExecuteAsync(
-                    "DELETE FROM remote_catalog_pending_prices WHERE remote_price_id = @remotePriceId",
-                    new { remotePriceId = normalizedRemotePriceId },
+                return conn.ExecuteAsync(@"
+DELETE FROM remote_catalog_pending_prices
+WHERE remote_price_id = @remotePriceId
+  AND TRIM(COALESCE(remote_product_id, '')) = @remoteProductId
+  AND type = @type
+  AND price = @price
+  AND effective_at = @effectiveAt
+  AND COALESCE(source, '') = @source",
+                    new
+                    {
+                        remotePriceId = normalizedRemotePriceId,
+                        remoteProductId = (remoteProductId ?? string.Empty).Trim(),
+                        type = (type ?? string.Empty).Trim().ToUpperInvariant(),
+                        price,
+                        effectiveAt = string.IsNullOrWhiteSpace(timestamp)
+                            ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                            : timestamp.Trim(),
+                        source = string.IsNullOrWhiteSpace(source) ? "remote_catalog" : source.Trim()
+                    },
                     tx);
             }
 
@@ -1374,6 +2219,19 @@ WHERE barcode = @existingRemoteBarcode
       SELECT 1
       FROM product_meta existing
       WHERE existing.barcode = @barcode
+  )",
+                new { existingRemoteBarcode, barcode },
+                tx).ConfigureAwait(false);
+
+            await conn.ExecuteAsync(@"
+UPDATE local_stock_movements
+SET barcode = @barcode
+WHERE barcode = @existingRemoteBarcode
+  AND EXISTS (
+      SELECT 1
+      FROM sales_sync_outbox pending_outbox
+      WHERE pending_outbox.sale_id = local_stock_movements.sale_id
+        AND pending_outbox.status IN ('pending', 'retry', 'in_progress', 'failed_blocked')
   )",
                 new { existingRemoteBarcode, barcode },
                 tx).ConfigureAwait(false);

@@ -2,6 +2,7 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Win7POS.Data;
+using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 
 namespace Win7POS.Core.Tests.Data;
@@ -115,6 +116,8 @@ WHERE m.barcode = 'BATCH-001'
             Assert.AreEqual(0L, await ScalarAsync(rolledBack, "SELECT COUNT(1) FROM product_meta;"));
             Assert.AreEqual(0L, await ScalarAsync(rolledBack,
                 "SELECT COUNT(1) FROM categories WHERE remote_category_id = 'category-rollback';"));
+            Assert.AreEqual(0L, await ScalarAsync(rolledBack,
+                "SELECT COUNT(1) FROM remote_catalog_product_references;"));
         }
 
         var retry = await repository.ApplyAsync(new RemoteCatalogBatch
@@ -158,6 +161,10 @@ VALUES('stock-sale:1:sale', (SELECT id FROM sales WHERE client_sale_id = 'stock-
         {
             Products = new[] { Product("product-stock", "STOCK-NEW", 100) }
         });
+        await repository.ApplyAsync(new RemoteCatalogBatch
+        {
+            Products = new[] { Product("product-stock", "STOCK-NEW", 100) }
+        });
 
         using var verify = db.Factory.Open();
         Assert.AreEqual(1L, await ScalarAsync(verify,
@@ -168,6 +175,8 @@ VALUES('stock-sale:1:sale', (SELECT id FROM sales WHERE client_sale_id = 'stock-
             "SELECT stock_qty FROM product_meta WHERE barcode = 'STOCK-NEW';"));
         Assert.AreEqual(0L, await ScalarAsync(verify,
             "SELECT COUNT(1) FROM product_meta WHERE barcode = 'STOCK-OLD';"));
+        Assert.AreEqual(1L, await ScalarAsync(verify,
+            "SELECT COUNT(1) FROM local_stock_movements WHERE barcode = 'STOCK-NEW';"));
     }
 
     [TestMethod]
@@ -294,6 +303,225 @@ WHERE remote_price_id = 'price-pending'
             "SELECT COUNT(1) FROM products WHERE remote_product_id = 'product-cancelled';"));
     }
 
+    [TestMethod]
+    public async Task ApplyAsync_ResolvesReferencesByRemoteIdWhenNamesAreDuplicated()
+    {
+        using var db = TestDb.Create();
+        var first = Product("product-ref-a", "REF-A", 1);
+        first.CategoryName = "Shared category";
+        first.SupplierName = "Shared supplier";
+        first.RemoteCategoryId = "category-a";
+        first.RemoteSupplierId = "supplier-a";
+        var second = Product("product-ref-b", "REF-B", 1);
+        second.CategoryName = "Shared category";
+        second.SupplierName = "Shared supplier";
+        second.RemoteCategoryId = "category-b";
+        second.RemoteSupplierId = "supplier-b";
+
+        await new RemoteCatalogBatchRepository(db.Factory).ApplyAsync(new RemoteCatalogBatch
+        {
+            Categories = new[]
+            {
+                new RemoteCatalogCategoryWrite { RemoteCategoryId = "category-a", Name = "Shared category" },
+                new RemoteCatalogCategoryWrite { RemoteCategoryId = "category-b", Name = "Shared category" }
+            },
+            Suppliers = new[]
+            {
+                new RemoteCatalogSupplierWrite { RemoteSupplierId = "supplier-a", Name = "Shared supplier" },
+                new RemoteCatalogSupplierWrite { RemoteSupplierId = "supplier-b", Name = "Shared supplier" }
+            },
+            Products = new[] { first, second }
+        });
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM product_meta m
+JOIN categories c ON c.id = m.category_id
+JOIN suppliers s ON s.id = m.supplier_id
+WHERE m.barcode = 'REF-A'
+  AND c.remote_category_id = 'category-a'
+  AND s.remote_supplier_id = 'supplier-a';"));
+        Assert.AreEqual(1L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM product_meta m
+JOIN categories c ON c.id = m.category_id
+JOIN suppliers s ON s.id = m.supplier_id
+WHERE m.barcode = 'REF-B'
+  AND c.remote_category_id = 'category-b'
+  AND s.remote_supplier_id = 'supplier-b';"));
+    }
+
+    [TestMethod]
+    public async Task ApplyAsync_ReportsMalformedPriceRowsAsSkipped()
+    {
+        using var db = TestDb.Create();
+        var result = await new RemoteCatalogBatchRepository(db.Factory).ApplyAsync(new RemoteCatalogBatch
+        {
+            Prices = new RemoteCatalogPriceWrite[]
+            {
+                null!,
+                new RemoteCatalogPriceWrite
+                {
+                    RemotePriceId = "invalid-price",
+                    RemoteProductId = string.Empty,
+                    Type = string.Empty,
+                    Price = -1
+                }
+            }
+        });
+
+        Assert.AreEqual(2, result.PricesSkipped);
+        Assert.AreEqual(0, result.PricesApplied);
+        Assert.AreEqual(0, result.PricesQueued);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(0L, await ScalarAsync(verify, "SELECT COUNT(1) FROM product_price_history;"));
+        Assert.AreEqual(0L, await ScalarAsync(verify, "SELECT COUNT(1) FROM remote_catalog_pending_prices;"));
+    }
+
+    [TestMethod]
+    public async Task ApplyAsync_RelinksRemoteReferencesThatArriveOnALaterPage()
+    {
+        using var db = TestDb.Create();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        var lateProduct = Product("product-late-ref", "LATE-REF", 5);
+        lateProduct.RemoteCategoryId = "category-late";
+        lateProduct.RemoteSupplierId = "supplier-late";
+        var unrelatedProduct = Product("product-unrelated", "UNRELATED-REF", 3);
+        unrelatedProduct.RemoteCategoryId = "category-unrelated";
+        unrelatedProduct.RemoteSupplierId = "supplier-unrelated";
+
+        await repository.ApplyAsync(new RemoteCatalogBatch
+        {
+            Categories = new[]
+            {
+                new RemoteCatalogCategoryWrite
+                {
+                    RemoteCategoryId = "category-unrelated",
+                    Name = "Unrelated Category"
+                }
+            },
+            Suppliers = new[]
+            {
+                new RemoteCatalogSupplierWrite
+                {
+                    RemoteSupplierId = "supplier-unrelated",
+                    Name = "Unrelated Supplier"
+                }
+            },
+            Products = new[] { lateProduct, unrelatedProduct }
+        });
+
+        using (var before = db.Factory.Open())
+        {
+            Assert.AreEqual(1L, await ScalarAsync(before, @"
+SELECT COUNT(1)
+FROM product_meta
+WHERE barcode = 'LATE-REF'
+  AND category_id IS NULL
+  AND supplier_id IS NULL;"));
+            Assert.AreEqual(1L, await ScalarAsync(before, @"
+SELECT COUNT(1)
+FROM product_meta m
+JOIN categories c ON c.id = m.category_id
+JOIN suppliers s ON s.id = m.supplier_id
+WHERE m.barcode = 'UNRELATED-REF'
+  AND c.remote_category_id = 'category-unrelated'
+  AND s.remote_supplier_id = 'supplier-unrelated';"));
+            await before.ExecuteAsync(@"
+CREATE TABLE product_meta_relink_touch_log(barcode TEXT NOT NULL);
+CREATE TRIGGER product_meta_relink_touch
+AFTER UPDATE OF category_id, category_name, supplier_id, supplier_name ON product_meta
+BEGIN
+  INSERT INTO product_meta_relink_touch_log(barcode) VALUES(NEW.barcode);
+END;");
+        }
+
+        var referencePage = await repository.ApplyAsync(new RemoteCatalogBatch
+        {
+            Categories = new[]
+            {
+                new RemoteCatalogCategoryWrite
+                {
+                    RemoteCategoryId = "category-late",
+                    Name = "Late Category"
+                }
+            },
+            Suppliers = new[]
+            {
+                new RemoteCatalogSupplierWrite
+                {
+                    RemoteSupplierId = "supplier-late",
+                    Name = "Late Supplier"
+                }
+            }
+        });
+
+        Assert.IsTrue(referencePage.ProductReferencesRelinked > 0);
+        using (var verify = db.Factory.Open())
+        {
+            Assert.AreEqual(0L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM product_meta_relink_touch_log
+WHERE barcode = 'UNRELATED-REF';"));
+            Assert.AreEqual(1L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM product_meta_relink_touch_log
+WHERE barcode = 'LATE-REF';"));
+            Assert.AreEqual(1L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM product_meta m
+JOIN categories c ON c.id = m.category_id
+JOIN suppliers s ON s.id = m.supplier_id
+WHERE m.barcode = 'LATE-REF'
+  AND c.remote_category_id = 'category-late'
+  AND s.remote_supplier_id = 'supplier-late';"));
+        }
+
+        var audit = await new CatalogFullRefreshReconciler(db.Factory).AuditCurrentAsync();
+        Assert.AreEqual(0L, audit.RemoteProductsWithoutReferenceMap);
+        Assert.AreEqual(0L, audit.InvalidCategoryReferenceMappings);
+        Assert.AreEqual(0L, audit.InvalidSupplierReferenceMappings);
+        Assert.AreEqual(string.Empty, CatalogExactnessVerifier.FindInvariantError(audit));
+    }
+
+    [TestMethod]
+    public async Task ApplyAsync_DifferentRemoteProductsCannotCollapseOntoSameBarcodeAcrossPages()
+    {
+        using var db = TestDb.Create();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+
+        var first = await repository.ApplyAsync(new RemoteCatalogBatch
+        {
+            Products = new[] { Product("product-identity-a", "IDENTITY-BAR", 3) }
+        });
+        var conflictingCaseVariant = await repository.ApplyAsync(new RemoteCatalogBatch
+        {
+            Products = new[] { Product("product-identity-b", "identity-bar", 4) }
+        });
+
+        Assert.AreEqual(1, first.ProductsApplied);
+        Assert.AreEqual(0, conflictingCaseVariant.ProductsApplied);
+        Assert.AreEqual(1, conflictingCaseVariant.ProductsSkipped);
+        Assert.AreEqual(1, conflictingCaseVariant.ProductIdentityConflicts);
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM products
+WHERE remote_product_id = 'product-identity-a'
+  AND barcode = 'IDENTITY-BAR'
+  AND is_active = 1;"));
+        Assert.AreEqual(0L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM products
+WHERE remote_product_id = 'product-identity-b';"));
+        Assert.AreEqual(0L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM remote_catalog_product_references
+WHERE remote_product_id = 'product-identity-b';"));
+    }
+
     private static RemoteCatalogProductWrite Product(
         string remoteProductId,
         string barcode,
@@ -306,7 +534,9 @@ WHERE remote_price_id = 'price-pending'
             CategoryName = "Category 1",
             Name = "Product " + barcode,
             PurchasePrice = 50,
+            RemoteCategoryId = "category-1",
             RemoteProductId = remoteProductId,
+            RemoteSupplierId = "supplier-1",
             SecondName = string.Empty,
             StockQuantity = stockQuantity,
             SupplierName = "Supplier 1",

@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
+using Win7POS.Data.Repositories;
 
 namespace Win7POS.Data.Online
 {
@@ -408,7 +409,8 @@ WHERE remote_product_id = @RemoteProductId
                 {
                     var exactRows = await conn.ExecuteAsync(@"
 UPDATE product_price_history
-SET remote_price_id = @RemotePriceId
+SET remote_price_id = @RemotePriceId,
+    type = UPPER(TRIM(type))
 WHERE id = (
     SELECT id
     FROM product_price_history
@@ -437,6 +439,12 @@ AND NOT EXISTS (
 
                     if (exactRows > 0)
                     {
+                        await EnsureAssignedRemotePriceOwnershipAsync(
+                            conn,
+                            tx,
+                            mapping.Barcode,
+                            mapping.PriceType,
+                            mapping.RemotePriceId).ConfigureAwait(false);
                         continue;
                     }
 
@@ -449,13 +457,20 @@ WHERE catalog_import_idempotency_key = @IdempotencyKey;",
 
                     if (importRows > 0)
                     {
+                        await EnsureAssignedRemotePriceOwnershipAsync(
+                            conn,
+                            tx,
+                            mapping.Barcode,
+                            mapping.PriceType,
+                            mapping.RemotePriceId).ConfigureAwait(false);
                         continue;
                     }
                 }
 
                 await conn.ExecuteAsync(@"
 UPDATE product_price_history
-SET remote_price_id = @RemotePriceId
+SET remote_price_id = @RemotePriceId,
+    type = UPPER(TRIM(type))
 WHERE id = (
     SELECT id
     FROM product_price_history
@@ -480,6 +495,66 @@ AND NOT EXISTS (
                         mapping.RemotePriceId
                     },
                     tx).ConfigureAwait(false);
+                await EnsureAssignedRemotePriceOwnershipAsync(
+                    conn,
+                    tx,
+                    mapping.Barcode,
+                    mapping.PriceType,
+                    mapping.RemotePriceId).ConfigureAwait(false);
+            }
+        }
+
+        private static async Task EnsureAssignedRemotePriceOwnershipAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            string barcode,
+            string priceType,
+            string remotePriceId)
+        {
+            var normalizedBarcode = NormalizeKey(barcode, 80);
+            var normalizedPriceType = NormalizePriceType(priceType);
+            var normalizedRemotePriceId = NormalizeTechnicalId(remotePriceId, 160);
+            var assignedRows = await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE remote_price_id = @remotePriceId
+  AND barcode = @barcode
+  AND (@priceType = '' OR LOWER(type) = LOWER(@priceType));",
+                new
+                {
+                    barcode = normalizedBarcode,
+                    priceType = normalizedPriceType,
+                    remotePriceId = normalizedRemotePriceId
+                },
+                tx).ConfigureAwait(false);
+            if (assignedRows != 1)
+            {
+                throw new InvalidOperationException("catalog_import_remote_price_mapping_unmatched");
+            }
+
+            var remoteProductIds = (await conn.QueryAsync<string>(@"
+SELECT TRIM(remote_product_id)
+FROM products
+WHERE barcode = @barcode
+  AND TRIM(COALESCE(remote_product_id, '')) <> '';",
+                new { barcode = normalizedBarcode },
+                tx).ConfigureAwait(false))
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value.Trim())
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            if (remoteProductIds.Length != 1)
+            {
+                throw new InvalidOperationException("catalog_import_remote_price_owner_missing_or_ambiguous");
+            }
+
+            if (!await ProductRepository.StoreRemotePriceOwnershipAsync(
+                    conn,
+                    tx,
+                    normalizedRemotePriceId,
+                    remoteProductIds[0]).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("catalog_import_remote_price_owner_conflict");
             }
         }
 

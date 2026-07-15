@@ -20,6 +20,12 @@ namespace Win7POS.Data.Online
             "pos.catalog.last_catalog_version",
             CatalogShopStateRepository.BoundShopIdKey,
             CatalogShopStateRepository.BoundShopCodeKey,
+            CatalogShopStateRepository.DeltaChainActiveKey,
+            CatalogShopStateRepository.DeltaChainCatalogVersionKey,
+            CatalogShopStateRepository.DeltaChainCursorFingerprintsKey,
+            CatalogShopStateRepository.DeltaChainModeKey,
+            CatalogShopStateRepository.DeltaChainSummaryFingerprintKey,
+            CatalogShopStateRepository.DeltaChainSummaryPinnedKey,
             "pos.catalog.bootstrap_status",
             "pos.catalog.initial_completed_at",
             "pos.catalog.sale_safe_at",
@@ -182,6 +188,7 @@ SET is_active = 0,
 WHERE COALESCE(is_active, 1) = 1;
 
 DELETE FROM remote_catalog_pending_prices;
+DELETE FROM remote_catalog_product_references;
 
 INSERT INTO app_settings(key, value)
 VALUES(@TransitionEpochKey, '1')
