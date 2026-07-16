@@ -6,6 +6,7 @@
     <Project Path="src/Win7POS.Wpf/Win7POS.Wpf.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Win7POS.CatalogPerformance/Win7POS.CatalogPerformance.csproj" />
     <Project Path="tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj" />
   </Folder>
 </Solution>

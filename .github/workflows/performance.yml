@@ -1,0 +1,80 @@
+name: Catalog Performance
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  catalog-benchmark:
+    runs-on: windows-latest
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup deterministic .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.301"
+
+      - name: Restore solution
+        run: dotnet restore Win7POS.slnx
+
+      - name: Build benchmark and tests
+        run: dotnet build Win7POS.slnx -c Release --no-restore
+
+      - name: Benchmark legacy vs batch (2,000 rows)
+        shell: pwsh
+        env:
+          WIN7POS_RUN_CATALOG_BENCHMARK: "1"
+          WIN7POS_CATALOG_BENCHMARK_ROWS: "2000"
+          WIN7POS_CATALOG_BENCHMARK_ITERATIONS: "3"
+        run: |
+          New-Item -ItemType Directory -Force -Path artifacts/performance | Out-Null
+          dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj `
+            -c Release --no-build --no-restore `
+            --filter "FullyQualifiedName~CatalogBatchPerformanceTests" `
+            --results-directory artifacts/performance `
+            --logger "trx;LogFileName=catalog-performance-2000.trx"
+          if ($LASTEXITCODE -ne 0) { throw "2,000-row catalog benchmark failed." }
+
+          [xml]$trx = Get-Content -LiteralPath artifacts/performance/catalog-performance-2000.trx -Raw
+          $evidence = @($trx.SelectNodes("//*[local-name()='StdOut']") | ForEach-Object { $_.InnerText })
+          if ($evidence.Count -eq 0) { throw "2,000-row benchmark produced no textual evidence." }
+          $evidence | Set-Content -LiteralPath artifacts/performance/catalog-performance-2000.txt -Encoding utf8
+
+      - name: Benchmark full path (19,762 rows)
+        shell: pwsh
+        env:
+          WIN7POS_RUN_CATALOG_BENCHMARK: "1"
+          WIN7POS_CATALOG_BENCHMARK_ROWS: "19762"
+          WIN7POS_CATALOG_BENCHMARK_ITERATIONS: "3"
+          WIN7POS_CATALOG_BENCHMARK_MODE: "batch-paged-full"
+          WIN7POS_CATALOG_BENCHMARK_PAGE_SIZE: "1000"
+        run: |
+          dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj `
+            -c Release --no-build --no-restore `
+            --filter "FullyQualifiedName~CatalogBatchPerformanceTests" `
+            --results-directory artifacts/performance `
+            --logger "trx;LogFileName=catalog-performance-19762.trx"
+          if ($LASTEXITCODE -ne 0) { throw "19,762-row catalog benchmark failed." }
+
+          [xml]$trx = Get-Content -LiteralPath artifacts/performance/catalog-performance-19762.trx -Raw
+          $evidence = @($trx.SelectNodes("//*[local-name()='StdOut']") | ForEach-Object { $_.InnerText })
+          if ($evidence.Count -eq 0) { throw "19,762-row benchmark produced no textual evidence." }
+          $evidence | Set-Content -LiteralPath artifacts/performance/catalog-performance-19762.txt -Encoding utf8
+
+      - name: Upload benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: Win7POS-Catalog-Performance-${{ github.run_id }}
+          path: artifacts/performance/*
+          if-no-files-found: error
+          retention-days: 30

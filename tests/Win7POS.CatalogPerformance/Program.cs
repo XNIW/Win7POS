@@ -18,6 +18,7 @@ try
 catch (ArgumentException ex)
 {
     Console.Error.WriteLine(ex.Message);
-    Console.Error.WriteLine("Usage: Win7POS.CatalogPerformance <legacy|batch> [rows] [iterations]");
+    Console.Error.WriteLine(
+        "Usage: Win7POS.CatalogPerformance <legacy|batch|batch-paged|batch-paged-full> [rows] [iterations]");
     return 2;
 }
