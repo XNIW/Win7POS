@@ -43,8 +43,18 @@
             <PasswordBox x:Name="PinBox" Grid.Row="4" Margin="0,0,0,16" MinHeight="34" Padding="8,6"/>
             <TextBlock x:Name="ErrorText" Grid.Row="5" Foreground="#C62828" Margin="0,0,0,12" TextWrapping="Wrap" Visibility="Collapsed"/>
             <StackPanel Grid.Row="6" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-                <Button Content="{loc:Loc override.authorize}" Margin="0,0,8,0" Click="OnAuthorizeClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
-                <Button Content="{loc:Loc common.cancel}" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
+                <Button Margin="0,0,8,0" Click="OnAuthorizeClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconLock}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc override.authorize}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Grid>
         </Border>

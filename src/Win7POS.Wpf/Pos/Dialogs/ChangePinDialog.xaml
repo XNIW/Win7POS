@@ -40,7 +40,12 @@
             <PasswordBox x:Name="ConfirmPinBox" Grid.Row="2" Grid.Column="1" Margin="0,0,0,10" MinHeight="34" Padding="8,6"/>
             <TextBlock x:Name="ErrorText" Grid.Row="3" Grid.ColumnSpan="2" Foreground="#C62828" Margin="0,0,0,12" TextWrapping="Wrap" Visibility="Collapsed"/>
             <StackPanel Grid.Row="4" Grid.ColumnSpan="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-                <Button Content="{loc:Loc common.save}" Margin="0,0,8,0" Click="OnSaveClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
+                <Button Margin="0,0,8,0" Click="OnSaveClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.save}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Grid>
         </Border>

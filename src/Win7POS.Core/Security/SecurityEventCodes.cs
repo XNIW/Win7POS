@@ -13,6 +13,7 @@ namespace Win7POS.Core.Security
         public const string PinReset = "pin_reset";
         public const string UserCreated = "user_created";
         public const string FirstRunAdminCreated = "first_run_admin_created";
+        public const string LocalRecoveryCatalogApproved = "local_recovery_catalog_approved";
         public const string PosOnlineBootstrap = "pos_online_bootstrap";
         public const string PosAuthorizationLeaseDenied = "pos_authorization_lease_denied";
         public const string UserUpdated = "user_updated";

@@ -44,10 +44,30 @@
         </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-            <Button x:Name="ContinueButton" Content="{loc:Loc startOfDay.continue}" MinWidth="110" Height="42" Margin="0,0,10,0" Click="Continue_Click" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True" IsEnabled="False"/>
-            <Button x:Name="WaitButton" Content="{loc:Loc startOfDay.wait}" MinWidth="150" Height="42" Margin="0,0,10,0" Click="Wait_Click" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed"/>
-            <Button x:Name="RetryButton" Content="{loc:Loc startOfDay.retry}" MinWidth="100" Height="42" Margin="0,0,10,0" Click="Retry_Click" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed"/>
-            <Button Content="{loc:Loc startOfDay.exit}" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Exit_Click"/>
+            <Button x:Name="ContinueButton" MinWidth="110" Height="42" Margin="0,0,10,0" Click="Continue_Click" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True" IsEnabled="False">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc startOfDay.continue}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="WaitButton" MinWidth="150" Height="42" Margin="0,0,10,0" Click="Wait_Click" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconCalendar}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc startOfDay.wait}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="RetryButton" MinWidth="100" Height="42" Margin="0,0,10,0" Click="Retry_Click" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc startOfDay.retry}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Exit_Click">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc startOfDay.exit}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

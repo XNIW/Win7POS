@@ -15,6 +15,14 @@
             <Setter Property="HorizontalAlignment" Value="Center"/>
             <Setter Property="Margin" Value="4,0"/>
         </Style>
+        <Style x:Key="CatalogStatChipStyle" TargetType="{x:Type Border}">
+            <Setter Property="Background" Value="#F4EFF8"/>
+            <Setter Property="BorderBrush" Value="#DCCFE8"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="8"/>
+            <Setter Property="Padding" Value="8,5"/>
+            <Setter Property="Margin" Value="6,0,0,6"/>
+        </Style>
     </UserControl.Resources>
     <UserControl.InputBindings>
         <KeyBinding Key="N" Modifiers="Control" Command="{Binding NewProductCommand}"/>
@@ -23,317 +31,291 @@
         <KeyBinding Key="R" Modifiers="Control" Command="{Binding CopyNewCommand}"/>
         <KeyBinding Key="F5" Command="{Binding RefreshCommand}"/>
     </UserControl.InputBindings>
-    <Grid Margin="18">
+
+    <Grid Margin="16">
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <!-- Toolbar: struttura fissa a 2 righe (no wrapping) -->
-        <Border Grid.Row="0" Margin="0,0,0,14"
-                Background="{StaticResource BackgroundLightBrush}"
-                Padding="16" CornerRadius="8"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
-                ClipToBounds="False">
+        <Border Grid.Row="0" Style="{StaticResource PageHeaderCardStyle}">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
-                <!-- Riga 1: azioni -->
-                <StackPanel x:Name="ToolbarActions" Grid.Row="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button MinWidth="96" Height="36" Content="{loc:Loc products.new}" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding NewProductCommand}"/>
-                    <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc products.edit}" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding EditProductCommand}"/>
-                    <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc products.duplicate}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CopyNewCommand}"/>
-                    <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc common.delete}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding DeleteCommand}"/>
-                    <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc import.title}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ImportCommand}"/>
-                    <Button MinWidth="150" Margin="12,0,0,0" Height="36" Content="{loc:Loc supplierExcelImport.title}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding SupplierExcelImportCommand}"/>
-                    <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc export.title}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ExportDataCommand}"/>
-                    <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc priceHistory.title}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenPriceHistoryCommand}"/>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="{loc:Loc shell.products}" Style="{StaticResource PageTitleTextStyle}"/>
+                    <TextBlock Text="{Binding FilterSummary}" Style="{StaticResource MutedTextStyle}" Margin="0,4,0,0"/>
                 </StackPanel>
-                <!-- Riga 2: filtri fornitore + ricerca -->
-                <StackPanel Grid.Row="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="0,10,0,0">
-                    <TextBlock Text="{loc:Loc products.supplier}" VerticalAlignment="Center" Margin="0,0,8,0" Foreground="#6B5B73" FontSize="12"/>
-                    <ComboBox x:Name="SupplierComboBox"
-                              MinWidth="160" MaxWidth="220" Height="36"
-                              VerticalContentAlignment="Center"
-                              Style="{StaticResource ModernComboBoxStyle}"
-                              ItemsSource="{Binding Suppliers}" DisplayMemberPath="Name"
-                              SelectedItem="{Binding SelectedSupplier, Mode=TwoWay}"
-                              MaxDropDownHeight="280"
-                              ToolTip="{loc:Loc products.filterSupplierTooltip}">
-                        <ComboBox.ItemContainerStyle>
-                            <Style TargetType="ComboBoxItem">
-                                <Setter Property="Padding" Value="8,6"/>
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="ComboBoxItem">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    Padding="{TemplateBinding Padding}"
-                                                    SnapsToDevicePixels="True">
-                                                <ContentPresenter ContentSource="Content"
-                                                                  VerticalAlignment="Center"
-                                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource PrimaryLighterBrush}"/>
-                                        <Setter Property="Foreground" Value="White"/>
-                                    </Trigger>
-                                    <Trigger Property="IsHighlighted" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ComboBox.ItemContainerStyle>
-                    </ComboBox>
-                    <TextBlock Text="{loc:Loc products.search}" VerticalAlignment="Center" Margin="24,0,8,0" Foreground="#6B5B73" FontSize="12"/>
-                    <TextBox MinWidth="180" MaxWidth="260" Height="36"
-                             VerticalContentAlignment="Center"
-                             Style="{StaticResource ModernTextBoxStyle}"
-                             Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                             ToolTip="{loc:Loc products.searchTooltip}">
-                        <TextBox.InputBindings>
-                            <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
-                        </TextBox.InputBindings>
-                    </TextBox>
-                    <Button MinWidth="84" Margin="12,0,0,0" Height="36" Content="{loc:Loc common.search}" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding SearchCommand}"/>
-                    <Button MinWidth="96" Margin="12,0,0,0" Height="36" Content="{loc:Loc common.clearFilters}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ClearFiltersCommand}"/>
+                <StackPanel Grid.Column="1"
+                            Margin="16,0,0,0"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center">
+                    <ItemsControl ItemsSource="{Binding CatalogStatsChips}"
+                                  HorizontalAlignment="Right">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel HorizontalAlignment="Right"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border Style="{StaticResource CatalogStatChipStyle}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Label}"
+                                                   Foreground="{StaticResource TextSecondaryBrush}"
+                                                   FontSize="11"
+                                                   VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding Value}"
+                                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                                   FontWeight="SemiBold"
+                                                   Margin="5,0,0,0"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding ResultSummary}"
+                               Style="{StaticResource MutedTextStyle}"
+                               HorizontalAlignment="Right"/>
                 </StackPanel>
             </Grid>
         </Border>
 
-        <!-- Content: Categorie (sinistra) + Griglia (destra) -->
-        <Grid Grid.Row="1">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="260"/>
-                <ColumnDefinition Width="14"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- Pannello Categorie: più spazio tra voci -->
-            <Border Grid.Column="0" Background="White" CornerRadius="8"
-                    BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="12">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                    </Grid.RowDefinitions>
-                    <TextBlock Grid.Row="0" Text="{loc:Loc products.categories}" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,8"/>
-                    <TextBlock Grid.Row="1" Foreground="#666" FontSize="11" Margin="0,0,0,10">
-                        <Run Text="{loc:Loc products.selectToFilter}"/>
-                    </TextBlock>
-                    <ListBox Grid.Row="2"
-                             ItemsSource="{Binding Categories}"
-                             SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
-                             DisplayMemberPath="Name"
-                             BorderThickness="0"
-                             Background="Transparent"
-                             Padding="0,2">
-                        <ListBox.ItemContainerStyle>
-                            <Style TargetType="ListBoxItem">
-                                <Setter Property="Padding" Value="10,8"/>
-                                <Setter Property="Margin" Value="0,0,0,2"/>
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="ListBoxItem">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    Padding="{TemplateBinding Padding}"
-                                                    SnapsToDevicePixels="True">
-                                                <ContentPresenter ContentSource="Content"
-                                                                  VerticalAlignment="Center"
-                                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource PrimaryLighterBrush}"/>
-                                        <Setter Property="Foreground" Value="White"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ListBox.ItemContainerStyle>
-                    </ListBox>
-                </Grid>
-            </Border>
-
-            <!-- Riga filtri attivi + Griglia -->
-            <Grid Grid.Column="2">
+        <Border Grid.Row="1" Style="{StaticResource FilterPanelStyle}" Margin="0,12,0,12">
+            <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
-                <!-- Riga filtri attivi -->
-                <Border Grid.Row="0" Background="#F5F5F5" Padding="10,8" Margin="0,0,0,6" CornerRadius="4"
-                        Visibility="{Binding HasActiveFilters, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="{Binding FilterSummary, Mode=OneWay}" FontSize="11" Foreground="#555" TextWrapping="Wrap"/>
-                </Border>
+                <WrapPanel Grid.Row="0" Margin="0,0,0,10">
+                    <Button MinWidth="96" Height="36" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding NewProductCommand}" Margin="0,0,8,8">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconAdd}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc products.new}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button MinWidth="96" Height="36" Style="{StaticResource SecondaryButtonStyle}" Command="{Binding EditProductCommand}" Margin="0,0,8,8">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconEdit}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc products.edit}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button MinWidth="108" Height="36" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CopyNewCommand}" Margin="0,0,8,8">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconDuplicate}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc products.duplicate}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button MinWidth="96" Height="36" Style="{StaticResource OutlineButtonStyle}" Command="{Binding DeleteCommand}" Margin="0,0,8,8">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconDelete}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc common.delete}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button MinWidth="96" Height="36" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ImportCommand}" Margin="0,0,8,8">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconImport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc import.title}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button MinWidth="168" Height="36" Style="{StaticResource OutlineButtonStyle}" Command="{Binding SupplierExcelImportCommand}" Margin="0,0,8,8">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconUploadFile}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc supplierExcelImport.title}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button MinWidth="96" Height="36" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ExportDataCommand}" Margin="0,0,8,8">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconExport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc export.title}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button MinWidth="120" Height="36" Style="{StaticResource OutlineButtonStyle}" Command="{Binding OpenPriceHistoryCommand}" Margin="0,0,0,8">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconHistory}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc priceHistory.title}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                </WrapPanel>
 
-                <!-- DataGrid: compatto, zebra più visibile, selezione tema viola -->
-                <Border Grid.Row="1" Background="White" CornerRadius="8"
-                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="0">
-                    <DataGrid ItemsSource="{Binding Items}"
-                              SelectedItem="{Binding SelectedProduct}"
-                              AutoGenerateColumns="False"
-                              CanUserAddRows="False"
-                              CanUserDeleteRows="False"
-                              EnableRowVirtualization="True"
-                              VirtualizingPanel.IsVirtualizing="True"
-                              VirtualizingPanel.VirtualizationMode="Recycling"
-                              RowBackground="White"
-                              AlternatingRowBackground="#F3F0F5"
-                              RowHeight="32"
-                              MouseDoubleClick="ProductsGrid_MouseDoubleClick"
-                              GridLinesVisibility="Horizontal"
-                              HorizontalGridLinesBrush="#EEE"
-                              HeadersVisibility="Column"
-                              BorderThickness="0">
-                        <DataGrid.RowStyle>
-                            <Style TargetType="DataGridRow">
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderBrush" Value="Transparent"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="DataGridRow">
-                                            <Border x:Name="DGR_Border"
-                                                    Background="{TemplateBinding Background}"
-                                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                                    SnapsToDevicePixels="True">
-                                                <SelectiveScrollingGrid>
-                                                    <SelectiveScrollingGrid.RowDefinitions>
-                                                        <RowDefinition Height="*"/>
-                                                        <RowDefinition Height="Auto"/>
-                                                    </SelectiveScrollingGrid.RowDefinitions>
-                                                    <DataGridCellsPresenter Grid.Row="0"
-                                                                           SelectiveScrollingGrid.SelectiveScrollingOrientation="Vertical"
-                                                                           ItemsPanel="{TemplateBinding ItemsPanel}"
-                                                                           SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
-                                                    <DataGridDetailsPresenter Grid.Row="1"
-                                                                             SelectiveScrollingGrid.SelectiveScrollingOrientation="Vertical"
-                                                                             Visibility="{TemplateBinding DetailsVisibility}"
-                                                                             SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
-                                                    <DataGridRowHeader Grid.RowSpan="2"
-                                                                      SelectiveScrollingGrid.SelectiveScrollingOrientation="Vertical"
-                                                                      Visibility="Collapsed"
-                                                                      SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
-                                                </SelectiveScrollingGrid>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                                        <Setter Property="BorderBrush" Value="{StaticResource SelectionBorderBrush}"/>
-                                        <Setter Property="BorderThickness" Value="3,0,0,0"/>
-                                    </Trigger>
-                                    <MultiTrigger>
-                                        <MultiTrigger.Conditions>
-                                            <Condition Property="IsMouseOver" Value="True"/>
-                                            <Condition Property="IsSelected" Value="False"/>
-                                        </MultiTrigger.Conditions>
-                                        <Setter Property="Background" Value="{StaticResource SelectionHoverBrush}"/>
-                                    </MultiTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </DataGrid.RowStyle>
-                        <DataGrid.ColumnHeaderStyle>
-                            <Style TargetType="DataGridColumnHeader">
-                                <Setter Property="Padding" Value="8,8,8,8"/>
-                                <Setter Property="FontWeight" Value="SemiBold"/>
-                                <Setter Property="FontSize" Value="12"/>
-                            </Style>
-                        </DataGrid.ColumnHeaderStyle>
-                        <DataGrid.CellStyle>
-                            <Style TargetType="DataGridCell">
-                                <Setter Property="Padding" Value="8,0,8,0"/>
-                                <Setter Property="VerticalAlignment" Value="Center"/>
-                                <Setter Property="Background" Value="Transparent"/>
-                                <Setter Property="BorderBrush" Value="Transparent"/>
-                                <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="DataGridCell">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                                    Padding="{TemplateBinding Padding}"
-                                                    SnapsToDevicePixels="True">
-                                                <ContentPresenter VerticalAlignment="Center"
-                                                                  TextElement.Foreground="{TemplateBinding Foreground}"/>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource SelectionBackgroundBrush}"/>
-                                        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </DataGrid.CellStyle>
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Barcode" Binding="{Binding Barcode}" Width="120" MinWidth="100" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="{loc:Loc products.name}" Binding="{Binding Name}" Width="2*" MinWidth="140" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="{loc:Loc products.articleCodeShort}" Binding="{Binding ArticleCode}" Width="100" MinWidth="90" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="{loc:Loc products.secondName}" Binding="{Binding Name2}" Width="1.2*" MinWidth="100" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="{loc:Loc products.sale}" Binding="{Binding UnitPrice, StringFormat={}{0:N0}}" Width="82" MinWidth="72" IsReadOnly="True">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="HorizontalAlignment" Value="Right"/>
-                                        <Setter Property="Margin" Value="6,0"/>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="{loc:Loc products.purchase}" Binding="{Binding PurchasePrice, StringFormat={}{0:N0}}" Width="82" MinWidth="72" IsReadOnly="True">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="HorizontalAlignment" Value="Right"/>
-                                        <Setter Property="Margin" Value="6,0"/>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="{loc:Loc products.stock}" Binding="{Binding StockQty}" Width="56" MinWidth="48" IsReadOnly="True">
-                                <DataGridTextColumn.ElementStyle>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="HorizontalAlignment" Value="Center"/>
-                                        <Setter Property="Margin" Value="6,0"/>
-                                    </Style>
-                                </DataGridTextColumn.ElementStyle>
-                            </DataGridTextColumn>
-                            <DataGridTextColumn Header="{loc:Loc products.supplierNoColon}" Binding="{Binding SupplierName}" Width="1*" MinWidth="90" IsReadOnly="True"/>
-                            <DataGridTextColumn Header="{loc:Loc products.categoryNoColon}" Binding="{Binding CategoryName}" Width="1*" MinWidth="90" IsReadOnly="True"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="2*"/>
+                        <ColumnDefinition Width="1.25*"/>
+                        <ColumnDefinition Width="1.25*"/>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                        <TextBlock Text="{loc:Loc products.search}" Style="{StaticResource MutedTextStyle}" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <TextBox MinWidth="220"
+                                 Height="36"
+                                 Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                 Style="{StaticResource ModernTextBoxStyle}"
+                                 ToolTip="{loc:Loc products.searchTooltip}">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding ApplyFiltersCommand}"/>
+                            </TextBox.InputBindings>
+                        </TextBox>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Margin="0,0,10,0">
+                        <TextBlock Text="{loc:Loc products.supplier}" Style="{StaticResource MutedTextStyle}" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <ComboBox MinWidth="160"
+                                  Height="36"
+                                  VerticalContentAlignment="Center"
+                                  IsEditable="True"
+                                  IsTextSearchEnabled="False"
+                                  StaysOpenOnEdit="True"
+                                  ItemsSource="{Binding FilteredSuppliers}"
+                                  DisplayMemberPath="Name"
+                                  TextSearch.TextPath="Name"
+                                  Text="{Binding SupplierFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  SelectedItem="{Binding SelectedSupplier, Mode=TwoWay}"
+                                  IsDropDownOpen="{Binding IsSupplierDropdownOpen, Mode=TwoWay}"
+                                  Style="{StaticResource ModernComboBoxStyle}"
+                                  ToolTip="{loc:Loc products.filterSupplierTooltip}">
+                            <ComboBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding ApplyFiltersCommand}"/>
+                            </ComboBox.InputBindings>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Margin="0,0,10,0">
+                        <TextBlock Text="{loc:Loc products.category}" Style="{StaticResource MutedTextStyle}" FontWeight="SemiBold" Margin="0,0,0,4"/>
+                        <ComboBox MinWidth="160"
+                                  Height="36"
+                                  VerticalContentAlignment="Center"
+                                  IsEditable="True"
+                                  IsTextSearchEnabled="False"
+                                  StaysOpenOnEdit="True"
+                                  ItemsSource="{Binding FilteredCategories}"
+                                  DisplayMemberPath="Name"
+                                  TextSearch.TextPath="Name"
+                                  Text="{Binding CategoryFilterText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                  SelectedItem="{Binding SelectedCategory, Mode=TwoWay}"
+                                  IsDropDownOpen="{Binding IsCategoryDropdownOpen, Mode=TwoWay}"
+                                  Style="{StaticResource ModernComboBoxStyle}"
+                                  ToolTip="{loc:Loc products.selectToFilter}">
+                            <ComboBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding ApplyFiltersCommand}"/>
+                            </ComboBox.InputBindings>
+                        </ComboBox>
+                    </StackPanel>
+
+                    <Button Grid.Column="3" MinWidth="118" Height="36" VerticalAlignment="Bottom" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding ApplyFiltersCommand}" Margin="0,0,8,0">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc products.applyFilters}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+
+                    <Button Grid.Column="4" MinWidth="96" Height="36" VerticalAlignment="Bottom" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ClearFiltersCommand}">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconFilterOff}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc common.clearFilters}" Margin="8,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                </Grid>
+
+                <Border Grid.Row="2"
+                        Style="{StaticResource FilterChipStyle}"
+                        Visibility="{Binding HasActiveFilters, Converter={StaticResource BoolToVis}}"
+                        HorizontalAlignment="Left"
+                        Margin="0,10,0,0">
+                    <TextBlock Text="{Binding FilterSummary}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap"/>
                 </Border>
             </Grid>
-        </Grid>
+        </Border>
 
-        <!-- Footer: paginazione unificata, pulsanti uniformi -->
-        <Border Grid.Row="2" Margin="0,14,0,0" Padding="0,10,0,0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Foreground="#6B5B73" VerticalAlignment="Center" Text="{Binding PagingStatus}" Margin="0,0,20,0" FontSize="12"/>
-                <Button Content="{loc:Loc common.previousShort}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding PrevPageCommand}" MinWidth="64" Height="34" Margin="0,0,8,0"/>
-                <Button Content="{loc:Loc common.nextShort}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding NextPageCommand}" MinWidth="64" Height="34" Margin="0,0,12,0"/>
-                <TextBox Text="{Binding GoPageText, UpdateSourceTrigger=PropertyChanged}" Width="52" Height="34" Margin="0,0,6,0" VerticalContentAlignment="Center"
-                         Style="{StaticResource ModernTextBoxStyle}"/>
-                <Button Content="{loc:Loc common.go}" Style="{StaticResource OutlineButtonStyle}" Command="{Binding GoToPageCommand}" MinWidth="64" Height="34"/>
-            </StackPanel>
+        <Border Grid.Row="2" Background="White" CornerRadius="8" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
+            <Grid>
+                <DataGrid ItemsSource="{Binding Items}"
+                          SelectedItem="{Binding SelectedProduct}"
+                          AutoGenerateColumns="False"
+                          SelectionMode="Single"
+                          EnableRowVirtualization="True"
+                          EnableColumnVirtualization="True"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling"
+                          ScrollViewer.CanContentScroll="True"
+                          MouseDoubleClick="ProductsGrid_MouseDoubleClick"
+                          Style="{StaticResource ModernDataGridStyle}">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="{loc:Loc pos.cart.barcode}" Binding="{Binding Barcode}" Width="120" MinWidth="100"/>
+                        <DataGridTextColumn Header="{loc:Loc products.name}" Binding="{Binding Name}" Width="2*" MinWidth="150"/>
+                        <DataGridTextColumn Header="{loc:Loc products.articleCodeShort}" Binding="{Binding ArticleCode}" Width="105" MinWidth="90"/>
+                        <DataGridTextColumn Header="{loc:Loc products.secondName}" Binding="{Binding Name2}" Width="1.2*" MinWidth="110"/>
+                        <DataGridTextColumn Header="{loc:Loc products.sale}" Binding="{Binding UnitPrice, StringFormat={}{0:N0}}" Width="86" MinWidth="72" ElementStyle="{StaticResource RightAlignCell}"/>
+                        <DataGridTextColumn Header="{loc:Loc products.purchase}" Binding="{Binding PurchasePrice, StringFormat={}{0:N0}}" Width="92" MinWidth="76" ElementStyle="{StaticResource RightAlignCell}"/>
+                        <DataGridTextColumn Header="{loc:Loc products.stock}" Binding="{Binding StockQty}" Width="64" MinWidth="52" ElementStyle="{StaticResource CenterAlignCell}"/>
+                        <DataGridTextColumn Header="{loc:Loc products.supplierNoColon}" Binding="{Binding SupplierName}" Width="1*" MinWidth="100"/>
+                        <DataGridTextColumn Header="{loc:Loc products.categoryNoColon}" Binding="{Binding CategoryName}" Width="1*" MinWidth="100"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+
+                <Border Background="#CCFFFFFF" Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="{loc:Loc common.loading}"
+                               Style="{StaticResource PageTitleTextStyle}"
+                               FontSize="18"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+                </Border>
+
+                <Border Background="#F8FFFFFF" Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="{Binding FilterSummary}"
+                               Style="{StaticResource MutedTextStyle}"
+                               FontSize="14"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="3" Margin="0,12,0,0" Padding="0,10,0,0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
+            <DockPanel LastChildFill="False">
+                <TextBlock DockPanel.Dock="Left"
+                           Foreground="{StaticResource TextSecondaryBrush}"
+                           VerticalAlignment="Center"
+                           Text="{Binding PagingStatus}"
+                           Margin="0,0,20,0"
+                           FontSize="12"/>
+
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource OutlineButtonStyle}" Command="{Binding PrevPageCommand}" MinWidth="72" Height="34" Margin="0,0,8,0">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconPrev}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc common.previousShort}" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource OutlineButtonStyle}" Command="{Binding NextPageCommand}" MinWidth="72" Height="34" Margin="0,0,12,0">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <TextBlock Text="{loc:Loc common.nextShort}" Margin="0,0,6,0"/>
+                            <Path Data="{StaticResource IconNext}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        </StackPanel>
+                    </Button>
+                    <TextBox Text="{Binding GoPageText, UpdateSourceTrigger=PropertyChanged}"
+                             Width="52"
+                             Height="34"
+                             Margin="0,0,6,0"
+                             HorizontalContentAlignment="Center"
+                             Style="{StaticResource ModernTextBoxStyle}"/>
+                    <Button Style="{StaticResource OutlineButtonStyle}" Command="{Binding GoToPageCommand}" MinWidth="64" Height="34">
+                        <StackPanel Style="{StaticResource IconButtonContent}">
+                            <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                            <TextBlock Text="{loc:Loc common.go}" Margin="6,0,0,0"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </DockPanel>
         </Border>
     </Grid>
 </UserControl>

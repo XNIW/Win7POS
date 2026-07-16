@@ -371,6 +371,9 @@ namespace Win7POS.Core.Online
         [DataMember(Name = "catalog")]
         public PosCatalogPayload Catalog { get; set; }
 
+        [DataMember(Name = "catalogSummary", EmitDefaultValue = false)]
+        public PosCatalogSummaryResponse CatalogSummary { get; set; }
+
         [DataMember(Name = "catalogVersion")]
         public string CatalogVersion { get; set; }
 
@@ -403,6 +406,31 @@ namespace Win7POS.Core.Online
 
         [DataMember(Name = "syncMode")]
         public string SyncMode { get; set; }
+    }
+
+    [DataContract]
+    public sealed class PosCatalogSummaryResponse
+    {
+        [DataMember(Name = "activeProducts", EmitDefaultValue = false)]
+        public long? ActiveProducts { get; set; }
+
+        [DataMember(Name = "categories", EmitDefaultValue = false)]
+        public long? Categories { get; set; }
+
+        [DataMember(Name = "checksum", EmitDefaultValue = false)]
+        public string Checksum { get; set; }
+
+        [DataMember(Name = "checksumAlgorithm", EmitDefaultValue = false)]
+        public string ChecksumAlgorithm { get; set; }
+
+        [DataMember(Name = "prices", EmitDefaultValue = false)]
+        public long? Prices { get; set; }
+
+        [DataMember(Name = "products", EmitDefaultValue = false)]
+        public long? Products { get; set; }
+
+        [DataMember(Name = "suppliers", EmitDefaultValue = false)]
+        public long? Suppliers { get; set; }
     }
 
     [DataContract]

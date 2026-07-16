@@ -162,7 +162,7 @@ if ($bootstrap -notmatch "new\s+PosAdminWebClient" -or $bootstrap -notmatch "Fir
 if ($bootstrap -notmatch "SaveFirstLogin" -or $store -notmatch "ProtectedDeviceSecret" -or $store -notmatch "ProtectedSessionSecret") { Fail "bootstrap does not save trusted tokens through protected store" } else { Pass "trusted tokens saved through protected store" }
 if ($store -match 'DataMember\(Name\s*=\s*"(trustedDeviceToken|deviceToken|sessionToken)"') { Fail "trusted store may persist raw token fields" } else { Pass "trusted store does not persist raw token field names" }
 if ($userRepo -notmatch "PinHelper\.HashPin\(input\.Credential") { Fail "remote staff credential is not hashed for local mirror" } else { Pass "remote staff credential hashed for local mirror" }
-if ($mainWindow -notmatch "new\s+PosOnlineFirstLoginDialog") { Fail "startup does not use unified POS online access dialog" } else { Pass "startup uses unified POS online access dialog" }
+if ($mainWindow -notmatch "new\s+PosOnlineFirstLoginDialog" -or $dialog -notmatch "PosOnlineBootstrapService") { Fail "unified POS access flow is not wired to the online client" } else { Pass "unified POS access flow uses online bootstrap client" }
 if ($mainWindow -notmatch "TryRefreshTrustedPosSessionAsync") { Fail "startup heartbeat missing" } else { Pass "startup heartbeat present" }
 
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }

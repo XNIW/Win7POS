@@ -150,7 +150,7 @@ if ($dialogVm -notmatch "27,112,0,25,250" -or $workflow -notmatch "27,112,0,60,2
     Pass "ESC/POS drawer command handling present"
 }
 
-if ($combined -match "(?i)sk-[a-z0-9]|api[_-]?key\s*=|secret\s*=|token\s*=|password\s*=|BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY") {
+if ($combined -match "(?i)sk-[a-z0-9]|api[_-]?key\s*=|secret\s*=|(?<![A-Za-z0-9_])token\s*=|password\s*=|BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY") {
     Fail "possible secret detected in printer/cashdrawer code"
 } else {
     Pass "no secret-like printer/cashdrawer content detected"

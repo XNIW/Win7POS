@@ -108,12 +108,27 @@
                 <Button Content="+ 1000" Margin="0,0,0,6" Style="{StaticResource SecondaryButtonStyle}" MinHeight="40" FontSize="15" Focusable="False"
                         Command="{Binding AddQuickAmountCommand}" CommandParameter="1000"/>
                 <TextBlock Text="{loc:Loc payment.amount}" FontSize="10" Foreground="Gray" Margin="0,10,0,4"/>
-                <Button Content="{loc:Loc payment.round}" Margin="0,0,0,6" Style="{StaticResource OutlineButtonStyle}" MinHeight="38" FontSize="14" Focusable="False"
-                        Command="{Binding SetRoundedTotalCommand}"/>
-                <Button Content="{loc:Loc payment.exactAmount}" Margin="0,0,0,6" Style="{StaticResource OutlineButtonStyle}" MinHeight="38" FontSize="14" Focusable="False"
-                        Command="{Binding SetExactTotalCommand}"/>
-                <Button Content="{loc:Loc payment.allCard}" Margin="0,0,0,6" Style="{StaticResource OutlineButtonStyle}" MinHeight="38" FontSize="14" Focusable="False"
-                        Command="{Binding PayAllCardCommand}"/>
+                <Button Margin="0,0,0,6" Style="{StaticResource OutlineButtonStyle}" MinHeight="38" FontSize="14" Focusable="False"
+                        Command="{Binding SetRoundedTotalCommand}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconPay}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc payment.round}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button Margin="0,0,0,6" Style="{StaticResource OutlineButtonStyle}" MinHeight="38" FontSize="14" Focusable="False"
+                        Command="{Binding SetExactTotalCommand}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconPay}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc payment.exactAmount}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button Margin="0,0,0,6" Style="{StaticResource OutlineButtonStyle}" MinHeight="38" FontSize="14" Focusable="False"
+                        Command="{Binding PayAllCardCommand}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconPay}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc payment.allCard}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Border>
 
@@ -204,13 +219,28 @@
                 </Grid>
             </Border>
             <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button Content="{loc:Loc payment.suspend}" MinWidth="110" Height="40" Margin="0,0,10,0"
-                        Style="{StaticResource AccentButtonStyle}" Command="{Binding SuspendCommand}"/>
-                <Button Content="{loc:Loc common.cancel}" MinWidth="120" Height="40" Margin="0,0,10,0" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CancelCommand}"/>
-                <Button Content="{loc:Loc payment.confirm}" MinWidth="220" Height="48" FontSize="15" FontWeight="SemiBold"
+                <Button MinWidth="110" Height="40" Margin="0,0,10,0"
+                        Style="{StaticResource AccentButtonStyle}" Command="{Binding SuspendCommand}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconSuspend}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc payment.suspend}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="120" Height="40" Margin="0,0,10,0" Style="{StaticResource OutlineButtonStyle}" Command="{Binding CancelCommand}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
+                <Button MinWidth="220" Height="48" FontSize="15" FontWeight="SemiBold"
                         Style="{StaticResource PrimaryButtonStyle}"
                         Command="{Binding ConfirmCommand}"
-                        IsEnabled="{Binding IsValid}"/>
+                        IsEnabled="{Binding IsValid}">
+                    <StackPanel Style="{StaticResource IconButtonContent}">
+                        <Path Data="{StaticResource IconPay}" Style="{StaticResource ButtonIconPathStyle}"/>
+                        <TextBlock Text="{loc:Loc payment.confirm}" Margin="8,0,0,0"/>
+                    </StackPanel>
+                </Button>
             </StackPanel>
         </Grid>
     </Grid>

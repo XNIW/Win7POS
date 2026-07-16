@@ -92,7 +92,7 @@ In repository è disponibile lo script `scripts/reset-test-db.ps1` (usa `WIN7POS
 
 ## Collegamento Admin Web POS
 
-Il collegamento online passa sempre da Admin Web POS API e non comunica direttamente con Supabase. Su installazione nuova con DB SQLite vuoto, l'app propone il bootstrap online prima del wizard locale di recovery/dev. Il pacchetto attuale include gia il default staging pubblico, quindi il flusso normale operatore richiede solo codice negozio (`shop_code`), codice staff (`staff_code`) e PIN/password.
+Il collegamento online passa sempre da Admin Web POS API e non comunica direttamente con Supabase. L'avvio usa un solo dialog, **Accesso POS**. Su un DB realmente vuoto l'azione primaria resta **Riprova online**; solo dopo server non configurato, timeout o errore DNS/TLS/rete compare l'azione secondaria esplicita **Recovery locale**. Il wizard non si apre automaticamente e chiarisce che l'account creato resta locale e non collegato ad Admin Web. Un denial valido (credenziali, HTTP 401/403, device, policy o contract) non abilita recovery né fallback locale; utenti esistenti ma tutti disabilitati non sono trattati come prima installazione. Il pacchetto include il default staging pubblico, quindi il flusso normale richiede solo codice negozio (`shop_code`), codice staff (`staff_code`) e PIN/password.
 
 Priorita risoluzione URL Admin Web:
 
@@ -128,7 +128,7 @@ dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:AdminWebEnvironmen
 
 Non usare un dominio production finche non e stato verificato davvero.
 
-L'URL Admin Web e una configurazione tecnica automatica del pacchetto oppure un override di manutenzione. Nella finestra **Collega POS online** resta disponibile solo in **Impostazioni avanzate / Server**. Inserire solo l'URL base HTTPS del pannello, per esempio `https://<workers-dev-host>`, senza username/password nell'URL, senza `/auth/login`, `/shop`, query string o hash. Il nome dispositivo viene generato automaticamente dal nome PC sanitizzato, senza username, path, MAC address o seriali hardware. Se il DB locale è già configurato, si può avviare da **Accesso operatore** → **Collega POS online**. I token del dispositivo e della sessione vengono salvati protetti con DPAPI dell'utente Windows. PIN/password non vengono salvati in chiaro; dopo un first-login riuscito vengono usati solo per creare hash/salt locale dell'operatore mirror, così il POS può lavorare offline.
+L'URL Admin Web e una configurazione tecnica automatica del pacchetto oppure un override di manutenzione. Nel dialog **Accesso POS** resta disponibile solo in **Impostazioni avanzate / Server**. Inserire solo l'URL base HTTPS del pannello, per esempio `https://<workers-dev-host>`, senza username/password nell'URL, senza `/auth/login`, `/shop`, query string o hash. Il nome dispositivo viene generato automaticamente dal nome PC sanitizzato, senza username, path, MAC address o seriali hardware. I token del dispositivo e della sessione vengono salvati protetti con DPAPI dell'utente Windows. PIN/password non vengono salvati in chiaro; dopo un first-login riuscito vengono usati solo per creare hash/salt locale dell'operatore mirror, così il POS può lavorare offline.
 
 Admin Web invia anche una `policy` POS versionata durante first-login e catalog pull. Win7POS la salva in `app_settings` senza secret e la usa solo come contract operativo: offline sales dopo prima attivazione, mirror offline limitato allo staff corrente, revoca applicata al prossimo controllo online, pagamenti `cash/card/other`, valuta `CLP`, tax/fiscal online non configurato. Se il server richiede una capability non supportata, la status strip mostra `Richiede attenzione`; il POS non abilita funzioni non supportate.
 
@@ -136,9 +136,13 @@ Il contratto online usato dal client è centralizzato in `Win7POS.Core.Online.Po
 
 Al primo collegamento online, Win7POS non apre la cassa finche il catalogo iniziale non viene scaricato fino a `HasMore=false` e marcato `pos.catalog.sale_safe_at`. Il dialog mostra preparazione negozio con progress e retry; errori retryable o pagine parziali preservano trust/cursor ma tengono bloccato il POS. Anche `--safe-start` salta i refresh online ma non consente vendita normale senza un catalogo gia sale-safe.
 
+Nel recovery locale con catalogo non sale-safe la shell non crea `PosView`: mostra un banner persistente, abilita solo Products/Import, retry server, backup/restore e diagnostica, e blocca vendita, pagamento, refund, void e cassetto. **Verifica nuovamente** abilita il POS solo quando esiste almeno un prodotto attivo con barcode, nome e prezzo di vendita valido; l'approvazione e il relativo security audit sono atomici.
+
 All'avvio giornaliero, dopo il login operatore e prima di creare la schermata vendita, Win7POS esegue un preflight breve: DB locale, sessione device, outbox, sales sync e catalog delta. Se il catalogo locale e' gia sale-safe e la rete/catalog delta sono lenti, l'operatore puo continuare e la sync prosegue in background; revoca sessione, restore da rivedere, outbox blocked o catalogo non sale-safe bloccano l'apertura POS.
 
 Runbook bootstrap/sync Win7POS: `docs/WIN7POS_BOOTSTRAP_SYNC_AUDIT.md`.
+
+Per eseguire localmente lo stesso set di controlli obbligatori della CI usare `pwsh -NoProfile -File scripts/check-required-gates.ps1`. La toolchain e fissata da `global.json` alla feature band SDK 10.0.301; il release pack Windows usa `scripts/win7pos/windows/build-release-x86.ps1` e una sola sorgente per `README_RUN.txt`, `RELEASE_CHECKLIST.txt` e `VERSION.txt`.
 
 Il ReleasePack per staging pubblica include ancora `set-admin-web-staging-url.bat`, che scrive `AdminWebBaseUrl=https://merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev` in `C:\ProgramData\Win7POS\pos-admin-web.config`. Con il default pacchettizzato non e piu necessario per il flusso normale: usarlo solo come override/manual recovery o per manutenzione. Lo script non imposta override HTTP LAN.
 

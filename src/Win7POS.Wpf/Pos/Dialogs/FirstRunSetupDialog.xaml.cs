@@ -7,6 +7,7 @@ using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -16,22 +17,28 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private static readonly FileLogger _logger = new FileLogger("FirstRunSetupDialog");
         private readonly SqliteConnectionFactory _factory;
         private readonly UserRepository _userRepo;
-        private readonly RoleRepository _roleRepo;
-        private readonly SecurityRepository _securityRepo;
+        private bool _creating;
 
         /// <summary>Usa le stesse options di MainWindow per garantire lo stesso DB (evita wizard scrive DB A, MainWindow legge DB B).</summary>
         public FirstRunSetupDialog(PosDbOptions options)
+            : this(new SqliteConnectionFactory(options ?? throw new ArgumentNullException(nameof(options))))
+        {
+        }
+
+        public FirstRunSetupDialog(SqliteConnectionFactory factory)
         {
             InitializeComponent();
-            var opts = options ?? throw new ArgumentNullException(nameof(options));
-            _factory = new SqliteConnectionFactory(opts);
+            _factory = factory ?? throw new ArgumentNullException(nameof(factory));
             _userRepo = new UserRepository(_factory);
-            _roleRepo = new RoleRepository(_factory);
-            _securityRepo = new SecurityRepository(_factory);
         }
 
         private async void OnCreateAdminClick(object sender, RoutedEventArgs e)
         {
+            if (_creating)
+            {
+                return;
+            }
+
             var displayName = (DisplayNameBox?.Text ?? "").Trim();
             var username = (UsernameBox?.Text ?? "").Trim();
             var pin = PinBox?.Password ?? "";
@@ -61,44 +68,30 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
-            var adminRole = await _roleRepo.GetByCodeAsync("admin").ConfigureAwait(true);
-            if (adminRole == null)
-            {
-                ShowError(PosLocalization.T("firstRun.adminRoleMissing"));
-                return;
-            }
-
-            var existing = await _userRepo.GetByUsernameAsync(username).ConfigureAwait(true);
-            if (existing != null)
-            {
-                ShowError(PosLocalization.T("firstRun.usernameInUse"));
-                return;
-            }
-
             try
             {
+                _creating = true;
+                SetFormEnabled(false);
                 var salt = PinHelper.GenerateSalt();
                 var hash = PinHelper.HashPin(pin, salt);
 
-                await _userRepo.CreateAsync(
+                var created = await _userRepo.TryCreateFirstRunAdminAsync(
                     username,
                     displayName,
                     hash,
-                    salt,
-                    adminRole.Id,
-                    0,
-                    requirePinChange: false
-                ).ConfigureAwait(true);
+                    salt).ConfigureAwait(true);
+                if (!created.CreatedSuccessfully)
+                {
+                    ShowError(PosLocalization.T("firstRun.noLongerEligible"));
+                    return;
+                }
 
-                await _securityRepo.LogEventAsync(
-                    SecurityEventCodes.UserCreated,
-                    "username=" + username + ", source=first_run"
-                ).ConfigureAwait(true);
-
-                await _securityRepo.LogEventAsync(
-                    SecurityEventCodes.FirstRunAdminCreated,
-                    "username=" + username
-                ).ConfigureAwait(true);
+                var session = OperatorSessionHolder.Current;
+                if (session == null || await session.LoginAsync(username, pin).ConfigureAwait(true) != LoginResult.Success)
+                {
+                    ShowError(PosLocalization.T("firstRun.sessionFailed"));
+                    return;
+                }
 
                 DialogResult = true;
                 Close();
@@ -113,15 +106,31 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 }
                 else
                 {
-                    _logger.LogError(ex, "FirstRunSetupDialog.OnCreateAdminClick");
+                    _logger.LogError(ex, "Local recovery administrator creation failed.");
                     ShowError(PosLocalization.T("firstRun.localSetupFailed"));
                 }
             }
             finally
             {
+                pin = string.Empty;
+                confirm = string.Empty;
                 PinBox.Clear();
                 ConfirmPinBox.Clear();
+                _creating = false;
+                if (IsVisible)
+                {
+                    SetFormEnabled(true);
+                }
             }
+        }
+
+        private void SetFormEnabled(bool enabled)
+        {
+            DisplayNameBox.IsEnabled = enabled;
+            UsernameBox.IsEnabled = enabled;
+            PinBox.IsEnabled = enabled;
+            ConfirmPinBox.IsEnabled = enabled;
+            CreateAdminButton.IsEnabled = enabled;
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)

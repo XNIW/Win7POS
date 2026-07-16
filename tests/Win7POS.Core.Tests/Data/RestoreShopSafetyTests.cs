@@ -135,10 +135,30 @@ INSERT INTO app_settings(key, value) VALUES('pos.catalog.bound_shop_code', 'SHOP
         using var db = TestDb.Create();
         await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
         var state = new CatalogShopStateRepository(db.Factory);
-        await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
-        await state.StoreLastSyncAsync(
-            "shop-a", "SHOP-A", "restored-cursor", "2026-07-14T00:00:00Z", syncMode: "delta");
+        var binding = await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        Assert.IsTrue(await state.StorePullCursorAsync(
+            "shop-a",
+            "SHOP-A",
+            "restored-cursor",
+            "2026-07-14T00:00:00Z",
+            binding.Epoch,
+            "delta",
+            authoritativeSnapshotCommitted: false,
+            new CatalogDeltaChainCheckpoint
+            {
+                CatalogVersion = "catalog-before-restore",
+                CursorFingerprints = new[]
+                {
+                    CatalogShopStateRepository.FingerprintValue("restored-cursor")
+                },
+                HasMore = true,
+                SyncMode = "delta"
+            }));
         await state.StoreSaleSafeAsync("shop-a", "SHOP-A", "2026-07-14T00:00:00Z");
+        Assert.IsTrue((await state.LoadDeltaChainAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch)).HasState);
 
         await state.ResetForRestoreReviewAsync("shop-a", "SHOP-A");
 
@@ -150,6 +170,9 @@ INSERT INTO app_settings(key, value) VALUES('pos.catalog.bound_shop_code', 'SHOP
         Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1) FROM app_settings
 WHERE key IN ('pos.catalog.last_sync_mode', 'pos.catalog.sale_safe_at');"));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1) FROM app_settings
+WHERE key LIKE 'pos.catalog.delta_chain.%';"));
     }
 
     private static async Task SaveShopAsync(SqliteConnectionFactory factory, string shopId, string shopCode)

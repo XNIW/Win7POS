@@ -58,7 +58,7 @@ Require-Pattern "runtime guard is internal and cannot be composed ad hoc" $guard
 $guardConstructionFiles = @(Get-ChildItem -Path (Join-Path $repoRoot "src/Win7POS.Wpf") -Recurse -File -Filter "*.cs" |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     Where-Object { Select-String -Path $_.FullName -Pattern "new PosOfflineAuthorizationLeaseGuard\(" -Quiet } |
-    ForEach-Object { $_.FullName.Substring($repoRoot.Length).TrimStart('/', '\') })
+    ForEach-Object { $_.FullName.Substring($repoRoot.Length).TrimStart('/', '\') -replace '\\', '/' })
 if ($guardConstructionFiles.Count -eq 1 -and
     $guardConstructionFiles[0] -eq "src/Win7POS.Wpf/Infrastructure/Security/OperatorSession.cs") {
     Pass "operator session is the single runtime guard composition point"
@@ -79,10 +79,16 @@ else {
 Require-Pattern "permission service checks lease before cached permissions" $permission 'EnsureAuthorizationValid\(\)[\s\S]*CurrentUser'
 Require-Pattern "override verifies active lease before authorizer PIN" $override 'EnsureAuthorizationValid\(\)[\s\S]*VerifyPinAsync'
 Require-Pattern "POS access exposes a distinct lease-expired result" $accessDialog 'LoginResult\.AuthorizationExpired[\s\S]*access\.login\.authorizationExpired'
-$denialIndex = $accessDialog.IndexOf("if (IsAuthorizationDenied(result))", [System.StringComparison]::Ordinal)
-$denialClearIndex = $accessDialog.IndexOf("_trustedDeviceStore.Clear();", $denialIndex, [System.StringComparison]::Ordinal)
-$denialReturnIndex = $accessDialog.IndexOf("return;", $denialClearIndex, [System.StringComparison]::Ordinal)
-$nextFallbackIndex = $accessDialog.IndexOf("if (IsOfflineFallbackAllowed(result.Code))", $denialIndex, [System.StringComparison]::Ordinal)
+$denialIndex = $accessDialog.IndexOf("IsAuthorizationDenied(result)", [System.StringComparison]::Ordinal)
+$denialClearIndex = if ($denialIndex -ge 0) {
+    $accessDialog.IndexOf("_trustedDeviceStore.Clear();", $denialIndex, [System.StringComparison]::Ordinal)
+} else { -1 }
+$denialReturnIndex = if ($denialClearIndex -ge 0) {
+    $accessDialog.IndexOf("return;", $denialClearIndex, [System.StringComparison]::Ordinal)
+} else { -1 }
+$nextFallbackIndex = if ($denialIndex -ge 0) {
+    $accessDialog.IndexOf("if (IsOfflineFallbackAllowed(result.Code))", $denialIndex, [System.StringComparison]::Ordinal)
+} else { -1 }
 if ($denialIndex -ge 0 -and $denialClearIndex -gt $denialIndex -and
     $denialReturnIndex -gt $denialClearIndex -and $nextFallbackIndex -gt $denialReturnIndex) {
     Pass "explicit online denial clears trust and never enters fallback"
@@ -110,7 +116,7 @@ Require-Pattern "legacy reversal payload is blocked before network" $salesSync '
 $directPinCallFiles = Get-ChildItem -Path (Join-Path $repoRoot "src/Win7POS.Wpf") -Recurse -File -Filter "*.cs" |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     Where-Object { Select-String -Path $_.FullName -Pattern "\.VerifyPinAsync\(" -Quiet } |
-    ForEach-Object { $_.FullName.Substring($repoRoot.Length).TrimStart('/', '\') } |
+    ForEach-Object { $_.FullName.Substring($repoRoot.Length).TrimStart('/', '\') -replace '\\', '/' } |
     Sort-Object
 $allowedPinCallFiles = @(
     "src/Win7POS.Wpf/Infrastructure/Security/OperatorSession.cs",

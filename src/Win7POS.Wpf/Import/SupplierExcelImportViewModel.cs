@@ -52,7 +52,7 @@ namespace Win7POS.Wpf.Import
             ApplyCommand = new AsyncRelayCommand(ApplyAsync, () => !IsBusy && StepIndex == 3 && CanApply);
             ApplyMarkupCommand = new RelayCommand(ApplyMarkup, () => !IsBusy && StepIndex == 2 && EditableRows.Count > 0);
             CancelCommand = new RelayCommand(() => RequestClose?.Invoke(false), () => !IsBusy);
-            Status = "Scegli un file Excel fornitore.";
+            Status = PosLocalization.T("supplierExcelImport.statusChooseFile");
         }
 
         public event PropertyChangedEventHandler PropertyChanged;
@@ -237,8 +237,8 @@ namespace Win7POS.Wpf.Import
             {
                 if (Analysis == null) return string.Empty;
                 return Analysis.HasHeader
-                    ? "Header rilevato alla riga " + Analysis.HeaderRowNumber.ToString(System.Globalization.CultureInfo.InvariantCulture)
-                    : "Header generato: file senza intestazione rilevata";
+                    ? PosLocalization.F("supplierExcelImport.headerDetected", Analysis.HeaderRowNumber)
+                    : PosLocalization.T("supplierExcelImport.headerGenerated");
             }
         }
         public string RowSummary
@@ -246,9 +246,11 @@ namespace Win7POS.Wpf.Import
             get
             {
                 if (Analysis == null) return string.Empty;
-                return "Righe dati: " + Analysis.SourceRowCount.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-                    " | Metadata saltati: " + Analysis.SkippedMetadataRows.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-                    " | Righe totale filtrate: " + Analysis.DroppedSummaryRows.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return PosLocalization.F(
+                    "supplierExcelImport.rowSummary",
+                    Analysis.SourceRowCount,
+                    Analysis.SkippedMetadataRows,
+                    Analysis.DroppedSummaryRows);
             }
         }
         public string IssueSummary
@@ -256,8 +258,7 @@ namespace Win7POS.Wpf.Import
             get
             {
                 if (Analysis == null) return string.Empty;
-                return "Warning: " + WarningsCount.ToString(System.Globalization.CultureInfo.InvariantCulture) +
-                    " | Errori: " + ErrorsCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                return PosLocalization.F("supplierExcelImport.issueSummary", WarningsCount, ErrorsCount);
             }
         }
         public int MissingNewRetailPriceCount
@@ -362,7 +363,7 @@ namespace Win7POS.Wpf.Import
             {
                 SelectedPath = fileName;
                 ClearAnalysis();
-                Status = "File selezionato: " + SelectedFileName;
+                Status = PosLocalization.F("supplierExcelImport.statusFileSelected", SelectedFileName);
             }
         }
 
@@ -370,12 +371,12 @@ namespace Win7POS.Wpf.Import
         {
             if (!File.Exists(SelectedPath))
             {
-                Status = "Scegli prima un file .xls o .xlsx.";
+                Status = PosLocalization.T("supplierExcelImport.statusSelectFileFirst");
                 return;
             }
 
             IsBusy = true;
-            Status = "Analisi Excel fornitore in corso...";
+            Status = PosLocalization.T("supplierExcelImport.statusAnalyzing");
             try
             {
                 var overrides = Columns.Count == 0
@@ -384,12 +385,16 @@ namespace Win7POS.Wpf.Import
                 var result = await _service.AnalyzeAsync(SelectedPath, overrides).ConfigureAwait(true);
                 ApplyAnalysis(result);
                 StepIndex = 1;
-                Status = "Analisi completata. Foglio: " + (SelectedSheetName.Length == 0 ? "n/d" : SelectedSheetName) + ". Verifica colonne, warning ed errori.";
+                Status = PosLocalization.F(
+                    "supplierExcelImport.statusAnalysisComplete",
+                    SelectedSheetName.Length == 0
+                        ? PosLocalization.T("common.unavailableShort")
+                        : SelectedSheetName);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Supplier Excel analyze failed");
-                Status = "Errore analisi: " + ex.Message;
+                Status = PosLocalization.F("supplierExcelImport.statusAnalyzeError", ex.Message);
             }
             finally
             {
@@ -401,22 +406,22 @@ namespace Win7POS.Wpf.Import
         {
             if (SyncPreview == null)
             {
-                Status = "Ricalcola Sync DB prima di applicare.";
+                Status = PosLocalization.T("supplierExcelImport.recalculateBeforeApply");
                 return;
             }
             if (IsSyncPreviewStale)
             {
-                Status = "Sync DB preview non aggiornato: torna allo Step 3 e ricalcola.";
+                Status = PosLocalization.T("supplierExcelImport.syncPreviewStale");
                 return;
             }
             if (!SyncPreview.CanApply)
             {
-                Status = "Errori nel Sync DB preview: correggi prima di applicare.";
+                Status = PosLocalization.T("supplierExcelImport.previewHasErrors");
                 return;
             }
 
             IsBusy = true;
-            Status = "Applicazione import fornitore in corso...";
+            Status = PosLocalization.T("supplierExcelImport.statusApplying");
             try
             {
                 var apply = await _service.ApplyAsync(SyncPreview, false, SelectedFileName).ConfigureAwait(true);
@@ -446,13 +451,13 @@ namespace Win7POS.Wpf.Import
             if (StepIndex != 1) return;
             await AnalyzeAsync().ConfigureAwait(true);
             if (Analysis != null && CanProceedToStep3) StepIndex = 2;
-            else Status = "Mappa una colonna barcode reale prima di proseguire.";
+            else Status = PosLocalization.T("supplierExcelImport.mapBarcodeBeforeContinue");
         }
 
         private async Task BuildSyncPreviewAsync()
         {
             IsBusy = true;
-            Status = "Calcolo Sync DB in corso...";
+            Status = PosLocalization.T("supplierExcelImport.statusCalculatingSync");
             try
             {
                 var preview = await _service.BuildSyncPreviewAsync(EditableRows.ToList()).ConfigureAwait(true);
@@ -460,13 +465,13 @@ namespace Win7POS.Wpf.Import
                 IsSyncPreviewStale = false;
                 StepIndex = 3;
                 Status = preview.CanApply
-                    ? "Sync DB calcolato. Verifica nuovi, aggiornamenti, senza modifiche e skippati prima di applicare."
-                    : "Sync DB calcolato con errori: torna allo Step 3 e correggi.";
+                    ? PosLocalization.T("supplierExcelImport.statusSyncReady")
+                    : PosLocalization.T("supplierExcelImport.statusSyncReadyWithErrors");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Supplier Excel sync preview failed");
-                Status = "Errore Sync DB: " + ex.Message;
+                Status = PosLocalization.F("supplierExcelImport.statusSyncError", ex.Message);
             }
             finally
             {
@@ -479,7 +484,7 @@ namespace Win7POS.Wpf.Import
             double markup;
             if (!double.TryParse((MarkupPercent ?? string.Empty).Replace(',', '.'), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out markup))
             {
-                Status = "Markup percent non valido.";
+                Status = PosLocalization.T("supplierExcelImport.invalidMarkup");
                 return;
             }
 
@@ -490,7 +495,7 @@ namespace Win7POS.Wpf.Import
                 ApplyOnlyEmptyRetailPrice);
             InvalidateSyncPreview();
             RefreshEditableRows();
-            Status = "Prezzo vendita calcolato per " + changed.ToString(System.Globalization.CultureInfo.InvariantCulture) + " righe.";
+            Status = PosLocalization.F("supplierExcelImport.markupApplied", changed);
         }
 
         private void ClearAnalysis()
@@ -598,7 +603,7 @@ namespace Win7POS.Wpf.Import
         {
             if (SyncPreview == null) return;
             IsSyncPreviewStale = true;
-            Status = "Sync DB preview non aggiornato: ricalcola prima di applicare.";
+            Status = PosLocalization.T("supplierExcelImport.syncPreviewStale");
         }
 
         private void Column_PropertyChanged(object sender, PropertyChangedEventArgs e)
@@ -921,7 +926,7 @@ namespace Win7POS.Wpf.Import
         {
             var dlg = new OpenFileDialog
             {
-                Title = "Scegli Excel fornitore",
+                Title = PosLocalization.T("supplierExcelImport.filePickerTitle"),
                 Filter = "Excel (*.xls;*.xlsx)|*.xls;*.xlsx",
                 CheckFileExists = true,
                 Multiselect = false
@@ -929,7 +934,7 @@ namespace Win7POS.Wpf.Import
 
             var owner = DialogOwnerHelper.GetSafeOwner(_ownerProvider == null ? null : _ownerProvider());
             if (owner == null)
-                throw new InvalidOperationException("Nessuna finestra owner attiva per il file picker Excel fornitore.");
+                throw new InvalidOperationException(PosLocalization.T("supplierExcelImport.noActiveOwner"));
 
             owner.Activate();
             return dlg.ShowDialog(owner) == true ? dlg.FileName : null;

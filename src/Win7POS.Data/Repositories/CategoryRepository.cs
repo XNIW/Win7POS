@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
+using Microsoft.Data.Sqlite;
 
 namespace Win7POS.Data.Repositories
 {
@@ -32,6 +33,33 @@ ORDER BY name ASC;").ConfigureAwait(false);
             string name,
             string remoteUpdatedAt)
         {
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction();
+            try
+            {
+                var applied = await UpsertRemoteInTransactionAsync(
+                    conn,
+                    tx,
+                    remoteCategoryId,
+                    name,
+                    remoteUpdatedAt).ConfigureAwait(false);
+                tx.Commit();
+                return applied;
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
+        }
+
+        internal static async Task<bool> UpsertRemoteInTransactionAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            string remoteCategoryId,
+            string name,
+            string remoteUpdatedAt)
+        {
             var remoteId = Normalize(remoteCategoryId);
             var normalizedName = Normalize(name);
             var updatedAt = Normalize(remoteUpdatedAt);
@@ -40,11 +68,7 @@ ORDER BY name ASC;").ConfigureAwait(false);
                 return false;
             }
 
-            using var conn = _factory.Open();
-            using var tx = conn.BeginTransaction();
-            try
-            {
-                var row = await conn.QueryFirstOrDefaultAsync<RemoteCategoryRow>(@"
+            var row = await conn.QueryFirstOrDefaultAsync<RemoteCategoryRow>(@"
 SELECT id AS Id,
        remote_updated_at AS RemoteUpdatedAt,
        remote_deleted_at AS RemoteDeletedAt,
@@ -52,12 +76,12 @@ SELECT id AS Id,
 FROM categories
 WHERE remote_category_id = @remoteId
 LIMIT 1;",
-                    new { remoteId },
-                    tx).ConfigureAwait(false);
+                new { remoteId },
+                tx).ConfigureAwait(false);
 
-                if (row == null)
-                {
-                    row = await conn.QueryFirstOrDefaultAsync<RemoteCategoryRow>(@"
+            if (row == null)
+            {
+                row = await conn.QueryFirstOrDefaultAsync<RemoteCategoryRow>(@"
 SELECT id AS Id,
        remote_updated_at AS RemoteUpdatedAt,
        remote_deleted_at AS RemoteDeletedAt,
@@ -67,20 +91,19 @@ WHERE remote_category_id IS NULL
   AND LOWER(TRIM(name)) = LOWER(@name)
 ORDER BY id ASC
 LIMIT 1;",
-                        new { name = normalizedName },
-                        tx).ConfigureAwait(false);
+                    new { name = normalizedName },
+                    tx).ConfigureAwait(false);
+            }
+
+            if (row != null)
+            {
+                if (IsOlder(updatedAt, row.RemoteUpdatedAt) ||
+                    (row.IsActive == 0 && IsNotNewerThanTombstone(updatedAt, row.RemoteDeletedAt)))
+                {
+                    return false;
                 }
 
-                if (row != null)
-                {
-                    if (IsOlder(updatedAt, row.RemoteUpdatedAt) ||
-                        (row.IsActive == 0 && IsNotNewerThanTombstone(updatedAt, row.RemoteDeletedAt)))
-                    {
-                        tx.Commit();
-                        return false;
-                    }
-
-                    await conn.ExecuteAsync(@"
+                await conn.ExecuteAsync(@"
 UPDATE categories
 SET name = @name,
     remote_category_id = @remoteId,
@@ -88,20 +111,38 @@ SET name = @name,
     remote_deleted_at = NULL,
     is_active = 1
 WHERE id = @id;",
-                        new { id = row.Id, name = normalizedName, remoteId, updatedAt },
-                        tx).ConfigureAwait(false);
-                }
-                else
-                {
-                    await conn.ExecuteAsync(@"
+                    new { id = row.Id, name = normalizedName, remoteId, updatedAt },
+                    tx).ConfigureAwait(false);
+            }
+            else
+            {
+                await conn.ExecuteAsync(@"
 INSERT INTO categories(name, remote_category_id, remote_updated_at, remote_deleted_at, is_active)
 VALUES(@name, @remoteId, NULLIF(@updatedAt, ''), NULL, 1);",
-                        new { name = normalizedName, remoteId, updatedAt },
-                        tx).ConfigureAwait(false);
-                }
+                    new { name = normalizedName, remoteId, updatedAt },
+                    tx).ConfigureAwait(false);
+            }
 
+            return true;
+        }
+
+        public async Task<bool> ApplyRemoteTombstoneAsync(
+            string remoteCategoryId,
+            string remoteDeletedAt,
+            string remoteUpdatedAt)
+        {
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction();
+            try
+            {
+                var applied = await ApplyRemoteTombstoneInTransactionAsync(
+                    conn,
+                    tx,
+                    remoteCategoryId,
+                    remoteDeletedAt,
+                    remoteUpdatedAt).ConfigureAwait(false);
                 tx.Commit();
-                return true;
+                return applied;
             }
             catch
             {
@@ -110,7 +151,9 @@ VALUES(@name, @remoteId, NULLIF(@updatedAt, ''), NULL, 1);",
             }
         }
 
-        public async Task<bool> ApplyRemoteTombstoneAsync(
+        internal static async Task<bool> ApplyRemoteTombstoneInTransactionAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
             string remoteCategoryId,
             string remoteDeletedAt,
             string remoteUpdatedAt)
@@ -126,11 +169,7 @@ VALUES(@name, @remoteId, NULLIF(@updatedAt, ''), NULL, 1);",
             var updatedAt = Normalize(remoteUpdatedAt);
             if (updatedAt.Length == 0) updatedAt = deletedAt;
 
-            using var conn = _factory.Open();
-            using var tx = conn.BeginTransaction();
-            try
-            {
-                var row = await conn.QueryFirstOrDefaultAsync<RemoteCategoryRow>(@"
+            var row = await conn.QueryFirstOrDefaultAsync<RemoteCategoryRow>(@"
 SELECT id AS Id,
        remote_updated_at AS RemoteUpdatedAt,
        remote_deleted_at AS RemoteDeletedAt,
@@ -138,43 +177,35 @@ SELECT id AS Id,
 FROM categories
 WHERE remote_category_id = @remoteId
 LIMIT 1;",
-                    new { remoteId },
-                    tx).ConfigureAwait(false);
+                new { remoteId },
+                tx).ConfigureAwait(false);
 
-                if (row != null && IsOlder(updatedAt, row.RemoteUpdatedAt))
-                {
-                    tx.Commit();
-                    return false;
-                }
+            if (row != null && IsOlder(updatedAt, row.RemoteUpdatedAt))
+            {
+                return false;
+            }
 
-                if (row == null)
-                {
-                    await conn.ExecuteAsync(@"
+            if (row == null)
+            {
+                await conn.ExecuteAsync(@"
 INSERT INTO categories(name, remote_category_id, remote_updated_at, remote_deleted_at, is_active)
 VALUES('(remote category removed)', @remoteId, @updatedAt, @deletedAt, 0);",
-                        new { remoteId, updatedAt, deletedAt },
-                        tx).ConfigureAwait(false);
-                }
-                else
-                {
-                    await conn.ExecuteAsync(@"
+                    new { remoteId, updatedAt, deletedAt },
+                    tx).ConfigureAwait(false);
+            }
+            else
+            {
+                await conn.ExecuteAsync(@"
 UPDATE categories
 SET remote_updated_at = @updatedAt,
     remote_deleted_at = @deletedAt,
     is_active = 0
 WHERE id = @id;",
-                        new { id = row.Id, updatedAt, deletedAt },
-                        tx).ConfigureAwait(false);
-                }
+                    new { id = row.Id, updatedAt, deletedAt },
+                    tx).ConfigureAwait(false);
+            }
 
-                tx.Commit();
-                return true;
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
+            return true;
         }
 
         private static bool IsOlder(string incoming, string current)

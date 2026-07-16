@@ -120,6 +120,7 @@ function Test-ReleasePackSource([string]$sourceValue) {
         $helper = Read-PackText $root "set-admin-web-staging-url.bat"
         $readmeRun = Read-PackText $root "README_RUN.txt"
         $checklist = Read-PackText $root "RELEASE_CHECKLIST.txt"
+        $version = Read-PackText $root "VERSION.txt"
 
         if ($null -eq $helper) {
             Fail "ReleasePack missing set-admin-web-staging-url.bat"
@@ -152,6 +153,20 @@ function Test-ReleasePackSource([string]$sourceValue) {
         } else {
             Pass "RELEASE_CHECKLIST.txt includes staging helper and simplified linking checks"
         }
+
+        if ($null -ne $version) {
+            $versionCommit = [regex]::Match($version, '(?im)^(?:CommitSHA|Commit SHA)\s*[:=]\s*([0-9a-f]{40})\s*$')
+            if (-not $versionCommit.Success) {
+                Fail "VERSION.txt does not contain a full commit SHA"
+            } else {
+                $currentCommit = (& git -C $repoRoot rev-parse HEAD 2>$null).Trim()
+                if ($LASTEXITCODE -eq 0 -and $currentCommit -and $versionCommit.Groups[1].Value -ne $currentCommit) {
+                    Fail "VERSION.txt commit does not match repository HEAD"
+                } else {
+                    Pass "VERSION.txt provenance matches repository HEAD"
+                }
+            }
+        }
     }
     finally {
         if ($tempDir -and (Test-Path $tempDir)) {
@@ -168,6 +183,8 @@ $identity = Read-Text "src/Win7POS.Wpf/Pos/Online/PosDeviceIdentity.cs"
 $workflow = Read-Text ".github/workflows/release-pack.yml"
 $readme = Read-Text "README.md"
 $helper = Read-Text "scripts/set-admin-web-staging-url.bat"
+$supportWriter = Read-Text "scripts/win7pos/windows/write-release-support-files.ps1"
+$localReleaseBuilder = Read-Text "scripts/win7pos/windows/build-release-x86.ps1"
 
 if ($dialogXaml -match "Indirizzo pannello") {
     Fail "normal online linking dialog must not show old panel URL label"
@@ -269,7 +286,7 @@ if ($releaseConfigScope -match "WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB\s*[:=]\s*1"
     Pass "release docs/workflow do not enable insecure LAN override"
 }
 
-if ($workflow -notmatch "set-admin-web-staging-url\.bat" -or
+if (($workflow + $supportWriter) -notmatch "set-admin-web-staging-url\.bat" -or
     $helper -notmatch [regex]::Escape($stagingUrl) -or
     $helper -notmatch "%ProgramData%\\Win7POS" -or
     $helper -notmatch "AdminWebBaseUrl=" -or
@@ -277,6 +294,16 @@ if ($workflow -notmatch "set-admin-web-staging-url\.bat" -or
     Fail "ReleasePack staging helper is missing or unsafe"
 } else {
     Pass "ReleasePack staging helper present and safe"
+}
+
+if ($workflow -notmatch "write-release-support-files\.ps1" -or
+    $localReleaseBuilder -notmatch "write-release-support-files\.ps1" -or
+    $supportWriter -notmatch "README_RUN\.txt" -or
+    $supportWriter -notmatch "RELEASE_CHECKLIST\.txt" -or
+    $supportWriter -notmatch "VERSION\.txt") {
+    Fail "local build and CI must share release support file generation"
+} else {
+    Pass "local build and CI share release support file generation"
 }
 
 if ($options -notmatch "URL base HTTPS" -or $readme -notmatch "WIN7POS_ADMIN_WEB_BASE_URL" -or $readme -notmatch "URL base HTTPS") {

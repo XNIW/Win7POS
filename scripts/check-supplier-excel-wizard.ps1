@@ -98,9 +98,20 @@ if ($stepScrollStart -lt 0 -or $stepScrollEnd -lt 0 -or $footerStart -lt 0 -or $
     throw "Supplier import footer must stay outside the step ScrollViewer."
 }
 foreach ($buttonKey in @("supplierExcelImport.back", "supplierExcelImport.analyze", "supplierExcelImport.next", "supplierExcelImport.continueSyncDb", "supplierExcelImport.confirmApply", "common.cancel")) {
-    $buttonIndex = $dialogXaml.IndexOf("Content=`"{loc:Loc $buttonKey}`"", [System.StringComparison]::Ordinal)
+    $buttonIndex = $dialogXaml.IndexOf("{loc:Loc $buttonKey}", $footerStart, [System.StringComparison]::Ordinal)
     if ($buttonIndex -lt $footerStart) {
         throw "Supplier import footer button '$buttonKey' must be outside the ScrollViewer."
+    }
+
+    $buttonStart = $dialogXaml.LastIndexOf("<Button", $buttonIndex, [System.StringComparison]::Ordinal)
+    $buttonEnd = if ($buttonStart -ge 0) { $dialogXaml.IndexOf("</Button>", $buttonStart, [System.StringComparison]::Ordinal) } else { -1 }
+    if ($buttonStart -lt $footerStart -or $buttonEnd -lt $buttonIndex) {
+        throw "Supplier import footer localization '$buttonKey' must belong to a footer Button."
+    }
+
+    $buttonMarkup = $dialogXaml.Substring($buttonStart, $buttonEnd + 9 - $buttonStart)
+    if ($buttonMarkup -notmatch '(Command|Click)\s*=') {
+        throw "Supplier import footer button '$buttonKey' must be wired to a command or click handler."
     }
 }
 
@@ -201,7 +212,7 @@ Assert-Contains $dialogXaml "supplierExcelImport.identityWarning" "Step 3 identi
 Assert-Contains $localization "Nuovi prodotti senza productName, secondProductName o itemNumber" "Step 3 identity warning translation must mention secondProductName."
 Assert-Contains $viewModel "row.IsSkipped" "Apply must track operator-skipped rows."
 Assert-Contains $viewModel "SyncErrors" "Step 4 blocker list must expose sync preview errors."
-Assert-Contains $viewModel "Ricalcola Sync DB prima di applicare." "Apply blocker must require Sync DB recalculation."
+Assert-Contains $viewModel "supplierExcelImport.recalculateBeforeApply" "Apply blocker must require Sync DB recalculation."
 Assert-Contains $workflow "CreateBackupBeforeApplyAsync" "Apply backup missing."
 Assert-Contains $workflow "WalCheckpointAsync" "Apply backup must checkpoint WAL before copying the DB."
 Assert-Contains $workflow "Warning count" "Apply warning count missing."

@@ -161,9 +161,30 @@
         </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-            <Button x:Name="RetryDownloadButton" Content="{loc:Loc onlineFirstLogin.retryDownload}" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnRetryDownloadClick" Style="{StaticResource DialogActionButtonStyle}" Visibility="Collapsed"/>
-            <Button x:Name="ConnectButton" Content="{loc:Loc access.login.signIn}" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnConnectClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True"/>
-            <Button Content="{loc:Loc common.cancel}" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click"/>
+            <Button x:Name="RetryDownloadButton" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnRetryDownloadClick" Style="{StaticResource DialogActionButtonStyle}" Visibility="Collapsed">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc onlineFirstLogin.retryDownload}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="RecoveryButton" MinWidth="120" Height="42" Margin="0,0,10,0" Click="OnRecoveryClick" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed" AutomationProperties.Name="{loc:Loc access.login.localRecovery}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconDatabase}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock x:Name="RecoveryButtonText" Text="{loc:Loc access.login.localRecovery}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="ConnectButton" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnConnectClick" Style="{StaticResource DialogActionButtonStyle}" IsDefault="True">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock x:Name="ConnectButtonText" Text="{loc:Loc access.login.signIn}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

@@ -30,6 +30,13 @@ namespace Win7POS.Data.Repositories
                 if (sale.Kind == 0)
                     sale.Kind = (int)SaleKind.Sale;
 
+                if (sale.Kind == (int)SaleKind.Sale)
+                {
+                    await CatalogShopStateRepository
+                        .RequireSaleSafeForOrdinarySaleAsync(conn, tx)
+                        .ConfigureAwait(false);
+                }
+
                 await ValidateReversalBoundaryAsync(conn, tx, sale, lines).ConfigureAwait(false);
 
                 var saleId = await conn.ExecuteScalarAsync<long>(@"

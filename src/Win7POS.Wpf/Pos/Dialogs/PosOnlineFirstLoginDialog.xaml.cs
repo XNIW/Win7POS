@@ -35,9 +35,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _initializing;
         private bool _serverOfflineNoticeShown;
         private bool _wifiOfflineNoticeShown;
+        private bool _authenticatedRecoveryAvailable;
+        private bool _localRecoveryLoginMode;
         private string _activeSetupStep;
         private string _lastAccessAttemptId;
+        private PosAccessRecoveryDecision _recoveryDecision;
+        private PosUserBootstrapState _bootstrapState = new PosUserBootstrapState();
         private PosAdminWebOptions _lastOptions;
+
+        public PosAuthenticatedAccessMode AccessMode { get; private set; } = PosAuthenticatedAccessMode.Normal;
 
         public PosOnlineFirstLoginDialog()
             : this(new SqliteConnectionFactory(PosDbOptions.Default()))
@@ -75,6 +81,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
             UpdateNetworkStatusBadge();
             _networkStatusTimer.Start();
 
+            try
+            {
+                _bootstrapState = await new UserRepository(_factory)
+                    .GetBootstrapStateAsync()
+                    .ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                LogAccessWarning(null, "bootstrap_state", "result=failed exceptionType=" + SafeAuditValue(ex.GetType().Name), ex);
+                ShowError(PosLocalization.T("firstRun.localSetupFailed"));
+            }
+
             if (PosAdminWebOptions.TryLoad(out var options, out _))
             {
                 _lastOptions = options;
@@ -111,6 +129,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 _ = RunCatalogRetryAsync();
                 return;
             }
+
+            var startupFailure = _lastOptions == null
+                ? PosAccessFailureKind.ServerNotConfigured
+                : PosAccessFailureKind.None;
+            ApplyRecoveryDecision(
+                PosAccessRecoveryPolicy.Evaluate(_bootstrapState, startupFailure),
+                showTransientHelp: _lastOptions == null);
 
             FocusInitialInput();
             _initializing = false;
@@ -172,6 +197,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
+            if (_localRecoveryLoginMode)
+            {
+                await RunLocalRecoveryLoginAsync().ConfigureAwait(true);
+                return;
+            }
+
             var attemptId = CreateAccessAttemptId();
             _lastAccessAttemptId = attemptId;
             var attemptTimer = Stopwatch.StartNew();
@@ -205,6 +236,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             if (!network.IsNetworkAvailable)
             {
+                var offlineDecision = PosAccessRecoveryPolicy.Evaluate(
+                    _bootstrapState,
+                    PosAccessFailureKind.NetworkUnavailable);
+                if (!offlineDecision.CanUseOfflineMirror)
+                {
+                    ApplyRecoveryDecision(offlineDecision, showTransientHelp: true);
+                    FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "blocked", "none", "network_offline");
+                    credential = string.Empty;
+                    CredentialBox.Clear();
+                    return;
+                }
+
                 BeginBusySignIn(WifiOfflineNoticeText());
                 LogAccessWarning(
                     attemptId,
@@ -248,7 +291,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 "result=success adminUrlConfigured=yes adminUrlSource=" + SafeAuditValue(options.BaseUrlSource.ToString()));
             BeginBusySetup(PosLocalization.T("onlineFirstLogin.connecting"));
 
-            var keepCredentialForRetry = false;
             var request = new PosFirstLoginRequest
             {
                 Credential = credential,
@@ -297,7 +339,36 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         return;
                     }
 
-                    if (IsAuthorizationDenied(result))
+                    if (result.Success && !result.CanOpenPos)
+                    {
+                        ShowError(result.Message);
+                        _authenticatedRecoveryAvailable = await LoginRemoteMirrorForRecoveryAsync(
+                            shopCode,
+                            staffCode,
+                            credential,
+                            attemptId).ConfigureAwait(true);
+                        if (_authenticatedRecoveryAvailable)
+                        {
+                            AccessMode = PosAuthenticatedAccessMode.LocalRecovery;
+                            RecoveryButtonText.Text = PosLocalization.T("access.login.localRecovery");
+                            RecoveryButton.Visibility = Visibility.Visible;
+                            RecoveryButton.IsEnabled = true;
+                        }
+
+                        FinishAccessAttempt(
+                            ref attemptFinished,
+                            attemptId,
+                            attemptTimer,
+                            "blocked",
+                            "online",
+                            "catalog_not_sale_safe");
+                        EndBusyKeepPreparation(retryVisible: result.RequiresRetry);
+                        return;
+                    }
+
+                    var failureKind = PosAccessRecoveryPolicy.ClassifyOnlineFailure(result.Code, result.Denied);
+                    var recoveryDecision = PosAccessRecoveryPolicy.Evaluate(_bootstrapState, failureKind);
+                    if (recoveryDecision.NextStep == PosAccessNextStep.Denied || IsAuthorizationDenied(result))
                     {
                         _trustedDeviceStore.Clear();
                         LogAccessWarning(
@@ -305,6 +376,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                             "online_bootstrap_denied",
                             "result=blocked reason=auth_denied code=" + SafeAuditValue(result.Code));
                         ShowError(PosLocalization.T("access.login.onlineDeniedNoOfflineFallback"));
+                        ApplyRecoveryDecision(recoveryDecision, showTransientHelp: false);
                         FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "blocked", "online", "auth_denied");
                         EndBusyAllowFreshLogin();
                         return;
@@ -312,6 +384,20 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
                     if (IsOfflineFallbackAllowed(result.Code))
                     {
+                        if (!recoveryDecision.CanUseOfflineMirror)
+                        {
+                            FinishAccessAttempt(
+                                ref attemptFinished,
+                                attemptId,
+                                attemptTimer,
+                                "blocked",
+                                "none",
+                                SafeAuditValue(result.Code));
+                            EndBusyAllowFreshLogin();
+                            ApplyRecoveryDecision(recoveryDecision, showTransientHelp: true);
+                            return;
+                        }
+
                         LogAccessWarning(
                             attemptId,
                             "offline_fallback",
@@ -332,7 +418,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     ShowError(result.Message);
                     if (result.RequiresRetry)
                     {
-                        keepCredentialForRetry = true;
                         FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "blocked", "online", "catalog_retry_required");
                         EndBusyKeepPreparation(retryVisible: true);
                         return;
@@ -347,6 +432,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (IsVisible)
                 {
                     LogAccessWarning(attemptId, "online_timeout", "result=timeout fallback=offline");
+                    var timeoutDecision = PosAccessRecoveryPolicy.Evaluate(
+                        _bootstrapState,
+                        PosAccessFailureKind.Timeout);
+                    if (!timeoutDecision.CanUseOfflineMirror)
+                    {
+                        FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "blocked", "none", "timeout");
+                        EndBusyAllowFreshLogin();
+                        ApplyRecoveryDecision(timeoutDecision, showTransientHelp: true);
+                        return;
+                    }
+
                     ShowInfo(ServerOfflineNoticeText());
                     if (await TryOfflineSignInAsync(shopCode, staffCode, credential, attemptId).ConfigureAwait(true))
                     {
@@ -368,6 +464,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     "online_exception",
                     "result=exception fallback=offline exceptionType=" + SafeAuditValue(ex.GetType().Name),
                     ex);
+                var exceptionDecision = PosAccessRecoveryPolicy.Evaluate(
+                    _bootstrapState,
+                    PosAccessFailureKind.ServerUnavailable);
+                if (!exceptionDecision.CanUseOfflineMirror)
+                {
+                    FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "blocked", "none", "exception");
+                    EndBusyAllowFreshLogin();
+                    ApplyRecoveryDecision(exceptionDecision, showTransientHelp: true);
+                    return;
+                }
+
                 ShowInfo(ServerOfflineNoticeText());
                 if (await TryOfflineSignInAsync(shopCode, staffCode, credential, attemptId).ConfigureAwait(true))
                 {
@@ -382,11 +489,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 _activeCts = null;
                 request.Credential = string.Empty;
-                if (!keepCredentialForRetry)
-                {
-                    credential = string.Empty;
-                    CredentialBox.Clear();
-                }
+                credential = string.Empty;
+                CredentialBox.Clear();
 
                 if (!attemptFinished)
                 {
@@ -427,6 +531,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             await SaveLastShopCodeAsync(shopCode).ConfigureAwait(true);
             MarkSetupReady();
             await Task.Delay(450).ConfigureAwait(true);
+            AccessMode = PosAuthenticatedAccessMode.Normal;
             DialogResult = true;
             Close();
             return true;
@@ -491,6 +596,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
                 await SaveLastShopCodeAsync(shopCode).ConfigureAwait(true);
                 LogAccessInfo(attemptId, "offline_login_result", "result=success");
+                AccessMode = PosAuthenticatedAccessMode.Normal;
                 DialogResult = true;
                 Close();
                 return true;
@@ -569,6 +675,214 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
 
             return true;
+        }
+
+        private async Task<bool> LoginRemoteMirrorForRecoveryAsync(
+            string shopCode,
+            string staffCode,
+            string credential,
+            string attemptId)
+        {
+            var username = await new UserRepository(_factory)
+                .FindRemoteStaffUsernameAsync(shopCode, staffCode)
+                .ConfigureAwait(true);
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                LogAccessWarning(attemptId, "recovery_login_result", "result=failed reason=mirror_missing");
+                return false;
+            }
+
+            var loggedIn = await LoginLocalUsernameAsync(
+                username,
+                credential,
+                attemptId,
+                "authenticated_recovery").ConfigureAwait(true);
+            LogAccessInfo(
+                attemptId,
+                "recovery_login_result",
+                "result=" + (loggedIn ? "success" : "failed") + " source=online_mirror");
+            return loggedIn;
+        }
+
+        private async Task RunLocalRecoveryLoginAsync()
+        {
+            if (_busy)
+            {
+                return;
+            }
+
+            var attemptId = CreateAccessAttemptId();
+            var username = (StaffCodeBox.Text ?? string.Empty).Trim();
+            var credential = CredentialBox.Password ?? string.Empty;
+            if (username.Length == 0 || credential.Length == 0)
+            {
+                ShowError(PosLocalization.T("onlineFirstLogin.missingCredentials"));
+                return;
+            }
+
+            try
+            {
+                BeginBusySignIn(PosLocalization.T("common.loading"));
+                if (!await LoginLocalUsernameAsync(username, credential, attemptId, "local_recovery").ConfigureAwait(true))
+                {
+                    EndBusyAllowFreshLogin();
+                    EnterLocalRecoveryLoginMode();
+                    ShowError(PosLocalization.T("access.login.invalidCredentials"));
+                    return;
+                }
+
+                var catalogSaleSafe = await PosCatalogPullService
+                    .IsCatalogSaleSafeAsync(_factory)
+                    .ConfigureAwait(true);
+                AccessMode = catalogSaleSafe
+                    ? PosAuthenticatedAccessMode.Normal
+                    : PosAuthenticatedAccessMode.LocalRecovery;
+                LogAccessInfo(
+                    attemptId,
+                    "local_recovery_result",
+                    "result=success catalogSaleSafe=" + BoolText(catalogSaleSafe));
+                DialogResult = true;
+                Close();
+            }
+            catch (Exception ex)
+            {
+                LogAccessWarning(
+                    attemptId,
+                    "local_recovery_result",
+                    "result=exception exceptionType=" + SafeAuditValue(ex.GetType().Name),
+                    ex);
+                EndBusyAllowFreshLogin();
+                EnterLocalRecoveryLoginMode();
+                ShowError(PosLocalization.T("access.login.invalidCredentials"));
+            }
+            finally
+            {
+                credential = string.Empty;
+                CredentialBox.Clear();
+            }
+        }
+
+        private async void OnRecoveryClick(object sender, RoutedEventArgs e)
+        {
+            if (_busy)
+            {
+                return;
+            }
+
+            if (_authenticatedRecoveryAvailable &&
+                OperatorSessionHolder.Current != null &&
+                OperatorSessionHolder.Current.IsLoggedIn)
+            {
+                AccessMode = PosAuthenticatedAccessMode.LocalRecovery;
+                DialogResult = true;
+                Close();
+                return;
+            }
+
+            if (_recoveryDecision != null && _recoveryDecision.CanUseLocalRecoveryLogin)
+            {
+                EnterLocalRecoveryLoginMode();
+                return;
+            }
+
+            if (_recoveryDecision == null || !_recoveryDecision.CanCreateLocalAdmin)
+            {
+                RecoveryButton.Visibility = Visibility.Collapsed;
+                return;
+            }
+
+            var state = await new UserRepository(_factory).GetBootstrapStateAsync().ConfigureAwait(true);
+            _bootstrapState = state;
+            var rechecked = PosAccessRecoveryPolicy.Evaluate(state, _recoveryDecision.FailureKind);
+            if (!rechecked.CanCreateLocalAdmin)
+            {
+                ApplyRecoveryDecision(rechecked, showTransientHelp: false);
+                ShowError(PosLocalization.T("firstRun.noLongerEligible"));
+                return;
+            }
+
+            CredentialBox.Clear();
+            var dialog = new FirstRunSetupDialog(_factory)
+            {
+                Owner = this
+            };
+            if (dialog.ShowDialog() == true &&
+                OperatorSessionHolder.Current != null &&
+                OperatorSessionHolder.Current.IsLoggedIn)
+            {
+                AccessMode = PosAuthenticatedAccessMode.LocalRecovery;
+                LogAccessInfo(null, "local_recovery_created", "result=success source=explicit_action");
+                DialogResult = true;
+                Close();
+                return;
+            }
+
+            _bootstrapState = await new UserRepository(_factory).GetBootstrapStateAsync().ConfigureAwait(true);
+            ApplyRecoveryDecision(
+                PosAccessRecoveryPolicy.Evaluate(_bootstrapState, _recoveryDecision.FailureKind),
+                showTransientHelp: false);
+        }
+
+        private void EnterLocalRecoveryLoginMode()
+        {
+            _localRecoveryLoginMode = true;
+            _authenticatedRecoveryAvailable = false;
+            ShopCodeLabel.Visibility = Visibility.Collapsed;
+            ShopCodeBox.Visibility = Visibility.Collapsed;
+            StaffCodeLabel.Text = PosLocalization.T("access.login.localUsername");
+            ConnectButtonText.Text = PosLocalization.T("access.login.localRecoverySignIn");
+            ConnectButton.Visibility = Visibility.Visible;
+            ConnectButton.IsEnabled = true;
+            RecoveryButton.Visibility = Visibility.Collapsed;
+            RetryDownloadButton.Visibility = Visibility.Collapsed;
+            ShowInfo(PosLocalization.T("firstRun.localOnlyWarning"));
+            StaffCodeBox.Clear();
+            CredentialBox.Clear();
+            StaffCodeBox.Focus();
+        }
+
+        private void ApplyRecoveryDecision(
+            PosAccessRecoveryDecision decision,
+            bool showTransientHelp)
+        {
+            _recoveryDecision = decision;
+            RecoveryButton.Visibility = Visibility.Collapsed;
+            RecoveryButton.IsEnabled = false;
+
+            if (decision == null || decision.NextStep == PosAccessNextStep.Denied)
+            {
+                return;
+            }
+
+            if (decision.NextStep == PosAccessNextStep.ExistingUsersDisabled)
+            {
+                ShowError(PosLocalization.T("access.login.existingUsersDisabled"));
+                return;
+            }
+
+            if (decision.CanCreateLocalAdmin)
+            {
+                RecoveryButtonText.Text = PosLocalization.T("access.login.localRecovery");
+                RecoveryButton.Visibility = Visibility.Visible;
+                RecoveryButton.IsEnabled = !_busy;
+                if (showTransientHelp)
+                {
+                    ConnectButtonText.Text = PosLocalization.T("access.login.retryOnline");
+                    ShowInfo(PosLocalization.T("access.login.localRecoveryHelp"));
+                }
+                return;
+            }
+
+            if (decision.CanUseLocalRecoveryLogin)
+            {
+                RecoveryButtonText.Text = PosLocalization.T("access.login.localRecoverySignIn");
+                RecoveryButton.Visibility = Visibility.Visible;
+                RecoveryButton.IsEnabled = !_busy;
+                if (showTransientHelp)
+                {
+                    ConnectButtonText.Text = PosLocalization.T("access.login.retryOnline");
+                }
+            }
         }
 
         private async Task<bool> EnsureCatalogSaleSafeForAccessAsync(
@@ -667,6 +981,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
                             return;
                         }
 
+                        if (OperatorSessionHolder.Current != null &&
+                            OperatorSessionHolder.Current.IsLoggedIn)
+                        {
+                            AccessMode = PosAuthenticatedAccessMode.Normal;
+                            FinishCatalogRetry(ref retryFinished, catalogRetryId, retryTimer, "success", string.Empty);
+                            DialogResult = true;
+                            Close();
+                            return;
+                        }
+
                         var credential = CredentialBox.Password ?? string.Empty;
                         if (await CompleteOnlineSignInAsync(
                                 NormalizeCode(ShopCodeBox.Text),
@@ -750,6 +1074,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void Cancel_Click(object sender, RoutedEventArgs e)
         {
             _activeCts?.Cancel();
+            CredentialBox.Clear();
             DialogResult = false;
             Close();
         }
@@ -787,6 +1112,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             RetryDownloadButton.Visibility = Visibility.Collapsed;
             RetryDownloadButton.IsEnabled = false;
             ConnectButton.IsEnabled = false;
+            RecoveryButton.IsEnabled = false;
             ShowProgressPanel();
             SetStepState(StepAccessGlyph, StepAccessGlyphText, StepAccessText, "active", PosLocalization.T("onlineFirstLogin.stepAccessVerified"));
             SetupPhaseTitleText.Text = PosLocalization.T("onlineFirstLogin.phaseVerify");
@@ -800,6 +1126,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             RetryDownloadButton.Visibility = Visibility.Collapsed;
             RetryDownloadButton.IsEnabled = false;
             ConnectButton.IsEnabled = false;
+            RecoveryButton.IsEnabled = false;
             ShowInfo(message);
         }
 
@@ -814,6 +1141,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             RetryDownloadButton.IsEnabled = false;
             ConnectButton.Visibility = Visibility.Visible;
             ConnectButton.IsEnabled = true;
+            RecoveryButton.IsEnabled = RecoveryButton.Visibility == Visibility.Visible;
         }
 
         private void EndBusyKeepPreparation(bool retryVisible)
@@ -826,6 +1154,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             ConnectButton.IsEnabled = false;
             RetryDownloadButton.Visibility = retryVisible ? Visibility.Visible : Visibility.Collapsed;
             RetryDownloadButton.IsEnabled = retryVisible;
+            RecoveryButton.IsEnabled = RecoveryButton.Visibility == Visibility.Visible;
         }
 
         private void SetInputEnabled(bool enabled)

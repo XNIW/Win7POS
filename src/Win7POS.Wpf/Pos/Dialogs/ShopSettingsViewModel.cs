@@ -3,14 +3,19 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
+using System.Windows;
+using System.Windows.Input;
+using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public sealed class ShopSettingsViewModel : INotifyPropertyChanged
+    public sealed class ShopSettingsViewModel : INotifyPropertyChanged, IDisposable
     {
         private readonly PosWorkflowService _service;
+        private readonly bool _canRepairCatalog;
         private string _name = "";
         private string _address = "";
         private string _businessGiro = "";
@@ -20,6 +25,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _footer = "";
         private string _fiscalBoletaNumberText = "0";
         private string _catalogSyncText = "";
+        private string _catalogCompletenessText = "";
+        private string _catalogCountsText = "";
+        private string _catalogRepairText = "";
+        private string _catalogSyncModeText = "";
         private string _deviceStatusText = "";
         private string _lastOfficialSyncText = "";
         private string _officialSourceText = "";
@@ -29,11 +38,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _shopStatusText = "";
         private string _syncStatusText = "";
         private string _status = "";
-        private bool _isBusy;
+        private int _activeLoads;
+        private bool _isRepairInProgress;
+        private bool _disposed;
 
         public ShopSettingsViewModel(PosWorkflowService service)
+            : this(service, canRepairCatalog: false)
+        {
+        }
+
+        public ShopSettingsViewModel(PosWorkflowService service, bool canRepairCatalog)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
+            _canRepairCatalog = canRepairCatalog;
+            RepairCatalogCommand = new AsyncRelayCommand(
+                RepairCatalogAsync,
+                _ => CanRepairCatalog && !IsBusy && !_disposed);
             PosLocalization.Current.LanguageChanged += OnLanguageChanged;
             _ = LoadAsync();
         }
@@ -46,7 +66,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string Phone { get => _phone; set { _phone = value ?? ""; OnPropertyChanged(); } }
         public string Footer { get => _footer; set { _footer = value ?? ""; OnPropertyChanged(); } }
         public string FiscalBoletaNumberText { get => _fiscalBoletaNumberText; set { _fiscalBoletaNumberText = value ?? ""; OnPropertyChanged(); } }
+        public string CatalogCompletenessText { get => _catalogCompletenessText; set { _catalogCompletenessText = value ?? ""; OnPropertyChanged(); } }
+        public string CatalogCountsText { get => _catalogCountsText; set { _catalogCountsText = value ?? ""; OnPropertyChanged(); } }
+        public string CatalogRepairText { get => _catalogRepairText; set { _catalogRepairText = value ?? ""; OnPropertyChanged(); } }
         public string CatalogSyncText { get => _catalogSyncText; set { _catalogSyncText = value ?? ""; OnPropertyChanged(); } }
+        public string CatalogSyncModeText { get => _catalogSyncModeText; set { _catalogSyncModeText = value ?? ""; OnPropertyChanged(); } }
         public string DeviceStatusText { get => _deviceStatusText; set { _deviceStatusText = value ?? ""; OnPropertyChanged(); } }
         public string LastOfficialSyncText { get => _lastOfficialSyncText; set { _lastOfficialSyncText = value ?? ""; OnPropertyChanged(); } }
         public string OfficialSourceText { get => _officialSourceText; set { _officialSourceText = value ?? ""; OnPropertyChanged(); } }
@@ -56,14 +80,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string ShopStatusText { get => _shopStatusText; set { _shopStatusText = value ?? ""; OnPropertyChanged(); } }
         public string SyncStatusText { get => _syncStatusText; set { _syncStatusText = value ?? ""; OnPropertyChanged(); } }
         public string Status { get => _status; set { _status = value ?? ""; OnPropertyChanged(); } }
-        public bool IsBusy { get => _isBusy; set { _isBusy = value; OnPropertyChanged(); } }
+        public bool IsBusy => _activeLoads > 0 || IsRepairInProgress;
+        public bool IsRepairInProgress => _isRepairInProgress;
+        public bool CanClose => !IsBusy;
+        public bool CanRepairCatalog => _canRepairCatalog;
         public bool IsReadOnly => true;
+        public ICommand RepairCatalogCommand { get; }
 
         public event PropertyChangedEventHandler PropertyChanged;
+        internal Window OwnerWindow { get; set; }
 
         private async Task LoadAsync()
         {
-            IsBusy = true;
+            BeginLoad();
             try
             {
                 var official = await _service.GetOfficialShopSnapshotAsync().ConfigureAwait(true);
@@ -83,6 +112,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 OfficialSourceText = PosLocalization.F("settings.source", FriendlySource(official.Source));
                 LastOfficialSyncText = PosLocalization.F("settings.officialSnapshot", FriendlyDate(official.SyncedAtUtc));
                 CatalogSyncText = sync.LastCatalogSyncText + " | " + sync.CatalogVersionText;
+                CatalogCompletenessText = sync.CatalogCompletenessText;
+                CatalogCountsText = sync.CatalogCountsText;
+                CatalogRepairText = sync.CatalogRepairText;
+                CatalogSyncModeText = sync.CatalogSyncModeText;
                 SalesSyncText = sync.LastSalesSyncText;
                 PendingSalesText = sync.PendingSalesText;
                 DeviceStatusText = sync.DeviceText + " | " + sync.StaffText;
@@ -97,8 +130,125 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             finally
             {
-                IsBusy = false;
+                EndLoad();
             }
+        }
+
+        private async Task RepairCatalogAsync()
+        {
+            var owner = OwnerWindow ?? DialogOwnerHelper.GetSafeOwner();
+            if (!ApplyConfirmDialog.ShowConfirm(
+                    owner,
+                    PosLocalization.T("settings.catalogRepairTitle"),
+                    PosLocalization.T("settings.catalogRepairConfirm")))
+            {
+                return;
+            }
+
+            SetRepairInProgress(true);
+            try
+            {
+                Status = PosLocalization.T("settings.catalogRepairInProgress");
+                var outcome = await _service.RepairCatalogAsync().ConfigureAwait(true);
+                await LoadAsync().ConfigureAwait(true);
+
+                if (outcome.Completed && outcome.CatalogSaleSafe)
+                {
+                    Status = PosLocalization.F(
+                        "settings.catalogRepairCompleted",
+                        outcome.PagesProcessed,
+                        outcome.ProductsApplied);
+                    ModernMessageDialog.Show(
+                        OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
+                        PosLocalization.T("settings.catalogRepairTitle"),
+                        Status);
+                    return;
+                }
+
+                Status = PosLocalization.F("settings.catalogRepairFailed", SafeStatusCode(outcome.StatusCode));
+                ModernMessageDialog.Show(
+                    OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("settings.catalogRepairTitle"),
+                    Status);
+            }
+            catch (Exception)
+            {
+                Status = PosLocalization.F("settings.catalogRepairFailed", "unexpected_error");
+                ModernMessageDialog.Show(
+                    OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
+                    PosLocalization.T("settings.catalogRepairTitle"),
+                    Status);
+            }
+            finally
+            {
+                SetRepairInProgress(false);
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            PosLocalization.Current.LanguageChanged -= OnLanguageChanged;
+            OwnerWindow = null;
+            (RepairCatalogCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private void BeginLoad()
+        {
+            _activeLoads += 1;
+            if (_activeLoads == 1)
+            {
+                NotifyBusyStateChanged();
+            }
+        }
+
+        private void EndLoad()
+        {
+            if (_activeLoads <= 0)
+            {
+                return;
+            }
+
+            _activeLoads -= 1;
+            if (_activeLoads == 0)
+            {
+                NotifyBusyStateChanged();
+            }
+        }
+
+        private void SetRepairInProgress(bool value)
+        {
+            if (_isRepairInProgress == value)
+            {
+                return;
+            }
+
+            _isRepairInProgress = value;
+            OnPropertyChanged(nameof(IsRepairInProgress));
+            NotifyBusyStateChanged();
+        }
+
+        private void NotifyBusyStateChanged()
+        {
+            OnPropertyChanged(nameof(IsBusy));
+            OnPropertyChanged(nameof(CanClose));
+            (RepairCatalogCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private static string SafeStatusCode(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return PosLocalization.T("sync.unavailable");
+            }
+
+            var normalized = value.Trim();
+            return normalized.Length <= 120 ? normalized : normalized.Substring(0, 120);
         }
 
         private static string Friendly(string value)
@@ -125,10 +275,44 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void OnLanguageChanged(object sender, EventArgs e)
         {
+            if (_disposed)
+            {
+                return;
+            }
+
             _ = LoadAsync();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
+
+        private sealed class AsyncRelayCommand : ICommand
+        {
+            private readonly Func<Task> _executeAsync;
+            private readonly Func<object, bool> _canExecute;
+
+            public AsyncRelayCommand(Func<Task> executeAsync, Func<object, bool> canExecute = null)
+            {
+                _executeAsync = executeAsync ?? throw new ArgumentNullException(nameof(executeAsync));
+                _canExecute = canExecute;
+            }
+
+            public bool CanExecute(object parameter) => _canExecute == null || _canExecute(parameter);
+
+            public async void Execute(object parameter)
+            {
+                try
+                {
+                    await _executeAsync().ConfigureAwait(true);
+                }
+                catch (Exception ex)
+                {
+                    UiErrorHandler.Handle(ex, null, "Shop settings catalog repair failed");
+                }
+            }
+
+            public event EventHandler CanExecuteChanged;
+            public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+        }
     }
 }

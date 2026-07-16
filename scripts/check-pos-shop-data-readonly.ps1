@@ -68,13 +68,21 @@ if ($dialogCopy -notmatch "Dati negozio ufficiali") { Fail "shop dialog copy mus
 if ($dialogCopy -notmatch "Master Console") { Fail "shop dialog must point edits to Master Console" } else { Pass "shop dialog Master Console boundary present" }
 if ($dialogCopy -notmatch "cache anche offline") { Fail "shop dialog must explain offline cache" } else { Pass "shop dialog offline cache copy present" }
 if ($dialog -match 'Content="(Salva|Guardar|Save|Modifica|Editar|Edit|Apply)"') { Fail "shop dialog must not expose save/edit/apply button" } else { Pass "shop dialog has no save/edit/apply button" }
-$shopTextBoxes = [regex]::Matches($dialog, "<TextBox[\s\S]*?/>")
-if ($shopTextBoxes.Count -eq 0) {
-    Fail "shop dialog text boxes not found"
-} elseif ($shopTextBoxes | Where-Object { $_.Value -notmatch 'IsReadOnly="\{Binding IsReadOnly\}"' }) {
-    Fail "all shop dialog text boxes must bind IsReadOnly"
-} else {
-    Pass "all shop dialog text boxes bind IsReadOnly"
+$shopTextBoxes = [regex]::Matches($dialog, "<TextBox[\s\S]*?(?:/>|</TextBox>)")
+$readonlyValueBorders = [regex]::Matches($dialog, 'ReadOnlyInfoValueBorderStyle')
+if ($shopTextBoxes.Count -gt 0) {
+    if ($shopTextBoxes | Where-Object { $_.Value -notmatch 'IsReadOnly="\{Binding IsReadOnly\}"' }) {
+        Fail "all shop dialog text boxes must bind IsReadOnly"
+    }
+    else {
+        Pass "all shop dialog text boxes bind IsReadOnly"
+    }
+}
+elseif ($readonlyValueBorders.Count -ge 6 -and $dialog -match 'ReadOnlyInfoValueTextStyle') {
+    Pass "shop dialog uses readonly value surfaces"
+}
+else {
+    Fail "shop dialog readonly value surfaces not found"
 }
 
 $shopMutationPattern = '(?i)/api/pos/shop|/api/shop/[^\r\n]{0,120}(update|settings)|SaveShopInfoAsync|ShopSettings[^\r\n]*(Save|Edit|Apply)|method:\s*"(PUT|PATCH|DELETE)"[^\r\n]*(shop|settings)'

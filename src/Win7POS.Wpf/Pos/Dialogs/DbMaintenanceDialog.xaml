@@ -39,23 +39,59 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc dbMaintenance.dbPath}"/>
-                    <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0" IsReadOnly="True" Text="{Binding DbPath, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,8,0" Text="{loc:Loc dbMaintenance.dbPath}"/>
+                    <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}" Margin="8,0,0,0">
+                        <TextBlock Text="{Binding DbPath, Mode=OneWay}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                    </Border>
 
-                    <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,6,0,0" VerticalAlignment="Center" Text="{loc:Loc dbMaintenance.backupsDirectory}"/>
-                    <TextBox Grid.Row="1" Grid.Column="1" Margin="8,6,0,0" IsReadOnly="True" Text="{Binding BackupsDirectory, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Grid.Row="1" Grid.Column="0" Style="{StaticResource FormLabelTextStyle}" Margin="0,6,8,0" Text="{loc:Loc dbMaintenance.backupsDirectory}"/>
+                    <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}" Margin="8,6,0,0">
+                        <TextBlock Text="{Binding BackupsDirectory, Mode=OneWay}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                    </Border>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,6,0,0" VerticalAlignment="Center" Text="{loc:Loc dbMaintenance.exportsDirectory}"/>
-                    <TextBox Grid.Row="2" Grid.Column="1" Margin="8,6,0,0" IsReadOnly="True" Text="{Binding ExportsDirectory, Mode=OneWay}" Style="{StaticResource ModernTextBoxStyle}"/>
+                    <TextBlock Grid.Row="2" Grid.Column="0" Style="{StaticResource FormLabelTextStyle}" Margin="0,6,8,0" Text="{loc:Loc dbMaintenance.exportsDirectory}"/>
+                    <Border Grid.Row="2" Grid.Column="1" Style="{StaticResource ReadOnlyInfoValueBorderStyle}" Margin="8,6,0,0">
+                        <TextBlock Text="{Binding ExportsDirectory, Mode=OneWay}" Style="{StaticResource ReadOnlyInfoValueTextStyle}"/>
+                    </Border>
 
                     <WrapPanel Grid.Row="3" Grid.ColumnSpan="2" Margin="0,12,0,0">
-                        <Button x:Name="BackupNowButton" MinWidth="120" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.backupNow}" Command="{Binding BackupNowCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                        <Button x:Name="RestoreBackupButton" MinWidth="140" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.restoreBackup}" Command="{Binding RestoreBackupCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                        <Button MinWidth="130" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.integrityCheck}" Command="{Binding IntegrityCheckCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                        <Button MinWidth="180" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.completeRestoreReview}" Command="{Binding CompleteRestoreReviewCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                        <Button x:Name="VacuumButton" MinWidth="110" Height="36" Margin="0,0,8,8" Content="VACUUM" Command="{Binding VacuumCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                        <Button x:Name="SupplierImportButton" MinWidth="170" Height="36" Margin="0,0,8,8" Content="{loc:Loc supplierExcelImport.title}" Command="{Binding SupplierExcelImportCommand}" Style="{StaticResource OutlineButtonStyle}"/>
-                        <Button x:Name="OpenFolderButton" MinWidth="120" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.openFolder}" Command="{Binding OpenFolderCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                        <Button x:Name="BackupNowButton" MinWidth="132" Height="36" Margin="0,0,8,8" Command="{Binding BackupNowCommand}" Style="{StaticResource OutlineButtonStyle}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconDatabase}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc dbMaintenance.backupNow}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="RestoreBackupButton" MinWidth="150" Height="36" Margin="0,0,8,8" Command="{Binding RestoreBackupCommand}" Style="{StaticResource OutlineButtonStyle}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconImport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc dbMaintenance.restoreBackup}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button MinWidth="142" Height="36" Margin="0,0,8,8" Command="{Binding IntegrityCheckCommand}" Style="{StaticResource OutlineButtonStyle}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc dbMaintenance.integrityCheck}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button MinWidth="190" Height="36" Margin="0,0,8,8" Content="{loc:Loc dbMaintenance.completeRestoreReview}" Command="{Binding CompleteRestoreReviewCommand}" Style="{StaticResource OutlineButtonStyle}"/>
+                        <Button x:Name="VacuumButton" MinWidth="110" Height="36" Margin="0,0,8,8" Command="{Binding VacuumCommand}" Style="{StaticResource OutlineButtonStyle}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                <TextBlock Text="VACUUM" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="SupplierImportButton" MinWidth="178" Height="36" Margin="0,0,8,8" Command="{Binding SupplierExcelImportCommand}" Style="{StaticResource OutlineButtonStyle}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconImport}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc supplierExcelImport.title}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="OpenFolderButton" MinWidth="132" Height="36" Margin="0,0,8,8" Command="{Binding OpenFolderCommand}" Style="{StaticResource OutlineButtonStyle}">
+                            <StackPanel Style="{StaticResource IconButtonContent}">
+                                <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                <TextBlock Text="{loc:Loc dbMaintenance.openFolder}" Margin="8,0,0,0"/>
+                            </StackPanel>
+                        </Button>
                     </WrapPanel>
 
                     <TextBlock Grid.Row="4" Grid.ColumnSpan="2" Margin="0,4,0,0" Foreground="DimGray" Text="{loc:Loc dbMaintenance.outputResults}"/>
@@ -70,7 +106,12 @@
             </ScrollViewer>
         </Border>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-            <Button MinWidth="110" Height="42" Content="{loc:Loc common.close}" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Close_Click"/>
+            <Button MinWidth="110" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Close_Click">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.close}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

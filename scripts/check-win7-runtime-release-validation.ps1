@@ -162,6 +162,7 @@ $requiredRepoFiles = @(
     ".github/workflows/release-pack.yml",
     "installer/Win7POS.iss",
     "scripts/check-release-pack-completeness.ps1",
+    "scripts/check-required-gates.ps1",
     "scripts/win7-smoke/check-win7-prereqs.ps1",
     "docs/WIN7_PRODUCTION_SMOKE_CHECKLIST.md"
 )
@@ -179,6 +180,7 @@ if (-not $fail) {
     $workflow = Read-Text ".github/workflows/release-pack.yml"
     $installer = Read-Text "installer/Win7POS.iss"
     $packCheck = Read-Text "scripts/check-release-pack-completeness.ps1"
+    $requiredGates = Read-Text "scripts/check-required-gates.ps1"
     $smoke = Read-Text "docs/WIN7_PRODUCTION_SMOKE_CHECKLIST.md"
 
     Require-Text "WPF targets net48" $wpf "<TargetFramework>net48</TargetFramework>"
@@ -190,11 +192,11 @@ if (-not $fail) {
     Require-Text "Data root supports WIN7POS_DATA_DIR override" $paths "WIN7POS_DATA_DIR"
     Require-Text "AppPaths creates logs/backups/exports" $appPaths "LogsDirectory[\s\S]*BackupsDirectory[\s\S]*ExportsDirectory"
 
-    Require-Text "Release workflow uses .NET 10 SDK" $workflow 'dotnet-version:\s*"10\.0\.x"'
+    Require-Text "Release workflow uses deterministic .NET 10 SDK" $workflow 'dotnet-version:\s*"10\.0\.301"'
     Require-Text "Release workflow builds WPF Release x86" $workflow 'dotnet build src/Win7POS\.Wpf/Win7POS\.Wpf\.csproj[\s\S]*-c Release[\s\S]*-p:Platform=x86[\s\S]*-p:PlatformTarget=x86'
     Require-Text "Release workflow copies WPF net48 x86 output" $workflow 'src/Win7POS\.Wpf/bin/x86/Release/net48'
     Require-Text "Release workflow validates pack folder" $workflow 'check-release-pack-completeness\.ps1[\s\S]*-ReleasePackSource dist/Win7POS'
-    Require-Text "Release workflow validates Win7 runtime folder" $workflow 'check-win7-runtime-release-validation\.ps1[\s\S]*-ReleasePackSource dist/Win7POS'
+    Require-Text "Release workflow validates Win7 runtime folder through canonical gates" ($workflow + $requiredGates) 'check-required-gates\.ps1[\s\S]*check-win7-runtime-release-validation\.ps1'
     Require-Text "Release workflow validates Win7 runtime zip" $workflow 'check-win7-runtime-release-validation\.ps1[\s\S]*-ReleasePackSource \$zip'
     Require-Text "Release workflow installs Inno Setup through Chocolatey" $workflow 'choco install innosetup --yes --no-progress'
     Require-Text "Release workflow resolves and exports ISCC" $workflow 'ISCC_EXE=\$iscc[\s\S]*GITHUB_ENV[\s\S]*\$env:ISCC_EXE'

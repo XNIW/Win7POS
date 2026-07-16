@@ -215,11 +215,14 @@ VALUES('PAGE-1', 'Page 1', 100, 'product-page-1', 1),
                 "SELECT is_active FROM products WHERE remote_product_id = 'product-page-1';"));
         }
 
-        var committed = await state.StorePullCursorAsync(
-            "shop-a", "SHOP-A", "final-page", "2026-07-14T02:00:00Z",
-            binding.Epoch, "full_refresh", authoritativeSnapshotCommitted: true);
-        Assert.IsTrue(committed);
-        Assert.AreEqual("final-page", (await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A")).Cursor);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            state.StorePullCursorAsync(
+                "shop-a", "SHOP-A", "final-page", "2026-07-14T02:00:00Z",
+                binding.Epoch, "full_refresh", authoritativeSnapshotCommitted: true));
+        Assert.AreEqual(
+            string.Empty,
+            (await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A")).Cursor,
+            "A full-refresh cursor must remain empty until exactness evidence is stored.");
     }
 
     [TestMethod]
@@ -251,6 +254,7 @@ VALUES('PAGE-1', 'Page 1', 100, 'product-page-1', 1),
     {
         return new PosCatalogPullResponse
         {
+            Catalog = new PosCatalogPayload(),
             SchemaVersion = PosOnlineContract.CatalogPullSchemaVersion,
             SyncMode = "delta",
             Policy = new PosPolicyResponse

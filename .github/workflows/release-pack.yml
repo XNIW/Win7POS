@@ -22,148 +22,64 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - uses: actions/setup-dotnet@v5
+      - name: Setup deterministic .NET SDK
+        uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: "10.0.x"
+          dotnet-version: "10.0.301"
 
-      - run: dotnet --info
+      - name: Print .NET info
+        run: dotnet --info
 
-      - name: Build CLI Release
-        run: dotnet restore src/Win7POS.Cli/Win7POS.Cli.csproj && dotnet build src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-restore
+      - name: Restore solution
+        run: dotnet restore Win7POS.slnx
 
-      - name: Selftest (keepdb)
+      - name: Run canonical required gates
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-required-gates.ps1
+
+      - name: Build solution Release
+        run: dotnet build Win7POS.slnx -c Release --no-restore
+
+      - name: Test Core and Data
+        run: dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj -c Release --no-build --no-restore
+
+      - name: CLI selftest
         run: dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build -- --selftest --keepdb
 
-      - name: Validate TASK-083 legacy startup hotfix
-        shell: pwsh
-        run: |
-          pwsh -NoProfile -File scripts/check-win7pos-legacy-db-migrations.ps1
-          pwsh -NoProfile -File scripts/check-win7pos-startup-no-eager-db.ps1
-          pwsh -NoProfile -File scripts/check-pos-online-linking-task084b.ps1
-          pwsh -NoProfile -File scripts/check-win7-runtime-release-validation.ps1
-
       - name: Build WPF Release x86
-        run: dotnet restore src/Win7POS.Wpf/Win7POS.Wpf.csproj && dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+        run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
 
-      - name: Prepare dist
+      - name: Prepare and validate dist
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          if (Test-Path "dist/Win7POS") { Remove-Item -LiteralPath "dist/Win7POS" -Recurse -Force }
           New-Item -ItemType Directory -Force -Path "dist/Win7POS" | Out-Null
 
           $wpfOutput = "src/Win7POS.Wpf/bin/x86/Release/net48"
           if (!(Test-Path (Join-Path $wpfOutput "Win7POS.Wpf.exe"))) { throw "WPF x86 net48 output folder not found: $wpfOutput" }
           Copy-Item -Path (Join-Path $wpfOutput "*") -Destination "dist/Win7POS" -Recurse -Force
+          Get-ChildItem -Path "dist/Win7POS" -Recurse -File -Filter "*.pdb" | Remove-Item -Force
 
-          Copy-Item -Path "scripts/set-admin-web-staging-url.bat" -Destination "dist/Win7POS/set-admin-web-staging-url.bat" -Force
-          New-Item -ItemType Directory -Force -Path "dist/Win7POS/scripts/win7-smoke" | Out-Null
-          Copy-Item -Path "scripts/win7-smoke/check-win7-prereqs.ps1" -Destination "dist/Win7POS/scripts/win7-smoke/check-win7-prereqs.ps1" -Force
-
-          Get-ChildItem -Path "dist/Win7POS" -Recurse -File -Filter "*.pdb" |
-            Remove-Item -Force
-
-          $readme = @"
-          Win7POS Release Pack
-
-          Requirements:
-          - Windows 7 SP1 or later
-          - .NET Framework 4.8 for WPF app
-          - Microsoft Visual C++ Runtime x86 (2015-2022) for native dependencies such as SQLite
-
-          Important paths:
-          - Data: %ProgramData%\Win7POS
-          - Logs: %ProgramData%\Win7POS\logs
-          - Backups: %ProgramData%\Win7POS\backups
-          - Exports: %ProgramData%\Win7POS\exports
-          - Receipts: %ProgramData%\Win7POS\receipts
-          - Admin Web config: %ProgramData%\Win7POS\pos-admin-web.config
-
-          Admin Web online linking:
-          - Public staging helper: run set-admin-web-staging-url.bat to write:
-            %ProgramData%\Win7POS\pos-admin-web.config
-            with:
-            AdminWebBaseUrl=https://merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev
-          - Configure WIN7POS_ADMIN_WEB_BASE_URL=https://<workers-dev-host>
-            or create %ProgramData%\Win7POS\pos-admin-web.config with:
-            AdminWebBaseUrl=https://<workers-dev-host>
-          - Operators enter only shop code, staff code and PIN/password.
-          - Do not configure /auth/login, /shop, query strings or hashes.
-          - Use HTTPS for workers.dev/staging. Do not enable WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB in release use.
-
-          Notes:
-          - WPF executable: Win7POS.Wpf.exe
-          - Verify package completeness with RELEASE_CHECKLIST.txt
-          "@
-          Set-Content -Path "dist/Win7POS/README_RUN.txt" -Value $readme -Encoding UTF8
-
-          $checklist = @"
-          Win7POS Release Pack Checklist
-
-          Verify inside zip Win7POS_yyyyMMdd_HHmm.zip -> dist/Win7POS:
-
-          [Windows 7 prerequisites]
-          [ ] Windows 7 SP1 or later
-          [ ] .NET Framework 4.8 installed
-          [ ] Microsoft Visual C++ Runtime x86 installed
-          [ ] Run scripts\win7-smoke\check-win7-prereqs.ps1 on the target or equivalent VM
-
-          [WPF - required]
-          [ ] Win7POS.Wpf.exe (or current app exe name)
-          [ ] Win7POS.Wpf.exe.config (if generated by build)
-          [ ] Win7POS.Core.dll
-          [ ] Win7POS.Data.dll
-          [ ] All managed dependency DLLs required by the app
-
-          [SQLite x86 runtime - critical]
-          If using Microsoft.Data.Sqlite:
-          [ ] Microsoft.Data.Sqlite.dll
-          [ ] SQLitePCLRaw.* assemblies
-          [ ] e_sqlite3.dll (x86 native)
-
-          If using System.Data.SQLite:
-          [ ] System.Data.SQLite.dll
-          [ ] SQLite.Interop.dll (x86 native)
-
-          IMPORTANT:
-          - Missing x86 native SQLite DLL can cause DB-open crash on Win7.
-
-          [CLI - diagnostics only]
-          [ ] CLI is not bundled in the Win7 runtime pack; run CLI diagnostics from CI/dev tooling.
-
-          [Docs]
-          [ ] README_RUN.txt includes .NET Framework 4.8 note
-          [ ] README_RUN.txt includes ProgramData paths:
-              %ProgramData%\Win7POS\...
-          [ ] set-admin-web-staging-url.bat writes %ProgramData%\Win7POS\pos-admin-web.config
-          [ ] README_RUN.txt includes logs/backups/exports/receipts paths
-          [ ] README_RUN.txt explains WIN7POS_ADMIN_WEB_BASE_URL or pos-admin-web.config
-          [ ] README_RUN.txt explains normal linking needs only shop code, staff code and PIN/password
-          [ ] README_RUN.txt does not enable WIN7POS_ALLOW_INSECURE_LAN_ADMIN_WEB
-          "@
-          Set-Content -Path "dist/Win7POS/RELEASE_CHECKLIST.txt" -Value $checklist -Encoding UTF8
-
-          $buildTimestamp = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
-          $versionInfo = @"
-          commit_sha=$env:GITHUB_SHA
-          branch=$env:GITHUB_REF_NAME
-          run_number=$env:GITHUB_RUN_NUMBER
-          timestamp_utc=$buildTimestamp
-          "@
-          Set-Content -Path "dist/Win7POS/VERSION.txt" -Value $versionInfo -Encoding UTF8
+          pwsh -NoProfile -File scripts/win7pos/windows/write-release-support-files.ps1 `
+            -OutputDirectory dist/Win7POS `
+            -Configuration Release `
+            -Platform x86 `
+            -SdkVersion 10.0.301 `
+            -CommitSha $env:GITHUB_SHA `
+            -Ref $env:GITHUB_REF_NAME `
+            -GitHubRunNumber $env:GITHUB_RUN_NUMBER
 
           pwsh -NoProfile -File scripts/check-release-pack-completeness.ps1 -ReleasePackSource dist/Win7POS -WriteManifests
-          pwsh -NoProfile -File scripts/check-win7-runtime-release-validation.ps1 -ReleasePackSource dist/Win7POS
+          pwsh -NoProfile -File scripts/check-required-gates.ps1 -ReleasePackSource dist/Win7POS
 
           $stamp = Get-Date -Format "yyyyMMdd_HHmm"
           $zip = "dist/Win7POS_$stamp.zip"
-          if (Test-Path $zip) { Remove-Item $zip -Force }
+          if (Test-Path $zip) { Remove-Item -LiteralPath $zip -Force }
           Compress-Archive -Path "dist/Win7POS/*" -DestinationPath $zip -Force
           pwsh -NoProfile -File scripts/check-win7-runtime-release-validation.ps1 -ReleasePackSource $zip
+          pwsh -NoProfile -File scripts/check-pos-online-linking-task084b.ps1 -ReleasePackSource $zip
           Write-Host "Created package: $zip"
-
-      - name: Validate Win7 startup safety
-        shell: pwsh
-        run: pwsh -NoProfile -File scripts/check-pos-startup-win7-safe.ps1
 
       - name: Install Inno Setup
         shell: pwsh
@@ -215,3 +131,4 @@ jobs:
         with:
           name: Win7POS-ReleasePack-x86
           path: dist/Win7POS_*.zip
+          retention-days: 14

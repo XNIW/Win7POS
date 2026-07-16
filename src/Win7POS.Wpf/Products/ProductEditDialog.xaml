@@ -114,10 +114,20 @@
             </ScrollViewer>
         </Border>
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-            <Button Content="{loc:Loc common.cancel}" MinWidth="100" Margin="0,0,10,0" IsCancel="True"
-                    Style="{StaticResource DialogCancelButtonStyle}" Command="{Binding CancelCommand}"/>
-            <Button Content="{loc:Loc common.save}" MinWidth="100" IsDefault="True"
-                    Style="{StaticResource DialogActionButtonStyle}" Command="{Binding ConfirmCommand}"/>
+            <Button MinWidth="100" Margin="0,0,10,0" IsCancel="True"
+                    Style="{StaticResource DialogCancelButtonStyle}" Command="{Binding CancelCommand}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button MinWidth="100" IsDefault="True"
+                    Style="{StaticResource DialogActionButtonStyle}" Command="{Binding ConfirmCommand}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.save}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
         </StackPanel>
     </Grid>
 </chrome:DialogShellWindow>

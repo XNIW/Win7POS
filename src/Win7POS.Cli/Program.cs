@@ -1150,10 +1150,7 @@ internal static class Program
         }
         finally
         {
-            if (!keepDb && File.Exists(opt.DbPath))
-            {
-                File.Delete(opt.DbPath);
-            }
+            await CleanupSelfTestDbAsync(opt.DbPath, keepDb).ConfigureAwait(false);
         }
     }
 
@@ -1225,14 +1222,7 @@ internal static class Program
         }
         finally
         {
-            if (!keepDb && File.Exists(opt.DbPath))
-            {
-                File.Delete(opt.DbPath);
-            }
-            else if (keepDb)
-            {
-                Console.WriteLine($"KEEPDB: {opt.DbPath}");
-            }
+            await CleanupSelfTestDbAsync(opt.DbPath, keepDb).ConfigureAwait(false);
         }
     }
 
@@ -1526,10 +1516,7 @@ internal static class Program
         }
         finally
         {
-            if (!parameters.KeepDb && File.Exists(opt.DbPath))
-            {
-                File.Delete(opt.DbPath);
-            }
+            await CleanupSelfTestDbAsync(opt.DbPath, parameters.KeepDb).ConfigureAwait(false);
         }
     }
 
@@ -1610,9 +1597,9 @@ internal static class Program
         }
         finally
         {
-            if (ownsDb && !parameters.KeepDb && File.Exists(opt.DbPath))
+            if (ownsDb)
             {
-                File.Delete(opt.DbPath);
+                await CleanupSelfTestDbAsync(opt.DbPath, parameters.KeepDb).ConfigureAwait(false);
             }
         }
     }
@@ -1816,10 +1803,7 @@ internal static class Program
         }
         finally
         {
-            if (!parameters.KeepDb && File.Exists(opt.DbPath))
-            {
-                File.Delete(opt.DbPath);
-            }
+            await CleanupSelfTestDbAsync(opt.DbPath, parameters.KeepDb).ConfigureAwait(false);
         }
     }
 
@@ -2383,7 +2367,7 @@ CREATE TABLE users (
             "common.cancel"
         })
         {
-            Assert(dialogXaml.IndexOf("Content=\"{loc:Loc " + buttonKey + "}\"", StringComparison.Ordinal) > footerStart,
+            Assert(dialogXaml.IndexOf("Text=\"{loc:Loc " + buttonKey + "}\"", footerStart, StringComparison.Ordinal) > footerStart,
                 "Supplier import footer button must be outside the ScrollViewer: " + buttonKey);
         }
 
@@ -2499,7 +2483,7 @@ CREATE TABLE users (
         AssertText(viewModel, "HeaderSummary", "Step 1/2 header summary missing.");
         AssertText(viewModel, "RowSummary", "Step 1/2 row summary missing.");
         AssertText(viewModel, "SyncErrors", "Step 4 blocker list must expose sync preview errors.");
-        AssertText(viewModel, "Ricalcola Sync DB prima di applicare.", "Apply blocker message must require recalculating Sync DB.");
+        AssertText(viewModel, "supplierExcelImport.recalculateBeforeApply", "Apply blocker message must require recalculating Sync DB.");
         AssertText(workflow, "CreateBackupBeforeApplyAsync", "Apply must create a pre-apply backup.");
         AssertText(workflow, "Warning count", "Apply summary must report warning count.");
         AssertText(workflow, "Skipped", "Apply summary must report skipped count.");
@@ -3038,6 +3022,44 @@ CREATE TABLE users (
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["shop_mismatch"]).ConfigureAwait(false) == "failed_blocked", "shop mismatch status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["auth_denied"]).ConfigureAwait(false) == "retry", "auth_denied status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["timeout"]).ConfigureAwait(false) == "retry", "timeout status mismatch.");
+
+                var retryExhaustionId = ids["timeout"];
+                using (var conn = factory.Open())
+                {
+                    await ExecuteSqliteAsync(
+                        conn,
+                        null,
+                        @"UPDATE catalog_import_outbox
+                          SET status = 'retry',
+                              attempt_count = 11,
+                              next_retry_at = 0,
+                              last_attempt_at = NULL,
+                              updated_at = @nowMs
+                          WHERE id = @outboxId;",
+                        "@nowMs", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        "@outboxId", retryExhaustionId).ConfigureAwait(false);
+                }
+
+                Assert(
+                    await ReadCatalogImportOutboxAttemptCountAsync(factory, retryExhaustionId).ConfigureAwait(false) == 11,
+                    "Retry exhaustion fixture must start at attempt 11.");
+                using (var exhaustionCts = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+                {
+                    var exhaustion = await new CatalogImportSyncService(factory)
+                        .SyncPendingAsync(adminOptions, session, 1, exhaustionCts.Token)
+                        .ConfigureAwait(false);
+                    Assert(exhaustion.Total == 1, "Retry exhaustion run must process exactly one row.");
+                    Assert(exhaustion.Prepared == 1, "Retry exhaustion run must prepare exactly one transient attempt.");
+                    Assert(exhaustion.Blocked == 1, "Attempt 12 must transition the transient row to failed_blocked.");
+                    Assert(exhaustion.Retried == 0, "Attempt 12 must not schedule another retry.");
+                }
+
+                Assert(
+                    await ReadCatalogImportOutboxStatusAsync(factory, retryExhaustionId).ConfigureAwait(false) == "failed_blocked",
+                    "Retry exhaustion status mismatch.");
+                Assert(
+                    await ReadCatalogImportOutboxAttemptCountAsync(factory, retryExhaustionId).ConfigureAwait(false) == 12,
+                    "Retry exhaustion must stop at attempt 12 without looping.");
                 var acceptedBarcode = CatalogImportHarnessBarcode("accepted", 1);
                 Assert(
                     await ReadProductRemoteProductIdAsync(factory, acceptedBarcode).ConfigureAwait(false) == "remote-product-map-accepted",
@@ -3236,7 +3258,12 @@ CREATE TABLE users (
             Assert(installIndex > restoreCheck, "Restore must check catalog import outbox before live DB install.");
             Assert(candidateValidationIndex > restoreCheck && candidateValidationIndex < installIndex, "Restore candidate must be validated before live DB install.");
             Assert(preBackupIndex > restoreCheck, "Restore must check catalog import outbox before pre-restore backup/copy flow.");
-            Assert(workflow.Contains("InstallAsync(\n                        tempRestorePath", StringComparison.Ordinal), "Restore must install the already-validated temporary copy.");
+            Assert(
+                System.Text.RegularExpressions.Regex.IsMatch(
+                    workflow,
+                    @"InstallAsync\s*\(\s*tempRestorePath",
+                    System.Text.RegularExpressions.RegexOptions.CultureInvariant),
+                "Restore must install the already-validated temporary copy.");
             Assert(atomicInstaller.Contains("File.Copy(rollbackDatabasePath, liveDatabasePath, true)", StringComparison.Ordinal), "Restore install must roll back every post-swap failure.");
             Assert(workflow.Contains("dbMaintenance.restoreBlockedUnresolvedCatalogImports", StringComparison.Ordinal), "Restore flow must use catalog import blocked message.");
             Assert(catalogRepository.Contains("'pending', 'retry', 'in_progress', 'failed_blocked'", StringComparison.Ordinal), "Catalog import unresolved guard must include pending/retry/in_progress/failed_blocked.");
@@ -3943,6 +3970,18 @@ VALUES(
         }
     }
 
+    private static async Task<long> ReadCatalogImportOutboxAttemptCountAsync(SqliteConnectionFactory factory, long outboxId)
+    {
+        using (var conn = factory.Open())
+        {
+            return await ScalarLongAsync(
+                conn,
+                null,
+                "SELECT attempt_count FROM catalog_import_outbox WHERE id = @outboxId",
+                "@outboxId", outboxId).ConfigureAwait(false);
+        }
+    }
+
     private static async Task<string> ReadCatalogImportOutboxPayloadAsync(SqliteConnectionFactory factory, long outboxId)
     {
         using (var conn = factory.Open())
@@ -3977,7 +4016,7 @@ VALUES(
                 @"SELECT COALESCE(remote_price_id, '')
 FROM product_price_history
 WHERE barcode = @barcode
-  AND type = @priceType
+  AND LOWER(type) = LOWER(@priceType)
 ORDER BY id DESC
 LIMIT 1",
                 "@barcode", barcode,

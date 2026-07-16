@@ -82,7 +82,9 @@ public sealed class PosShopTransitionGuardTests
         Assert.AreEqual(0L, await conn.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM products WHERE is_active = 1;"));
         Assert.AreEqual(1L, await conn.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM product_price_history;"));
         Assert.AreEqual(0L, await conn.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM remote_catalog_pending_prices;"));
+        Assert.AreEqual(0L, await conn.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM remote_catalog_product_references;"));
         Assert.AreEqual(0L, await conn.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM app_settings WHERE key IN ('pos.catalog.last_sync_cursor', 'pos.catalog.sale_safe_at');"));
+        Assert.AreEqual(0L, await conn.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM app_settings WHERE key LIKE 'pos.catalog.delta_chain.%';"));
         Assert.AreEqual(0L, await conn.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM users WHERE remote_shop_code = 'SHOP-A' AND is_active = 1;"));
         Assert.AreEqual(1L, await conn.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM users WHERE remote_shop_code = 'SHOP-B' AND is_active = 1;"));
 
@@ -169,8 +171,17 @@ VALUES('A-001', '2026-07-14T00:00:00Z', 'retail', 1000, 'catalog_pull');
 INSERT INTO remote_catalog_pending_prices(remote_price_id, remote_product_id, type, price, effective_at, source, created_at)
 VALUES('remote-price-a', 'remote-product-a', 'retail', 1000, '2026-07-14T00:00:00Z', 'catalog_pull', '2026-07-14T00:00:00Z');
 
+INSERT INTO remote_catalog_product_references(remote_product_id, remote_category_id, remote_supplier_id)
+VALUES('remote-product-a', NULL, NULL);
+
 INSERT INTO app_settings(key, value) VALUES('pos.catalog.last_sync_cursor', 'cursor-a');
-INSERT INTO app_settings(key, value) VALUES('pos.catalog.sale_safe_at', '2026-07-14T00:00:00Z');");
+INSERT INTO app_settings(key, value) VALUES('pos.catalog.sale_safe_at', '2026-07-14T00:00:00Z');
+INSERT INTO app_settings(key, value) VALUES('pos.catalog.delta_chain.active', '1');
+INSERT INTO app_settings(key, value) VALUES('pos.catalog.delta_chain.catalog_version', 'catalog-a');
+INSERT INTO app_settings(key, value) VALUES('pos.catalog.delta_chain.cursor_fingerprints', 'deadbeef');
+INSERT INTO app_settings(key, value) VALUES('pos.catalog.delta_chain.sync_mode', 'delta');
+INSERT INTO app_settings(key, value) VALUES('pos.catalog.delta_chain.summary_fingerprint', 'deadbeef');
+INSERT INTO app_settings(key, value) VALUES('pos.catalog.delta_chain.summary_pinned', '1');");
     }
 
     private static async Task EnqueueSaleAsync(SqliteConnectionFactory factory)

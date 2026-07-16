@@ -362,6 +362,9 @@ namespace Win7POS.Data.Online
             var barcodeByClientItemId = BuildBarcodeMap(request);
             var remoteProductIds = new List<CatalogImportRemoteProductId>();
             var remotePriceIds = new List<CatalogImportRemotePriceId>();
+            var explicitRemotePriceSlots = new HashSet<string>(StringComparer.Ordinal);
+            var explicitRemotePriceIdentities = new HashSet<string>(StringComparer.Ordinal);
+            var explicitRemotePriceWildcardIdentities = new HashSet<string>(StringComparer.Ordinal);
 
             foreach (var remoteProduct in remote.RemoteProductIds ?? Array.Empty<PosCatalogImportRemoteProductIdAck>())
             {
@@ -385,13 +388,31 @@ namespace Win7POS.Data.Online
                     continue;
                 }
 
+                var barcode = ResolveAckBarcode(
+                    barcodeByClientItemId,
+                    remotePrice.ClientItemId,
+                    remotePrice.Barcode);
+                var priceType = NormalizeAckPriceType(remotePrice.PriceType);
                 remotePriceIds.Add(new CatalogImportRemotePriceId
                 {
-                    Barcode = ResolveAckBarcode(barcodeByClientItemId, remotePrice.ClientItemId, remotePrice.Barcode),
+                    Barcode = barcode,
                     ClientItemId = remotePrice.ClientItemId,
-                    PriceType = remotePrice.PriceType,
+                    PriceType = priceType,
                     RemotePriceId = remotePrice.RemotePriceId
                 });
+                if (!string.IsNullOrWhiteSpace(remotePrice.RemotePriceId))
+                {
+                    var priceIdentity = BuildAckPriceIdentityKey(remotePrice.ClientItemId, barcode);
+                    explicitRemotePriceSlots.Add(BuildAckPriceSlotKey(
+                        remotePrice.ClientItemId,
+                        barcode,
+                        priceType));
+                    explicitRemotePriceIdentities.Add(priceIdentity);
+                    if (priceType.Length == 0)
+                    {
+                        explicitRemotePriceWildcardIdentities.Add(priceIdentity);
+                    }
+                }
             }
 
             foreach (var ackItem in remote.Items ?? Array.Empty<PosCatalogImportItemAck>())
@@ -414,11 +435,24 @@ namespace Win7POS.Data.Online
 
                 if (!string.IsNullOrWhiteSpace(ackItem.RemotePriceId))
                 {
+                    var priceType = NormalizeAckPriceType(ackItem.PriceType);
+                    var priceIdentity = BuildAckPriceIdentityKey(ackItem.ClientItemId, barcode);
+                    var priceSlot = BuildAckPriceSlotKey(
+                        ackItem.ClientItemId,
+                        barcode,
+                        priceType);
+                    if (explicitRemotePriceSlots.Contains(priceSlot) ||
+                        explicitRemotePriceWildcardIdentities.Contains(priceIdentity) ||
+                        (priceType.Length == 0 && explicitRemotePriceIdentities.Contains(priceIdentity)))
+                    {
+                        continue;
+                    }
+
                     remotePriceIds.Add(new CatalogImportRemotePriceId
                     {
                         Barcode = barcode,
                         ClientItemId = ackItem.ClientItemId,
-                        PriceType = ackItem.PriceType,
+                        PriceType = priceType,
                         RemotePriceId = ackItem.RemotePriceId
                     });
                 }
@@ -435,6 +469,31 @@ namespace Win7POS.Data.Online
                     remote.ServerRequestId,
                     FirstNonEmpty(remote.Batch.ServerRequestId, transportServerRequestId))
             };
+        }
+
+        private static string BuildAckPriceSlotKey(
+            string clientItemId,
+            string barcode,
+            string priceType)
+        {
+            return BuildAckPriceIdentityKey(clientItemId, barcode) +
+                "|type:" + NormalizeAckPriceType(priceType);
+        }
+
+        private static string BuildAckPriceIdentityKey(string clientItemId, string barcode)
+        {
+            return string.IsNullOrWhiteSpace(clientItemId)
+                ? "barcode:" + (barcode ?? string.Empty).Trim()
+                : "client:" + clientItemId.Trim();
+        }
+
+        private static string NormalizeAckPriceType(string priceType)
+        {
+            var normalized = (priceType ?? string.Empty).Trim().ToLowerInvariant();
+            return string.Equals(normalized, "purchase", StringComparison.Ordinal) ||
+                string.Equals(normalized, "retail", StringComparison.Ordinal)
+                ? normalized
+                : string.Empty;
         }
 
         private static IReadOnlyDictionary<string, string> BuildBarcodeMap(PosCatalogImportRequest request)
