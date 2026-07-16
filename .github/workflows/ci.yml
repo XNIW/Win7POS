@@ -1,10 +1,17 @@
 name: CI
 
 on:
+  push:
+    branches:
+      - main
   pull_request:
     branches:
       - main
   workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-and-check:
@@ -34,8 +41,17 @@ jobs:
       - name: Test Core/Data
         run: dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj -c Release --no-build --no-restore --logger "trx;LogFileName=Win7POS.Core.Tests.trx"
 
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: Win7POS-Core-TestResults-${{ github.run_id }}
+          path: tests/Win7POS.Core.Tests/TestResults/*.trx
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Selftest (fast)
-        run: dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build -- --selftest --keepdb
+        run: dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build --no-restore -- --selftest --keepdb
 
       - name: Build WPF (Release x86)
-        run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86
+        run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
