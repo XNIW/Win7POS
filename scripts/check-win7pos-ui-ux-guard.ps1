@@ -63,6 +63,14 @@ $supplierImport = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xa
 $supplierImportViewModel = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs"
 $importView = Read-Text "src/Win7POS.Wpf/Import/ImportView.xaml"
 
+Test-ContainsAll "MainWindow remains a maximize-only workstation shell" ($mainWindow + $mainWindowCode) @(
+    'WindowState="Maximized"',
+    'ResizeMode="CanMinimize"',
+    'protected override void OnStateChanged(EventArgs e)',
+    'if (WindowState == WindowState.Normal)',
+    'SetCurrentValue(WindowStateProperty, WindowState.Maximized)'
+)
+
 Test-ContainsAll "ModernTextBoxStyle readable text/caret/selection" $modernStyles @(
     'x:Key="ModernTextBoxStyle"',
     'Foreground',

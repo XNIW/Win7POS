@@ -6,8 +6,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 {
     public partial class DailyReportDialog : DialogShellWindow
     {
+        private readonly DailyReportViewModel _viewModel;
+
         public DailyReportDialog(DailyReportViewModel vm)
         {
+            _viewModel = vm;
             InitializeComponent();
             WindowSizingHelper.ApplyAdaptiveDialogSizing(
                 this,
@@ -17,6 +20,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 maxHeightPercent: 0.96,
                 allowResize: true);
             DataContext = vm;
+            Closed += OnClosed;
+        }
+
+        private void OnClosed(object sender, System.EventArgs e)
+        {
+            Closed -= OnClosed;
+            _viewModel.Dispose();
+            DataContext = null;
         }
 
         private void Close_Click(object sender, RoutedEventArgs e)

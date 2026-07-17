@@ -112,6 +112,18 @@ namespace Win7POS.Wpf
             PreviewKeyDown += OnPreviewKeyDown;
         }
 
+        protected override void OnStateChanged(EventArgs e)
+        {
+            base.OnStateChanged(e);
+
+            // The POS shell is a full-screen workstation surface. It may be minimized,
+            // but restoring it to a resizable normal window would expose clipped layouts.
+            if (WindowState == WindowState.Normal)
+            {
+                SetCurrentValue(WindowStateProperty, WindowState.Maximized);
+            }
+        }
+
         private void InitializeLanguageSelector()
         {
             PosLocalization.Current.LanguageChanged += (_, __) =>

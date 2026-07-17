@@ -16,7 +16,7 @@ using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public sealed class DailyReportViewModel : INotifyPropertyChanged
+    public sealed class DailyReportViewModel : INotifyPropertyChanged, IDisposable
     {
         private readonly Pos.PosWorkflowService _service;
         private readonly IOverrideAuthService _overrideAuthService;
@@ -41,6 +41,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private int _selectedTabIndex;
         /// <summary>Sorgente unica per i 6 KPI in alto: Giornaliero, riga selezionata in Storico, o somma righe spuntate.</summary>
         private HeaderSummary _currentHeaderSummary;
+        private bool _disposed;
 
         private long _periodNetAmount;
         private long _periodGrossAmount;
@@ -1178,6 +1179,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 point.NotifyLanguageChanged();
             }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            PosLocalization.Current.LanguageChanged -= OnLanguageChanged;
         }
 
         private void SetStatusKey(string key)

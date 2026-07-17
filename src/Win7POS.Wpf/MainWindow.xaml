@@ -4,7 +4,11 @@
         xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         xmlns:pos="clr-namespace:Win7POS.Wpf.Pos"
         xmlns:prod="clr-namespace:Win7POS.Wpf.Products"
-        Title="Win7POS" MinWidth="800" MinHeight="560" WindowState="Maximized">
+        Title="Win7POS"
+        MinWidth="800"
+        MinHeight="560"
+        WindowState="Maximized"
+        ResizeMode="CanMinimize">
     <Grid Margin="0">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
