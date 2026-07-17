@@ -44,6 +44,7 @@ $mainWindow = Read-Required "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $app = Read-Required "src/Win7POS.Wpf/App.xaml.cs"
 $exitDialog = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/ExitConfirmationDialog.xaml"
 $settingsDialog = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/CustomerDisplaySettingsDialog.xaml"
+$settingsDialogCode = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/CustomerDisplaySettingsDialog.xaml.cs"
 $settingsHub = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml"
 $settingsHubCode = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml.cs"
 $translations = Read-Required "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs"
@@ -112,6 +113,18 @@ Require-All "settings surface and four-language copy are present" ($settingsDial
     'Display cliente',
     'Pantalla cliente',
     '顾客显示屏'
+)
+
+Require-All "customer display settings remain work-area adaptable" ($settingsDialogCode + $mainWindow) @(
+    'WindowSizingHelper.ApplyAdaptiveDialogSizing',
+    'WindowSizingHelper.CapMaxHeightToOwner(dialog)'
+)
+
+Require-All "customer display initialization is best-effort" $mainWindow @(
+    'var manager = new CustomerDisplayManager(',
+    'category=customer_display initialization=failed mode=best_effort',
+    'manager.Dispose()',
+    'if (_customerDisplayManager == null)'
 )
 
 if ($fail) {

@@ -56,15 +56,6 @@ namespace Win7POS.Data.Online
                     false);
             }
 
-            if (result.Offline)
-            {
-                return new CatalogSyncScheduleDecision(
-                    CatalogSyncScheduleKind.OfflineQuiet,
-                    TimeSpan.Zero,
-                    0,
-                    false);
-            }
-
             if (result.Success && (result.HasMore || result.ReceivedChanges))
             {
                 return new CatalogSyncScheduleDecision(
@@ -90,8 +81,11 @@ namespace Win7POS.Data.Online
             var retrySeconds = Math.Min(
                 300d,
                 RetrySeconds[index] * (0.8d + (0.4d * boundedJitter)));
+            var retryKind = result.Offline
+                ? CatalogSyncScheduleKind.OfflineQuiet
+                : CatalogSyncScheduleKind.Retry;
             return new CatalogSyncScheduleDecision(
-                CatalogSyncScheduleKind.Retry,
+                retryKind,
                 TimeSpan.FromSeconds(retrySeconds),
                 nextFailureCount,
                 true);

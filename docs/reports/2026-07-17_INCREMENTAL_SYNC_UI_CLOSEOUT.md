@@ -100,10 +100,9 @@ ignored by Git.
 An isolated `--safe-start` launch used a fresh data root and no stored production
 session. On the available host configuration (1440×900, 200% scale), the shell and
 first-login dialog rendered without clipping; initial focus was on Shop code and
-the credential fields were empty. The redacted screenshot is stored outside the
-repository at:
-
-`C:\Users\xniw9\.codex\visualizations\2026\07\16\019f6d1a-e17e-7060-a0d0-9f4229b82200\win7pos-first-login-current-host-redacted.png`
+the credential fields were empty. The redacted screenshot was stored as external
+evidence under the identifier `win7pos-first-login-current-host-redacted`; the
+artifact and host path are not tracked in the repository.
 
 The requested 1024×768 and 1366×768 configurations at 100%/125%, authenticated
 POS/Payment/Products/Settings/Sync Center states and start-of-day flow were not

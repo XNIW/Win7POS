@@ -3,6 +3,7 @@ using System.Windows;
 using Win7POS.Core.Pos;
 using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Import;
+using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -28,6 +29,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _open = open;
             _close = close;
             InitializeComponent();
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(
+                this,
+                minWidth: 700,
+                minHeight: 540,
+                maxWidthPercent: 0.92,
+                maxHeightPercent: 0.92,
+                allowResize: true);
             DataContext = _viewModel;
         }
 

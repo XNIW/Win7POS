@@ -70,7 +70,7 @@ public sealed class SyncSchedulerPolicyTests
     }
 
     [TestMethod]
-    public void AuthDeniedAndOffline_StopQuietPolling()
+    public void AuthDeniedStopsWhileOfflineRetainsQuietPolling()
     {
         var auth = CatalogSyncSchedulerPolicy.Evaluate(
             new CatalogSyncRunResult(false, authenticationDenied: true),
@@ -83,8 +83,32 @@ public sealed class SyncSchedulerPolicyTests
 
         Assert.IsFalse(auth.ShouldPoll);
         Assert.AreEqual(CatalogSyncScheduleKind.AuthenticationStopped, auth.Kind);
-        Assert.IsFalse(offline.ShouldPoll);
+        Assert.IsTrue(offline.ShouldPoll);
         Assert.AreEqual(CatalogSyncScheduleKind.OfflineQuiet, offline.Kind);
+        Assert.AreEqual(60d, offline.Delay.TotalSeconds);
+        Assert.AreEqual(4, offline.FailureCount);
+    }
+
+    [TestMethod]
+    public void ServerSideRecoveryWithoutNicTransition_ResumesAndResetsBackoff()
+    {
+        var offline = CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(false, offline: true, code: "network_error"),
+            0,
+            0.5);
+        var recovered = CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(success: true),
+            offline.FailureCount,
+            0.5);
+
+        Assert.IsTrue(offline.ShouldPoll);
+        Assert.AreEqual(CatalogSyncScheduleKind.OfflineQuiet, offline.Kind);
+        Assert.AreEqual(5d, offline.Delay.TotalSeconds);
+        Assert.AreEqual(1, offline.FailureCount);
+        Assert.IsTrue(recovered.ShouldPoll);
+        Assert.AreEqual(CatalogSyncScheduleKind.IdleOnline, recovered.Kind);
+        Assert.AreEqual(30d, recovered.Delay.TotalSeconds);
+        Assert.AreEqual(0, recovered.FailureCount);
     }
 
     [TestMethod]

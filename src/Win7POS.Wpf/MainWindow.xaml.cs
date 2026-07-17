@@ -2153,15 +2153,30 @@ namespace Win7POS.Wpf
         {
             if (_customerDisplayManager == null)
             {
-                _customerDisplayManager = new CustomerDisplayManager(
+                var manager = new CustomerDisplayManager(
                     new WindowsDisplayTopologyProvider(),
                     new CustomerDisplaySettingsRepository(factory),
                     Dispatcher);
-                _customerDisplayManager.WarningRaised += code =>
+                manager.WarningRaised += code =>
                     GetPosViewModel()?.SetStatus(
                         PosLocalization.Current.Text("customerDisplay.error." + (code ?? "actionFailed")),
                         PosNoticeSeverity.Warning);
-                await _customerDisplayManager.InitializeAsync().ConfigureAwait(true);
+                try
+                {
+                    await manager.InitializeAsync().ConfigureAwait(true);
+                    _customerDisplayManager = manager;
+                }
+                catch (Exception ex)
+                {
+                    try { manager.Dispose(); } catch { }
+                    _logger.LogWarning(
+                        "category=customer_display initialization=failed mode=best_effort",
+                        ex);
+                    GetPosViewModel()?.SetStatus(
+                        PosLocalization.Current.Text("customerDisplay.error.actionFailed"),
+                        PosNoticeSeverity.Warning);
+                    return;
+                }
             }
             var posViewModel = GetPosViewModel();
             posViewModel?.SetCustomerDisplayShopName(ShellTitle);
@@ -2258,6 +2273,15 @@ namespace Win7POS.Wpf
 
             var factory = _onlineSchedulerFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
             await EnsureCustomerDisplayManagerAsync(factory).ConfigureAwait(true);
+            if (_customerDisplayManager == null)
+            {
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(this),
+                    PosLocalization.Current.Text("customerDisplay.settings.title"),
+                    PosLocalization.Current.Text("customerDisplay.error.actionFailed"));
+                PosViewControl?.RestoreScannerFocus();
+                return;
+            }
             var topology = new WindowsDisplayTopologyProvider();
             var vm = new CustomerDisplaySettingsViewModel(
                 _customerDisplayManager.Settings,
@@ -2271,6 +2295,7 @@ namespace Win7POS.Wpf
             {
                 Owner = DialogOwnerHelper.GetSafeOwner(this)
             };
+            WindowSizingHelper.CapMaxHeightToOwner(dialog);
 
             if (dialog.ShowDialog() == true && dialog.Result != null)
             {

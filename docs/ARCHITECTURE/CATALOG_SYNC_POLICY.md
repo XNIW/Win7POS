@@ -113,11 +113,13 @@ The adaptive schedule uses:
 - immediate resume catch-up after 5 seconds;
 - idle success polling with randomized 24-36 second spacing;
 - retry delays of 5, 15, 30, 60, 120 and 300 seconds with ±20% jitter;
+- endpoint-offline failures retain quiet bounded retry polling even while the Windows NIC remains up;
 - reset of the failure backoff after success;
 - polling stop after authentication denial.
 
 Each coordinated run preserves the established operation order: heartbeat, sales
-outbox, catalog-import outbox, then catalog pull. No periodic path schedules full.
+outbox, catalog-import outbox, then catalog pull. A healthy periodic trigger does
+not schedule full; independently persisted repair evidence can still require full.
 After normal POS opening the scheduler remains active even when start-of-day has
 already completed. Ordinary pending, retry and in-progress sales never block the
 register; the 25-row sales batches continue on scheduled runs until the measured

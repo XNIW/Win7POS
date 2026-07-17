@@ -40,6 +40,7 @@ $required = @(
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs",
     "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs",
     "src/Win7POS.Data/Online/CatalogSyncSchedulerPolicy.cs",
+    "tests/Win7POS.Core.Tests/Online/SyncSchedulerPolicyTests.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs",
     "docs/ARCHITECTURE/CATALOG_SYNC_POLICY.md"
 )
@@ -61,6 +62,7 @@ $service = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs"
 $schedulerPolicy = Read-Text "src/Win7POS.Data/Online/CatalogSyncSchedulerPolicy.cs"
+$schedulerTests = Read-Text "tests/Win7POS.Core.Tests/Online/SyncSchedulerPolicyTests.cs"
 $salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $catalogPolicyDoc = Read-Text "docs/ARCHITECTURE/CATALOG_SYNC_POLICY.md"
 
@@ -242,6 +244,14 @@ if ($schedulerPolicy -notmatch "idleSeconds\s*=\s*24d\s*\+\s*\(12d\s*\*\s*bounde
     Fail "idle polling code, deterministic test and documentation must agree on 24-36 seconds"
 } else {
     Pass "idle polling code, test and documentation agree on 24-36 seconds"
+}
+
+if ($schedulerPolicy -notmatch "result\.Offline" -or
+    $schedulerPolicy -notmatch "CatalogSyncScheduleKind\.OfflineQuiet" -or
+    $schedulerTests -notmatch "ServerSideRecoveryWithoutNicTransition_ResumesAndResetsBackoff") {
+    Fail "endpoint-offline polling must retry without requiring a NIC state transition"
+} else {
+    Pass "endpoint-offline polling recovers without a NIC state transition"
 }
 
 if ($drainTests -notmatch "HealthyPeriodicPolling_NeverSelectsFullCatalog" -or
