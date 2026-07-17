@@ -9,6 +9,7 @@ using Microsoft.Data.Sqlite;
 using Win7POS.Core;
 using Win7POS.Core.Online;
 using Win7POS.Core.Security;
+using Win7POS.Data.Migrations;
 using Win7POS.Data.Online;
 
 namespace Win7POS.Data
@@ -21,35 +22,59 @@ namespace Win7POS.Data
         {
             SQLitePCL.Batteries_V2.Init();
 
-            Directory.CreateDirectory(Path.GetDirectoryName(opt.DbPath));
-
+            var directory = Path.GetDirectoryName(opt.DbPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
             var factory = new SqliteConnectionFactory(opt);
-            using var conn = factory.Open();
-            using var tx = conn.BeginTransaction();
-
             LogMigrationInfo("migration start");
             try
             {
-                CreateBaseTables(conn, tx);
-                EnsureMigrations(conn, tx);
-                CreateDependentTables(conn, tx);
-                BackfillLegacyOutboxBindings(conn, tx);
-                EnsureIndexes(conn, tx);
-                SeedSecurity(conn, tx);
-                tx.Commit();
+                SqliteConnectionFactory.RunExclusiveMaintenanceAsync(() =>
+                {
+                    var result = new SchemaMigrationRunner(
+                        factory,
+                        SchemaMigrationRegistry.All,
+                        new SchemaMigrationRunnerOptions { Log = LogMigrationInfo })
+                        .Run();
+
+                    // Outbox rows and system-role grants remain mutable after a
+                    // migration has been recorded. Preserve the pre-PR-B
+                    // idempotent safety reconciliation on later no-op startups;
+                    // the migration runner itself never reapplies a migration.
+                    if (result.WasNoOp)
+                        ReconcileMutableInvariants(factory);
+
+                    return System.Threading.Tasks.Task.CompletedTask;
+                }).GetAwaiter().GetResult();
                 LogMigrationInfo("migration done");
             }
             catch (Exception ex)
             {
-                try { tx.Rollback(); } catch { }
                 LogMigrationFailure(ex);
                 throw;
             }
         }
 
-        private static void CreateBaseTables(SqliteConnection conn, SqliteTransaction tx)
+        private static void ReconcileMutableInvariants(SqliteConnectionFactory factory)
         {
-            conn.Execute(@"
+            using (var connection = factory.Open())
+            using (var transaction = connection.BeginTransaction())
+            {
+                try
+                {
+                    BackfillLegacyOutboxBindings(connection, transaction);
+                    SeedSecurity(connection, transaction);
+                    transaction.Commit();
+                }
+                catch
+                {
+                    try { transaction.Rollback(); } catch { }
+                    throw;
+                }
+            }
+        }
+
+        internal static string CoreSchemaSql => @"
 CREATE TABLE IF NOT EXISTS products (
   id        INTEGER PRIMARY KEY AUTOINCREMENT,
   barcode   TEXT NOT NULL UNIQUE,
@@ -208,53 +233,203 @@ CREATE TABLE IF NOT EXISTS security_events (
   event_type TEXT NOT NULL,
   details   TEXT NOT NULL
 );
-", transaction: tx);
+";
+
+        // Structural fingerprint for the oldest supported ledgerless schema.
+        // Later additive columns are intentionally excluded because migration 0002
+        // owns them; types, nullability, defaults, PK ordinals and UNIQUE keys in
+        // this prefix are still compared exactly before any migration is ledgered.
+        internal static string CoreSchemaFingerprintSql => @"
+CREATE TABLE products (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  barcode   TEXT NOT NULL UNIQUE,
+  name      TEXT NOT NULL,
+  unitPrice INTEGER NOT NULL
+);
+
+CREATE TABLE sales (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  code      TEXT NOT NULL UNIQUE,
+  createdAt INTEGER NOT NULL,
+  total     INTEGER NOT NULL,
+  paidCash  INTEGER NOT NULL,
+  paidCard  INTEGER NOT NULL,
+  change    INTEGER NOT NULL
+);
+
+CREATE TABLE sale_lines (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  saleId    INTEGER NOT NULL,
+  productId INTEGER,
+  barcode   TEXT NOT NULL,
+  name      TEXT NOT NULL,
+  quantity  INTEGER NOT NULL,
+  unitPrice INTEGER NOT NULL,
+  lineTotal INTEGER NOT NULL,
+  FOREIGN KEY(saleId) REFERENCES sales(id) ON DELETE CASCADE
+);
+
+CREATE TABLE app_settings (
+  key   TEXT PRIMARY KEY NOT NULL,
+  value TEXT NOT NULL
+);
+
+CREATE TABLE audit_log (
+  id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts      INTEGER NOT NULL,
+  action  TEXT NOT NULL,
+  details TEXT NOT NULL
+);
+
+CREATE TABLE suppliers (
+  id   INTEGER PRIMARY KEY,
+  name TEXT NOT NULL
+);
+
+CREATE TABLE categories (
+  id   INTEGER PRIMARY KEY,
+  name TEXT NOT NULL
+);
+
+CREATE TABLE product_meta (
+  barcode        TEXT PRIMARY KEY,
+  article_code   TEXT NULL,
+  name2          TEXT NULL,
+  purchase_price INTEGER NOT NULL DEFAULT 0,
+  purchase_old   INTEGER NOT NULL DEFAULT 0,
+  retail_old     INTEGER NOT NULL DEFAULT 0,
+  supplier_id    INTEGER NULL,
+  supplier_name  TEXT NULL,
+  category_id    INTEGER NULL,
+  category_name  TEXT NULL,
+  stock_qty      INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE product_price_history (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  barcode   TEXT NOT NULL,
+  timestamp TEXT NOT NULL,
+  type      TEXT NOT NULL,
+  new_price INTEGER NOT NULL
+);
+
+CREATE TABLE held_carts (
+  holdId      TEXT PRIMARY KEY NOT NULL,
+  createdAtMs INTEGER NOT NULL,
+  totalMinor  INTEGER NOT NULL
+);
+
+CREATE TABLE held_cart_lines (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  holdId    TEXT NOT NULL,
+  barcode   TEXT NOT NULL,
+  name      TEXT NOT NULL,
+  unitPrice INTEGER NOT NULL,
+  qty       INTEGER NOT NULL,
+  FOREIGN KEY(holdId) REFERENCES held_carts(holdId) ON DELETE CASCADE
+);
+
+CREATE TABLE roles (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  code      TEXT NOT NULL UNIQUE,
+  name      TEXT NOT NULL,
+  is_system INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE users (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  username     TEXT NOT NULL UNIQUE,
+  display_name TEXT NOT NULL,
+  pin_hash     TEXT NOT NULL,
+  pin_salt     TEXT NOT NULL,
+  role_id      INTEGER NOT NULL,
+  is_active    INTEGER NOT NULL DEFAULT 1,
+  created_at   INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL,
+  FOREIGN KEY(role_id) REFERENCES roles(id)
+);
+
+CREATE TABLE role_permissions (
+  role_id         INTEGER NOT NULL,
+  permission_code TEXT NOT NULL,
+  PRIMARY KEY(role_id, permission_code),
+  FOREIGN KEY(role_id) REFERENCES roles(id) ON DELETE CASCADE
+);
+
+CREATE TABLE security_events (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  ts         INTEGER NOT NULL,
+  user_id    INTEGER NULL,
+  event_type TEXT NOT NULL,
+  details    TEXT NOT NULL
+);
+";
+
+        internal static void CreateBaseTables(SqliteConnection conn, SqliteTransaction tx)
+        {
+            conn.Execute(CoreSchemaSql, transaction: tx);
         }
 
-        private static void EnsureMigrations(SqliteConnection conn, SqliteTransaction tx)
+        internal static SchemaColumnDefinition[] SupportedLegacyColumns { get; } = new[]
         {
-            EnsureColumn(conn, tx, "users", "require_pin_change", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "users", "max_discount_percent", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "users", "failed_attempts", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "users", "lockout_until", "INTEGER NULL");
-            EnsureColumn(conn, tx, "users", "remote_staff_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "users", "remote_staff_code", "TEXT NULL");
-            EnsureColumn(conn, tx, "users", "remote_shop_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "users", "remote_shop_code", "TEXT NULL");
-            EnsureColumn(conn, tx, "users", "remote_role_key", "TEXT NULL");
-            EnsureColumn(conn, tx, "users", "remote_credential_version", "INTEGER NULL");
-            EnsureColumn(conn, tx, "users", "remote_synced_at", "INTEGER NULL");
-            EnsureColumn(conn, tx, "sales", "kind", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "sales", "related_sale_id", "INTEGER NULL");
-            EnsureColumn(conn, tx, "sales", "voided_by_sale_id", "INTEGER NULL");
-            EnsureColumn(conn, tx, "sales", "voided_at", "INTEGER NULL");
-            EnsureColumn(conn, tx, "sales", "reason", "TEXT NULL");
-            EnsureColumn(conn, tx, "sale_lines", "related_original_line_id", "INTEGER NULL");
-            EnsureColumn(conn, tx, "sales", "operator_id", "INTEGER NULL");
-            EnsureColumn(conn, tx, "sales", "pdf_printed", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "sales", "client_sale_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "sales", "sync_status", "TEXT NOT NULL DEFAULT 'pending'");
-            EnsureColumn(conn, tx, "products", "remote_product_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "products", "remote_deleted_at", "TEXT NULL");
-            EnsureColumn(conn, tx, "products", "is_active", "INTEGER NOT NULL DEFAULT 1");
-            EnsureColumn(conn, tx, "categories", "remote_category_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "categories", "remote_updated_at", "TEXT NULL");
-            EnsureColumn(conn, tx, "categories", "remote_deleted_at", "TEXT NULL");
-            EnsureColumn(conn, tx, "categories", "is_active", "INTEGER NOT NULL DEFAULT 1");
-            EnsureColumn(conn, tx, "suppliers", "remote_supplier_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "suppliers", "remote_updated_at", "TEXT NULL");
-            EnsureColumn(conn, tx, "suppliers", "remote_deleted_at", "TEXT NULL");
-            EnsureColumn(conn, tx, "suppliers", "is_active", "INTEGER NOT NULL DEFAULT 1");
-            EnsureColumn(conn, tx, "product_price_history", "old_price", "INTEGER NULL");
-            EnsureColumn(conn, tx, "product_price_history", "source", "TEXT NULL");
-            EnsureColumn(conn, tx, "product_price_history", "remote_price_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "product_price_history", "catalog_import_client_item_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "product_price_history", "catalog_import_idempotency_key", "TEXT NULL");
+            Column("users", "require_pin_change", "INTEGER", true, "0", "INTEGER NOT NULL DEFAULT 0"),
+            Column("users", "max_discount_percent", "INTEGER", true, "0", "INTEGER NOT NULL DEFAULT 0"),
+            Column("users", "last_login_at", "INTEGER", false, "", "INTEGER NULL"),
+            Column("users", "failed_attempts", "INTEGER", true, "0", "INTEGER NOT NULL DEFAULT 0"),
+            Column("users", "lockout_until", "INTEGER", false, "", "INTEGER NULL"),
+            Column("users", "remote_staff_id", "TEXT", false, "", "TEXT NULL"),
+            Column("users", "remote_staff_code", "TEXT", false, "", "TEXT NULL"),
+            Column("users", "remote_shop_id", "TEXT", false, "", "TEXT NULL"),
+            Column("users", "remote_shop_code", "TEXT", false, "", "TEXT NULL"),
+            Column("users", "remote_role_key", "TEXT", false, "", "TEXT NULL"),
+            Column("users", "remote_credential_version", "INTEGER", false, "", "INTEGER NULL"),
+            Column("users", "remote_synced_at", "INTEGER", false, "", "INTEGER NULL"),
+            Column("sales", "kind", "INTEGER", true, "0", "INTEGER NOT NULL DEFAULT 0"),
+            Column("sales", "related_sale_id", "INTEGER", false, "", "INTEGER NULL"),
+            Column("sales", "voided_by_sale_id", "INTEGER", false, "", "INTEGER NULL"),
+            Column("sales", "voided_at", "INTEGER", false, "", "INTEGER NULL"),
+            Column("sales", "reason", "TEXT", false, "", "TEXT NULL"),
+            Column("sale_lines", "related_original_line_id", "INTEGER", false, "", "INTEGER NULL"),
+            Column("sales", "operator_id", "INTEGER", false, "", "INTEGER NULL"),
+            Column("sales", "pdf_printed", "INTEGER", true, "0", "INTEGER NOT NULL DEFAULT 0"),
+            Column("sales", "client_sale_id", "TEXT", false, "", "TEXT NULL"),
+            Column("sales", "sync_status", "TEXT", true, "'pending'", "TEXT NOT NULL DEFAULT 'pending'"),
+            Column("products", "remote_product_id", "TEXT", false, "", "TEXT NULL"),
+            Column("products", "remote_deleted_at", "TEXT", false, "", "TEXT NULL"),
+            Column("products", "is_active", "INTEGER", true, "1", "INTEGER NOT NULL DEFAULT 1"),
+            Column("categories", "remote_category_id", "TEXT", false, "", "TEXT NULL"),
+            Column("categories", "remote_updated_at", "TEXT", false, "", "TEXT NULL"),
+            Column("categories", "remote_deleted_at", "TEXT", false, "", "TEXT NULL"),
+            Column("categories", "is_active", "INTEGER", true, "1", "INTEGER NOT NULL DEFAULT 1"),
+            Column("suppliers", "remote_supplier_id", "TEXT", false, "", "TEXT NULL"),
+            Column("suppliers", "remote_updated_at", "TEXT", false, "", "TEXT NULL"),
+            Column("suppliers", "remote_deleted_at", "TEXT", false, "", "TEXT NULL"),
+            Column("suppliers", "is_active", "INTEGER", true, "1", "INTEGER NOT NULL DEFAULT 1"),
+            Column("product_price_history", "old_price", "INTEGER", false, "", "INTEGER NULL"),
+            Column("product_price_history", "source", "TEXT", false, "", "TEXT NULL"),
+            Column("product_price_history", "remote_price_id", "TEXT", false, "", "TEXT NULL"),
+            Column("product_price_history", "catalog_import_client_item_id", "TEXT", false, "", "TEXT NULL"),
+            Column("product_price_history", "catalog_import_idempotency_key", "TEXT", false, "", "TEXT NULL")
+        };
+
+        internal static string SupportedLegacyColumnMaterial => string.Join(
+            "\n",
+            SupportedLegacyColumns.Select(item => item.ToCanonicalMaterial()));
+
+        internal static void EnsureMigrations(SqliteConnection conn, SqliteTransaction tx)
+        {
+            foreach (var column in SupportedLegacyColumns)
+            {
+                EnsureColumn(
+                    conn,
+                    tx,
+                    column.TableName,
+                    column.ColumnName,
+                    column.AlterDefinition);
+            }
         }
 
-        private static void CreateDependentTables(SqliteConnection conn, SqliteTransaction tx)
-        {
-            conn.Execute(@"
+        internal static string DependentSchemaSql => @"
 CREATE TABLE IF NOT EXISTS local_stock_movements (
   id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
   movement_key TEXT NOT NULL UNIQUE,
@@ -356,69 +531,70 @@ CREATE TABLE IF NOT EXISTS remote_catalog_price_evidence_quarantine (
   quarantined_at                  TEXT NOT NULL,
   UNIQUE(evidence_kind, evidence_row_id, remote_price_id)
 );
-", transaction: tx);
+";
 
-            EnsureColumn(conn, tx, "local_stock_movements", "movement_key", "TEXT NULL");
-            EnsureColumn(conn, tx, "local_stock_movements", "sale_id", "INTEGER NULL");
-            EnsureColumn(conn, tx, "local_stock_movements", "sale_line_id", "INTEGER NULL");
-            EnsureColumn(conn, tx, "local_stock_movements", "barcode", "TEXT NULL");
-            EnsureColumn(conn, tx, "local_stock_movements", "quantity_delta", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "local_stock_movements", "movement_kind", "TEXT NULL");
-            EnsureColumn(conn, tx, "local_stock_movements", "created_at", "INTEGER NOT NULL DEFAULT 0");
+        internal static SchemaColumnDefinition[] DependentLegacyColumns { get; } = new[]
+        {
+            Column("local_stock_movements", "movement_key", "TEXT", true, "", "TEXT NULL"),
+            Column("local_stock_movements", "sale_id", "INTEGER", true, "", "INTEGER NULL"),
+            new SchemaColumnDefinition("local_stock_movements", "sale_line_id", "INTEGER NULL"),
+            Column("local_stock_movements", "barcode", "TEXT", true, "", "TEXT NULL"),
+            Column("local_stock_movements", "quantity_delta", "INTEGER", true, "", "INTEGER NOT NULL DEFAULT 0"),
+            Column("local_stock_movements", "movement_kind", "TEXT", true, "", "TEXT NULL"),
+            Column("local_stock_movements", "created_at", "INTEGER", true, "", "INTEGER NOT NULL DEFAULT 0"),
+            Column("sales_sync_outbox", "sale_id", "INTEGER", true, "", "INTEGER NULL"),
+            Column("sales_sync_outbox", "client_sale_id", "TEXT", true, "", "TEXT NULL"),
+            new SchemaColumnDefinition("sales_sync_outbox", "client_batch_id", "TEXT NULL"),
+            Column("sales_sync_outbox", "idempotency_key", "TEXT", true, "", "TEXT NULL"),
+            new SchemaColumnDefinition("sales_sync_outbox", "schema_version", "TEXT NOT NULL DEFAULT 'pos-sales-ledger-v2'"),
+            new SchemaColumnDefinition("sales_sync_outbox", "operation_type", "TEXT NOT NULL DEFAULT 'sale'"),
+            new SchemaColumnDefinition("sales_sync_outbox", "origin_shop_id", "TEXT NULL"),
+            new SchemaColumnDefinition("sales_sync_outbox", "origin_shop_code", "TEXT NULL"),
+            new SchemaColumnDefinition("sales_sync_outbox", "payload_json", "TEXT NULL"),
+            new SchemaColumnDefinition("sales_sync_outbox", "payload_hash", "TEXT NULL"),
+            new SchemaColumnDefinition("sales_sync_outbox", "status", "TEXT NOT NULL DEFAULT 'pending'"),
+            new SchemaColumnDefinition("sales_sync_outbox", "attempt_count", "INTEGER NOT NULL DEFAULT 0"),
+            new SchemaColumnDefinition("sales_sync_outbox", "next_retry_at", "INTEGER NOT NULL DEFAULT 0"),
+            new SchemaColumnDefinition("sales_sync_outbox", "last_attempt_at", "INTEGER NULL"),
+            new SchemaColumnDefinition("sales_sync_outbox", "last_error_code", "TEXT NULL"),
+            new SchemaColumnDefinition("sales_sync_outbox", "last_error_at", "INTEGER NULL"),
+            new SchemaColumnDefinition("sales_sync_outbox", "server_batch_id", "TEXT NULL"),
+            new SchemaColumnDefinition("sales_sync_outbox", "server_sale_id", "TEXT NULL"),
+            Column("sales_sync_outbox", "created_at", "INTEGER", true, "", "INTEGER NOT NULL DEFAULT 0"),
+            Column("sales_sync_outbox", "updated_at", "INTEGER", true, "", "INTEGER NOT NULL DEFAULT 0"),
+            Column("catalog_import_outbox", "client_import_id", "TEXT", true, "", "TEXT NOT NULL DEFAULT ''"),
+            Column("catalog_import_outbox", "idempotency_key", "TEXT", true, "", "TEXT NOT NULL DEFAULT ''"),
+            new SchemaColumnDefinition("catalog_import_outbox", "schema_version", "TEXT NOT NULL DEFAULT 'pos-catalog-import-v1'"),
+            new SchemaColumnDefinition("catalog_import_outbox", "operation_type", "TEXT NOT NULL DEFAULT 'catalog_import'"),
+            new SchemaColumnDefinition("catalog_import_outbox", "origin_shop_id", "TEXT NULL"),
+            new SchemaColumnDefinition("catalog_import_outbox", "origin_shop_code", "TEXT NULL"),
+            new SchemaColumnDefinition("catalog_import_outbox", "source", "TEXT NOT NULL DEFAULT 'supplier_excel'"),
+            Column("catalog_import_outbox", "payload_json", "TEXT", true, "", "TEXT NOT NULL DEFAULT ''"),
+            Column("catalog_import_outbox", "payload_hash", "TEXT", true, "", "TEXT NOT NULL DEFAULT ''"),
+            new SchemaColumnDefinition("catalog_import_outbox", "status", "TEXT NOT NULL DEFAULT 'pending'"),
+            new SchemaColumnDefinition("catalog_import_outbox", "attempt_count", "INTEGER NOT NULL DEFAULT 0"),
+            new SchemaColumnDefinition("catalog_import_outbox", "next_retry_at", "INTEGER NOT NULL DEFAULT 0"),
+            new SchemaColumnDefinition("catalog_import_outbox", "last_attempt_at", "INTEGER NULL"),
+            new SchemaColumnDefinition("catalog_import_outbox", "last_error_code", "TEXT NULL"),
+            new SchemaColumnDefinition("catalog_import_outbox", "last_error_at", "INTEGER NULL"),
+            new SchemaColumnDefinition("catalog_import_outbox", "server_import_id", "TEXT NULL"),
+            new SchemaColumnDefinition("catalog_import_outbox", "server_request_id", "TEXT NULL"),
+            Column("catalog_import_outbox", "created_at", "INTEGER", true, "", "INTEGER NOT NULL DEFAULT 0"),
+            Column("catalog_import_outbox", "updated_at", "INTEGER", true, "", "INTEGER NOT NULL DEFAULT 0"),
+            new SchemaColumnDefinition("remote_catalog_pending_prices", "remote_price_id", "TEXT NULL"),
+            Column("remote_catalog_pending_prices", "remote_product_id", "TEXT", true, "", "TEXT NOT NULL DEFAULT ''"),
+            Column("remote_catalog_pending_prices", "type", "TEXT", true, "", "TEXT NOT NULL DEFAULT ''"),
+            Column("remote_catalog_pending_prices", "price", "INTEGER", true, "", "INTEGER NOT NULL DEFAULT 0"),
+            Column("remote_catalog_pending_prices", "effective_at", "TEXT", true, "", "TEXT NOT NULL DEFAULT ''"),
+            new SchemaColumnDefinition("remote_catalog_pending_prices", "source", "TEXT NULL"),
+            Column("remote_catalog_pending_prices", "created_at", "TEXT", true, "", "TEXT NOT NULL DEFAULT ''")
+        };
 
-            EnsureColumn(conn, tx, "sales_sync_outbox", "sale_id", "INTEGER NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "client_sale_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "client_batch_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "idempotency_key", "TEXT NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "schema_version", "TEXT NOT NULL DEFAULT 'pos-sales-ledger-v2'");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "operation_type", "TEXT NOT NULL DEFAULT 'sale'");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "origin_shop_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "origin_shop_code", "TEXT NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "payload_json", "TEXT NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "payload_hash", "TEXT NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "status", "TEXT NOT NULL DEFAULT 'pending'");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "attempt_count", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "next_retry_at", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "last_attempt_at", "INTEGER NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "last_error_code", "TEXT NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "last_error_at", "INTEGER NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "server_batch_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "server_sale_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "created_at", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "sales_sync_outbox", "updated_at", "INTEGER NOT NULL DEFAULT 0");
+        internal static string DependentLegacyColumnMaterial => string.Join(
+            "\n",
+            DependentLegacyColumns.Select(item => item.ToCanonicalMaterial()));
 
-            EnsureColumn(conn, tx, "catalog_import_outbox", "client_import_id", "TEXT NOT NULL DEFAULT ''");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "idempotency_key", "TEXT NOT NULL DEFAULT ''");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "schema_version", "TEXT NOT NULL DEFAULT 'pos-catalog-import-v1'");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "operation_type", "TEXT NOT NULL DEFAULT 'catalog_import'");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "origin_shop_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "origin_shop_code", "TEXT NULL");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "source", "TEXT NOT NULL DEFAULT 'supplier_excel'");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "payload_json", "TEXT NOT NULL DEFAULT ''");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "payload_hash", "TEXT NOT NULL DEFAULT ''");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "status", "TEXT NOT NULL DEFAULT 'pending'");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "attempt_count", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "next_retry_at", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "last_attempt_at", "INTEGER NULL");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "last_error_code", "TEXT NULL");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "last_error_at", "INTEGER NULL");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "server_import_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "server_request_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "created_at", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "catalog_import_outbox", "updated_at", "INTEGER NOT NULL DEFAULT 0");
-
-            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "remote_price_id", "TEXT NULL");
-            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "remote_product_id", "TEXT NOT NULL DEFAULT ''");
-            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "type", "TEXT NOT NULL DEFAULT ''");
-            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "price", "INTEGER NOT NULL DEFAULT 0");
-            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "effective_at", "TEXT NOT NULL DEFAULT ''");
-            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "source", "TEXT NULL");
-            EnsureColumn(conn, tx, "remote_catalog_pending_prices", "created_at", "TEXT NOT NULL DEFAULT ''");
-
-            // Older pending rows already carry the remote product owner and can be
-            // backfilled conservatively. History-only rows cannot: their barcode may
-            // have been renamed/reused, so they remain unclaimed and fail closed.
-            conn.Execute(@"
+        internal static string RemoteOwnershipBackfillSql => @"
 INSERT OR IGNORE INTO remote_catalog_price_ownership(
   remote_price_id,
   remote_product_id)
@@ -440,14 +616,33 @@ FROM (
     )
 ) evidence
 GROUP BY evidence.remote_price_id
-HAVING COUNT(DISTINCT evidence.remote_product_id) = 1;", transaction: tx);
+HAVING COUNT(DISTINCT evidence.remote_product_id) = 1;";
+
+        internal static void CreateDependentTables(SqliteConnection conn, SqliteTransaction tx)
+        {
+            conn.Execute(DependentSchemaSql, transaction: tx);
+            foreach (var column in DependentLegacyColumns)
+            {
+                EnsureColumn(
+                    conn,
+                    tx,
+                    column.TableName,
+                    column.ColumnName,
+                    column.AlterDefinition);
+            }
+
+            // Older pending rows already carry the remote product owner and can be
+            // backfilled conservatively. History-only rows cannot: their barcode may
+            // have been renamed/reused, so they remain unclaimed and fail closed.
+            conn.Execute(RemoteOwnershipBackfillSql, transaction: tx);
         }
 
-        private static void BackfillLegacyOutboxBindings(SqliteConnection conn, SqliteTransaction tx)
-        {
-            conn.Execute(@"
+        internal const string MigrationSalesSchemaVersion = "pos-sales-ledger-v2";
+        internal const string MigrationCatalogImportSchemaVersion = "pos-catalog-import-v1";
+
+        internal static string OutboxNormalizationSql => @"
 UPDATE sales_sync_outbox
-SET schema_version = @SalesSchemaVersion
+SET schema_version = 'pos-sales-ledger-v2'
 WHERE TRIM(COALESCE(schema_version, '')) = '';
 
 UPDATE sales_sync_outbox
@@ -463,20 +658,86 @@ WHERE TRIM(COALESCE(operation_type, '')) = ''
    );
 
 UPDATE catalog_import_outbox
-SET schema_version = @CatalogImportSchemaVersion
+SET schema_version = 'pos-catalog-import-v1'
 WHERE TRIM(COALESCE(schema_version, '')) = '';
 
 UPDATE catalog_import_outbox
 SET operation_type = 'catalog_import'
-WHERE TRIM(COALESCE(operation_type, '')) = '';",
-                new
-                {
-                    SalesSchemaVersion = PosOnlineContract.SalesSchemaVersion,
-                    CatalogImportSchemaVersion = PosOnlineContract.CatalogImportSchemaVersion
-                },
-                tx);
+WHERE TRIM(COALESCE(operation_type, '')) = '';";
 
+        internal static string OutboxContractMismatchSql => @"
+UPDATE sales_sync_outbox
+SET status = 'failed_blocked',
+    last_error_code = 'legacy_contract_mismatch',
+    last_error_at = @nowMs,
+    updated_at = @nowMs
+WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked')
+  AND NOT (
+    status = 'failed_blocked'
+    AND COALESCE(last_error_code, '') = 'legacy_contract_mismatch')
+  AND (
+    COALESCE(schema_version, '') <> 'pos-sales-ledger-v2'
+    OR COALESCE(operation_type, '') <> CASE COALESCE(
+         (SELECT kind FROM sales WHERE sales.id = sales_sync_outbox.sale_id), 0)
+         WHEN 1 THEN 'refund'
+         WHEN 2 THEN 'void'
+         ELSE 'sale'
+       END
+  );
+
+UPDATE sales
+SET sync_status = 'blocked'
+WHERE id IN (
+  SELECT sale_id
+  FROM sales_sync_outbox
+  WHERE status = 'failed_blocked'
+    AND last_error_code = 'legacy_contract_mismatch'
+);
+
+UPDATE catalog_import_outbox
+SET status = 'failed_blocked',
+    last_error_code = 'legacy_contract_mismatch',
+    last_error_at = @nowMs,
+    updated_at = @nowMs
+WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked')
+  AND NOT (
+    status = 'failed_blocked'
+    AND COALESCE(last_error_code, '') = 'legacy_contract_mismatch')
+  AND (
+    COALESCE(schema_version, '') <> 'pos-catalog-import-v1'
+    OR COALESCE(operation_type, '') <> 'catalog_import'
+  );";
+
+        internal static string CatalogAmbiguousOriginSql => @"
+UPDATE catalog_import_outbox
+SET status = 'failed_blocked',
+    last_error_code = 'legacy_origin_ambiguous',
+    last_error_at = @nowMs,
+    updated_at = @nowMs
+WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked')
+  AND TRIM(COALESCE(origin_shop_code, '')) = ''
+  AND NOT (
+    status = 'failed_blocked'
+    AND COALESCE(last_error_code, '') IN (
+      'legacy_origin_ambiguous',
+      'legacy_contract_mismatch'));
+";
+
+        internal static string OutboxBackfillMaterial =>
+            "sales-schema=" + MigrationSalesSchemaVersion + "\n" +
+            "catalog-schema=" + MigrationCatalogImportSchemaVersion + "\n" +
+            OutboxNormalizationSql + "\n" +
+            OutboxContractMismatchSql + "\n" +
+            CatalogAmbiguousOriginSql + "\n" +
+            "origin-proof=sha256-utf8-exact;single-sale;batch-required;" +
+            "schema-client-idempotency-kind-batch-match;normalized-shop-code;" +
+            "payload-and-hash-immutable";
+
+        internal static void BackfillLegacyOutboxBindings(SqliteConnection conn, SqliteTransaction tx)
+        {
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            conn.Execute(OutboxNormalizationSql, transaction: tx);
+            conn.Execute(OutboxContractMismatchSql, new { nowMs }, tx);
             var legacySales = conn.Query<LegacySalesOutboxRow>(@"
 SELECT
   id AS Id,
@@ -490,7 +751,12 @@ SELECT
   payload_hash AS PayloadHash
 FROM sales_sync_outbox
 WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked')
-  AND TRIM(COALESCE(origin_shop_code, '')) = '';",
+  AND TRIM(COALESCE(origin_shop_code, '')) = ''
+  AND NOT (
+    status = 'failed_blocked'
+    AND COALESCE(last_error_code, '') IN (
+      'legacy_origin_ambiguous',
+      'legacy_contract_mismatch'));",
                     transaction: tx)
                 .ToArray();
 
@@ -526,16 +792,7 @@ WHERE id = @saleId;",
                     tx);
             }
 
-            conn.Execute(@"
-UPDATE catalog_import_outbox
-SET status = 'failed_blocked',
-    last_error_code = 'legacy_origin_ambiguous',
-    last_error_at = @nowMs,
-    updated_at = @nowMs
-WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked')
-  AND TRIM(COALESCE(origin_shop_code, '')) = '';",
-                new { nowMs },
-                tx);
+            conn.Execute(CatalogAmbiguousOriginSql, new { nowMs }, tx);
         }
 
         private static string TryReadLegacySalesOriginShopCode(LegacySalesOutboxRow row)
@@ -597,10 +854,7 @@ WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked')
             public string SchemaVersion { get; set; }
         }
 
-        private static void EnsureIndexes(SqliteConnection conn, SqliteTransaction tx)
-        {
-            LogMigrationInfo("index creation phase");
-            conn.Execute(@"
+        internal static string CanonicalIndexSql => @"
 CREATE INDEX IF NOT EXISTS idx_sale_lines_saleId ON sale_lines(saleId);
 CREATE INDEX IF NOT EXISTS idx_sale_lines_barcode ON sale_lines(barcode);
 CREATE INDEX IF NOT EXISTS idx_sales_createdAt ON sales(createdAt);
@@ -644,23 +898,108 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_suppliers_remote_supplier_id ON suppliers(
 CREATE INDEX IF NOT EXISTS idx_suppliers_active_name ON suppliers(is_active, name);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_remote_staff_id ON users(remote_staff_id) WHERE remote_staff_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_users_remote_shop_staff ON users(remote_shop_code, remote_staff_code);
-", transaction: tx);
+";
+
+        // Frozen whitelist used only while detecting PR-B ledgerless databases.
+        // It is deliberately version-bound: future schema changes must append a
+        // migration and must not broaden an already-published legacy fingerprint.
+        internal static string PrBKnownSchemaSql =>
+            CoreSchemaSql + @"
+ALTER TABLE sales ADD COLUMN operator_id INTEGER NULL;
+ALTER TABLE sales ADD COLUMN pdf_printed INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE sales ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending';
+" + DependentSchemaSql + "\n" + CanonicalIndexSql;
+
+        internal static void EnsureIndexes(SqliteConnection conn, SqliteTransaction tx)
+        {
+            LogMigrationInfo("index creation phase");
+            conn.Execute(CanonicalIndexSql, transaction: tx);
         }
 
-        private static void SeedSecurity(SqliteConnection conn, SqliteTransaction tx)
-        {
-            conn.Execute(@"
+        internal static string SecurityRoleSeedSql => @"
 INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('admin','Admin',1);
 INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('manager','Manager',1);
 INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('supervisor','Supervisore',1);
 INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('cashier','Cassiere',1);
-", transaction: tx);
+";
+
+        internal static void SeedSecurity(SqliteConnection conn, SqliteTransaction tx)
+        {
+            conn.Execute(SecurityRoleSeedSql, transaction: tx);
 
             SeedRolePermissions(conn, tx);
             // Nessun utente admin seedato: il primo admin viene creato dal wizard FirstRunSetupDialog.
         }
 
         private static void SeedRolePermissions(SqliteConnection conn, SqliteTransaction tx)
+        {
+            var permissionSeeds = BuildRolePermissionSeeds();
+            var roleIds = conn.Query<RoleSeedRow>(
+                "SELECT code AS Code, id AS Id, is_system AS IsSystem FROM roles",
+                transaction: tx).ToList();
+            foreach (var role in roleIds)
+            {
+                if (!permissionSeeds.TryGetValue(role.Code, out var permissions))
+                    permissions = Array.Empty<string>();
+                foreach (var permission in permissions)
+                {
+                    conn.Execute(
+                        "INSERT OR IGNORE INTO role_permissions(role_id, permission_code) VALUES(@rid, @code)",
+                        new { rid = role.Id, code = permission },
+                        tx);
+                }
+            }
+        }
+
+        internal static bool IsSecuritySeedSatisfied(
+            SqliteConnection conn,
+            SqliteTransaction tx)
+        {
+            var permissionSeeds = BuildRolePermissionSeeds();
+            var roleIds = conn.Query<RoleSeedRow>(
+                "SELECT code AS Code, id AS Id, is_system AS IsSystem FROM roles",
+                transaction: tx).ToList();
+            foreach (var seed in permissionSeeds)
+            {
+                var role = roleIds.FirstOrDefault(item =>
+                    string.Equals(item.Code, seed.Key, StringComparison.Ordinal));
+                if (role == null || role.IsSystem != 1)
+                    return false;
+
+                foreach (var permission in seed.Value)
+                {
+                    var count = conn.ExecuteScalar<long>(@"
+SELECT COUNT(1)
+FROM role_permissions
+WHERE role_id = @roleId
+  AND permission_code = @permission;",
+                        new { roleId = role.Id, permission },
+                        tx);
+                    if (count != 1)
+                        return false;
+                }
+            }
+
+            return true;
+        }
+
+        internal static string SecuritySeedMaterial
+        {
+            get
+            {
+                var seeds = BuildRolePermissionSeeds();
+                return SecurityRoleSeedSql + "\n" + string.Join(
+                    "\n",
+                    seeds
+                        .OrderBy(item => item.Key, StringComparer.Ordinal)
+                        .Select(item =>
+                            item.Key + "=" + string.Join(
+                                ",",
+                                item.Value.OrderBy(value => value, StringComparer.Ordinal))));
+            }
+        }
+
+        private static System.Collections.Generic.Dictionary<string, string[]> BuildRolePermissionSeeds()
         {
             var allPerms = new[] {
                 PermissionCodes.PosSell, PermissionCodes.PosPay, PermissionCodes.PosSuspendCart, PermissionCodes.PosRecoverCart,
@@ -677,16 +1016,13 @@ INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('cashier','Cassiere',1
             var supervisorPerms = new[] { PermissionCodes.PosSell, PermissionCodes.PosPay, PermissionCodes.PosSuspendCart, PermissionCodes.PosRecoverCart, PermissionCodes.PosDiscount, PermissionCodes.PosRefund, PermissionCodes.PosVoidSale, PermissionCodes.PosReprintReceipt, PermissionCodes.CatalogView, PermissionCodes.RegisterView, PermissionCodes.RegisterViewAll, PermissionCodes.DailyCloseView, PermissionCodes.DailyCloseRun, PermissionCodes.DailyClosePrint, PermissionCodes.SettingsPrinter };
             var managerPerms = new[] { PermissionCodes.PosSell, PermissionCodes.PosPay, PermissionCodes.PosSuspendCart, PermissionCodes.PosRecoverCart, PermissionCodes.PosDiscount, PermissionCodes.PosDiscountOverLimit, PermissionCodes.PosRefund, PermissionCodes.PosVoidSale, PermissionCodes.PosReprintReceipt, PermissionCodes.CatalogView, PermissionCodes.CatalogEdit, PermissionCodes.CatalogPriceEdit, PermissionCodes.RegisterView, PermissionCodes.RegisterViewAll, PermissionCodes.DailyCloseView, PermissionCodes.DailyCloseRun, PermissionCodes.DailyClosePrint, PermissionCodes.SettingsShop, PermissionCodes.SettingsPrinter, PermissionCodes.DbBackup };
             var adminPerms = allPerms;
-
-            var roleIds = conn.Query<RoleSeedRow>("SELECT code AS Code, id AS Id FROM roles", transaction: tx).ToList();
-            foreach (var r in roleIds)
+            return new System.Collections.Generic.Dictionary<string, string[]>(StringComparer.Ordinal)
             {
-                var perms = r.Code == "admin" ? adminPerms : r.Code == "manager" ? managerPerms : r.Code == "supervisor" ? supervisorPerms : r.Code == "cashier" ? cashierPerms : Array.Empty<string>();
-                foreach (var p in perms)
-                {
-                    conn.Execute("INSERT OR IGNORE INTO role_permissions(role_id, permission_code) VALUES(@rid, @code)", new { rid = r.Id, code = p }, tx);
-                }
-            }
+                { "admin", adminPerms },
+                { "manager", managerPerms },
+                { "supervisor", supervisorPerms },
+                { "cashier", cashierPerms }
+            };
         }
 
         private static void EnsureColumn(SqliteConnection conn, SqliteTransaction tx, string table, string column, string ddl)
@@ -696,6 +1032,23 @@ INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('cashier','Cassiere',1
                 return;
             conn.Execute("ALTER TABLE " + table + " ADD COLUMN " + column + " " + ddl + ";", transaction: tx);
             LogMigrationInfo("legacy column added: " + table + "." + column);
+        }
+
+        private static SchemaColumnDefinition Column(
+            string table,
+            string column,
+            string declaredType,
+            bool isNotNull,
+            string defaultValue,
+            string alterDefinition)
+        {
+            return new SchemaColumnDefinition(
+                table,
+                column,
+                declaredType,
+                isNotNull,
+                defaultValue,
+                alterDefinition);
         }
 
         private static void LogMigrationInfo(string message)
@@ -738,8 +1091,8 @@ INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('cashier','Cassiere',1
                 sanitized,
                 @"(?i)(sessionToken|deviceToken|trustedDeviceToken|pin|password|credential)\s*[:=]\s*\S+",
                 "$1=[redacted]");
-            sanitized = Regex.Replace(sanitized, @"[A-Za-z]:\\[^\s|]+", "[path]");
-            sanitized = Regex.Replace(sanitized, @"/(?:Users|private|tmp|var)/[^\s|]+", "[path]");
+            sanitized = Regex.Replace(sanitized, @"[A-Za-z]:\\[^\r\n|]+", "[path]");
+            sanitized = Regex.Replace(sanitized, @"/(?:Users|private|tmp|var)/[^\r\n|]+", "[path]");
             return sanitized;
         }
 
@@ -752,6 +1105,7 @@ INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('cashier','Cassiere',1
         {
             public string Code { get; set; }
             public int Id { get; set; }
+            public int IsSystem { get; set; }
         }
     }
 }
