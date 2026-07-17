@@ -78,6 +78,25 @@ workflow, and the full new/legacy/unavailable DB plus trusted/untrusted/revoked
 matrix is not extracted into deterministic headless tests. This report therefore
 does not claim architecture complete.
 
+## Final automated and release validation
+
+| Evidence | Result |
+| --- | --- |
+| Restore | PASS |
+| Canonical source gates | 29/29 PASS |
+| Architecture, dialog and focused sync/UI gates | PASS |
+| Solution Release build | PASS, 0 warnings, 0 errors |
+| Core/Data tests | 205/205 PASS, 0 skipped |
+| Financial outbox failure injection | PASS |
+| CLI selftest | PASS on isolated temporary DB |
+| WPF and UiSmokeHarness | net48/x86 PASS, 0 warnings, 0 errors |
+| MainWindow maximize-only WPF probe | PASS |
+| Six-surface lifecycle, 20 cycles each | PASS |
+| Release pack completeness | PASS |
+| Win7 runtime release validator | PASS; WPF PE x86 |
+| UiSmokeHarness/QA artifacts excluded | PASS |
+| Installer | PASS; `Win7POS-Setup.exe` generated |
+
 ## Decomposition status
 
 - PR 1 startup coordinator: PARTIAL.
