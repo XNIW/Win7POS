@@ -11,9 +11,11 @@ namespace Win7POS.Data
         private static readonly object MaintenanceSync = new object();
         private static readonly SemaphoreSlim MaintenanceGate = new SemaphoreSlim(1, 1);
         private static readonly AsyncLocal<MaintenanceContext> CurrentMaintenance = new AsyncLocal<MaintenanceContext>();
+        private static readonly TimeSpan DefaultMaintenanceDrainTimeout = TimeSpan.FromSeconds(30);
         private static TaskCompletionSource<bool> _maintenanceReleased = CompletedSignal();
         private static TaskCompletionSource<bool> _activeConnectionsDrained = CompletedSignal();
         private static string _maintenanceOwnerToken = string.Empty;
+        private static bool _maintenanceEntered;
         private static bool _maintenancePending;
         private static int _activeConnections;
 
@@ -80,10 +82,19 @@ namespace Win7POS.Data
             }
         }
 
-        public static async Task RunExclusiveMaintenanceAsync(Func<Task> maintenanceAction)
+        public static Task RunExclusiveMaintenanceAsync(Func<Task> maintenanceAction)
+        {
+            return RunExclusiveMaintenanceAsync(maintenanceAction, DefaultMaintenanceDrainTimeout);
+        }
+
+        public static async Task RunExclusiveMaintenanceAsync(
+            Func<Task> maintenanceAction,
+            TimeSpan drainTimeout)
         {
             if (maintenanceAction == null)
                 throw new ArgumentNullException(nameof(maintenanceAction));
+            if (drainTimeout <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(drainTimeout));
 
             var current = CurrentMaintenance.Value;
             var isReentrant = false;
@@ -123,6 +134,7 @@ namespace Win7POS.Data
             lock (MaintenanceSync)
             {
                 _maintenancePending = true;
+                _maintenanceEntered = false;
                 _maintenanceOwnerToken = context.Token;
                 _maintenanceReleased = PendingSignal();
                 _activeConnectionsDrained = _activeConnections == 0
@@ -133,7 +145,19 @@ namespace Win7POS.Data
 
             try
             {
+                var drainCompleted = await Task.WhenAny(drained, Task.Delay(drainTimeout)).ConfigureAwait(false);
+                if (!ReferenceEquals(drainCompleted, drained) && !drained.IsCompleted)
+                {
+                    throw new TimeoutException(
+                        "Timed out waiting for active SQLite connections to drain before exclusive maintenance.");
+                }
+
                 await drained.ConfigureAwait(false);
+                lock (MaintenanceSync)
+                {
+                    context.Entered = true;
+                    _maintenanceEntered = true;
+                }
                 CurrentMaintenance.Value = context;
                 await maintenanceAction().ConfigureAwait(false);
             }
@@ -158,7 +182,14 @@ namespace Win7POS.Data
                     var current = CurrentMaintenance.Value;
                     var isOwner = current != null &&
                         string.Equals(current.Token, _maintenanceOwnerToken, StringComparison.Ordinal);
-                    if (!_maintenancePending || isOwner)
+                    // A flow that already contributes to the drain may need another
+                    // connection before it can release its current one. Admit opens
+                    // until the active count first reaches zero; that zero boundary
+                    // remains reserved for pending maintenance, so later non-owner
+                    // opens wait until the fence is released.
+                    if (!_maintenancePending ||
+                        isOwner ||
+                        (!_maintenanceEntered && _activeConnections > 0))
                     {
                         _activeConnections++;
                         return new ActiveConnectionLease();
@@ -209,9 +240,10 @@ namespace Win7POS.Data
                 if (!ownsGate || context.Depth > 0)
                     return;
 
-                leakedConnections = _activeConnections != 0;
+                leakedConnections = context.Entered && _activeConnections != 0;
                 CurrentMaintenance.Value = context.Previous;
                 _maintenanceOwnerToken = string.Empty;
+                _maintenanceEntered = false;
                 _maintenancePending = false;
                 _maintenanceReleased.TrySetResult(true);
                 Monitor.PulseAll(MaintenanceSync);
@@ -255,6 +287,7 @@ namespace Win7POS.Data
         private sealed class MaintenanceContext
         {
             public int Depth { get; set; }
+            public bool Entered { get; set; }
             public MaintenanceContext Previous { get; set; }
             public string Token { get; set; } = string.Empty;
         }

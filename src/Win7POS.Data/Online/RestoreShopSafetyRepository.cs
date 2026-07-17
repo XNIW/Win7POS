@@ -62,6 +62,68 @@ SELECT
             }
         }
 
+        public async Task<RestoreSafetyResult> ValidateLivePreSwapAsync(
+            string expectedShopId,
+            string expectedShopCode,
+            long expectedCatalogEpoch)
+        {
+            using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction())
+            {
+                var officialId = await GetAsync(conn, tx, OutboxShopBinding.OfficialShopIdKey).ConfigureAwait(false);
+                var officialCode = await GetAsync(conn, tx, OutboxShopBinding.OfficialShopCodeKey).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
+                    expectedShopId,
+                    expectedShopCode,
+                    officialId,
+                    officialCode)))
+                {
+                    return RestoreSafetyResult.Failure("restore_live_shop_changed");
+                }
+
+                var boundId = await GetAsync(conn, tx, CatalogShopStateRepository.BoundShopIdKey).ConfigureAwait(false);
+                var boundCode = await GetAsync(conn, tx, CatalogShopStateRepository.BoundShopCodeKey).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
+                    officialId,
+                    officialCode,
+                    boundId,
+                    boundCode)))
+                {
+                    return RestoreSafetyResult.Failure("restore_live_catalog_shop_mismatch");
+                }
+
+                var rawEpoch = await GetAsync(conn, tx, CatalogShopStateRepository.TransitionEpochKey).ConfigureAwait(false);
+                if (!long.TryParse(
+                    rawEpoch,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out var liveCatalogEpoch) ||
+                    liveCatalogEpoch != expectedCatalogEpoch)
+                {
+                    return RestoreSafetyResult.Failure("restore_live_catalog_epoch_changed");
+                }
+
+                var unresolvedSales = await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM sales_sync_outbox
+WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
+                    transaction: tx).ConfigureAwait(false);
+                if (unresolvedSales > 0)
+                {
+                    return RestoreSafetyResult.Failure("restore_live_sales_outbox_unresolved");
+                }
+
+                var unresolvedCatalogImports = await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_import_outbox
+WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
+                    transaction: tx).ConfigureAwait(false);
+                return unresolvedCatalogImports == 0
+                    ? RestoreSafetyResult.Success()
+                    : RestoreSafetyResult.Failure("restore_live_catalog_outbox_unresolved");
+            }
+        }
+
         public async Task<RestoreSafetyResult> CompleteReviewAsync()
         {
             using (var conn = _factory.Open())

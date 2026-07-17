@@ -80,6 +80,14 @@ $outboxCheck = Index-OrFail $restoreBody "HasUnresolvedSalesSyncOutboxAsync" "re
 $catalogOutboxCheck = Index-OrFail $restoreBody "_catalogImportOutbox.HasUnresolvedAsync" "restore must check unresolved catalog import outbox"
 $candidateValidation = Index-OrFail $restoreBody "ValidateCandidateAsync" "restore must validate candidate shop binding before installation"
 $exclusiveMaintenance = Index-OrFail $restoreBody "RunExclusiveMaintenanceAsync" "restore must acquire the process-wide connection fence"
+$fencedLiveValidation = Index-OrFail $restoreBody "ValidateLivePreSwapAsync" "restore must revalidate live state after the connection drain"
+$fencedCandidateValidation = $restoreBody.IndexOf(
+    "ValidateCandidateAsync",
+    $candidateValidation + "ValidateCandidateAsync".Length,
+    [System.StringComparison]::Ordinal)
+if ($fencedCandidateValidation -lt 0) {
+    Fail "restore must revalidate candidate binding inside the connection fence"
+}
 $preBackup = Index-OrFail $restoreBody 'CreateDbBackupNoLockAsync("pos_pre_restore_")' "restore must create a verified online pre-restore backup"
 $copyRestore = Index-OrFail $restoreBody "new AtomicRestoreInstaller().InstallAsync" "restore must atomically install the validated copy"
 $ensureCreated = Index-OrFail $restoreBody "DbInitializer.EnsureCreated(_options)" "restore must run migrations after copy"
@@ -89,25 +97,42 @@ $reviewFlag = Index-OrFail $restoreBody "SetBoolAsync(KeyRestoreNeedsSyncReview,
 if ($outboxCheck -gt $candidateValidation -or
     $catalogOutboxCheck -gt $candidateValidation -or
     $candidateValidation -gt $exclusiveMaintenance -or
-    $exclusiveMaintenance -gt $preBackup -or
+    $exclusiveMaintenance -gt $fencedLiveValidation -or
+    $fencedLiveValidation -gt $fencedCandidateValidation -or
+    $fencedCandidateValidation -gt $preBackup -or
     $preBackup -gt $copyRestore -or
     $copyRestore -gt $ensureCreated -or
     $ensureCreated -gt $integrity -or
     $integrity -gt $reviewFlag) {
-    Fail "restore guard order must be outbox/candidate validation -> connection fence -> verified pre-backup -> atomic install -> migrations -> validation -> sync-review flag"
+    Fail "restore guard order must be preliminary validation -> connection fence -> authoritative live/candidate validation -> verified pre-backup -> atomic install -> migrations -> validation -> sync-review flag"
 } else {
     Pass "restore guard order is safe"
 }
 
 if ($connectionFactory -notmatch "RunExclusiveMaintenanceAsync" -or
     $connectionFactory -notmatch "_maintenancePending" -or
+    $connectionFactory -notmatch "_maintenanceEntered" -or
     $connectionFactory -notmatch "_activeConnections" -or
     $connectionFactory -notmatch "RegisterConnection" -or
+    $connectionFactory -notmatch "DefaultMaintenanceDrainTimeout" -or
+    $connectionFactory -notmatch "Timed out waiting for active SQLite connections to drain" -or
     $connectionPolicyTests -notmatch "ExclusiveMaintenance_DrainsActiveConnectionsBlocksNewOpenAndAllowsOwnerReentry" -or
+    $connectionPolicyTests -notmatch "ExclusiveMaintenance_AllowsConnectionNeededToCompleteDrainWithoutDeadlock" -or
+    $connectionPolicyTests -notmatch "ExclusiveMaintenance_DrainTimeoutAbortsBeforeActionAndReleasesFence" -or
     $connectionPolicyTests -notmatch "ExclusiveMaintenance_LeakedOwnerConnectionFailsButReleasesGlobalFence") {
-    Fail "restore must drain active SQLite connections, block new opens, and allow maintenance-owner reentry"
+    Fail "restore must complete or safely time out the connection drain, avoid nested-open deadlock, block opens at the zero boundary, and allow maintenance-owner reentry"
 } else {
     Pass "process-wide connection fence is covered by concurrency tests"
+}
+
+if ($restoreSafety -notmatch "ValidateLivePreSwapAsync" -or
+    $restoreSafety -notmatch "restore_live_sales_outbox_unresolved" -or
+    $restoreSafety -notmatch "restore_live_catalog_outbox_unresolved" -or
+    $restoreSafety -notmatch "restore_live_catalog_epoch_changed" -or
+    $restoreSafetyTests -notmatch "LivePreSwapValidation_RejectsOutboxCommittedAfterPreliminaryCheck") {
+    Fail "restore must close the pre-fence outbox/shop/epoch TOCTOU before backup or live swap"
+} else {
+    Pass "fenced pre-swap validation closes the outbox/shop/epoch TOCTOU"
 }
 
 if ($candidateValidation -gt $exclusiveMaintenance -or

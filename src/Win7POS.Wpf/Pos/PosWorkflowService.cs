@@ -298,6 +298,44 @@ namespace Win7POS.Wpf.Pos
                     var integrityOk = false;
                     await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
                     {
+                        var livePreSwapSafety = await new RestoreShopSafetyRepository(_factory)
+                            .ValidateLivePreSwapAsync(
+                                currentShop.ShopId,
+                                currentShop.ShopCode,
+                                liveCatalogEpoch)
+                            .ConfigureAwait(false);
+                        if (!livePreSwapSafety.IsValid)
+                        {
+                            _logger.LogWarning(
+                                "POS DB restore blocked by fenced pre-swap validation: " +
+                                livePreSwapSafety.Code);
+                            if (string.Equals(
+                                livePreSwapSafety.Code,
+                                "restore_live_sales_outbox_unresolved",
+                                StringComparison.Ordinal))
+                            {
+                                throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedSales"));
+                            }
+
+                            if (string.Equals(
+                                livePreSwapSafety.Code,
+                                "restore_live_catalog_outbox_unresolved",
+                                StringComparison.Ordinal))
+                            {
+                                throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedCatalogImports"));
+                            }
+
+                            throw new InvalidOperationException(livePreSwapSafety.Code);
+                        }
+
+                        var fencedCandidateSafety = await new RestoreShopSafetyRepository(validateFactory)
+                            .ValidateCandidateAsync(currentShop.ShopId, currentShop.ShopCode)
+                            .ConfigureAwait(false);
+                        if (!fencedCandidateSafety.IsValid)
+                        {
+                            throw new InvalidOperationException(fencedCandidateSafety.Code);
+                        }
+
                         preBackupPath = await CreateDbBackupNoLockAsync("pos_pre_restore_").ConfigureAwait(false);
                         await new AtomicRestoreInstaller().InstallAsync(
                             tempRestorePath,

@@ -155,15 +155,13 @@ public sealed class SqliteConnectionPolicyTests
 
             var maintenance = SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
             {
-                await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(() =>
+                await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
                 {
                     using var ownerConnection = factory.Open();
                     AssertConnectionPolicy(ownerConnection);
-                    return Task.CompletedTask;
+                    entered.TrySetResult(true);
+                    await release.Task;
                 });
-
-                entered.TrySetResult(true);
-                await release.Task;
             });
 
             await Task.Delay(100);
@@ -174,7 +172,9 @@ public sealed class SqliteConnectionPolicyTests
 
             var blockedOpen = Task.Run(() => factory.Open());
             await Task.Delay(100);
-            Assert.IsFalse(blockedOpen.IsCompleted, "A non-owner connection opened during exclusive maintenance.");
+            Assert.IsFalse(
+                blockedOpen.IsCompleted,
+                "A non-owner connection opened while the maintenance owner held an active connection.");
 
             release.TrySetResult(true);
             await AwaitWithTimeout(maintenance, "Exclusive maintenance did not complete.");
@@ -185,6 +185,86 @@ public sealed class SqliteConnectionPolicyTests
         }
         finally
         {
+            SqliteConnectionFactory.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExclusiveMaintenance_AllowsConnectionNeededToCompleteDrainWithoutDeadlock()
+    {
+        SQLitePCL.Batteries_V2.Init();
+        var root = CreateTemporaryRoot();
+        var dbPath = Path.Combine(root, "pos.db");
+        try
+        {
+            var options = PosDbOptions.ForPath(dbPath);
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+            var active = factory.Open();
+            var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            var maintenance = SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
+            {
+                entered.TrySetResult(true);
+                await release.Task;
+            });
+
+            Assert.IsFalse(entered.Task.IsCompleted, "Maintenance must wait for the original connection.");
+
+            var neededOpen = Task.Run(() => factory.Open());
+            using (var needed = await AwaitWithTimeout(
+                neededOpen,
+                "A connection needed to finish active work deadlocked behind the pending drain."))
+            {
+                AssertConnectionPolicy(needed);
+            }
+
+            active.Dispose();
+            await AwaitWithTimeout(entered.Task, "Maintenance did not enter after both connections drained.");
+            release.TrySetResult(true);
+            await AwaitWithTimeout(maintenance, "Exclusive maintenance did not complete.");
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExclusiveMaintenance_DrainTimeoutAbortsBeforeActionAndReleasesFence()
+    {
+        SQLitePCL.Batteries_V2.Init();
+        var root = CreateTemporaryRoot();
+        var dbPath = Path.Combine(root, "pos.db");
+        SqliteConnection? active = null;
+        try
+        {
+            var options = PosDbOptions.ForPath(dbPath);
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+            active = factory.Open();
+            var actionInvoked = false;
+
+            var error = await Assert.ThrowsExactlyAsync<TimeoutException>(() =>
+                SqliteConnectionFactory.RunExclusiveMaintenanceAsync(
+                    () =>
+                    {
+                        actionInvoked = true;
+                        return Task.CompletedTask;
+                    },
+                    TimeSpan.FromMilliseconds(100)));
+
+            StringAssert.Contains(error.Message, "active SQLite connections to drain");
+            Assert.IsFalse(actionInvoked, "Timed-out maintenance must abort before its action can swap the database.");
+            using var reopened = factory.Open();
+            AssertConnectionPolicy(reopened);
+        }
+        finally
+        {
+            active?.Dispose();
             SqliteConnectionFactory.ClearAllPools();
             Directory.Delete(root, recursive: true);
         }

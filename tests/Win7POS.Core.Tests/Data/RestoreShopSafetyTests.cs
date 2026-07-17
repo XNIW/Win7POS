@@ -63,6 +63,51 @@ INSERT INTO app_settings(key, value) VALUES('pos.catalog.bound_shop_code', 'SHOP
     }
 
     [TestMethod]
+    public async Task LivePreSwapValidation_RejectsOutboxCommittedAfterPreliminaryCheck()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var binding = await new CatalogShopStateRepository(db.Factory)
+            .EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        var preliminary = await new RestoreShopSafetyRepository(db.Factory)
+            .ValidateLivePreSwapAsync("shop-a", "SHOP-A", binding.Epoch);
+        Assert.IsTrue(preliminary.IsValid);
+
+        var writerFactory = new SqliteConnectionFactory(PosDbOptions.ForPath(db.Factory.DbPath));
+        using (var writer = writerFactory.Open())
+        {
+            await writer.ExecuteAsync(@"
+INSERT INTO sales(client_sale_id, code, createdAt, total, paidCash, paidCard, change, sync_status)
+VALUES('late-restore-sale', 'LATE-RESTORE-SALE', 2, 100, 100, 0, 0, 'pending');
+INSERT INTO sales_sync_outbox(
+  sale_id, client_sale_id, idempotency_key, schema_version, operation_type,
+  origin_shop_id, origin_shop_code, payload_json, payload_hash,
+  status, attempt_count, next_retry_at, created_at, updated_at)
+VALUES(last_insert_rowid(), 'late-restore-sale', 'late-restore-sale:pos-sales-ledger-v2',
+  'pos-sales-ledger-v2', 'sale', 'shop-a', 'SHOP-A', '{}', 'hash',
+  'pending', 0, 0, 2, 2);");
+        }
+
+        RestoreSafetyResult? fencedResult = null;
+        var swapAttempted = false;
+        await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
+        {
+            fencedResult = await new RestoreShopSafetyRepository(db.Factory)
+                .ValidateLivePreSwapAsync("shop-a", "SHOP-A", binding.Epoch);
+            if (fencedResult.IsValid)
+                swapAttempted = true;
+        });
+
+        Assert.IsNotNull(fencedResult);
+        Assert.IsFalse(fencedResult.IsValid);
+        Assert.AreEqual("restore_live_sales_outbox_unresolved", fencedResult.Code);
+        Assert.IsFalse(swapAttempted, "The fenced guard must abort before backup or live swap.");
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM sales_sync_outbox WHERE client_sale_id = 'late-restore-sale';"));
+    }
+
+    [TestMethod]
     public async Task AtomicInstaller_UsesValidatedCopyAfterSourceMutation()
     {
         using var files = RestoreFiles.Create();
