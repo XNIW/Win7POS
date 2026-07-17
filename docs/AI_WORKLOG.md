@@ -450,3 +450,28 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   `OPEN` / `DEFERRED_EXTERNAL_VALIDATION`; staging, Win7 physical,
   dual-monitor, scanner, Xprinter, cash drawer and DPI/language runtime are not
   declared PASS.
+
+## 2026-07-17 - Post-merge PR-A persistence foundation
+
+- Source main verified at `f3e779bd537d62ed0f3ddb5333149e9213e2c13f`; PR `#4`
+  already merged; final main CI `29591597390` and Release Pack `29591597131`
+  both `completed/success` on the exact SHA.
+- External certification remains `0/16`: items 1-8 `BLOCKED_CREDENTIALS`, 9-10
+  `BLOCKED_WIN7`, 11-15 `BLOCKED_HARDWARE`, item 16 `NOT_RUN`; production
+  certification stays `OPEN` and the authoritative backlog is unchanged.
+- Selected only PR-A on branch
+  `codex/pr-a-persistence-foundation-20260717-114614`; implementation commit
+  `188d9cd`; GitHub PR `#5` is open, non-draft and must not be auto-merged.
+- Added verified SQLite online backup, process-wide connection fencing,
+  same-directory `File.Replace`, durable prepared/committed marker recovery,
+  integrity/FK validation and startup recovery. No schema, WAL policy, dependency,
+  payload/hash, catalog or economics change.
+- Review fixed four P1 edge cases: rollback journal cleanup, committed-live
+  validation before rollback disposal, cleanup failure after commit and fence
+  recovery after an owner handle leak. P0/P1 open: `0/0`.
+- Validation: 30/30 canonical gates, 257/257 tests with zero skipped, CLI PASS,
+  solution and WPF net48/x86 0 warnings/errors. Same-host A/B medians changed
+  +3.66% legacy, +4.91% batch and -2.29% full; ratio `38.92x`, exactness
+  `Verified` 3/3 and pending prices 0.
+- Structural status: PR-A `READY_FOR_REVIEW`; next incomplete item is PR-B
+  versioned migrations. No merge was performed.
