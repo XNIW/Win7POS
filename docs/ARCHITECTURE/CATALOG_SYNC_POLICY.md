@@ -32,10 +32,16 @@ Normal triggers resolve only to incremental or resume:
 The full path is allowed only when one of these reasons is present and the caller
 has the corresponding evidence/authority:
 
-- initial bootstrap with no authoritative catalog generation;
-- explicit administrator repair with `DbMaintenance` permission and confirmation;
-- restore recovery after the restore guard marks catalog state unsafe;
-- exactness/integrity mismatch that requires an authoritative repair boundary.
+- `FirstBootstrap`;
+- `MissingShopBinding` or `MissingLegacyCursor` when legacy state cannot be
+  recovered safely;
+- `CursorRejectedOrExpired` or `ServerRequestedReset`;
+- `ShopChanged`;
+- `RestoreRecovery`;
+- `ExactnessRepair` after mismatch or `repair_required` evidence;
+- `AdministratorRepair` with `DbMaintenance` permission and confirmation;
+- `MigrationInvalidatedCursor` when a migration explicitly declares the old
+  cursor incompatible.
 
 The following conditions never select full by themselves:
 

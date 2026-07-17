@@ -20,9 +20,12 @@ The documentation commit cannot include its own final SHA in this file.
 
 ## Delivered behavior
 
-- Pure Core policy selects incremental/resume for every normal trigger and full
-  only for bootstrap, authorized administrator repair, restore recovery or
-  exactness/integrity repair.
+- Pure Core policy selects incremental/resume for every normal trigger. Full is
+  limited to `FirstBootstrap`, unrecoverable `MissingShopBinding`/
+  `MissingLegacyCursor`, `CursorRejectedOrExpired`, `ServerRequestedReset`,
+  `ShopChanged`, `RestoreRecovery`, `ExactnessRepair`, authorized
+  `AdministratorRepair`, or an explicitly incompatible
+  `MigrationInvalidatedCursor`.
 - Full is explicitly forbidden for timeout, offline, auth denial, ordinary retry,
   stale age, periodic/start-of-day/foreground/network triggers, manual sync,
   import ACK and page-budget exhaustion.

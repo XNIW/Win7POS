@@ -336,8 +336,10 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Branch: `feature/win7pos-incremental-sync-ui-v2-20260716-201301` da audit
   `b590335348937ca830c92289c84032523e267497`; `origin/main`
   `5160b7c1574313ac8be47fdf2e139bb715a37e7d` non modificata.
-- Policy Core: incremental/resume per tutti i trigger normali; full limitato a
-  bootstrap, repair amministratore confermato, restore recovery ed exactness repair.
+- Policy Core: incremental/resume per tutti i trigger normali; full limitato alle
+  dieci ragioni evidence-driven del contratto (bootstrap, binding/cursor legacy non
+  recuperabile, cursor/reset server, cambio shop, restore, exactness, repair
+  amministratore o migrazione esplicitamente incompatibile).
 - Safety: CAS sales preflight, guard `Success/Value/Ok`, caller cancellation
   preservata, barriera/epoch/shop/mode/cursor su apply/checkpoint/exactness/restore e
   late response bloccata.
