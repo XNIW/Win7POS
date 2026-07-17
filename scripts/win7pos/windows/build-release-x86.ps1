@@ -543,7 +543,8 @@ try {
 
         $forbiddenPayload = Get-ChildItem -LiteralPath $DistDir -Recurse -File | Where-Object {
             $_.Extension -in @(".pdb", ".cs", ".xaml", ".csproj", ".db", ".sqlite", ".sln", ".slnx") -or
-            $_.Name -match '(?i)(token|secret|production).*(json|config|txt)$'
+            $_.Name -match '(?i)(token|secret|production).*(json|config|txt)$' -or
+            $_.Name -match '(?i)(UiSmokeHarness|qa[-_ ]fixture|screenshots?|customer[-_ ]display.*(?:result|matrix|screenshot)|monitor.*(?:result|fixture|test))'
         }
         if ($forbiddenPayload) {
             throw "Release pack contains forbidden source, database, debug or secret-like files: $($forbiddenPayload.Name -join ', ')"
@@ -552,6 +553,11 @@ try {
 
     if (-not $DryRun) {
         Show-DropSummary
+        $releaseCompletenessChecker = Join-Path $RepoRoot "scripts\check-release-pack-completeness.ps1"
+        & pwsh -NoProfile -File $releaseCompletenessChecker -ReleasePackSource $DistDir
+        if ($LASTEXITCODE -ne 0) {
+            throw "Release completeness validation failed before installer generation."
+        }
     }
 
     if ($BuildInstaller) {

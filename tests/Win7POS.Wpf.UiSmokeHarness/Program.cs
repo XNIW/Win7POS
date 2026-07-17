@@ -18,6 +18,9 @@ using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.Dialogs;
+using Win7POS.Wpf.Pos.CustomerDisplay;
+using Win7POS.Wpf.Infrastructure.Displays;
+using Win7POS.Core.Pos;
 using Win7POS.Wpf.Products;
 
 namespace Win7POS.Wpf.UiSmokeHarness
@@ -105,7 +108,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             shell.WindowState = WindowState.Normal;
             stateChanged.Invoke(shell, new object[] { EventArgs.Empty });
             var afterRestore = shell.WindowState;
-            shell.Close();
+                shell.CloseWithoutUserPrompt();
 
             var passed = initial == WindowState.Maximized &&
                          afterNormal == WindowState.Maximized &&
@@ -252,6 +255,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 try
                 {
                     var languageHandlersBefore = GetLanguageChangedHandlerCount();
+                    var displaySubscriptionsBefore = CustomerDisplayManager.ActiveDisplaySettingsSubscriptions;
                     var samples = new List<LifecycleSample>();
                     var weakWindows = new List<LifecycleWindowReference>();
                     for (var cycle = 1; cycle <= 20; cycle++)
@@ -260,6 +264,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         await OpenThenCloseAsync(CreateDailyReportDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(CreateUserManagementDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(new SettingsHubDialog(), weakWindows).ConfigureAwait(true);
+                        await OpenThenCloseAsync(CreateCustomerDisplaySettingsDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(CreateProductEditDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(CreateSyncCenterDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(new PosStartOfDaySyncDialog(), weakWindows).ConfigureAwait(true);
@@ -271,10 +276,40 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     await OpenThenCloseAsync(CreateDailyReportDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(CreateUserManagementDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(new SettingsHubDialog(), null).ConfigureAwait(true);
+                    await OpenThenCloseAsync(CreateCustomerDisplaySettingsDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(CreateProductEditDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(CreateSyncCenterDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(new PosStartOfDaySyncDialog(), null).ConfigureAwait(true);
 
+                    _status.Text = "Lifecycle customer display windows 0/50";
+                    var displayWindowPass = true;
+                    for (var displayCycle = 0; displayCycle < 50; displayCycle++)
+                    {
+                        _status.Text = "Lifecycle customer display windows " +
+                                       (displayCycle + 1).ToString(CultureInfo.InvariantCulture) + "/50";
+                        displayWindowPass &= await OpenThenCloseCustomerDisplayAsync().ConfigureAwait(true);
+                    }
+
+                    _status.Text = "Lifecycle customer display manager setup";
+                    var displaySettings = CustomerDisplaySettings.CreateDefault(2);
+                    displaySettings.Enabled = false;
+                    var displayRepository = new CustomerDisplaySettingsRepository(
+                        new SqliteConnectionFactory(PosDbOptions.Default()));
+                    await displayRepository.SaveAsync(displaySettings).ConfigureAwait(true);
+                    for (var managerCycle = 0; managerCycle < 50; managerCycle++)
+                    {
+                        _status.Text = "Lifecycle customer display managers " +
+                                       (managerCycle + 1).ToString(CultureInfo.InvariantCulture) + "/50";
+                        using (var manager = new CustomerDisplayManager(
+                            new FakeDisplayTopologyProvider(),
+                            displayRepository,
+                            Dispatcher))
+                        {
+                            await manager.InitializeAsync().ConfigureAwait(true);
+                        }
+                    }
+
+                    _status.Text = "Lifecycle final collection";
                     await Dispatcher.InvokeAsync(
                         () => { },
                         System.Windows.Threading.DispatcherPriority.ApplicationIdle);
@@ -301,13 +336,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         .OfType<Window>()
                         .Count(x => !ReferenceEquals(x, this));
                     var languageHandlersAfter = GetLanguageChangedHandlerCount();
+                    var displaySubscriptionsAfter = CustomerDisplayManager.ActiveDisplaySettingsSubscriptions;
                     var monotonicPrivateBytes = IsStrictlyIncreasing(samples.Select(x => x.PrivateBytes).ToList());
                     var monotonicHandles = IsStrictlyIncreasing(samples.Select(x => (long)x.HandleCount).ToList());
                     var passed = openWindows == 0 && languageHandlersAfter == languageHandlersBefore &&
+                                 displaySubscriptionsAfter == displaySubscriptionsBefore && displayWindowPass &&
                                  !monotonicPrivateBytes && !monotonicHandles;
                     return string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0}: cycles=20; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}",
+                        "{0}: cycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}",
                         passed ? "PASS" : "FAIL",
                         residual,
                         residualTypes,
@@ -321,7 +358,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         samples.First().HandleCount,
                         samples.Last().HandleCount,
                         monotonicPrivateBytes,
-                        monotonicHandles);
+                        monotonicHandles,
+                        displaySubscriptionsBefore,
+                        displaySubscriptionsAfter,
+                        displayWindowPass);
                 }
                 finally
                 {
@@ -378,6 +418,65 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     factory,
                     (_, __, ___) => Task.FromResult<CatalogSyncRunResult>(null),
                     _ => Task.FromResult(false));
+            }
+
+            private static CustomerDisplaySettingsDialog CreateCustomerDisplaySettingsDialog()
+            {
+                var monitors = new FakeDisplayTopologyProvider().GetMonitors();
+                return new CustomerDisplaySettingsDialog(
+                    new CustomerDisplaySettingsViewModel(CustomerDisplaySettings.CreateDefault(2), monitors),
+                    null, null, null, null);
+            }
+
+            private static Task<bool> OpenThenCloseCustomerDisplayAsync()
+            {
+                var monitor = new FakeDisplayTopologyProvider().GetMonitors()[1];
+                var settings = CustomerDisplaySettings.CreateDefault(2);
+                var snapshot = CustomerDisplayProjection.Cart(
+                    new[]
+                    {
+                        new CustomerDisplayProjectionLine
+                        {
+                            StableKey = "qa-line",
+                            Name = "QA item",
+                            Barcode = "QA0001",
+                            Quantity = 2,
+                            UnitPrice = 1000,
+                            LineTotal = 2000,
+                            LineKind = CustomerDisplayLineKind.Item
+                        }
+                    },
+                    2000, 2000, "QA Shop", "qa-line", false, DateTimeOffset.UtcNow);
+                var window = new CustomerDisplayWindow();
+                window.Show();
+                window.UpdateDisplay(snapshot, settings, monitor);
+                var passed = !window.ShowActivated && !window.ShowInTaskbar && !window.Focusable;
+                window.Close();
+                return Task.FromResult(passed);
+            }
+
+            private sealed class FakeDisplayTopologyProvider : IDisplayTopologyProvider
+            {
+                public IReadOnlyList<DisplayMonitorInfo> GetMonitors()
+                {
+                    return new List<DisplayMonitorInfo>
+                    {
+                        new DisplayMonitorInfo
+                        {
+                            DeviceName = "QA-CASHIER", IsPrimary = true,
+                            BoundsLeft = 0, BoundsTop = 0, Width = 1024, Height = 768,
+                            WorkAreaLeft = 0, WorkAreaTop = 0, WorkingWidth = 1024, WorkingHeight = 728,
+                            BitsPerPixel = 32
+                        },
+                        new DisplayMonitorInfo
+                        {
+                            DeviceName = "QA-CUSTOMER", IsPrimary = false,
+                            BoundsLeft = -800, BoundsTop = 0, Width = 800, Height = 600,
+                            WorkAreaLeft = -800, WorkAreaTop = 0, WorkingWidth = 800, WorkingHeight = 600,
+                            BitsPerPixel = 32
+                        }
+                    }.AsReadOnly();
+                }
             }
 
             private static bool IsStrictlyIncreasing(IReadOnlyList<long> values)

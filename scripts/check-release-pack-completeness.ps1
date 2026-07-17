@@ -135,7 +135,7 @@ if (-not $fail) {
     $forbiddenPayload = Get-ChildItem -Path $root -Recurse -File -ErrorAction Stop |
         Where-Object {
             $forbiddenExtensions -contains $_.Extension.ToLowerInvariant() -or
-            $_.Name -match '(?i)(UiSmokeHarness|UI_SURFACE_INVENTORY|UI_RUNTIME_MATRIX|lifecycle-result|shell-window-state|qa[-_ ]fixture|screenshots?)' -or
+            $_.Name -match '(?i)(UiSmokeHarness|UI_SURFACE_INVENTORY|UI_RUNTIME_MATRIX|lifecycle-result|shell-window-state|qa[-_ ]fixture|screenshots?|customer[-_ ]display.*(?:result|matrix|screenshot)|monitor.*(?:result|fixture|test))' -or
             $_.Name -match '(?i)^(pos-admin-web\.config|.*production.*\.(json|config|txt)|.*(?:token|secret).*(?:json|config|txt))$'
         }
     if ($forbiddenPayload) {
