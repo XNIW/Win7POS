@@ -95,6 +95,22 @@ namespace Win7POS.Wpf.Pos.Online
             return outcome.Completed;
         }
 
+        public Task<PosCatalogPullOutcome> TryPullIncrementalCatalogAsync(
+            PosAdminWebOptions options,
+            PosTrustedDeviceSession trustedSession,
+            CancellationToken cancellationToken,
+            IProgress<PosCatalogPullProgress> progress = null)
+        {
+            return TryPullCatalogWithSessionAsync(
+                options,
+                trustedSession,
+                clearStoredStateOnDenied: false,
+                maxPages: MaxBackgroundCatalogPullPages,
+                bootstrapRun: false,
+                cancellationToken,
+                progress);
+        }
+
         public async Task<PosCatalogPullOutcome> TryPullInitialCatalogAsync(
             PosAdminWebOptions options,
             CancellationToken cancellationToken,

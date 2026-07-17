@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -42,7 +43,15 @@ namespace Win7POS.Wpf
         private DispatcherTimer _networkStatusTimer;
         private DispatcherTimer _authorizationLeaseTimer;
         private bool _authorizationLeaseBlockHandled;
-        private bool _backgroundOnlineRefreshQueued;
+        private readonly object _onlineSchedulerGate = new object();
+        private CatalogSyncCoordinator _catalogSyncCoordinator;
+        private CancellationTokenSource _onlineSchedulerCts;
+        private Task _onlineSchedulerTask;
+        private SqliteConnectionFactory _onlineSchedulerFactory;
+        private string _onlineSchedulerShopKey;
+        private string _onlineSchedulerSessionId;
+        private bool? _lastNetworkOnline;
+        private DateTimeOffset _lastForegroundSyncTrigger = DateTimeOffset.MinValue;
         private bool _operatorLoginReached;
         private bool _recoveryMode;
         private SqliteConnectionFactory _languageSettingsFactory;
@@ -89,7 +98,17 @@ namespace Win7POS.Wpf
 
             Loaded += OnLoadedAsync;
             ContentRendered += OnContentRendered;
-            Closed += (_, __) => _authorizationLeaseTimer?.Stop();
+            Activated += OnShellActivated;
+            Closed += (_, __) =>
+            {
+                _authorizationLeaseTimer?.Stop();
+                _syncStatusTimer?.Stop();
+                _networkStatusTimer?.Stop();
+                lock (_onlineSchedulerGate)
+                {
+                    _onlineSchedulerCts?.Cancel();
+                }
+            };
             PreviewKeyDown += OnPreviewKeyDown;
         }
 
@@ -355,37 +374,95 @@ namespace Win7POS.Wpf
                 return;
             }
 
-            if (_backgroundOnlineRefreshQueued)
+            StartAdaptiveOnlineScheduler(factory, CatalogSyncTrigger.StartOfDay);
+        }
+
+        private void StartAdaptiveOnlineScheduler(
+            SqliteConnectionFactory factory,
+            CatalogSyncTrigger initialTrigger)
+        {
+            if (factory == null || App.IsSafeStart || _recoveryMode)
             {
                 return;
             }
 
-            _backgroundOnlineRefreshQueued = true;
-            StartupTrace.Write("online refresh queued");
-            _logger.LogInfo("BackgroundOnlineRefresh queued");
-            Task.Run(async () => await RunBackgroundOnlineRefreshAsync(factory).ConfigureAwait(false));
+            lock (_onlineSchedulerGate)
+            {
+                if (_onlineSchedulerTask != null && !_onlineSchedulerTask.IsCompleted)
+                {
+                    Task.Run(() => TriggerAdaptiveOnlineRefreshAsync(
+                        factory,
+                        initialTrigger,
+                        _onlineSchedulerCts.Token));
+                    return;
+                }
+
+                _onlineSchedulerFactory = factory;
+                _onlineSchedulerCts?.Dispose();
+                _onlineSchedulerCts = new CancellationTokenSource();
+                var token = _onlineSchedulerCts.Token;
+                _onlineSchedulerTask = Task.Run(() => RunAdaptiveOnlineSchedulerAsync(
+                    factory,
+                    initialTrigger,
+                    token));
+            }
         }
 
-        private async Task RunBackgroundOnlineRefreshAsync(SqliteConnectionFactory factory)
+        private async Task RunAdaptiveOnlineSchedulerAsync(
+            SqliteConnectionFactory factory,
+            CatalogSyncTrigger initialTrigger,
+            CancellationToken cancellationToken)
         {
-            StartupTrace.Write("online refresh start");
-            _logger.LogInfo("BackgroundOnlineRefresh start");
-
+            StartupTrace.Write("adaptive online scheduler start");
+            _logger.LogInfo("AdaptiveOnlineScheduler start");
+            var failureCount = 0;
+            var trigger = initialTrigger;
             try
             {
-                await TryRefreshTrustedPosSessionAsync(factory).ConfigureAwait(false);
-                StartupTrace.Write("online refresh done");
-                _logger.LogInfo("BackgroundOnlineRefresh done");
+                while (true)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var result = await TriggerAdaptiveOnlineRefreshAsync(
+                        factory,
+                        trigger,
+                        cancellationToken).ConfigureAwait(false);
+                    var schedule = CatalogSyncSchedulerPolicy.Evaluate(
+                        result,
+                        failureCount,
+                        SchedulerJitterSample());
+                    failureCount = schedule.FailureCount;
+                    QueueSyncStatusRefresh(factory);
+                    if (!schedule.ShouldPoll)
+                    {
+                        return;
+                    }
+
+                    CatalogSyncCoordinator coordinator;
+                    lock (_onlineSchedulerGate)
+                    {
+                        coordinator = _catalogSyncCoordinator;
+                    }
+
+                    if (coordinator == null)
+                    {
+                        return;
+                    }
+
+                    await coordinator.WaitForScheduleAsync(schedule, cancellationToken)
+                        .ConfigureAwait(false);
+                    trigger = result.HasMore
+                        ? CatalogSyncTrigger.PartialResume
+                        : CatalogSyncTrigger.Periodic;
+                }
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                StartupTrace.Write("online refresh timeout");
-                _logger.LogWarning("BackgroundOnlineRefresh timeout");
+                _logger.LogInfo("AdaptiveOnlineScheduler stopped.");
             }
             catch (Exception ex)
             {
-                StartupTrace.Write("online refresh failed", ex);
-                _logger.LogWarning("BackgroundOnlineRefresh not completed.", ex);
+                StartupTrace.Write("adaptive online scheduler failed", ex);
+                _logger.LogWarning("AdaptiveOnlineScheduler not completed.", ex);
             }
             finally
             {
@@ -393,31 +470,152 @@ namespace Win7POS.Wpf
             }
         }
 
-        private async Task TryRefreshTrustedPosSessionAsync(SqliteConnectionFactory factory)
+        private async Task<CatalogSyncRunResult> TriggerAdaptiveOnlineRefreshAsync(
+            SqliteConnectionFactory factory,
+            CatalogSyncTrigger requestedTrigger,
+            CancellationToken cancellationToken,
+            bool administratorRepairAuthorized = false)
         {
+            var store = new PosTrustedDeviceStore();
+            if (!store.TryRead(out var trustedSession))
+            {
+                return new CatalogSyncRunResult(
+                    success: false,
+                    authenticationDenied: true,
+                    code: "trusted_session_missing");
+            }
+
+            var context = await BuildCatalogSyncContextAsync(
+                factory,
+                trustedSession,
+                requestedTrigger,
+                administratorRepairAuthorized).ConfigureAwait(false);
+            CatalogSyncCoordinator coordinator;
+            var shopKey = FirstNonEmpty(trustedSession.ShopId, trustedSession.ShopCode);
+            lock (_onlineSchedulerGate)
+            {
+                if (_catalogSyncCoordinator == null ||
+                    !string.Equals(_onlineSchedulerShopKey, shopKey, StringComparison.OrdinalIgnoreCase) ||
+                    !string.Equals(
+                        _onlineSchedulerSessionId,
+                        trustedSession.PosSessionId,
+                        StringComparison.Ordinal))
+                {
+                    _onlineSchedulerShopKey = shopKey;
+                    _onlineSchedulerSessionId = trustedSession.PosSessionId;
+                    _catalogSyncCoordinator = new CatalogSyncCoordinator(
+                        shopKey,
+                        (request, token) => RunCoordinatedOnlineRefreshAsync(
+                            factory,
+                            request,
+                            token),
+                        new CatalogSyncDiagnosticsRepository(factory));
+                }
+
+                coordinator = _catalogSyncCoordinator;
+            }
+
+            return await coordinator.TriggerAsync(
+                context.Trigger,
+                context.State,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        private static async Task<CatalogSyncContext> BuildCatalogSyncContextAsync(
+            SqliteConnectionFactory factory,
+            PosTrustedDeviceSession trustedSession,
+            CatalogSyncTrigger requestedTrigger,
+            bool administratorRepairAuthorized)
+        {
+            var stateRepository = new CatalogShopStateRepository(factory);
+            var binding = await stateRepository.EnsureAndLoadCursorAsync(
+                trustedSession.ShopId,
+                trustedSession.ShopCode).ConfigureAwait(false);
+            if (!binding.IsValid)
+            {
+                return new CatalogSyncContext(
+                    requestedTrigger,
+                    new CatalogSyncState(
+                        failure: CatalogSyncFailure.DatabaseIntegrityFailed));
+            }
+
+            var settings = new SettingsRepository(factory);
+            var bootstrapCompleted = !string.IsNullOrWhiteSpace(
+                await settings.GetStringAsync(CatalogShopStateRepository.InitialCompletedAtKey)
+                    .ConfigureAwait(false));
+            var restoreRecovery = await settings.GetBoolAsync(
+                RestoreShopSafetyRepository.RestoreNeedsReviewKey).ConfigureAwait(false) == true;
+            var exactness = await stateRepository.LoadExactnessAsync().ConfigureAwait(false);
+            var delta = await stateRepository.LoadDeltaChainAsync(
+                trustedSession.ShopId,
+                trustedSession.ShopCode,
+                binding.Epoch).ConfigureAwait(false);
+            var exactnessRepair = exactness.RepairRequired ||
+                exactness.Status == CatalogCompletenessStatus.Mismatch;
+            var trigger = requestedTrigger;
+            if (restoreRecovery)
+            {
+                trigger = CatalogSyncTrigger.RestoreCompleted;
+            }
+            else if (exactnessRepair)
+            {
+                trigger = CatalogSyncTrigger.ExactnessMismatch;
+            }
+            else if (!bootstrapCompleted)
+            {
+                trigger = CatalogSyncTrigger.FirstBootstrap;
+            }
+            else if (delta.IsValid && delta.HasState)
+            {
+                trigger = CatalogSyncTrigger.PartialResume;
+            }
+
+            return new CatalogSyncContext(
+                trigger,
+                new CatalogSyncState(
+                    persistedCursor: binding.Cursor,
+                    bootstrapCompleted: bootstrapCompleted,
+                    hasShopBinding: true,
+                    legacyCursorMissing: bootstrapCompleted &&
+                        string.IsNullOrWhiteSpace(binding.Cursor) &&
+                        !restoreRecovery &&
+                        !exactnessRepair,
+                    hasPartialCheckpoint: delta.IsValid && delta.HasState,
+                    restoreRecoveryRequired: restoreRecovery,
+                    exactnessRepairRequired: exactnessRepair,
+                    administratorRepairAuthorized: administratorRepairAuthorized,
+                    failure: delta.IsValid
+                        ? CatalogSyncFailure.None
+                        : CatalogSyncFailure.DatabaseIntegrityFailed));
+        }
+
+        private async Task<CatalogSyncRunResult> RunCoordinatedOnlineRefreshAsync(
+            SqliteConnectionFactory factory,
+            CatalogSyncRunRequest request,
+            CancellationToken cancellationToken)
+        {
+            var timer = Stopwatch.StartNew();
             if (!PosAdminWebOptions.TryLoad(out var options, out _))
             {
-                StartupTrace.Write("online refresh skipped: Admin Web config missing");
-                _logger.LogInfo("BackgroundOnlineRefresh skipped: Admin Web config missing");
-                return;
+                return new CatalogSyncRunResult(false, offline: true, code: "admin_web_config_missing");
             }
 
             var store = new PosTrustedDeviceStore();
             if (!store.TryRead(out var trustedSession))
             {
-                StartupTrace.Write("online refresh skipped: trusted session missing");
-                _logger.LogInfo("BackgroundOnlineRefresh skipped: trusted session missing");
-                return;
+                return new CatalogSyncRunResult(
+                    false,
+                    authenticationDenied: true,
+                    code: "trusted_session_missing");
             }
 
             try
             {
                 using (var client = new PosAdminWebClient(options))
-                using (var heartbeatCts = new CancellationTokenSource(StartupHeartbeatTimeout))
+                using (var heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
                 {
-                    StartupTrace.Write("online heartbeat start");
-                    _logger.LogInfo("BackgroundOnlineRefresh heartbeat start");
-                    var result = await client.HeartbeatAsync(new PosHeartbeatRequest
+                    heartbeatCts.CancelAfter(StartupHeartbeatTimeout);
+                    var heartbeat = await client.HeartbeatAsync(new PosHeartbeatRequest
                     {
                         AppVersion = typeof(MainWindow).Assembly.GetName().Version?.ToString(),
                         DeviceToken = trustedSession.DeviceToken,
@@ -426,50 +624,118 @@ namespace Win7POS.Wpf
                         ShopDeviceId = trustedSession.ShopDeviceId,
                     }, heartbeatCts.Token).ConfigureAwait(false);
 
-                    if (result.Success && result.Value != null)
+                    if (!heartbeat.Success || heartbeat.Value == null || !heartbeat.Value.Ok)
                     {
-                        store.SaveHeartbeat(trustedSession, result.Value);
-                        StartupTrace.Write("online heartbeat done");
-                        _logger.LogInfo(
-                            "BackgroundOnlineRefresh heartbeat done: category=online.heartbeat clientRequestId=" +
-                            SafeOnlineId(result.ClientRequestId) +
-                            " serverRequestId=" + SafeOnlineId(result.ServerRequestId));
-                        QueueSyncStatusRefresh(factory);
-                        await TrySyncSalesOutboxAsync(options, factory).ConfigureAwait(false);
-                        await TrySyncCatalogImportOutboxAsync(options, factory).ConfigureAwait(false);
-                        await TryPullCatalogAsync(options, factory).ConfigureAwait(false);
-                        return;
+                        if (heartbeat.Denied)
+                        {
+                            store.Clear();
+                            await StoreStartupSettingAsync(factory, LastCatalogErrorSettingKey, "auth_denied")
+                                .ConfigureAwait(false);
+                            await StoreStartupSettingAsync(factory, LastSalesErrorSettingKey, "auth_denied")
+                                .ConfigureAwait(false);
+                            await StoreStartupSettingAsync(factory, CatalogBootstrapStatusSettingKey, "failed_auth_denied")
+                                .ConfigureAwait(false);
+                        }
+
+                        var heartbeatCode = SafeOnlineCode(heartbeat.Code);
+                        return new CatalogSyncRunResult(
+                            false,
+                            authenticationDenied: heartbeat.Denied,
+                            offline: string.Equals(heartbeatCode, "network_error", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(heartbeatCode, "io_error", StringComparison.OrdinalIgnoreCase),
+                            durationMilliseconds: timer.ElapsedMilliseconds,
+                            code: heartbeatCode);
                     }
 
-                    if (result.Denied)
+                    if (!store.TryRead(out var currentSession) ||
+                        !IsSameTrustedSession(trustedSession, currentSession))
                     {
-                        store.Clear();
-                        await StoreStartupSettingAsync(factory, LastCatalogErrorSettingKey, "auth_denied")
-                            .ConfigureAwait(false);
-                        await StoreStartupSettingAsync(factory, LastSalesErrorSettingKey, "auth_denied")
-                            .ConfigureAwait(false);
-                        await StoreStartupSettingAsync(factory, CatalogBootstrapStatusSettingKey, "failed_auth_denied")
-                            .ConfigureAwait(false);
-                        QueueSyncStatusRefresh(factory);
+                        return new CatalogSyncRunResult(
+                            false,
+                            durationMilliseconds: timer.ElapsedMilliseconds,
+                            code: "trusted_session_changed");
                     }
 
-                    _logger.LogWarning(
-                        "BackgroundOnlineRefresh heartbeat skipped: category=online.heartbeat code=" +
-                        SafeOnlineCode(result.Code) +
-                        " clientRequestId=" + SafeOnlineId(result.ClientRequestId) +
-                        " serverRequestId=" + SafeOnlineId(result.ServerRequestId) +
-                        " cfRay=" + SafeOnlineId(result.CfRay));
+                    store.SaveHeartbeat(trustedSession, heartbeat.Value);
                 }
+
+                await TrySyncSalesOutboxAsync(options, factory).ConfigureAwait(false);
+                await TrySyncCatalogImportOutboxAsync(options, factory).ConfigureAwait(false);
+
+                PosCatalogPullOutcome outcome;
+                using (var catalogCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                {
+                    catalogCts.CancelAfter(StartupCatalogPullTimeout);
+                    var catalogPull = new PosCatalogPullService(factory);
+                    outcome = request.Decision.Mode == CatalogSyncMode.Full
+                        ? await catalogPull.TryRepairCatalogAsync(options, catalogCts.Token).ConfigureAwait(false)
+                        : await catalogPull.TryPullIncrementalCatalogAsync(
+                            options,
+                            trustedSession,
+                            catalogCts.Token).ConfigureAwait(false);
+                }
+
+                var binding = await new CatalogShopStateRepository(factory).EnsureAndLoadCursorAsync(
+                    trustedSession.ShopId,
+                    trustedSession.ShopCode).ConfigureAwait(false);
+                var rows = outcome.ProductsApplied + outcome.PricesApplied +
+                    outcome.PricesQueued + outcome.PendingPricesApplied;
+                timer.Stop();
+                return new CatalogSyncRunResult(
+                    success: outcome.Completed || outcome.HasMore,
+                    authenticationDenied: outcome.AuthDenied,
+                    hasMore: outcome.HasMore,
+                    receivedChanges: rows > 0,
+                    pages: outcome.PagesProcessed,
+                    rows: rows,
+                    durationMilliseconds: timer.ElapsedMilliseconds,
+                    resumeCursor: binding.IsValid ? binding.Cursor : string.Empty,
+                    code: outcome.StatusCode);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (OperationCanceledException)
             {
-                StartupTrace.Write("online heartbeat timeout");
-                _logger.LogWarning("BackgroundOnlineRefresh heartbeat timeout");
+                timer.Stop();
+                return new CatalogSyncRunResult(
+                    false,
+                    durationMilliseconds: timer.ElapsedMilliseconds,
+                    code: "timeout");
             }
             catch (Exception ex)
             {
-                StartupTrace.Write("online heartbeat failed", ex);
-                _logger.LogWarning("TryRefreshTrustedPosSessionAsync: refresh online non completato", ex);
+                timer.Stop();
+                _logger.LogWarning("Adaptive online run failed.", ex);
+                return new CatalogSyncRunResult(
+                    false,
+                    durationMilliseconds: timer.ElapsedMilliseconds,
+                    code: "exception");
+            }
+            finally
+            {
+                QueueSyncStatusRefresh(factory);
+            }
+        }
+
+        private static bool IsSameTrustedSession(
+            PosTrustedDeviceSession expected,
+            PosTrustedDeviceSession current)
+        {
+            return expected != null && current != null &&
+                string.Equals(expected.PosSessionId, current.PosSessionId, StringComparison.Ordinal) &&
+                string.Equals(expected.ShopDeviceId, current.ShopDeviceId, StringComparison.Ordinal) &&
+                string.Equals(expected.ShopId, current.ShopId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(expected.ShopCode, current.ShopCode, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static double SchedulerJitterSample()
+        {
+            unchecked
+            {
+                var mixed = (uint)(Environment.TickCount ^ DateTime.UtcNow.Ticks.GetHashCode());
+                return (mixed % 10001u) / 10000d;
             }
         }
 
@@ -898,12 +1164,56 @@ namespace Win7POS.Wpf
             _networkStatusTimer.Start();
         }
 
+        private async void OnShellActivated(object sender, EventArgs e)
+        {
+            if (!_operatorLoginReached ||
+                _recoveryMode ||
+                App.IsSafeStart ||
+                OperatorSessionHolder.Current == null ||
+                !OperatorSessionHolder.Current.IsLoggedIn)
+            {
+                return;
+            }
+
+            var now = DateTimeOffset.UtcNow;
+            if (now - _lastForegroundSyncTrigger < TimeSpan.FromSeconds(60))
+            {
+                return;
+            }
+
+            var factory = _onlineSchedulerFactory ?? _languageSettingsFactory;
+            if (factory == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var lastSuccess = await new SettingsRepository(factory).GetStringAsync(
+                    CatalogSyncDiagnosticsRepository.Prefix + "last_success_at").ConfigureAwait(true);
+                if (DateTimeOffset.TryParse(lastSuccess, out var parsed) &&
+                    now - parsed.ToUniversalTime() <= TimeSpan.FromSeconds(60))
+                {
+                    return;
+                }
+
+                _lastForegroundSyncTrigger = now;
+                StartAdaptiveOnlineScheduler(factory, CatalogSyncTrigger.Foreground);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Foreground sync trigger skipped.", ex);
+            }
+        }
+
         private void UpdateNetworkStatusBadge()
         {
             try
             {
                 var status = NetworkStatusService.Read();
                 var online = status != null && status.IsNetworkAvailable;
+                var wasOnline = _lastNetworkOnline;
+                _lastNetworkOnline = online;
                 var foreground = online
                     ? new SolidColorBrush(Color.FromRgb(46, 125, 50))
                     : new SolidColorBrush(Color.FromRgb(198, 40, 40));
@@ -933,6 +1243,17 @@ namespace Win7POS.Wpf
                 {
                     ShellNetworkWifiIcon.Fill = foreground;
                     ShellNetworkOfflineX.Visibility = online ? Visibility.Collapsed : Visibility.Visible;
+                }
+
+                if (online && wasOnline == false)
+                {
+                    var factory = _onlineSchedulerFactory ?? _languageSettingsFactory;
+                    if (factory != null &&
+                        OperatorSessionHolder.Current != null &&
+                        OperatorSessionHolder.Current.IsLoggedIn)
+                    {
+                        StartAdaptiveOnlineScheduler(factory, CatalogSyncTrigger.NetworkRecovered);
+                    }
                 }
             }
             catch (Exception ex)
@@ -1856,6 +2177,18 @@ namespace Win7POS.Wpf
             }));
 
             return tcs.Task;
+        }
+
+        private sealed class CatalogSyncContext
+        {
+            public CatalogSyncContext(CatalogSyncTrigger trigger, CatalogSyncState state)
+            {
+                Trigger = trigger;
+                State = state ?? throw new ArgumentNullException(nameof(state));
+            }
+
+            public CatalogSyncState State { get; }
+            public CatalogSyncTrigger Trigger { get; }
         }
     }
 }
