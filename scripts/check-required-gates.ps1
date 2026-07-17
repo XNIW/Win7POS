@@ -12,6 +12,7 @@ $sourceGates = @(
     "check-architecture-boundaries.ps1",
     "check-pos-startup-win7-safe.ps1",
     "check-win7pos-startup-no-eager-db.ps1",
+    "check-win7pos-legacy-db-migrations.ps1",
     "check-pos-unified-login-ux.ps1",
     "check-pos-login-logging.ps1",
     "check-pos-debug-logging.ps1",
