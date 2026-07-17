@@ -398,3 +398,27 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   virtuali, nessuno scanner/Xprinter/cash drawer. Staging autenticato, Win7 reale,
   dual monitor, hardware e matrice DPI/lingue restano `NOT_RUN`.
 - Classificazione invariata: `STOPPED_STAGING`; task `NOT_DONE`, nessuna PR/CI/merge.
+
+## 2026-07-17 - Final software merge authorization
+
+- Review branch: `release/win7pos-final-review-20260717-015659`; initial review
+  HEAD `f24afcb5dde54d73fc95a53f8645f0f90a82893a`; validated software HEAD
+  `4fe6f0a69e15fb38e77f01f6f6e61afb98e65d62`.
+- Final review found one additional P1 in customer-display first-frame placement.
+  The window is now placed before first visibility and closed on setup failure;
+  checker, WPF x86 build and lifecycle harness passed. Cumulative P0 `0/0/0`,
+  P1 `4/4/0`; nine P2 remain deferred.
+- Final local software validation: canonical gates `30/30`; automated tests
+  `249/249`, skipped `0`; solution and WPF net48/x86 `0 warnings / 0 errors`;
+  CLI selftest `PASS`; UiSmokeHarness build and lifecycle `PASS`.
+- Catalog regression: batch/legacy median ratio `56.12x`, pending prices `0`;
+  paged-full exactness `Verified` in `3/3` iterations with pending prices `0`.
+- Clean-tree local x86 Release Pack, completeness validator, Win7 runtime
+  validator and Inno Setup installer: `PASS`; pack commit `4fe6f0a`, PE32/x86,
+  net48, no harness/DB/log/PDB/source/secret or active QA configuration.
+- External validation moved to
+  `docs/QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md`: 16 items remain `OPEN` and
+  `DEFERRED_EXTERNAL_VALIDATION`; no previous `NOT_RUN` is promoted to PASS.
+- Task software status: `READY_FOR_MERGE`.
+- Merge authorization: `APPROVED_BY_PROJECT_OWNER`.
+- Production certification remains open: `NOT_YET_CERTIFIED`.

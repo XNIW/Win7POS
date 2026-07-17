@@ -1,6 +1,34 @@
 # Win7POS final closure and merge review — 2026-07-17
 
-## Decision
+## Final software merge authorization
+
+- Software implementation status: `READY_FOR_MERGE`.
+- External certification status: `DEFERRED_EXTERNAL_VALIDATION`.
+- P0 open: `0`.
+- P1 open: `0`.
+- Merge authorization: `APPROVED_BY_PROJECT_OWNER`.
+- Production certification: `NOT_YET_CERTIFIED`.
+- Review branch: `release/win7pos-final-review-20260717-015659`.
+- Validated software SHA: `4fe6f0a69e15fb38e77f01f6f6e61afb98e65d62`.
+- Initial review SHA: `f24afcb5dde54d73fc95a53f8645f0f90a82893a`.
+
+The final software rerun passed 30/30 canonical gates, 249/249 automated tests
+with zero skipped, the zero-warning solution and WPF net48/x86 builds, CLI
+selftest, UiSmokeHarness lifecycle coverage, catalog regression/exactness gates,
+the clean-tree local Release Pack and the installer build. One additional P1 was
+found and fixed during the final review: the customer display is now placed on
+the selected secondary monitor before its first visible frame, with failure-path
+cleanup. Cumulative software review findings are P0 `0/0/0`, P1 `4/4/0`, and
+nine P2 deferred.
+
+The project owner explicitly authorizes the software merge without promoting any
+staging, physical Windows 7, dual-monitor, peripheral, DPI or language result to
+PASS. Those 16 activities remain open in
+[`WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md`](../QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md)
+and are mandatory before production/hardware certification. The historical
+`NOT_RUN` evidence and prior stopped decision below are preserved unchanged.
+
+## Prior closure decision (historical)
 
 - Classification: `STOPPED_STAGING`.
 - Task status: `NOT_DONE`.
