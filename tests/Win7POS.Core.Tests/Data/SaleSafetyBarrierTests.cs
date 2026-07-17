@@ -69,6 +69,34 @@ public sealed class SaleSafetyBarrierTests
     }
 
     [TestMethod]
+    public async Task OrdinarySale_WhenOutboxInsertFailsRollsBackSaleLinesStockAndLedger()
+    {
+        using var db = TestDb.Create();
+        var fixture = await SeedSaleSafeFixtureAsync(db);
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+CREATE TRIGGER fail_sales_outbox
+BEFORE INSERT ON sales_sync_outbox
+BEGIN
+    SELECT RAISE(ABORT, 'injected outbox failure');
+END;");
+        }
+
+        var exception = await Assert.ThrowsExactlyAsync<SqliteException>(
+            () => InsertOrdinarySaleAsync(db.Factory, fixture.ProductId, "SALE-INJECTED-FAILURE"));
+        StringAssert.Contains(exception.Message, "injected outbox failure");
+
+        await AssertNoSaleArtifactsAsync(db.Factory);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(
+            10L,
+            await verify.ExecuteScalarAsync<long>(
+                "SELECT stock_qty FROM product_meta WHERE barcode = @barcode;",
+                new { barcode = fixture.Barcode }));
+    }
+
+    [TestMethod]
     public async Task OrdinarySale_WithPartialCatalogBindingFailsClosed()
     {
         using var db = TestDb.Create();

@@ -8,5 +8,6 @@
   <Folder Name="/tests/">
     <Project Path="tests/Win7POS.CatalogPerformance/Win7POS.CatalogPerformance.csproj" />
     <Project Path="tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj" />
+    <Project Path="tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj" />
   </Folder>
 </Solution>

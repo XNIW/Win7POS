@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Platforms>x86</Platforms>
+    <Platform Condition="'$(Platform)' == '' Or '$(Platform)' == 'AnyCPU'">x86</Platform>
+    <PlatformTarget>x86</PlatformTarget>
+    <Prefer32Bit>true</Prefer32Bit>
+    <LangVersion>8.0</LangVersion>
+    <AssemblyName>Win7POS.Wpf.UiSmokeHarness</AssemblyName>
+    <RootNamespace>Win7POS.Wpf.UiSmokeHarness</RootNamespace>
+    <StartupObject>Win7POS.Wpf.UiSmokeHarness.Program</StartupObject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Win7POS.Core\Win7POS.Core.csproj" />
+    <ProjectReference Include="..\..\src\Win7POS.Data\Win7POS.Data.csproj" />
+    <ProjectReference Include="..\..\src\Win7POS.Wpf\Win7POS.Wpf.csproj" />
+  </ItemGroup>
+</Project>

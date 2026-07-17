@@ -66,7 +66,11 @@ $forbiddenFiles = @(
     "Win7POS.Cli.dll",
     "Win7POS.Cli.deps.json",
     "Win7POS.Cli.runtimeconfig.json",
-    "Win7POS.Cli.pdb"
+    "Win7POS.Cli.pdb",
+    "Win7POS.Wpf.UiSmokeHarness.exe",
+    "Win7POS.Wpf.UiSmokeHarness.exe.config",
+    "Win7POS.Wpf.UiSmokeHarness.dll",
+    "Win7POS.Wpf.UiSmokeHarness.pdb"
 )
 
 if ([string]::IsNullOrWhiteSpace($ReleasePackSource)) {
@@ -120,7 +124,7 @@ if (-not $fail) {
         $found = Get-ChildItem -Path $root -Recurse -File -Filter $name -ErrorAction SilentlyContinue |
             Select-Object -First 1
         if ($null -ne $found) {
-            Fail "ReleasePack contains forbidden CLI runtime file: $name"
+            Fail "ReleasePack contains forbidden non-runtime file: $name"
         }
         else {
             Pass "ReleasePack does not contain $name"
@@ -131,6 +135,7 @@ if (-not $fail) {
     $forbiddenPayload = Get-ChildItem -Path $root -Recurse -File -ErrorAction Stop |
         Where-Object {
             $forbiddenExtensions -contains $_.Extension.ToLowerInvariant() -or
+            $_.Name -match '(?i)(UiSmokeHarness|UI_SURFACE_INVENTORY|UI_RUNTIME_MATRIX|lifecycle-result|shell-window-state|qa[-_ ]fixture|screenshots?)' -or
             $_.Name -match '(?i)^(pos-admin-web\.config|.*production.*\.(json|config|txt)|.*(?:token|secret).*(?:json|config|txt))$'
         }
     if ($forbiddenPayload) {
