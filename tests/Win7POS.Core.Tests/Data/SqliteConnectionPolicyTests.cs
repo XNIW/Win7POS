@@ -138,6 +138,93 @@ public sealed class SqliteConnectionPolicyTests
         }
     }
 
+    [TestMethod]
+    public async Task ExclusiveMaintenance_DrainsActiveConnectionsBlocksNewOpenAndAllowsOwnerReentry()
+    {
+        SQLitePCL.Batteries_V2.Init();
+        var root = CreateTemporaryRoot();
+        var dbPath = Path.Combine(root, "pos.db");
+        try
+        {
+            var options = PosDbOptions.ForPath(dbPath);
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+            var active = factory.Open();
+            var entered = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+            var maintenance = SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
+            {
+                await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(() =>
+                {
+                    using var ownerConnection = factory.Open();
+                    AssertConnectionPolicy(ownerConnection);
+                    return Task.CompletedTask;
+                });
+
+                entered.TrySetResult(true);
+                await release.Task;
+            });
+
+            await Task.Delay(100);
+            Assert.IsFalse(entered.Task.IsCompleted, "Maintenance must wait for the active connection to drain.");
+
+            active.Dispose();
+            await AwaitWithTimeout(entered.Task, "Maintenance did not enter after the active connection closed.");
+
+            var blockedOpen = Task.Run(() => factory.Open());
+            await Task.Delay(100);
+            Assert.IsFalse(blockedOpen.IsCompleted, "A non-owner connection opened during exclusive maintenance.");
+
+            release.TrySetResult(true);
+            await AwaitWithTimeout(maintenance, "Exclusive maintenance did not complete.");
+            using var reopened = await AwaitWithTimeout(
+                blockedOpen,
+                "A blocked connection did not resume after exclusive maintenance.");
+            AssertConnectionPolicy(reopened);
+        }
+        finally
+        {
+            SqliteConnectionFactory.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [TestMethod]
+    public async Task ExclusiveMaintenance_LeakedOwnerConnectionFailsButReleasesGlobalFence()
+    {
+        SQLitePCL.Batteries_V2.Init();
+        var root = CreateTemporaryRoot();
+        var dbPath = Path.Combine(root, "pos.db");
+        SqliteConnection? leaked = null;
+        try
+        {
+            var options = PosDbOptions.ForPath(dbPath);
+            DbInitializer.EnsureCreated(options);
+            var factory = new SqliteConnectionFactory(options);
+
+            var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+                SqliteConnectionFactory.RunExclusiveMaintenanceAsync(() =>
+                {
+                    leaked = factory.Open();
+                    return Task.CompletedTask;
+                }));
+            StringAssert.Contains(error.Message, "global fence was released");
+
+            var reopenedTask = Task.Run(() => factory.Open());
+            using var reopened = await AwaitWithTimeout(
+                reopenedTask,
+                "The global fence remained blocked after a leaked owner connection.");
+            AssertConnectionPolicy(reopened);
+        }
+        finally
+        {
+            leaked?.Dispose();
+            SqliteConnectionFactory.ClearAllPools();
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static void AssertConnectionPolicy(SqliteConnection connection)
     {
         Assert.AreEqual(1L, ScalarLong(connection, "PRAGMA foreign_keys;"));
@@ -168,6 +255,20 @@ public sealed class SqliteConnectionPolicyTests
         var root = Path.Combine(Path.GetTempPath(), "Win7POS.SqlitePolicy", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         return root;
+    }
+
+    private static async Task AwaitWithTimeout(Task task, string message)
+    {
+        var completed = await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(10)));
+        Assert.AreSame(task, completed, message);
+        await task;
+    }
+
+    private static async Task<T> AwaitWithTimeout<T>(Task<T> task, string message)
+    {
+        var completed = await Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(10)));
+        Assert.AreSame(task, completed, message);
+        return await task;
     }
 
     private static void Execute(

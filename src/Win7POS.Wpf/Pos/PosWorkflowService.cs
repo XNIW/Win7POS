@@ -15,6 +15,7 @@ using Win7POS.Core.Receipt;
 using Win7POS.Core.Util;
 using Win7POS.Data;
 using Win7POS.Data.Adapters;
+using Win7POS.Data.Backup;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
@@ -26,6 +27,7 @@ namespace Win7POS.Wpf.Pos
 {
     public sealed class DbRestoreResult
     {
+        public string ForeignKeyCheck { get; set; }
         public string IntegrityCheck { get; set; }
         public bool IntegrityOk { get; set; }
         public string PreRestoreBackupPath { get; set; }
@@ -77,6 +79,7 @@ namespace Win7POS.Wpf.Pos
         private readonly SaleRepository _sales;
         private readonly SettingsRepository _settings;
         private readonly DbMaintenanceRepository _dbMaintenance;
+        private readonly SqliteOnlineBackup _onlineBackup;
         private readonly CatalogImportOutboxRepository _catalogImportOutbox;
         private readonly SupplierRepository _suppliers;
         private readonly CategoryRepository _categories;
@@ -101,6 +104,7 @@ namespace Win7POS.Wpf.Pos
             _sales = new SaleRepository(_factory);
             _settings = new SettingsRepository(_factory);
             _dbMaintenance = new DbMaintenanceRepository(_factory);
+            _onlineBackup = new SqliteOnlineBackup(_factory);
             _catalogImportOutbox = new CatalogImportOutboxRepository(_factory);
             _suppliers = new SupplierRepository(_factory);
             _categories = new CategoryRepository(_factory);
@@ -258,8 +262,6 @@ namespace Win7POS.Wpf.Pos
                     throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedCatalogImports"));
                 }
 
-                await _dbMaintenance.WalCheckpointAsync().ConfigureAwait(false);
-                var preBackupPath = CreateDbBackupCopyNoLock("pos_pre_restore_");
                 var restoredAt = DateTimeOffset.UtcNow;
 
                 var tempRestorePath = Path.Combine(
@@ -272,10 +274,12 @@ namespace Win7POS.Wpf.Pos
                     DbInitializer.EnsureCreated(validateOptions);
                     var validateFactory = new SqliteConnectionFactory(validateOptions);
                     var validationMaintenance = new DbMaintenanceRepository(validateFactory);
-                    var validationIntegrity = await validationMaintenance.IntegrityCheckAsync().ConfigureAwait(false);
-                    if (!IsIntegrityOk(validationIntegrity))
+                    var candidateValidation = await validationMaintenance.ValidateAsync().ConfigureAwait(false);
+                    if (!candidateValidation.IsValid)
                     {
-                        throw new InvalidOperationException(PosLocalization.F("dbMaintenance.integrityCheckFailed", validationIntegrity));
+                        throw new InvalidOperationException(PosLocalization.F(
+                            "dbMaintenance.integrityCheckFailed",
+                            candidateValidation.IntegrityCheck + " / FK: " + candidateValidation.ForeignKeyCheck));
                     }
 
                     var restoreSafety = await new RestoreShopSafetyRepository(validateFactory)
@@ -286,52 +290,63 @@ namespace Win7POS.Wpf.Pos
                         throw new InvalidOperationException(restoreSafety.Code);
                     }
 
-                    await validationMaintenance.WalCheckpointAsync().ConfigureAwait(false);
                     SqliteConnectionFactory.ClearAllPools();
 
+                    var preBackupPath = string.Empty;
                     var integrity = string.Empty;
+                    var foreignKeys = string.Empty;
                     var integrityOk = false;
-                    await new AtomicRestoreInstaller().InstallAsync(
-                        tempRestorePath,
-                        _options.DbPath,
-                        preBackupPath,
-                        async () =>
-                        {
-                            DbInitializer.EnsureCreated(_options);
-                            integrity = await _dbMaintenance.IntegrityCheckAsync().ConfigureAwait(false);
-                            integrityOk = IsIntegrityOk(integrity);
-                            if (!integrityOk)
+                    await SqliteConnectionFactory.RunExclusiveMaintenanceAsync(async () =>
+                    {
+                        preBackupPath = await CreateDbBackupNoLockAsync("pos_pre_restore_").ConfigureAwait(false);
+                        await new AtomicRestoreInstaller().InstallAsync(
+                            tempRestorePath,
+                            _options.DbPath,
+                            preBackupPath,
+                            async () =>
                             {
-                                throw new InvalidOperationException(PosLocalization.F("dbMaintenance.integrityCheckFailed", integrity));
-                            }
+                                DbInitializer.EnsureCreated(_options);
+                                var liveValidation = await _dbMaintenance.ValidateAsync().ConfigureAwait(false);
+                                integrity = liveValidation.IntegrityCheck;
+                                foreignKeys = liveValidation.ForeignKeyCheck;
+                                integrityOk = liveValidation.IsValid;
+                                if (!integrityOk)
+                                {
+                                    throw new InvalidOperationException(PosLocalization.F(
+                                        "dbMaintenance.integrityCheckFailed",
+                                        integrity + " / FK: " + foreignKeys));
+                                }
 
-                            await catalogState
-                                .ResetForRestoreReviewWhileBarrierHeldAsync(
-                                    currentShop.ShopId,
-                                    currentShop.ShopCode,
-                                    liveCatalogEpoch)
-                                .ConfigureAwait(false);
+                                await catalogState
+                                    .ResetForRestoreReviewWhileBarrierHeldAsync(
+                                        currentShop.ShopId,
+                                        currentShop.ShopCode,
+                                        liveCatalogEpoch)
+                                    .ConfigureAwait(false);
 
-                            await _settings.SetBoolAsync(KeyRestoreNeedsSyncReview, true).ConfigureAwait(false);
-                            await _settings.SetStringAsync(KeyRestoreLastCompletedAt, restoredAt.ToString("O", CultureInfo.InvariantCulture)).ConfigureAwait(false);
-                            await _settings.SetStringAsync(KeyRestoreLastPreBackupPath, preBackupPath).ConfigureAwait(false);
-                            await _settings.SetStringAsync(KeyRestoreLastSourcePath, backupDbPath).ConfigureAwait(false);
-                            await _settings.SetStringAsync(KeyRestoreLastIntegrityCheck, integrity).ConfigureAwait(false);
-                            var details = AuditDetails.Kv(
-                                ("backupFile", Path.GetFileName(backupDbPath)),
-                                ("preBackupFile", Path.GetFileName(preBackupPath)),
-                                ("integrity", "ok"),
-                                ("syncReview", "required"));
-                            await _audit.AppendAsync(
-                                _options,
-                                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                                AuditActions.DbRestore,
-                                details).ConfigureAwait(false);
-                        }).ConfigureAwait(false);
+                                await _settings.SetBoolAsync(KeyRestoreNeedsSyncReview, true).ConfigureAwait(false);
+                                await _settings.SetStringAsync(KeyRestoreLastCompletedAt, restoredAt.ToString("O", CultureInfo.InvariantCulture)).ConfigureAwait(false);
+                                await _settings.SetStringAsync(KeyRestoreLastPreBackupPath, preBackupPath).ConfigureAwait(false);
+                                await _settings.SetStringAsync(KeyRestoreLastSourcePath, backupDbPath).ConfigureAwait(false);
+                                await _settings.SetStringAsync(KeyRestoreLastIntegrityCheck, integrity).ConfigureAwait(false);
+                                var details = AuditDetails.Kv(
+                                    ("backupFile", Path.GetFileName(backupDbPath)),
+                                    ("preBackupFile", Path.GetFileName(preBackupPath)),
+                                    ("integrity", "ok"),
+                                    ("foreignKeys", "ok"),
+                                    ("syncReview", "required"));
+                                await _audit.AppendAsync(
+                                    _options,
+                                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                                    AuditActions.DbRestore,
+                                    details).ConfigureAwait(false);
+                            }).ConfigureAwait(false);
+                    }).ConfigureAwait(false);
 
                     _logger.LogWarning("POS DB restored; sync review required. backupFile=" + Path.GetFileName(backupDbPath) + " preBackupFile=" + Path.GetFileName(preBackupPath));
                     return new DbRestoreResult
                     {
+                        ForeignKeyCheck = foreignKeys,
                         IntegrityCheck = integrity,
                         IntegrityOk = integrityOk,
                         PreRestoreBackupPath = preBackupPath,
@@ -616,14 +631,13 @@ namespace Win7POS.Wpf.Pos
                 DbInitializer.EnsureCreated(_options);
                 AppPaths.EnsureCreated();
 
-                var fileName = "pos_backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".db";
+                var fileName = "pos_backup_" + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + ".db";
                 var outputPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
                 var outputDir = Path.GetDirectoryName(outputPath);
                 if (!string.IsNullOrWhiteSpace(outputDir))
                     Directory.CreateDirectory(outputDir);
 
-                await _dbMaintenance.WalCheckpointAsync().ConfigureAwait(false);
-                File.Copy(_options.DbPath, outputPath, true);
+                await _onlineBackup.CreateVerifiedAsync(outputPath).ConfigureAwait(false);
                 _logger.LogInfo("POS DB backup created: " + outputPath);
                 return outputPath;
             }
@@ -638,7 +652,7 @@ namespace Win7POS.Wpf.Pos
             }
         }
 
-        private string CreateDbBackupCopyNoLock(string prefix)
+        private async Task<string> CreateDbBackupNoLockAsync(string prefix)
         {
             AppPaths.EnsureCreated();
 
@@ -646,24 +660,22 @@ namespace Win7POS.Wpf.Pos
                 throw new FileNotFoundException("Current POS database not found; restore pre-backup was not created.", _options.DbPath);
 
             var safePrefix = string.IsNullOrWhiteSpace(prefix) ? "pos_backup_" : prefix;
-            var fileName = safePrefix + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture) + ".db";
+            var fileName = safePrefix + DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture) + ".db";
             var outputPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
             var outputDir = Path.GetDirectoryName(outputPath);
             if (!string.IsNullOrWhiteSpace(outputDir))
                 Directory.CreateDirectory(outputDir);
 
-            File.Copy(_options.DbPath, outputPath, true);
+            await _onlineBackup.CreateVerifiedAsync(outputPath).ConfigureAwait(false);
             _logger.LogInfo("POS DB pre-restore backup created: " + Path.GetFileName(outputPath));
             return outputPath;
         }
 
-        private static bool IsIntegrityOk(string integrity)
-        {
-            return string.Equals((integrity ?? string.Empty).Trim(), "ok", StringComparison.OrdinalIgnoreCase);
-        }
-
         public async Task InitializeAsync()
         {
+            await new AtomicRestoreInstaller()
+                .RecoverInterruptedInstallAsync(_options.DbPath)
+                .ConfigureAwait(false);
             await Task.Run(() => DbInitializer.EnsureCreated(_options)).ConfigureAwait(false);
 
             await _gate.WaitAsync().ConfigureAwait(false);

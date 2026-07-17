@@ -34,7 +34,11 @@ $required = @(
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
     "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs",
     "src/Win7POS.Data/Online/AtomicRestoreInstaller.cs",
-    "src/Win7POS.Data/Repositories/DbMaintenanceRepository.cs"
+    "src/Win7POS.Data/Backup/SqliteOnlineBackup.cs",
+    "src/Win7POS.Data/Repositories/DbMaintenanceRepository.cs",
+    "src/Win7POS.Data/SqliteConnectionFactory.cs",
+    "tests/Win7POS.Core.Tests/Data/PersistenceFoundationTests.cs",
+    "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs"
 )
 
 foreach ($path in $required) {
@@ -57,6 +61,10 @@ $maintenance = Read-Text "src/Win7POS.Data/Repositories/DbMaintenanceRepository.
 $restoreSafety = Read-Text "src/Win7POS.Data/Online/RestoreShopSafetyRepository.cs"
 $restoreSafetyTests = Read-Text "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs"
 $atomicInstaller = Read-Text "src/Win7POS.Data/Online/AtomicRestoreInstaller.cs"
+$onlineBackup = Read-Text "src/Win7POS.Data/Backup/SqliteOnlineBackup.cs"
+$connectionFactory = Read-Text "src/Win7POS.Data/SqliteConnectionFactory.cs"
+$persistenceTests = Read-Text "tests/Win7POS.Core.Tests/Data/PersistenceFoundationTests.cs"
+$connectionPolicyTests = Read-Text "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $maintenanceDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml.cs"
 $combined = Get-ChildItem -Path (Join-Path $repoRoot "src") -Recurse -File -Include *.cs,*.xaml |
@@ -70,35 +78,47 @@ $restoreBody = $workflow.Substring($restoreStart, $restoreEnd - $restoreStart)
 
 $outboxCheck = Index-OrFail $restoreBody "HasUnresolvedSalesSyncOutboxAsync" "restore must check unresolved sales outbox"
 $catalogOutboxCheck = Index-OrFail $restoreBody "_catalogImportOutbox.HasUnresolvedAsync" "restore must check unresolved catalog import outbox"
-$preBackup = Index-OrFail $restoreBody 'CreateDbBackupCopyNoLock("pos_pre_restore_")' "restore must create pre-restore backup"
+$candidateValidation = Index-OrFail $restoreBody "ValidateCandidateAsync" "restore must validate candidate shop binding before installation"
+$exclusiveMaintenance = Index-OrFail $restoreBody "RunExclusiveMaintenanceAsync" "restore must acquire the process-wide connection fence"
+$preBackup = Index-OrFail $restoreBody 'CreateDbBackupNoLockAsync("pos_pre_restore_")' "restore must create a verified online pre-restore backup"
 $copyRestore = Index-OrFail $restoreBody "new AtomicRestoreInstaller().InstallAsync" "restore must atomically install the validated copy"
 $ensureCreated = Index-OrFail $restoreBody "DbInitializer.EnsureCreated(_options)" "restore must run migrations after copy"
-$integrity = Index-OrFail $restoreBody "integrity = await _dbMaintenance.IntegrityCheckAsync()" "restore must run live DB integrity check"
+$integrity = Index-OrFail $restoreBody "liveValidation = await _dbMaintenance.ValidateAsync()" "restore must run live integrity and foreign-key checks"
 $reviewFlag = Index-OrFail $restoreBody "SetBoolAsync(KeyRestoreNeedsSyncReview, true)" "restore must mark sync review required"
-$walCheckpoint = Index-OrFail $restoreBody "WalCheckpointAsync()" "restore must checkpoint WAL before copying live DB"
-$candidateValidation = Index-OrFail $restoreBody "ValidateCandidateAsync" "restore must validate candidate shop binding before copying live DB"
 
-if ($outboxCheck -gt $preBackup -or $catalogOutboxCheck -gt $preBackup -or $preBackup -gt $copyRestore -or $copyRestore -gt $ensureCreated -or $ensureCreated -gt $integrity -or $integrity -gt $reviewFlag) {
-    Fail "restore guard order must be outbox checks -> pre-backup -> restore -> migrations -> integrity -> sync-review flag"
+if ($outboxCheck -gt $candidateValidation -or
+    $catalogOutboxCheck -gt $candidateValidation -or
+    $candidateValidation -gt $exclusiveMaintenance -or
+    $exclusiveMaintenance -gt $preBackup -or
+    $preBackup -gt $copyRestore -or
+    $copyRestore -gt $ensureCreated -or
+    $ensureCreated -gt $integrity -or
+    $integrity -gt $reviewFlag) {
+    Fail "restore guard order must be outbox/candidate validation -> connection fence -> verified pre-backup -> atomic install -> migrations -> validation -> sync-review flag"
 } else {
     Pass "restore guard order is safe"
 }
 
-if ($walCheckpoint -gt $preBackup) {
-    Fail "restore pre-backup must checkpoint WAL before copying current DB"
+if ($connectionFactory -notmatch "RunExclusiveMaintenanceAsync" -or
+    $connectionFactory -notmatch "_maintenancePending" -or
+    $connectionFactory -notmatch "_activeConnections" -or
+    $connectionFactory -notmatch "RegisterConnection" -or
+    $connectionPolicyTests -notmatch "ExclusiveMaintenance_DrainsActiveConnectionsBlocksNewOpenAndAllowsOwnerReentry" -or
+    $connectionPolicyTests -notmatch "ExclusiveMaintenance_LeakedOwnerConnectionFailsButReleasesGlobalFence") {
+    Fail "restore must drain active SQLite connections, block new opens, and allow maintenance-owner reentry"
 } else {
-    Pass "restore checkpoints WAL before pre-backup"
+    Pass "process-wide connection fence is covered by concurrency tests"
 }
 
-if ($candidateValidation -gt $copyRestore -or
+if ($candidateValidation -gt $exclusiveMaintenance -or
     $restoreSafety -notmatch "restore_shop_mismatch" -or
     $restoreSafety -notmatch "restore_catalog_shop_mismatch" -or
     $restoreSafety -notmatch "restore_candidate_outbox_unresolved" -or
     $restoreSafetyTests -notmatch "CandidateValidation_RejectsCrossShopSnapshotAndAnyUnresolvedOutbox" -or
     $restoreSafetyTests -notmatch "CandidateValidation_RejectsCatalogBindingMismatch") {
-    Fail "restore must reject incoherent official/catalog binding and every unresolved candidate outbox before live DB copy"
+    Fail "restore must reject incoherent official/catalog binding and every unresolved candidate outbox before live DB installation"
 } else {
-    Pass "restore validates official/catalog binding and rejects every unresolved candidate outbox before copy"
+    Pass "restore validates official/catalog binding and rejects every unresolved candidate outbox before installation"
 }
 
 if ($restoreBody -notmatch "File\.Copy\(backupDbPath, tempRestorePath, true\)" -or
@@ -110,13 +130,38 @@ if ($restoreBody -notmatch "File\.Copy\(backupDbPath, tempRestorePath, true\)" -
     Pass "restore installs the validated temporary copy and covers source TOCTOU"
 }
 
-if ($atomicInstaller -notmatch "catch \(Exception installException\)" -or
-    $atomicInstaller -notmatch "File\.Copy\(rollbackDatabasePath, liveDatabasePath, true\)" -or
-    $atomicInstaller -notmatch "DeleteSqliteSidecars" -or
-    $restoreSafetyTests -notmatch "AtomicInstaller_RollsBackOnPostSwapFailure") {
-    Fail "restore post-swap work must roll back the live DB on every failure"
+if ($atomicInstaller -notmatch "File\.Replace\(candidatePath, liveDatabasePath, atomicRollbackPath\)" -or
+    $atomicInstaller -notmatch "File\.Replace\(rollbackPath, liveDatabasePath, null\)" -or
+    $atomicInstaller -notmatch "PhasePrepared" -or
+    $atomicInstaller -notmatch "PhaseCommitted" -or
+    $atomicInstaller -notmatch "RecoverInterruptedInstallCore" -or
+    $atomicInstaller -notmatch "Flush\(true\)" -or
+    $atomicInstaller -notmatch 'databasePath \+ "-journal"' -or
+    $restoreSafetyTests -notmatch "AtomicInstaller_RollsBackOnPostSwapFailure" -or
+    $persistenceTests -notmatch "Recovery_PreparedBeforeSwapKeepsOldLiveAndRemovesPartialCandidate" -or
+    $persistenceTests -notmatch "Recovery_PreparedAfterAtomicSwapRestoresOldLive" -or
+    $persistenceTests -notmatch "Recovery_CommittedAfterSwapKeepsNewLiveAndCleansRollback") {
+    Fail "restore must use same-directory atomic replacement with durable prepared/committed recovery"
 } else {
-    Pass "restore post-swap work is fail-atomic with failure-injection coverage"
+    Pass "restore swap is fail-atomic and crash recovery is covered"
+}
+
+if ($persistenceTests -notmatch "Recovery_CommittedCorruptLiveRestoresValidatedRollback" -or
+    $atomicInstaller -notmatch "IsDatabaseValidAsync" -or
+    $atomicInstaller -notmatch "TryCleanupCommittedRestore") {
+    Fail "committed recovery must validate the live DB, preserve rollback until validation, and defer cleanup safely"
+} else {
+    Pass "committed recovery validates live state before idempotent cleanup"
+}
+
+if ($onlineBackup -notmatch "BackupDatabase" -or
+    $onlineBackup -notmatch "ValidateAsync" -or
+    $onlineBackup -notmatch "File\.Move\(temporaryPath, finalPath\)" -or
+    $workflow -notmatch "_onlineBackup\.CreateVerifiedAsync\(outputPath\)" -or
+    $persistenceTests -notmatch "OnlineBackup_ProducesValidatedSnapshotWhileWriterContinues") {
+    Fail "manual and pre-restore backups must use the verified SQLite online-backup path"
+} else {
+    Pass "verified online backup is used and covered under concurrent writes"
 }
 
 if ($saleRepo -notmatch "WHERE status IN \('pending', 'retry', 'in_progress', 'failed_blocked'\)") {
@@ -139,17 +184,24 @@ if ($workflow -notmatch "KeyRestoreLastPreBackupPath" -or
     Pass "restore records source, pre-backup and integrity"
 }
 
-if ($maintenance -notmatch "PRAGMA integrity_check" -or $maintenance -notmatch "PRAGMA wal_checkpoint\(FULL\)") {
-    Fail "DB maintenance must expose integrity_check and WAL checkpoint"
+if ($maintenance -notmatch "PRAGMA integrity_check" -or
+    $maintenance -notmatch "PRAGMA foreign_key_check" -or
+    $maintenance -notmatch "ValidateAsync" -or
+    $maintenance -notmatch "PRAGMA wal_checkpoint\(FULL\)" -or
+    $persistenceTests -notmatch "CandidateForeignKeyViolation_IsRejectedBeforeLiveSwap") {
+    Fail "DB maintenance must expose combined integrity and foreign-key validation while preserving WAL checkpoint support"
 } else {
-    Pass "DB maintenance exposes integrity_check and WAL checkpoint"
+    Pass "DB maintenance validates integrity and foreign keys and preserves WAL checkpoint support"
 }
 
-if ($workflow -notmatch "public async Task<string> BackupDbAsync" -or
-    $workflow -notmatch "BackupDbAsync[\s\S]*WalCheckpointAsync\(\)[\s\S]*File\.Copy\(_options\.DbPath, outputPath, true\)") {
-    Fail "manual DB backup must checkpoint WAL before copying"
+$backupStart = Index-OrFail $workflow "public async Task<string> BackupDbAsync" "BackupDbAsync missing"
+$backupEnd = Index-OrFail $workflow "private async Task<string> CreateDbBackupNoLockAsync" "BackupDbAsync end marker missing"
+$backupBody = $workflow.Substring($backupStart, $backupEnd - $backupStart)
+if ($backupBody -notmatch "_onlineBackup\.CreateVerifiedAsync\(outputPath\)" -or
+    $backupBody -match "File\.Copy\(_options\.DbPath") {
+    Fail "manual DB backup must use SQLite online backup and validate the snapshot"
 } else {
-    Pass "manual DB backup checkpoints WAL before copy"
+    Pass "manual DB backup uses a verified SQLite online snapshot"
 }
 
 if ($startOfDay -notmatch "RestoreNeedsReviewSettingKey" -or

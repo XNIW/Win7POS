@@ -83,14 +83,17 @@ INSERT INTO app_settings(key, value) VALUES('pos.catalog.bound_shop_code', 'SHOP
         Assert.AreEqual("validated", File.ReadAllText(files.Live));
         Assert.IsFalse(File.Exists(files.Live + "-wal"));
         Assert.IsFalse(File.Exists(files.Live + "-shm"));
+        Assert.IsFalse(File.Exists(files.Live + ".restore-in-progress"));
+        Assert.AreEqual(0, Directory.GetFiles(files.Root, "live.db.restore-*").Length);
     }
 
     [TestMethod]
     public async Task AtomicInstaller_RollsBackOnPostSwapFailure()
     {
         using var files = RestoreFiles.Create();
-        File.WriteAllText(files.Validated, "validated");
-        File.WriteAllText(files.Live, "live-before-restore");
+        WriteProbeDatabase(files.Validated, "validated");
+        WriteProbeDatabase(files.Live, "live-before-restore");
+        SqliteConnectionFactory.ClearAllPools();
         File.Copy(files.Live, files.Rollback, true);
 
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
@@ -100,7 +103,9 @@ INSERT INTO app_settings(key, value) VALUES('pos.catalog.bound_shop_code', 'SHOP
                 files.Rollback,
                 () => throw new InvalidOperationException("failure-injection-after-swap")));
 
-        Assert.AreEqual("live-before-restore", File.ReadAllText(files.Live));
+        Assert.AreEqual("live-before-restore", ReadProbeValue(files.Live));
+        Assert.IsFalse(File.Exists(files.Live + ".restore-in-progress"));
+        Assert.AreEqual(0, Directory.GetFiles(files.Root, "live.db.restore-*").Length);
     }
 
     [TestMethod]
@@ -190,6 +195,22 @@ WHERE key = 'pos.catalog.exactness.code';"));
         });
     }
 
+    private static void WriteProbeDatabase(string path, string value)
+    {
+        using var connection = new SqliteConnection("Data Source=" + path);
+        connection.Open();
+        connection.Execute(@"
+CREATE TABLE restore_probe(id INTEGER PRIMARY KEY, value TEXT NOT NULL);
+INSERT INTO restore_probe(id, value) VALUES(1, @value);", new { value });
+    }
+
+    private static string ReadProbeValue(string path)
+    {
+        using var connection = new SqliteConnection("Data Source=" + path);
+        connection.Open();
+        return connection.ExecuteScalar<string>("SELECT value FROM restore_probe WHERE id=1;") ?? string.Empty;
+    }
+
     private sealed class TestDb : IDisposable
     {
         private TestDb(string root)
@@ -232,7 +253,7 @@ WHERE key = 'pos.catalog.exactness.code';"));
         public string Validated { get; }
         public string Live { get; }
         public string Rollback { get; }
-        private string Root { get; }
+        public string Root { get; }
 
         public static RestoreFiles Create()
         {
