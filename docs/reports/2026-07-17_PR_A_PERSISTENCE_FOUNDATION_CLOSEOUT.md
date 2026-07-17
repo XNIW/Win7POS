@@ -4,11 +4,14 @@
 
 - Base: GitHub `main` at `f3e779bd537d62ed0f3ddb5333149e9213e2c13f`.
 - Implementation commit: `188d9cd3cb4c1728f802fc114088e3fd18ecc3c7`.
+- Final-review blocker fix: `607e1f15fce64fed48e84e5fe680d40741ef6031`.
 - Branch: `codex/pr-a-persistence-foundation-20260717-114614`.
-- Pull request: GitHub `#5`, open and non-draft.
-- Implementation CI: run `29595607766`, `completed/success` on `188d9cd`.
-- Structural status: `READY_FOR_REVIEW`.
-- Auto-merge: `NO`; this execution does not merge the PR.
+- Pull request: GitHub `#5`, merged and non-draft.
+- Final PR CI: run `29600241291`, `completed/success` on exact head `607e1f1`.
+- Structural status: `DONE_MERGED`.
+- Merge method: fast-forward `f3e779b..607e1f1`; squash/rebase/force push `NO`.
+- GitHub author self-approval was rejected by platform policy; a formal review
+  comment records the equivalent evidence before the authorized fast-forward.
 
 ## Scope delivered
 
@@ -17,8 +20,12 @@ workflow, catalog protocol, outbox payload/hash or refund/void economics change:
 
 - manual and pre-restore backups use SQLite `BackupDatabase` and validate both
   `integrity_check` and `foreign_key_check` before publication;
-- a process-wide factory fence drains tracked connections, blocks new opens during
-  the swap, supports maintenance-owner re-entry and always releases after failure;
+- a process-wide factory fence drains tracked connections, permits completion opens
+  only until the first zero-connection boundary, then blocks non-owner opens during
+  maintenance, supports owner re-entry and aborts before the action after a bounded
+  30-second drain timeout;
+- after that drain, restore revalidates the trusted shop, catalog epoch, both live
+  outboxes and the already-validated candidate before pre-backup or live swap;
 - restore writes a durable same-directory prepared marker, copies the validated
   candidate durably and uses `File.Replace` to obtain an atomic rollback file;
 - prepared/committed recovery is idempotent, validates live and rollback databases,
@@ -52,15 +59,18 @@ the existing five-second busy timeout. Other cases cover rejected FK violations
 without changing the live hash, source TOCTOU, post-swap failure rollback, prepared
 crash state before and after the atomic swap, committed crash state, corrupt
 committed live recovery, rollback-journal removal, repeat recovery, DB reopen and
-combined integrity/FK validation. The connection tests cover active drain, blocked
-non-owner open, owner re-entry and recovery from a leaked owner handle.
+combined integrity/FK validation. The connection tests cover active drain, an open
+needed to complete the drain, the first-zero admission boundary, blocked non-owner
+open while the owner has a connection, bounded drain timeout, owner re-entry and
+recovery from a leaked owner handle. A two-factory regression commits an outbox row
+after preliminary validation and proves the fenced guard aborts before the swap.
 
 Results:
 
 | Check | Result |
 | --- | --- |
-| Focused persistence/restore/connection tests | `16/16 PASS` |
-| Full Core/Data tests | `257/257 PASS`, skipped `0` |
+| Focused persistence/restore/connection tests | `19/19 PASS` |
+| Full Core/Data tests | `260/260 PASS`, skipped `0` |
 | Canonical required gates | `30/30 PASS` |
 | Solution Release | `PASS`, 0 warnings / 0 errors |
 | CLI selftest | `PASS` |
@@ -95,9 +105,10 @@ local installer build are required and executed on the documented branch head.
 The pack must exclude harnesses, fixtures, DB/journal/WAL/SHM files, logs, PDB,
 screenshots, secrets and QA configuration.
 
-- P0 open: `0`.
-- P1 open: `0` after the review fixes for journal cleanup, corrupt committed-live
-  validation, post-commit cleanup outcome and leaked-owner fence release.
+- P0 open: `0` after closing the pre-fence restore/outbox TOCTOU found in final
+  review.
+- P1 open: `0` after the earlier journal/recovery fixes plus the final-review
+  nested-open drain deadlock, first-zero admission and bounded-timeout fixes.
 - Remaining historical P2: `9`, unchanged by this single-scope PR.
 - Residual PR-A external risk: real power-loss/filesystem behavior on Win7/x86 is
   not certified without a qualifying Windows 7 target; this is not labeled PASS.
@@ -105,3 +116,16 @@ screenshots, secrets and QA configuration.
 Rollback is a normal revert of PR-A: there is no schema migration, persisted
 business payload version or WAL policy to downgrade. Production certification
 remains `OPEN` because external certification is still `0/16`.
+
+Post-merge evidence on exact software head `607e1f1`:
+
+- main CI `29600645459`: `completed/success`, 30/30 gates, 260/260 tests,
+  CLI selftest and WPF net48/x86;
+- Release Pack `29600645440`: `completed/success`, 30/30 source gates, 33/33
+  packaging gates, WPF x86 and Inno Setup installer;
+- downloaded pack `VERSION.txt`: exact `CommitSHA=607e1f1...`, `Ref=main`,
+  `TreeState=clean`;
+- GitHub installer SHA-256:
+  `0F54924EE6B5C15D96626885E6D1A3D59D3A85EE7CC65961D0B49572C7C748D6`;
+  release ZIP SHA-256:
+  `E35188BCE9E32C38FFE9290E1635E16F51A6710BCB3ED339D5FB63B071194260`.

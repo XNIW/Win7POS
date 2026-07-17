@@ -475,3 +475,29 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   `Verified` 3/3 and pending prices 0.
 - Structural status: PR-A `READY_FOR_REVIEW`; next incomplete item is PR-B
   versioned migrations. No merge was performed.
+
+## 2026-07-17 - PR-A final review and merge
+
+- Reverified base `f3e779b`, original PR head `09b0be3`, open/non-draft/mergeable
+  state and successful historical CI `29596021792` before final review.
+- Final read-only review found a P0 pre-fence restore/outbox TOCTOU and a P1 drain
+  deadlock when an active flow needed a second SQLite connection. No schema, WAL,
+  package, payload/hash/idempotency or refund/void economics change was introduced.
+- Fixed both on commit `607e1f1`: authoritative shop/epoch/sales/catalog/candidate
+  revalidation now runs after connection drain and before backup/swap; connection
+  admission closes permanently at the first zero boundary, with a safe 30-second
+  pre-action timeout and regression coverage.
+- Independent re-review found P0/P1 open `0/0`. Local evidence: 30/30 canonical
+  gates, 19/19 focused tests, 260/260 full tests with zero skipped, CLI PASS,
+  solution and WPF net48/x86 builds with zero warnings/errors, Release Pack and
+  installer PASS.
+- Final PR CI `29600241291` passed on exact head `607e1f1`. GitHub rejected author
+  self-approval by policy, so an approve-equivalent formal review comment recorded
+  the evidence before integration.
+- PR `#5` was integrated by fast-forward `f3e779b..607e1f1`; squash, rebase and
+  force push were not used. Post-merge main CI `29600645459` and Release Pack
+  `29600645440` both passed on exact `607e1f1` with 260/260 tests.
+- Downloaded release provenance reports `CommitSHA=607e1f1...`, `Ref=main`,
+  `TreeState=clean`; installer and ZIP hashes are recorded in the closeout report.
+- Ledger status: PR-A `DONE_MERGED`, PR-B `NEXT`, external certification remains
+  `OPEN 0/16`. PR-B was not started.

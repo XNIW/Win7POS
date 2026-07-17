@@ -2,11 +2,14 @@
 
 ## Source and status rules
 
-- Authoritative source main: `f3e779bd537d62ed0f3ddb5333149e9213e2c13f`.
-- Software merge: `DONE_SOFTWARE_MERGED`; PR `#4` is already merged and no old
-  feature branch is to be merged again.
-- Final main CI: run `29591597390`, `completed/success` on `f3e779b`.
-- Final main Release Pack: run `29591597131`, `completed/success` on `f3e779b`.
+- Previous software baseline: `f3e779bd537d62ed0f3ddb5333149e9213e2c13f`;
+  PR `#4` remains already merged and must not be merged again.
+- PR-A software merge: `DONE_MERGED`; PR `#5` was integrated by fast-forward at
+  `607e1f15fce64fed48e84e5fe680d40741ef6031`, without force push.
+- PR-A main CI: run `29600645459`, `completed/success` on exact `607e1f1`.
+- PR-A main Release Pack: run `29600645440`, `completed/success` on exact
+  `607e1f1`; installer and release ZIP were downloaded and matched the embedded
+  clean-main provenance.
 - Production certification: `OPEN` until all 16 external items have real PASS
   evidence.
 - A structural item becomes `DONE_MERGED` only after an explicit later merge.
@@ -43,13 +46,13 @@ updated only when a real PASS is obtained.
 
 | Order | Structural item | PR | Status | Evidence / next action |
 | --- | --- | --- | --- | --- |
-| B | Persistence foundation | PR-A / GitHub `#5` | `READY_FOR_REVIEW` | Branch `codex/pr-a-persistence-foundation-20260717-114614`; do not auto-merge. |
-| C | Versioned migrations | PR-B | `NOT_STARTED` | Next incomplete PR after PR-A review/merge decision. |
+| B | Persistence foundation | PR-A / GitHub `#5` | `DONE_MERGED` | Fast-forward head `607e1f1`; PR/main CI and Release Pack green on the exact SHA. |
+| C | Versioned migrations | PR-B | `NEXT` | Next separate structural task; not started in the PR-A merge run. |
 | D | Startup coordinator | PR-C | `NOT_STARTED` | Wait for preceding item. |
 | E | Catalog state-machine/performance split | PR-D | `NOT_STARTED` | Wait for preceding item. |
 | F | ProductRepository split | PR-E | `NOT_STARTED` | Wait for preceding item. |
 | G | SaleRepository split | PR-F | `NOT_STARTED` | Wait for preceding item. |
 | H | Reproducible/signable release chain | PR-G | `NOT_STARTED` | Wait for preceding item; no certificate or secret in Git. |
 
-Only one structural PR is selected in this execution. PR-B is recorded as the
-next incomplete software item, but it is not implemented here.
+Only PR-A was reviewed, corrected and merged in this execution. PR-B is recorded
+as `NEXT`, but it remains a separate task and is not implemented here.
