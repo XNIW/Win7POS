@@ -1,5 +1,28 @@
 # Win7POS final closure and merge review — 2026-07-17
 
+## Software merge completion
+
+- Task software status: `DONE_SOFTWARE_MERGED`.
+- Merge status: `MERGED_AND_VERIFIED`.
+- External validation status: `DEFERRED_EXTERNAL_VALIDATION`.
+- Production certification: `OPEN`.
+- Final main SHA: `f4f17f06d04c2d9ec16309317952cfd08420961e`.
+- Post-merge CI: `PASS` — GitHub run `29590958239`, exact main SHA.
+- Post-merge Release Pack: `PASS` — GitHub run `29590958386`, exact main SHA.
+
+PR `#4` was merged by direct fast-forward push, without force, from initial main
+`5160b7c1574313ac8be47fdf2e139bb715a37e7d` to software head
+`f4f17f06d04c2d9ec16309317952cfd08420961e`. GitHub records the same SHA as the
+PR head and merge commit. Local `main` and `origin/main` were equal at `0 0`
+before this documentation-only completion commit.
+
+The post-merge GitHub artifact records `CommitSHA=f4f17f0...`, `Ref=main`,
+`Platform=x86`, `SdkVersion=10.0.301` and `TreeState=clean`. The downloaded pack
+passed 33/33 source-and-release gates; all 41 `SHA256SUMS.txt` entries matched;
+the CI TRX recorded 249/249 tests with zero failed or skipped; the installer and
+release ZIP were present and non-empty. This completion is restricted to the
+software task. All 16 external items remain open and none is declared PASS.
+
 ## Final software merge authorization
 
 - Software implementation status: `READY_FOR_MERGE`.

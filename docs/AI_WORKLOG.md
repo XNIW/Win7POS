@@ -422,3 +422,31 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Task software status: `READY_FOR_MERGE`.
 - Merge authorization: `APPROVED_BY_PROJECT_OWNER`.
 - Production certification remains open: `NOT_YET_CERTIFIED`.
+
+## 2026-07-17 - Software merge and post-merge verification (DONE_SOFTWARE_MERGED)
+
+- PR `#4` head and merge commit:
+  `f4f17f06d04c2d9ec16309317952cfd08420961e`; PR CI run `29590576245`
+  completed successfully on that exact SHA.
+- Merge method: direct fast-forward from `5160b7c` to `f4f17f0`; no force push.
+  GitHub records PR `#4` as `MERGED`.
+- Task software status: `DONE_SOFTWARE_MERGED`.
+- Merge status: `MERGED_AND_VERIFIED`.
+- External validation status: `DEFERRED_EXTERNAL_VALIDATION`.
+- Production certification: `OPEN`.
+- Final main SHA: `f4f17f06d04c2d9ec16309317952cfd08420961e` (software merge
+  head before this documentation-only completion commit).
+- Post-merge CI: `PASS`, run `29590958239`, push event on exact main SHA; all
+  workflow steps passed, including upload of the TRX with 249/249 tests and zero
+  skipped.
+- Post-merge Release Pack: `PASS`, run `29590958386`, push event on exact main
+  SHA; downloaded GitHub artifacts passed 33/33 source-and-release gates,
+  VERSION/ref/tree-state checks and 41/41 manifest hashes.
+- GitHub installer SHA-256:
+  `7DB77AD2B3EEBDFC60C0009EC7A5F75AF7524C64AD845C0D6AAE8EFAC96FCBA7`;
+  release ZIP SHA-256:
+  `BE6627F89D771E965B6597DA243833A15A43EDF77F98A26B5C63AC0F2CC1EBE2`.
+- The 16 entries in `docs/QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md` remain
+  `OPEN` / `DEFERRED_EXTERNAL_VALIDATION`; staging, Win7 physical,
+  dual-monitor, scanner, Xprinter, cash drawer and DPI/language runtime are not
+  declared PASS.
