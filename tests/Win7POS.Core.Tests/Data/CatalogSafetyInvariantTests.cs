@@ -231,6 +231,10 @@ VALUES('PAGE-1', 'Page 1', 100, 'product-page-1', 1),
         var valid = ValidCatalogResponse();
         Assert.AreEqual(string.Empty, PosOnlineCompatibilityValidator.ValidateCatalogPull(valid));
 
+        valid.Ok = false;
+        Assert.AreEqual("catalog_response_not_ok", PosOnlineCompatibilityValidator.ValidateCatalogPull(valid));
+
+        valid = ValidCatalogResponse();
         valid.SchemaVersion = 1;
         Assert.AreEqual("catalog_schema_not_supported", PosOnlineCompatibilityValidator.ValidateCatalogPull(valid));
         valid = ValidCatalogResponse();
@@ -255,8 +259,11 @@ VALUES('PAGE-1', 'Page 1', 100, 'product-page-1', 1),
         return new PosCatalogPullResponse
         {
             Catalog = new PosCatalogPayload(),
+            CatalogVersion = "catalog-v1",
+            Ok = true,
             SchemaVersion = PosOnlineContract.CatalogPullSchemaVersion,
             SyncMode = "delta",
+            SyncCursor = "cursor-v1",
             Policy = new PosPolicyResponse
             {
                 ContractVersion = PosOnlineContract.PolicyContractVersion,

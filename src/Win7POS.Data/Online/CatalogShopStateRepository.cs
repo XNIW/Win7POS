@@ -115,12 +115,13 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey)
                     {
                         await conn.ExecuteAsync(@"
 DELETE FROM app_settings
-WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey);",
+WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey, @LastSyncModeKey);",
                             new
                             {
                                 CursorKey = LastSyncCursorKey,
                                 InitialCompletedKey = InitialCompletedAtKey,
                                 LastSyncKey = LastSyncAtKey,
+                                LastSyncModeKey,
                                 SaleSafeKey = SaleSafeAtKey
                             },
                             tx).ConfigureAwait(false);
@@ -153,8 +154,9 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey);",
 
                 var epoch = await LoadEpochAsync(conn, tx).ConfigureAwait(false);
                 var cursor = await GetAsync(conn, tx, LastSyncCursorKey).ConfigureAwait(false);
+                var mode = await GetAsync(conn, tx, LastSyncModeKey).ConfigureAwait(false);
                 tx.Commit();
-                return CatalogShopBindingResult.Success(cursor, epoch);
+                return CatalogShopBindingResult.Success(cursor, epoch, mode);
             }
         }
 
@@ -164,7 +166,9 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey);",
             string syncCursor,
             string generatedAt,
             long expectedEpoch = -1,
-            string syncMode = null)
+            string syncMode = null,
+            string expectedPreviousCursor = null,
+            string expectedPreviousMode = null)
         {
             var value = string.IsNullOrWhiteSpace(generatedAt)
                 ? DateTimeOffset.UtcNow.ToString("O")
@@ -174,7 +178,14 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey);",
             using (var conn = _factory.Open())
             using (var tx = conn.BeginTransaction())
             {
-                await RequireBindingAsync(conn, tx, trustedShopId, trustedShopCode, expectedEpoch).ConfigureAwait(false);
+                await RequireCommitStateAsync(
+                    conn,
+                    tx,
+                    trustedShopId,
+                    trustedShopCode,
+                    expectedEpoch,
+                    expectedPreviousCursor,
+                    expectedPreviousMode).ConfigureAwait(false);
                 await SetAsync(conn, tx, LastSyncAtKey, value).ConfigureAwait(false);
                 await SetAsync(conn, tx, LastSyncCursorKey, cursor).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(syncMode))
@@ -193,15 +204,23 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey);",
             long expectedEpoch,
             string syncMode,
             bool authoritativeSnapshotCommitted,
-            CatalogDeltaChainCheckpoint deltaCheckpoint = null)
+            CatalogDeltaChainCheckpoint deltaCheckpoint = null,
+            string expectedPreviousCursor = null,
+            string expectedPreviousMode = null)
         {
-            if (string.Equals(syncMode, "full_refresh", StringComparison.OrdinalIgnoreCase) &&
+            var normalizedSyncMode = (syncMode ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalizedSyncMode != "delta" && normalizedSyncMode != "full_refresh")
+            {
+                throw new InvalidOperationException("Catalog sync mode is not supported.");
+            }
+
+            if (normalizedSyncMode == "full_refresh" &&
                 !authoritativeSnapshotCommitted)
             {
                 return false;
             }
 
-            if (string.Equals(syncMode, "full_refresh", StringComparison.OrdinalIgnoreCase))
+            if (normalizedSyncMode == "full_refresh")
             {
                 var value = string.IsNullOrWhiteSpace(generatedAt)
                     ? DateTimeOffset.UtcNow.ToString("O")
@@ -210,12 +229,14 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey);",
                 using (var conn = _factory.Open())
                 using (var tx = conn.BeginTransaction())
                 {
-                    await RequireBindingAsync(
+                    await RequireCommitStateAsync(
                         conn,
                         tx,
                         trustedShopId,
                         trustedShopCode,
-                        expectedEpoch).ConfigureAwait(false);
+                        expectedEpoch,
+                        expectedPreviousCursor,
+                        expectedPreviousMode).ConfigureAwait(false);
                     await RequireExactnessSaleSafetyAsync(
                         conn,
                         tx,
@@ -224,7 +245,7 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey);",
                         requireEvidence: true).ConfigureAwait(false);
                     await SetAsync(conn, tx, LastSyncAtKey, value).ConfigureAwait(false);
                     await SetAsync(conn, tx, LastSyncCursorKey, cursor).ConfigureAwait(false);
-                    await SetAsync(conn, tx, LastSyncModeKey, syncMode.Trim()).ConfigureAwait(false);
+                    await SetAsync(conn, tx, LastSyncModeKey, normalizedSyncMode).ConfigureAwait(false);
                     await ClearDeltaChainAsync(conn, tx).ConfigureAwait(false);
                     tx.Commit();
                     return true;
@@ -238,17 +259,19 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey);",
             using (var conn = _factory.Open())
             using (var tx = conn.BeginTransaction())
             {
-                await RequireBindingAsync(
+                await RequireCommitStateAsync(
                     conn,
                     tx,
                     trustedShopId,
                     trustedShopCode,
-                    expectedEpoch).ConfigureAwait(false);
+                    expectedEpoch,
+                    expectedPreviousCursor,
+                    expectedPreviousMode).ConfigureAwait(false);
                 await SetAsync(conn, tx, LastSyncAtKey, deltaValue).ConfigureAwait(false);
                 await SetAsync(conn, tx, LastSyncCursorKey, deltaCursor).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(syncMode))
                 {
-                    await SetAsync(conn, tx, LastSyncModeKey, syncMode.Trim()).ConfigureAwait(false);
+                    await SetAsync(conn, tx, LastSyncModeKey, normalizedSyncMode).ConfigureAwait(false);
                 }
 
                 if (deltaCheckpoint != null)
@@ -267,6 +290,46 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey);",
                 tx.Commit();
             }
             return true;
+        }
+
+        public async Task ValidateCommitStateAsync(
+            string trustedShopId,
+            string trustedShopCode,
+            long expectedEpoch,
+            string expectedPreviousCursor,
+            string expectedPreviousMode)
+        {
+            using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction())
+            {
+                await RequireCommitStateAsync(
+                    conn,
+                    tx,
+                    trustedShopId,
+                    trustedShopCode,
+                    expectedEpoch,
+                    expectedPreviousCursor ?? string.Empty,
+                    expectedPreviousMode ?? string.Empty).ConfigureAwait(false);
+                tx.Commit();
+            }
+        }
+
+        public async Task ValidateBindingEpochAsync(
+            string trustedShopId,
+            string trustedShopCode,
+            long expectedEpoch)
+        {
+            using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction())
+            {
+                await RequireBindingAsync(
+                    conn,
+                    tx,
+                    trustedShopId,
+                    trustedShopCode,
+                    expectedEpoch).ConfigureAwait(false);
+                tx.Commit();
+            }
         }
 
         public async Task<CatalogDeltaChainState> LoadDeltaChainAsync(
@@ -383,9 +446,37 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey);",
             }
         }
 
+        public async Task<long> LoadTransitionEpochAsync()
+        {
+            using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction())
+            {
+                var epoch = await LoadEpochAsync(conn, tx).ConfigureAwait(false);
+                tx.Commit();
+                return epoch;
+            }
+        }
+
         public async Task ResetForRestoreReviewAsync(
             string trustedShopId,
             string trustedShopCode)
+        {
+            using (await new CatalogShopTransitionBarrier(_factory).EnterAsync().ConfigureAwait(false))
+            {
+                var previousEpoch = await LoadTransitionEpochAsync().ConfigureAwait(false);
+                await ResetForRestoreReviewWhileBarrierHeldAsync(
+                    trustedShopId,
+                    trustedShopCode,
+                    previousEpoch).ConfigureAwait(false);
+            }
+        }
+
+        // The caller must own CatalogShopTransitionBarrier across the database swap and
+        // this reset. minimumPreviousEpoch carries the live generation across that swap.
+        public async Task<long> ResetForRestoreReviewWhileBarrierHeldAsync(
+            string trustedShopId,
+            string trustedShopCode,
+            long minimumPreviousEpoch)
         {
             var binding = await EnsureAndLoadCursorAsync(trustedShopId, trustedShopCode).ConfigureAwait(false);
             if (!binding.IsValid)
@@ -402,6 +493,19 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey);",
                     trustedShopId,
                     trustedShopCode,
                     binding.Epoch).ConfigureAwait(false);
+                var currentEpoch = await LoadEpochAsync(conn, tx).ConfigureAwait(false);
+                var epochFloor = Math.Max(Math.Max(0, minimumPreviousEpoch), currentEpoch);
+                if (epochFloor == long.MaxValue)
+                {
+                    throw new InvalidOperationException("Catalog state transition epoch is exhausted.");
+                }
+
+                var nextEpoch = epochFloor + 1;
+                await SetAsync(
+                    conn,
+                    tx,
+                    TransitionEpochKey,
+                    nextEpoch.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
                 await conn.ExecuteAsync(@"
 DELETE FROM app_settings
 WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey, @LastSyncModeKey);",
@@ -416,7 +520,16 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey, @Las
                     tx).ConfigureAwait(false);
                 await ClearExactnessAsync(conn, tx).ConfigureAwait(false);
                 await ClearDeltaChainAsync(conn, tx).ConfigureAwait(false);
+                var resetAt = DateTimeOffset.UtcNow.ToString("O");
+                await SetAsync(conn, tx, CompletenessStatusKey, CatalogCompletenessStatus.Unverified.ToString()).ConfigureAwait(false);
+                await SetAsync(conn, tx, CompletenessCodeKey, "catalog_restore_review_required").ConfigureAwait(false);
+                await SetAsync(conn, tx, RepairRequiredKey, "1").ConfigureAwait(false);
+                await SetAsync(conn, tx, ExactnessEvaluatedAtKey, resetAt).ConfigureAwait(false);
+                await SetAsync(conn, tx, ExactnessVerifiedAtKey, string.Empty).ConfigureAwait(false);
+                await SetAsync(conn, tx, ExactnessShopIdKey, SafeOpaque(Normalize(trustedShopId), 128)).ConfigureAwait(false);
+                await SetAsync(conn, tx, ExactnessShopCodeKey, OutboxShopBinding.NormalizeCode(trustedShopCode)).ConfigureAwait(false);
                 tx.Commit();
+                return nextEpoch;
             }
         }
 
@@ -452,13 +565,26 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey, @Las
                     normalizedShopId,
                     normalizedShopCode,
                     expectedEpoch).ConfigureAwait(false);
+                var currentEpoch = await LoadEpochAsync(conn, tx).ConfigureAwait(false);
+                if (currentEpoch == long.MaxValue)
+                {
+                    throw new InvalidOperationException("Catalog state transition epoch is exhausted.");
+                }
+
+                await SetAsync(
+                    conn,
+                    tx,
+                    TransitionEpochKey,
+                    (currentEpoch + 1).ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
                 await conn.ExecuteAsync(@"
 DELETE FROM app_settings
-WHERE key IN (@CursorKey, @SaleSafeKey, @InitialCompletedKey);",
+WHERE key IN (@CursorKey, @SaleSafeKey, @InitialCompletedKey, @LastSyncKey, @LastSyncModeKey);",
                     new
                     {
                         CursorKey = LastSyncCursorKey,
                         InitialCompletedKey = InitialCompletedAtKey,
+                        LastSyncKey = LastSyncAtKey,
+                        LastSyncModeKey,
                         SaleSafeKey = SaleSafeAtKey
                     },
                     tx).ConfigureAwait(false);
@@ -480,7 +606,9 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @InitialCompletedKey);",
             string trustedShopId,
             string trustedShopCode,
             CatalogExactnessResult exactness,
-            long expectedEpoch = -1)
+            long expectedEpoch = -1,
+            string expectedPreviousCursor = null,
+            string expectedPreviousMode = null)
         {
             if (exactness == null) throw new ArgumentNullException(nameof(exactness));
 
@@ -499,12 +627,14 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @InitialCompletedKey);",
             using (var conn = _factory.Open())
             using (var tx = conn.BeginTransaction())
             {
-                await RequireBindingAsync(
+                await RequireCommitStateAsync(
                     conn,
                     tx,
                     normalizedShopId,
                     normalizedShopCode,
-                    expectedEpoch).ConfigureAwait(false);
+                    expectedEpoch,
+                    expectedPreviousCursor,
+                    expectedPreviousMode).ConfigureAwait(false);
                 await ClearExactnessAsync(conn, tx).ConfigureAwait(false);
 
                 await SetAsync(conn, tx, CompletenessStatusKey, canonical.Status.ToString()).ConfigureAwait(false);
@@ -672,7 +802,9 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
             string trustedShopId,
             string trustedShopCode,
             string generatedAt,
-            long expectedEpoch = -1)
+            long expectedEpoch = -1,
+            string expectedPreviousCursor = null,
+            string expectedPreviousMode = null)
         {
             var value = string.IsNullOrWhiteSpace(generatedAt)
                 ? DateTimeOffset.UtcNow.ToString("O")
@@ -681,7 +813,14 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
             using (var conn = _factory.Open())
             using (var tx = conn.BeginTransaction())
             {
-                await RequireBindingAsync(conn, tx, trustedShopId, trustedShopCode, expectedEpoch).ConfigureAwait(false);
+                await RequireCommitStateAsync(
+                    conn,
+                    tx,
+                    trustedShopId,
+                    trustedShopCode,
+                    expectedEpoch,
+                    expectedPreviousCursor,
+                    expectedPreviousMode).ConfigureAwait(false);
                 await RequireExactnessSaleSafetyAsync(
                     conn,
                     tx,
@@ -1199,6 +1338,47 @@ WHERE key IN (
             }
         }
 
+        private static async Task RequireCommitStateAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            Microsoft.Data.Sqlite.SqliteTransaction tx,
+            string trustedShopId,
+            string trustedShopCode,
+            long expectedEpoch,
+            string expectedPreviousCursor,
+            string expectedPreviousMode)
+        {
+            await RequireBindingAsync(
+                conn,
+                tx,
+                trustedShopId,
+                trustedShopCode,
+                expectedEpoch).ConfigureAwait(false);
+
+            if (expectedPreviousCursor != null)
+            {
+                var currentCursor = Normalize(await GetAsync(conn, tx, LastSyncCursorKey).ConfigureAwait(false));
+                if (!string.Equals(
+                    currentCursor,
+                    Normalize(expectedPreviousCursor),
+                    StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("Catalog state previous cursor mismatch.");
+                }
+            }
+
+            if (expectedPreviousMode != null)
+            {
+                var currentMode = Normalize(await GetAsync(conn, tx, LastSyncModeKey).ConfigureAwait(false));
+                if (!string.Equals(
+                    currentMode,
+                    Normalize(expectedPreviousMode),
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("Catalog state previous mode mismatch.");
+                }
+            }
+        }
+
         private static async Task<long> LoadEpochAsync(
             Microsoft.Data.Sqlite.SqliteConnection conn,
             Microsoft.Data.Sqlite.SqliteTransaction tx)
@@ -1383,19 +1563,21 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
         public string Cursor { get; private set; } = string.Empty;
         public long Epoch { get; private set; }
         public bool IsValid { get; private set; }
+        public string Mode { get; private set; } = string.Empty;
 
         public static CatalogShopBindingResult Failure(string code)
         {
             return new CatalogShopBindingResult { Code = code ?? string.Empty };
         }
 
-        public static CatalogShopBindingResult Success(string cursor, long epoch)
+        public static CatalogShopBindingResult Success(string cursor, long epoch, string mode)
         {
             return new CatalogShopBindingResult
             {
                 Cursor = cursor ?? string.Empty,
                 Epoch = epoch,
-                IsValid = true
+                IsValid = true,
+                Mode = mode ?? string.Empty
             };
         }
     }

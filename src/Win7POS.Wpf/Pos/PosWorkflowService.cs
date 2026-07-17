@@ -232,8 +232,14 @@ namespace Win7POS.Wpf.Pos
                 throw new FileNotFoundException("Backup file not found.", backupDbPath);
 
             await _gate.WaitAsync().ConfigureAwait(false);
+            IDisposable catalogTransitionLease = null;
             try
             {
+                catalogTransitionLease = await new CatalogShopTransitionBarrier(_factory)
+                    .EnterAsync()
+                    .ConfigureAwait(false);
+                var catalogState = new CatalogShopStateRepository(_factory);
+                var liveCatalogEpoch = await catalogState.LoadTransitionEpochAsync().ConfigureAwait(false);
                 var currentShop = await _officialShopSnapshots.GetAsync().ConfigureAwait(false);
                 if (currentShop == null || string.IsNullOrWhiteSpace(currentShop.ShopCode))
                 {
@@ -299,8 +305,11 @@ namespace Win7POS.Wpf.Pos
                                 throw new InvalidOperationException(PosLocalization.F("dbMaintenance.integrityCheckFailed", integrity));
                             }
 
-                            await new CatalogShopStateRepository(_factory)
-                                .ResetForRestoreReviewAsync(currentShop.ShopId, currentShop.ShopCode)
+                            await catalogState
+                                .ResetForRestoreReviewWhileBarrierHeldAsync(
+                                    currentShop.ShopId,
+                                    currentShop.ShopCode,
+                                    liveCatalogEpoch)
                                 .ConfigureAwait(false);
 
                             await _settings.SetBoolAsync(KeyRestoreNeedsSyncReview, true).ConfigureAwait(false);
@@ -344,6 +353,7 @@ namespace Win7POS.Wpf.Pos
             }
             finally
             {
+                catalogTransitionLease?.Dispose();
                 _gate.Release();
             }
         }

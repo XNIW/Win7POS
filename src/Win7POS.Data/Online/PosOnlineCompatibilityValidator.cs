@@ -13,11 +13,25 @@ namespace Win7POS.Data.Online
                 return "catalog_schema_not_supported";
             }
 
+            if (!response.Ok)
+            {
+                return "catalog_response_not_ok";
+            }
+
             var syncMode = (response.SyncMode ?? string.Empty).Trim();
             if (!string.Equals(syncMode, "delta", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(syncMode, "full_refresh", StringComparison.OrdinalIgnoreCase))
             {
                 return "catalog_sync_mode_not_supported";
+            }
+
+            var syncCursor = response.SyncCursor ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(syncCursor) ||
+                syncCursor.Length > 512 ||
+                syncCursor.Any(char.IsControl) ||
+                !string.Equals(syncCursor, syncCursor.Trim(), StringComparison.Ordinal))
+            {
+                return "catalog_sync_cursor_invalid";
             }
 
             var catalogVersionError = ValidateCatalogVersion(response.CatalogVersion);
@@ -44,7 +58,8 @@ namespace Win7POS.Data.Online
         public static string ValidateCatalogVersion(string catalogVersion)
         {
             var value = catalogVersion ?? string.Empty;
-            if (value.Length > 128 ||
+            if (string.IsNullOrWhiteSpace(value) ||
+                value.Length > 128 ||
                 value.Any(char.IsControl) ||
                 !string.Equals(value, value.Trim(), StringComparison.Ordinal))
             {

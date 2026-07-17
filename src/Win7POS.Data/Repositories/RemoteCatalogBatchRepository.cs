@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
 {
@@ -25,7 +26,8 @@ namespace Win7POS.Data.Repositories
 
         public async Task<RemoteCatalogBatchApplyResult> ApplyAsync(
             RemoteCatalogBatch batch,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            RemoteCatalogCommitFence commitFence = null)
         {
             if (batch == null) throw new ArgumentNullException(nameof(batch));
 
@@ -38,6 +40,7 @@ namespace Win7POS.Data.Repositories
                 using var tx = conn.BeginTransaction();
                 try
                 {
+                    await RequireCommitFenceAsync(conn, tx, commitFence).ConfigureAwait(false);
                     var result = new RemoteCatalogBatchApplyResult();
                     var pendingPriceCollisionIds = new HashSet<long>();
                     var relinkProductRemoteIds = new HashSet<string>(StringComparer.Ordinal);
@@ -387,6 +390,78 @@ WHERE NOT EXISTS (
             }
         }
 
+        private static async Task RequireCommitFenceAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            RemoteCatalogCommitFence commitFence)
+        {
+            if (commitFence == null)
+            {
+                return;
+            }
+
+            var boundShopId = await ReadSettingAsync(
+                conn,
+                tx,
+                CatalogShopStateRepository.BoundShopIdKey).ConfigureAwait(false);
+            var boundShopCode = await ReadSettingAsync(
+                conn,
+                tx,
+                CatalogShopStateRepository.BoundShopCodeKey).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
+                boundShopId,
+                boundShopCode,
+                commitFence.ShopId,
+                commitFence.ShopCode)))
+            {
+                throw new InvalidOperationException("Catalog state shop binding mismatch.");
+            }
+
+            var rawEpoch = await ReadSettingAsync(
+                conn,
+                tx,
+                CatalogShopStateRepository.TransitionEpochKey).ConfigureAwait(false);
+            if (!long.TryParse(rawEpoch, out var epoch) || epoch != commitFence.ExpectedEpoch)
+            {
+                throw new InvalidOperationException("Catalog state transition epoch mismatch.");
+            }
+
+            var currentCursor = (await ReadSettingAsync(
+                conn,
+                tx,
+                CatalogShopStateRepository.LastSyncCursorKey).ConfigureAwait(false) ?? string.Empty).Trim();
+            if (!string.Equals(
+                currentCursor,
+                (commitFence.ExpectedPreviousCursor ?? string.Empty).Trim(),
+                StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("Catalog state previous cursor mismatch.");
+            }
+
+            var currentMode = (await ReadSettingAsync(
+                conn,
+                tx,
+                CatalogShopStateRepository.LastSyncModeKey).ConfigureAwait(false) ?? string.Empty).Trim();
+            if (!string.Equals(
+                currentMode,
+                (commitFence.ExpectedPreviousMode ?? string.Empty).Trim(),
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException("Catalog state previous mode mismatch.");
+            }
+        }
+
+        private static Task<string> ReadSettingAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            string key)
+        {
+            return conn.ExecuteScalarAsync<string>(
+                "SELECT value FROM app_settings WHERE key = @key;",
+                new { key },
+                tx);
+        }
+
         private static Task<int> RelinkRemoteProductReferencesAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
@@ -611,6 +686,15 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
                 await _command.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
         }
+    }
+
+    public sealed class RemoteCatalogCommitFence
+    {
+        public long ExpectedEpoch { get; set; }
+        public string ExpectedPreviousCursor { get; set; } = string.Empty;
+        public string ExpectedPreviousMode { get; set; } = string.Empty;
+        public string ShopCode { get; set; } = string.Empty;
+        public string ShopId { get; set; } = string.Empty;
     }
 
     public sealed class RemoteCatalogBatch

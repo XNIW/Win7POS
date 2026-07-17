@@ -172,6 +172,10 @@ namespace Win7POS.Data.Online
                     }
                 }
             }
+            catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (TaskCanceledException)
             {
                 return PosOnlineResult<TResponse>.Failure(

@@ -449,7 +449,10 @@ namespace Win7POS.Wpf.Pos.Online
                 item.Id,
                 item.SaleId,
                 SafeCode(errorCode),
-                nowMs).ConfigureAwait(false);
+                nowMs,
+                item.Status,
+                item.AttemptCount,
+                item.LeaseObservedAt).ConfigureAwait(false);
         }
 
         private static string GetOperationType(Sale sale)

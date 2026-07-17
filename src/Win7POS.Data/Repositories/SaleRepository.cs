@@ -785,6 +785,7 @@ SELECT
   payload_hash AS PayloadHash,
   status AS Status,
   attempt_count AS AttemptCount,
+  COALESCE(last_attempt_at, updated_at, 0) AS LeaseObservedAt,
   next_retry_at AS NextRetryAt,
   last_error_code AS LastErrorCode
 FROM sales_sync_outbox
@@ -1084,8 +1085,19 @@ WHERE id = @outboxId
             long outboxId,
             long saleId,
             string errorCode,
-            long nowMs)
+            long nowMs,
+            string expectedStatus,
+            int expectedAttemptCount,
+            long expectedLeaseObservedAt)
         {
+            var normalizedExpectedStatus = (expectedStatus ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalizedExpectedStatus != "pending" &&
+                normalizedExpectedStatus != "retry" &&
+                normalizedExpectedStatus != "in_progress")
+            {
+                return false;
+            }
+
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
             var rows = await conn.ExecuteAsync(@"
@@ -1095,8 +1107,21 @@ SET status = 'failed_blocked',
     last_error_at = @nowMs,
     updated_at = @nowMs
 WHERE id = @outboxId
-  AND status IN ('pending', 'retry', 'in_progress');",
-                new { outboxId, errorCode, nowMs }, tx).ConfigureAwait(false);
+  AND sale_id = @saleId
+  AND status = @normalizedExpectedStatus
+  AND attempt_count = @expectedAttemptCount
+  AND COALESCE(last_attempt_at, updated_at, 0) = @expectedLeaseObservedAt;",
+                new
+                {
+                    outboxId,
+                    saleId,
+                    errorCode,
+                    nowMs,
+                    normalizedExpectedStatus,
+                    expectedAttemptCount,
+                    expectedLeaseObservedAt
+                },
+                tx).ConfigureAwait(false);
             if (rows == 1)
             {
                 await conn.ExecuteAsync(
@@ -1363,6 +1388,7 @@ SELECT last_insert_rowid();", line, tx).ConfigureAwait(false);
         public string PayloadHash { get; set; }
         public string Status { get; set; }
         public int AttemptCount { get; set; }
+        public long LeaseObservedAt { get; set; }
         public long NextRetryAt { get; set; }
         public string LastErrorCode { get; set; }
     }

@@ -17,8 +17,11 @@ public sealed class CatalogExactnessTests
     public void CatalogSummaryContract_IsOptionalAndRoundTripsAuthoritativeEvidence()
     {
         var legacy = Deserialize<PosCatalogPullResponse>(@"{
+  ""ok"": true,
   ""schemaVersion"": 2,
   ""syncMode"": ""full_refresh"",
+  ""syncCursor"": ""cursor-legacy"",
+  ""catalogVersion"": ""catalog-legacy"",
   ""catalog"": {}
 }");
         legacy.Policy = ValidPolicy();
@@ -483,7 +486,7 @@ VALUES('WHITESPACE-REMOTE', 'Whitespace identity', 100, '   ', 1);");
         await repair;
 
         var after = await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
-        Assert.AreEqual(binding.Epoch, after.Epoch);
+        Assert.IsTrue(after.Epoch > binding.Epoch);
         Assert.AreEqual(string.Empty, after.Cursor);
         using var verify = db.Factory.Open();
         Assert.AreEqual("SHOP-A", await verify.ExecuteScalarAsync<string>(
@@ -524,7 +527,7 @@ VALUES('WHITESPACE-REMOTE', 'Whitespace identity', 100, '   ', 1);");
 
         var after = await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
         var exactness = await state.LoadExactnessAsync();
-        Assert.AreEqual(binding.Epoch, after.Epoch);
+        Assert.IsTrue(after.Epoch > binding.Epoch);
         Assert.AreEqual(string.Empty, after.Cursor);
         Assert.AreEqual(CatalogCompletenessStatus.Unverified, exactness.Status);
         Assert.AreEqual("catalog_full_repair_requested", exactness.Code);
@@ -903,9 +906,12 @@ VALUES('product-1', 'category-1', 'supplier-1'),
         return new PosCatalogPullResponse
         {
             Catalog = new PosCatalogPayload(),
+            CatalogVersion = "catalog-v1",
+            Ok = true,
             Policy = ValidPolicy(),
             SchemaVersion = PosOnlineContract.CatalogPullSchemaVersion,
-            SyncMode = "full_refresh"
+            SyncMode = "full_refresh",
+            SyncCursor = "cursor-v1"
         };
     }
 

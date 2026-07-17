@@ -186,6 +186,7 @@ namespace Win7POS.Wpf.Pos.Online
                 return PosCatalogPullOutcome.Failure("invalid_session", false, false, 0);
             }
 
+            var capturedEpoch = -1L;
             try
             {
                 using (await new CatalogShopTransitionBarrier(_factory)
@@ -219,6 +220,10 @@ namespace Win7POS.Wpf.Pos.Online
                     return PosCatalogPullOutcome.Failure(binding.Code, false, false, 0);
                 }
 
+                capturedEpoch = binding.Epoch;
+
+                var fullBoundaryPrepared = false;
+
                 if (forceFullRepair)
                 {
                     await catalogState.RequestFullRepairWhileBarrierHeldAsync(
@@ -235,6 +240,9 @@ namespace Win7POS.Wpf.Pos.Online
                             .ConfigureAwait(false);
                         return PosCatalogPullOutcome.Failure(binding.Code, false, false, 0);
                     }
+
+                    capturedEpoch = binding.Epoch;
+                    fullBoundaryPrepared = true;
                 }
 
                 await StoreCatalogBootstrapStatusAsync(bootstrapRun
@@ -245,7 +253,6 @@ namespace Win7POS.Wpf.Pos.Online
                 using (var client = new PosAdminWebClient(options))
                 {
                     var syncTimer = Stopwatch.StartNew();
-                    var cursor = string.Empty;
                     var effectiveMaxPages = maxPages;
                     var totalStats = new CatalogApplyStats();
                     PosCatalogPullResponse lastResponse = null;
@@ -302,8 +309,13 @@ namespace Win7POS.Wpf.Pos.Online
                             return PosCatalogPullOutcome.Failure(binding.Code, false, false, 0);
                         }
 
+                        capturedEpoch = binding.Epoch;
                         persistedDeltaChain = CatalogDeltaChainState.Empty();
+                        fullBoundaryPrepared = true;
                     }
+
+                    var committedCursor = binding.Cursor;
+                    var committedMode = binding.Mode;
 
                     var seenCursorFingerprints = new HashSet<string>(
                         persistedDeltaChain.CursorFingerprints,
@@ -322,7 +334,7 @@ namespace Win7POS.Wpf.Pos.Online
 
                     for (var page = 1; page <= effectiveMaxPages; page++)
                     {
-                        var requestCursor = page == 1 ? binding.Cursor : cursor;
+                        var requestCursor = committedCursor;
                         var request = new PosCatalogPullRequest
                         {
                             AppVersion = typeof(PosCatalogPullService).Assembly.GetName().Version?.ToString(),
@@ -336,12 +348,15 @@ namespace Win7POS.Wpf.Pos.Online
                         };
                         var result = await CatalogPullWithRetryAsync(client, request, cancellationToken)
                             .ConfigureAwait(false);
+                        var resultCode = result.Value != null && !result.Value.Ok
+                            ? FirstNonEmpty(result.Value.Code, "catalog_response_not_ok")
+                            : result.Code;
 
-                        if ((!result.Success || result.Value == null || result.Value.Catalog == null) &&
+                        if ((!result.Success || result.Value == null || !result.Value.Ok || result.Value.Catalog == null) &&
                             !result.Denied &&
                             page == 1 &&
                             requestCursor.Length > 0 &&
-                            IsCatalogCursorRejectionCode(result.Code))
+                            IsCatalogCursorRejectionCode(resultCode))
                         {
                             // A server-rejected cursor is an authoritative boundary change, not a
                             // retryable delta error. Reset the shop-bound cursor/sale-safe state and
@@ -361,7 +376,10 @@ namespace Win7POS.Wpf.Pos.Online
                                 return PosCatalogPullOutcome.Failure(binding.Code, false, false, 0);
                             }
 
+                            capturedEpoch = binding.Epoch;
                             requestCursor = binding.Cursor;
+                            committedCursor = binding.Cursor;
+                            committedMode = binding.Mode;
                             request.SyncCursor = requestCursor;
                             seenCursorFingerprints.Clear();
                             snapshotCatalogVersionPinned = false;
@@ -370,30 +388,34 @@ namespace Win7POS.Wpf.Pos.Online
                             snapshotSummaryFingerprint = string.Empty;
                             snapshotSummary = null;
                             persistedDeltaChain = CatalogDeltaChainState.Empty();
+                            fullBoundaryPrepared = true;
                             result = await CatalogPullWithRetryAsync(client, request, cancellationToken)
                                 .ConfigureAwait(false);
+                            resultCode = result.Value != null && !result.Value.Ok
+                                ? FirstNonEmpty(result.Value.Code, "catalog_response_not_ok")
+                                : result.Code;
                         }
 
-                        if (!result.Success || result.Value == null || result.Value.Catalog == null)
+                        if (!result.Success || result.Value == null || !result.Value.Ok || result.Value.Catalog == null)
                         {
                             if (result.Denied && clearStoredStateOnDenied)
                             {
                                 _store.Clear();
                             }
 
-                            await StoreCatalogFailureAsync(result.Code).ConfigureAwait(false);
+                            await StoreCatalogFailureAsync(resultCode).ConfigureAwait(false);
                             await StoreCatalogBootstrapStatusAsync(result.Denied
                                     ? BootstrapStatusFailedAuthDenied
                                     : BootstrapStatusFailedRetryable)
                                 .ConfigureAwait(false);
 
                             _logger.LogWarning(
-                                "Catalog pull skipped: category=catalog.pull code=" + SafeCode(result.Code) +
+                                "Catalog pull skipped: category=catalog.pull code=" + SafeCode(resultCode) +
                                 " clientRequestId=" + SafeId(result.ClientRequestId) +
                                 " serverRequestId=" + SafeId(result.ServerRequestId) +
                                 " cfRay=" + SafeId(result.CfRay));
                             return PosCatalogPullOutcome.Failure(
-                                SafeCode(result.Code),
+                                SafeCode(resultCode),
                                 result.Denied,
                                 false,
                                 pagesProcessed);
@@ -416,6 +438,94 @@ namespace Win7POS.Wpf.Pos.Online
                             result.Value.SyncMode,
                             "full_refresh",
                             StringComparison.OrdinalIgnoreCase);
+                        if (page == 1 && pageIsFullRefresh && !fullBoundaryPrepared)
+                        {
+                            // A full response creates a new authoritative generation. Fence that
+                            // generation before accepting rows, then repeat the request so the
+                            // response being applied was captured under the new epoch.
+                            await catalogState.RequestFullRepairWhileBarrierHeldAsync(
+                                trustedSession.ShopId,
+                                trustedSession.ShopCode,
+                                binding.Epoch).ConfigureAwait(false);
+                            binding = await catalogState.EnsureAndLoadCursorAsync(
+                                trustedSession.ShopId,
+                                trustedSession.ShopCode).ConfigureAwait(false);
+                            if (!binding.IsValid)
+                            {
+                                return PosCatalogPullOutcome.Failure(
+                                    binding.Code,
+                                    false,
+                                    false,
+                                    pagesProcessed);
+                            }
+
+                            capturedEpoch = binding.Epoch;
+                            fullBoundaryPrepared = true;
+                            committedCursor = binding.Cursor;
+                            committedMode = binding.Mode;
+                            requestCursor = committedCursor;
+                            request.SyncCursor = requestCursor;
+                            persistedDeltaChain = CatalogDeltaChainState.Empty();
+                            seenCursorFingerprints.Clear();
+                            snapshotCatalogVersionPinned = false;
+                            snapshotCatalogVersion = string.Empty;
+                            snapshotSummaryPinned = false;
+                            snapshotSummaryFingerprint = string.Empty;
+                            snapshotSummary = null;
+
+                            result = await CatalogPullWithRetryAsync(client, request, cancellationToken)
+                                .ConfigureAwait(false);
+                            resultCode = result.Value != null && !result.Value.Ok
+                                ? FirstNonEmpty(result.Value.Code, "catalog_response_not_ok")
+                                : result.Code;
+                            if (!result.Success ||
+                                result.Value == null ||
+                                !result.Value.Ok ||
+                                result.Value.Catalog == null)
+                            {
+                                if (result.Denied && clearStoredStateOnDenied)
+                                {
+                                    _store.Clear();
+                                }
+
+                                await StoreCatalogFailureAsync(resultCode).ConfigureAwait(false);
+                                await StoreCatalogBootstrapStatusAsync(result.Denied
+                                        ? BootstrapStatusFailedAuthDenied
+                                        : BootstrapStatusFailedRetryable)
+                                    .ConfigureAwait(false);
+                                return PosCatalogPullOutcome.Failure(
+                                    SafeCode(resultCode),
+                                    result.Denied,
+                                    false,
+                                    pagesProcessed);
+                            }
+
+                            compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull(result.Value);
+                            if (!string.IsNullOrWhiteSpace(compatibilityError))
+                            {
+                                return PosCatalogPullOutcome.Failure(
+                                    compatibilityError,
+                                    false,
+                                    false,
+                                    pagesProcessed);
+                            }
+
+                            pageIsFullRefresh = string.Equals(
+                                result.Value.SyncMode,
+                                "full_refresh",
+                                StringComparison.OrdinalIgnoreCase);
+                            if (!pageIsFullRefresh)
+                            {
+                                const string boundaryModeCode = "catalog_full_boundary_requires_full_refresh";
+                                await StoreCatalogFailureAsync(boundaryModeCode).ConfigureAwait(false);
+                                return PosCatalogPullOutcome.Failure(
+                                    boundaryModeCode,
+                                    false,
+                                    false,
+                                    pagesProcessed);
+                            }
+                        }
+
                         if (page == 1 && persistedDeltaChain.HasState && pageIsFullRefresh)
                         {
                             // A server-selected full snapshot is a new authoritative boundary,
@@ -640,17 +750,7 @@ namespace Win7POS.Wpf.Pos.Online
                                     0);
                             }
 
-                            if (fullRefresh && !forceFullRepair)
-                            {
-                                // A full snapshot is not safe for sales until every page is applied,
-                                // reconciled and verified. Resetting the cursor also guarantees that an
-                                // interrupted full refresh restarts from an authoritative boundary.
-                                await catalogState.RequestFullRepairWhileBarrierHeldAsync(
-                                    trustedSession.ShopId,
-                                    trustedSession.ShopCode,
-                                    binding.Epoch).ConfigureAwait(false);
-                            }
-                            else if (!fullRefresh)
+                            if (!fullRefresh)
                             {
                                 var exactnessState = await catalogState.LoadExactnessAsync()
                                     .ConfigureAwait(false);
@@ -711,7 +811,14 @@ namespace Win7POS.Wpf.Pos.Online
                                 ref duplicatePriceRows);
                         }
 
-                        var applyStats = await ApplyCatalogAsync(result.Value, fullRefresh, cancellationToken)
+                        var applyStats = await ApplyCatalogAsync(
+                            result.Value,
+                            fullRefresh,
+                            trustedSession,
+                            binding.Epoch,
+                            committedCursor,
+                            committedMode,
+                            cancellationToken)
                             .ConfigureAwait(false);
                         totalStats.Add(applyStats);
                         if (applyStats.RowsSkipped > 0)
@@ -747,12 +854,20 @@ namespace Win7POS.Wpf.Pos.Online
                             applyStats,
                             trustedSession,
                             binding.Epoch,
-                            deltaCheckpoint).ConfigureAwait(false);
+                            deltaCheckpoint,
+                            fullRefresh,
+                            committedCursor,
+                            committedMode).ConfigureAwait(false);
+
+                        if (!fullRefresh)
+                        {
+                            committedCursor = result.Value.SyncCursor;
+                            committedMode = result.Value.SyncMode;
+                        }
 
                         lastResponse = result.Value;
                         lastResult = result;
                         pagesProcessed = page;
-                        cursor = result.Value.SyncCursor;
                         progress?.Report(PosCatalogPullProgress.ForCatalogPage(
                             page,
                             result.Value.HasMore,
@@ -875,7 +990,9 @@ namespace Win7POS.Wpf.Pos.Online
                             trustedSession.ShopId,
                             trustedSession.ShopCode,
                             exactness,
-                            binding.Epoch).ConfigureAwait(false);
+                            binding.Epoch,
+                            committedCursor,
+                            committedMode).ConfigureAwait(false);
 
                         if (exactness.Status == CatalogCompletenessStatus.Mismatch ||
                             exactness.RepairRequired)
@@ -962,19 +1079,29 @@ namespace Win7POS.Wpf.Pos.Online
 
                     if (fullRefresh)
                     {
-                        await StoreLastSyncAsync(
+                        if (!await StoreLastSyncAsync(
                             lastResponse.SyncCursor,
                             lastResponse.GeneratedAt,
                             trustedSession,
                             binding.Epoch,
                             lastResponse.SyncMode,
-                            authoritativeSnapshotCommitted: true).ConfigureAwait(false);
+                            authoritativeSnapshotCommitted: true,
+                            expectedPreviousCursor: committedCursor,
+                            expectedPreviousMode: committedMode).ConfigureAwait(false))
+                        {
+                            throw new InvalidOperationException("Catalog full cursor commit was rejected.");
+                        }
+
+                        committedCursor = lastResponse.SyncCursor;
+                        committedMode = lastResponse.SyncMode;
                     }
 
                     await StoreCatalogSaleSafeAsync(
                         lastResponse.GeneratedAt,
                         trustedSession,
-                        binding.Epoch).ConfigureAwait(false);
+                        binding.Epoch,
+                        committedCursor,
+                        committedMode).ConfigureAwait(false);
                     await StoreCatalogBootstrapStatusAsync(BootstrapStatusCompleted)
                         .ConfigureAwait(false);
                     _logger.LogInfo(
@@ -998,20 +1125,28 @@ namespace Win7POS.Wpf.Pos.Online
                 }
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (OperationCanceledException)
             {
-                await StoreCatalogFailureAsync("timeout").ConfigureAwait(false);
-                await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
-                    .ConfigureAwait(false);
+                await StoreCatalogFailureForGenerationAsync(
+                    trustedSession,
+                    capturedEpoch,
+                    "timeout",
+                    BootstrapStatusFailedRetryable).ConfigureAwait(false);
 
                 _logger.LogWarning("Catalog pull timeout.");
                 return PosCatalogPullOutcome.Failure("timeout", false, false, 0);
             }
             catch (Exception ex)
             {
-                await StoreCatalogFailureAsync("exception").ConfigureAwait(false);
-                await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
-                    .ConfigureAwait(false);
+                await StoreCatalogFailureForGenerationAsync(
+                    trustedSession,
+                    capturedEpoch,
+                    "exception",
+                    BootstrapStatusFailedRetryable).ConfigureAwait(false);
 
                 _logger.LogWarning("Catalog pull skipped.", ex);
                 return PosCatalogPullOutcome.Failure("exception", false, false, 0);
@@ -1082,6 +1217,10 @@ namespace Win7POS.Wpf.Pos.Online
         private async Task<CatalogApplyStats> ApplyCatalogAsync(
             PosCatalogPullResponse response,
             bool authoritativeFullRefresh,
+            PosTrustedDeviceSession trustedSession,
+            long expectedEpoch,
+            string expectedPreviousCursor,
+            string expectedPreviousMode,
             CancellationToken cancellationToken)
         {
             var catalog = response.Catalog;
@@ -1168,7 +1307,17 @@ namespace Win7POS.Wpf.Pos.Online
             };
 
             var applied = await new RemoteCatalogBatchRepository(_factory)
-                .ApplyAsync(batch, cancellationToken)
+                .ApplyAsync(
+                    batch,
+                    cancellationToken,
+                    new RemoteCatalogCommitFence
+                    {
+                        ExpectedEpoch = expectedEpoch,
+                        ExpectedPreviousCursor = expectedPreviousCursor,
+                        ExpectedPreviousMode = expectedPreviousMode,
+                        ShopCode = trustedSession.ShopCode,
+                        ShopId = trustedSession.ShopId
+                    })
                 .ConfigureAwait(false);
 
             if (tombstones > 0)
@@ -1197,16 +1346,18 @@ namespace Win7POS.Wpf.Pos.Online
             };
         }
 
-        private async Task StoreLastSyncAsync(
+        private async Task<bool> StoreLastSyncAsync(
             string syncCursor,
             string generatedAt,
             PosTrustedDeviceSession trustedSession,
             long expectedEpoch,
             string syncMode,
             bool authoritativeSnapshotCommitted,
-            CatalogDeltaChainCheckpoint deltaCheckpoint = null)
+            CatalogDeltaChainCheckpoint deltaCheckpoint = null,
+            string expectedPreviousCursor = null,
+            string expectedPreviousMode = null)
         {
-            await new CatalogShopStateRepository(_factory).StorePullCursorAsync(
+            return await new CatalogShopStateRepository(_factory).StorePullCursorAsync(
                 trustedSession.ShopId,
                 trustedSession.ShopCode,
                 syncCursor,
@@ -1214,7 +1365,9 @@ namespace Win7POS.Wpf.Pos.Online
                 expectedEpoch,
                 syncMode,
                 authoritativeSnapshotCommitted,
-                deltaCheckpoint).ConfigureAwait(false);
+                deltaCheckpoint,
+                expectedPreviousCursor,
+                expectedPreviousMode).ConfigureAwait(false);
         }
 
         private async Task StoreCatalogFailureAsync(string code)
@@ -1223,6 +1376,37 @@ namespace Win7POS.Wpf.Pos.Online
             await settings.SetStringAsync(
                 LastCatalogErrorSettingKey,
                 SafeCode(code)).ConfigureAwait(false);
+        }
+
+        private async Task StoreCatalogFailureForGenerationAsync(
+            PosTrustedDeviceSession trustedSession,
+            long expectedEpoch,
+            string code,
+            string bootstrapStatus)
+        {
+            if (trustedSession == null || expectedEpoch < 0)
+            {
+                return;
+            }
+
+            using (await new CatalogShopTransitionBarrier(_factory).EnterAsync().ConfigureAwait(false))
+            {
+                try
+                {
+                    await new CatalogShopStateRepository(_factory).ValidateBindingEpochAsync(
+                        trustedSession.ShopId,
+                        trustedSession.ShopCode,
+                        expectedEpoch).ConfigureAwait(false);
+                }
+                catch (InvalidOperationException)
+                {
+                    _logger.LogInfo("Catalog failure state skipped: generation changed.");
+                    return;
+                }
+
+                await StoreCatalogFailureAsync(code).ConfigureAwait(false);
+                await StoreCatalogBootstrapStatusAsync(bootstrapStatus).ConfigureAwait(false);
+            }
         }
 
         private async Task StoreCatalogBootstrapStatusAsync(string status)
@@ -1236,13 +1420,17 @@ namespace Win7POS.Wpf.Pos.Online
         private async Task StoreCatalogSaleSafeAsync(
             string generatedAt,
             PosTrustedDeviceSession trustedSession,
-            long expectedEpoch)
+            long expectedEpoch,
+            string expectedPreviousCursor,
+            string expectedPreviousMode)
         {
             await new CatalogShopStateRepository(_factory).StoreSaleSafeAsync(
                 trustedSession.ShopId,
                 trustedSession.ShopCode,
                 generatedAt,
-                expectedEpoch).ConfigureAwait(false);
+                expectedEpoch,
+                expectedPreviousCursor,
+                expectedPreviousMode).ConfigureAwait(false);
         }
 
         private async Task StoreCatalogDiagnosticsAsync(
@@ -1250,20 +1438,39 @@ namespace Win7POS.Wpf.Pos.Online
             CatalogApplyStats stats,
             PosTrustedDeviceSession trustedSession,
             long expectedEpoch,
-            CatalogDeltaChainCheckpoint deltaCheckpoint)
+            CatalogDeltaChainCheckpoint deltaCheckpoint,
+            bool fullRefresh,
+            string expectedPreviousCursor,
+            string expectedPreviousMode)
         {
             var settings = new SettingsRepository(_factory);
+            var state = new CatalogShopStateRepository(_factory);
 
-            await PosOnlineShopSnapshot.SaveAsync(_factory, response?.Shop).ConfigureAwait(false);
-            await PosOnlinePolicySnapshot.SaveAsync(_factory, response?.Policy).ConfigureAwait(false);
-            await StoreLastSyncAsync(
+            if (fullRefresh)
+            {
+                await state.ValidateCommitStateAsync(
+                    trustedSession.ShopId,
+                    trustedSession.ShopCode,
+                    expectedEpoch,
+                    expectedPreviousCursor,
+                    expectedPreviousMode).ConfigureAwait(false);
+            }
+            else if (!await StoreLastSyncAsync(
                 response.SyncCursor,
                 response.GeneratedAt,
                 trustedSession,
                 expectedEpoch,
                 response.SyncMode,
                 authoritativeSnapshotCommitted: false,
-                deltaCheckpoint: deltaCheckpoint).ConfigureAwait(false);
+                deltaCheckpoint: deltaCheckpoint,
+                expectedPreviousCursor: expectedPreviousCursor,
+                expectedPreviousMode: expectedPreviousMode).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("Catalog delta cursor commit was rejected.");
+            }
+
+            await PosOnlineShopSnapshot.SaveAsync(_factory, response?.Shop).ConfigureAwait(false);
+            await PosOnlinePolicySnapshot.SaveAsync(_factory, response?.Policy).ConfigureAwait(false);
             await settings.SetStringAsync(LastCatalogErrorSettingKey, string.Empty).ConfigureAwait(false);
             await settings.SetIntAsync(
                 LastCatalogUpdatedProductsSettingKey,

@@ -164,6 +164,7 @@ INSERT INTO app_settings(key, value) VALUES('pos.catalog.bound_shop_code', 'SHOP
 
         var rebound = await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
         Assert.IsTrue(rebound.IsValid);
+        Assert.IsTrue(rebound.Epoch > binding.Epoch);
         Assert.AreEqual(string.Empty, rebound.Cursor);
         Assert.IsFalse(await state.IsSaleSafeForOfficialShopAsync());
         using var verify = db.Factory.Open();
@@ -173,6 +174,9 @@ WHERE key IN ('pos.catalog.last_sync_mode', 'pos.catalog.sale_safe_at');"));
         Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1) FROM app_settings
 WHERE key LIKE 'pos.catalog.delta_chain.%';"));
+        Assert.AreEqual("catalog_restore_review_required", await verify.ExecuteScalarAsync<string>(@"
+SELECT value FROM app_settings
+WHERE key = 'pos.catalog.exactness.code';"));
     }
 
     private static async Task SaveShopAsync(SqliteConnectionFactory factory, string shopId, string shopCode)
