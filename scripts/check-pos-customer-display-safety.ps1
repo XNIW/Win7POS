@@ -31,6 +31,19 @@ function Forbid([string]$label, [string]$text, [string]$pattern) {
     if ($text -match $pattern) { Fail $label } else { Pass $label }
 }
 
+function Require-Ordered([string]$label, [string]$text, [string[]]$markers) {
+    $position = -1
+    foreach ($marker in $markers) {
+        $next = $text.IndexOf($marker, $position + 1, [StringComparison]::Ordinal)
+        if ($next -lt 0) {
+            Fail "$label missing or out of order: $marker"
+            return
+        }
+        $position = $next
+    }
+    Pass $label
+}
+
 $windowXaml = Read-Required "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayWindow.xaml"
 $windowCode = Read-Required "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayWindow.xaml.cs"
 $manager = Read-Required "src/Win7POS.Wpf/Pos/CustomerDisplay/CustomerDisplayManager.cs"
@@ -125,6 +138,20 @@ Require-All "customer display initialization is best-effort" $mainWindow @(
     'category=customer_display initialization=failed mode=best_effort',
     'manager.Dispose()',
     'if (_customerDisplayManager == null)'
+)
+
+Require-Ordered "customer display is prepared before first visibility" $manager @(
+    '_window = new CustomerDisplayWindow();',
+    '_window.PrepareDisplay(displaySnapshot, settings, monitor);',
+    '_window.Show();'
+)
+
+Require-All "customer display first-frame placement and failure cleanup" ($windowCode + $placement + $manager) @(
+    'ApplyPreparedPlacement(showWindow: false)',
+    'bool showWindow',
+    'if (showWindow) flags |= SwpShowWindow',
+    'catch (Exception ex)',
+    'CloseWindow();'
 )
 
 if ($fail) {

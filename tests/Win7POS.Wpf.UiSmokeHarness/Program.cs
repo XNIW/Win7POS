@@ -5,9 +5,11 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using System.Windows.Media;
 using Dapper;
 using Win7POS.Core.Models;
@@ -448,12 +450,33 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     },
                     2000, 2000, "QA Shop", "qa-line", false, DateTimeOffset.UtcNow);
                 var window = new CustomerDisplayWindow();
+                window.PrepareDisplay(snapshot, settings, monitor);
                 window.Show();
-                window.UpdateDisplay(snapshot, settings, monitor);
-                var passed = !window.ShowActivated && !window.ShowInTaskbar && !window.Focusable;
+                var handle = new WindowInteropHelper(window).Handle;
+                var placementPass = handle != IntPtr.Zero &&
+                                    GetWindowRect(handle, out var bounds) &&
+                                    bounds.Left == monitor.BoundsLeft &&
+                                    bounds.Top == monitor.BoundsTop &&
+                                    bounds.Right - bounds.Left == monitor.Width &&
+                                    bounds.Bottom - bounds.Top == monitor.Height;
+                var passed = !window.ShowActivated && !window.ShowInTaskbar && !window.Focusable &&
+                             placementPass;
                 window.Close();
                 return Task.FromResult(passed);
             }
+
+            [StructLayout(LayoutKind.Sequential)]
+            private struct NativeRect
+            {
+                public int Left;
+                public int Top;
+                public int Right;
+                public int Bottom;
+            }
+
+            [DllImport("user32.dll")]
+            [return: MarshalAs(UnmanagedType.Bool)]
+            private static extern bool GetWindowRect(IntPtr window, out NativeRect bounds);
 
             private sealed class FakeDisplayTopologyProvider : IDisplayTopologyProvider
             {

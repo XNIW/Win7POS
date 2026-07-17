@@ -8,6 +8,9 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
     public partial class CustomerDisplayWindow : Window
     {
         private readonly CustomerDisplayViewModel _viewModel = new CustomerDisplayViewModel();
+        private DisplayMonitorInfo _preparedMonitor;
+        private bool _preparedUseWorkingArea;
+        private bool _preparedAlwaysOnTop;
 
         public CustomerDisplayWindow()
         {
@@ -19,6 +22,29 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         {
             base.OnSourceInitialized(e);
             PhysicalWindowPlacement.ApplyNoActivateToolWindow(this);
+            ApplyPreparedPlacement(showWindow: false);
+        }
+
+        public void PrepareDisplay(
+            CustomerDisplaySnapshot snapshot,
+            CustomerDisplaySettings settings,
+            DisplayMonitorInfo monitor)
+        {
+            if (settings == null) throw new ArgumentNullException(nameof(settings));
+            if (monitor == null) throw new ArgumentNullException(nameof(monitor));
+
+            var useWorkingArea = settings.UseWorkingArea || !settings.FullScreen;
+            var layout = CustomerDisplayLayoutPolicy.Determine(
+                useWorkingArea ? monitor.WorkingWidth : monitor.Width,
+                useWorkingArea ? monitor.WorkingHeight : monitor.Height);
+            _viewModel.Apply(snapshot, settings, layout);
+            Topmost = settings.AlwaysOnTop;
+            _preparedMonitor = monitor;
+            _preparedUseWorkingArea = useWorkingArea;
+            _preparedAlwaysOnTop = settings.AlwaysOnTop;
+            ApplyPreparedPlacement(showWindow: false);
+
+            QueueChangedLineScroll();
         }
 
         public void UpdateDisplay(
@@ -26,14 +52,23 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
             CustomerDisplaySettings settings,
             DisplayMonitorInfo monitor)
         {
-            var useWorkingArea = settings.UseWorkingArea || !settings.FullScreen;
-            var layout = CustomerDisplayLayoutPolicy.Determine(
-                useWorkingArea ? monitor.WorkingWidth : monitor.Width,
-                useWorkingArea ? monitor.WorkingHeight : monitor.Height);
-            _viewModel.Apply(snapshot, settings, layout);
-            Topmost = settings.AlwaysOnTop;
-            PhysicalWindowPlacement.Apply(this, monitor, useWorkingArea, settings.AlwaysOnTop);
+            PrepareDisplay(snapshot, settings, monitor);
+            ApplyPreparedPlacement(showWindow: true);
+        }
 
+        private void ApplyPreparedPlacement(bool showWindow)
+        {
+            if (_preparedMonitor == null) return;
+            PhysicalWindowPlacement.Apply(
+                this,
+                _preparedMonitor,
+                _preparedUseWorkingArea,
+                _preparedAlwaysOnTop,
+                showWindow);
+        }
+
+        private void QueueChangedLineScroll()
+        {
             if (!string.IsNullOrWhiteSpace(_viewModel.LastChangedLineKey))
             {
                 Dispatcher.BeginInvoke(new Action(() =>

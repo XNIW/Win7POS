@@ -313,22 +313,28 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
                     return false;
                 }
 
+                var displaySnapshot = snapshot ?? _lastSnapshot;
                 if (_window == null)
                 {
                     _window = new CustomerDisplayWindow();
                     _window.Closed += (_, __) => _window = null;
+                    _window.PrepareDisplay(displaySnapshot, settings, monitor);
                     _window.Show();
                 }
                 else if (!_window.IsVisible)
                 {
+                    _window.PrepareDisplay(displaySnapshot, settings, monitor);
                     _window.Show();
                 }
-
-                _window.UpdateDisplay(snapshot ?? _lastSnapshot, settings, monitor);
+                else
+                {
+                    _window.UpdateDisplay(displaySnapshot, settings, monitor);
+                }
                 return true;
             }
             catch (Exception ex)
             {
+                CloseWindow();
                 _logger.LogWarning("category=customer_display operation=open_or_update result=failed", ex);
                 if (throwOnFailure) throw;
                 return false;

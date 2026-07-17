@@ -28,7 +28,8 @@ namespace Win7POS.Wpf.Infrastructure.Displays
             Window window,
             DisplayMonitorInfo monitor,
             bool useWorkingArea,
-            bool topmost)
+            bool topmost,
+            bool showWindow)
         {
             if (window == null) throw new ArgumentNullException(nameof(window));
             if (monitor == null) throw new ArgumentNullException(nameof(monitor));
@@ -40,7 +41,11 @@ namespace Win7POS.Wpf.Infrastructure.Displays
             var top = useWorkingArea ? monitor.WorkAreaTop : monitor.BoundsTop;
             var width = useWorkingArea ? monitor.WorkingWidth : monitor.Width;
             var height = useWorkingArea ? monitor.WorkingHeight : monitor.Height;
-            if (width <= 0 || height <= 0) return;
+            if (width <= 0 || height <= 0)
+                throw new InvalidOperationException("customer_display_invalid_monitor_bounds");
+
+            var flags = SwpNoActivate;
+            if (showWindow) flags |= SwpShowWindow;
 
             if (!SetWindowPos(
                     handle,
@@ -49,7 +54,7 @@ namespace Win7POS.Wpf.Infrastructure.Displays
                     top,
                     width,
                     height,
-                    SwpNoActivate | SwpShowWindow))
+                    flags))
             {
                 throw new InvalidOperationException("customer_display_placement_failed");
             }

@@ -25,7 +25,7 @@ namespace Win7POS.Wpf.Pos.CustomerDisplay
         {
             base.OnSourceInitialized(e);
             PhysicalWindowPlacement.ApplyNoActivateToolWindow(this);
-            PhysicalWindowPlacement.Apply(this, _monitor, false, true);
+            PhysicalWindowPlacement.Apply(this, _monitor, false, true, showWindow: false);
             _closeTimer.Start();
         }
 
