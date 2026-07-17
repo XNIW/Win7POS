@@ -1,5 +1,8 @@
 # Win7POS customer display QA matrix
 
+Current review evidence: `release/win7pos-final-review-20260717-015659` at the
+preserved runtime/documentation HEAD `1b11a6fdd7140e046ee1ef48f4e46828eadd209c`.
+
 ## Automated coverage
 
 | Area | Evidence | Result |
@@ -45,8 +48,11 @@ directory and must not include credentials, PINs, tokens or production data.
 ## Final certification — 2026-07-17
 
 Final static safety, adaptive settings sizing, best-effort initialization, Core
-policy tests and WPF net48/x86 build pass. Physical certification remains
-`NOT_RUN`: the available Windows 11 host has one monitor and no attached scanner,
-Xprinter or cash drawer. A Windows 7 SP1 POS in Extend mode with two independent
-monitors is still required for focus, taskbar, cashier fallback, negative
-coordinates, portrait and hot-plug evidence.
+policy tests and WPF net48/x86 build pass. Computer Use reconfirmed the isolated
+real application entrypoint but could not open the authenticated settings flow.
+Physical certification remains `NOT_RUN`: the available Windows 11 host has one
+monitor and no attached scanner, Xprinter or cash drawer. A Windows 7 SP1 POS in
+Extend mode with two independent monitors is still required for focus, taskbar,
+cashier fallback, negative coordinates, portrait and hot-plug evidence. The
+harness lifecycle row remains `PENDING_FINAL_RUN`; build success is not relabeled
+as lifecycle or visual PASS.

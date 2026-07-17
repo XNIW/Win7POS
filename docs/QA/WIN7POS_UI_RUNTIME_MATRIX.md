@@ -2,8 +2,9 @@
 
 ## Certification scope
 
-- Source branch: `qa/win7pos-ui-architecture-runtime-20260716-215939`.
-- Feature base: `74780e98d74a53bcbc449eeed3558049026a5480`.
+- Review branch: `release/win7pos-final-review-20260717-015659`.
+- Preserved review HEAD: `1b11a6fdd7140e046ee1ef48f4e46828eadd209c`.
+- Original UI feature base: `74780e98d74a53bcbc449eeed3558049026a5480`.
 - Public staging only: `https://merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev`.
 - Isolated synthetic data root; no production database, token, cookie or credential was used.
 - Host display: 2880×1800 physical, 1440×900 logical, 200%, one monitor.
@@ -74,6 +75,8 @@ application call site.
 - Visual FAIL: 0.
 - Authenticated or hardware-dependent visual flows blocked/not run: 39.
 - Lifecycle: PASS, 20 cycles across six types; no open windows, language handlers 0→0, non-monotonic handle/private-byte samples.
+- Current closure rerun: Computer Use reconfirmed `UI-001` and `UI-014` from the
+  real isolated-data entrypoint; no authenticated surface was opened.
 
 ## Display, language and hardware matrix
 
@@ -95,10 +98,11 @@ Screenshots and CSV evidence are stored outside Git under
 
 ## Final certification — 2026-07-17
 
-The inventory was recomputed from the final review tree and now contains 43
-interactive XAML surfaces. This closure run added no authenticated or physical
-visual PASS: the available host is Windows 11, exposes one 1440×900 monitor and
-has no test credentials or POS peripherals. The four critical DPI profiles,
-IT/EN/ES/ZH authenticated flows, Win7 SP1, dual-monitor Extend and hardware remain
-`NOT_RUN`. Automated dialog/customer-display gates and the x86 harness build pass,
-but do not replace the required Computer Use matrix.
+The inventory was recomputed from the final review tree and contains 43 interactive
+XAML surfaces. Computer Use reconfirmed the maximized shell, disabled Restore and
+online first-login surface, then stopped before credential entry. This closure run
+added no authenticated or physical visual PASS: the available host is Windows 11,
+exposes one 1440×900 monitor and has no QA login or POS peripherals. The four
+critical DPI profiles, IT/EN/ES/ZH authenticated flows, Win7 SP1, dual-monitor
+Extend and hardware remain `NOT_RUN`. Automated dialog/customer-display gates and
+the x86 harness build pass, but do not replace the required Computer Use matrix.

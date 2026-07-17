@@ -377,3 +377,24 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   host disponibile Windows 11 con un solo monitor e senza scanner, Xprinter o
   cash drawer, quindi Win7 fisico, dual monitor, hardware, DPI e matrice runtime
   restano `NOT_RUN`. Nessuna PR, merge o modifica a main.
+
+## 2026-07-17 - Final closure publication and blocker recheck (NOT_DONE)
+
+- Recuperata senza ricostruzione la review branch
+  `release/win7pos-final-review-20260717-015659` a `1b11a6f`; ancestry source e
+  main verificata, nuovo bundle completo creato e validato.
+- Review branch pubblicata su `origin` senza force; nessuna PR creata e `main`
+  invariata.
+- Review cumulativa aggiornata: 22 commit source + 2 finali, 110 file, tre lane
+  read-only sulle cinque aree richieste, zero nuovi P0/P1 e nove P2 invariati.
+- Rerun locale: 30/30 gate, 249/249 test, skipped 0, solution/WPF x86/harness
+  0 warning e 0 error, CLI selftest PASS.
+- Release pack PE32/x86, completezza, validator Win7 e installer Inno PASS; nessun
+  DB/WAL/SHM, PDB, harness, screenshot, config QA attiva, credenziale o path
+  personale nel pack.
+- Computer Use sul data root isolato ha confermato shell massimizzata, Restore
+  disabilitato e login sullo staging online. Nessuna credenziale è stata inserita.
+- Host verificato: ASUS Zenbook Windows 11, un monitor 1440×900, sole stampanti
+  virtuali, nessuno scanner/Xprinter/cash drawer. Staging autenticato, Win7 reale,
+  dual monitor, hardware e matrice DPI/lingue restano `NOT_RUN`.
+- Classificazione invariata: `STOPPED_STAGING`; task `NOT_DONE`, nessuna PR/CI/merge.

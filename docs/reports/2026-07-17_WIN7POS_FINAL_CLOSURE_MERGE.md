@@ -6,7 +6,9 @@
 - Task status: `NOT_DONE`.
 - Merge recommendation: `NOT_READY_FOR_MERGE`.
 - Main changed: `NO`.
-- PR/push/merge: not performed because mandatory authenticated staging, physical
+- Review branch push: `PASS`; published first at the preserved review SHA
+  `1b11a6fdd7140e046ee1ef48f4e46828eadd209c`.
+- PR/merge: not performed because mandatory authenticated staging, physical
   Windows 7, dual-monitor, peripheral and DPI evidence is absent.
 
 ## Git provenance
@@ -15,15 +17,19 @@
 - Source branch: `codex/win7pos-sync-drain-closeout-20260717`.
 - Source HEAD: `75be03853a95cbb1b38db249b2b332f3f3549a32`.
 - Review branch: `release/win7pos-final-review-20260717-015659`.
+- Preserved and published review HEAD:
+  `1b11a6fdd7140e046ee1ef48f4e46828eadd209c`.
 - Runtime-fix commit: `fe03719be0657cea882948f275674033d64fbdeb`.
 - Final documentation commit: the commit containing this report.
-- Reviewed interval: 22 commits, 109 changed files, divergence from initial main
-  `0 22` before the review fix.
+- Reviewed interval: 22 source commits plus two final review commits, 110 changed
+  files, divergence from initial main `0 24` at the preserved review HEAD.
 - Required ancestors `5160b7c`, `b590335`, `74780e9`, `32dec1e`, `6c321d6` and
   `75be038` all passed `merge-base --is-ancestor` against the source HEAD.
 - Missing branch work: none demonstrated by the read-only provenance review.
 - Backup preserved: `backup/pre-final-closure-20260717-015659`.
 - Bundle preserved and verified: `Win7POS-pre-final-closure-20260717-015659.bundle`.
+- New full bundle preserved and verified:
+  `C:\Dev\Win7POS-final-review-20260717-093950.bundle`.
 
 ## Complete review findings
 
@@ -55,6 +61,12 @@ polling; only retryable endpoint-offline failures keep bounded polling alive.
 | UiSmokeHarness | PASS build, net48 Release x86 |
 | Secret/artifact review | PASS for tracked diff and local release pack |
 
+The closure rerun on the published review branch again passed restore, all 30
+canonical gates, the zero-warning solution build, 249/249 tests with zero skipped,
+CLI selftest, WPF x86 and the x86 harness build. `git diff --check` passed across
+all 110 cumulative files. Three independent read-only lanes covering the five
+requested review areas found no additional P0 or P1.
+
 Catalog policy tests cover healthy periodic incremental selection, evidence-driven
 full reasons, idle polling at 24–36 seconds, fast catch-up, bounded retry, auth stop,
 endpoint-offline recovery without a NIC transition, coalescing and backoff reset.
@@ -79,9 +91,16 @@ and excludes UiSmokeHarness, CLI diagnostics, fixtures, screenshots, DB/WAL/SHM,
 logs, PDB, source, QA credentials and secret markers. `Win7POS-Setup.exe` was
 created locally. Installer smoke on Windows 7 is `NOT_RUN`.
 
+The pack regenerated from the preserved review HEAD records commit `1b11a6f`, and
+`Win7POS-Setup.exe` was rebuilt successfully. The staging URL helper and the
+pre-existing staging default are intentional, but no active QA configuration,
+credential or session material is bundled.
+
 ## Mandatory staging evidence
 
-No QA credential was supplied through an authorized interactive login flow, so no
+Computer Use reached the real isolated-data Win7POS login and confirmed that the
+configured staging endpoint was online. No QA credential was supplied through an
+authorized interactive login flow, so no credential was entered and no
 authenticated staging mutation was attempted. The following remain `NOT_RUN`:
 
 - first bootstrap full, pages/rows/duration and x86 process memory;
@@ -96,13 +115,14 @@ Local deterministic policy evidence confirms the 25-row bound and sequence `60 �
 
 ## Windows 7, visual and hardware evidence
 
-The available machine is Windows 11 with .NET Framework 4.8, one 1440×900 monitor,
-Microsoft virtual printers only, and no scanner, Xprinter or cash drawer. It cannot
-certify a physical Windows 7 SP1 POS or Windows Extend.
+The available ASUS Zenbook is Windows 11 with .NET Framework 4.8, one 1440×900
+monitor, Microsoft virtual printers only, and no scanner, Xprinter or cash drawer.
+It cannot certify a physical Windows 7 SP1 POS or Windows Extend.
 
 - Interactive XAML surfaces discovered: 43 (3 windows, 34 dialogs, 6 controls).
-- Prior real-entrypoint visual PASS remains 2 surfaces; prior harness-only coverage
-  remains 6 types. This run added no runtime visual PASS.
+- Computer Use reconfirmed the real maximized shell and online first-login surface
+  on the isolated QA data root; Restore was disabled. Prior harness-only coverage
+  remains six types and is not promoted to visual PASS.
 - 1024×768 and 1366×768 at 100%/125%, 1024×600 best effort, IT/EN/ES/ZH runtime,
   physical dual-monitor focus, customer display, hot-plug and DPI remain `NOT_RUN`.
 - Scanner, Xprinter, cash drawer and installer smoke remain `NOT_RUN`.
@@ -117,8 +137,9 @@ prefixed staging QA products/sales through application services.
 
 No exact pre-existing task-ledger entry was found for the full closure definition,
 so this report and `docs/AI_WORKLOG.md` record `NOT_DONE`; no issue ID was invented.
-Because the Definition of Done is incomplete, the review branch was not pushed, no
-PR was created, no CI was requested, and local/GitHub main were not moved.
+The preserved review branch was published without force. Because the Definition of
+Done is incomplete, no PR was created, no PR CI was requested, and local/GitHub
+main were not moved.
 
 ## Separate non-blocking backlog
 
