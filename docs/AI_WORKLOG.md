@@ -501,3 +501,28 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   `TreeState=clean`; installer and ZIP hashes are recorded in the closeout report.
 - Ledger status: PR-A `DONE_MERGED`, PR-B `NEXT`, external certification remains
   `OPEN 0/16`. PR-B was not started.
+
+## 2026-07-17 - PR-B versioned SQLite migrations
+
+- Started from main `ad431fe8b7cf4de1bf3bee744bab159b6a95e80c` on
+  `codex/pr-b-versioned-migrations-20260717-143330`; backup branch and verified
+  all-ref bundle were created before implementation.
+- Added an immutable six-entry SHA-256 migration registry and
+  `schema_migrations` ledger, exact legacy metadata detection, verified online
+  backup before ledger bootstrap/upgrade, immediate per-migration transactions,
+  fail-closed checksum/gap/future-ID handling and no-op reopen reconciliation.
+- Added six sanitized SQL generations plus rollback, concurrent startup,
+  tamper, backup failure, restore/re-upgrade and semantic fresh-schema parity
+  coverage. No WAL, package, payload/hash/idempotency, sync-policy or reversal
+  economics change was introduced.
+- Local evidence: canonical gates `31/31`; migration/restore/architecture gates
+  PASS; tests `290/290`, skipped `0`; WPF `net48/x86` 0 warnings/errors; CLI
+  selftest PASS. Solution compilation has 0 errors and four external `NU1900`
+  warnings because the NuGet vulnerability endpoint was unavailable.
+- Catalog regression: 2,000-row batch median `262.188 ms` (`77.21x` versus
+  legacy); 19,762-row paged-full exactness `Verified` in 3/3 iterations.
+- Clean committed-head x86 Release Pack, completeness validator, Win7 runtime
+  validator and Inno Setup 6.7.3 installer: `PASS`.
+- Hardware/settings and sync/efficiency roadmaps record no open P0, six deferred
+  repository-level P1 findings and current-server-compatible follow-up PRs.
+  PR-B is to remain `READY_FOR_REVIEW`; no automatic merge is authorized.

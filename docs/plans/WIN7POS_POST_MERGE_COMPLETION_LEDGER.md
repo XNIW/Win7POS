@@ -47,12 +47,13 @@ updated only when a real PASS is obtained.
 | Order | Structural item | PR | Status | Evidence / next action |
 | --- | --- | --- | --- | --- |
 | B | Persistence foundation | PR-A / GitHub `#5` | `DONE_MERGED` | Fast-forward head `607e1f1`; PR/main CI and Release Pack green on the exact SHA. |
-| C | Versioned migrations | PR-B | `NEXT` | Next separate structural task; not started in the PR-A merge run. |
-| D | Startup coordinator | PR-C | `NOT_STARTED` | Wait for preceding item. |
+| C | Versioned migrations | PR-B | `READY_FOR_REVIEW` | Six immutable checksummed migrations, verified legacy bootstrap/backup/rollback and six sanitized fixtures; publish without automatic merge. |
+| D | Startup coordinator | PR-C | `WAITING` | Wait for PR-B review and explicit merge decision. |
 | E | Catalog state-machine/performance split | PR-D | `NOT_STARTED` | Wait for preceding item. |
 | F | ProductRepository split | PR-E | `NOT_STARTED` | Wait for preceding item. |
 | G | SaleRepository split | PR-F | `NOT_STARTED` | Wait for preceding item. |
 | H | Reproducible/signable release chain | PR-G | `NOT_STARTED` | Wait for preceding item; no certificate or secret in Git. |
 
-Only PR-A was reviewed, corrected and merged in this execution. PR-B is recorded
-as `NEXT`, but it remains a separate task and is not implemented here.
+PR-A remains `DONE_MERGED`. PR-B is implemented on its independent branch and is
+left `READY_FOR_REVIEW`; this status does not imply merge. PR-C remains
+`WAITING`. External certification remains `OPEN 0/16`.
