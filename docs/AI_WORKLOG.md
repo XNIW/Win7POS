@@ -330,3 +330,28 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Release pack esterno rigenerato dal commit implementazione: cartella e ZIP completezza/runtime/startup/linking PASS, `unzip -t` PASS, PE32/x86, nessun PDB/CLI/source/DB; ZIP SHA-256 `9e489fcbcc770159ea99f748b3feb38c05d28ec4f409719a382e054455d4cd84`.
 - Handoff aggiornato in-place: `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-2026-07-14.md`; nessun duplicato.
 - Runtime invariato: `EXTERNAL_TEST_PENDING_CODEX_ASUS`; test Windows 7/UTM/staging autenticato/hardware 1-30 restano `DEFERRED_TO_CODEX_ASUS`, mai dichiarati PASS da Mac.
+
+## 2026-07-17 - Incremental-first sync, fencing e Sync Center
+
+- Branch: `feature/win7pos-incremental-sync-ui-v2-20260716-201301` da audit
+  `b590335348937ca830c92289c84032523e267497`; `origin/main`
+  `5160b7c1574313ac8be47fdf2e139bb715a37e7d` non modificata.
+- Policy Core: incremental/resume per tutti i trigger normali; full limitato a
+  bootstrap, repair amministratore confermato, restore recovery ed exactness repair.
+- Safety: CAS sales preflight, guard `Success/Value/Ok`, caller cancellation
+  preservata, barriera/epoch/shop/mode/cursor su apply/checkpoint/exactness/restore e
+  late response bloccata.
+- Coordinator: single-flight dirty-bit, massimo due run per drain, resume dopo 5 s,
+  polling 24-36 min, backoff 5/15/30/60/120/300 s ±20%, auth stop e diagnostica
+  `pos.catalog.sync.*`.
+- UI: Sync Center moderno, full repair separata/permission-gated, diagnostica safe,
+  focus scanner ripristinato, shared visual polish e copy IT/EN/ES/ZH.
+- Verifica: 29/29 gate, 204/204 test, CLI selftest PASS, WPF net48/x86 PASS 0/0,
+  policy 34/34 e trigger normali 100/100 incremental/resume.
+- Performance sintetica: delta mediane 17.383/26.772/162.696 ms per 10/100/1000;
+  full 19.762 mediana 3865.609 ms, exactness `Verified` 3/3, pending 0.
+- Release: pack x86, completezza/runtime validator e installer Inno PASS.
+- Visuale: first login isolato PASS sul solo host 1440×900/200%; matrice
+  1024/1366 a 100/125 e superfici autenticate non eseguite senza credenziali.
+- Restano esterni: staging autenticato, Win7 fisico/VM, Xprinter, scanner, cash
+  drawer e x86 full-sync memory certification.

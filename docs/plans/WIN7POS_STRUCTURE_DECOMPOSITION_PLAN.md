@@ -16,6 +16,26 @@ Recommended execution order is **PR 5 → PR 1 → PR 2 → PR 3 → PR 4**. Ver
 migration fixtures establish the persistence safety net first; financial repository
 decomposition remains last.
 
+## Delivery status — 2026-07-17 incremental-sync slice
+
+The following cross-cutting safety slice has been delivered without declaring the
+larger decomposition PRs complete:
+
+- Core now owns the pure incremental-first decision policy and typed trigger/full
+  reason model.
+- Data now owns `CatalogSyncCoordinator`, adaptive scheduler policy, single-flight
+  coalescing and safe sync diagnostics.
+- Catalog transition, restore/reset, page apply, checkpoint, exactness and repair
+  completion use shop/epoch/mode/cursor fencing with late-response race tests.
+- Sales preflight blocking uses attempt/lease compare-and-swap evidence.
+- WPF keeps the composition/presentation adapter and exposes the Sync Center.
+
+PR 1 and PR 2 therefore have their policy/coordinator/fencing foundations, while
+their acceptance criteria remain **PARTIAL**: `MainWindow` still owns coordinated
+online workflow code and `PosCatalogPullService` still contains the transport/page
+state-machine façade internals. PR 4 has the sales-CAS safety prerequisite, but the
+repository split remains pending. PR 3 and PR 5 are unchanged.
+
 ## PR 1 — Extract `PosStartupCoordinator` from `MainWindow`
 
 ### Files

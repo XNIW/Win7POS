@@ -82,10 +82,10 @@ that were disproved or lacked sufficient evidence.
 
 | ID | Sev. | Evidence | Disposition |
 | --- | --- | --- | --- |
-| SYNC-01 | P1 | `PosSalesSyncService.cs:104-106,442-452`; `SaleRepository.cs:1083-1099`: preflight blocking lacks an attempt-count CAS and can overwrite another worker's `in_progress` lease. | PLAN/SEPARATE FIX: read-only first-batch files; add a concurrent regression test before mutation. |
-| SYNC-02 | P1 | `PosCatalogPullService.cs:340-413,714-750` does not prove `PosCatalogPullResponse.Ok` before apply/cursor progress. | PLAN/SEPARATE FIX: guard and protocol test; confidence MEDIUM. |
-| SYNC-03 | P2 | `PosCatalogPullService.cs:1001-1039` converts caller cancellation into timeout/failure state. | PLAN: rethrow caller-requested cancellation and test diagnostics. |
-| SYNC-04 | P1 | `CatalogShopStateRepository.cs:386-454,1177-1199`: restore-review reset lacks the transition barrier/epoch fencing used by other transitions. | PLAN: race test and consistent lock order before change. |
+| SYNC-01 | P1 | Sales preflight now captures outbox/sale/status/attempt/lease evidence and blocks through compare-and-swap. | **FIXED 2026-07-17:** concurrent acquired-lease regression coverage passes. |
+| SYNC-02 | P1 | Catalog and sales responses require transport success, a value and application-level `Ok` before apply/ACK/cursor progress. | **FIXED 2026-07-17:** protocol guard tests and catalog/sales gates pass. |
+| SYNC-03 | P2 | Caller-requested catalog cancellation is rethrown; only the internal timeout becomes a fenced `timeout` result. | **FIXED 2026-07-17:** caller-cancellation and diagnostic tests pass. |
+| SYNC-04 | P1 | Restore/reset and catalog apply share the transition barrier and expected epoch/shop/mode/cursor CAS evidence. | **FIXED 2026-07-17:** restore-reset versus late-page race coverage passes. |
 | SYNC-05 | P2 | Empty catalog version can persist multi-run delta checkpoints without authoritative snapshot identity. | PLAN: fail closed only after compatibility requirements are agreed. |
 
 ### Performance
@@ -155,11 +155,15 @@ Twenty-one hypotheses were rejected or left unpromoted. The important cases were
 1. Physical Windows 7 SP1 startup/sale/reopen/installer evidence.
 2. Authenticated staging catalog and sales-sync evidence.
 3. Xprinter, scanner and cash-drawer tests.
-4. Atomic restore/online backup/fencing design and crash fixtures.
-5. Attempt-count CAS and catalog-response guards with concurrent/protocol tests.
-6. WAL/fallback/backup-sidecar matrix before any journal-mode change.
-7. Locked NuGet graph, pinned Inno provenance and SHA-2-compatible signing.
+4. Atomic restore/online backup crash fixtures; catalog transition/epoch fencing is now complete.
+5. WAL/fallback/backup-sidecar matrix before any journal-mode change.
+6. Locked NuGet graph, pinned Inno provenance and SHA-2-compatible signing.
 
 Recommended independent PR order: PR 5 migrations, PR 1 startup coordinator,
 PR 2 catalog state machine, PR 3 product repository internals, PR 4 sale repository
 internals.
+
+Post-audit follow-up (2026-07-17): the incremental-first policy, adaptive catalog
+coordinator, sales preflight CAS and catalog/restore fencing slices were delivered
+and validated on the feature branch. The larger façade decomposition and migration,
+backup and repository-splitting work remains governed by the plan.
