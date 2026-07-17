@@ -26,6 +26,7 @@ function Require-Marker([string]$label, [string]$source, [string]$pattern) {
 
 $required = @(
     "src/Win7POS.Data/Online/PosAdminWebClient.cs",
+    "src/Win7POS.Data/Online/CatalogSyncCoordinator.cs",
     "src/Win7POS.Wpf/Infrastructure/FileLogger.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
@@ -51,7 +52,8 @@ $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $catalog = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 $salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
-$combined = @($client, $logger, $mainWindow, $catalog, $bootstrap, $salesSync) -join "`n"
+$coordinator = Read-Text "src/Win7POS.Data/Online/CatalogSyncCoordinator.cs"
+$combined = @($client, $logger, $mainWindow, $catalog, $bootstrap, $salesSync, $coordinator) -join "`n"
 
 Require-Marker "client request id header" $client "X-Client-Request-Id"
 Require-Marker "server request id header" $client "X-Request-Id"
@@ -67,7 +69,10 @@ Require-Marker "POS token prefix redaction" $logger "mcpos_\(device\|session\)"
 Require-Marker "log rotation" $logger "RotateIfNeeded"
 
 Require-Marker "bootstrap category" $bootstrap "category=online\.bootstrap"
-Require-Marker "heartbeat category" $mainWindow "category=online\.heartbeat"
+Require-Marker "coordinated heartbeat" $mainWindow "RunCoordinatedOnlineRefreshAsync[\s\S]*HeartbeatAsync"
+Require-Marker "heartbeat response guard" $mainWindow "!heartbeat\.Success[\s\S]{0,160}!heartbeat\.Value\.Ok"
+Require-Marker "sync diagnostics prefix" $coordinator 'Prefix\s*=\s*"pos\.catalog\.sync\."'
+Require-Marker "sync trigger diagnostic" $coordinator 'Prefix\s*\+\s*"last_trigger"'
 Require-Marker "catalog category" $catalog "category=catalog\.pull"
 Require-Marker "sales category" $salesSync "category=sales\.sync"
 Require-Marker "sales sync attempt id" $salesSync "syncAttemptId"

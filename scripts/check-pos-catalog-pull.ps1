@@ -67,7 +67,8 @@ $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.c
 if ($client -notmatch "/api/pos/catalog/pull") { Fail "catalog pull path missing" } else { Pass "catalog pull path present" }
 if ($client -notmatch "CatalogPullAsync") { Fail "CatalogPullAsync missing" } else { Pass "CatalogPullAsync present" }
 if ($service -notmatch "PosTrustedDeviceStore") { Fail "trusted device store not used for catalog pull" } else { Pass "trusted device store used" }
-if ($service -notmatch "RemoteCatalogBatchRepository" -or $service -notmatch "ApplyAsync\(batch, cancellationToken\)") { Fail "catalog pages are not delegated to the batch repository with cancellation" } else { Pass "catalog pages use the cancellation-aware batch repository" }
+if ($service -notmatch "RemoteCatalogBatchRepository" -or
+    $service -notmatch "ApplyAsync\(\s*batch,\s*cancellationToken,\s*new\s+RemoteCatalogCommitFence") { Fail "catalog pages are not delegated to the fenced batch repository with cancellation" } else { Pass "catalog pages use the cancellation-aware fenced batch repository" }
 if ($batchRepository -notmatch "class RemoteCatalogBatchRepository" -or $batchRepository -notmatch "Task<RemoteCatalogBatchApplyResult>\s+ApplyAsync") { Fail "remote catalog batch repository contract missing" } else { Pass "remote catalog batch repository contract present" }
 $batchCancellationIndex = $batchRepository.LastIndexOf("cancellationToken.ThrowIfCancellationRequested")
 $batchTransactionIndex = $batchRepository.IndexOf("conn.BeginTransaction")
@@ -140,7 +141,10 @@ if ($service -notmatch "lastResponse\.HasMore[\s\S]*StoreCatalogFailureAsync\(Ca
 if ($service -notmatch "cursorSaved=" -or $service -notmatch "!fullRefresh") { Fail "catalog partial HasMore log must distinguish resumable delta from restartable full refresh" } else { Pass "catalog partial HasMore log distinguishes delta/full-refresh cursor persistence" }
 if ($service -notmatch "CatalogPullWithRetryAsync") { Fail "catalog pull retry helper missing" } else { Pass "catalog pull retry helper present" }
 if ($service -notmatch "Task.Delay") { Fail "catalog pull backoff missing" } else { Pass "catalog pull backoff present" }
-if ($service -notmatch "var\s+requestCursor\s*=\s*page\s*==\s*1\s*\?\s*binding\.Cursor\s*:\s*cursor" -or $service -notmatch "SyncCursor\s*=\s*requestCursor" -or $service -notmatch "EnsureAndLoadCursorAsync") { Fail "catalog pull syncCursor is not loaded from shop-bound state" } else { Pass "catalog pull syncCursor uses shop-bound state" }
+if ($service -notmatch "var\s+committedCursor\s*=\s*binding\.Cursor" -or
+    $service -notmatch "var\s+requestCursor\s*=\s*committedCursor" -or
+    $service -notmatch "SyncCursor\s*=\s*requestCursor" -or
+    $service -notmatch "EnsureAndLoadCursorAsync") { Fail "catalog pull syncCursor is not loaded from committed shop-bound state" } else { Pass "catalog pull syncCursor uses committed shop-bound state" }
 $capturedSessionCheckIndex = $service.IndexOf("ValidateCapturedSessionAsync")
 $bindingIndex = $service.IndexOf("EnsureAndLoadCursorAsync")
 $networkIndex = $service.IndexOf("new PosAdminWebClient")
@@ -182,20 +186,19 @@ if ($service -notmatch "IsCatalogCursorRejectionCode" -or
 } else {
     Pass "expired/rejected cursors trigger a controlled full-refresh boundary retry"
 }
-$catalogApplyIndex = $service.IndexOf("ApplyCatalogAsync(result.Value, fullRefresh, cancellationToken)")
-$pageOnePolicyIndex = $service.IndexOf("if (page == 1)")
-$repairBeforeApplyIndex = if ($catalogApplyIndex -gt 0) {
-    $service.Substring(0, $catalogApplyIndex).LastIndexOf("RequestFullRepairWhileBarrierHeldAsync")
+$catalogApplyIndex = $service.IndexOf("var applyStats = await ApplyCatalogAsync(")
+$fullBoundaryIndex = $service.IndexOf("if (page == 1 && pageIsFullRefresh && !fullBoundaryPrepared)")
+$fullBoundaryBlock = if ($catalogApplyIndex -gt $fullBoundaryIndex -and $fullBoundaryIndex -ge 0) {
+    $service.Substring($fullBoundaryIndex, $catalogApplyIndex - $fullBoundaryIndex)
 } else {
-    -1
+    ""
 }
 if ($catalogApplyIndex -lt 0 -or
-    $pageOnePolicyIndex -lt 0 -or
-    $repairBeforeApplyIndex -lt $pageOnePolicyIndex -or
-    $service.Substring($pageOnePolicyIndex, $catalogApplyIndex - $pageOnePolicyIndex) -notmatch "fullRefresh\s*&&\s*!forceFullRepair") {
+    $fullBoundaryIndex -lt 0 -or
+    $fullBoundaryBlock -notmatch "RequestFullRepairWhileBarrierHeldAsync[\s\S]*EnsureAndLoadCursorAsync[\s\S]*fullBoundaryPrepared\s*=\s*true[\s\S]*CatalogPullWithRetryAsync") {
     Fail "automatic full_refresh must reset repair/cursor state before the first page is applied"
 } else {
-    Pass "full_refresh resets repair/cursor state before local apply"
+    Pass "full_refresh fences a new epoch and re-requests before local apply"
 }
 $skippedRowsIndex = $service.IndexOf("applyStats.RowsSkipped > 0")
 $diagnosticsIndex = $service.IndexOf("StoreCatalogDiagnosticsAsync(")

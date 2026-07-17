@@ -51,7 +51,12 @@ $settingsHub = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml"
 $languageDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/LanguageSettingsDialog.xaml"
 $operatorSwitch = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xaml"
 $posView = Read-Text "src/Win7POS.Wpf/Pos/PosView.xaml"
+$paymentView = Read-Text "src/Win7POS.Wpf/Pos/PaymentView.xaml"
 $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
+$syncCenter = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterDialog.xaml"
+$syncCenterCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterDialog.xaml.cs"
+$syncCenterViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterViewModel.cs"
+$startOfDayDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml"
 $refundDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/RefundDialog.xaml"
 $refundDialogCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/RefundDialog.xaml.cs"
 $supplierImport = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportDialog.xaml"
@@ -143,6 +148,30 @@ Test-ContainsAll "disabled button contrast resources" $modernStyles @(
     'x:Key="FooterSecondaryButtonStyle"'
 )
 
+Test-ContainsAll "shared semantic design tokens" $modernStyles @(
+    'x:Key="Spacing4"',
+    'x:Key="Spacing8"',
+    'x:Key="Spacing12"',
+    'x:Key="Spacing16"',
+    'x:Key="Spacing24"',
+    'x:Key="Spacing32"',
+    'x:Key="RadiusSmall"',
+    'x:Key="RadiusMedium"',
+    'x:Key="RadiusLarge"',
+    'x:Key="ButtonHeightCompact"',
+    'x:Key="ButtonHeightStandard"',
+    'x:Key="ButtonHeightTouch"',
+    'x:Key="TypeTitleStyle"',
+    'x:Key="TypeSubtitleStyle"',
+    'x:Key="TypeBodyStyle"',
+    'x:Key="TypeCaptionStyle"',
+    'x:Key="FocusBrush"',
+    'x:Key="StatusSuccessBrush"',
+    'x:Key="StatusWarningBrush"',
+    'x:Key="StatusErrorBrush"',
+    'x:Key="StatusInfoBrush"'
+)
+
 Test-ContainsAll "modern app-wide ComboBox template" $modernStyles @(
     'x:Key="ModernComboBoxStyle"',
     'x:Key="ModernComboBoxItemStyle"',
@@ -170,6 +199,12 @@ else {
     Pass "RoundedButtonTemplate keeps disabled buttons opaque"
 }
 
+Test-ContainsAll "shared button keyboard focus ring" $buttonTemplateMatch.Value @(
+    'Property="IsKeyboardFocused"',
+    'Property="BorderBrush" Value="{StaticResource FocusBrush}"',
+    'Property="BorderThickness" Value="2"'
+)
+
 Test-ContainsAll "Settings hub cards available" $settingsHub @(
     'SettingsHubDialog',
     'shell.officialShopData',
@@ -181,9 +216,38 @@ Test-ContainsAll "Settings hub cards available" $settingsHub @(
 )
 
 Test-ContainsAll "Settings hub language is a normal card" $settingsHub @(
-    'Height="560"',
+    'Height="620"',
     'Click="OnLanguageClick"',
-    'settings.cardLanguageHelp'
+    'settings.cardLanguageHelp',
+    'Click="OnSyncCenterClick"',
+    'settings.cardSyncCenterHelp'
+)
+
+Test-ContainsAll "Sync Center has textual status, safe actions and automation names" ($syncCenter + $syncCenterCode + $syncCenterViewModel) @(
+    'sync.center.status',
+    'sync.center.lastUpdated',
+    'sync.center.syncNow',
+    'sync.center.retryCheckpoint',
+    'sync.center.fullRepair',
+    'sync.center.copyDiagnostics',
+    'AutomationProperties.Name',
+    'ApplyConfirmDialog.ShowConfirm',
+    '_fullRepairRunning'
+)
+
+Test-ContainsAll "primary surfaces keep responsive layout markers" ($productsView + $paymentView + $posView) @(
+    '<WrapPanel Grid.Row="1"',
+    'EnableRowVirtualization="True"',
+    '<ColumnDefinition Width="1.05*"/>',
+    '<ColumnDefinition Width="1.55*"/>',
+    'Grid.Row="1" Grid.Column="5" Grid.ColumnSpan="2"',
+    'Style="{StaticResource PrimaryButtonStyle}"'
+)
+
+Test-ContainsAll "start-of-day progress is announced to assistive technology" $startOfDayDialog @(
+    'AutomationProperties.LiveSetting="Assertive"',
+    'AutomationProperties.LiveSetting="Polite"',
+    'AutomationProperties.Name="{loc:Loc startOfDay.checking}"'
 )
 
 if ($settingsHub.IndexOf('SettingsLanguagePanel', [StringComparison]::Ordinal) -ge 0 -or

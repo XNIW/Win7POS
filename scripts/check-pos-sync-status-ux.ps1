@@ -26,7 +26,11 @@ $required = @(
     "src/Win7POS.Wpf/Pos/PosViewModel.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml",
     "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml.cs",
-    "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsViewModel.cs"
+    "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsViewModel.cs",
+    "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterDialog.xaml",
+    "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterDialog.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterViewModel.cs",
+    "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml"
 )
 
 foreach ($path in $required) {
@@ -47,6 +51,10 @@ $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
 $shopDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml"
 $shopDialogCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsDialog.xaml.cs"
 $shopViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/ShopSettingsViewModel.cs"
+$syncCenter = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterDialog.xaml"
+$syncCenterCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterDialog.xaml.cs"
+$syncCenterViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterViewModel.cs"
+$settingsHub = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml"
 $salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $workflow = Read-Text "src/Win7POS.Wpf/Pos/PosWorkflowService.cs"
 $localization = Read-Text "src/Win7POS.Wpf/Localization/PosLocalization.cs"
@@ -93,31 +101,40 @@ if ($reader -notmatch "EvaluateSaleSafetyForOfficialShopAsync" -or
 }
 if ($shopDialog -notmatch "CatalogCompletenessText" -or $shopDialog -notmatch "CatalogCountsText" -or $shopDialog -notmatch "CatalogRepairText" -or $shopDialog -notmatch "CatalogSyncModeText") { Fail "shop dialog must display catalog exactness diagnostics" } else { Pass "shop dialog displays catalog exactness diagnostics" }
 if ($workflow -notmatch "RepairCatalogAsync" -or $workflow -notmatch "TryRepairCatalogAsync") { Fail "workflow must expose authoritative full catalog repair" } else { Pass "workflow exposes authoritative full catalog repair" }
-if ($shopViewModel -notmatch "RepairCatalogCommand" -or $shopViewModel -notmatch "ApplyConfirmDialog\.ShowConfirm" -or $shopViewModel -notmatch "OwnerWindow \?\? DialogOwnerHelper\.GetSafeOwner\(\)") { Fail "shop settings repair must be confirmed and owner-safe" } else { Pass "shop settings repair is confirmed and owner-safe" }
-if ($posViewModel -notmatch "PermissionCodes\.DbMaintenance" -or $posViewModel -notmatch "Has\(PermissionCodes\.DbMaintenance\)") { Fail "catalog repair action must be protected by database maintenance permission" } else { Pass "catalog repair action is permission protected" }
-if ($shopDialog -notmatch "RepairCatalogCommand" -or $shopDialog -notmatch "DialogActionButtonStyle" -or $shopDialog -notmatch "DialogFooterMargin") { Fail "catalog repair footer action must use shared dialog resources" } else { Pass "catalog repair footer uses shared dialog resources" }
-if ($shopDialog -notmatch 'IsEnabled="\{Binding CanClose\}"' -or $shopViewModel -notmatch "CanClose\s*=>\s*!IsBusy" -or $shopViewModel -notmatch "OnPropertyChanged\(nameof\(CanClose\)\)") { Fail "shop settings close action must be disabled while catalog repair is busy" } else { Pass "shop settings close action follows repair busy state" }
-if ($shopDialogCode -notmatch "OnClosing\(CancelEventArgs e\)" -or $shopDialogCode -notmatch "CanClose\s*==\s*false" -or $shopDialogCode -notmatch "e\.Cancel\s*=\s*true") { Fail "shop settings must block Escape/Alt+F4 while catalog repair is busy" } else { Pass "shop settings guards Escape/Alt+F4 during repair" }
+if ($syncCenter -notmatch 'x:Class="Win7POS\.Wpf\.Pos\.Dialogs\.SyncCenterDialog"' -or
+    $syncCenter -notmatch 'WindowStartupLocation="CenterOwner"' -or
+    $syncCenter -notmatch 'DialogFooterMargin' -or
+    $syncCenter -notmatch 'sync\.center\.fullRepair') { Fail "Sync Center must use the shared dialog shell, centered owner and standard footer" } else { Pass "Sync Center follows shared dialog structure" }
+if ($syncCenterCode -notmatch "ApplyConfirmDialog\.ShowConfirm" -or
+    $mainCode -notmatch "AuthorizeFullCatalogRepairAsync" -or
+    $mainCode -notmatch "PermissionCodes\.DbMaintenance" -or
+    $mainCode -notmatch "requestedTrigger\s*==\s*CatalogSyncTrigger\.AdministratorRepair" -or
+    $mainCode -notmatch '"CatalogFullRepair"') { Fail "Full Repair must be owner-safe, confirmed and protected by database maintenance permission" } else { Pass "Full Repair is confirmed and permission protected" }
+if ($syncCenter -notmatch "DialogCancelButtonStyle" -or $syncCenter -notmatch "DialogActionButtonStyle" -or $syncCenter -notmatch "AutomationProperties\.Name") { Fail "Sync Center actions must use shared dialog resources and automation names" } else { Pass "Sync Center actions use shared resources and automation names" }
+if ($mainCode -notmatch "allowFullDecision:\s*administratorRepairAuthorized" -or
+    $mainCode -notmatch "!allowFullDecision\s*&&\s*previewDecision\.Mode\s*==\s*CatalogSyncMode\.Full" -or
+    $mainCode -notmatch "catalog_sync_full_repair_required") { Fail "Sync Now must not be able to start a Full run" } else { Pass "Sync Now is constrained to incremental/resume" }
+if ($syncCenterCode -notmatch "_fullRepairRunning" -or
+    $syncCenterCode -notmatch "OnClosing\(CancelEventArgs e\)" -or
+    $syncCenterCode -notmatch "e\.Cancel\s*=\s*true" -or
+    $syncCenterCode -notmatch "_operationCts\?\.Cancel\(\)") { Fail "Sync Center close semantics must block Full Repair and cancel incremental operations" } else { Pass "Sync Center close semantics match operation type" }
+if ($syncCenterViewModel -notmatch "BuildSafeDiagnostics" -or
+    $syncCenterViewModel -match "DeviceToken|SessionToken|ShopCode|StaffDisplayName" -or
+    $syncCenterViewModel -notmatch "cursor_fingerprint") { Fail "Sync Center diagnostics must expose only redacted safe codes and counts" } else { Pass "Sync Center diagnostics are redacted" }
+if ($settingsHub -notmatch "OnSyncCenterClick" -or $mainXaml -notmatch "OnSyncStatusPillClick" -or $mainCode -notmatch "RestoreScannerFocus") { Fail "Sync Center must be reachable from shell/settings and restore scanner focus" } else { Pass "Sync Center entry points and scanner focus restoration present" }
+if ($shopDialog -match "RepairCatalogCommand" -or $shopViewModel -match "RepairCatalogAsync|TryRepairCatalogAsync") { Fail "Shop settings must remain diagnostic-only and not duplicate Full Repair logic" } else { Pass "Shop settings is diagnostic-only" }
+if ($shopDialog -notmatch 'IsEnabled="\{Binding CanClose\}"' -or $shopViewModel -notmatch "CanClose\s*=>\s*!IsBusy" -or $shopViewModel -notmatch "OnPropertyChanged\(nameof\(CanClose\)\)") { Fail "shop settings close action must follow its active load state" } else { Pass "shop settings close action follows active load state" }
+if ($shopDialogCode -notmatch "OnClosing\(CancelEventArgs e\)" -or $shopDialogCode -notmatch "CanClose\s*==\s*false" -or $shopDialogCode -notmatch "e\.Cancel\s*=\s*true") { Fail "shop settings must block Escape/Alt+F4 while loading" } else { Pass "shop settings guards Escape/Alt+F4 while loading" }
 if ($shopViewModel -notmatch "INotifyPropertyChanged,\s*IDisposable" -or
     $shopViewModel -notmatch "LanguageChanged\s*-=\s*OnLanguageChanged" -or
-    $shopViewModel -notmatch "OwnerWindow\s*=\s*null" -or
     $shopDialogCode -notmatch "OnClosed\(EventArgs e\)" -or
     $shopDialogCode -notmatch "viewModel\.Dispose\(\)" -or
     $shopDialogCode -notmatch "DataContext\s*=\s*null") {
-    Fail "shop settings must detach localization and release its owner when closed"
+    Fail "shop settings must detach localization and release its data context when closed"
 } else {
-    Pass "shop settings releases localization and owner references on close"
+    Pass "shop settings releases localization and data context on close"
 }
-if ($shopViewModel -notmatch "IsRepairInProgress" -or
-    $shopViewModel -notmatch "SetRepairInProgress\(true\)" -or
-    $shopViewModel -notmatch "SetRepairInProgress\(false\)" -or
-    $shopViewModel -notmatch "IsBusy\s*=>\s*_activeLoads\s*>\s*0\s*\|\|\s*IsRepairInProgress" -or
-    $shopViewModel -match "IsBusy\s*=\s*(true|false)") {
-    Fail "catalog repair must own a distinct busy state through refresh and outcome presentation"
-} else {
-    Pass "catalog repair busy state remains active through refresh and outcome presentation"
-}
-foreach ($key in @("sync.catalogCompleteness", "sync.catalogLocalCounts", "sync.catalogSyncMode", "sync.catalogRepairRequired", "sync.catalogNotSaleSafe", "settings.catalogRepairAction", "settings.catalogRepairConfirm", "settings.catalogRepairCompleted", "settings.catalogRepairFailed")) {
+foreach ($key in @("sync.catalogCompleteness", "sync.catalogLocalCounts", "sync.catalogSyncMode", "sync.catalogRepairRequired", "sync.catalogNotSaleSafe", "sync.center.title", "sync.center.syncNow", "sync.center.retryCheckpoint", "sync.center.fullRepair", "sync.center.copyDiagnostics", "sync.center.repairConfirm")) {
     if ($localization -notmatch [regex]::Escape($key)) { Fail "catalog exactness localization missing key: $key" }
 }
 

@@ -163,7 +163,9 @@ if ($bootstrap -notmatch "SaveFirstLogin" -or $store -notmatch "ProtectedDeviceS
 if ($store -match 'DataMember\(Name\s*=\s*"(trustedDeviceToken|deviceToken|sessionToken)"') { Fail "trusted store may persist raw token fields" } else { Pass "trusted store does not persist raw token field names" }
 if ($userRepo -notmatch "PinHelper\.HashPin\(input\.Credential") { Fail "remote staff credential is not hashed for local mirror" } else { Pass "remote staff credential hashed for local mirror" }
 if ($mainWindow -notmatch "new\s+PosOnlineFirstLoginDialog" -or $dialog -notmatch "PosOnlineBootstrapService") { Fail "unified POS access flow is not wired to the online client" } else { Pass "unified POS access flow uses online bootstrap client" }
-if ($mainWindow -notmatch "TryRefreshTrustedPosSessionAsync") { Fail "startup heartbeat missing" } else { Pass "startup heartbeat present" }
+if ($mainWindow -notmatch "RunCoordinatedOnlineRefreshAsync[\s\S]*HeartbeatAsync" -or
+    $mainWindow -notmatch "IsSameTrustedSession" -or
+    $mainWindow -notmatch "SaveHeartbeat") { Fail "coordinated startup heartbeat missing or unfenced" } else { Pass "coordinated startup heartbeat present and session-fenced" }
 
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }
 if ($combined -match "mcpos_(device|session)_[A-Za-z0-9_-]+") { Fail "literal POS token found" }

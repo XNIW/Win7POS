@@ -299,11 +299,12 @@ else {
     Pass "startup catalog pull timeout bounded"
 }
 
-if ($mainWindow -notmatch "Task\.Run[\s\S]*RunBackgroundOnlineRefreshAsync") {
+if ($mainWindow -notmatch "StartAdaptiveOnlineScheduler" -or
+    $mainWindow -notmatch "Task\.Run[\s\S]*RunAdaptiveOnlineSchedulerAsync") {
     Fail "online refresh is not moved to background task"
 }
 else {
-    Pass "online refresh runs in a background task"
+    Pass "adaptive online refresh runs in a background task"
 }
 
 if ($mainWindow -notmatch "Dispatcher\.BeginInvoke[\s\S]*RefreshSyncStatusStripAsync") {
@@ -323,13 +324,13 @@ else {
 
 $refreshBody = Get-MethodBody `
     $mainWindow `
-    "private\s+async\s+Task\s+TryRefreshTrustedPosSessionAsync\s*\([^\)]*\)" `
-    "private\s+async\s+Task\s+TryPullCatalogAsync"
+    "private\s+async\s+Task<CatalogSyncRunResult>\s+RunCoordinatedOnlineRefreshAsync\s*\([^\)]*\)" `
+    "private\s+static\s+bool\s+IsSameTrustedSession"
 if ($refreshBody -match "ModernMessageDialog\.Show") {
-    Fail "background trusted session refresh shows a blocking dialog"
+    Fail "coordinated background refresh shows a blocking dialog"
 }
 else {
-    Pass "background trusted session refresh does not show blocking dialogs"
+    Pass "coordinated background refresh does not show blocking dialogs"
 }
 
 if ($app -notmatch "Mutex" -or $app -notmatch "SingleInstance") {
@@ -393,7 +394,7 @@ else {
 $queueRefreshBody = Get-MethodBody `
     $mainWindow `
     "private\s+void\s+QueueBackgroundOnlineRefresh\s*\([^\)]*\)" `
-    "private\s+async\s+Task\s+RunBackgroundOnlineRefreshAsync"
+    "private\s+void\s+StartAdaptiveOnlineScheduler"
 if ($mainWindow -match "TryOnlineBootstrapFirstRunAsync" -or
     $loadedBody -notmatch "if\s*\(\s*!App\.IsSafeStart\s*\)[\s\S]{0,220}RunStartOfDaySyncAsync\(factory\)" -or
     [string]::IsNullOrWhiteSpace($queueRefreshBody) -or
@@ -407,11 +408,11 @@ else {
 
 if ($app -notmatch "App\.OnStartup entered" -or
     $mainWindow -notmatch "MainWindow constructor entered" -or
-    $mainWindow -notmatch "DbInitializer start" -or
+    $mainWindow -notmatch "DB init start" -or
     $mainWindow -notmatch "POS access dialog opening" -or
     $mainWindow -notmatch "POS access dialog shown" -or
     $mainWindow -notmatch "POS access dialog accepted" -or
-    $mainWindow -notmatch "BackgroundOnlineRefresh queued") {
+    $mainWindow -notmatch "adaptive online scheduler start") {
     Fail "startup trace markers missing"
 }
 else {
@@ -433,11 +434,12 @@ if (-not $fail) {
     Pass "startup UI avoids raw exception and absolute path copy"
 }
 
-if ($catalogPull -notmatch 'StoreCatalogFailureAsync\("timeout"\)') {
-    Fail "catalog pull cancellation does not persist timeout status"
+if ($catalogPull -notmatch 'catch\s*\(OperationCanceledException\)\s*when\s*\(cancellationToken\.IsCancellationRequested\)[\s\S]{0,120}throw' -or
+    $catalogPull -notmatch 'StoreCatalogFailureForGenerationAsync\([\s\S]{0,240}"timeout"') {
+    Fail "catalog pull cancellation does not distinguish caller cancellation from fenced timeout status"
 }
 else {
-    Pass "catalog pull cancellation persists timeout status"
+    Pass "catalog pull cancellation rethrows caller cancellation and persists fenced timeout status"
 }
 
 if ($workflow -notmatch "check-required-gates\.ps1" -or
