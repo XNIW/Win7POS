@@ -31,12 +31,17 @@ function Index-OrFail([string]$text, [string]$needle, [string]$message) {
 }
 
 $required = @(
+    "src/Win7POS.Core/Online/StartOfDaySalesDrainPolicy.cs",
+    "tests/Win7POS.Core.Tests/Online/StartOfDaySalesDrainPolicyTests.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml",
     "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml.cs",
     "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs",
-    "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs"
+    "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs",
+    "src/Win7POS.Data/Online/CatalogSyncSchedulerPolicy.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs",
+    "docs/ARCHITECTURE/CATALOG_SYNC_POLICY.md"
 )
 
 foreach ($path in $required) {
@@ -48,11 +53,41 @@ if ($fail) {
 }
 
 $main = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$drainPolicy = Read-Text "src/Win7POS.Core/Online/StartOfDaySalesDrainPolicy.cs"
+$drainTests = Read-Text "tests/Win7POS.Core.Tests/Online/StartOfDaySalesDrainPolicyTests.cs"
 $dialogXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml"
 $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml.cs"
 $service = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs"
+$schedulerPolicy = Read-Text "src/Win7POS.Data/Online/CatalogSyncSchedulerPolicy.cs"
+$salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
+$catalogPolicyDoc = Read-Text "docs/ARCHITECTURE/CATALOG_SYNC_POLICY.md"
+
+if ($drainPolicy -notmatch "public static class StartOfDaySalesDrainPolicy" -or
+    $drainPolicy -notmatch "blockedSales\s*>\s*0[\s\S]{0,180}StartOfDaySalesDrainDecision\.Blocked" -or
+    $drainPolicy -notmatch "pendingSales\s*>\s*0\s*\|\|\s*retrySales\s*>\s*0\s*\|\|\s*inProgressSales\s*>\s*0" -or
+    $drainPolicy -notmatch "StartOfDaySalesDrainDecision\.ContinueBackground" -or
+    $drainPolicy -notmatch "StartOfDaySalesDrainDecision\.Complete") {
+    Fail "pure start-of-day sales drain policy missing or incomplete"
+} else {
+    Pass "pure start-of-day sales drain policy present"
+}
+
+foreach ($pendingCase in @("DataRow(0,", "DataRow(25,", "DataRow(26,", "DataRow(60,")) {
+    if ($drainTests -notmatch [regex]::Escape($pendingCase)) {
+        Fail "deterministic pending-sales case missing: $pendingCase"
+    }
+}
+if ($drainTests -notmatch "RetrySales_ContinueInBackground" -or
+    $drainTests -notmatch "ActiveInProgressSales_RemainUnresolved" -or
+    $drainTests -notmatch "StaleInProgressSales_RemainUnresolved" -or
+    $drainTests -notmatch "BlockedSales_TakePriority" -or
+    $drainTests -notmatch "35, 10, 0") {
+    Fail "deterministic retry/in-progress/blocked/60-sale drain coverage missing"
+} else {
+    Pass "deterministic sales drain cases present"
+}
 
 if ($service -notmatch "public sealed class PosStartOfDaySyncService" -or $service -notmatch "public sealed class StartOfDaySyncResult") {
     Fail "start-of-day service/result missing"
@@ -60,12 +95,45 @@ if ($service -notmatch "public sealed class PosStartOfDaySyncService" -or $servi
     Pass "start-of-day service/result present"
 }
 
-foreach ($field in @("CanOpenPos", "ShouldContinueInBackground", "RequiresOperatorAction", "BlockingReason", "StatusMessage", "PendingSales", "RetrySales", "BlockedSales", "CatalogStatus", "CatalogSaleSafe")) {
+foreach ($field in @("CanOpenPos", "ShouldContinueInBackground", "RequiresOperatorAction", "BlockingReason", "StatusMessage", "PendingSales", "RetrySales", "InProgressSales", "BlockedSales", "CatalogStatus", "CatalogSaleSafe")) {
     if ($service -notmatch $field) {
         Fail "StartOfDaySyncResult missing $field"
     }
 }
 if (-not $fail) { Pass "StartOfDaySyncResult exposes required fields" }
+
+if ($service -notmatch "InProgressSales\s*=\s*ToSafeInt\(outbox\.InProgress\)" -or
+    $service -notmatch "result\.InProgressSales\s*>\s*0") {
+    Fail "sales in_progress must be refreshed and treated as unresolved"
+} else {
+    Pass "sales in_progress is included in start-of-day state"
+}
+
+$trySalesIndex = $service.IndexOf(
+    "await TrySalesSyncAsync(options, result, cancellationToken)",
+    [System.StringComparison]::Ordinal)
+$refreshAfterSalesIndex = if ($trySalesIndex -ge 0) {
+    $service.IndexOf(
+        "await RefreshOutboxAsync(result, sales, _factory)",
+        $trySalesIndex,
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$drainDecisionIndex = if ($refreshAfterSalesIndex -ge 0) {
+    $service.IndexOf(
+        "StartOfDaySalesDrainPolicy.Evaluate(",
+        $refreshAfterSalesIndex,
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+if ($trySalesIndex -lt 0 -or
+    $refreshAfterSalesIndex -lt 0 -or
+    $drainDecisionIndex -lt 0 -or
+    $trySalesIndex -gt $refreshAfterSalesIndex -or
+    $refreshAfterSalesIndex -gt $drainDecisionIndex -or
+    $service -notmatch "salesComplete\s*=\s*salesDrainDecision\s*==\s*StartOfDaySalesDrainDecision\.Complete") {
+    Fail "sales completion must be recalculated from refreshed outbox counters"
+} else {
+    Pass "sales completion is recalculated from refreshed outbox counters"
+}
 
 if ($service -notmatch "StartOfDayTotalTimeout\s*=\s*TimeSpan\.FromSeconds\(28\)" -or
     $service -notmatch "HeartbeatTimeout\s*=\s*TimeSpan\.FromSeconds\(4\)" -or
@@ -120,10 +188,68 @@ if ($runIndex -gt $ensureIndex) {
     Pass "start-of-day preflight runs before PosView creation"
 }
 
-if ($main -notmatch "startOfDayResult\.ShouldContinueInBackground[\s\S]{0,180}QueueBackgroundOnlineRefresh") {
-    Fail "MainWindow must queue background sync only when start-of-day asks for it"
+$recoveryExclusionIndex = $main.IndexOf(
+    'StartupTrace.Write("online refresh deferred: recovery mode")',
+    [System.StringComparison]::Ordinal)
+$safeStartExclusionIndex = if ($recoveryExclusionIndex -ge 0) {
+    $main.IndexOf(
+        'StartupTrace.Write("online refresh skipped: safe-start")',
+        $recoveryExclusionIndex,
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$normalPosSchedulerIndex = if ($safeStartExclusionIndex -ge 0) {
+    $main.IndexOf(
+        "QueueBackgroundOnlineRefresh(factory);",
+        $safeStartExclusionIndex,
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$startupCatchIndex = if ($normalPosSchedulerIndex -ge 0) {
+    $main.IndexOf(
+        "catch (Exception ex)",
+        $normalPosSchedulerIndex,
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+if ($main -match "startOfDayResult\s*==\s*null\s*\|\|\s*startOfDayResult\.ShouldContinueInBackground" -or
+    $recoveryExclusionIndex -lt 0 -or
+    $safeStartExclusionIndex -lt 0 -or
+    $normalPosSchedulerIndex -lt 0 -or
+    $startupCatchIndex -lt 0 -or
+    $normalPosSchedulerIndex -gt $startupCatchIndex) {
+    Fail "MainWindow must always start the adaptive scheduler after normal POS opening"
 } else {
-    Pass "MainWindow queues background sync from start-of-day result"
+    Pass "MainWindow always starts the scheduler after normal POS opening"
+}
+
+if ($main -notmatch "factory\s*==\s*null\s*\|\|\s*App\.IsSafeStart\s*\|\|\s*_recoveryMode" -or
+    $main -notmatch "_onlineSchedulerTask\s*!=\s*null\s*&&\s*!_onlineSchedulerTask\.IsCompleted") {
+    Fail "adaptive scheduler safe-start/recovery/single-flight guards missing"
+} else {
+    Pass "adaptive scheduler retains safe-start, recovery and single-flight guards"
+}
+
+if ($salesSync -notmatch "MaxOutboxItemsPerRun\s*=\s*25" -or
+    $drainTests -notmatch "SixtyPendingSales_DrainAcrossThreeBoundedRuns" -or
+    $drainTests -notmatch "35, 10, 0") {
+    Fail "automatic drain coverage must preserve the 25-row batch and reach zero"
+} else {
+    Pass "automatic sales drain covers backlog above 25 through zero"
+}
+
+if ($schedulerPolicy -notmatch "idleSeconds\s*=\s*24d\s*\+\s*\(12d\s*\*\s*boundedJitter\)" -or
+    $drainTests -notmatch "IdleSchedulerPolling_RemainsBetweenTwentyFourAndThirtySixSeconds" -or
+    $catalogPolicyDoc -notmatch "24-36 second spacing" -or
+    $catalogPolicyDoc -match "24-36 minute spacing") {
+    Fail "idle polling code, deterministic test and documentation must agree on 24-36 seconds"
+} else {
+    Pass "idle polling code, test and documentation agree on 24-36 seconds"
+}
+
+if ($drainTests -notmatch "HealthyPeriodicPolling_NeverSelectsFullCatalog" -or
+    $drainTests -notmatch "CatalogSyncTrigger\.Periodic" -or
+    $drainTests -notmatch "CatalogSyncMode\.Incremental") {
+    Fail "periodic polling must have deterministic no-full coverage"
+} else {
+    Pass "periodic polling has deterministic no-full coverage"
 }
 
 if ($dialogXaml -notmatch "StartOfDayProgressBar" -or $dialogXaml -notmatch "ContinueButton" -or $dialogXaml -notmatch "WaitButton" -or $dialogXaml -notmatch "RetryButton") {

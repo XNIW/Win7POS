@@ -111,13 +111,17 @@ queue.
 The adaptive schedule uses:
 
 - immediate resume catch-up after 5 seconds;
-- idle success polling with randomized 24-36 minute spacing;
+- idle success polling with randomized 24-36 second spacing;
 - retry delays of 5, 15, 30, 60, 120 and 300 seconds with ±20% jitter;
 - reset of the failure backoff after success;
 - polling stop after authentication denial.
 
 Each coordinated run preserves the established operation order: heartbeat, sales
 outbox, catalog-import outbox, then catalog pull. No periodic path schedules full.
+After normal POS opening the scheduler remains active even when start-of-day has
+already completed. Ordinary pending, retry and in-progress sales never block the
+register; the 25-row sales batches continue on scheduled runs until the measured
+outbox counters reach zero. `failed_blocked` remains an operator-action condition.
 
 ## Diagnostics and UI contract
 
@@ -142,8 +146,8 @@ recorded:
 
 - 34/34 policy cases;
 - 100/100 normal trigger cycles in incremental/resume mode;
-- 29/29 canonical gates;
-- 204/204 Core/Data tests with zero skipped;
+- 30/30 canonical gates;
+- 248/248 Core/Data tests with zero skipped;
 - WPF `net48/x86` build with zero warnings and zero errors.
 
 Authenticated staging, a physical Windows 7 SP1 run and attached POS hardware are

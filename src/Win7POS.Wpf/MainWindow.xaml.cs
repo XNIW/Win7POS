@@ -438,14 +438,7 @@ namespace Win7POS.Wpf
                 }
                 else
                 {
-                    if (startOfDayResult == null || startOfDayResult.ShouldContinueInBackground)
-                    {
-                        QueueBackgroundOnlineRefresh(factory);
-                    }
-                    else
-                    {
-                        QueueSyncStatusRefresh(factory);
-                    }
+                    QueueBackgroundOnlineRefresh(factory);
                 }
             }
             catch (Exception ex)
@@ -1182,13 +1175,9 @@ namespace Win7POS.Wpf
             {
                 ApplySafeStartStatus();
             }
-            else if (startOfDayResult == null || startOfDayResult.ShouldContinueInBackground)
-            {
-                QueueBackgroundOnlineRefresh(factory);
-            }
             else
             {
-                QueueSyncStatusRefresh(factory);
+                QueueBackgroundOnlineRefresh(factory);
             }
 
             _logger.LogInfo("category=pos.recovery result=completed");

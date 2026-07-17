@@ -164,14 +164,20 @@ namespace Win7POS.Wpf.Pos.Online
 
             Report(progress, "outbox", "ok", T("startOfDay.stepOutbox"));
             Report(progress, "sales", "active", T("startOfDay.stepSales"));
-            var salesComplete = await TrySalesSyncAsync(options, result, cancellationToken).ConfigureAwait(false);
+            await TrySalesSyncAsync(options, result, cancellationToken).ConfigureAwait(false);
             await RefreshOutboxAsync(result, sales, _factory).ConfigureAwait(false);
+            var salesDrainDecision = StartOfDaySalesDrainPolicy.Evaluate(
+                result.PendingSales,
+                result.RetrySales,
+                result.InProgressSales,
+                result.BlockedSales);
+            var salesComplete = salesDrainDecision == StartOfDaySalesDrainDecision.Complete;
             if (await HasStoredAuthDeniedAsync(settings).ConfigureAwait(false))
             {
                 return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "sales", progress);
             }
 
-            if (result.BlockedSales > 0)
+            if (salesDrainDecision == StartOfDaySalesDrainDecision.Blocked)
             {
                 return Block(result, "sales_blocked", T("startOfDay.blockSalesBlocked"), "sales", progress);
             }
@@ -498,6 +504,7 @@ namespace Win7POS.Wpf.Pos.Online
                 .ConfigureAwait(false);
             result.PendingSales = ToSafeInt(outbox.Pending);
             result.RetrySales = ToSafeInt(outbox.Retry);
+            result.InProgressSales = ToSafeInt(outbox.InProgress);
             result.BlockedSales = ToSafeInt(outbox.Blocked);
             result.PendingCatalogImports = ToSafeInt(catalogOutbox.Pending + catalogOutbox.InProgress);
             result.RetryCatalogImports = ToSafeInt(catalogOutbox.Retry);
@@ -508,6 +515,7 @@ namespace Win7POS.Wpf.Pos.Online
         {
             return result.PendingSales > 0 ||
                 result.RetrySales > 0 ||
+                result.InProgressSales > 0 ||
                 result.BlockedSales > 0 ||
                 result.PendingCatalogImports > 0 ||
                 result.RetryCatalogImports > 0 ||
@@ -654,6 +662,7 @@ namespace Win7POS.Wpf.Pos.Online
         public string StatusMessage { get; set; } = string.Empty;
         public int PendingSales { get; set; }
         public int RetrySales { get; set; }
+        public int InProgressSales { get; set; }
         public int BlockedSales { get; set; }
         public int PendingCatalogImports { get; set; }
         public int RetryCatalogImports { get; set; }
