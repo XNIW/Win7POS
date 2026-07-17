@@ -70,3 +70,14 @@ pwsh -NoProfile -File scripts/check-pos-catalog-pull.ps1
 
 The automated results support staging readiness; they do not substitute for the
 remaining authenticated and physical-hardware staging checks listed above.
+
+## Final certification — 2026-07-17
+
+The final review corrected one recovery gap: endpoint-offline results now retain
+bounded quiet polling even if Windows reports the NIC continuously up, and a
+deterministic recovery test verifies backoff reset after server recovery. Final
+local evidence is 30/30 gates, 249/249 tests, zero skipped, WPF net48/x86 and CLI
+selftest PASS. The deterministic 60-sale policy sequence remains `60 → 35 → 10 →
+0`; it is not a substitute for the mandatory authenticated staging fixture and
+remote duplicate/ACK verification. Task status remains `NOT_DONE` and main is
+unchanged.

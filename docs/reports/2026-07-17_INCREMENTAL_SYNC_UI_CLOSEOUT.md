@@ -126,3 +126,13 @@ Not claimed as PASS:
 
 These are the only remaining blockers to the corresponding external/runtime
 certifications; they do not invalidate the completed local software gates.
+
+## Final certification — 2026-07-17
+
+The final 22-commit review added bounded endpoint-offline polling so recovery no
+longer depends on a Windows NIC state transition. Final local evidence is 30/30
+gates, 249/249 tests, zero skipped, solution/WPF net48 x86 builds, CLI selftest,
+release pack and installer PASS. The full synthetic 19,762-row median is 4,293.185
+ms with `Verified` 3/3 and pending 0. Authenticated staging, x86 full-sync memory,
+Win7 SP1, physical displays/peripherals and DPI remain `NOT_RUN`; task status is
+therefore `NOT_DONE`, with no PR or main change.

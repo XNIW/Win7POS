@@ -13,8 +13,8 @@
 
 ## Dynamic surface inventory
 
-The current repository contains 39 interactive surfaces: one `Window`, 32
-`DialogShellWindow` dialogs and six reachable `UserControl` views. `DailyReportDialog`
+The current repository contains 43 interactive surfaces: three `Window` surfaces,
+34 `DialogShellWindow` dialogs and six reachable `UserControl` views. `DailyReportDialog`
 and `UserManagementDialog` are legacy dialog classes whose commands are not bound by
 the normal shell, so they require the QA harness. All other surfaces have a normal
 application call site.
@@ -60,15 +60,19 @@ application call site.
 | UI-037 | `Import/SupplierExcelImportDialog.xaml` | DialogShellWindow | supplier import command; safe owner | import permission; XLS/XLSX | select/map/preview/busy/result | YES | NO | BLOCKED_AUTHENTICATED_STAGING |
 | UI-038 | `Import/ApplyConfirmDialog.xaml` | DialogShellWindow | import confirmation; import owner | staged import | summary/warning/cancel/apply | YES | NO | BLOCKED_AUTHENTICATED_STAGING |
 | UI-039 | `Import/ModernMessageDialog.xaml` | DialogShellWindow | import result/error; import owner | import outcome | info/warning/error | YES | NO | BLOCKED_AUTHENTICATED_STAGING |
+| UI-040 | `Pos/CustomerDisplay/CustomerDisplayWindow.xaml` | Window | customer display manager; selected secondary monitor | authenticated cart/payment | idle, cart, payment, completed, locked | YES | NO | PASS_GATE; visual NOT_RUN_WIN7_DUAL_MONITOR |
+| UI-041 | `Pos/CustomerDisplay/MonitorIdentifyWindow.xaml` | Window | customer display settings identify action | two-monitor topology | monitor label, no activate, timed close | YES | NO | PASS_GATE; visual NOT_RUN_DUAL_MONITOR |
+| UI-042 | `Pos/Dialogs/CustomerDisplaySettingsDialog.xaml` | DialogShellWindow | Settings Hub; safe MainWindow owner | settings permission; monitor topology | one/two monitor, preview, save, error | YES | NO | PASS_GATE; visual NOT_RUN_AUTHENTICATED_DUAL_MONITOR |
+| UI-043 | `Pos/Dialogs/ExitConfirmationDialog.xaml` | DialogShellWindow | X or Alt+F4; MainWindow owner | cart/payment/sync state | minimize, cancel, close, guarded states | YES | NO | PASS_AUTOMATED policy; visual NOT_RUN_AUTHENTICATED |
 
 ## Runtime totals
 
-- Discovered: 39.
+- Discovered: 43.
 - Opened through valid real entrypoint on public staging: 2 (`UI-001`, `UI-014`).
 - Opened through QA harness: 6 distinct types (`UI-007`, `UI-009`, `UI-017`, `UI-027`, `UI-028`, `UI-031`).
 - Visual PASS through Computer Use: 4 (`UI-001`, `UI-014`, `UI-027`, `UI-028`).
 - Visual FAIL: 0.
-- Authenticated visual flows blocked/not run: 35.
+- Authenticated or hardware-dependent visual flows blocked/not run: 39.
 - Lifecycle: PASS, 20 cycles across six types; no open windows, language handlers 0→0, non-monotonic handle/private-byte samples.
 
 ## Display, language and hardware matrix
@@ -88,3 +92,13 @@ application call site.
 
 Screenshots and CSV evidence are stored outside Git under
 `C:\Dev\Win7POS-QA\20260716-215939\visual`.
+
+## Final certification — 2026-07-17
+
+The inventory was recomputed from the final review tree and now contains 43
+interactive XAML surfaces. This closure run added no authenticated or physical
+visual PASS: the available host is Windows 11, exposes one 1440×900 monitor and
+has no test credentials or POS peripherals. The four critical DPI profiles,
+IT/EN/ES/ZH authenticated flows, Win7 SP1, dual-monitor Extend and hardware remain
+`NOT_RUN`. Automated dialog/customer-display gates and the x86 harness build pass,
+but do not replace the required Computer Use matrix.

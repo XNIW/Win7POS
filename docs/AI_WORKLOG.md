@@ -344,7 +344,7 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   preservata, barriera/epoch/shop/mode/cursor su apply/checkpoint/exactness/restore e
   late response bloccata.
 - Coordinator: single-flight dirty-bit, massimo due run per drain, resume dopo 5 s,
-  polling 24-36 min, backoff 5/15/30/60/120/300 s ±20%, auth stop e diagnostica
+  polling 24-36 s, backoff 5/15/30/60/120/300 s ±20%, auth stop e diagnostica
   `pos.catalog.sync.*`.
 - UI: Sync Center moderno, full repair separata/permission-gated, diagnostica safe,
   focus scanner ripristinato, shared visual polish e copy IT/EN/ES/ZH.
@@ -357,3 +357,23 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   1024/1366 a 100/125 e superfici autenticate non eseguite senza credenziali.
 - Restano esterni: staging autenticato, Win7 fisico/VM, Xprinter, scanner, cash
   drawer e x86 full-sync memory certification.
+
+## 2026-07-17 - Final closure review (NOT_DONE)
+
+- Provenance verificata dalla source cumulativa
+  `codex/win7pos-sync-drain-closeout-20260717` @ `75be03853a95cbb1b38db249b2b332f3f3549a32`:
+  22 commit sopra `origin/main` iniziale `5160b7c1574313ac8be47fdf2e139bb715a37e7d`,
+  tutti gli antenati richiesti presenti, nessun lavoro di branch mancante dimostrato.
+- Review read-only A-E completata. Tre P1 riproducibili corretti sulla review branch:
+  retry endpoint-offline senza transizione NIC, inizializzazione customer display
+  best-effort e dialog impostazioni adattivo all'area di lavoro. Zero P0/P1 aperti.
+- Finale locale: 30/30 gate, 249/249 test senza skip, solution e WPF net48/x86
+  0 warning/0 error, CLI selftest e UiSmokeHarness build PASS.
+- Benchmark: 2.000 righe batch/legacy mediana 248,930/19.951,492 ms (`80,15x`);
+  full sintetico 19.762 righe mediana 4.293,185 ms, `Verified` 3/3, pending 0.
+- Release pack x86, validator runtime e installer Inno locali PASS; harness, DB,
+  PDB, sorgenti e marker secret esclusi.
+- Stato task: `NOT_DONE`. Staging autenticato non eseguito senza credenziali QA;
+  host disponibile Windows 11 con un solo monitor e senza scanner, Xprinter o
+  cash drawer, quindi Win7 fisico, dual monitor, hardware, DPI e matrice runtime
+  restano `NOT_RUN`. Nessuna PR, merge o modifica a main.

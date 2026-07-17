@@ -41,3 +41,12 @@ payment, focus, taskbar, minimize/restore, exit and hot-plug scenarios.
 
 Screenshots, if later collected, must remain outside Git under the isolated QA
 directory and must not include credentials, PINs, tokens or production data.
+
+## Final certification — 2026-07-17
+
+Final static safety, adaptive settings sizing, best-effort initialization, Core
+policy tests and WPF net48/x86 build pass. Physical certification remains
+`NOT_RUN`: the available Windows 11 host has one monitor and no attached scanner,
+Xprinter or cash drawer. A Windows 7 SP1 POS in Extend mode with two independent
+monitors is still required for focus, taskbar, cashier fallback, negative
+coordinates, portrait and hot-plug evidence.

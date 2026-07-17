@@ -41,3 +41,12 @@ external evidence.
 
 `NOT_READY_FOR_MERGE` until the final automated/release validation is green and a
 separate two-monitor Windows Extend session completes the physical runtime matrix.
+
+## Final certification — 2026-07-17
+
+Final local automated/release validation is green. Review fixes make customer
+display initialization explicitly best-effort and keep the settings dialog within
+the active work area/owner cap. The remaining merge blocker is external runtime
+evidence: no Windows 7 SP1 machine, second monitor, scanner, Xprinter or cash drawer
+is attached to this host. Dual-display focus/hot-plug, physical DPI and installer
+smoke therefore remain `NOT_RUN`; recommendation remains `NOT_READY_FOR_MERGE`.
