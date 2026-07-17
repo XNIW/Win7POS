@@ -11,7 +11,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             InitializeComponent();
             DataContext = vm;
-            vm.OwnerWindow = this;
         }
 
         private void CloseWithResult(bool ok)

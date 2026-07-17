@@ -474,7 +474,8 @@ namespace Win7POS.Wpf
             SqliteConnectionFactory factory,
             CatalogSyncTrigger requestedTrigger,
             CancellationToken cancellationToken,
-            bool administratorRepairAuthorized = false)
+            bool administratorRepairAuthorized = false,
+            bool allowFullDecision = true)
         {
             var store = new PosTrustedDeviceStore();
             if (!store.TryRead(out var trustedSession))
@@ -490,6 +491,14 @@ namespace Win7POS.Wpf
                 trustedSession,
                 requestedTrigger,
                 administratorRepairAuthorized).ConfigureAwait(false);
+            var previewDecision = CatalogSyncPolicy.Evaluate(context.Trigger, context.State);
+            if (!allowFullDecision && previewDecision.Mode == CatalogSyncMode.Full)
+            {
+                return new CatalogSyncRunResult(
+                    success: false,
+                    code: "catalog_sync_full_repair_required");
+            }
+
             CatalogSyncCoordinator coordinator;
             var shopKey = FirstNonEmpty(trustedSession.ShopId, trustedSession.ShopCode);
             lock (_onlineSchedulerGate)
@@ -553,7 +562,11 @@ namespace Win7POS.Wpf
             var exactnessRepair = exactness.RepairRequired ||
                 exactness.Status == CatalogCompletenessStatus.Mismatch;
             var trigger = requestedTrigger;
-            if (restoreRecovery)
+            if (requestedTrigger == CatalogSyncTrigger.AdministratorRepair)
+            {
+                trigger = CatalogSyncTrigger.AdministratorRepair;
+            }
+            else if (restoreRecovery)
             {
                 trigger = CatalogSyncTrigger.RestoreCompleted;
             }
@@ -1413,13 +1426,16 @@ namespace Win7POS.Wpf
             await ShowOperatorSwitchOrPosAccessAsync().ConfigureAwait(true);
         }
 
-        private async Task<bool> ShowOperatorSwitchOrPosAccessAsync(string requiredPermissionCode = null, string requiredPermissionName = null)
+        private async Task<bool> ShowOperatorSwitchOrPosAccessAsync(
+            string requiredPermissionCode = null,
+            string requiredPermissionName = null,
+            Window dialogOwner = null)
         {
             var factory = new SqliteConnectionFactory(PosDbOptions.Default());
             var session = EnsureOperatorSession(factory);
             var switchDlg = new OperatorSwitchDialog(factory, session)
             {
-                Owner = DialogOwnerHelper.GetSafeOwner(this)
+                Owner = DialogOwnerHelper.GetSafeOwner(dialogOwner ?? this)
             };
 
             await switchDlg.InitializeAsync(requiredPermissionCode, requiredPermissionName).ConfigureAwait(true);
@@ -1427,7 +1443,7 @@ namespace Win7POS.Wpf
 
             if (switchDlg.PosAccessRequested)
             {
-                return OpenPosAccessForOperatorChange(factory);
+                return OpenPosAccessForOperatorChange(factory, dialogOwner);
             }
 
             if (!switchDlg.SwitchSucceeded)
@@ -1440,11 +1456,13 @@ namespace Win7POS.Wpf
             return true;
         }
 
-        private bool OpenPosAccessForOperatorChange(SqliteConnectionFactory factory)
+        private bool OpenPosAccessForOperatorChange(
+            SqliteConnectionFactory factory,
+            Window dialogOwner = null)
         {
             var loginDlg = new PosOnlineFirstLoginDialog(factory)
             {
-                Owner = DialogOwnerHelper.GetSafeOwner(this)
+                Owner = DialogOwnerHelper.GetSafeOwner(dialogOwner ?? this)
             };
             if (loginDlg.ShowDialog() != true ||
                 OperatorSessionHolder.Current == null ||
@@ -1477,18 +1495,26 @@ namespace Win7POS.Wpf
             return OperatorSessionHolder.Current;
         }
 
-        private async Task<bool> TrySwitchForPermissionAsync(string permissionCode, string message, string actionName)
+        private async Task<bool> TrySwitchForPermissionAsync(
+            string permissionCode,
+            string message,
+            string actionName,
+            Window dialogOwner = null)
         {
+            var owner = DialogOwnerHelper.GetSafeOwner(dialogOwner ?? this);
             var missingPermission = PermissionDiagnosticName(permissionCode);
             var deniedMessage = BuildPermissionDeniedMessage(message, GetCurrentRoleDiagnostic(), missingPermission);
             LogPermissionDenied(permissionCode, actionName, "initial");
 
-            if (!PermissionDeniedDialog.ShowSwitchPrompt(this, deniedMessage))
+            if (!PermissionDeniedDialog.ShowSwitchPrompt(owner, deniedMessage))
             {
                 return false;
             }
 
-            if (!await ShowOperatorSwitchOrPosAccessAsync(permissionCode, missingPermission).ConfigureAwait(true))
+            if (!await ShowOperatorSwitchOrPosAccessAsync(
+                    permissionCode,
+                    missingPermission,
+                    owner).ConfigureAwait(true))
             {
                 return false;
             }
@@ -1500,7 +1526,7 @@ namespace Win7POS.Wpf
 
             LogPermissionDenied(permissionCode, actionName, "after_switch");
             ModernMessageDialog.Show(
-                this,
+                owner,
                 PosLocalization.Current.Text("common.userPermissionDenied"),
                 BuildPermissionDeniedMessage(message, GetCurrentRoleDiagnostic(), missingPermission));
             return false;
@@ -2016,6 +2042,11 @@ namespace Win7POS.Wpf
             ShowSettingsHubDialog();
         }
 
+        private void OnSyncStatusPillClick(object sender, RoutedEventArgs e)
+        {
+            ShowSyncCenterDialog();
+        }
+
         private void ShowSettingsHubDialog()
         {
             try
@@ -2031,6 +2062,7 @@ namespace Win7POS.Wpf
                 dialog.UsersRolesRequested += (_, __) => OnMenuUsersClick(this, new RoutedEventArgs());
                 dialog.AboutRequested += (_, __) => OnMenuAboutClick(this, new RoutedEventArgs());
                 dialog.OnlineAccessRequested += (_, __) => OnRetryRecoveryOnlineClick(this, new RoutedEventArgs());
+                dialog.SyncCenterRequested += (_, __) => ShowSyncCenterDialog();
                 dialog.LanguageChangedRequested += async (_, code) => await SaveLanguagePreferenceAsync(code).ConfigureAwait(true);
 
                 dialog.ShowDialog();
@@ -2043,6 +2075,56 @@ namespace Win7POS.Wpf
                     PosLocalization.Current.Text("shell.settings"),
                     PosLocalization.Current.Text("settings.openLogError"));
             }
+        }
+
+        private void ShowSyncCenterDialog()
+        {
+            var factory = _onlineSchedulerFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+            try
+            {
+                var dialog = new SyncCenterDialog(
+                    factory,
+                    (trigger, administratorRepairAuthorized, token) =>
+                        TriggerAdaptiveOnlineRefreshAsync(
+                            factory,
+                            trigger,
+                            token,
+                            administratorRepairAuthorized,
+                            allowFullDecision: administratorRepairAuthorized),
+                    AuthorizeFullCatalogRepairAsync)
+                {
+                    Owner = DialogOwnerHelper.GetSafeOwner(this)
+                };
+                dialog.ShowDialog();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "MainWindow.ShowSyncCenterDialog: errore apertura Sync Center");
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(this),
+                    PosLocalization.T("sync.center.title"),
+                    PosLocalization.T("settings.openLogError"));
+            }
+            finally
+            {
+                PosViewControl?.RestoreScannerFocus();
+                _ = RefreshSyncStatusStripAsync(factory);
+            }
+        }
+
+        private async Task<bool> AuthorizeFullCatalogRepairAsync(Window dialogOwner)
+        {
+            if (HasCurrentPermission(PermissionCodes.DbMaintenance))
+            {
+                return true;
+            }
+
+            return await TrySwitchForPermissionAsync(
+                    PermissionCodes.DbMaintenance,
+                    PosLocalization.T("sync.center.repairPermissionMessage"),
+                    "CatalogFullRepair",
+                    dialogOwner)
+                .ConfigureAwait(true);
         }
 
         private async void OnMenuDbClick(object sender, RoutedEventArgs e)

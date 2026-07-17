@@ -145,16 +145,9 @@
                     </Button>
                 </WrapPanel>
 
-                <Grid Grid.Row="1">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="2*"/>
-                        <ColumnDefinition Width="1.25*"/>
-                        <ColumnDefinition Width="1.25*"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
+                <WrapPanel Grid.Row="1">
 
-                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                    <StackPanel Width="260" Margin="0,0,10,8">
                         <TextBlock Text="{loc:Loc products.search}" Style="{StaticResource MutedTextStyle}" FontWeight="SemiBold" Margin="0,0,0,4"/>
                         <TextBox MinWidth="220"
                                  Height="36"
@@ -167,7 +160,7 @@
                         </TextBox>
                     </StackPanel>
 
-                    <StackPanel Grid.Column="1" Margin="0,0,10,0">
+                    <StackPanel Width="190" Margin="0,0,10,8">
                         <TextBlock Text="{loc:Loc products.supplier}" Style="{StaticResource MutedTextStyle}" FontWeight="SemiBold" Margin="0,0,0,4"/>
                         <ComboBox MinWidth="160"
                                   Height="36"
@@ -189,7 +182,7 @@
                         </ComboBox>
                     </StackPanel>
 
-                    <StackPanel Grid.Column="2" Margin="0,0,10,0">
+                    <StackPanel Width="190" Margin="0,0,10,8">
                         <TextBlock Text="{loc:Loc products.category}" Style="{StaticResource MutedTextStyle}" FontWeight="SemiBold" Margin="0,0,0,4"/>
                         <ComboBox MinWidth="160"
                                   Height="36"
@@ -211,20 +204,20 @@
                         </ComboBox>
                     </StackPanel>
 
-                    <Button Grid.Column="3" MinWidth="118" Height="36" VerticalAlignment="Bottom" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding ApplyFiltersCommand}" Margin="0,0,8,0">
+                    <Button MinWidth="118" Height="36" VerticalAlignment="Bottom" Style="{StaticResource PrimaryButtonStyle}" Command="{Binding ApplyFiltersCommand}" Margin="0,20,8,8">
                         <StackPanel Style="{StaticResource IconButtonContent}">
                             <Path Data="{StaticResource IconSearch}" Style="{StaticResource ButtonIconPathStyle}"/>
                             <TextBlock Text="{loc:Loc products.applyFilters}" Margin="8,0,0,0"/>
                         </StackPanel>
                     </Button>
 
-                    <Button Grid.Column="4" MinWidth="96" Height="36" VerticalAlignment="Bottom" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ClearFiltersCommand}">
+                    <Button MinWidth="96" Height="36" VerticalAlignment="Bottom" Style="{StaticResource OutlineButtonStyle}" Command="{Binding ClearFiltersCommand}" Margin="0,20,0,8">
                         <StackPanel Style="{StaticResource IconButtonContent}">
                             <Path Data="{StaticResource IconFilterOff}" Style="{StaticResource ButtonIconPathStyle}"/>
                             <TextBlock Text="{loc:Loc common.clearFilters}" Margin="8,0,0,0"/>
                         </StackPanel>
                     </Button>
-                </Grid>
+                </WrapPanel>
 
                 <Border Grid.Row="2"
                         Style="{StaticResource FilterChipStyle}"

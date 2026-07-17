@@ -195,6 +195,11 @@ namespace Win7POS.Wpf.Pos
                 BarcodeBox.SelectAll();
             }), DispatcherPriority.Input);
         }
+
+        public void RestoreScannerFocus()
+        {
+            FocusBarcode();
+        }
     }
 
     /// <summary>Mini Composition Root: assembla le dipendenze per PosViewModel.</summary>

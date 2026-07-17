@@ -4,7 +4,7 @@
         xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         xmlns:pos="clr-namespace:Win7POS.Wpf.Pos"
         xmlns:prod="clr-namespace:Win7POS.Wpf.Products"
-        Title="Win7POS" MinWidth="1024" MinHeight="600" WindowState="Maximized">
+        Title="Win7POS" MinWidth="800" MinHeight="560" WindowState="Maximized">
     <Grid Margin="0">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -37,21 +37,26 @@
                                Text="{Binding ShellTitle, RelativeSource={RelativeSource AncestorType={x:Type Window}}}"
                                TextTrimming="CharacterEllipsis"
                                MaxWidth="520"/>
-                    <Border x:Name="SyncStatusPill" Margin="0,4,16,0" Padding="8,3" CornerRadius="7" Background="#26FFFFFF" BorderBrush="#66FFFFFF" BorderThickness="1" HorizontalAlignment="Left">
+                    <Button x:Name="SyncStatusPill"
+                            Margin="0,4,16,0"
+                            HorizontalAlignment="Left"
+                            Style="{StaticResource SyncStatusPillButtonStyle}"
+                            Click="OnSyncStatusPillClick"
+                            AutomationProperties.Name="{loc:Loc sync.center.open}">
                         <TextBlock x:Name="SyncStatusText"
                                    Foreground="White"
                                    FontSize="11"
                                    Text="{loc:Loc shell.syncUnavailable}"
                                    TextTrimming="CharacterEllipsis"
                                    MaxWidth="540"/>
-                    </Border>
+                    </Button>
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Background="#33FFFFFF" CornerRadius="8" Padding="12,6" Margin="0,0,10,0" BorderBrush="White" BorderThickness="1">
+                    <Border Background="#33FFFFFF" CornerRadius="8" Padding="12,6" Margin="0,0,10,0" BorderBrush="White" BorderThickness="1" MaxWidth="280">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock VerticalAlignment="Center" Foreground="White" FontSize="11" Margin="0,0,6,0" Text="{loc:Loc shell.operator}"/>
-                            <TextBlock x:Name="OperatorDisplayText" Foreground="White" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Text="—"/>
-                            <TextBlock x:Name="OperatorRoleText" Foreground="#E8FFFFFF" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0" Text=""/>
+                            <TextBlock x:Name="OperatorDisplayText" Foreground="White" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" Text="—" MaxWidth="130" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock x:Name="OperatorRoleText" Foreground="#E8FFFFFF" FontSize="11" VerticalAlignment="Center" Margin="6,0,0,0" Text="" MaxWidth="90" TextTrimming="CharacterEllipsis"/>
                         </StackPanel>
                     </Border>
                     <Border x:Name="ShellNetworkStatusBadge" Background="#E8F2ED" CornerRadius="8" Padding="10,6" Margin="0,0,10,0" BorderBrush="#BFD9C9" BorderThickness="1">

@@ -1,0 +1,192 @@
+<chrome:DialogShellWindow x:Class="Win7POS.Wpf.Pos.Dialogs.SyncCenterDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
+        xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
+        Title="{loc:Loc sync.center.title}"
+        ShowHeader="False"
+        UseModalOverlay="True"
+        DialogCornerRadius="16"
+        DialogBackground="{StaticResource SurfaceBrush}"
+        DialogBorderBrush="{StaticResource SurfaceBorderBrush}"
+        WindowStartupLocation="CenterOwner"
+        SizeToContent="Manual"
+        Width="900"
+        Height="700"
+        MinWidth="720"
+        MinHeight="560"
+        ResizeMode="CanResize"
+        ShowInTaskbar="False">
+    <Grid Background="{StaticResource SurfaceBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Grid Grid.Row="0" Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+            <Border Width="42" Height="42" CornerRadius="12" Background="#E9DFF2" Margin="0,0,12,0">
+                <Path Data="{StaticResource IconSync}" Fill="{StaticResource StatusInfoBrush}" Width="22" Height="22" Stretch="Uniform"/>
+            </Border>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="{loc:Loc sync.center.title}" Style="{StaticResource DialogTitleStyle}" Margin="0"/>
+                <TextBlock Text="{loc:Loc sync.center.subtitle}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,4,12,0"/>
+            </StackPanel>
+            <Border x:Name="HeaderStatusBadge" Grid.Column="2" CornerRadius="8" Padding="10,6" Background="#E9DFF2" VerticalAlignment="Center">
+                <TextBlock x:Name="HeaderStatusText"
+                           Text="{Binding HeaderStatusText}"
+                           Style="{StaticResource TypeCaptionStyle}"
+                           FontWeight="SemiBold"
+                           AutomationProperties.Name="{loc:Loc sync.center.status}"
+                           AutomationProperties.LiveSetting="Polite"/>
+            </Border>
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="0,0,0,12">
+            <ProgressBar x:Name="OperationProgress"
+                         Height="4"
+                         IsIndeterminate="True"
+                         Visibility="Collapsed"
+                         Foreground="{StaticResource PrimaryBrush}"
+                         AutomationProperties.Name="{loc:Loc sync.center.operationProgress}"/>
+            <TextBlock x:Name="LastUpdatedText" Text="{Binding LastUpdatedText}" HorizontalAlignment="Right" Style="{StaticResource TypeCaptionStyle}" Margin="0,8,0,0"/>
+        </Grid>
+
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" CanContentScroll="False">
+            <StackPanel>
+                <Border Style="{StaticResource DialogPanelStyle}" Margin="0,0,0,12" Padding="18">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconProducts}" Fill="{StaticResource PrimaryBrush}" Width="20" Height="20" Stretch="Uniform" Margin="0,0,8,0"/>
+                                <TextBlock Text="{loc:Loc sync.center.catalog}" Style="{StaticResource TypeSubtitleStyle}"/>
+                            </StackPanel>
+                            <Border Grid.Column="1" Style="{StaticResource FilterChipStyle}">
+                                <TextBlock x:Name="CatalogProgressText" Text="{Binding CatalogProgressText}" Style="{StaticResource TypeCaptionStyle}" FontWeight="SemiBold"/>
+                            </Border>
+                        </Grid>
+                        <UniformGrid Columns="2" Margin="0,14,0,0">
+                            <TextBlock x:Name="CatalogModeText" Text="{Binding CatalogModeText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,12,8"/>
+                            <TextBlock x:Name="CatalogTriggerText" Text="{Binding CatalogTriggerText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="CatalogLastSuccessText" Text="{Binding CatalogLastSuccessText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,12,8"/>
+                            <TextBlock x:Name="CatalogCursorText" Text="{Binding CatalogCursorText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="CatalogRowsText" Text="{Binding CatalogRowsText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,12,8"/>
+                            <TextBlock x:Name="CatalogFullRatioText" Text="{Binding CatalogFullRatioText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                        </UniformGrid>
+                        <TextBlock x:Name="CatalogVerificationText" Text="{Binding CatalogVerificationText}" Style="{StaticResource TypeBodyStyle}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        <TextBlock x:Name="CatalogCountsText" Text="{Binding CatalogCountsText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                        <Border Background="#FFF4D6" BorderBrush="#D6A93D" BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,12,0,0">
+                            <TextBlock x:Name="CatalogRepairReasonText" Text="{Binding CatalogRepairReasonText}" Foreground="{StaticResource StatusWarningBrush}" TextWrapping="Wrap"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <Grid Margin="0,0,0,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="12"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Style="{StaticResource DialogPanelStyle}" Padding="16">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconPay}" Fill="{StaticResource PrimaryBrush}" Width="19" Height="19" Stretch="Uniform" Margin="0,0,8,0"/>
+                                <TextBlock Text="{loc:Loc sync.center.sales}" Style="{StaticResource TypeSubtitleStyle}"/>
+                            </StackPanel>
+                            <TextBlock x:Name="SalesQueueText" Text="{Binding SalesQueueText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                            <TextBlock x:Name="SalesLastAckText" Text="{Binding SalesLastAckText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                            <TextBlock x:Name="SalesErrorText" Text="{Binding SalesErrorText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Grid.Column="2" Style="{StaticResource DialogPanelStyle}" Padding="16">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource IconDatabase}" Fill="{StaticResource PrimaryBrush}" Width="19" Height="19" Stretch="Uniform" Margin="0,0,8,0"/>
+                                <TextBlock Text="{loc:Loc sync.center.imports}" Style="{StaticResource TypeSubtitleStyle}"/>
+                            </StackPanel>
+                            <TextBlock x:Name="ImportQueueText" Text="{Binding ImportQueueText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                            <TextBlock x:Name="ImportLastAckText" Text="{Binding ImportLastAckText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <TextBlock x:Name="OperationStatusText"
+                           Style="{StaticResource TypeBodyStyle}"
+                           TextWrapping="Wrap"
+                           MinHeight="22"
+                           AutomationProperties.Name="{loc:Loc sync.center.operationStatus}"
+                           AutomationProperties.LiveSetting="Assertive"/>
+            </StackPanel>
+        </ScrollViewer>
+
+        <WrapPanel Grid.Row="3" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+            <Button x:Name="FullRepairButton"
+                    MinWidth="150"
+                    Margin="0,0,8,8"
+                    Style="{StaticResource OutlineButtonStyle}"
+                    Foreground="{StaticResource StatusWarningBrush}"
+                    Click="OnFullRepairClick"
+                    AutomationProperties.Name="{loc:Loc sync.center.fullRepair}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc sync.center.fullRepair}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="CopyDiagnosticsButton"
+                    MinWidth="150"
+                    Margin="0,0,8,8"
+                    Style="{StaticResource OutlineButtonStyle}"
+                    Click="OnCopyDiagnosticsClick"
+                    AutomationProperties.Name="{loc:Loc sync.center.copyDiagnostics}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconDuplicate}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc sync.center.copyDiagnostics}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="SyncNowButton"
+                    MinWidth="130"
+                    Margin="0,0,8,8"
+                    Style="{StaticResource DialogActionButtonStyle}"
+                    Click="OnSyncNowClick"
+                    AutomationProperties.Name="{loc:Loc sync.center.syncNow}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc sync.center.syncNow}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="RetryButton"
+                    MinWidth="150"
+                    Margin="0,0,8,8"
+                    Style="{StaticResource DialogCancelButtonStyle}"
+                    Click="OnRetryClick"
+                    AutomationProperties.Name="{loc:Loc sync.center.retryCheckpoint}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc sync.center.retryCheckpoint}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+            <Button x:Name="CloseButton"
+                    MinWidth="90"
+                    Margin="0,0,0,8"
+                    IsCancel="True"
+                    Style="{StaticResource DialogCancelButtonStyle}"
+                    Click="OnCloseClick"
+                    AutomationProperties.Name="{loc:Loc common.close}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc common.close}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
+        </WrapPanel>
+    </Grid>
+</chrome:DialogShellWindow>

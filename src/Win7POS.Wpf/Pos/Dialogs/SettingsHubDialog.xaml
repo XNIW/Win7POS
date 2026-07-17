@@ -12,7 +12,7 @@
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
         Width="760"
-        Height="560"
+        Height="620"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
     <Grid Margin="0" Background="#F1EDF7">
@@ -37,6 +37,7 @@
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
@@ -87,6 +88,19 @@
                     <Path Data="{StaticResource IconLanguage}" Style="{StaticResource SettingsCardIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc settings.language}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
                     <TextBlock Text="{loc:Loc settings.cardLanguageHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Button>
+
+            <Button Grid.Row="3"
+                    Grid.Column="0"
+                    Grid.ColumnSpan="2"
+                    Style="{StaticResource SettingsCardButtonStyle}"
+                    Click="OnSyncCenterClick"
+                    AutomationProperties.Name="{loc:Loc sync.center.open}">
+                <StackPanel>
+                    <Path Data="{StaticResource IconSync}" Style="{StaticResource SettingsCardIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc sync.center.title}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="{loc:Loc settings.cardSyncCenterHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                 </StackPanel>
             </Button>
 

@@ -12,7 +12,7 @@
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
         Width="620"
-        Height="700"
+        Height="640"
         MinWidth="560"
         MinHeight="560"
         ResizeMode="CanResize"
@@ -160,16 +160,6 @@
         </Border>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-            <Button MinWidth="150"
-                    Margin="0,0,10,0"
-                    Command="{Binding RepairCatalogCommand}"
-                    Visibility="{Binding CanRepairCatalog, Converter={StaticResource BoolToVis}}"
-                    Style="{StaticResource DialogActionButtonStyle}">
-                <StackPanel Style="{StaticResource IconButtonContent}">
-                    <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
-                    <TextBlock Text="{loc:Loc settings.catalogRepairAction}" Margin="8,0,0,0"/>
-                </StackPanel>
-            </Button>
             <Button MinWidth="100"
                     IsCancel="True"
                     IsEnabled="{Binding CanClose}"

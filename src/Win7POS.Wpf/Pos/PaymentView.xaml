@@ -12,10 +12,10 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="252"/>
-            <ColumnDefinition Width="320"/>
-            <ColumnDefinition Width="230"/>
-            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="1.05*"/>
+            <ColumnDefinition Width="1.3*"/>
+            <ColumnDefinition Width="0.9*"/>
+            <ColumnDefinition Width="1.55*"/>
         </Grid.ColumnDefinitions>
 
         <!-- Col 0: Scontrino + Stampa PDF, dimensionata in base all'anteprima scontrino -->

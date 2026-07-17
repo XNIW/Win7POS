@@ -12,6 +12,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public event EventHandler UsersRolesRequested;
         public event EventHandler AboutRequested;
         public event EventHandler OnlineAccessRequested;
+        public event EventHandler SyncCenterRequested;
         public event EventHandler<string> LanguageChangedRequested;
 
         public SettingsHubDialog(bool recoveryMode = false)
@@ -60,6 +61,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void OnOnlineAccessClick(object sender, RoutedEventArgs e)
         {
             CloseAndRaise(OnlineAccessRequested);
+        }
+
+        private void OnSyncCenterClick(object sender, RoutedEventArgs e)
+        {
+            CloseAndRaise(SyncCenterRequested);
         }
 
         private void OnLanguageClick(object sender, RoutedEventArgs e)

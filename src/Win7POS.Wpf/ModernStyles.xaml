@@ -19,6 +19,15 @@
     <SolidColorBrush x:Key="BorderBrush" Color="#E0D8E4"/>
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#201627"/>
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#6E5C78"/>
+    <!-- Semantic aliases keep feature surfaces on the established purple palette. -->
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#F8F5FA"/>
+    <SolidColorBrush x:Key="SurfaceCardBrush" Color="#FFFFFF"/>
+    <SolidColorBrush x:Key="SurfaceBorderBrush" Color="#E0D8E4"/>
+    <SolidColorBrush x:Key="FocusBrush" Color="#7B4FA3"/>
+    <SolidColorBrush x:Key="StatusSuccessBrush" Color="#2A6F48"/>
+    <SolidColorBrush x:Key="StatusWarningBrush" Color="#925824"/>
+    <SolidColorBrush x:Key="StatusErrorBrush" Color="#9D2F2F"/>
+    <SolidColorBrush x:Key="StatusInfoBrush" Color="#5C3D7A"/>
     <SolidColorBrush x:Key="ReadOnlySurfaceBrush" Color="#F7F3FA"/>
     <SolidColorBrush x:Key="TableHeaderBrush" Color="#EFE7F5"/>
     <SolidColorBrush x:Key="DisabledButtonBackgroundBrush" Color="#F1ECF5"/>
@@ -43,6 +52,18 @@
     <SolidColorBrush x:Key="SelectionHoverBrush" Color="#F3ECF8"/>
     <Thickness x:Key="DialogFooterMargin">0,18,0,0</Thickness>
     <Thickness x:Key="DialogTitleMargin">0,0,0,10</Thickness>
+    <system:Double x:Key="Spacing4">4</system:Double>
+    <system:Double x:Key="Spacing8">8</system:Double>
+    <system:Double x:Key="Spacing12">12</system:Double>
+    <system:Double x:Key="Spacing16">16</system:Double>
+    <system:Double x:Key="Spacing24">24</system:Double>
+    <system:Double x:Key="Spacing32">32</system:Double>
+    <system:Double x:Key="RadiusSmall">6</system:Double>
+    <system:Double x:Key="RadiusMedium">8</system:Double>
+    <system:Double x:Key="RadiusLarge">12</system:Double>
+    <system:Double x:Key="ButtonHeightCompact">36</system:Double>
+    <system:Double x:Key="ButtonHeightStandard">40</system:Double>
+    <system:Double x:Key="ButtonHeightTouch">44</system:Double>
     <system:Double x:Key="DialogActionButtonHeight">42</system:Double>
 
     <!-- Icon geometries are defined in Icons/MaterialSymbols.xaml. -->
@@ -64,6 +85,21 @@
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
         <Setter Property="FontSize" Value="12"/>
     </Style>
+
+    <Style x:Key="TypeTitleStyle" TargetType="TextBlock" BasedOn="{StaticResource PageTitleTextStyle}"/>
+
+    <Style x:Key="TypeSubtitleStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="FontSize" Value="15"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <Style x:Key="TypeBodyStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
+        <Setter Property="FontSize" Value="13"/>
+    </Style>
+
+    <Style x:Key="TypeCaptionStyle" TargetType="TextBlock" BasedOn="{StaticResource MutedTextStyle}"/>
 
     <Style x:Key="FormLabelTextStyle" TargetType="TextBlock">
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}"/>
@@ -118,6 +154,10 @@
             </Trigger>
             <Trigger Property="IsPressed" Value="True">
                 <Setter TargetName="border" Property="Opacity" Value="0.85"/>
+            </Trigger>
+            <Trigger Property="IsKeyboardFocused" Value="True">
+                <Setter TargetName="border" Property="BorderBrush" Value="{StaticResource FocusBrush}"/>
+                <Setter TargetName="border" Property="BorderThickness" Value="2"/>
             </Trigger>
             <Trigger Property="IsEnabled" Value="False">
                 <Setter TargetName="border" Property="Opacity" Value="1"/>
@@ -364,6 +404,18 @@
                 <Setter Property="Foreground" Value="#F8F1FC"/>
             </Trigger>
         </Style.Triggers>
+    </Style>
+
+    <Style x:Key="SyncStatusPillButtonStyle" TargetType="Button">
+        <Setter Property="Template" Value="{StaticResource RoundedButtonTemplate}"/>
+        <Setter Property="Background" Value="#26FFFFFF"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="BorderBrush" Value="#66FFFFFF"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="Padding" Value="8,3"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="Cursor" Value="Hand"/>
     </Style>
 
     <!-- Rounded TextBox -->
