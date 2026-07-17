@@ -187,6 +187,39 @@ namespace Win7POS.Wpf.Localization
             return "[missing:" + normalizedKey + "]";
         }
 
+        public string TextForLanguage(string languageCode, string key)
+        {
+            var normalizedKey = (key ?? string.Empty).Trim();
+            if (normalizedKey.Length == 0) return string.Empty;
+
+            var language = NormalizeLanguage(languageCode);
+            if (Translations.TryGetValue(language, out var selected) &&
+                selected.TryGetValue(normalizedKey, out var value))
+            {
+                return value;
+            }
+
+            return Translations[DefaultLanguage].TryGetValue(normalizedKey, out value)
+                ? value
+                : "[missing:" + normalizedKey + "]";
+        }
+
+        public string FormatForLanguage(string languageCode, string key, params object[] args)
+        {
+            var template = TextForLanguage(languageCode, key);
+            try
+            {
+                return string.Format(
+                    CultureInfo.GetCultureInfo(CultureNameForLanguage(languageCode)),
+                    template,
+                    args ?? new object[0]);
+            }
+            catch (FormatException)
+            {
+                return template;
+            }
+        }
+
         public string Format(string key, params object[] args)
         {
             var template = Text(key);

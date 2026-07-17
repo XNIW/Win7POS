@@ -936,6 +936,8 @@ namespace Win7POS.Wpf.Pos
                     SaleId = sale.Id,
                     SaleCode = sale.Code,
                     TotalMinor = sale.Total,
+                    PaidMinor = sale.PaidCash + sale.PaidCard,
+                    ChangeMinor = sale.Change,
                     CreatedAtMs = sale.CreatedAt,
                     Receipt42 = BuildReceiptPreview(completed, true, shop),
                     Receipt32 = BuildReceiptPreview(completed, false, shop),
@@ -2235,6 +2237,8 @@ namespace Win7POS.Wpf.Pos
         public long SaleId { get; set; }
         public string SaleCode { get; set; } = string.Empty;
         public long TotalMinor { get; set; }
+        public long PaidMinor { get; set; }
+        public long ChangeMinor { get; set; }
         public long CreatedAtMs { get; set; }
         public string Receipt42 { get; set; } = string.Empty;
         public string Receipt32 { get; set; } = string.Empty;

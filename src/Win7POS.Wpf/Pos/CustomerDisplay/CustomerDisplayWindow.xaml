@@ -1,0 +1,126 @@
+<Window x:Class="Win7POS.Wpf.Pos.CustomerDisplay.CustomerDisplayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Customer display"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Focusable="False"
+        Width="800"
+        Height="600"
+        Background="{Binding Background}">
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVisibility"/>
+    </Window.Resources>
+    <Grid Background="{Binding Background}" Margin="0" IsHitTestVisible="False">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" BorderBrush="{Binding Accent}" BorderThickness="0,0,0,2" Padding="20,14">
+            <Grid>
+                <TextBlock Text="{Binding ShopName}" Foreground="{Binding Foreground}" FontSize="24" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding ItemCountText}" Foreground="{Binding MutedForeground}" FontSize="16" HorizontalAlignment="Right"
+                           Visibility="{Binding ShowItemCount, Converter={StaticResource BoolToVisibility}}"/>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <TextBlock Grid.RowSpan="2" Text="{Binding StateMessage}" Foreground="{Binding Foreground}" FontSize="34" FontWeight="SemiBold"
+                       TextAlignment="Center" TextWrapping="Wrap" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="36"
+                       Visibility="{Binding ShowStateMessage, Converter={StaticResource BoolToVisibility}}"/>
+
+            <Grid Grid.Row="0" Margin="24,10,24,2"
+                  Visibility="{Binding ShowLandscapeHeader, Converter={StaticResource BoolToVisibility}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/><ColumnDefinition Width="90"/><ColumnDefinition Width="160"/><ColumnDefinition Width="170"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding ItemHeader}" Foreground="{Binding MutedForeground}" FontWeight="SemiBold"/>
+                <TextBlock Grid.Column="1" Text="{Binding QuantityHeader}" Foreground="{Binding MutedForeground}" FontWeight="SemiBold" HorizontalAlignment="Center"/>
+                <TextBlock Grid.Column="2" Text="{Binding UnitPriceHeader}" Foreground="{Binding MutedForeground}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                <TextBlock Grid.Column="3" Text="{Binding LineTotalHeader}" Foreground="{Binding MutedForeground}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+            </Grid>
+
+            <ListBox Grid.Row="1" x:Name="LinesList" ItemsSource="{Binding Lines}" Background="Transparent" BorderThickness="0"
+                     Focusable="False" IsTabStop="False" Padding="{Binding ContentPadding}"
+                     Visibility="{Binding HasLines, Converter={StaticResource BoolToVisibility}}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="ListBoxItem">
+                        <Setter Property="Focusable" Value="False"/>
+                        <Setter Property="IsHitTestVisible" Value="False"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0,0,0,4"/>
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Border CornerRadius="8" Padding="12,8" MinHeight="{Binding DataContext.RowHeight, RelativeSource={RelativeSource AncestorType=ListBox}}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="#14000000"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
+                                            <Setter Property="Background" Value="#335F3C78"/>
+                                            <Setter Property="BorderBrush" Value="#B58AD0"/>
+                                            <Setter Property="BorderThickness" Value="2"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <Grid>
+                                <Grid Visibility="{Binding DataContext.IsLandscape, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibility}}">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/><ColumnDefinition Width="90"/><ColumnDefinition Width="160"/><ColumnDefinition Width="170"/>
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding Name}" Foreground="{Binding DataContext.Foreground, RelativeSource={RelativeSource AncestorType=ListBox}}" FontSize="{Binding DataContext.BodyFontSize, RelativeSource={RelativeSource AncestorType=ListBox}}" TextTrimming="CharacterEllipsis"/>
+                                        <TextBlock Text="{Binding Barcode}" Foreground="{Binding DataContext.MutedForeground, RelativeSource={RelativeSource AncestorType=ListBox}}" FontSize="12" Visibility="{Binding ShowBarcode, Converter={StaticResource BoolToVisibility}}"/>
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding QuantityText}" Foreground="{Binding DataContext.Foreground, RelativeSource={RelativeSource AncestorType=ListBox}}" FontSize="{Binding DataContext.BodyFontSize, RelativeSource={RelativeSource AncestorType=ListBox}}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="2" Text="{Binding UnitPriceText}" Foreground="{Binding DataContext.Foreground, RelativeSource={RelativeSource AncestorType=ListBox}}" FontSize="{Binding DataContext.BodyFontSize, RelativeSource={RelativeSource AncestorType=ListBox}}" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="{Binding ShowUnitPrice, Converter={StaticResource BoolToVisibility}}"/>
+                                    <TextBlock Grid.Column="3" Text="{Binding LineTotalText}" Foreground="{Binding DataContext.Foreground, RelativeSource={RelativeSource AncestorType=ListBox}}" FontSize="{Binding DataContext.BodyFontSize, RelativeSource={RelativeSource AncestorType=ListBox}}" FontWeight="SemiBold" HorizontalAlignment="Right" VerticalAlignment="Center" Visibility="{Binding ShowLineTotal, Converter={StaticResource BoolToVisibility}}"/>
+                                </Grid>
+                                <Grid Visibility="{Binding DataContext.IsPortrait, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVisibility}}">
+                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="{Binding Name}" Foreground="{Binding DataContext.Foreground, RelativeSource={RelativeSource AncestorType=ListBox}}" FontSize="{Binding DataContext.BodyFontSize, RelativeSource={RelativeSource AncestorType=ListBox}}" TextTrimming="CharacterEllipsis"/>
+                                    <Grid Grid.Row="1" Margin="0,5,0,0">
+                                        <TextBlock Foreground="{Binding DataContext.MutedForeground, RelativeSource={RelativeSource AncestorType=ListBox}}">
+                                            <Run Text="{Binding QuantityText, Mode=OneWay}"/><Run Text=" × "/><Run Text="{Binding UnitPriceText, Mode=OneWay}"/>
+                                        </TextBlock>
+                                        <TextBlock Text="{Binding LineTotalText}" Foreground="{Binding DataContext.Foreground, RelativeSource={RelativeSource AncestorType=ListBox}}" FontWeight="SemiBold" HorizontalAlignment="Right"/>
+                                    </Grid>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+
+        <Border Grid.Row="2" Background="#26000000" BorderBrush="{Binding Accent}" BorderThickness="0,2,0,0" Padding="20,14">
+            <Grid>
+                <StackPanel HorizontalAlignment="Left">
+                    <TextBlock Foreground="{Binding MutedForeground}" Visibility="{Binding ShowSubtotal, Converter={StaticResource BoolToVisibility}}"><Run Text="{Binding SubtotalLabel, Mode=OneWay}"/><Run Text=": "/><Run Text="{Binding SubtotalText, Mode=OneWay}"/></TextBlock>
+                    <TextBlock Foreground="{Binding Accent}" Visibility="{Binding ShowDiscount, Converter={StaticResource BoolToVisibility}}"><Run Text="{Binding DiscountLabel, Mode=OneWay}"/><Run Text=": -"/><Run Text="{Binding DiscountText, Mode=OneWay}"/></TextBlock>
+                    <TextBlock Foreground="{Binding MutedForeground}" Visibility="{Binding ShowPaid, Converter={StaticResource BoolToVisibility}}"><Run Text="{Binding PaidLabel, Mode=OneWay}"/><Run Text=": "/><Run Text="{Binding PaidText, Mode=OneWay}"/></TextBlock>
+                    <TextBlock Foreground="{Binding Accent}" Visibility="{Binding ShowChange, Converter={StaticResource BoolToVisibility}}"><Run Text="{Binding ChangeLabel, Mode=OneWay}"/><Run Text=": "/><Run Text="{Binding ChangeText, Mode=OneWay}"/></TextBlock>
+                </StackPanel>
+                <StackPanel HorizontalAlignment="Right">
+                    <TextBlock Text="{Binding TotalLabel}" Foreground="{Binding MutedForeground}" FontSize="18" HorizontalAlignment="Right"/>
+                    <TextBlock Text="{Binding TotalText}" Foreground="{Binding Accent}" FontSize="{Binding TotalFontSize}" FontWeight="Bold" HorizontalAlignment="Right"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

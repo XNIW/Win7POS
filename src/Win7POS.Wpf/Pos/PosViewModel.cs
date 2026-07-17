@@ -39,6 +39,7 @@ namespace Win7POS.Wpf.Pos
         private long _subtotal;
         private long _total;
         private bool _isBusy;
+        private bool _isPaymentCommitInProgress;
         private string _statusMessage = string.Empty;
         private string _statusToastMessage = string.Empty;
         private bool _isStatusToastVisible;
@@ -53,10 +54,23 @@ namespace Win7POS.Wpf.Pos
         private PosCartLineRow _selectedCartItem;
         private RecentSaleRow _selectedRecentSale;
         private int? _pendingInputQuantity;
+        private CustomerDisplaySnapshot _lastCustomerCartSnapshot = CustomerDisplayProjection.Empty(DateTimeOffset.UtcNow);
+        private string _customerDisplayShopName = string.Empty;
 
         public ObservableCollection<PosCartLineRow> CartItems { get; } = new ObservableCollection<PosCartLineRow>();
         public ObservableCollection<RecentSaleRow> RecentSales { get; } = new ObservableCollection<RecentSaleRow>();
         public event Action FocusBarcodeRequested;
+        public event Action<CustomerDisplaySnapshot> CustomerDisplaySnapshotChanged;
+        public CustomerDisplaySnapshot CurrentCustomerDisplaySnapshot { get; private set; } =
+            CustomerDisplayProjection.Empty(DateTimeOffset.UtcNow);
+
+        public void SetCustomerDisplayShopName(string shopName)
+        {
+            var normalized = string.IsNullOrWhiteSpace(shopName) ? string.Empty : shopName.Trim();
+            if (string.Equals(_customerDisplayShopName, normalized, StringComparison.Ordinal)) return;
+            _customerDisplayShopName = normalized;
+            PublishCustomerCartSnapshot();
+        }
 
         public string BarcodeInput
         {
@@ -329,7 +343,14 @@ namespace Win7POS.Wpf.Pos
                     row.RaiseLocalizedProperties();
                 }
             };
+            PublishCustomerCartSnapshot();
             SetStatus(PosLocalization.Current.Text("pos.status.ready"), PosNoticeSeverity.Info, suppressToast: true);
+        }
+
+        public bool IsPaymentCommitInProgress
+        {
+            get => _isPaymentCommitInProgress;
+            private set { _isPaymentCommitInProgress = value; OnPropertyChanged(); }
         }
 
         private void OnCatalogChanged(string barcode)
@@ -711,6 +732,7 @@ namespace Win7POS.Wpf.Pos
                     automaticAfterSale: true).ConfigureAwait(true),
                 openDrawerDefault: IsCashDrawerConfigured && _printerSettings.CashDrawerOpenOnCashSale);
 
+            PublishCustomerState(CustomerDisplayState.Payment, "payment");
             bool ok;
             try
             {
@@ -719,6 +741,7 @@ namespace Win7POS.Wpf.Pos
                 {
                     _logger.LogError(null, "MainWindow not available for payment screen.");
                     SetStatus(PosLocalization.Current.Text("pos.status.mainWindowUnavailable"), PosNoticeSeverity.Error);
+                    PublishCustomerCartSnapshot();
                     RequestFocusBarcode();
                     return;
                 }
@@ -729,6 +752,7 @@ namespace Win7POS.Wpf.Pos
                 _logger.LogError(ex, "Payment screen failed.");
                 ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("pos.status.payError"), PosLocalization.Current.Format("pos.status.payErrorDetail", ex.Message));
                 SetStatus(PosLocalization.Current.Text("pos.status.payError"), PosNoticeSeverity.Error);
+                PublishCustomerCartSnapshot();
                 RequestFocusBarcode();
                 return;
             }
@@ -742,6 +766,7 @@ namespace Win7POS.Wpf.Pos
             if (!ok)
             {
                 SetStatus(PosLocalization.Current.Text("pos.status.paymentCancelled"), PosNoticeSeverity.Info);
+                PublishCustomerCartSnapshot();
                 RequestFocusBarcode();
                 return;
             }
@@ -757,10 +782,12 @@ namespace Win7POS.Wpf.Pos
                     DialogOwnerHelper.GetSafeOwner(),
                     PosLocalization.Current.Text("common.userPermissionDenied"),
                     ex.Message);
+                PublishCustomerCartSnapshot();
                 return;
             }
 
             IsBusy = true;
+            IsPaymentCommitInProgress = true;
             try
             {
                 var payment = new PosPaymentInfo
@@ -774,7 +801,14 @@ namespace Win7POS.Wpf.Pos
                     vm.SaleCode,
                     vm.CreatedAtMs,
                     operatorId).ConfigureAwait(true);
+                var completedCart = _lastCustomerCartSnapshot;
                 ApplySnapshot(result.Snapshot);
+                PublishCustomerSnapshot(CustomerDisplayProjection.Completed(
+                    completedCart,
+                    result.TotalMinor,
+                    result.PaidMinor,
+                    result.ChangeMinor,
+                    DateTimeOffset.UtcNow));
                 ReceiptPreview = UseReceipt42 ? result.Receipt42 : result.Receipt32;
                 SetStatus(PosLocalization.Current.Format("pos.status.paymentOk", result.SaleCode), PosNoticeSeverity.Success);
 
@@ -815,14 +849,17 @@ namespace Win7POS.Wpf.Pos
             catch (PosException ex)
             {
                 SetStatus(ex.Message, PosNoticeSeverity.Error);
+                PublishCustomerCartSnapshot();
             }
             catch (Exception ex)
             {
                 SetStatus(PosLocalization.Current.Format("common.errorWithMessage", ex.Message), PosNoticeSeverity.Error);
                 _logger.LogError(ex, "POS VM pay failed");
+                PublishCustomerCartSnapshot();
             }
             finally
             {
+                IsPaymentCommitInProgress = false;
                 IsBusy = false;
                 RequestFocusBarcode();
             }
@@ -2012,12 +2049,68 @@ namespace Win7POS.Wpf.Pos
                 selected = CartItems[CartItems.Count - 1];
             SelectedCartItem = selected;
 
+            PublishCustomerCartSnapshot(StableCustomerKey(selected));
+
             (ClearCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (OpenDiscountCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenEditProductCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenChangeQuantityCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenChangeQuantityForLineCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SuspendCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private void PublishCustomerCartSnapshot(string lastChangedLineKey = null)
+        {
+            var projectionLines = CartItems.Select(item =>
+            {
+                var netLineTotal = Math.Max(0, item.LineTotal - item.DiscountAmountMinor);
+                return new CustomerDisplayProjectionLine
+                {
+                    StableKey = StableCustomerKey(item),
+                    Name = item.Name ?? string.Empty,
+                    Barcode = item.Barcode ?? string.Empty,
+                    Quantity = item.Quantity,
+                    UnitPrice = item.Quantity > 0 ? netLineTotal / item.Quantity : item.UnitPrice,
+                    LineTotal = netLineTotal,
+                    LineKind = CustomerDisplayLineKind.Item
+                };
+            }).ToList();
+
+            _lastCustomerCartSnapshot = CustomerDisplayProjection.Cart(
+                projectionLines,
+                Subtotal,
+                Total,
+                _customerDisplayShopName,
+                lastChangedLineKey,
+                true,
+                DateTimeOffset.UtcNow);
+            PublishCustomerSnapshot(_lastCustomerCartSnapshot);
+        }
+
+        private void PublishCustomerState(CustomerDisplayState state, string messageCode)
+        {
+            PublishCustomerSnapshot(CustomerDisplayProjection.WithState(
+                _lastCustomerCartSnapshot,
+                state,
+                messageCode,
+                timestamp: DateTimeOffset.UtcNow));
+        }
+
+        private void PublishCustomerSnapshot(CustomerDisplaySnapshot snapshot)
+        {
+            CurrentCustomerDisplaySnapshot = snapshot ?? CustomerDisplayProjection.Empty(DateTimeOffset.UtcNow);
+            CustomerDisplaySnapshotChanged?.Invoke(CurrentCustomerDisplaySnapshot);
+        }
+
+        private static string StableCustomerKey(PosCartLineRow row)
+        {
+            if (row == null) return string.Empty;
+            var barcode = (row.Barcode ?? string.Empty).Trim();
+            if (barcode.StartsWith("MANUAL:", StringComparison.OrdinalIgnoreCase))
+                return "manual:" + (row.Name ?? string.Empty).Trim() + ":" + row.UnitPrice;
+            return string.IsNullOrWhiteSpace(barcode)
+                ? "item:" + (row.Name ?? string.Empty).Trim() + ":" + row.UnitPrice
+                : "item:" + barcode;
         }
 
         public string BuildCartReceiptPreview()
