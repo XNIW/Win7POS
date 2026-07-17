@@ -13,6 +13,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public event EventHandler AboutRequested;
         public event EventHandler OnlineAccessRequested;
         public event EventHandler SyncCenterRequested;
+        public event EventHandler CustomerDisplayRequested;
         public event EventHandler<string> LanguageChangedRequested;
 
         public SettingsHubDialog(bool recoveryMode = false)
@@ -23,6 +24,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 ShopDataButton.Visibility = Visibility.Collapsed;
                 PrinterSettingsButton.Visibility = Visibility.Collapsed;
                 UsersRolesButton.Visibility = Visibility.Collapsed;
+                CustomerDisplayButton.Visibility = Visibility.Collapsed;
                 OnlineAccessButton.Visibility = Visibility.Visible;
             }
         }
@@ -66,6 +68,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private void OnSyncCenterClick(object sender, RoutedEventArgs e)
         {
             CloseAndRaise(SyncCenterRequested);
+        }
+
+        private void OnCustomerDisplayClick(object sender, RoutedEventArgs e)
+        {
+            CloseAndRaise(CustomerDisplayRequested);
         }
 
         private void OnLanguageClick(object sender, RoutedEventArgs e)

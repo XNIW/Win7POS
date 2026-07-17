@@ -41,6 +41,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
             <Button x:Name="ShopDataButton" Grid.Row="0" Grid.Column="0" Style="{StaticResource SettingsCardButtonStyle}" Click="OnShopDataClick">
@@ -101,6 +102,19 @@
                     <Path Data="{StaticResource IconSync}" Style="{StaticResource SettingsCardIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc sync.center.title}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
                     <TextBlock Text="{loc:Loc settings.cardSyncCenterHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Button>
+
+            <Button x:Name="CustomerDisplayButton"
+                    Grid.Row="4"
+                    Grid.Column="0"
+                    Grid.ColumnSpan="2"
+                    Style="{StaticResource SettingsCardButtonStyle}"
+                    Click="OnCustomerDisplayClick">
+                <StackPanel>
+                    <Path Data="{StaticResource IconMonitor}" Style="{StaticResource SettingsCardIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc customerDisplay.settings.title}" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock Text="{loc:Loc customerDisplay.settings.cardHelp}" Style="{StaticResource MutedTextStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                 </StackPanel>
             </Button>
 

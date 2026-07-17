@@ -701,6 +701,14 @@
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}"/>
     </Style>
 
+    <Style x:Key="SettingsCardBorderStyle" TargetType="{x:Type Border}">
+        <Setter Property="Background" Value="White"/>
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="10"/>
+        <Setter Property="Padding" Value="16"/>
+    </Style>
+
     <Style x:Key="ModernDataGridStyle" TargetType="{x:Type DataGrid}">
         <Setter Property="Background" Value="White"/>
         <Setter Property="BorderThickness" Value="0"/>

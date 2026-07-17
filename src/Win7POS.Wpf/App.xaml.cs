@@ -126,6 +126,12 @@ namespace Win7POS.Wpf
             base.OnExit(e);
         }
 
+        protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+        {
+            (MainWindow as MainWindow)?.PrepareForSessionEnding();
+            base.OnSessionEnding(e);
+        }
+
         private static bool TryAcquireSingleInstance()
         {
             try

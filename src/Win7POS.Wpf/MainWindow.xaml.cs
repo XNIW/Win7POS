@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Threading;
@@ -24,6 +25,8 @@ using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Pos.Online;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Products;
+using Win7POS.Wpf.Infrastructure.Displays;
+using Win7POS.Wpf.Pos.CustomerDisplay;
 
 namespace Win7POS.Wpf
 {
@@ -60,6 +63,12 @@ namespace Win7POS.Wpf
         private string _startupPhase = "constructed";
         private string _productsDataContextOperatorUsername;
         private PosView PosViewControl;
+        private CustomerDisplayManager _customerDisplayManager;
+        private bool _programmaticClose;
+        private bool _sessionEnding;
+        private bool _closeConfirmationOpen;
+        private bool _cleanupCompleted;
+        private int _fullCatalogRepairInProgress;
         public static readonly DependencyProperty ShellTitleProperty = DependencyProperty.Register(
             nameof(ShellTitle), typeof(string), typeof(MainWindow), new PropertyMetadata("Win7POS"));
         public static readonly DependencyProperty CurrentMenuKeyProperty = DependencyProperty.Register(
@@ -99,16 +108,8 @@ namespace Win7POS.Wpf
             Loaded += OnLoadedAsync;
             ContentRendered += OnContentRendered;
             Activated += OnShellActivated;
-            Closed += (_, __) =>
-            {
-                _authorizationLeaseTimer?.Stop();
-                _syncStatusTimer?.Stop();
-                _networkStatusTimer?.Stop();
-                lock (_onlineSchedulerGate)
-                {
-                    _onlineSchedulerCts?.Cancel();
-                }
-            };
+            Closed += OnShellClosed;
+            Application.Current.SessionEnding += OnApplicationSessionEnding;
             PreviewKeyDown += OnPreviewKeyDown;
         }
 
@@ -122,6 +123,131 @@ namespace Win7POS.Wpf
             {
                 SetCurrentValue(WindowStateProperty, WindowState.Maximized);
             }
+
+            _customerDisplayManager?.SetCashierMinimized(WindowState == WindowState.Minimized);
+        }
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            var state = CollectCloseState();
+            var decision = MainShellClosePolicy.Decide(state);
+            if (decision == MainShellCloseDecision.Allow ||
+                decision == MainShellCloseDecision.BypassForSystemShutdown)
+            {
+                base.OnClosing(e);
+                return;
+            }
+
+            e.Cancel = true;
+            if (_closeConfirmationOpen)
+            {
+                base.OnClosing(e);
+                return;
+            }
+
+            if (decision == MainShellCloseDecision.BlockUntilOperationCompletes)
+            {
+                ModernMessageDialog.Show(
+                    DialogOwnerHelper.GetSafeOwner(this),
+                    PosLocalization.Current.Text("exit.title"),
+                    PosLocalization.Current.Text("exit.operationInProgress"));
+                base.OnClosing(e);
+                return;
+            }
+
+            _closeConfirmationOpen = true;
+            try
+            {
+                var vm = GetPosViewModel();
+                var dialog = new ExitConfirmationDialog(vm?.ItemsCount ?? 0, vm?.Total ?? 0)
+                {
+                    Owner = DialogOwnerHelper.GetSafeOwner(this)
+                };
+                dialog.ShowDialog();
+                switch (dialog.Choice)
+                {
+                    case ExitConfirmationChoice.CloseApplication:
+                        _programmaticClose = true;
+                        e.Cancel = false;
+                        break;
+                    case ExitConfirmationChoice.Minimize:
+                        WindowState = WindowState.Minimized;
+                        break;
+                    default:
+                        SetCurrentValue(WindowStateProperty, WindowState.Maximized);
+                        Dispatcher.BeginInvoke(new Action(() => PosViewControl?.RestoreScannerFocus()));
+                        break;
+                }
+            }
+            finally
+            {
+                _closeConfirmationOpen = false;
+            }
+            base.OnClosing(e);
+        }
+
+        public void CloseWithoutUserPrompt()
+        {
+            _programmaticClose = true;
+            Close();
+        }
+
+        internal void PrepareForSessionEnding()
+        {
+            _sessionEnding = true;
+            CleanupBestEffort();
+        }
+
+        private MainShellCloseState CollectCloseState()
+        {
+            if (_sessionEnding) return MainShellCloseState.SessionEnding;
+            if (_programmaticClose) return MainShellCloseState.ProgrammaticClose;
+
+            var state = MainShellCloseState.Idle;
+            var vm = GetPosViewModel();
+            if (vm?.CartItems.Count > 0) state |= MainShellCloseState.CartNotEmpty;
+            if (PaymentViewControl?.DataContext != null || vm?.IsPaymentCommitInProgress == true)
+                state |= MainShellCloseState.PaymentInProgress;
+            lock (_onlineSchedulerGate)
+            {
+                if (_onlineSchedulerTask != null && !_onlineSchedulerTask.IsCompleted)
+                    state |= MainShellCloseState.IncrementalSyncInProgress;
+            }
+            if (Volatile.Read(ref _fullCatalogRepairInProgress) > 0)
+                state |= MainShellCloseState.FullCatalogRepairInProgress;
+            return state;
+        }
+
+        private void OnApplicationSessionEnding(object sender, SessionEndingCancelEventArgs e)
+        {
+            PrepareForSessionEnding();
+        }
+
+        private void OnShellClosed(object sender, EventArgs e)
+        {
+            CleanupBestEffort();
+        }
+
+        private void CleanupBestEffort()
+        {
+            if (_cleanupCompleted) return;
+            _cleanupCompleted = true;
+            try { Application.Current.SessionEnding -= OnApplicationSessionEnding; } catch { }
+            try { _authorizationLeaseTimer?.Stop(); } catch { }
+            try { _syncStatusTimer?.Stop(); } catch { }
+            try { _networkStatusTimer?.Stop(); } catch { }
+            try
+            {
+                lock (_onlineSchedulerGate)
+                {
+                    _onlineSchedulerCts?.Cancel();
+                    _onlineSchedulerCts?.Dispose();
+                    _onlineSchedulerCts = null;
+                }
+            }
+            catch { }
+            try { _customerDisplayManager?.Dispose(); } catch { }
+            _customerDisplayManager = null;
         }
 
         private void InitializeLanguageSelector()
@@ -243,7 +369,7 @@ namespace Win7POS.Wpf
                     !OperatorSessionHolder.Current.IsLoggedIn)
                 {
                     _logger.LogInfo("POS access dialog cancelled or not authenticated");
-                    Close();
+                    CloseWithoutUserPrompt();
                     return;
                 }
                 _logger.LogInfo("POS access dialog accepted");
@@ -274,7 +400,7 @@ namespace Win7POS.Wpf
                             {
                                 await ShowRestoreReviewRecoveryAsync().ConfigureAwait(true);
                             }
-                            Close();
+                            CloseWithoutUserPrompt();
                             return;
                         }
                     }
@@ -288,6 +414,7 @@ namespace Win7POS.Wpf
                     if (shellMode == PosShellMode.Pos)
                     {
                         EnsurePosViewCreated();
+                        await EnsureCustomerDisplayManagerAsync(factory).ConfigureAwait(true);
                     }
                     UpdateOperatorDisplay(session);
                     RefreshShellAfterOperatorChange(session);
@@ -331,7 +458,7 @@ namespace Win7POS.Wpf
                         PosLocalization.Current.Text("app.startupError"));
                 }
                 catch { }
-                Close();
+                CloseWithoutUserPrompt();
             }
         }
 
@@ -536,10 +663,19 @@ namespace Win7POS.Wpf
                 coordinator = _catalogSyncCoordinator;
             }
 
-            return await coordinator.TriggerAsync(
-                context.Trigger,
-                context.State,
-                cancellationToken).ConfigureAwait(false);
+            var tracksFullRepair = previewDecision.Mode == CatalogSyncMode.Full;
+            if (tracksFullRepair) Interlocked.Increment(ref _fullCatalogRepairInProgress);
+            try
+            {
+                return await coordinator.TriggerAsync(
+                    context.Trigger,
+                    context.State,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            finally
+            {
+                if (tracksFullRepair) Interlocked.Decrement(ref _fullCatalogRepairInProgress);
+            }
         }
 
         private static async Task<CatalogSyncContext> BuildCatalogSyncContextAsync(
@@ -1369,7 +1505,7 @@ namespace Win7POS.Wpf
                 this,
                 PosLocalization.Current.Text("access.login.title"),
                 PosLocalization.Current.Text("access.login.authorizationExpired"));
-            Close();
+            CloseWithoutUserPrompt();
         }
 
         private async Task RefreshSyncStatusStripAsync(SqliteConnectionFactory factory = null)
@@ -1451,21 +1587,29 @@ namespace Win7POS.Wpf
             };
 
             await switchDlg.InitializeAsync(requiredPermissionCode, requiredPermissionName).ConfigureAwait(true);
-            switchDlg.ShowDialog();
-
-            if (switchDlg.PosAccessRequested)
+            _customerDisplayManager?.SetOperatorLocked(true);
+            try
             {
-                return OpenPosAccessForOperatorChange(factory, dialogOwner);
-            }
+                switchDlg.ShowDialog();
 
-            if (!switchDlg.SwitchSucceeded)
+                if (switchDlg.PosAccessRequested)
+                {
+                    return OpenPosAccessForOperatorChange(factory, dialogOwner);
+                }
+
+                if (!switchDlg.SwitchSucceeded)
+                {
+                    return false;
+                }
+
+                UpdateOperatorDisplay(session);
+                RefreshShellAfterOperatorChange(session);
+                return true;
+            }
+            finally
             {
-                return false;
+                _customerDisplayManager?.SetOperatorLocked(false);
             }
-
-            UpdateOperatorDisplay(session);
-            RefreshShellAfterOperatorChange(session);
-            return true;
         }
 
         private bool OpenPosAccessForOperatorChange(
@@ -2012,7 +2156,27 @@ namespace Win7POS.Wpf
             PosViewControl = new PosView();
             PosTabHost.Children.Clear();
             PosTabHost.Children.Add(PosViewControl);
+            _customerDisplayManager?.Attach(GetPosViewModel());
             return PosViewControl;
+        }
+
+        private async Task EnsureCustomerDisplayManagerAsync(SqliteConnectionFactory factory)
+        {
+            if (_customerDisplayManager == null)
+            {
+                _customerDisplayManager = new CustomerDisplayManager(
+                    new WindowsDisplayTopologyProvider(),
+                    new CustomerDisplaySettingsRepository(factory),
+                    Dispatcher);
+                _customerDisplayManager.WarningRaised += code =>
+                    GetPosViewModel()?.SetStatus(
+                        PosLocalization.Current.Text("customerDisplay.error." + (code ?? "actionFailed")),
+                        PosNoticeSeverity.Warning);
+                await _customerDisplayManager.InitializeAsync().ConfigureAwait(true);
+            }
+            var posViewModel = GetPosViewModel();
+            posViewModel?.SetCustomerDisplayShopName(ShellTitle);
+            _customerDisplayManager.Attach(posViewModel);
         }
 
         private async void OnMenuDailyReportClick(object sender, RoutedEventArgs e)
@@ -2075,6 +2239,7 @@ namespace Win7POS.Wpf
                 dialog.AboutRequested += (_, __) => OnMenuAboutClick(this, new RoutedEventArgs());
                 dialog.OnlineAccessRequested += (_, __) => OnRetryRecoveryOnlineClick(this, new RoutedEventArgs());
                 dialog.SyncCenterRequested += (_, __) => ShowSyncCenterDialog();
+                dialog.CustomerDisplayRequested += async (_, __) => await ShowCustomerDisplaySettingsAsync().ConfigureAwait(true);
                 dialog.LanguageChangedRequested += async (_, code) => await SaveLanguagePreferenceAsync(code).ConfigureAwait(true);
 
                 dialog.ShowDialog();
@@ -2087,6 +2252,56 @@ namespace Win7POS.Wpf
                     PosLocalization.Current.Text("shell.settings"),
                     PosLocalization.Current.Text("settings.openLogError"));
             }
+        }
+
+        private async Task ShowCustomerDisplaySettingsAsync()
+        {
+            if (_recoveryMode) return;
+            if (!HasCurrentPermission(PermissionCodes.SettingsPrinter) &&
+                !await TrySwitchForPermissionAsync(
+                    PermissionCodes.SettingsPrinter,
+                    PosLocalization.Current.Text("customerDisplay.settings.permissionDenied"),
+                    "CustomerDisplaySettings").ConfigureAwait(true))
+            {
+                PosViewControl?.RestoreScannerFocus();
+                return;
+            }
+
+            var factory = _onlineSchedulerFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+            await EnsureCustomerDisplayManagerAsync(factory).ConfigureAwait(true);
+            var topology = new WindowsDisplayTopologyProvider();
+            var vm = new CustomerDisplaySettingsViewModel(
+                _customerDisplayManager.Settings,
+                topology.GetMonitors());
+            var dialog = new CustomerDisplaySettingsDialog(
+                vm,
+                () => _customerDisplayManager.IdentifyMonitors(),
+                () => _customerDisplayManager.Preview(),
+                () => _customerDisplayManager.OpenDisplay(),
+                () => _customerDisplayManager.CloseDisplay())
+            {
+                Owner = DialogOwnerHelper.GetSafeOwner(this)
+            };
+
+            if (dialog.ShowDialog() == true && dialog.Result != null)
+            {
+                try
+                {
+                    await _customerDisplayManager.SaveAndApplyAsync(dialog.Result).ConfigureAwait(true);
+                    GetPosViewModel()?.SetStatus(
+                        PosLocalization.Current.Text("customerDisplay.settings.saved"),
+                        PosNoticeSeverity.Success);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning("category=customer_display settings=apply_failed", ex);
+                    ModernMessageDialog.Show(
+                        DialogOwnerHelper.GetSafeOwner(this),
+                        PosLocalization.Current.Text("customerDisplay.settings.title"),
+                        PosLocalization.Current.Text("customerDisplay.error.actionFailed"));
+                }
+            }
+            PosViewControl?.RestoreScannerFocus();
         }
 
         private void ShowSyncCenterDialog()
