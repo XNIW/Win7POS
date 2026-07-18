@@ -248,7 +248,7 @@ Test-ContainsAll "primary surfaces keep responsive layout markers" ($productsVie
     'EnableRowVirtualization="True"',
     '<ColumnDefinition Width="1.05*"/>',
     '<ColumnDefinition Width="1.55*"/>',
-    'Grid.Row="1" Grid.Column="5" Grid.ColumnSpan="2"',
+    'x:Name="FooterPayButton"',
     'Style="{StaticResource PrimaryButtonStyle}"'
 )
 
@@ -291,6 +291,32 @@ Test-ContainsAll "POS footer uses readable disabled button style" $posView @(
     'ClearCartCommand',
     'FooterSecondaryButtonStyle'
 )
+
+Test-ContainsAll "POS checkout footer stays compact and single-line" $posView @(
+    'x:Name="PosCheckoutFooter"',
+    'AutomationProperties.AutomationId="Pos.CheckoutFooter"',
+    'Padding="12,10"',
+    'x:Name="PosToolActionsPanel"',
+    'x:Name="FooterTotalPanel"',
+    'x:Name="FooterPayButton"',
+    'Width="{Binding ActualWidth, ElementName=PosToolActionsPanel}"',
+    'VerticalAlignment="Center"'
+)
+
+if ($posView.IndexOf('Grid.Row="1" Grid.Column="4"', [StringComparison]::Ordinal) -ge 0 -or
+    $posView.IndexOf('Grid.Row="1" Grid.Column="5"', [StringComparison]::Ordinal) -ge 0) {
+    Fail "POS checkout footer still splits total/payment onto a second visual row"
+}
+else {
+    Pass "POS checkout footer aligns actions, total and payment on one visual row"
+}
+
+if ($posView.IndexOf('Background="{StaticResource PrimaryLighterBrush}" Foreground="White"', [StringComparison]::Ordinal) -ge 0) {
+    Fail "POS pay button locally overrides disabled-state colors"
+}
+else {
+    Pass "POS pay button inherits enabled and disabled colors from PrimaryButtonStyle"
+}
 
 Test-ContainsAll "Products searchable filters" $productsView @(
     'ApplyFiltersCommand',

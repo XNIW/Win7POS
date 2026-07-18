@@ -10,12 +10,13 @@ using Win7POS.Core.Models;
 using Win7POS.Core.Receipt;
 using Win7POS.Core.Util;
 using Win7POS.Wpf.Localization;
+using Win7POS.Wpf.Pos;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public enum PaymentActiveField { Cash, Card }
 
-    public sealed class PaymentViewModel : INotifyPropertyChanged
+    public sealed class PaymentViewModel : INotifyPropertyChanged, IDisposable
     {
         private readonly long _totalDueMinor;
         private readonly PaymentReceiptDraft _draft;
@@ -71,13 +72,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             UpdateReceiptPreviewText();
             UpdateFiscalPreviewText();
-            PosLocalization.Current.LanguageChanged += (_, __) =>
-            {
-                OnPropertyChanged(nameof(NextBoletaNumberLabel));
-                OnPropertyChanged(nameof(PaidLabelPrefix));
-                SetFiscalStatusKey(_fiscalStatusKey);
-                NotifyDerived();
-            };
+            PosLocalization.Current.LanguageChanged += OnLanguageChanged;
         }
 
         public string SaleCode => _draft?.SaleCode ?? "";
@@ -438,20 +433,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 LineTotal = x.LineTotal
             }).ToList();
 
-            var options = PosLocalization.CreateReceiptOptions(_draft.UseReceipt42, "receipt.title");
             var shop = _draft?.ShopInfo ?? new ReceiptShopInfo { Name = "Win7POS", Address = "", Footer = PosLocalization.T("receipt.thanks") };
-
-            var lines = new List<string>(ReceiptFormatter.Format(sale, saleLines, options, shop));
-            // Stessa struttura della stampante: riga con codice vendita in fondo.
-            if (!string.IsNullOrEmpty(sale.Code))
-            {
-                lines.Add("");
-                lines.Add(PosLocalization.T("receipt.title") + ": " + sale.Code);
-            }
-            ReceiptPreviewText = string.Join(Environment.NewLine, lines);
-            // Anteprima = stampa: prima riga (nome negozio) in grassetto e più grande, resto uguale
-            ReceiptPreviewFirstLine = lines.Count > 0 ? (lines[0] ?? "") : "";
-            ReceiptPreviewRest = lines.Count > 1 ? string.Join(Environment.NewLine, lines.Skip(1)) : "";
+            var receiptText = PosReceiptTextRenderer.BuildReceipt(
+                sale,
+                saleLines,
+                _draft.UseReceipt42,
+                shop);
+            ReceiptPreviewText = receiptText;
+            PosReceiptTextRenderer.SplitPreview(
+                receiptText,
+                out var firstLine,
+                out var remainingText);
+            ReceiptPreviewFirstLine = firstLine;
+            ReceiptPreviewRest = remainingText;
         }
 
         private void AppendDigit(object parameter)
@@ -562,6 +556,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (ConfirmCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (PrintPdfCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private void OnLanguageChanged(object sender, EventArgs e)
+        {
+            OnPropertyChanged(nameof(NextBoletaNumberLabel));
+            OnPropertyChanged(nameof(PaidLabelPrefix));
+            SetFiscalStatusKey(_fiscalStatusKey);
+            NotifyDerived();
+        }
+
+        public void Dispose()
+        {
+            PosLocalization.Current.LanguageChanged -= OnLanguageChanged;
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)

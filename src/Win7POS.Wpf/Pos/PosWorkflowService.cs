@@ -74,6 +74,11 @@ namespace Win7POS.Wpf.Pos
 
         private readonly FileLogger _logger = new FileLogger("PosWorkflowService");
         private readonly SemaphoreSlim _gate = new SemaphoreSlim(1, 1);
+        private readonly object _printerDiscoverySync = new object();
+        private Task<IReadOnlyList<InstalledPrinterInfo>> _printerDiscoveryTask;
+        private IReadOnlyList<InstalledPrinterInfo> _lastPrinterDiscovery = new List<InstalledPrinterInfo>();
+
+        private const int PrinterDiscoveryTimeoutMilliseconds = 5000;
 
         private readonly ProductRepository _products;
         private readonly SaleRepository _sales;
@@ -209,21 +214,79 @@ namespace Win7POS.Wpf.Pos
             await SetPrinterSettingsAsync(settings).ConfigureAwait(false);
         }
 
-        public Task<IReadOnlyList<InstalledPrinterInfo>> GetInstalledPrintersAsync()
+        public async Task<IReadOnlyList<InstalledPrinterInfo>> GetInstalledPrintersAsync()
         {
-            return Task.Run(() => WindowsPrinterDiscovery.GetInstalledPrinters());
+            Task<IReadOnlyList<InstalledPrinterInfo>> discoveryTask;
+            lock (_printerDiscoverySync)
+            {
+                if (_printerDiscoveryTask == null || _printerDiscoveryTask.IsCompleted)
+                {
+                    _printerDiscoveryTask = Task.Run<IReadOnlyList<InstalledPrinterInfo>>(() =>
+                    {
+                        try
+                        {
+                            var discovered = WindowsPrinterDiscovery.GetInstalledPrinters();
+                            lock (_printerDiscoverySync)
+                            {
+                                _lastPrinterDiscovery = discovered;
+                            }
+
+                            return discovered;
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning("Printer discovery failed; cached inventory retained.", ex);
+                            lock (_printerDiscoverySync)
+                            {
+                                return _lastPrinterDiscovery;
+                            }
+                        }
+                    });
+                }
+
+                discoveryTask = _printerDiscoveryTask;
+            }
+
+            var completed = await Task.WhenAny(
+                discoveryTask,
+                Task.Delay(PrinterDiscoveryTimeoutMilliseconds)).ConfigureAwait(false);
+            if (completed == discoveryTask)
+                return await discoveryTask.ConfigureAwait(false);
+
+            _logger.LogWarning("Printer discovery timed out; cached inventory returned.");
+            lock (_printerDiscoverySync)
+            {
+                return _lastPrinterDiscovery;
+            }
         }
 
-        public async Task TestReceiptPrinterAsync(PosPrinterSettings settings)
+        public async Task<string> BuildPrinterTestReceiptAsync(bool use42)
+        {
+            var shop = await GetShopInfoAsync().ConfigureAwait(false);
+            return BuildPrinterTestReceipt(shop, use42, DateTimeOffset.Now);
+        }
+
+        public async Task TestReceiptPrinterAsync(
+            PosPrinterSettings settings,
+            string receiptText,
+            bool use42)
         {
             if (settings == null) throw new ArgumentNullException(nameof(settings));
-            var resolvedPrinter = ResolveReceiptPrinterOrThrow(settings, automaticAfterSale: false, explicitUserAction: true);
-            await _receiptPrinter.PrintAsync(BuildPrinterTestText(), new ReceiptPrintOptions
+            if (string.IsNullOrWhiteSpace(receiptText))
+                throw new InvalidOperationException(PosLocalization.T("printer.receiptTextEmpty"));
+            var installedPrinters = await GetInstalledPrintersAsync().ConfigureAwait(false);
+            var resolvedPrinter = ResolveReceiptPrinterOrThrow(
+                settings,
+                installedPrinters,
+                automaticAfterSale: false,
+                explicitUserAction: true);
+            await _receiptPrinter.PrintAsync(receiptText, new ReceiptPrintOptions
             {
                 PrinterName = resolvedPrinter.Name,
-                Copies = settings.Copies < 1 ? 1 : settings.Copies,
-                CharactersPerLine = 42,
+                Copies = 1,
+                CharactersPerLine = use42 ? 42 : 32,
                 SaveCopyToFile = false,
+                SaleCodeForBarcode = "TEST-NO-SALE",
                 UseReceiptHeaderStyle = true
             }).ConfigureAwait(false);
         }
@@ -936,7 +999,8 @@ namespace Win7POS.Wpf.Pos
             PosPaymentInfo payment,
             string saleCode = null,
             long? createdAtMs = null,
-            int? operatorId = null)
+            int? operatorId = null,
+            ReceiptShopInfo receiptShopSnapshot = null)
         {
             if (payment == null) throw new ArgumentNullException(nameof(payment));
 
@@ -979,7 +1043,8 @@ namespace Win7POS.Wpf.Pos
                 _lastCompletedSale = completed;
                 _session.Clear();
                 var snapshot = await BuildSnapshotAsync(PosLocalization.T("pos.status.saleCompleted"));
-                var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
+                var shop = receiptShopSnapshot ??
+                           await GetShopInfoNoLockAsync().ConfigureAwait(false);
 
                 return new PosSaleResult
                 {
@@ -1903,19 +1968,12 @@ namespace Win7POS.Wpf.Pos
 
         private static string BuildReceiptPreview(SaleCompleted completed, bool use42, ReceiptShopInfo shop = null)
         {
-            shop = shop ?? new ReceiptShopInfo();
-            var lines = new List<string>(ReceiptFormatter.Format(
+            if (completed == null) throw new ArgumentNullException(nameof(completed));
+            return PosReceiptTextRenderer.BuildReceipt(
                 completed.Sale,
                 completed.Lines,
-                PosLocalization.CreateReceiptOptions(use42, "receipt.title"),
-                shop));
-            // Stessa struttura della stampante: codice vendita in fondo per barcode Code128.
-            if (!string.IsNullOrEmpty(completed?.Sale?.Code))
-            {
-                lines.Add("");
-                lines.Add(PosLocalization.T("receipt.title") + ": " + completed.Sale.Code);
-            }
-            return string.Join(Environment.NewLine, lines);
+                use42,
+                shop);
         }
 
         private static string BuildRefundReceiptPreview(SaleCompleted completed, bool use42, ReceiptShopInfo shop = null)
@@ -2043,7 +2101,14 @@ namespace Win7POS.Wpf.Pos
                 throw new InvalidOperationException(PosLocalization.T("printer.receiptTextEmpty"));
 
             var printer = await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
-            var resolvedPrinter = ResolveReceiptPrinterOrThrow(printer, automaticAfterSale, explicitUserAction);
+            // Discovery is bounded and independent from _gate. Never call the
+            // synchronous spooler discovery path while a sale operation owns it.
+            var installedPrinters = await GetInstalledPrintersAsync().ConfigureAwait(false);
+            var resolvedPrinter = ResolveReceiptPrinterOrThrow(
+                printer,
+                installedPrinters,
+                automaticAfterSale,
+                explicitUserAction);
             var outputDirectory = string.IsNullOrWhiteSpace(printer.OutputDirectory)
                 ? Path.Combine(AppPaths.DataDirectory, "receipts")
                 : printer.OutputDirectory;
@@ -2069,13 +2134,16 @@ namespace Win7POS.Wpf.Pos
 
         public async Task OpenCashDrawerAsync()
         {
+            // Refresh/cache the inventory before taking _gate so a slow spooler
+            // cannot hold the POS operation lock for the discovery timeout.
+            var installedPrinters = await GetInstalledPrintersAsync().ConfigureAwait(false);
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
                 var printer = await ReadPrinterSettingsNoLockAsync().ConfigureAwait(false);
                 if (!printer.CashDrawerEnabled) return;
                 if (!string.Equals(printer.CashDrawerMode, CashDrawerModePrinterKick, StringComparison.OrdinalIgnoreCase)) return;
-                var drawerPrinter = ResolveCashDrawerPrinterOrThrow(printer);
+                var drawerPrinter = ResolveCashDrawerPrinterOrThrow(printer, installedPrinters);
                 await _receiptPrinter.OpenCashDrawerAsync(new ReceiptPrintOptions
                 {
                     PrinterName = drawerPrinter.Name,
@@ -2089,10 +2157,12 @@ namespace Win7POS.Wpf.Pos
         }
 
         /// <summary>Testa il cassetto portamonete con i parametri forniti (senza salvare in impostazioni). Non usa fallback sulla stampante predefinita.</summary>
-        public Task TestCashDrawerAsync(string printerName, string cashDrawerCommand)
+        public async Task TestCashDrawerAsync(string printerName, string cashDrawerCommand)
         {
+            var installedPrinters = await GetInstalledPrintersAsync().ConfigureAwait(false);
             var resolvedPrinter = ResolvePrinterNameOrThrow(
                 printerName,
+                installedPrinters,
                 allowWindowsDefault: false,
                 allowVirtualPrinters: false,
                 blockVirtualForAutomaticSale: false);
@@ -2100,15 +2170,16 @@ namespace Win7POS.Wpf.Pos
                 ? cashDrawerCommand.Trim()
                 : DefaultCashDrawerCommand;
 
-            return _receiptPrinter.OpenCashDrawerAsync(new ReceiptPrintOptions
+            await _receiptPrinter.OpenCashDrawerAsync(new ReceiptPrintOptions
             {
                 PrinterName = resolvedPrinter.Name,
                 CashDrawerCommand = cmd
-            });
+            }).ConfigureAwait(false);
         }
 
         private static InstalledPrinterInfo ResolveReceiptPrinterOrThrow(
             PosPrinterSettings settings,
+            IReadOnlyList<InstalledPrinterInfo> installedPrinters,
             bool automaticAfterSale,
             bool explicitUserAction)
         {
@@ -2119,12 +2190,15 @@ namespace Win7POS.Wpf.Pos
 
             return ResolvePrinterNameOrThrow(
                 settings.PrinterName,
+                installedPrinters,
                 settings.AllowWindowsDefault,
                 settings.AllowVirtualPrinters,
                 automaticAfterSale && !explicitUserAction);
         }
 
-        private static InstalledPrinterInfo ResolveCashDrawerPrinterOrThrow(PosPrinterSettings settings)
+        private static InstalledPrinterInfo ResolveCashDrawerPrinterOrThrow(
+            PosPrinterSettings settings,
+            IReadOnlyList<InstalledPrinterInfo> installedPrinters)
         {
             if (settings == null)
                 throw new ArgumentNullException(nameof(settings));
@@ -2135,6 +2209,7 @@ namespace Win7POS.Wpf.Pos
 
             return ResolvePrinterNameOrThrow(
                 printerName,
+                installedPrinters,
                 allowWindowsDefault: false,
                 allowVirtualPrinters: false,
                 blockVirtualForAutomaticSale: true);
@@ -2142,6 +2217,7 @@ namespace Win7POS.Wpf.Pos
 
         private static InstalledPrinterInfo ResolvePrinterNameOrThrow(
             string printerName,
+            IReadOnlyList<InstalledPrinterInfo> installedPrinters,
             bool allowWindowsDefault,
             bool allowVirtualPrinters,
             bool blockVirtualForAutomaticSale)
@@ -2154,14 +2230,20 @@ namespace Win7POS.Wpf.Pos
                 if (!allowWindowsDefault)
                     throw new InvalidOperationException(PosLocalization.T("printer.saleSavedPrinterNotConfigured"));
 
-                requestedName = WindowsPrinterDiscovery.GetDefaultPrinterName();
+                var defaultPrinter = (installedPrinters ?? Array.Empty<InstalledPrinterInfo>())
+                    .FirstOrDefault(x => x != null && x.IsDefault);
+                requestedName = defaultPrinter == null ? string.Empty : (defaultPrinter.Name ?? string.Empty).Trim();
                 usingWindowsDefault = true;
             }
 
             if (requestedName.Length == 0)
                 throw new InvalidOperationException(PosLocalization.T("printer.saleSavedPrinterNotConfigured"));
 
-            var resolved = WindowsPrinterDiscovery.FindPrinter(requestedName);
+            var resolved = (installedPrinters ?? Array.Empty<InstalledPrinterInfo>())
+                .FirstOrDefault(x => x != null && string.Equals(
+                    x.Name,
+                    requestedName,
+                    StringComparison.OrdinalIgnoreCase));
             if (resolved == null)
             {
                 throw new InvalidOperationException(PosLocalization.Current.Format(
@@ -2189,16 +2271,60 @@ namespace Win7POS.Wpf.Pos
             return resolved;
         }
 
-        private static string BuildPrinterTestText()
+        private static string BuildPrinterTestReceipt(
+            ReceiptShopInfo shop,
+            bool use42,
+            DateTimeOffset createdAt)
         {
-            return string.Join(Environment.NewLine, new[]
+            var sale = new Sale
             {
-                "Win7POS",
-                "Printer test",
-                DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
-                "Receipt printer configured.",
-                "Sale saving is independent from printing."
-            });
+                ClientSaleId = "TEST-NO-SALE",
+                Code = "TEST-NO-SALE",
+                CreatedAt = createdAt.ToUnixTimeMilliseconds(),
+                Total = 14691,
+                PaidCash = 7000,
+                PaidCard = 7691,
+                Change = 0,
+                SyncStatus = "test_only"
+            };
+            var lines = new List<SaleLine>
+            {
+                new SaleLine
+                {
+                    Barcode = "TEST-CAFFE",
+                    Name = "Caffè più qualità - información",
+                    Quantity = 2,
+                    UnitPrice = 6173,
+                    LineTotal = 12346
+                },
+                new SaleLine
+                {
+                    Barcode = "TEST-PINGUINO",
+                    Name = "Confezione città pingüino niño",
+                    Quantity = 1,
+                    UnitPrice = 2345,
+                    LineTotal = 2345
+                }
+            };
+            var preview = BuildReceiptPreview(new SaleCompleted(sale, lines), use42, shop);
+            var marker = WrapPrinterTestLine(
+                PosLocalization.T("printer.testReceiptMarker"),
+                use42 ? 42 : 32);
+            return preview + Environment.NewLine + marker;
+        }
+
+        private static string WrapPrinterTestLine(string text, int width)
+        {
+            var value = text ?? string.Empty;
+            var safeWidth = Math.Max(16, width);
+            if (value.Length <= safeWidth) return value;
+
+            var chunks = new List<string>();
+            for (var offset = 0; offset < value.Length; offset += safeWidth)
+            {
+                chunks.Add(value.Substring(offset, Math.Min(safeWidth, value.Length - offset)));
+            }
+            return string.Join(Environment.NewLine, chunks);
         }
 
         private static string NormalizeFileTag(string value)

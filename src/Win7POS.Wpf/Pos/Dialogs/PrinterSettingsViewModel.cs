@@ -4,14 +4,17 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using System.Windows.Input;
+using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Printing;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
-    public sealed class PrinterSettingsViewModel : INotifyPropertyChanged
+    public sealed class PrinterSettingsViewModel : INotifyPropertyChanged, IDisposable
     {
+        private static readonly FileLogger _logger = new FileLogger("PrinterSettingsViewModel");
         private const string PrinterKickMode = "printer_kick";
         private const string DisabledMode = "disabled";
 
@@ -23,11 +26,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _allowVirtualPrinters;
         private bool _saveCopyToFile;
         private string _outputDirectory = string.Empty;
+        private string _testReceiptPreview = string.Empty;
+        private string _testReceiptPreviewFirstLine = string.Empty;
+        private string _testReceiptPreviewRest = string.Empty;
         private string _cashDrawerCommand = "27,112,0,25,250";
         private bool _cashDrawerEnabled;
         private string _cashDrawerMode = DisabledMode;
         private string _cashDrawerPrinterName = string.Empty;
         private bool _cashDrawerOpenOnCashSale = true;
+        private bool _isTestOperationInProgress;
+        private bool _isRefreshingPrinters;
+        private Task _activeTestOperation = Task.CompletedTask;
+        private Task _activeRefreshOperation = Task.CompletedTask;
+        private bool _disposed;
 
         public ObservableCollection<InstalledPrinterInfo> InstalledPrinters { get; } =
             new ObservableCollection<InstalledPrinterInfo>();
@@ -40,6 +51,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 _printerName = value ?? string.Empty;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(SelectedPrinterSummary));
+                OnPropertyChanged(nameof(CanTestPrint));
+                OnPropertyChanged(nameof(CanTestCashDrawer));
+                OnPropertyChanged(nameof(TestPrintStatusMessage));
+                OnPropertyChanged(nameof(TestCashDrawerStatusMessage));
                 RaiseCanExecuteChanged();
             }
         }
@@ -59,7 +74,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool ReceiptEnabled
         {
             get => _receiptEnabled;
-            set { _receiptEnabled = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
+            set
+            {
+                _receiptEnabled = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(CanTestPrint));
+                OnPropertyChanged(nameof(TestPrintStatusMessage));
+                RaiseCanExecuteChanged();
+            }
         }
 
         public bool AutoPrint
@@ -71,13 +93,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool AllowWindowsDefault
         {
             get => _allowWindowsDefault;
-            set { _allowWindowsDefault = value; OnPropertyChanged(); }
+            set
+            {
+                _allowWindowsDefault = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(SelectedPrinterSummary));
+                OnPropertyChanged(nameof(CanTestPrint));
+                OnPropertyChanged(nameof(TestPrintStatusMessage));
+                RaiseCanExecuteChanged();
+            }
         }
 
         public bool AllowVirtualPrinters
         {
             get => _allowVirtualPrinters;
-            set { _allowVirtualPrinters = value; OnPropertyChanged(); }
+            set
+            {
+                _allowVirtualPrinters = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(SelectedPrinterSummary));
+                OnPropertyChanged(nameof(CanTestPrint));
+                OnPropertyChanged(nameof(TestPrintStatusMessage));
+                RaiseCanExecuteChanged();
+            }
         }
 
         public bool SaveCopyToFile
@@ -92,6 +130,25 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _outputDirectory = value ?? string.Empty; OnPropertyChanged(); }
         }
 
+        public string TestReceiptPreview
+        {
+            get => _testReceiptPreview;
+            set
+            {
+                _testReceiptPreview = value ?? string.Empty;
+                PosReceiptTextRenderer.SplitPreview(
+                    _testReceiptPreview,
+                    out _testReceiptPreviewFirstLine,
+                    out _testReceiptPreviewRest);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(TestReceiptPreviewFirstLine));
+                OnPropertyChanged(nameof(TestReceiptPreviewRest));
+            }
+        }
+
+        public string TestReceiptPreviewFirstLine => _testReceiptPreviewFirstLine;
+        public string TestReceiptPreviewRest => _testReceiptPreviewRest;
+
         public string CashDrawerCommand
         {
             get => _cashDrawerCommand;
@@ -99,6 +156,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 _cashDrawerCommand = value ?? string.Empty;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(IsCashDrawerCommandValid));
+                OnPropertyChanged(nameof(IsValid));
                 OnPropertyChanged(nameof(CanTestCashDrawer));
                 OnPropertyChanged(nameof(TestCashDrawerStatusMessage));
                 RaiseCanExecuteChanged();
@@ -113,6 +172,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 _cashDrawerEnabled = value;
                 CashDrawerMode = value ? PrinterKickMode : DisabledMode;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(IsCashDrawerCommandValid));
+                OnPropertyChanged(nameof(IsValid));
                 RaiseCanExecuteChanged();
             }
         }
@@ -128,6 +189,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 _cashDrawerEnabled = string.Equals(_cashDrawerMode, PrinterKickMode, StringComparison.OrdinalIgnoreCase);
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(CashDrawerEnabled));
+                OnPropertyChanged(nameof(IsCashDrawerCommandValid));
+                OnPropertyChanged(nameof(IsValid));
+                OnPropertyChanged(nameof(CanTestCashDrawer));
+                OnPropertyChanged(nameof(TestCashDrawerStatusMessage));
                 RaiseCanExecuteChanged();
             }
         }
@@ -139,6 +204,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 _cashDrawerPrinterName = value ?? string.Empty;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(CanTestCashDrawer));
+                OnPropertyChanged(nameof(TestCashDrawerStatusMessage));
                 RaiseCanExecuteChanged();
             }
         }
@@ -153,19 +220,46 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             get
             {
-                var info = FindPrinter(PrinterName);
+                var info = ResolveReceiptPrinter();
                 if (info == null)
                     return PosLocalization.T("printer.noPosPrinterConfigured");
                 return info.StatusText + (info.IsVirtual ? " - " + PosLocalization.T("printer.virtualNotRecommended") : string.Empty);
             }
         }
 
-        public bool IsValid => ParsedCopies >= 1;
-        public bool CanTestCashDrawer => CashDrawerEnabled && !string.IsNullOrWhiteSpace(CashDrawerCommand);
+        public bool IsCashDrawerCommandValid =>
+            !CashDrawerEnabled ||
+            (!string.IsNullOrWhiteSpace(CashDrawerCommand) &&
+             WindowsSpoolerReceiptPrinter.IsCashDrawerCommandValid(CashDrawerCommand));
+        public bool IsValid => ParsedCopies >= 1 && IsCashDrawerCommandValid;
+        public bool IsTestOperationInProgress => _isTestOperationInProgress;
+        public Task ActiveTestOperation => _activeTestOperation;
+        public Task ActiveRefreshOperation => _activeRefreshOperation;
 
-        public string TestCashDrawerStatusMessage => CanTestCashDrawer
-            ? PosLocalization.T("printer.testReady")
-            : PosLocalization.T("printer.testMissing");
+        public bool CanTestPrint =>
+            !_disposed &&
+            !IsTestOperationInProgress &&
+            ReceiptEnabled &&
+            IsUsableQueue(ResolveReceiptPrinter(), AllowVirtualPrinters);
+        public bool CanTestCashDrawer =>
+            !_disposed &&
+            !IsTestOperationInProgress &&
+            CashDrawerEnabled &&
+            IsCashDrawerCommandValid &&
+            IsUsableQueue(ResolveCashDrawerPrinter(), allowVirtualPrinter: false);
+
+        public string TestPrintStatusMessage => CanTestPrint
+            ? PosLocalization.T("printer.testPrintReady")
+            : PosLocalization.T("printer.testPrintUnavailable");
+
+        public string TestCashDrawerStatusMessage =>
+            !CashDrawerEnabled || string.IsNullOrWhiteSpace(CashDrawerCommand)
+                ? PosLocalization.T("printer.testMissing")
+                : !IsCashDrawerCommandValid
+                    ? PosLocalization.T("printer.testInvalidCommand")
+                    : CanTestCashDrawer
+                        ? PosLocalization.T("printer.testReady")
+                        : PosLocalization.T("printer.testQueueUnavailable");
 
         public int ParsedCopies
         {
@@ -183,28 +277,130 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand RefreshPrintersCommand { get; }
 
         public event Action<bool> RequestClose;
-        public event Action<string, string> TestCashDrawerRequested;
-        public event Action TestPrintRequested;
-        public event Action RefreshPrintersRequested;
+        public event Func<string, string, Task> TestCashDrawerRequested;
+        public event Func<Task> TestPrintRequested;
+        public event Func<Task> RefreshPrintersRequested;
         public event PropertyChangedEventHandler PropertyChanged;
 
         public PrinterSettingsViewModel()
         {
-            ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
-            CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
-            TestCashDrawerCommand = new RelayCommand(_ =>
-            {
-                var name = string.IsNullOrWhiteSpace(CashDrawerPrinterName) ? PrinterName : CashDrawerPrinterName;
-                var cmd = string.IsNullOrWhiteSpace(CashDrawerCommand) ? "27,112,0,25,250" : CashDrawerCommand.Trim();
-                TestCashDrawerRequested?.Invoke(name, cmd);
-            }, _ => CanTestCashDrawer);
-            TestPrintCommand = new RelayCommand(_ => TestPrintRequested?.Invoke(), _ => ReceiptEnabled);
-            RefreshPrintersCommand = new RelayCommand(_ => RefreshPrintersRequested?.Invoke(), _ => true);
+            ConfirmCommand = new RelayCommand(
+                _ => RequestClose?.Invoke(true),
+                _ => IsValid && !IsTestOperationInProgress && !_isRefreshingPrinters);
+            CancelCommand = new RelayCommand(
+                _ => RequestClose?.Invoke(false),
+                _ => !IsTestOperationInProgress && !_isRefreshingPrinters);
+            TestCashDrawerCommand = new RelayCommand(_ => StartCashDrawerTest(), _ => CanTestCashDrawer);
+            TestPrintCommand = new RelayCommand(_ => StartPrintTest(), _ => CanTestPrint);
+            RefreshPrintersCommand = new RelayCommand(
+                _ => StartPrinterRefresh(),
+                _ => !_disposed && !_isRefreshingPrinters);
             PosLocalization.Current.LanguageChanged += OnLanguageChanged;
+        }
+
+        private void StartPrintTest()
+        {
+            if (!CanTestPrint) return;
+            _activeTestOperation = RunTestOperationAsync(() => InvokeAsync(TestPrintRequested));
+        }
+
+        private void StartCashDrawerTest()
+        {
+            if (!CanTestCashDrawer) return;
+            var name = ResolveCashDrawerPrinter()?.Name ?? string.Empty;
+            var command = CashDrawerCommand.Trim();
+            _activeTestOperation = RunTestOperationAsync(() => InvokeAsync(TestCashDrawerRequested, name, command));
+        }
+
+        private async Task RunTestOperationAsync(Func<Task> operation)
+        {
+            SetTestOperationInProgress(true);
+            try
+            {
+                await operation().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Printer settings test operation failed");
+            }
+            finally
+            {
+                SetTestOperationInProgress(false);
+            }
+        }
+
+        private void StartPrinterRefresh()
+        {
+            if (_disposed || _isRefreshingPrinters) return;
+            _activeRefreshOperation = RunPrinterRefreshAsync();
+        }
+
+        private async Task RunPrinterRefreshAsync()
+        {
+            SetRefreshingPrinters(true);
+            try
+            {
+                await InvokeAsync(RefreshPrintersRequested).ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Printer settings refresh failed");
+            }
+            finally
+            {
+                SetRefreshingPrinters(false);
+            }
+        }
+
+        private static async Task InvokeAsync(Func<Task> handlers)
+        {
+            if (handlers == null) return;
+            foreach (Func<Task> handler in handlers.GetInvocationList())
+            {
+                var task = handler();
+                if (task != null)
+                    await task.ConfigureAwait(true);
+            }
+        }
+
+        private static async Task InvokeAsync(
+            Func<string, string, Task> handlers,
+            string printerName,
+            string command)
+        {
+            if (handlers == null) return;
+            foreach (Func<string, string, Task> handler in handlers.GetInvocationList())
+            {
+                var task = handler(printerName, command);
+                if (task != null)
+                    await task.ConfigureAwait(true);
+            }
+        }
+
+        private void SetTestOperationInProgress(bool value)
+        {
+            if (_isTestOperationInProgress == value) return;
+            _isTestOperationInProgress = value;
+            if (_disposed) return;
+            OnPropertyChanged(nameof(IsTestOperationInProgress));
+            OnPropertyChanged(nameof(CanTestPrint));
+            OnPropertyChanged(nameof(CanTestCashDrawer));
+            OnPropertyChanged(nameof(TestPrintStatusMessage));
+            OnPropertyChanged(nameof(TestCashDrawerStatusMessage));
+            RaiseCanExecuteChanged();
+        }
+
+        private void SetRefreshingPrinters(bool value)
+        {
+            if (_isRefreshingPrinters == value) return;
+            _isRefreshingPrinters = value;
+            if (_disposed) return;
+            RaiseCanExecuteChanged();
         }
 
         public void ReplaceInstalledPrinters(IEnumerable<InstalledPrinterInfo> printers)
         {
+            if (_disposed) return;
             InstalledPrinters.Clear();
             foreach (var printer in printers ?? Enumerable.Empty<InstalledPrinterInfo>())
             {
@@ -212,6 +408,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
 
             OnPropertyChanged(nameof(SelectedPrinterSummary));
+            OnPropertyChanged(nameof(CanTestPrint));
+            OnPropertyChanged(nameof(CanTestCashDrawer));
+            OnPropertyChanged(nameof(TestPrintStatusMessage));
+            OnPropertyChanged(nameof(TestCashDrawerStatusMessage));
+            RaiseCanExecuteChanged();
         }
 
         private InstalledPrinterInfo FindPrinter(string name)
@@ -221,10 +422,51 @@ namespace Win7POS.Wpf.Pos.Dialogs
             return InstalledPrinters.FirstOrDefault(x => string.Equals(x.Name, value, StringComparison.OrdinalIgnoreCase));
         }
 
+        private InstalledPrinterInfo ResolveReceiptPrinter()
+        {
+            var selected = FindPrinter(PrinterName);
+            if (selected != null || !string.IsNullOrWhiteSpace(PrinterName) || !AllowWindowsDefault)
+                return selected;
+
+            return InstalledPrinters.FirstOrDefault(x => x.IsDefault);
+        }
+
+        private InstalledPrinterInfo ResolveCashDrawerPrinter()
+        {
+            var name = string.IsNullOrWhiteSpace(CashDrawerPrinterName)
+                ? PrinterName
+                : CashDrawerPrinterName;
+            return FindPrinter(name);
+        }
+
+        private static bool IsUsableQueue(InstalledPrinterInfo printer, bool allowVirtualPrinter)
+        {
+            return printer != null &&
+                   !string.IsNullOrWhiteSpace(printer.Name) &&
+                   printer.IsAvailable &&
+                   !printer.IsOffline &&
+                   !printer.IsPaused &&
+                   (allowVirtualPrinter || !printer.IsVirtual);
+        }
+
         private void OnLanguageChanged(object sender, EventArgs e)
         {
+            if (_disposed) return;
             OnPropertyChanged(nameof(TestCashDrawerStatusMessage));
+            OnPropertyChanged(nameof(TestPrintStatusMessage));
             OnPropertyChanged(nameof(SelectedPrinterSummary));
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            PosLocalization.Current.LanguageChanged -= OnLanguageChanged;
+            RequestClose = null;
+            TestCashDrawerRequested = null;
+            TestPrintRequested = null;
+            RefreshPrintersRequested = null;
+            PropertyChanged = null;
         }
 
         private void RaiseCanExecuteChanged()
@@ -233,6 +475,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (TestCashDrawerCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (TestPrintCommand as RelayCommand)?.RaiseCanExecuteChanged();
+            (RefreshPrintersCommand as RelayCommand)?.RaiseCanExecuteChanged();
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
@@ -56,6 +57,8 @@ namespace Win7POS.Wpf.Pos
         private int? _pendingInputQuantity;
         private CustomerDisplaySnapshot _lastCustomerCartSnapshot = CustomerDisplayProjection.Empty(DateTimeOffset.UtcNow);
         private string _customerDisplayShopName = string.Empty;
+        private IReadOnlyList<PaymentReceiptDraftLine> _paymentReceiptDraftLines =
+            Array.Empty<PaymentReceiptDraftLine>();
 
         public ObservableCollection<PosCartLineRow> CartItems { get; } = new ObservableCollection<PosCartLineRow>();
         public ObservableCollection<RecentSaleRow> RecentSales { get; } = new ObservableCollection<RecentSaleRow>();
@@ -707,14 +710,7 @@ namespace Win7POS.Wpf.Pos
             {
                 SaleCode = SaleCodeGenerator.NewCode("V"),
                 CreatedAtMs = UnixTime.NowMs(),
-                CartLines = CartItems.Select(x => new PaymentReceiptDraftLine
-                {
-                    Barcode = x.Barcode,
-                    Name = x.Name,
-                    Quantity = x.Quantity,
-                    UnitPrice = x.UnitPrice,
-                    LineTotal = x.LineTotal
-                }).ToList(),
+                CartLines = _paymentReceiptDraftLines,
                 UseReceipt42 = UseReceipt42,
                 DefaultPrint = _printerSettings.ReceiptEnabled && _printerSettings.AutoPrint,
                 ShopInfo = shop,
@@ -722,7 +718,7 @@ namespace Win7POS.Wpf.Pos
             };
 
             var fiscalPdf = new FiscalPdfService();
-            var vm = new PaymentViewModel(Total, draft,
+            using var vm = new PaymentViewModel(Total, draft,
                 (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code),
                 async (text, code) => await _service.PrintReceiptTextAsync(
                     text,
@@ -800,7 +796,8 @@ namespace Win7POS.Wpf.Pos
                     payment,
                     vm.SaleCode,
                     vm.CreatedAtMs,
-                    operatorId).ConfigureAwait(true);
+                    operatorId,
+                    draft.ShopInfo).ConfigureAwait(true);
                 var completedCart = _lastCustomerCartSnapshot;
                 ApplySnapshot(result.Snapshot);
                 PublishCustomerSnapshot(CustomerDisplayProjection.Completed(
@@ -1227,79 +1224,104 @@ namespace Win7POS.Wpf.Pos
                 CashDrawerEnabled = _printerSettings.CashDrawerEnabled,
                 CashDrawerMode = _printerSettings.CashDrawerMode,
                 CashDrawerPrinterName = _printerSettings.CashDrawerPrinterName,
-                CashDrawerOpenOnCashSale = _printerSettings.CashDrawerOpenOnCashSale
+                CashDrawerOpenOnCashSale = _printerSettings.CashDrawerOpenOnCashSale,
+                TestReceiptPreview = await _service.BuildPrinterTestReceiptAsync(UseReceipt42).ConfigureAwait(true)
             };
-            vm.ReplaceInstalledPrinters(await _service.GetInstalledPrintersAsync().ConfigureAwait(true));
-            vm.RefreshPrintersRequested += async () =>
-            {
-                try
-                {
-                    vm.ReplaceInstalledPrinters(await _service.GetInstalledPrintersAsync().ConfigureAwait(true));
-                    SetStatus(PosLocalization.Current.Text("printer.printersReloaded"), PosNoticeSeverity.Success);
-                }
-                catch (Exception ex)
-                {
-                    SetStatus(PosLocalization.Current.Format("printer.discoveryError", ex.Message), PosNoticeSeverity.Error);
-                    _logger.LogError(ex, "POS VM printer discovery failed");
-                }
-            };
-            vm.TestPrintRequested += async () =>
-            {
-                try
-                {
-                    await _service.TestReceiptPrinterAsync(ToPrinterSettings(vm)).ConfigureAwait(true);
-                    SetStatus(PosLocalization.Current.Text("printer.testPrintSent"), PosNoticeSeverity.Success);
-                }
-                catch (Exception ex)
-                {
-                    SetStatus(PosLocalization.Current.Format("printer.testPrintError", ex.Message), PosNoticeSeverity.Error);
-                    ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("printer.testPrint"), ex.Message);
-                }
-            };
-            vm.TestCashDrawerRequested += async (name, cmd) =>
-            {
-                try
-                {
-                    await _service.TestCashDrawerAsync(name, cmd).ConfigureAwait(true);
-                    SetStatus(PosLocalization.Current.Text("printer.commandSent"), PosNoticeSeverity.Success);
-                }
-                catch (Exception ex)
-                {
-                    SetStatus(PosLocalization.Current.Format("printer.testError", ex.Message), PosNoticeSeverity.Error);
-                    ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("printer.testDrawer"), ex.Message);
-                }
-            };
-
-            var dlg = new PrinterSettingsDialog(vm)
-            {
-                Owner = DialogOwnerHelper.GetSafeOwner()
-            };
-            WindowSizingHelper.CapMaxHeightToOwner(dlg);
-            var ok = dlg.ShowDialog() == true;
-            if (!ok)
-            {
-                SetStatus(PosLocalization.Current.Text("printer.settingsCancelled"), PosNoticeSeverity.Info);
-                RequestFocusBarcode();
-                return;
-            }
-
-            _printerSettings = ToPrinterSettings(vm);
+            Func<Task> refreshPrintersHandler = null;
+            Func<Task> testPrintHandler = null;
+            Func<string, string, Task> testCashDrawerHandler = null;
 
             try
             {
-                await _service.SetPrinterSettingsAsync(_printerSettings).ConfigureAwait(true);
-                _printerSettings = await _service.GetPrinterSettingsAsync().ConfigureAwait(true);
-                SetStatus(PosLocalization.Current.Text("printer.settingsSaved"), PosNoticeSeverity.Success);
-                RaiseCanExecuteChanged();
-            }
-            catch (Exception ex)
-            {
-                SetStatus(PosLocalization.Current.Format("printer.settingsSaveError", ex.Message), PosNoticeSeverity.Error);
-                _logger.LogError(ex, "POS VM save printer settings failed");
+                vm.ReplaceInstalledPrinters(await _service.GetInstalledPrintersAsync().ConfigureAwait(true));
+                refreshPrintersHandler = async () =>
+                {
+                    try
+                    {
+                        vm.ReplaceInstalledPrinters(await _service.GetInstalledPrintersAsync().ConfigureAwait(true));
+                        SetStatus(PosLocalization.Current.Text("printer.printersReloaded"), PosNoticeSeverity.Success);
+                    }
+                    catch (Exception ex)
+                    {
+                        SetStatus(PosLocalization.Current.Format("printer.discoveryError", ex.Message), PosNoticeSeverity.Error);
+                        _logger.LogError(ex, "POS VM printer discovery failed");
+                    }
+                };
+                testPrintHandler = async () =>
+                {
+                    try
+                    {
+                        await _service.TestReceiptPrinterAsync(
+                            ToPrinterSettings(vm),
+                            vm.TestReceiptPreview,
+                            UseReceipt42).ConfigureAwait(true);
+                        SetStatus(PosLocalization.Current.Text("printer.testPrintSent"), PosNoticeSeverity.Success);
+                    }
+                    catch (Exception ex)
+                    {
+                        SetStatus(PosLocalization.Current.Format("printer.testPrintError", ex.Message), PosNoticeSeverity.Error);
+                        ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("printer.testPrint"), ex.Message);
+                    }
+                };
+                testCashDrawerHandler = async (name, cmd) =>
+                {
+                    try
+                    {
+                        await _service.TestCashDrawerAsync(name, cmd).ConfigureAwait(true);
+                        SetStatus(PosLocalization.Current.Text("printer.commandSent"), PosNoticeSeverity.Success);
+                    }
+                    catch (Exception ex)
+                    {
+                        SetStatus(PosLocalization.Current.Format("printer.testError", ex.Message), PosNoticeSeverity.Error);
+                        ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("printer.testDrawer"), ex.Message);
+                    }
+                };
+
+                vm.RefreshPrintersRequested += refreshPrintersHandler;
+                vm.TestPrintRequested += testPrintHandler;
+                vm.TestCashDrawerRequested += testCashDrawerHandler;
+
+                var dlg = new PrinterSettingsDialog(vm)
+                {
+                    Owner = DialogOwnerHelper.GetSafeOwner()
+                };
+                WindowSizingHelper.CapMaxHeightToOwner(dlg);
+                var ok = dlg.ShowDialog() == true;
+                if (!ok)
+                {
+                    SetStatus(PosLocalization.Current.Text("printer.settingsCancelled"), PosNoticeSeverity.Info);
+                    RequestFocusBarcode();
+                    return;
+                }
+
+                _printerSettings = ToPrinterSettings(vm);
+
+                try
+                {
+                    await _service.SetPrinterSettingsAsync(_printerSettings).ConfigureAwait(true);
+                    _printerSettings = await _service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                    SetStatus(PosLocalization.Current.Text("printer.settingsSaved"), PosNoticeSeverity.Success);
+                    RaiseCanExecuteChanged();
+                }
+                catch (Exception ex)
+                {
+                    SetStatus(PosLocalization.Current.Format("printer.settingsSaveError", ex.Message), PosNoticeSeverity.Error);
+                    _logger.LogError(ex, "POS VM save printer settings failed");
+                }
+                finally
+                {
+                    RequestFocusBarcode();
+                }
             }
             finally
             {
-                RequestFocusBarcode();
+                if (refreshPrintersHandler != null)
+                    vm.RefreshPrintersRequested -= refreshPrintersHandler;
+                if (testPrintHandler != null)
+                    vm.TestPrintRequested -= testPrintHandler;
+                if (testCashDrawerHandler != null)
+                    vm.TestCashDrawerRequested -= testCashDrawerHandler;
+                vm.Dispose();
             }
         }
 
@@ -2010,6 +2032,7 @@ namespace Win7POS.Wpf.Pos
         /// <summary>Applica lo snapshot. preferBarcode: riga da selezionare; preferIndex: indice da selezionare (es. dopo rimozione). Le righe sconto (DISC:*) non vengono mostrate: lo sconto è fuso nella riga prodotto.</summary>
         private void ApplySnapshot(PosWorkflowSnapshot snapshot, string preferBarcode = null, int? preferIndex = null)
         {
+            _paymentReceiptDraftLines = CreatePaymentReceiptLines(snapshot.Lines);
             CartItems.Clear();
             foreach (var item in snapshot.Lines)
             {
@@ -2057,6 +2080,19 @@ namespace Win7POS.Wpf.Pos
             (OpenChangeQuantityCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenChangeQuantityForLineCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (SuspendCartCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        internal static IReadOnlyList<PaymentReceiptDraftLine> CreatePaymentReceiptLines(
+            IReadOnlyList<PosCartLine> lines)
+        {
+            return (lines ?? Array.Empty<PosCartLine>()).Select(item => new PaymentReceiptDraftLine
+            {
+                Barcode = item.Barcode,
+                Name = item.Name,
+                Quantity = item.Quantity,
+                UnitPrice = item.UnitPrice,
+                LineTotal = item.LineTotal
+            }).ToList();
         }
 
         private void PublishCustomerCartSnapshot(string lastChangedLineKey = null)
