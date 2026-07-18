@@ -362,6 +362,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var cashDrawerParsingPass = VerifyCashDrawerCommandParsing();
                     var receiptColumnFitPass = VerifyReceiptColumnFit();
                     var printerTestReceiptPass = VerifyPrinterTestReceiptBuilder();
+                    var receiptShopSnapshotPass = await VerifyReceiptShopSnapshotReprintAsync().ConfigureAwait(true);
+                    var activeDrawerSettingsValidationPass = await VerifyActiveDrawerSettingsValidationAsync().ConfigureAwait(true);
                     var samples = new List<LifecycleSample>();
                     var weakWindows = new List<LifecycleWindowReference>();
                     for (var cycle = 1; cycle <= 20; cycle++)
@@ -451,11 +453,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                  displaySubscriptionsAfter == displaySubscriptionsBefore && displayWindowPass &&
                                  printerCommandPolicyPass && printerSelectionBindingPass &&
                                  cashDrawerParsingPass && receiptColumnFitPass &&
-                                 printerTestReceiptPass &&
+                                 printerTestReceiptPass && receiptShopSnapshotPass &&
+                                 activeDrawerSettingsValidationPass &&
                                  !monotonicPrivateBytes && !monotonicHandles;
                     return string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0}: cycles=20; printerSettingsCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}",
+                        "{0}: cycles=20; printerSettingsCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}; receiptShopSnapshotPass={22}; activeDrawerSettingsValidationPass={23}",
                         passed ? "PASS" : "FAIL",
                         residual,
                         residualTypes,
@@ -477,7 +480,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         cashDrawerParsingPass,
                         receiptColumnFitPass,
                         printerTestReceiptPass,
-                        printerSelectionBindingPass);
+                        printerSelectionBindingPass,
+                        receiptShopSnapshotPass,
+                        activeDrawerSettingsValidationPass);
                 }
                 finally
                 {
@@ -1150,12 +1155,24 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
 
                     vm.CashDrawerCommand = "27,112,0,25,not-a-byte";
+                    if (vm.TestCashDrawerCommand.CanExecute(null) ||
+                        vm.IsCashDrawerCommandValid ||
+                        vm.IsValid ||
+                        !string.Equals(
+                            vm.TestCashDrawerStatusMessage,
+                            Win7POS.Wpf.Localization.PosLocalization.T("printer.testInvalidCommand"),
+                            StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    vm.CashDrawerCommand = "  ";
                     return !vm.TestCashDrawerCommand.CanExecute(null) &&
                            !vm.IsCashDrawerCommandValid &&
                            !vm.IsValid &&
                            string.Equals(
                                vm.TestCashDrawerStatusMessage,
-                               Win7POS.Wpf.Localization.PosLocalization.T("printer.testInvalidCommand"),
+                               Win7POS.Wpf.Localization.PosLocalization.T("printer.testMissing"),
                                StringComparison.Ordinal);
                 }
                 finally
@@ -1174,8 +1191,6 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                 var valid = new[]
                 {
-                    null,
-                    string.Empty,
                     "27,112,0,25,250",
                     "27 112 1 50 250",
                     "27;112;48;0;1",
@@ -1192,6 +1207,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                 var invalid = new[]
                 {
+                    null,
+                    string.Empty,
+                    "   ",
                     "27,,112,0,25,250",
                     "27,112,0,25,256",
                     "27,112,0,25,not-a-byte",
@@ -1221,6 +1239,109 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 {
                     bytes = null;
                     return false;
+                }
+            }
+
+            private static async Task<bool> VerifyReceiptShopSnapshotReprintAsync()
+            {
+                var serialize = typeof(PosWorkflowService).GetMethod(
+                    "SerializeReceiptShopSnapshot",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                if (serialize == null) return false;
+
+                var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+                var shopAtSale = new ReceiptShopInfo
+                {
+                    Name = "QA Snapshot Shop A",
+                    Address = "Snapshot Avenue A",
+                    City = "Santiago",
+                    Rut = "76.000.000-1",
+                    Footer = "Snapshot footer A"
+                };
+                var serialized = serialize.Invoke(null, new object[] { shopAtSale }) as string;
+                if (string.IsNullOrWhiteSpace(serialized)) return false;
+
+                long saleId;
+                var code = "QA-SNAPSHOT-" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
+                    .ToString(CultureInfo.InvariantCulture);
+                using (var conn = factory.Open())
+                {
+                    saleId = await conn.ExecuteScalarAsync<long>(@"
+INSERT INTO sales(code, createdAt, kind, total, paidCash, paidCard, change, receipt_shop_snapshot)
+VALUES(@code, @createdAt, 0, 1250, 1250, 0, 0, @serialized);
+SELECT last_insert_rowid();",
+                        new
+                        {
+                            code,
+                            createdAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                            serialized
+                        }).ConfigureAwait(true);
+                    await conn.ExecuteAsync(@"
+INSERT INTO sale_lines(saleId, productId, barcode, name, quantity, unitPrice, lineTotal)
+VALUES(@saleId, NULL, 'QA-SNAPSHOT-LINE', 'Snapshot product', 1, 1250, 1250);",
+                        new { saleId }).ConfigureAwait(true);
+                }
+
+                var persisted = await new SaleRepository(factory).GetByIdAsync(saleId).ConfigureAwait(true);
+                if (persisted == null || !string.Equals(
+                    persisted.ReceiptShopSnapshotJson,
+                    serialized,
+                    StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                await new ShopOfficialSnapshotRepository(factory).SaveAsync(new OfficialShopSnapshot
+                {
+                    ShopId = QaShopId,
+                    ShopCode = QaShopCode,
+                    ShopName = "QA Snapshot Shop B",
+                    BusinessAddress = "Snapshot Avenue B",
+                    CompanyRut = "76.000.000-2",
+                    Footer = "Snapshot footer B",
+                    Source = "qa_harness"
+                }).ConfigureAwait(true);
+
+                var preview = await new PosWorkflowService()
+                    .GetReceiptPreviewBySaleIdAsync(saleId, true)
+                    .ConfigureAwait(true);
+                return preview.IndexOf("QA SNAPSHOT SHOP A", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                       preview.IndexOf("SNAPSHOT AVENUE A", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                       preview.IndexOf("QA SNAPSHOT SHOP B", StringComparison.OrdinalIgnoreCase) < 0;
+            }
+
+            private static async Task<bool> VerifyActiveDrawerSettingsValidationAsync()
+            {
+                var service = new PosWorkflowService();
+                var before = await service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                var invalid = new PosPrinterSettings
+                {
+                    PrinterName = before.PrinterName,
+                    Copies = before.Copies,
+                    ReceiptEnabled = before.ReceiptEnabled,
+                    AutoPrint = before.AutoPrint,
+                    AllowWindowsDefault = before.AllowWindowsDefault,
+                    AllowVirtualPrinters = before.AllowVirtualPrinters,
+                    SaveCopyToFile = before.SaveCopyToFile,
+                    OutputDirectory = before.OutputDirectory,
+                    CashDrawerCommand = " ",
+                    CashDrawerEnabled = true,
+                    CashDrawerMode = "printer_kick",
+                    CashDrawerPrinterName = before.CashDrawerPrinterName,
+                    CashDrawerOpenOnCashSale = before.CashDrawerOpenOnCashSale
+                };
+
+                try
+                {
+                    await service.SetPrinterSettingsAsync(invalid).ConfigureAwait(true);
+                    return false;
+                }
+                catch (InvalidOperationException)
+                {
+                    var after = await service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                    return string.Equals(after.CashDrawerCommand, before.CashDrawerCommand, StringComparison.Ordinal) &&
+                           after.CashDrawerEnabled == before.CashDrawerEnabled &&
+                           string.Equals(after.CashDrawerMode, before.CashDrawerMode, StringComparison.Ordinal);
                 }
             }
 

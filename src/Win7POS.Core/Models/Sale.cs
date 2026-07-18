@@ -20,5 +20,7 @@ namespace Win7POS.Core.Models
         /// <summary>True se il documento locale e stato stampato; non esclude mai la vendita da registro, chiusura o sync.</summary>
         public bool PdfPrinted { get; set; }
         public string SyncStatus { get; set; }
+        /// <summary>Snapshot JSON locale dei dati negozio stampati; escluso dal payload di sync.</summary>
+        public string ReceiptShopSnapshotJson { get; set; }
     }
 }

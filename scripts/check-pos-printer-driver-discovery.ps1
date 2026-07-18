@@ -185,7 +185,7 @@ Forbid-Pattern "operational printer resolution never bypasses bounded discovery"
 
 $operationalDiscoveryMethods = @(
     @{ Label = "test receipt"; Signature = 'public\s+async\s+Task\s+TestReceiptPrinterAsync\s*\(' },
-    @{ Label = "receipt print"; Signature = 'private\s+async\s+Task<PosPrintResult>\s+PrintReceiptTextNoLockAsync\s*\(' },
+    @{ Label = "receipt print"; Signature = 'public\s+async\s+Task<PosPrintResult>\s+PrintReceiptTextAsync\s*\(' },
     @{ Label = "cash drawer open"; Signature = 'public\s+async\s+Task\s+OpenCashDrawerAsync\s*\(' },
     @{ Label = "cash drawer test"; Signature = 'public\s+async\s+Task\s+TestCashDrawerAsync\s*\(' }
 )

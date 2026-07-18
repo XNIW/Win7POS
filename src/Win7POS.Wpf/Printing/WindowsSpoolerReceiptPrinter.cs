@@ -58,16 +58,25 @@ namespace Win7POS.Wpf.Printing
             await TryPrintWithRetryAsync(receiptText, opt).ConfigureAwait(false);
         }
 
-        private const string DefaultCashDrawerCommand = "27,112,0,25,250";
         private const byte EscPosEscape = 27;
         private const byte EscPosPulse = 112;
 
-        public Task OpenCashDrawerAsync(ReceiptPrintOptions opt)
+        public async Task OpenCashDrawerAsync(ReceiptPrintOptions opt)
         {
-            if (opt == null) return Task.CompletedTask;
-            var cmd = string.IsNullOrWhiteSpace(opt.CashDrawerCommand) ? DefaultCashDrawerCommand : opt.CashDrawerCommand;
+            if (opt == null) return;
+            var cmd = (opt.CashDrawerCommand ?? string.Empty).Trim();
             var bytes = ParseCashDrawerCommand(cmd);
-            return Task.Run(() => TryOpenCashDrawer(opt.PrinterName, bytes, cmd));
+            var drawerTask = Task.Run(() => TryOpenCashDrawer(opt.PrinterName, bytes, cmd));
+            var completed = await Task.WhenAny(
+                drawerTask,
+                Task.Delay(PrintAttemptTimeoutMilliseconds)).ConfigureAwait(false);
+            if (completed != drawerTask)
+            {
+                // Do not retry: the driver may still emit the original pulse.
+                throw new TimeoutException(PosLocalization.T("printer.drawerTimedOut"));
+            }
+
+            await drawerTask.ConfigureAwait(false);
         }
 
         public static bool IsCashDrawerCommandValid(string command)
@@ -108,7 +117,7 @@ namespace Win7POS.Wpf.Printing
         private static byte[] ParseCashDrawerCommand(string cmd)
         {
             if (string.IsNullOrWhiteSpace(cmd))
-                return new byte[] { EscPosEscape, EscPosPulse, 0, 25, 250 };
+                throw InvalidCashDrawerCommand();
 
             // Accetta la sintassi storica con virgole, punti e virgola o spazi, ma
             // non ignora mai token vuoti o caratteri non numerici. Un comando non
@@ -151,6 +160,7 @@ namespace Win7POS.Wpf.Printing
         }
 
         private const int RetryDelayMs = 300;
+        private const int PrintAttemptTimeoutMilliseconds = 5000;
         private const int ThermalPaper80mmMin = 300;
         private const int ThermalPaper80mmMax = 330;
         private const int DefaultCharactersPerLine = 42;
@@ -163,13 +173,33 @@ namespace Win7POS.Wpf.Printing
         {
             try
             {
-                await Task.Run(() => PrintOnce(receiptText, opt)).ConfigureAwait(false);
+                await PrintOnceWithinTimeoutAsync(receiptText, opt).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // A timed-out spooler call can still submit later. Retrying would
+                // make the physical outcome ambiguous and risks a duplicate receipt.
+                throw;
             }
             catch
             {
                 await Task.Delay(RetryDelayMs).ConfigureAwait(false);
-                await Task.Run(() => PrintOnce(receiptText, opt)).ConfigureAwait(false);
+                await PrintOnceWithinTimeoutAsync(receiptText, opt).ConfigureAwait(false);
             }
+        }
+
+        private static async Task PrintOnceWithinTimeoutAsync(string receiptText, ReceiptPrintOptions opt)
+        {
+            var printTask = Task.Run(() => PrintOnce(receiptText, opt));
+            var completed = await Task.WhenAny(
+                printTask,
+                Task.Delay(PrintAttemptTimeoutMilliseconds)).ConfigureAwait(false);
+            if (completed != printTask)
+            {
+                throw new TimeoutException(PosLocalization.T("printer.printTimedOut"));
+            }
+
+            await printTask.ConfigureAwait(false);
         }
 
         private static void PrintOnce(string receiptText, ReceiptPrintOptions opt)

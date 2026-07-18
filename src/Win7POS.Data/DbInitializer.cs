@@ -73,7 +73,8 @@ CREATE TABLE IF NOT EXISTS sales (
   total     INTEGER NOT NULL,
   paidCash  INTEGER NOT NULL,
   paidCard  INTEGER NOT NULL,
-  change    INTEGER NOT NULL
+  change    INTEGER NOT NULL,
+  receipt_shop_snapshot TEXT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sale_lines (
@@ -234,6 +235,7 @@ CREATE TABLE IF NOT EXISTS security_events (
             EnsureColumn(conn, tx, "sales", "pdf_printed", "INTEGER NOT NULL DEFAULT 0");
             EnsureColumn(conn, tx, "sales", "client_sale_id", "TEXT NULL");
             EnsureColumn(conn, tx, "sales", "sync_status", "TEXT NOT NULL DEFAULT 'pending'");
+            EnsureColumn(conn, tx, "sales", "receipt_shop_snapshot", "TEXT NULL");
             EnsureColumn(conn, tx, "products", "remote_product_id", "TEXT NULL");
             EnsureColumn(conn, tx, "products", "remote_deleted_at", "TEXT NULL");
             EnsureColumn(conn, tx, "products", "is_active", "INTEGER NOT NULL DEFAULT 1");

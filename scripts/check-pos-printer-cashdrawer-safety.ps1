@@ -59,6 +59,9 @@ $required = @(
     "src/Win7POS.Wpf/Pos/PosViewModel.cs",
     "src/Win7POS.Wpf/Infrastructure/AppSettingKeys.cs",
     "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs",
+    "src/Win7POS.Core/Models/Sale.cs",
+    "src/Win7POS.Data/DbInitializer.cs",
+    "src/Win7POS.Data/Repositories/SaleRepository.cs",
     "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 )
 
@@ -78,6 +81,9 @@ $workflow = Read-Text "src/Win7POS.Wpf/Pos/PosWorkflowService.cs"
 $posVm = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
 $keys = Read-Text "src/Win7POS.Wpf/Infrastructure/AppSettingKeys.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs"
+$saleModel = Read-Text "src/Win7POS.Core/Models/Sale.cs"
+$dbInitializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
+$saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
 $uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $combined = $discovery + $spooler + $dialog + $dialogVm + $workflow + $posVm + $keys + $translations + $uiSmoke
 
@@ -252,11 +258,48 @@ $strictDrawerParser =
     $drawerParseBody -match 'list\[2\]\s*!=\s*0\s*&&\s*list\[2\]\s*!=\s*1\s*&&\s*list\[2\]\s*!=\s*48\s*&&\s*list\[2\]\s*!=\s*49' -and
     $drawerParseBody -match 'list\[3\]\s*>=\s*list\[4\]' -and
     $drawerParseBody -match 'throw\s+InvalidCashDrawerCommand' -and
+    $drawerParseBody -match 'string\.IsNullOrWhiteSpace\s*\(cmd\)[\s\S]{0,120}throw\s+InvalidCashDrawerCommand' -and
     $drawerParseBody -notmatch 'list\.Count\s*>\s*0\s*\?'
 if ($strictDrawerParser) {
     Pass "cash-drawer parser rejects malformed/non-ESC-p commands without fallback"
 } else {
     Fail "cash-drawer parser must validate every byte and reject malformed non-empty input"
+}
+
+if ($spooler -match 'DefaultCashDrawerCommand' -or
+    $spooler -match 'string\.IsNullOrWhiteSpace\s*\(opt\.CashDrawerCommand\)[\s\S]{0,120}\?') {
+    Fail "drawer runtime must not turn a blank command into a physical default pulse"
+}
+elseif ($workflow -notmatch 'cashDrawerActive\s*=\s*settings\.CashDrawerEnabled' -or
+        $workflow -notmatch 'cashDrawerActive[\s\S]{0,260}IsCashDrawerCommandValid' -or
+        $posVm -match 'CashDrawerCommand\s*=\s*string\.IsNullOrWhiteSpace') {
+    Fail "drawer settings must validate an active command before persistence without a UI blank fallback"
+}
+else {
+    Pass "blank drawer commands are rejected at runtime and before active-setting persistence"
+}
+
+if ($spooler -match 'PrintAttemptTimeoutMilliseconds\s*=\s*[1-9]\d*' -and
+    $spooler -match 'Task\.WhenAny\s*\([\s\S]{0,240}Task\.Delay\s*\(PrintAttemptTimeoutMilliseconds\)' -and
+    $spooler -match 'catch\s*\(TimeoutException\)[\s\S]{0,240}throw' -and
+    $workflow -match 'var installedPrinters = await GetInstalledPrintersAsync\(\)' -and
+    $workflow -match '_gate\.Release\(\);[\s\S]{0,300}await _receiptPrinter\.PrintAsync') {
+    Pass "spooler attempts are bounded and physical print runs after the POS gate is released"
+}
+else {
+    Fail "spooler print must have a bounded no-retry timeout outside the POS gate"
+}
+
+if ($saleModel -match 'ReceiptShopSnapshotJson' -and
+    $dbInitializer -match 'receipt_shop_snapshot' -and
+    $saleRepository -match 'receipt_shop_snapshot' -and
+    $workflow -match 'SerializeReceiptShopSnapshot' -and
+    $workflow -match 'GetReceiptShopInfoNoLockAsync' -and
+    $uiSmoke -match 'VerifyReceiptShopSnapshotReprintAsync') {
+    Pass "historical receipt reprints use a persisted immutable shop snapshot"
+}
+else {
+    Fail "receipt shop snapshot persistence/reprint coverage missing"
 }
 
 $taskBasedTestEvents =
@@ -286,6 +329,7 @@ if ($singleFlightTests) {
 }
 
 if ($uiSmoke -match 'VerifyCashDrawerCommandParsing' -and
+    $uiSmoke -match 'string\.Empty' -and
     $uiSmoke -match '27,,112,0,25,250' -and
     $uiSmoke -match '27,112,0,25,256' -and
     $uiSmoke -match '27,112,2,25,250' -and

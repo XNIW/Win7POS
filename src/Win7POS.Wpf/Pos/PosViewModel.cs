@@ -1220,7 +1220,7 @@ namespace Win7POS.Wpf.Pos
                 AllowVirtualPrinters = _printerSettings.AllowVirtualPrinters,
                 SaveCopyToFile = _printerSettings.SaveCopyToFile,
                 OutputDirectory = _printerSettings.OutputDirectory,
-                CashDrawerCommand = string.IsNullOrWhiteSpace(_printerSettings.CashDrawerCommand) ? "27,112,0,25,250" : _printerSettings.CashDrawerCommand,
+                CashDrawerCommand = _printerSettings.CashDrawerCommand,
                 CashDrawerEnabled = _printerSettings.CashDrawerEnabled,
                 CashDrawerMode = _printerSettings.CashDrawerMode,
                 CashDrawerPrinterName = _printerSettings.CashDrawerPrinterName,
@@ -1391,7 +1391,7 @@ namespace Win7POS.Wpf.Pos
                 OutputDirectory = string.IsNullOrWhiteSpace(vm.OutputDirectory)
                     ? Path.Combine(Win7POS.Core.AppPaths.DataDirectory, "receipts")
                     : vm.OutputDirectory,
-                CashDrawerCommand = string.IsNullOrWhiteSpace(vm.CashDrawerCommand) ? "27,112,0,25,250" : vm.CashDrawerCommand,
+                CashDrawerCommand = vm.CashDrawerCommand,
                 CashDrawerEnabled = vm.CashDrawerEnabled,
                 CashDrawerMode = vm.CashDrawerEnabled ? "printer_kick" : "disabled",
                 CashDrawerPrinterName = vm.CashDrawerPrinterName,

@@ -40,8 +40,8 @@ namespace Win7POS.Data.Repositories
                 await ValidateReversalBoundaryAsync(conn, tx, sale, lines).ConfigureAwait(false);
 
                 var saleId = await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change, operator_id)
-VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @VoidedBySaleId, @VoidedAt, @Reason, @Total, @PaidCash, @PaidCard, @Change, @OperatorId);
+INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change, operator_id, receipt_shop_snapshot)
+VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @VoidedBySaleId, @VoidedAt, @Reason, @Total, @PaidCash, @PaidCard, @Change, @OperatorId, @ReceiptShopSnapshotJson);
 SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
                 sale.Id = saleId;
                 sale.ClientSaleId = await EnsureClientSaleIdAsync(conn, tx, saleId).ConfigureAwait(false);
@@ -70,7 +70,7 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         {
             using var conn = _factory.Open();
             var rows = await conn.QueryAsync<Sale>(
-                @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus
+                @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus, receipt_shop_snapshot AS ReceiptShopSnapshotJson
                   FROM sales
                   ORDER BY id DESC LIMIT @take",
                 new { take }
@@ -81,7 +81,7 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         public async Task<IReadOnlyList<Sale>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null, bool includeFiscalPrinted = true)
         {
             using var conn = _factory.Open();
-            var sql = @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus
+            var sql = @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus, receipt_shop_snapshot AS ReceiptShopSnapshotJson
                   FROM sales
                   WHERE createdAt >= @fromMs AND createdAt < @toMs";
             if (operatorId.HasValue)
@@ -214,7 +214,7 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         {
             using var conn = _factory.Open();
             return await conn.QuerySingleOrDefaultAsync<Sale>(
-                @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus
+                @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus, receipt_shop_snapshot AS ReceiptShopSnapshotJson
                   FROM sales WHERE id = @saleId",
                 new { saleId }).ConfigureAwait(false);
         }
@@ -235,7 +235,7 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
             using var conn = _factory.Open();
             var pattern = "%" + codeFilter.Trim() + "%";
             var rows = await conn.QueryAsync<Sale>($@"
-	SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus
+	SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus, receipt_shop_snapshot AS ReceiptShopSnapshotJson
 	FROM sales
 	WHERE code LIKE @pattern
 	ORDER BY createdAt DESC, id DESC
@@ -445,8 +445,8 @@ WHERE id = @saleId;",
             };
 
             var saleId = await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change)
-VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @VoidedBySaleId, @VoidedAt, @Reason, @Total, @PaidCash, @PaidCard, @Change);
+INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change, receipt_shop_snapshot)
+VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @VoidedBySaleId, @VoidedAt, @Reason, @Total, @PaidCash, @PaidCard, @Change, @ReceiptShopSnapshotJson);
 SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
 
             return saleId;
@@ -468,8 +468,8 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
             {
                 await ValidateReversalBoundaryAsync(conn, tx, refundSale, refundLines).ConfigureAwait(false);
                 var saleId = await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change)
-VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change);
+INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change, receipt_shop_snapshot)
+VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change, @ReceiptShopSnapshotJson);
 SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
 
                 refundSale.Id = saleId;
