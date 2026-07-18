@@ -7,6 +7,7 @@ using Win7POS.Data;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Chrome;
+using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Online;
 
@@ -29,10 +30,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             InitializeComponent();
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
             ContentRendered += OnContentRendered;
+            ApplyAuthenticatedAccessStatus();
             ResetSteps();
         }
 
         public StartOfDaySyncResult Result { get; private set; }
+
+        public event EventHandler SyncDetailsRequested;
 
         private void OnContentRendered(object sender, EventArgs e)
         {
@@ -126,6 +130,15 @@ namespace Win7POS.Wpf.Pos.Dialogs
             UpdateCounts(result);
             ContinueButton.IsEnabled = result.CanOpenPos;
             RetryButton.Visibility = result.CanOpenPos ? Visibility.Collapsed : Visibility.Visible;
+            SyncDetailsButton.Visibility = result.RequiresOperatorAction
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+            ActionHelpText.Text = result.RequiresOperatorAction
+                ? PosLocalization.T("startOfDay.actionRequiredHelp")
+                : string.Empty;
+            ActionHelpText.Visibility = result.RequiresOperatorAction
+                ? Visibility.Visible
+                : Visibility.Collapsed;
             WaitButton.Visibility = result.CanOpenPos && result.ShouldContinueInBackground
                 ? Visibility.Visible
                 : Visibility.Collapsed;
@@ -182,7 +195,27 @@ namespace Win7POS.Wpf.Pos.Dialogs
             CountsText.Text = string.Empty;
             ContinueButton.IsEnabled = false;
             RetryButton.Visibility = Visibility.Collapsed;
+            SyncDetailsButton.Visibility = Visibility.Collapsed;
             WaitButton.Visibility = Visibility.Collapsed;
+            ActionHelpText.Text = string.Empty;
+            ActionHelpText.Visibility = Visibility.Collapsed;
+        }
+
+        private void ApplyAuthenticatedAccessStatus()
+        {
+            var session = OperatorSessionHolder.Current;
+            if (session == null || !session.IsLoggedIn)
+            {
+                AccessVerifiedPanel.Visibility = Visibility.Collapsed;
+                AccessVerifiedText.Text = string.Empty;
+                return;
+            }
+
+            AccessVerifiedText.Text = PosLocalization.F(
+                "startOfDay.accessVerified",
+                session.CurrentDisplayName,
+                session.CurrentRoleName);
+            AccessVerifiedPanel.Visibility = Visibility.Visible;
         }
 
         private static void SetStep(System.Windows.Controls.TextBlock textBlock, string state, string label)
@@ -246,6 +279,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             ContinueButton.IsEnabled = !busy && Result?.CanOpenPos == true;
             RetryButton.IsEnabled = !busy;
+            SyncDetailsButton.IsEnabled = !busy;
             WaitButton.IsEnabled = !busy;
         }
 
@@ -266,6 +300,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private async void Retry_Click(object sender, RoutedEventArgs e)
         {
             await RunPreflightAsync().ConfigureAwait(true);
+        }
+
+        private void SyncDetails_Click(object sender, RoutedEventArgs e)
+        {
+            if (_running)
+            {
+                return;
+            }
+
+            SyncDetailsRequested?.Invoke(this, EventArgs.Empty);
         }
 
         private void Exit_Click(object sender, RoutedEventArgs e)

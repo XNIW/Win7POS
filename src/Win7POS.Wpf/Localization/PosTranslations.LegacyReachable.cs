@@ -298,6 +298,8 @@ namespace Win7POS.Wpf.Localization
 
             yield return new TranslationEntry("startOfDay.title", "Start-of-day check", "Control inicio de jornada", "Controllo iniziale giornata", "开班检查");
             yield return new TranslationEntry("startOfDay.subtitle", "Checking local data, device session and shop updates.", "Verificando datos locales, sesion dispositivo y actualizaciones del negocio.", "Verifica dati locali, sessione dispositivo e aggiornamenti negozio.", "正在检查本地数据、设备会话和店铺更新。");
+            yield return new TranslationEntry("startOfDay.accessVerified", "Sign-in successful: {0} ({1})", "Acceso correcto: {0} ({1})", "Accesso riuscito: {0} ({1})", "登录成功：{0}（{1}）");
+            yield return new TranslationEntry("startOfDay.accessVerifiedHelp", "Authentication is complete. The checks below can still keep POS locked to protect local data.", "La autenticacion termino. Las comprobaciones siguientes aun pueden mantener el POS bloqueado para proteger los datos locales.", "L'autenticazione e completata. I controlli seguenti possono ancora mantenere il POS bloccato per proteggere i dati locali.", "身份验证已完成。为保护本地数据，以下检查仍可能保持 POS 锁定。");
             yield return new TranslationEntry("startOfDay.checking", "Checking start-of-day sync...", "Verificando sync inicio de jornada...", "Controllo sync iniziale giornata...", "正在检查开班同步...");
             yield return new TranslationEntry("startOfDay.stepDatabase", "Local database", "Base local", "Database locale", "本地数据库");
             yield return new TranslationEntry("startOfDay.stepSession", "Device session", "Sesion dispositivo", "Sessione dispositivo", "设备会话");
@@ -309,6 +311,9 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("startOfDay.continue", "Continue", "Continuar", "Continua", "继续");
             yield return new TranslationEntry("startOfDay.wait", "Wait for sync", "Esperar sync", "Attendi sync", "等待同步");
             yield return new TranslationEntry("startOfDay.retry", "Retry", "Reintentar", "Riprova", "重试");
+            yield return new TranslationEntry("startOfDay.checkAgain", "Check again", "Comprobar de nuevo", "Controlla di nuovo", "再次检查");
+            yield return new TranslationEntry("startOfDay.syncDetails", "Sync details", "Detalles de sync", "Dettagli sync", "同步详情");
+            yield return new TranslationEntry("startOfDay.actionRequiredHelp", "Sign-in is complete. POS remains locked to protect local data. Open sync details for diagnostics, correct the issue, then check again.", "El acceso termino. El POS sigue bloqueado para proteger los datos locales. Abre los detalles de sync, corrige el problema y vuelve a comprobar.", "L'accesso e completato. Il POS resta bloccato per proteggere i dati locali. Apri i dettagli sync, correggi il problema e controlla di nuovo.", "登录已完成。POS 仍保持锁定以保护本地数据。请打开同步详情，修正问题后再次检查。");
             yield return new TranslationEntry("startOfDay.exit", "Exit", "Salir", "Esci", "退出");
             yield return new TranslationEntry("startOfDay.counts", "Queued {0} | retry {1} | blocked {2} | catalog {3}", "Cola {0} | retry {1} | bloqueadas {2} | catalogo {3}", "Coda {0} | retry {1} | bloccate {2} | catalogo {3}", "排队 {0} | 重试 {1} | 阻塞 {2} | 目录 {3}");
             yield return new TranslationEntry("startOfDay.complete", "Start-of-day sync complete.", "Sync inicio de jornada completada.", "Sync iniziale giornata completata.", "开班同步完成。");

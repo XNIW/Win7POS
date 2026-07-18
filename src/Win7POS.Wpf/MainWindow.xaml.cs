@@ -379,6 +379,10 @@ namespace Win7POS.Wpf
                 StartOfDaySyncResult startOfDayResult = null;
                 if (session != null)
                 {
+                    // Authentication is already complete at this point. Reflect it in the shell
+                    // before the modal sync gate so a later data-safety block is not mistaken for
+                    // a failed sign-in.
+                    UpdateOperatorDisplay(session);
                     RefreshAuthorizationLeaseSchedule(session);
                     var catalogSaleSafe = await PosCatalogPullService
                         .IsCatalogSaleSafeAsync(factory)
@@ -461,6 +465,7 @@ namespace Win7POS.Wpf
             {
                 Owner = this
             };
+            dialog.SyncDetailsRequested += (_, __) => ShowSyncCenterDialog(dialog);
 
             var ok = dialog.ShowDialog() == true;
             await RefreshSyncStatusStripAsync(factory).ConfigureAwait(true);
@@ -2318,7 +2323,7 @@ namespace Win7POS.Wpf
             PosViewControl?.RestoreScannerFocus();
         }
 
-        private void ShowSyncCenterDialog()
+        private void ShowSyncCenterDialog(Window owner = null)
         {
             var factory = _onlineSchedulerFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
             try
@@ -2334,7 +2339,7 @@ namespace Win7POS.Wpf
                             allowFullDecision: administratorRepairAuthorized),
                     AuthorizeFullCatalogRepairAsync)
                 {
-                    Owner = DialogOwnerHelper.GetSafeOwner(this)
+                    Owner = DialogOwnerHelper.GetSafeOwner(owner ?? this)
                 };
                 dialog.ShowDialog();
             }
