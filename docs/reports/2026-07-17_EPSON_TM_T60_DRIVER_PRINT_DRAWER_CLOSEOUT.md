@@ -27,6 +27,10 @@ and redacted documentation; production data was not opened.
   accents, feed and cutter.
 - The operator also confirmed the Win7POS fictitious receipt printed completely
   and correctly with automatic cut.
+- The operator confirmed the authenticated QA transactional matrix: cash printed
+  and cut with exactly one drawer opening; card and reprint printed with the
+  drawer closed; a card sale committed during a paused queue, exposed a retryable
+  print failure, and reprinted once after resume with no duplicate or drawer open.
 - Win7POS source now reads real queue/driver/port/state metadata through Unicode
   Windows 7 spooler APIs without WMI, WinRT or a new package.
 - Discovery is background, single-flight, bounded to five seconds and retains
@@ -90,6 +94,17 @@ failures in `File.Replace`. The identical run outside the filesystem sandbox
 passed 260/260, proving an environment restriction rather than a product
 regression.
 
+## Transactional matrix checkpoint — 2026-07-18
+
+The matrix used the isolated QA root
+`C:\POSData\Win7POS-QA\Win7POS-Epson-Transactional-20260718-104809` and the
+Release x86 application. Persisted counts finished at 10 sales, 12 lines,
+11 stock movements and 10 outbox rows, with no duplicate client sale IDs or
+movement keys. The application log contains exactly one drawer event, belonging
+to cash sale `VMRQI73CRZQ6`; the card, reprint and resumed-reprint paths added no
+drawer event. The Epson queue returned `Normal`, zero jobs, with Spooler running
+and automatic. The operator confirmed all four paper/drawer outcomes.
+
 ## Remaining physical closure
 
 The previously blocked Printer Settings inspection and Win7POS fictitious print
@@ -97,15 +112,14 @@ have now been completed. The following remain open and must not be represented
 as PASS:
 
 - authenticated settings persistence across a real operator session;
-- cash receipt, card receipt and reprint from committed QA sales;
-- printer-off/paused behavior after sale commit;
-- the separate authenticated Printer Settings UI action, cash-only open,
-  card-only non-open, failure and
+- the separate authenticated Printer Settings UI test-drawer action and
   disconnected-drawer behavior;
+- receipt-surface parity and the dedicated 80 mm daily-close addendum, including
+  its final reprint/daily-close physical check;
 - a physical Windows 7 SP1 run.
 
 Until those rows close, the accurate classification is
-`IN_PROGRESS_WIN7POS_PRINT_AND_MANUAL_DRAWER_PASS_TRANSACTIONAL_MATRIX_PENDING`, not
+`TRANSACTIONAL_MATRIX_PASS_RECEIPT_SURFACE_ADDENDUM_PENDING`, not
 `TM_T60_PRINT_AND_DRAWER_PASS`.
 
 ## Publication

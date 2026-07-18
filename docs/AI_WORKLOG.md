@@ -530,3 +530,24 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Implementation and automated coverage were committed as `7d1ef84` and pushed
   to `codex/hardware-epson-tm-t60-20260717-161122`. Draft PR `#7` targets
   `main`; no merge or auto-merge was requested.
+
+## 2026-07-18 - Epson transactional matrix physical checkpoint
+
+- Ran the Release x86 application against isolated QA root
+  `C:\POSData\Win7POS-QA\Win7POS-Epson-Transactional-20260718-104809`.
+- Cash sale `VMRQI73CRZQ6` printed and cut; the operator confirmed exactly one
+  drawer opening. Card-only sale `VMRQIA8J5KE3` printed with the drawer closed.
+- Reprinted the persisted cash sale once; counts remained unchanged and the
+  operator confirmed no drawer opening.
+- Paused `EPSON TM-T60 Receipt`, committed card-only sale `VMRQIK583IXD`, observed
+  the explicit saved-sale/print-failed state, resumed the queue and used
+  `Print last` once. The operator confirmed correct paper and no drawer opening.
+- Final evidence: 10 sales, 12 lines, 11 stock movements, 10 outbox rows; no
+  duplicate client sale IDs or movement keys; exactly one drawer log event;
+  printer `Normal`, zero jobs, Spooler running/automatic.
+- Final local regression before the receipt-surface addendum: required gates
+  31/31, Core tests 260/260 with zero skipped, CLI selftest PASS, solution and
+  WPF/harness x86 builds PASS, lifecycle 20 Printer Settings / 50 display /
+  50 manager cycles PASS with zero residual windows/ViewModels.
+- Merge remains blocked by the receipt-surface/daily-close addendum and physical
+  Windows 7 validation; no extra cash transaction or drawer pulse is authorized.

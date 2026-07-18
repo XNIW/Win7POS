@@ -54,10 +54,10 @@ No Epson ZIP, EXE, INF, PDF, driver binary or photograph is stored in Git.
 | 42 vs 48 characters | OBSERVED_WRAP | Both Notepad rulers wrap with that sample font. No global Win7POS width change was inferred from this result. |
 | Win7POS diagnostics UI | PASS_QA_RENDERED | Printer Settings, payment preview and POS footer rendered from the Release x86 build; targeted presentation/layout checks pass at 1280x720 and 1024x600. This is not a physical Win7 claim. |
 | Win7POS test print | PASS_PHYSICAL | Operator confirmed the complete Win7POS fictitious receipt printed correctly, stayed within the roll and cut automatically. |
-| QA cash receipt | PENDING_PHYSICAL | No QA sale claimed yet. |
-| QA card receipt | PENDING_PHYSICAL | No QA sale claimed yet. |
-| Receipt reprint | PENDING_PHYSICAL | Not yet observed. |
-| Printer off / paused after commit | PENDING_PHYSICAL | Must prove saved sale, retryable print error and no duplicate. |
+| QA cash receipt | PASS_PHYSICAL | QA sale `VMRQI73CRZQ6` printed completely, cut automatically and opened the drawer exactly once. The operator confirmed the paper and single opening. |
+| QA card receipt | PASS_PHYSICAL_NO_DRAWER | QA card-only sale `VMRQIA8J5KE3` printed completely; the operator confirmed that the drawer stayed closed. |
+| Receipt reprint | PASS_PHYSICAL_NO_DRAWER | One reprint of persisted cash sale `VMRQI73CRZQ6` printed correctly; no sale, movement or outbox duplicate was created and the operator confirmed that the drawer stayed closed. |
+| Printer off / paused after commit | PASS_COMMIT_BEFORE_PRINT_NO_DUPLICATE | Card-only sale `VMRQIK583IXD` committed while the queue was paused, reported a retryable print failure, and remained a single sale/line/movement/outbox entry. After resume, one `Print last` produced the receipt; the operator confirmed correct paper output and no drawer opening. |
 
 Photo evidence is retained outside Git as
 `windows-notepad-80mm-pass.png`, SHA-256
@@ -74,9 +74,9 @@ No row below is marked PASS until a physical opening or non-opening is observed.
 | Production-service pin 2 (`27,112,0,25,250`) | PASS_PHYSICAL_SINGLE_OPEN_2026-07-17 | One direct production-code `TestCashDrawerAsync` submission returned successfully at 2026-07-17 21:36 local; the operator later explicitly confirmed that this single pulse opened the drawer exactly once. One matching log entry was retained, pre/post queue observations were `Normal`/0, and no `pos.db` was created. This did not exercise the authenticated Printer Settings UI. No retry was sent. |
 | Printer Settings > Test drawer (authenticated UI) | PENDING_AUTHENTICATED_PHYSICAL | Permission gate, UI state/status and settings persistence remain unproven; do not use this row as authorization for another pulse. |
 | Win7POS manual pin 5 (`27,112,1,25,250`) | NOT_NEEDED_NOT_SENT | Pin 2 physically passed; pin 5 must not be sent. |
-| Cash-only QA sale | PENDING_PHYSICAL | Sale commits, receipt prints, drawer opens once. |
-| Card-only QA sale | PENDING_PHYSICAL | Receipt prints and drawer does not open. |
-| Drawer failure after committed sale | PENDING_PHYSICAL | Failure reported separately; no rollback or duplicate sale. |
+| Cash-only QA sale | PASS_PHYSICAL_SINGLE_OPEN_2026-07-18 | Sale committed, receipt printed and cut, and the operator confirmed exactly one drawer opening. The application log contains one matching drawer event. |
+| Card-only QA sale | PASS_PHYSICAL_NO_OPEN_2026-07-18 | Receipt printed and the operator confirmed that the drawer did not open. |
+| Drawer failure after committed sale | PASS_SOFTWARE_NO_DUPLICATE_PHYSICAL_NO_OPEN_2026-07-18 | The paused-queue card sale committed before the print failure, exposed retry guidance, and was reprinted once after resume without duplicates; the operator confirmed no drawer opening. |
 | Drawer disconnected | PENDING_PHYSICAL | POS remains usable; card sale remains possible. |
 
 ## Automated safeguards
@@ -102,13 +102,14 @@ drawer command cannot silently fall back to a physical pulse.
 
 ## Current classification
 
-`IN_PROGRESS_WIN7POS_PRINT_AND_MANUAL_DRAWER_PASS_TRANSACTIONAL_MATRIX_PENDING`
+`TRANSACTIONAL_MATRIX_PASS_RECEIPT_SURFACE_ADDENDUM_PENDING`
 
-Windows/APD/Notepad and the Win7POS fictitious receipt are physically proven.
-The one production-service pin-2 command is also physically proven: the operator
-confirmed exactly one opening and no retry was sent. Full
-`TM_T60_PRINT_AND_DRAWER_PASS` still requires the authenticated settings,
-cash/card sale, reprint, failure/disconnect and physical Windows 7 rows above.
+Windows/APD/Notepad, the Win7POS fictitious receipt and the transactional cash,
+card, reprint and paused/resumed-queue matrix are physically proven. Exactly one
+transactional drawer opening was observed for cash; card and both reprint paths
+kept it closed. Counts remained idempotent and the queue returned `Normal` with
+zero jobs. The receipt-surface/daily-close addendum, disconnected-drawer row and
+physical Windows 7 row remain open, so merge is still blocked.
 
 ## Publication
 
