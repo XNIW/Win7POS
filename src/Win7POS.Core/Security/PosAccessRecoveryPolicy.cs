@@ -48,7 +48,7 @@ namespace Win7POS.Core.Security
 
         public bool IsNewDatabase => TotalUserRows == 0;
         public bool HasOnlyDisabledUsers => TotalUserRows > 0 && ActiveLoginableUsers == 0;
-        public bool HasActiveLocalRecoveryUsers => ActiveLoginableUsers > 0 && ActiveRemoteMirrors == 0;
+        public bool HasActiveLocalRecoveryUsers => ActiveLoginableUsers > ActiveRemoteMirrors;
     }
 
     public sealed class PosAccessRecoveryDecision
@@ -73,6 +73,15 @@ namespace Win7POS.Core.Security
             PosAccessFailureKind failureKind)
         {
             if (state == null) throw new ArgumentNullException(nameof(state));
+
+            // An online credential denial must never create an administrator or reuse a
+            // remote mirror offline. It may, however, leave an already-provisioned local
+            // recovery account available through its separate username/PIN challenge.
+            if (failureKind == PosAccessFailureKind.AuthenticationDenied &&
+                state.HasActiveLocalRecoveryUsers)
+            {
+                return new PosAccessRecoveryDecision(PosAccessNextStep.LocalRecoveryLogin, failureKind);
+            }
 
             if (IsDenied(failureKind))
             {

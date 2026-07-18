@@ -65,6 +65,8 @@ Require-Pattern "historical view keeps virtualization and selectable monospaced 
 Require-Pattern "daily close has a dedicated renderer using shared primitives" ($dailyCore + $dailyRenderer) 'class\s+DailyCloseReceiptTextRenderer[\s\S]*ReceiptTextLayout\.NormalizeColumns[\s\S]*ReceiptTextLayout\.TwoColumnLine'
 Require-Pattern "daily close preview is the exact print payload" $dailyVm 'SummaryReceiptPreview[\s\S]*PrintReceiptTextAsync\(SummaryReceiptPreview'
 Require-Pattern "daily history clears stale preview and blocks print while loading" $dailyVm 'SelectedHistoryRow[\s\S]*SummaryReceiptPreview\s*=\s*string\.Empty[\s\S]*CanPrintStampaRiepilogo[\s\S]*!IsHistoryPreviewLoading'
+Require-Pattern "daily date edits immediately clear stale preview" $dailyVm 'DateText[\s\S]*InvalidateDailyPreview'
+Require-Pattern "daily asynchronous results are version fenced" $dailyVm '_dailyPreviewVersion[\s\S]*BeginDailyPreviewLoad[\s\S]*IsCurrentDailyPreview'
 Require-Pattern "daily history uses the same complete sales scope for selected and marked previews" $dailyVm 'GetDailySummaryAsync\(row\.Date,\s*includeFiscalPrinted:\s*true\)[\s\S]*GetDailySummaryAsync\(row\.Date,\s*includeFiscalPrinted:\s*true\)'
 Require-Pattern "single marked daily preview is fenced and is the exact print payload" $dailyVm 'IsMarkedPreviewLoading[\s\S]*MarkedCount\s*==\s*1[\s\S]*SingleMarkedReceiptPreview[\s\S]*textToPrint\s*=\s*SingleMarkedReceiptPreview[\s\S]*IsCurrentMarkedPreview'
 Require-Pattern "daily close preview is selectable monospaced receipt paper" $dailyXaml 'DailyCloseReceiptPreview[\s\S]*FontFamily="Consolas"[\s\S]*IsReadOnly="True"'
@@ -80,6 +82,7 @@ Require-Pattern "UI lifecycle covers Sales Register and Daily Close 20 times" $u
 Require-Pattern "UI harness verifies archive API removal" $uiSmoke 'VerifyReceiptArchiveRemoval[\s\S]*receiptArchiveRemovalPass'
 Require-Pattern "UI harness verifies rapid history selection fencing" $uiSmoke 'VerifySalesRegisterRapidSelectionAsync[\s\S]*salesRegisterRapidSelectionPass'
 Require-Pattern "UI harness verifies daily-history stale-preview fencing" $uiSmoke 'VerifyDailyHistoryPreviewFencingAsync[\s\S]*dailyHistoryPreviewFencingPass'
+Require-Pattern "UI harness verifies daily-date stale-preview fencing" $uiSmoke 'VerifyDailyDatePreviewFencing[\s\S]*dailyDatePreviewFencingPass'
 
 if ($fail) {
     Write-Host "`n=== RESULT: FAIL ===" -ForegroundColor Red

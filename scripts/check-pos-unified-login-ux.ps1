@@ -115,6 +115,7 @@ $requiredKeys = @(
     "access.login.offlineNoticeServerUnavailable",
     "access.login.offlineMirrorMissing",
     "access.login.onlineDeniedNoOfflineFallback",
+    "access.login.onlineDeniedLocalRecoveryAvailable",
     "access.login.invalidCredentials",
     "access.login.signIn",
     "access.login.advancedSettings"
@@ -145,6 +146,7 @@ Assert-Contains "dialog has network status text" $dialogXaml 'x:Name="NetworkSta
 $dialogCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
 Assert-Contains "dialog attempts offline fallback" $dialogCode "TryOfflineSignInAsync"
 Assert-Contains "dialog blocks denied fallback" $dialogCode "onlineDeniedNoOfflineFallback"
+Assert-Contains "dialog explains existing local recovery after online denial" $dialogCode "onlineDeniedLocalRecoveryAvailable"
 Assert-Contains "dialog logs in session before credential clear path" $dialogCode "LoginLocalUsernameAsync"
 Assert-Contains "dialog exposes explicit recovery action" $dialogXaml 'x:Name="RecoveryButton"'
 Assert-Contains "dialog keeps recovery inside unified access" $dialogCode "OnRecoveryClick"
@@ -153,11 +155,17 @@ Assert-Contains "dialog reaches first-run child only from recovery" $dialogCode 
 $recoveryPolicy = Read-Text "src/Win7POS.Core/Security/PosAccessRecoveryPolicy.cs"
 Assert-Contains "recovery policy classifies online denial" $recoveryPolicy "IsDenied(failureKind)"
 Assert-Contains "recovery policy returns denied state" $recoveryPolicy "PosAccessNextStep.Denied"
+Assert-Contains "online denial preserves only existing local recovery" $recoveryPolicy 'failureKind == PosAccessFailureKind.AuthenticationDenied &&'
+Assert-Contains "local recovery is distinct from remote mirrors" $recoveryPolicy "ActiveLoginableUsers > ActiveRemoteMirrors"
 if ($dialogCode -match 'onlineDeniedNoOfflineFallback[\s\S]{0,500}CanCreateLocalAdmin') {
     Fail "online denied path must not expose local admin recovery"
 } else {
     Pass "online denied path does not expose local admin recovery"
 }
+
+$uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
+Assert-Contains "recovery access dialog has 20-cycle lifecycle coverage" $uiSmoke "recoveryAccessCycles=20"
+Assert-Contains "recovery lifecycle opens the real access dialog" $uiSmoke "new PosOnlineFirstLoginDialog()"
 
 Assert-Contains "shell evaluates catalog before PosView" $main "PosShellStartupPolicy.Determine"
 Assert-Contains "shell has controlled recovery mode" $main "EnterRecoveryModeAsync"

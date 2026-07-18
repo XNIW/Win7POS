@@ -50,6 +50,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private CancellationTokenSource _markedPreviewCts;
         private int _markedPreviewVersion;
         private bool _isMarkedPreviewLoading;
+        private int _dailyPreviewVersion;
 
         private long _periodNetAmount;
         private long _periodGrossAmount;
@@ -84,7 +85,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string DateText
         {
             get => _dateText;
-            set { _dateText = value ?? string.Empty; OnPropertyChanged(); }
+            set
+            {
+                var normalized = value ?? string.Empty;
+                if (string.Equals(_dateText, normalized, StringComparison.Ordinal)) return;
+                _dateText = normalized;
+                InvalidateDailyPreview();
+                OnPropertyChanged();
+            }
         }
 
         public string Status
@@ -408,12 +416,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
+            var version = BeginDailyPreviewLoad();
             IsBusy = true;
             try
             {
                 var includeFiscalPrinted = true;
-                _useReceipt42 = await _service.GetUseReceipt42Async().ConfigureAwait(true) ?? true;
+                var useReceipt42 = await _service.GetUseReceipt42Async().ConfigureAwait(true) ?? true;
                 DailySalesSummary summary = await _service.GetDailySummaryAsync(date, includeFiscalPrinted).ConfigureAwait(true);
+                if (!IsCurrentDailyPreview(version)) return;
+                var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
+                if (!IsCurrentDailyPreview(version)) return;
+
+                _useReceipt42 = useReceipt42;
                 SalesCount = summary.SalesCount;
                 TotalAmount = summary.TotalAmount;
                 CashAmount = summary.CashAmount;
@@ -421,18 +435,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 GrossSalesAmount = summary.GrossSalesAmount;
                 RefundsAmount = summary.RefundsAmount;
                 NetAmount = summary.NetAmount;
-                var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
                 UpdateSummaryReceiptPreview(date, summary, shop);
                 _reportLoaded = true;
                 RefreshHeaderSummary();
-                _ = LoadHourlySalesAsync(date, includeFiscalPrinted);
+                _ = LoadHourlySalesAsync(date, includeFiscalPrinted, version);
                 OnPropertyChanged(nameof(StatusBadgeText));
                 OnPropertyChanged(nameof(ShowStatusBadge));
                 SetStatusKey("reports.loaded");
             }
             catch (Exception ex)
             {
-                Status = PosLocalization.F("reports.loadError", ex.Message);
+                if (IsCurrentDailyPreview(version))
+                    Status = PosLocalization.F("reports.loadError", ex.Message);
             }
             finally
             {
@@ -440,11 +454,43 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        private async Task LoadHourlySalesAsync(DateTime date, bool includeFiscalPrinted = true)
+        private int BeginDailyPreviewLoad()
+        {
+            var version = ++_dailyPreviewVersion;
+            ClearDailyPreviewState();
+            return version;
+        }
+
+        private void InvalidateDailyPreview()
+        {
+            _dailyPreviewVersion++;
+            ClearDailyPreviewState();
+        }
+
+        private void ClearDailyPreviewState()
+        {
+            SummaryReceiptPreview = string.Empty;
+            _reportLoaded = false;
+            HourlySalesPoints.Clear();
+            OnPropertyChanged(nameof(HourlyPeakText));
+            OnPropertyChanged(nameof(HourlyDayTotalText));
+            OnPropertyChanged(nameof(StatusBadgeText));
+            OnPropertyChanged(nameof(ShowStatusBadge));
+            RaiseCanExecuteChanged();
+        }
+
+        private bool IsCurrentDailyPreview(int version)
+            => !_disposed && version == _dailyPreviewVersion;
+
+        private async Task LoadHourlySalesAsync(
+            DateTime date,
+            bool includeFiscalPrinted,
+            int dailyPreviewVersion)
         {
             try
             {
                 var amounts = await _service.GetHourlySalesAsync(date, includeFiscalPrinted).ConfigureAwait(true);
+                if (!IsCurrentDailyPreview(dailyPreviewVersion)) return;
                 if (amounts == null || amounts.Count < 24) return;
                 long max = 0;
                 int peakHour = 0;
@@ -468,9 +514,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch
             {
-                HourlySalesPoints.Clear();
+                if (IsCurrentDailyPreview(dailyPreviewVersion))
+                    HourlySalesPoints.Clear();
             }
-            OnPropertyChanged(nameof(HourlyPeakText));
+            if (IsCurrentDailyPreview(dailyPreviewVersion))
+                OnPropertyChanged(nameof(HourlyPeakText));
         }
 
         private string GetHourlyPeakText()

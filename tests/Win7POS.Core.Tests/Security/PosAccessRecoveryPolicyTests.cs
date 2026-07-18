@@ -102,6 +102,79 @@ public sealed class PosAccessRecoveryPolicyTests
     }
 
     [TestMethod]
+    public void ExistingLocalRecoveryUser_AuthenticationDenied_KeepsSeparateLocalLoginAvailable()
+    {
+        var state = new PosUserBootstrapState
+        {
+            TotalUserRows = 1,
+            ActiveLoginableUsers = 1,
+            ActiveRemoteMirrors = 0
+        };
+
+        var decision = PosAccessRecoveryPolicy.Evaluate(state, PosAccessFailureKind.AuthenticationDenied);
+
+        Assert.AreEqual(PosAccessNextStep.LocalRecoveryLogin, decision.NextStep);
+        Assert.IsTrue(decision.CanUseLocalRecoveryLogin);
+        Assert.IsFalse(decision.CanUseOfflineMirror);
+        Assert.IsFalse(decision.CanCreateLocalAdmin);
+    }
+
+    [TestMethod]
+    public void RemoteMirrorOnly_AuthenticationDenied_RemainsDenied()
+    {
+        var state = new PosUserBootstrapState
+        {
+            TotalUserRows = 1,
+            ActiveLoginableUsers = 1,
+            ActiveRemoteMirrors = 1
+        };
+
+        var decision = PosAccessRecoveryPolicy.Evaluate(state, PosAccessFailureKind.AuthenticationDenied);
+
+        Assert.AreEqual(PosAccessNextStep.Denied, decision.NextStep);
+        Assert.IsFalse(decision.CanUseLocalRecoveryLogin);
+    }
+
+    [TestMethod]
+    public void MixedRemoteAndLocalUsers_AuthenticationDenied_OffersOnlySeparateLocalLogin()
+    {
+        var state = new PosUserBootstrapState
+        {
+            TotalUserRows = 2,
+            ActiveLoginableUsers = 2,
+            ActiveRemoteMirrors = 1
+        };
+
+        var decision = PosAccessRecoveryPolicy.Evaluate(state, PosAccessFailureKind.AuthenticationDenied);
+
+        Assert.AreEqual(PosAccessNextStep.LocalRecoveryLogin, decision.NextStep);
+        Assert.IsTrue(decision.CanUseLocalRecoveryLogin);
+        Assert.IsFalse(decision.CanUseOfflineMirror);
+        Assert.IsFalse(decision.CanCreateLocalAdmin);
+    }
+
+    [TestMethod]
+    [DataRow(PosAccessFailureKind.DeviceDenied)]
+    [DataRow(PosAccessFailureKind.PolicyDenied)]
+    [DataRow(PosAccessFailureKind.InvalidContract)]
+    [DataRow(PosAccessFailureKind.InvalidResponse)]
+    public void ExistingLocalRecoveryUser_NonCredentialSecurityDenial_RemainsDenied(
+        PosAccessFailureKind failure)
+    {
+        var state = new PosUserBootstrapState
+        {
+            TotalUserRows = 1,
+            ActiveLoginableUsers = 1,
+            ActiveRemoteMirrors = 0
+        };
+
+        var decision = PosAccessRecoveryPolicy.Evaluate(state, failure);
+
+        Assert.AreEqual(PosAccessNextStep.Denied, decision.NextStep);
+        Assert.IsFalse(decision.CanUseLocalRecoveryLogin);
+    }
+
+    [TestMethod]
     public void LocalRecoveryWithUnsafeCatalog_UsesRecoveryShell()
     {
         Assert.AreEqual(

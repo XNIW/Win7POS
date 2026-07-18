@@ -375,7 +375,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
                             attemptId,
                             "online_bootstrap_denied",
                             "result=blocked reason=auth_denied code=" + SafeAuditValue(result.Code));
-                        ShowError(PosLocalization.T("access.login.onlineDeniedNoOfflineFallback"));
+                        ShowError(PosLocalization.T(
+                            recoveryDecision.CanUseLocalRecoveryLogin
+                                ? "access.login.onlineDeniedLocalRecoveryAvailable"
+                                : "access.login.onlineDeniedNoOfflineFallback"));
                         ApplyRecoveryDecision(recoveryDecision, showTransientHelp: false);
                         FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "blocked", "online", "auth_denied");
                         EndBusyAllowFreshLogin();

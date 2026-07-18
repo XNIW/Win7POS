@@ -401,6 +401,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var receiptArchiveRemovalPass = VerifyReceiptArchiveRemoval();
                     var salesRegisterRapidSelectionPass = await VerifySalesRegisterRapidSelectionAsync().ConfigureAwait(true);
                     var dailyHistoryPreviewFencingPass = await VerifyDailyHistoryPreviewFencingAsync().ConfigureAwait(true);
+                    var dailyDatePreviewFencingPass = VerifyDailyDatePreviewFencing();
                     var samples = new List<LifecycleSample>();
                     var weakWindows = new List<LifecycleWindowReference>();
                     for (var cycle = 1; cycle <= 20; cycle++)
@@ -413,6 +414,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         await OpenThenCloseAsync(CreateCustomerDisplaySettingsDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(CreateProductEditDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(CreateSyncCenterDialog(), weakWindows).ConfigureAwait(true);
+                        await OpenThenCloseAsync(new PosOnlineFirstLoginDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(new PosStartOfDaySyncDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(CreatePrinterSettingsDialog(), weakWindows).ConfigureAwait(true);
                         samples.Add(LifecycleSample.Capture(cycle));
@@ -427,6 +429,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     await OpenThenCloseAsync(CreateCustomerDisplaySettingsDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(CreateProductEditDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(CreateSyncCenterDialog(), null).ConfigureAwait(true);
+                    await OpenThenCloseAsync(new PosOnlineFirstLoginDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(new PosStartOfDaySyncDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(CreatePrinterSettingsDialog(), null).ConfigureAwait(true);
 
@@ -496,11 +499,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                  printerTestReceiptPass && receiptShopSnapshotPass &&
                                  activeDrawerSettingsValidationPass && dailyCloseReceiptPass &&
                                  receiptArchiveRemovalPass && salesRegisterRapidSelectionPass &&
-                                 dailyHistoryPreviewFencingPass &&
+                                 dailyHistoryPreviewFencingPass && dailyDatePreviewFencingPass &&
                                  !monotonicPrivateBytes && !monotonicHandles;
                     return string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0}: cycles=20; dailyReportCycles=20; salesRegisterCycles=20; printerSettingsCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}; receiptShopSnapshotPass={22}; activeDrawerSettingsValidationPass={23}; dailyCloseReceiptPass={24}; receiptArchiveRemovalPass={25}; salesRegisterRapidSelectionPass={26}; dailyHistoryPreviewFencingPass={27}",
+                        "{0}: cycles=20; dailyReportCycles=20; salesRegisterCycles=20; printerSettingsCycles=20; recoveryAccessCycles=20; startOfDayCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}; receiptShopSnapshotPass={22}; activeDrawerSettingsValidationPass={23}; dailyCloseReceiptPass={24}; receiptArchiveRemovalPass={25}; salesRegisterRapidSelectionPass={26}; dailyHistoryPreviewFencingPass={27}; dailyDatePreviewFencingPass={28}",
                         passed ? "PASS" : "FAIL",
                         residual,
                         residualTypes,
@@ -528,7 +531,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         dailyCloseReceiptPass,
                         receiptArchiveRemovalPass,
                         salesRegisterRapidSelectionPass,
-                        dailyHistoryPreviewFencingPass);
+                        dailyHistoryPreviewFencingPass,
+                        dailyDatePreviewFencingPass);
                 }
                 finally
                 {
@@ -1814,6 +1818,27 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                             "DELETE FROM sales WHERE code LIKE @prefix;",
                             new { prefix = prefix + "%" }).ConfigureAwait(true);
                     }
+                }
+            }
+
+            private static bool VerifyDailyDatePreviewFencing()
+            {
+                var vm = new DailyReportViewModel(new PosWorkflowService());
+                try
+                {
+                    vm.SummaryReceiptPreview = "STALE DAILY RECEIPT";
+                    if (!vm.PrintSummaryCommand.CanExecute(null)) return false;
+
+                    vm.DateText = DateTime.Today.AddDays(-1)
+                        .ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
+                    return string.IsNullOrEmpty(vm.SummaryReceiptPreview) &&
+                           !vm.PrintSummaryCommand.CanExecute(null) &&
+                           !vm.PrintSelectedHistoryCommand.CanExecute(null);
+                }
+                finally
+                {
+                    vm.Dispose();
                 }
             }
 
