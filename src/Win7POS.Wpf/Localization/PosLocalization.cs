@@ -717,6 +717,9 @@ namespace Win7POS.Wpf.Localization
 
             new TranslationEntry("settings.shopTitle", "Official shop data", "Datos oficiales del local", "Dati negozio ufficiali", "官方店铺数据"),
             new TranslationEntry("settings.hubIntro", "Choose what you want to configure.", "Elige que quieres configurar.", "Scegli cosa configurare.", "选择要配置的内容。"),
+            new TranslationEntry("settings.groupStore", "Store and checkout", "Local y caja", "Negozio e cassa", "店铺与收银"),
+            new TranslationEntry("settings.groupWorkstation", "Workstation", "Puesto de caja", "Postazione", "收银工作站"),
+            new TranslationEntry("settings.groupAdministration", "Administration and support", "Administracion y soporte", "Amministrazione e supporto", "管理与支持"),
             new TranslationEntry("settings.cardShopHelp", "Read-only fiscal and shop identity.", "Identidad fiscal y del local solo lectura.", "Identita fiscale e negozio in sola lettura.", "只读税务和店铺身份。"),
             new TranslationEntry("settings.cardOnlineAccessHelp", "Retry the configured Admin Web access and catalog download.", "Reintenta el acceso configurado a Admin Web y la descarga del catalogo.", "Riprova l'accesso Admin Web configurato e il download del catalogo.", "重试已配置的 Admin Web 访问和目录下载。"),
             new TranslationEntry("notice.info", "Info", "Informacion", "Info", "信息"),
@@ -732,6 +735,8 @@ namespace Win7POS.Wpf.Localization
             new TranslationEntry("settings.cardSyncCenterHelp", "Incremental catalog, queues and safe repair diagnostics.", "Catalogo incremental, colas y diagnostico de reparacion segura.", "Catalogo incrementale, code e diagnostica di riparazione sicura.", "增量目录、队列与安全修复诊断。"),
             new TranslationEntry("settings.officialSourceAdminWeb", "Admin Web / Master Console", "Admin Web / Consola Maestra", "Admin Web / Master Console", "Admin Web / 主控台"),
             new TranslationEntry("settings.readOnlyBadge", "Read-only", "Solo lectura", "Sola lettura", "只读"),
+            new TranslationEntry("settings.syncOverview", "Offline and sync status", "Estado offline y sincronizacion", "Stato offline e sincronizzazione", "离线与同步状态"),
+            new TranslationEntry("settings.syncDetails", "Technical sync details", "Detalles tecnicos de sincronizacion", "Dettagli tecnici di sincronizzazione", "同步技术详情"),
             new TranslationEntry("settings.shopReadOnly", "Read-only. Profile and fiscal identity changes are made in Master Console; Win7POS uses this cache offline too.", "Solo lectura. Los cambios de perfil e identidad fiscal se hacen en Master Console; Win7POS usa esta cache tambien offline.", "Sola lettura. Le modifiche a profilo e identita fiscale si fanno in Master Console; Win7POS usa questa cache anche offline.", "只读。资料和税务身份在 Master Console 修改；Win7POS 离线时也使用此缓存。"),
             new TranslationEntry("settings.shopName", "Shop name:", "Nombre local:", "Nome negozio:", "店铺名称："),
             new TranslationEntry("settings.shopCode", "Shop code:", "Codigo shop:", "Codice shop:", "店铺代码："),

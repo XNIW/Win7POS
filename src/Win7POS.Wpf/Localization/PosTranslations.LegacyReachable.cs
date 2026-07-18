@@ -63,11 +63,16 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("customerDisplay.settings.invert", "Swap screens", "Invertir pantallas", "Inverti schermi", "交换屏幕");
             yield return new TranslationEntry("customerDisplay.settings.resetAuto", "Restore automatic", "Restaurar automatico", "Ripristina automatico", "恢复自动");
             yield return new TranslationEntry("customerDisplay.settings.actions", "Actions", "Acciones", "Azioni", "操作");
+            yield return new TranslationEntry("customerDisplay.settings.routing", "Screen assignment", "Asignacion de pantallas", "Assegnazione schermi", "屏幕分配");
+            yield return new TranslationEntry("customerDisplay.settings.control", "Test and control", "Prueba y control", "Test e controllo", "测试与控制");
             yield return new TranslationEntry("customerDisplay.settings.identify", "Identify screens", "Identificar pantallas", "Identifica schermi", "识别屏幕");
             yield return new TranslationEntry("customerDisplay.settings.preview", "Preview customer display", "Vista previa pantalla cliente", "Anteprima display cliente", "预览顾客显示屏");
             yield return new TranslationEntry("customerDisplay.settings.open", "Open display", "Abrir pantalla", "Apri display", "打开显示屏");
             yield return new TranslationEntry("customerDisplay.settings.close", "Close display", "Cerrar pantalla", "Chiudi display", "关闭显示屏");
             yield return new TranslationEntry("customerDisplay.settings.visual", "Display options", "Opciones visuales", "Opzioni visuali", "显示选项");
+            yield return new TranslationEntry("customerDisplay.settings.content", "Receipt content", "Contenido del recibo", "Contenuto scontrino", "小票内容");
+            yield return new TranslationEntry("customerDisplay.settings.behavior", "Window behavior", "Comportamiento de ventana", "Comportamento finestra", "窗口行为");
+            yield return new TranslationEntry("customerDisplay.settings.appearance", "Appearance", "Apariencia", "Aspetto", "外观");
             yield return new TranslationEntry("customerDisplay.settings.autoOpen", "Open automatically", "Abrir automaticamente", "Apri automaticamente", "自动打开");
             yield return new TranslationEntry("customerDisplay.settings.fullScreen", "Full screen", "Pantalla completa", "Schermo intero", "全屏");
             yield return new TranslationEntry("customerDisplay.settings.workArea", "Use working area", "Usar area de trabajo", "Usa area di lavoro", "使用工作区");

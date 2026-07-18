@@ -56,6 +56,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                HasArg(args, "--pos-footer-layout") ||
                                HasArg(args, "--receipt-rendering-alignment") ||
                                HasArg(args, "--capture-ux-artifacts") ||
+                               HasArg(args, "--capture-settings-audit") ||
                                HasArg(args, "--lifecycle");
 
             Environment.SetEnvironmentVariable("WIN7POS_DATA_DIR", dataDir);
@@ -142,6 +143,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     {
                         var result = await launcher.CaptureUxArtifactsAsync(dataDir).ConfigureAwait(true);
                         File.WriteAllText(Path.Combine(dataDir, "capture-ux-artifacts.txt"), result);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
+                    if (HasArg(args, "--capture-settings-audit"))
+                    {
+                        var result = await launcher.CaptureSettingsAuditAsync(dataDir).ConfigureAwait(true);
+                        File.WriteAllText(Path.Combine(dataDir, "capture-settings-audit.txt"), result);
                         app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
                         return;
                     }
@@ -267,7 +276,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 Title = "Win7POS UI Smoke Harness";
                 Width = 680;
-                Height = 430;
+                Height = 560;
                 MinWidth = 560;
                 MinHeight = 360;
                 WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -291,6 +300,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                 panel.Children.Add(MakeButton("Open DailyReportDialog", OpenDailyReport));
                 panel.Children.Add(MakeButton("Open UserManagementDialog", OpenUserManagement));
+                panel.Children.Add(MakeButton("Open SettingsHubDialog", OpenSettingsHub));
+                panel.Children.Add(MakeButton("Open CustomerDisplaySettingsDialog", OpenCustomerDisplaySettings));
                 panel.Children.Add(MakeButton("Run 20x lifecycle matrix", RunLifecycleMatrix));
 
                 _status = new TextBlock
@@ -330,6 +341,19 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private void OpenUserManagement(object sender, RoutedEventArgs e)
             {
                 var dialog = CreateUserManagementDialog();
+                dialog.Owner = this;
+                dialog.ShowDialog();
+            }
+
+            private void OpenSettingsHub(object sender, RoutedEventArgs e)
+            {
+                var dialog = new SettingsHubDialog { Owner = this };
+                dialog.ShowDialog();
+            }
+
+            private void OpenCustomerDisplaySettings(object sender, RoutedEventArgs e)
+            {
+                var dialog = CreateCustomerDisplaySettingsDialog();
                 dialog.Owner = this;
                 dialog.ShowDialog();
             }
@@ -657,6 +681,94 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
 
                 return "PASS: posFooter=True; paymentPreview=True; printerPreview=True";
+            }
+
+            public async Task<string> CaptureSettingsAuditAsync(string outputDirectory)
+            {
+                Directory.CreateDirectory(outputDirectory);
+                if (!File.Exists(Path.Combine(outputDirectory, "pos.db")))
+                    await QaFixture.SeedAsync().ConfigureAwait(true);
+                else
+                    DbInitializer.EnsureCreated(PosDbOptions.Default());
+
+                await CaptureDialogAsync(
+                    new SettingsHubDialog(),
+                    Path.Combine(outputDirectory, "settings-hub.png")).ConfigureAwait(true);
+                var compactSettingsHub = new SettingsHubDialog { Width = 640, Height = 520 };
+                await CaptureDialogAsync(
+                    compactSettingsHub,
+                    Path.Combine(outputDirectory, "settings-hub-compact.png")).ConfigureAwait(true);
+                await CaptureDialogAsync(
+                    new SettingsHubDialog(recoveryMode: true),
+                    Path.Combine(outputDirectory, "settings-hub-recovery.png")).ConfigureAwait(true);
+                await CaptureDialogAsync(
+                    CreateCustomerDisplaySettingsDialog(),
+                    Path.Combine(outputDirectory, "customer-display-settings.png")).ConfigureAwait(true);
+                var compactCustomerDisplay = CreateCustomerDisplaySettingsDialog();
+                compactCustomerDisplay.Width = 700;
+                compactCustomerDisplay.Height = 540;
+                await CaptureDialogAsync(
+                    compactCustomerDisplay,
+                    Path.Combine(outputDirectory, "customer-display-settings-compact.png")).ConfigureAwait(true);
+                await CaptureDialogAsync(
+                    new LanguageSettingsDialog(),
+                    Path.Combine(outputDirectory, "language-settings.png")).ConfigureAwait(true);
+                await CaptureDialogAsync(
+                    new ShopSettingsDialog(new ShopSettingsViewModel(new PosWorkflowService())),
+                    Path.Combine(outputDirectory, "shop-settings.png"),
+                    idleDelayMs: 250).ConfigureAwait(true);
+                await CaptureDialogAsync(
+                    new ShopSettingsDialog(new ShopSettingsViewModel(new PosWorkflowService())) { Width = 560, Height = 560 },
+                    Path.Combine(outputDirectory, "shop-settings-compact.png"),
+                    idleDelayMs: 250).ConfigureAwait(true);
+                await CaptureDialogAsync(
+                    new UserManagementDialog(new UserManagementViewModel()),
+                    Path.Combine(outputDirectory, "user-management.png")).ConfigureAwait(true);
+                await CaptureDialogAsync(
+                    CreateSyncCenterDialog(),
+                    Path.Combine(outputDirectory, "sync-center.png")).ConfigureAwait(true);
+                await CaptureDialogAsync(
+                    new DbMaintenanceDialog(new DbMaintenanceViewModel(new PosWorkflowService())),
+                    Path.Combine(outputDirectory, "database-maintenance.png")).ConfigureAwait(true);
+                await CaptureDialogAsync(
+                    new AboutSupportDialog(new AboutSupportViewModel(new PosWorkflowService())),
+                    Path.Combine(outputDirectory, "about-support.png"),
+                    idleDelayMs: 150).ConfigureAwait(true);
+
+                return "PASS: settingsHub=True; settingsHubCompact=True; settingsHubRecovery=True; customerDisplay=True; customerDisplayCompact=True; language=True; shop=True; shopCompact=True; users=True; sync=True; database=True; about=True";
+            }
+
+            private async Task CaptureDialogAsync(
+                Window dialog,
+                string outputPath,
+                int idleDelayMs = 0)
+            {
+                dialog.Owner = this;
+                var rendered = new TaskCompletionSource<bool>();
+                EventHandler renderedHandler = null;
+                renderedHandler = (_, __) =>
+                {
+                    dialog.ContentRendered -= renderedHandler;
+                    rendered.TrySetResult(true);
+                };
+                dialog.ContentRendered += renderedHandler;
+                try
+                {
+                    dialog.Show();
+                    await rendered.Task.ConfigureAwait(true);
+                    await Dispatcher.InvokeAsync(
+                        () => { },
+                        System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                    if (idleDelayMs > 0)
+                        await Task.Delay(idleDelayMs).ConfigureAwait(true);
+                    SaveVisual(dialog.Content as FrameworkElement, outputPath);
+                }
+                finally
+                {
+                    dialog.ContentRendered -= renderedHandler;
+                    if (dialog.IsVisible)
+                        dialog.Close();
+                }
             }
 
             private async Task CaptureHostedElementAsync(

@@ -26,6 +26,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 UsersRolesButton.Visibility = Visibility.Collapsed;
                 CustomerDisplayButton.Visibility = Visibility.Collapsed;
                 OnlineAccessButton.Visibility = Visibility.Visible;
+                StoreSettingsGrid.Columns = 1;
+                WorkstationSettingsGrid.Columns = 1;
+                AdministrationSettingsGrid.Columns = 1;
             }
         }
 
