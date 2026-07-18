@@ -166,6 +166,10 @@ Local deterministic policy evidence confirms the 25-row bound and sequence `60 â
 
 ## Windows 7, visual and hardware evidence
 
+This section is a historical pre-Epson snapshot. Later Epson print and drawer
+evidence is tracked in `docs/QA/WIN7POS_EPSON_TM_T60_HARDWARE_MATRIX.md`; the
+external validation backlog remains authoritative for current status.
+
 The available ASUS Zenbook is Windows 11 with .NET Framework 4.8, one 1440Ã—900
 monitor, Microsoft virtual printers only, and no scanner, Xprinter or cash drawer.
 It cannot certify a physical Windows 7 SP1 POS or Windows Extend.

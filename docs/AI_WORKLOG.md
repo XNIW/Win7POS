@@ -501,3 +501,30 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   `TreeState=clean`; installer and ZIP hashes are recorded in the closeout report.
 - Ledger status: PR-A `DONE_MERGED`, PR-B `NEXT`, external certification remains
   `OPEN 0/16`. PR-B was not started.
+
+## 2026-07-17 - Epson receipt alignment, POS footer and drawer pulse
+
+- Enlarged the POS `Pay` touch target to the exact visible width/edges of the
+  right tools panel while retaining the compact single-row footer.
+- Added one shared receipt renderer used by payment preview, completed-sale
+  printing/reprint and the non-persisted Printer Settings sample. Exact alignment
+  is covered for cash, card and mixed payments at 32 and 42 columns, including
+  lossless line/cart discount rows and EN/ES/IT/ZH labels. The shop snapshot is
+  frozen across payment/commit and the fictitious test uses the sale barcode path.
+- Matched the Printer Settings preview hierarchy to the payment preview and made
+  the fictitious sample show both cash and card without creating a sale.
+- Added focused geometry, renderer-parity and visual-capture harness coverage;
+  Release x86 build and targeted checks pass.
+- Fixed the payment localization event subscription so every completed/cancelled
+  payment flow and every harness fixture releases its handler.
+- Submitted one production-code pin-2 drawer command to `EPSON TM-T60 Receipt`
+  in a fresh isolated evidence root, outside the authenticated settings UI. The
+  call returned successfully; pre/post queue observations were `Normal`/0 jobs,
+  one log entry was retained and no `pos.db` was created. Physical opening
+  confirmation is pending; no retry was issued.
+- The external backlog is now `OPEN 2/18`: rows 17 and 18 are physical print
+  PASS; the drawer row remains `NO` physical PASS. The earlier `OPEN 0/16` entry
+  is the pre-Epson historical snapshot.
+- Implementation and automated coverage were committed as `7d1ef84` and pushed
+  to `codex/hardware-epson-tm-t60-20260717-161122`. Draft PR `#7` targets
+  `main`; no merge or auto-merge was requested.

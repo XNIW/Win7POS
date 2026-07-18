@@ -3,13 +3,13 @@
 ## Status and scope
 
 - Backlog status: `OPEN`.
-- External validation status: `DEFERRED_EXTERNAL_VALIDATION`.
+- External validation status: `PARTIAL_PHYSICAL_PASS`.
 - Software merge authorization: `APPROVED_BY_PROJECT_OWNER`.
 - Production/hardware certification: `OPEN` and `NOT_YET_CERTIFIED`.
 
-No item in this backlog is declared PASS. Every item is non-blocking for the
-owner-authorized software merge and remains mandatory before production or
-hardware certification.
+Rows 17 and 18 are the only rows declared physically PASS. Every other open
+item is non-blocking for the owner-authorized software merge and remains
+mandatory before production or full hardware certification.
 
 | # | External validation item | Status | PASS declared | Software merge gate | Production/hardware certification |
 | ---: | --- | --- | --- | --- | --- |
@@ -27,9 +27,19 @@ hardware certification.
 | 12 | Customer display fisico. | `DEFERRED_EXTERNAL_VALIDATION` | `NO` | `NON_BLOCKING_OWNER_AUTHORIZED` | `REQUIRED_BEFORE_CERTIFICATION` |
 | 13 | Scanner. | `DEFERRED_EXTERNAL_VALIDATION` | `NO` | `NON_BLOCKING_OWNER_AUTHORIZED` | `REQUIRED_BEFORE_CERTIFICATION` |
 | 14 | Xprinter. | `DEFERRED_EXTERNAL_VALIDATION` | `NO` | `NON_BLOCKING_OWNER_AUTHORIZED` | `REQUIRED_BEFORE_CERTIFICATION` |
-| 15 | Cash drawer. | `DEFERRED_EXTERNAL_VALIDATION` | `NO` | `NON_BLOCKING_OWNER_AUTHORIZED` | `REQUIRED_BEFORE_CERTIFICATION` |
+| 15 | Cash drawer. | `SOFTWARE_PULSE_SENT_ONCE_AWAITING_PHYSICAL_OBSERVATION` | `NO` | `NON_BLOCKING_OWNER_AUTHORIZED` | `REQUIRED_BEFORE_CERTIFICATION` |
 | 16 | Profili DPI e IT/EN/ES/ZH runtime. | `DEFERRED_EXTERNAL_VALIDATION` | `NO` | `NON_BLOCKING_OWNER_AUTHORIZED` | `REQUIRED_BEFORE_CERTIFICATION` |
+| 17 | Epson TM-T60 APD/Windows/Notepad 80 mm print, accents, feed and cutter. | `PASS_PHYSICAL_2026-07-17` | `YES` | `NON_BLOCKING_OWNER_AUTHORIZED` | `PARTIAL_ONLY_REMAINING_WIN7POS_DRAWER_AND_WIN7_ROWS_REQUIRED` |
+| 18 | Win7POS fictitious receipt through Epson TM-T60, full text, accents, totals and automatic cutter. | `PASS_PHYSICAL_2026-07-17` | `YES` | `NON_BLOCKING_OWNER_AUTHORIZED` | `PARTIAL_ONLY_CASH_CARD_REPRINT_FAILURE_AND_DRAWER_MATRIX_REMAIN` |
 
 Completion evidence must come from the corresponding authenticated staging or
 physical Win7/hardware execution. Static checks, synthetic fixtures, lifecycle
 harnesses, local packaging and CI evidence do not change these statuses to PASS.
+Row 17 is backed by operator-observed paper and a retained photograph. Row 18
+is backed by the operator-confirmed Win7POS fictitious receipt with complete
+content and automatic cut. Neither row closes cash/card sale, reprint,
+printer-failure, cash-drawer or physical Windows 7 validation.
+
+The successful production-code/spooler submission for row 15 is software-only
+evidence. It does not close the row without the operator's explicit physical
+observation, and no automatic retry is permitted.
