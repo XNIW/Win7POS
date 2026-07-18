@@ -71,9 +71,9 @@ No row below is marked PASS until a physical opening or non-opening is observed.
 | --- | --- | --- |
 | Cable in printer DK/DKD (not Ethernet/telephone) | OPERATOR_REPORTED_CONNECTED_BEFORE_PULSE__EXACT_DK_DKD_NOT_DOCUMENTED | The operator stated that the drawer was connected and authorized the test; the exact cable path was not independently documented. |
 | Epson utility drawer test | PENDING_PHYSICAL | One utility action, if the installed utility exposes the supported test. |
-| Production-service pin 2 (`27,112,0,25,250`) | COMMAND_SENT_ONCE_AWAITING_PHYSICAL_OBSERVATION | One direct production-code `TestCashDrawerAsync` submission returned successfully at 2026-07-17 21:36 local; one matching log entry was retained. Pre/post queue observations were `Normal`, 0 pending jobs; no `pos.db` was created. This did not exercise the authenticated Printer Settings UI. Do not retry automatically. |
+| Production-service pin 2 (`27,112,0,25,250`) | PASS_PHYSICAL_SINGLE_OPEN_2026-07-17 | One direct production-code `TestCashDrawerAsync` submission returned successfully at 2026-07-17 21:36 local; the operator later explicitly confirmed that this single pulse opened the drawer exactly once. One matching log entry was retained, pre/post queue observations were `Normal`/0, and no `pos.db` was created. This did not exercise the authenticated Printer Settings UI. No retry was sent. |
 | Printer Settings > Test drawer (authenticated UI) | PENDING_AUTHENTICATED_PHYSICAL | Permission gate, UI state/status and settings persistence remain unproven; do not use this row as authorization for another pulse. |
-| Win7POS manual pin 5 (`27,112,1,25,250`) | NOT_AUTHORIZED_UNLESS_PIN2_FAILS | At most once, only if Epson utility proves hardware and pin 2 fails. |
+| Win7POS manual pin 5 (`27,112,1,25,250`) | NOT_NEEDED_NOT_SENT | Pin 2 physically passed; pin 5 must not be sent. |
 | Cash-only QA sale | PENDING_PHYSICAL | Sale commits, receipt prints, drawer opens once. |
 | Card-only QA sale | PENDING_PHYSICAL | Receipt prints and drawer does not open. |
 | Drawer failure after committed sale | PENDING_PHYSICAL | Failure reported separately; no rollback or duplicate sale. |
@@ -94,7 +94,7 @@ No row below is marked PASS until a physical opening or non-opening is observed.
 | New strict parser / single-flight harness | PASS in the final lifecycle run: printer command policy, selection binding and cash-drawer parser all true |
 | Receipt renderer alignment | PASS; exact parity for cash, card and mixed payments, including line/cart discounts, in EN/ES/IT/ZH at 32/42 columns; shop data is frozen from preview through completed-sale output and the printer sample uses the same sale barcode path plus the no-sale marker |
 | POS footer touch geometry | PASS; Pay matches the visible tools width and edge alignment at 1280x720 and 1024x600 |
-| Manual drawer software evidence | PASS_SOFTWARE_ONLY; one production-code submission returned successfully, one matching log entry, pre/post queue observed `Normal`/0, isolated root contains no database; retained manifest hash above |
+| Manual drawer physical evidence | PASS_PHYSICAL; one production-code submission returned successfully and the operator confirmed exactly one opening; one matching log entry, pre/post queue `Normal`/0, isolated root contains no database; retained manifest hash above |
 
 The source now uses Win7 Unicode spooler APIs, bounded/cached discovery, strict
 `ESC p` parsing and task-based single-flight test actions. A malformed non-empty
@@ -102,13 +102,13 @@ drawer command cannot silently fall back to a physical pulse.
 
 ## Current classification
 
-`IN_PROGRESS_WIN7POS_PRINT_PASS_DRAWER_OBSERVATION_PENDING`
+`IN_PROGRESS_WIN7POS_PRINT_AND_MANUAL_DRAWER_PASS_TRANSACTIONAL_MATRIX_PENDING`
 
 Windows/APD/Notepad and the Win7POS fictitious receipt are physically proven.
-One production-service drawer command was submitted safely, but it is not a physical
-PASS until the operator confirms exactly one opening. Full
-`TM_T60_PRINT_AND_DRAWER_PASS` still requires the cash/card sale, reprint,
-failure/disconnect and physical Windows 7 rows above.
+The one production-service pin-2 command is also physically proven: the operator
+confirmed exactly one opening and no retry was sent. Full
+`TM_T60_PRINT_AND_DRAWER_PASS` still requires the authenticated settings,
+cash/card sale, reprint, failure/disconnect and physical Windows 7 rows above.
 
 ## Publication
 

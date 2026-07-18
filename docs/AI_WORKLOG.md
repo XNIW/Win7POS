@@ -520,10 +520,12 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Submitted one production-code pin-2 drawer command to `EPSON TM-T60 Receipt`
   in a fresh isolated evidence root, outside the authenticated settings UI. The
   call returned successfully; pre/post queue observations were `Normal`/0 jobs,
-  one log entry was retained and no `pos.db` was created. Physical opening
-  confirmation is pending; no retry was issued.
-- The external backlog is now `OPEN 2/18`: rows 17 and 18 are physical print
-  PASS; the drawer row remains `NO` physical PASS. The earlier `OPEN 0/16` entry
+  one log entry was retained and no `pos.db` was created. The operator later
+  explicitly confirmed exactly one physical opening; no retry or pin-5 pulse was
+  issued.
+- The external backlog is now `OPEN 3/18`: row 15 is the single manual pin-2
+  drawer PASS and rows 17/18 are physical print PASS. Transactional cash/card,
+  reprint/failure and Windows 7 rows remain open. The earlier `OPEN 0/16` entry
   is the pre-Epson historical snapshot.
 - Implementation and automated coverage were committed as `7d1ef84` and pushed
   to `codex/hardware-epson-tm-t60-20260717-161122`. Draft PR `#7` targets

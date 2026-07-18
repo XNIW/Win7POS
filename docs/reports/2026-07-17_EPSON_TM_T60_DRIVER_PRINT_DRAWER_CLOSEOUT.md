@@ -50,7 +50,8 @@ and redacted documentation; production data was not opened.
   `TestCashDrawerAsync`, outside the authenticated Printer Settings UI. It
   returned successfully; one matching log entry was retained, pre/post queue
   observations were normal/empty, and the isolated root contains no database.
-  Physical drawer PASS still awaits operator observation.
+  The operator later explicitly confirmed that this single pulse opened the
+  drawer exactly once. No retry or pin-5 pulse was sent.
 
 ## Review findings resolved
 
@@ -82,7 +83,7 @@ leak. Focused gates and the complete 31-gate set pass.
 | Receipt rendering alignment | PASS: cash/card/mixed plus line/cart discounts, EN/ES/IT/ZH, 32/42 columns; payment preview equals frozen-shop production output and settings test adds only the explicit no-sale marker/barcode identity |
 | POS footer geometry | PASS at 1280x720 and 1024x600; Pay width/edges equal the visible tools panel |
 | Printer Settings presentation | PASS_QA_RENDERED/PASS_AUTOMATED; preview and main settings visible, advanced/drawer/detected-printer sections progressively disclosed; authenticated persistence remains open |
-| Manual drawer command | PASS_SOFTWARE_ONLY: one production-code submission returned successfully, one matching log entry, pre/post `Normal`/0, no `pos.db`; physical observation pending |
+| Manual drawer command | PASS_PHYSICAL: one production-code submission returned successfully and the operator confirmed exactly one opening; one matching log entry, pre/post `Normal`/0, no `pos.db`, no retry |
 
 The first sandboxed Core/Data run reported four `UnauthorizedAccessException`
 failures in `File.Replace`. The identical run outside the filesystem sandbox
@@ -98,14 +99,13 @@ as PASS:
 - authenticated settings persistence across a real operator session;
 - cash receipt, card receipt and reprint from committed QA sales;
 - printer-off/paused behavior after sale commit;
-- operator confirmation that the submitted production-service pin-2 pulse opened
-  exactly once; the separate authenticated Printer Settings UI action, cash-only
-  open, card-only non-open, failure and
+- the separate authenticated Printer Settings UI action, cash-only open,
+  card-only non-open, failure and
   disconnected-drawer behavior;
 - a physical Windows 7 SP1 run.
 
 Until those rows close, the accurate classification is
-`IN_PROGRESS_WIN7POS_PRINT_PASS_DRAWER_OBSERVATION_PENDING`, not
+`IN_PROGRESS_WIN7POS_PRINT_AND_MANUAL_DRAWER_PASS_TRANSACTIONAL_MATRIX_PENDING`, not
 `TM_T60_PRINT_AND_DRAWER_PASS`.
 
 ## Publication
@@ -113,5 +113,5 @@ Until those rows close, the accurate classification is
 Implementation commit `7d1ef84` was pushed on
 `codex/hardware-epson-tm-t60-20260717-161122`. Draft pull request
 <https://github.com/XNIW/Win7POS/pull/7> targets `main`; no merge or auto-merge
-was requested. The open drawer and Windows 7 rows remain explicit review
+was requested. The open transactional-drawer and Windows 7 rows remain explicit review
 constraints and must not be represented as PASS.
