@@ -400,6 +400,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var dailyCloseReceiptPass = VerifyDailyCloseReceiptWidthAndParity();
                     var receiptArchiveRemovalPass = VerifyReceiptArchiveRemoval();
                     var salesRegisterRapidSelectionPass = await VerifySalesRegisterRapidSelectionAsync().ConfigureAwait(true);
+                    var dailyHistoryPreviewFencingPass = await VerifyDailyHistoryPreviewFencingAsync().ConfigureAwait(true);
                     var samples = new List<LifecycleSample>();
                     var weakWindows = new List<LifecycleWindowReference>();
                     for (var cycle = 1; cycle <= 20; cycle++)
@@ -495,10 +496,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                  printerTestReceiptPass && receiptShopSnapshotPass &&
                                  activeDrawerSettingsValidationPass && dailyCloseReceiptPass &&
                                  receiptArchiveRemovalPass && salesRegisterRapidSelectionPass &&
+                                 dailyHistoryPreviewFencingPass &&
                                  !monotonicPrivateBytes && !monotonicHandles;
                     return string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0}: cycles=20; dailyReportCycles=20; salesRegisterCycles=20; printerSettingsCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}; receiptShopSnapshotPass={22}; activeDrawerSettingsValidationPass={23}; dailyCloseReceiptPass={24}; receiptArchiveRemovalPass={25}; salesRegisterRapidSelectionPass={26}",
+                        "{0}: cycles=20; dailyReportCycles=20; salesRegisterCycles=20; printerSettingsCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}; receiptShopSnapshotPass={22}; activeDrawerSettingsValidationPass={23}; dailyCloseReceiptPass={24}; receiptArchiveRemovalPass={25}; salesRegisterRapidSelectionPass={26}; dailyHistoryPreviewFencingPass={27}",
                         passed ? "PASS" : "FAIL",
                         residual,
                         residualTypes,
@@ -525,7 +527,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         activeDrawerSettingsValidationPass,
                         dailyCloseReceiptPass,
                         receiptArchiveRemovalPass,
-                        salesRegisterRapidSelectionPass);
+                        salesRegisterRapidSelectionPass,
+                        dailyHistoryPreviewFencingPass);
                 }
                 finally
                 {
@@ -1682,6 +1685,135 @@ VALUES(@saleId, NULL, 'QA-SNAPSHOT-LINE', 'Snapshot product', 1, 1250, 1250);",
                 finally
                 {
                     vm.Dispose();
+                }
+            }
+
+            private static async Task<bool> VerifyDailyHistoryPreviewFencingAsync()
+            {
+                var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+                var service = new PosWorkflowService();
+                var vm = new DailyReportViewModel(service);
+                var prefix = "QA-DAILY-FENCE-" + Guid.NewGuid().ToString("N");
+                var dayA = DateTime.Today.AddYears(-3).Date;
+                var dayB = dayA.AddDays(1);
+                try
+                {
+                    using (var conn = factory.Open())
+                    {
+                        await conn.ExecuteAsync(@"
+INSERT INTO sales(code, createdAt, kind, total, paidCash, paidCard, change, pdf_printed)
+VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
+                            new[]
+                            {
+                                new
+                                {
+                                    code = prefix + "-A-CASH",
+                                    createdAt = new DateTimeOffset(dayA.AddHours(10)).ToUnixTimeMilliseconds(),
+                                    total = 1111L,
+                                    paidCash = 1111L,
+                                    paidCard = 0L,
+                                    pdfPrinted = 0
+                                },
+                                new
+                                {
+                                    code = prefix + "-A-CARD-PRINTED",
+                                    createdAt = new DateTimeOffset(dayA.AddHours(11)).ToUnixTimeMilliseconds(),
+                                    total = 2222L,
+                                    paidCash = 0L,
+                                    paidCard = 2222L,
+                                    pdfPrinted = 1
+                                },
+                                new
+                                {
+                                    code = prefix + "-B-CASH",
+                                    createdAt = new DateTimeOffset(dayB.AddHours(12)).ToUnixTimeMilliseconds(),
+                                    total = 4444L,
+                                    paidCash = 4444L,
+                                    paidCard = 0L,
+                                    pdfPrinted = 0
+                                }
+                            }).ConfigureAwait(true);
+                    }
+
+                    vm.SelectedTabIndex = 1;
+                    vm.HistoryFromText = dayA.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    vm.HistoryToText = dayB.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                    vm.LoadHistoryCommand.Execute(null);
+                    for (var attempt = 0; attempt < 160 && vm.IsBusy; attempt++)
+                        await Task.Delay(25).ConfigureAwait(true);
+                    if (vm.IsBusy || vm.HistoryRows.Count != 2) return false;
+
+                    vm.ClearMarkedHistoryRowsCommand.Execute(null);
+                    if (vm.MarkedCount != 0) return false;
+
+                    var rowA = vm.HistoryRows.SingleOrDefault(row => row.Date == dayA);
+                    var rowB = vm.HistoryRows.SingleOrDefault(row => row.Date == dayB);
+                    if (rowA == null || rowB == null) return false;
+
+                    vm.SelectedHistoryRow = rowB;
+                    for (var attempt = 0; attempt < 160 && vm.IsHistoryPreviewLoading; attempt++)
+                        await Task.Delay(25).ConfigureAwait(true);
+                    var previousPreview = vm.SummaryReceiptPreview;
+                    if (vm.IsHistoryPreviewLoading || string.IsNullOrWhiteSpace(previousPreview)) return false;
+
+                    vm.SelectedHistoryRow = rowA;
+                    var immediateFencePass = vm.IsHistoryPreviewLoading
+                        ? string.IsNullOrEmpty(vm.SummaryReceiptPreview) &&
+                          !vm.PrintSelectedHistoryCommand.CanExecute(null)
+                        : !string.IsNullOrWhiteSpace(vm.SummaryReceiptPreview) &&
+                          !string.Equals(vm.SummaryReceiptPreview, previousPreview, StringComparison.Ordinal);
+                    if (!immediateFencePass) return false;
+
+                    for (var attempt = 0; attempt < 160 && vm.IsHistoryPreviewLoading; attempt++)
+                        await Task.Delay(25).ConfigureAwait(true);
+
+                    var selectedPreviewPass = !vm.IsHistoryPreviewLoading &&
+                                              rowA.SalesCount == 2 &&
+                                              rowA.NetAmount == 3333L &&
+                                              rowA.CashAmount == 1111L &&
+                                              rowA.CardAmount == 2222L &&
+                                              !string.IsNullOrWhiteSpace(vm.SummaryReceiptPreview) &&
+                                              !string.Equals(vm.SummaryReceiptPreview, previousPreview, StringComparison.Ordinal) &&
+                                              vm.PrintSelectedHistoryCommand.CanExecute(null);
+                    if (!selectedPreviewPass) return false;
+
+                    rowA.IsMarked = true;
+                    var markedFencePass = vm.IsMarkedPreviewLoading
+                        ? string.IsNullOrEmpty(vm.SingleMarkedReceiptPreview) &&
+                          !vm.PrintSelectedHistoryCommand.CanExecute(null)
+                        : !string.IsNullOrWhiteSpace(vm.SingleMarkedReceiptPreview);
+                    if (!markedFencePass) return false;
+                    for (var attempt = 0; attempt < 160 && vm.IsMarkedPreviewLoading; attempt++)
+                        await Task.Delay(25).ConfigureAwait(true);
+                    var markedAPreview = vm.SingleMarkedReceiptPreview;
+                    if (vm.IsMarkedPreviewLoading || string.IsNullOrWhiteSpace(markedAPreview)) return false;
+
+                    rowA.IsMarked = false;
+                    rowB.IsMarked = true;
+                    var switchedMarkedFencePass = vm.IsMarkedPreviewLoading
+                        ? string.IsNullOrEmpty(vm.SingleMarkedReceiptPreview) &&
+                          !vm.PrintSelectedHistoryCommand.CanExecute(null)
+                        : !string.IsNullOrWhiteSpace(vm.SingleMarkedReceiptPreview) &&
+                          !string.Equals(vm.SingleMarkedReceiptPreview, markedAPreview, StringComparison.Ordinal);
+                    if (!switchedMarkedFencePass) return false;
+                    for (var attempt = 0; attempt < 160 && vm.IsMarkedPreviewLoading; attempt++)
+                        await Task.Delay(25).ConfigureAwait(true);
+
+                    return !vm.IsMarkedPreviewLoading &&
+                           vm.MarkedCount == 1 &&
+                           !string.IsNullOrWhiteSpace(vm.SingleMarkedReceiptPreview) &&
+                           !string.Equals(vm.SingleMarkedReceiptPreview, markedAPreview, StringComparison.Ordinal) &&
+                           vm.PrintSelectedHistoryCommand.CanExecute(null);
+                }
+                finally
+                {
+                    vm.Dispose();
+                    using (var conn = factory.Open())
+                    {
+                        await conn.ExecuteAsync(
+                            "DELETE FROM sales WHERE code LIKE @prefix;",
+                            new { prefix = prefix + "%" }).ConfigureAwait(true);
+                    }
                 }
             }
 

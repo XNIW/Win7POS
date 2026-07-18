@@ -46,6 +46,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _useReceipt42 = true;
         private CancellationTokenSource _historyPreviewCts;
         private int _historyPreviewVersion;
+        private bool _isHistoryPreviewLoading;
+        private CancellationTokenSource _markedPreviewCts;
+        private int _markedPreviewVersion;
+        private bool _isMarkedPreviewLoading;
 
         private long _periodNetAmount;
         private long _periodGrossAmount;
@@ -169,6 +173,30 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _summaryReceiptPreview = value ?? string.Empty; OnPropertyChanged(); OnPropertyChanged(nameof(PrintSummaryToolTip)); RaiseCanExecuteChanged(); }
         }
 
+        public bool IsHistoryPreviewLoading
+        {
+            get => _isHistoryPreviewLoading;
+            private set
+            {
+                if (_isHistoryPreviewLoading == value) return;
+                _isHistoryPreviewLoading = value;
+                OnPropertyChanged();
+                RaiseCanExecuteChanged();
+            }
+        }
+
+        public bool IsMarkedPreviewLoading
+        {
+            get => _isMarkedPreviewLoading;
+            private set
+            {
+                if (_isMarkedPreviewLoading == value) return;
+                _isMarkedPreviewLoading = value;
+                OnPropertyChanged();
+                RaiseCanExecuteChanged();
+            }
+        }
+
         /// <summary>Tooltip pulsante Stampa Giornaliero: guida quando disabilitato.</summary>
         public string PrintSummaryToolTip => !IsBusy && !string.IsNullOrEmpty(SummaryReceiptPreview) ? PosLocalization.T("reports.printReadyTooltip") : PosLocalization.T("reports.printLoadFirstTooltip");
 
@@ -208,6 +236,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 OnPropertyChanged(nameof(ShowPlaceholder));
                 OnPropertyChanged(nameof(ShowSelectedRowDetail));
                 OnPropertyChanged(nameof(ShowReceiptPreview));
+                SummaryReceiptPreview = string.Empty;
                 _ = LoadPreviewForSelectedHistoryAsync();
                 RaiseCanExecuteChanged();
                 (ExportCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
@@ -582,8 +611,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (SelectedTabIndex == 0)
                 return !string.IsNullOrEmpty(SummaryReceiptPreview);
-            if (MarkedCount >= 1) return true;
-            return SelectedHistoryRow != null;
+            if (MarkedCount >= 2) return true;
+            if (MarkedCount == 1)
+                return !IsMarkedPreviewLoading &&
+                       !string.IsNullOrEmpty(SingleMarkedReceiptPreview);
+            return SelectedHistoryRow != null &&
+                   !IsHistoryPreviewLoading &&
+                   !string.IsNullOrEmpty(SummaryReceiptPreview);
         }
 
         private async Task PrintStampaRiepilogoAsync()
@@ -599,19 +633,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             else if (MarkedCount == 1)
             {
-                HistoryRow marked = null;
-                foreach (var row in HistoryRows)
-                    if (row.IsMarked) { marked = row; break; }
-                if (marked != null)
-                {
-                    var summary = await _service.GetDailySummaryAsync(marked.Date, IsUnlocked).ConfigureAwait(true);
-                    var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
-                    textToPrint = Pos.DailyCloseReceiptTextRenderer.Render(
-                        marked.Date,
-                        summary,
-                        shop ?? new ReceiptShopInfo(),
-                        _useReceipt42);
-                }
+                textToPrint = SingleMarkedReceiptPreview;
             }
             else if (SelectedHistoryRow != null)
             {
@@ -684,8 +706,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 var includeFiscalPrinted = true;
                 var summaries = await _service.GetDailySummariesAsync(from, to, includeFiscalPrinted).ConfigureAwait(true);
+                CancelMarkedPreviewLoad();
+                SingleMarkedReceiptPreview = string.Empty;
                 foreach (var row in HistoryRows)
                     row.PropertyChanged -= OnHistoryRowPropertyChanged;
+                SelectedHistoryRow = null;
                 HistoryRows.Clear();
                 HistoryRowCount = 0;
                 PeriodNetAmount = 0;
@@ -759,6 +784,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>Reset completo stato Storico quando si torna al tab Giornaliero.</summary>
         private void ResetHistoryState()
         {
+            CancelHistoryPreviewLoad();
+            CancelMarkedPreviewLoad();
+            IsHistoryPreviewLoading = false;
+            IsMarkedPreviewLoading = false;
+            SummaryReceiptPreview = string.Empty;
+            SingleMarkedReceiptPreview = string.Empty;
             foreach (var row in HistoryRows)
                 row.PropertyChanged -= OnHistoryRowPropertyChanged;
             HistoryRows.Clear();
@@ -827,7 +858,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (count == 1)
                 _ = LoadPreviewForSingleMarkedAsync();
             else
+            {
+                CancelMarkedPreviewLoad();
                 SingleMarkedReceiptPreview = string.Empty;
+            }
             RefreshHeaderSummary();
         }
 
@@ -975,15 +1009,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var row = SelectedHistoryRow;
             if (row == null || _disposed)
             {
+                IsHistoryPreviewLoading = false;
                 SummaryReceiptPreview = string.Empty;
                 return;
             }
             var cts = new CancellationTokenSource();
             _historyPreviewCts = cts;
             var version = ++_historyPreviewVersion;
+            IsHistoryPreviewLoading = true;
             try
             {
-                var summary = await _service.GetDailySummaryAsync(row.Date, IsUnlocked).ConfigureAwait(true);
+                var summary = await _service.GetDailySummaryAsync(row.Date, includeFiscalPrinted: true).ConfigureAwait(true);
                 cts.Token.ThrowIfCancellationRequested();
                 if (!IsCurrentHistoryPreview(row, version)) return;
                 SalesCount = summary.SalesCount;
@@ -1000,7 +1036,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (OperationCanceledException) { }
             catch { if (IsCurrentHistoryPreview(row, version)) SummaryReceiptPreview = ""; }
-            finally { if (IsCurrentHistoryPreview(row, version)) RefreshHeaderSummary(); }
+            finally
+            {
+                if (IsCurrentHistoryPreview(row, version))
+                {
+                    IsHistoryPreviewLoading = false;
+                    RefreshHeaderSummary();
+                }
+            }
         }
 
         private bool IsCurrentHistoryPreview(HistoryRow row, int version)
@@ -1010,26 +1053,72 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             var cts = _historyPreviewCts;
             _historyPreviewCts = null;
-            if (cts == null) return;
-            try { cts.Cancel(); } catch { }
-            cts.Dispose();
+            if (cts != null)
+            {
+                try { cts.Cancel(); } catch { }
+                cts.Dispose();
+            }
+            IsHistoryPreviewLoading = false;
         }
 
         private async Task LoadPreviewForSingleMarkedAsync()
         {
+            CancelMarkedPreviewLoad();
             var row = HistoryRows.FirstOrDefault(r => r.IsMarked);
-            if (row == null) { SingleMarkedReceiptPreview = ""; return; }
+            if (row == null || _disposed)
+            {
+                IsMarkedPreviewLoading = false;
+                SingleMarkedReceiptPreview = string.Empty;
+                return;
+            }
+            var cts = new CancellationTokenSource();
+            _markedPreviewCts = cts;
+            var version = ++_markedPreviewVersion;
+            IsMarkedPreviewLoading = true;
             try
             {
-                var summary = await _service.GetDailySummaryAsync(row.Date, IsUnlocked).ConfigureAwait(true);
+                var summary = await _service.GetDailySummaryAsync(row.Date, includeFiscalPrinted: true).ConfigureAwait(true);
+                cts.Token.ThrowIfCancellationRequested();
+                if (!IsCurrentMarkedPreview(row, version)) return;
                 var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
+                cts.Token.ThrowIfCancellationRequested();
+                if (!IsCurrentMarkedPreview(row, version)) return;
                 SingleMarkedReceiptPreview = Pos.DailyCloseReceiptTextRenderer.Render(
                     row.Date,
                     summary,
                     shop ?? new ReceiptShopInfo(),
                     _useReceipt42);
             }
-            catch { SingleMarkedReceiptPreview = ""; }
+            catch (OperationCanceledException) { }
+            catch
+            {
+                if (IsCurrentMarkedPreview(row, version))
+                    SingleMarkedReceiptPreview = string.Empty;
+            }
+            finally
+            {
+                if (IsCurrentMarkedPreview(row, version))
+                    IsMarkedPreviewLoading = false;
+            }
+        }
+
+        private bool IsCurrentMarkedPreview(HistoryRow row, int version)
+        {
+            if (_disposed || version != _markedPreviewVersion || MarkedCount != 1)
+                return false;
+            return ReferenceEquals(HistoryRows.FirstOrDefault(candidate => candidate.IsMarked), row);
+        }
+
+        private void CancelMarkedPreviewLoad()
+        {
+            var cts = _markedPreviewCts;
+            _markedPreviewCts = null;
+            if (cts != null)
+            {
+                try { cts.Cancel(); } catch { }
+                cts.Dispose();
+            }
+            IsMarkedPreviewLoading = false;
         }
 
         private static DateTime StartOfWeek(DateTime d)
@@ -1175,7 +1264,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
             if (_disposed) return;
             _disposed = true;
             CancelHistoryPreviewLoad();
+            CancelMarkedPreviewLoad();
             PosLocalization.Current.LanguageChanged -= OnLanguageChanged;
+            IsHistoryPreviewLoading = false;
+            IsMarkedPreviewLoading = false;
             SummaryReceiptPreview = string.Empty;
             SingleMarkedReceiptPreview = string.Empty;
         }
