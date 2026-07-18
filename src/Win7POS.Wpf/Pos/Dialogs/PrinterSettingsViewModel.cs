@@ -24,8 +24,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private bool _autoPrint;
         private bool _allowWindowsDefault;
         private bool _allowVirtualPrinters;
-        private bool _saveCopyToFile;
-        private string _outputDirectory = string.Empty;
         private string _testReceiptPreview = string.Empty;
         private string _testReceiptPreviewFirstLine = string.Empty;
         private string _testReceiptPreviewRest = string.Empty;
@@ -116,18 +114,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 OnPropertyChanged(nameof(TestPrintStatusMessage));
                 RaiseCanExecuteChanged();
             }
-        }
-
-        public bool SaveCopyToFile
-        {
-            get => _saveCopyToFile;
-            set { _saveCopyToFile = value; OnPropertyChanged(); }
-        }
-
-        public string OutputDirectory
-        {
-            get => _outputDirectory;
-            set { _outputDirectory = value ?? string.Empty; OnPropertyChanged(); }
         }
 
         public string TestReceiptPreview

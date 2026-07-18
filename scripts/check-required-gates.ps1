@@ -38,7 +38,8 @@ $sourceGates = @(
     "check-win7pos-restore-guard.ps1",
     "check-pos-start-of-day-sync.ps1",
     "check-pos-printer-cashdrawer-safety.ps1",
-    "check-pos-printer-driver-discovery.ps1"
+    "check-pos-printer-driver-discovery.ps1",
+    "check-pos-receipt-surface-consistency.ps1"
 )
 
 $releaseOnlyGates = @(

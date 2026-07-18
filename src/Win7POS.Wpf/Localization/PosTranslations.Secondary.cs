@@ -117,12 +117,28 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("reports.receiptTitle", "CASH CLOSE", "CIERRE DE CAJA", "CHIUSURA CASSA", "收银日结");
             yield return new TranslationEntry("reports.receiptSummaryDays", "SUMMARY {0} DAYS", "RESUMEN {0} DIAS", "RIEPILOGO {0} GG", "汇总 {0} 天");
             yield return new TranslationEntry("reports.receiptNet", "Net", "Neto", "Net", "净额");
+            yield return new TranslationEntry("reports.receiptBusinessDate", "Business date", "Fecha comercial", "Data contabile", "营业日期");
+            yield return new TranslationEntry("reports.receiptPeriod", "Period", "Periodo", "Periodo", "期间");
+            yield return new TranslationEntry("reports.receiptTax", "Tax", "Impuesto", "Imposta", "税额");
+            yield return new TranslationEntry("reports.receiptMixed", "Mixed payments", "Pagos mixtos", "Pagamenti misti", "混合付款");
+            yield return new TranslationEntry("reports.receiptExpectedCash", "Expected cash", "Efectivo esperado", "Contanti attesi", "应有现金");
+            yield return new TranslationEntry("reports.receiptOpening", "Opening amount", "Importe inicial", "Fondo iniziale", "期初金额");
+            yield return new TranslationEntry("reports.receiptClosing", "Closing amount", "Importe final", "Importo chiusura", "期末金额");
+            yield return new TranslationEntry("reports.receiptDifference", "Difference", "Diferencia", "Differenza", "差额");
+            yield return new TranslationEntry("reports.receiptPendingSync", "Pending sync", "Sync pendiente", "Sync in attesa", "待同步");
+            yield return new TranslationEntry("reports.receiptRetrySync", "Retry sync", "Sync para reintentar", "Sync da ritentare", "重试同步");
+            yield return new TranslationEntry("reports.receiptBlockedSync", "Blocked sync", "Sync bloqueada", "Sync bloccata", "同步受阻");
+            yield return new TranslationEntry("reports.receiptGenerated", "Generated", "Generado", "Generato", "生成时间");
 
             yield return new TranslationEntry("sales.register.title", "Sales register", "Registro de ventas", "Registro vendite", "销售登记");
             yield return new TranslationEntry("sales.filter7Days", "7 days", "7 dias", "7 giorni", "7 天");
             yield return new TranslationEntry("sales.period", "Period", "Periodo", "Periodo", "期间");
             yield return new TranslationEntry("sales.codeTooltip", "Search by code (Enter reloads)", "Buscar por codigo (Enter recarga)", "Cerca per codice (Invio ricarica)", "按代码搜索（Enter 重新加载）");
             yield return new TranslationEntry("sales.detailTitle", "Sale detail", "Detalle venta", "Dettaglio vendita", "销售详情");
+            yield return new TranslationEntry("sales.previewTab", "Receipt preview", "Vista previa", "Anteprima scontrino", "小票预览");
+            yield return new TranslationEntry("sales.itemsTab", "Items", "Articulos", "Articoli", "商品");
+            yield return new TranslationEntry("sales.previewLoading", "Loading receipt...", "Cargando boleta...", "Caricamento scontrino...", "正在加载小票…");
+            yield return new TranslationEntry("sales.previewEmpty", "Select a sale to preview and reprint its persisted receipt.", "Selecciona una venta para previsualizar y reimprimir su boleta guardada.", "Seleziona una vendita per vedere e ristampare lo scontrino memorizzato.", "选择一笔销售以预览并重打印其已保存的小票。");
             yield return new TranslationEntry("sales.unlockTooltip", "Unlock register admin functions", "Desbloquear funciones admin del registro", "Sblocca funzioni admin del registro", "解锁销售登记管理员功能");
             yield return new TranslationEntry("sales.refundVoid", "Return / Void", "Devolucion / Anulacion", "Reso / Storno", "退货 / 作废");
             yield return new TranslationEntry("sales.searchStatus", "{0} sales (code search).", "{0} ventas (busqueda codigo).", "{0} vendite (ricerca codice).", "{0} 笔销售（代码搜索）。");
@@ -183,9 +199,7 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("printer.copies", "Copies:", "Copias:", "Copie:", "份数：");
             yield return new TranslationEntry("printer.copiesTooltip", "Number of copies for each receipt", "Numero de copias por boleta", "Numero di copie per ogni scontrino", "每张小票打印份数");
             yield return new TranslationEntry("printer.autoPrint", "Auto-print after sale", "Impresion automatica despues de venta", "Stampa automatica dopo la vendita", "销售后自动打印");
-            yield return new TranslationEntry("printer.saveCopy", "Save receipt copy to file", "Guardar copia de boleta en archivo", "Salva copia scontrino su file", "保存小票副本到文件");
-            yield return new TranslationEntry("printer.outputDirectory", "Output folder:", "Carpeta de salida:", "Cartella di output:", "输出文件夹：");
-            yield return new TranslationEntry("printer.outputDirectoryTooltip", "Folder where receipt copies are saved", "Carpeta donde guardar copias de boletas", "Cartella in cui salvare le copie degli scontrini", "保存小票副本的文件夹");
+            yield return new TranslationEntry("printer.receiptHistoryStorageInfo", "Receipts are stored in the sales history and can be previewed or reprinted without creating image copies.", "Las boletas se guardan en el historial de ventas y se pueden previsualizar o reimprimir sin crear copias de imagen.", "Gli scontrini sono conservati nello storico vendite e possono essere visualizzati o ristampati senza creare copie immagine.", "小票保存在销售历史中，可随时预览或重打印，不会创建图片副本。");
             yield return new TranslationEntry("printer.cashDrawer", "Cash drawer", "Caja", "Cassetto portamonete", "钱箱");
             yield return new TranslationEntry("printer.cashDrawerEnabled", "Open drawer enabled", "Abrir caja habilitado", "Apri cassa abilitato", "启用开钱箱");
             yield return new TranslationEntry("printer.drawerModePrinterKick", "Open through receipt printer", "Abrir por impresora de boleta", "Apri tramite stampante ricevuta", "通过小票打印机打开");
@@ -224,7 +238,6 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("printer.drawerOpened", "Cash drawer opened.", "Caja abierta.", "Cassetto aperto.", "钱箱已打开。");
             yield return new TranslationEntry("printer.drawerOpenError", "Cash drawer open error: {0}", "Error abriendo caja: {0}", "Errore apertura cassetto: {0}", "打开钱箱错误：{0}");
             yield return new TranslationEntry("printer.receiptPrinted", "Receipt printed.", "Boleta impresa.", "Ricevuta stampata.", "小票已打印。");
-            yield return new TranslationEntry("printer.receiptPrintedSaved", "Receipt printed. Copy saved: {0}", "Boleta impresa. Copia guardada: {0}", "Ricevuta stampata. Copia salvata: {0}", "小票已打印。副本已保存：{0}");
             yield return new TranslationEntry("printer.reprintReceipt", "Reprint receipt", "Reimprimir boleta", "Ristampa ricevuta", "重新打印小票");
             yield return new TranslationEntry("printer.printReceipt", "Print receipt", "Imprimir boleta", "Stampa ricevuta", "打印小票");
             yield return new TranslationEntry("printer.receiptTextEmpty", "Receipt text is empty.", "El texto de la boleta esta vacio.", "Il testo della ricevuta e vuoto.", "小票文本为空。");

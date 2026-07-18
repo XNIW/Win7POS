@@ -1218,8 +1218,6 @@ namespace Win7POS.Wpf.Pos
                 AutoPrint = _printerSettings.AutoPrint,
                 AllowWindowsDefault = _printerSettings.AllowWindowsDefault,
                 AllowVirtualPrinters = _printerSettings.AllowVirtualPrinters,
-                SaveCopyToFile = _printerSettings.SaveCopyToFile,
-                OutputDirectory = _printerSettings.OutputDirectory,
                 CashDrawerCommand = _printerSettings.CashDrawerCommand,
                 CashDrawerEnabled = _printerSettings.CashDrawerEnabled,
                 CashDrawerMode = _printerSettings.CashDrawerMode,
@@ -1387,10 +1385,6 @@ namespace Win7POS.Wpf.Pos
                 AutoPrint = vm.AutoPrint,
                 AllowWindowsDefault = vm.AllowWindowsDefault,
                 AllowVirtualPrinters = vm.AllowVirtualPrinters,
-                SaveCopyToFile = vm.SaveCopyToFile,
-                OutputDirectory = string.IsNullOrWhiteSpace(vm.OutputDirectory)
-                    ? Path.Combine(Win7POS.Core.AppPaths.DataDirectory, "receipts")
-                    : vm.OutputDirectory,
                 CashDrawerCommand = vm.CashDrawerCommand,
                 CashDrawerEnabled = vm.CashDrawerEnabled,
                 CashDrawerMode = vm.CashDrawerEnabled ? "printer_kick" : "disabled",
@@ -1414,11 +1408,7 @@ namespace Win7POS.Wpf.Pos
                     saleCode,
                     automaticAfterSale: automaticAfterSale,
                     explicitUserAction: explicitUserAction).ConfigureAwait(true);
-                SetStatus(
-                    result.SavedCopy
-                        ? PosLocalization.Current.Format("printer.receiptPrintedSaved", result.OutputPath)
-                        : PosLocalization.Current.Text("printer.receiptPrinted"),
-                    PosNoticeSeverity.Success);
+                SetStatus(PosLocalization.Current.Text("printer.receiptPrinted"), PosNoticeSeverity.Success);
                 return true;
             }
             catch (Exception ex)

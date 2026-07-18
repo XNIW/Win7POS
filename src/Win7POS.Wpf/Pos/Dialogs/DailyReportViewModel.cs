@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Win7POS.Core.Receipt;
@@ -42,6 +43,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>Sorgente unica per i 6 KPI in alto: Giornaliero, riga selezionata in Storico, o somma righe spuntate.</summary>
         private HeaderSummary _currentHeaderSummary;
         private bool _disposed;
+        private bool _useReceipt42 = true;
+        private CancellationTokenSource _historyPreviewCts;
+        private int _historyPreviewVersion;
 
         private long _periodNetAmount;
         private long _periodGrossAmount;
@@ -379,6 +383,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 var includeFiscalPrinted = true;
+                _useReceipt42 = await _service.GetUseReceipt42Async().ConfigureAwait(true) ?? true;
                 DailySalesSummary summary = await _service.GetDailySummaryAsync(date, includeFiscalPrinted).ConfigureAwait(true);
                 SalesCount = summary.SalesCount;
                 TotalAmount = summary.TotalAmount;
@@ -547,22 +552,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void UpdateSummaryReceiptPreview(DateTime date, DailySalesSummary summary, ReceiptShopInfo shop = null)
         {
-            var model = new DailyTakingsReceiptModel
-            {
-                Date = date,
-                SalesCount = summary.SalesCount,
-                TotalAmount = summary.TotalAmount,
-                CashAmount = summary.CashAmount,
-                CardAmount = summary.CardAmount,
-                GrossSalesAmount = summary.GrossSalesAmount,
-                RefundsAmount = summary.RefundsAmount,
-                NetAmount = summary.NetAmount
-            };
-            var lines = DailyTakingsReceiptFormatter.Format(
-                model,
+            SummaryReceiptPreview = Pos.DailyCloseReceiptTextRenderer.Render(
+                date,
+                summary,
                 shop ?? new ReceiptShopInfo(),
-                PosLocalization.CreateReceiptOptions(false, "reports.closeTitle"));
-            SummaryReceiptPreview = string.Join(Environment.NewLine, lines);
+                _useReceipt42);
         }
 
         private async Task PrintSummaryAsync()
@@ -571,7 +565,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             IsBusy = true;
             try
             {
-                var result = await _service.PrintReceiptTextAsync(SummaryReceiptPreview, true, "DAILY_SUMMARY_" + DateTime.Now.ToString("yyyyMMdd_HHmm", CultureInfo.InvariantCulture)).ConfigureAwait(true);
+                await _service.PrintReceiptTextAsync(SummaryReceiptPreview, _useReceipt42, "DAILY_SUMMARY_" + DateTime.Now.ToString("yyyyMMdd_HHmm", CultureInfo.InvariantCulture), explicitUserAction: true).ConfigureAwait(true);
                 Status = PosLocalization.T("reports.printStarted");
             }
             catch (Exception ex)
@@ -612,22 +606,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 {
                     var summary = await _service.GetDailySummaryAsync(marked.Date, IsUnlocked).ConfigureAwait(true);
                     var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
-                    var model = new DailyTakingsReceiptModel
-                    {
-                        Date = marked.Date,
-                        SalesCount = summary.SalesCount,
-                        TotalAmount = summary.TotalAmount,
-                        CashAmount = summary.CashAmount,
-                        CardAmount = summary.CardAmount,
-                        GrossSalesAmount = summary.GrossSalesAmount,
-                        RefundsAmount = summary.RefundsAmount,
-                        NetAmount = summary.NetAmount
-                    };
-                    var lines = DailyTakingsReceiptFormatter.Format(
-                        model,
+                    textToPrint = Pos.DailyCloseReceiptTextRenderer.Render(
+                        marked.Date,
+                        summary,
                         shop ?? new ReceiptShopInfo(),
-                        PosLocalization.CreateReceiptOptions(false, "reports.closeTitle"));
-                    textToPrint = string.Join(Environment.NewLine, lines);
+                        _useReceipt42);
                 }
             }
             else if (SelectedHistoryRow != null)
@@ -640,7 +623,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 await _service.PrintReceiptTextAsync(
                     textToPrint,
-                    true,
+                    _useReceipt42,
                     "STAMPA_RIEPILOGO_" + DateTime.Now.ToString("yyyyMMdd_HHmm", CultureInfo.InvariantCulture),
                     explicitUserAction: true).ConfigureAwait(true);
                 Status = PosLocalization.T("reports.printStarted");
@@ -655,40 +638,30 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
         }
 
-        private const int ReceiptWidth = 32;
-
-        private static string ReceiptLine2(string left, string right)
-        {
-            left = left ?? "";
-            right = right ?? "";
-            var maxLeft = Math.Max(1, ReceiptWidth - right.Length - 1);
-            if (left.Length > maxLeft) left = left.Substring(0, maxLeft);
-            return left.PadRight(ReceiptWidth - right.Length) + right;
-        }
-
         private string BuildMarkedAggregateReceiptText()
         {
-            var sep = new string('-', ReceiptWidth);
+            var width = _useReceipt42 ? 42 : 32;
+            var sep = ReceiptTextLayout.Separator(width);
             var lines = new List<string>();
-            lines.Add(PosLocalization.T("reports.receiptTitle"));
-            lines.Add(PosLocalization.F("reports.receiptSummaryDays", MarkedCount));
+            lines.AddRange(ReceiptTextLayout.WrapText(PosLocalization.T("reports.receiptTitle"), width));
+            lines.AddRange(ReceiptTextLayout.WrapText(PosLocalization.F("reports.receiptSummaryDays", MarkedCount), width));
             var markedRows = HistoryRows.Where(r => r.IsMarked).OrderBy(r => r.Date).ToList();
             if (markedRows.Count > 0)
-                lines.Add(PosLocalization.F("reports.fromTo", markedRows[0].DateText, markedRows[markedRows.Count - 1].DateText));
+                lines.AddRange(ReceiptTextLayout.WrapText(PosLocalization.F("reports.fromTo", markedRows[0].DateText, markedRows[markedRows.Count - 1].DateText), width));
             lines.Add(sep);
             if (PrintMarkedDaysDetail)
             {
                 foreach (var row in markedRows)
-                    lines.Add(ReceiptLine2(row.DateText, PosLocalization.T("reports.receiptNet") + " " + MoneyClp.FormatDisplay(row.NetAmount)));
+                    lines.AddRange(ReceiptTextLayout.TwoColumnLine(row.DateText, PosLocalization.T("reports.receiptNet") + " " + MoneyClp.FormatDisplay(row.NetAmount), width));
                 lines.Add(sep);
             }
-            lines.Add(ReceiptLine2(PosLocalization.T("common.receipts"), MarkedSalesCount.ToString(CultureInfo.InvariantCulture)));
-            lines.Add(ReceiptLine2(PosLocalization.T("common.gross"), MarkedGrossDisplay));
-            lines.Add(ReceiptLine2(PosLocalization.T("common.returns"), MarkedRefundsDisplay));
-            lines.Add(ReceiptLine2(PosLocalization.T("common.net"), MarkedNetDisplay));
-            lines.Add(ReceiptLine2(PosLocalization.T("common.cash"), MarkedCashDisplay));
-            lines.Add(ReceiptLine2(PosLocalization.T("common.card"), MarkedCardDisplay));
-            lines.Add(ReceiptLine2(PosLocalization.T("common.averageTicket"), MarkedTicketAverageDisplay));
+            lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.receipts"), MarkedSalesCount.ToString(CultureInfo.InvariantCulture), width));
+            lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.gross"), MarkedGrossDisplay, width));
+            lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.returns"), MarkedRefundsDisplay, width));
+            lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.net"), MarkedNetDisplay, width));
+            lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.cash"), MarkedCashDisplay, width));
+            lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.card"), MarkedCardDisplay, width));
+            lines.AddRange(ReceiptTextLayout.TwoColumnLine(PosLocalization.T("common.averageTicket"), MarkedTicketAverageDisplay, width));
             lines.Add(sep);
             return string.Join(Environment.NewLine, lines);
         }
@@ -998,10 +971,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task LoadPreviewForSelectedHistoryAsync()
         {
-            if (SelectedHistoryRow == null) return;
+            CancelHistoryPreviewLoad();
+            var row = SelectedHistoryRow;
+            if (row == null || _disposed)
+            {
+                SummaryReceiptPreview = string.Empty;
+                return;
+            }
+            var cts = new CancellationTokenSource();
+            _historyPreviewCts = cts;
+            var version = ++_historyPreviewVersion;
             try
             {
-                var summary = await _service.GetDailySummaryAsync(SelectedHistoryRow.Date, IsUnlocked).ConfigureAwait(true);
+                var summary = await _service.GetDailySummaryAsync(row.Date, IsUnlocked).ConfigureAwait(true);
+                cts.Token.ThrowIfCancellationRequested();
+                if (!IsCurrentHistoryPreview(row, version)) return;
                 SalesCount = summary.SalesCount;
                 TotalAmount = summary.TotalAmount;
                 CashAmount = summary.CashAmount;
@@ -1010,10 +994,25 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 RefundsAmount = summary.RefundsAmount;
                 NetAmount = summary.NetAmount;
                 var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
-                UpdateSummaryReceiptPreview(SelectedHistoryRow.Date, summary, shop);
+                cts.Token.ThrowIfCancellationRequested();
+                if (!IsCurrentHistoryPreview(row, version)) return;
+                UpdateSummaryReceiptPreview(row.Date, summary, shop);
             }
-            catch { SummaryReceiptPreview = ""; }
-            finally { RefreshHeaderSummary(); }
+            catch (OperationCanceledException) { }
+            catch { if (IsCurrentHistoryPreview(row, version)) SummaryReceiptPreview = ""; }
+            finally { if (IsCurrentHistoryPreview(row, version)) RefreshHeaderSummary(); }
+        }
+
+        private bool IsCurrentHistoryPreview(HistoryRow row, int version)
+            => !_disposed && version == _historyPreviewVersion && ReferenceEquals(SelectedHistoryRow, row);
+
+        private void CancelHistoryPreviewLoad()
+        {
+            var cts = _historyPreviewCts;
+            _historyPreviewCts = null;
+            if (cts == null) return;
+            try { cts.Cancel(); } catch { }
+            cts.Dispose();
         }
 
         private async Task LoadPreviewForSingleMarkedAsync()
@@ -1024,22 +1023,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 var summary = await _service.GetDailySummaryAsync(row.Date, IsUnlocked).ConfigureAwait(true);
                 var shop = await _service.GetShopInfoAsync().ConfigureAwait(true);
-                var model = new DailyTakingsReceiptModel
-                {
-                    Date = row.Date,
-                    SalesCount = summary.SalesCount,
-                    TotalAmount = summary.TotalAmount,
-                    CashAmount = summary.CashAmount,
-                    CardAmount = summary.CardAmount,
-                    GrossSalesAmount = summary.GrossSalesAmount,
-                    RefundsAmount = summary.RefundsAmount,
-                    NetAmount = summary.NetAmount
-                };
-                var lines = DailyTakingsReceiptFormatter.Format(
-                    model,
+                SingleMarkedReceiptPreview = Pos.DailyCloseReceiptTextRenderer.Render(
+                    row.Date,
+                    summary,
                     shop ?? new ReceiptShopInfo(),
-                    PosLocalization.CreateReceiptOptions(false, "reports.closeTitle"));
-                SingleMarkedReceiptPreview = string.Join(Environment.NewLine, lines);
+                    _useReceipt42);
             }
             catch { SingleMarkedReceiptPreview = ""; }
         }
@@ -1179,13 +1167,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 point.NotifyLanguageChanged();
             }
+            if (!_disposed && !IsBusy) _ = RefreshCurrentViewAsync();
         }
 
         public void Dispose()
         {
             if (_disposed) return;
             _disposed = true;
+            CancelHistoryPreviewLoad();
             PosLocalization.Current.LanguageChanged -= OnLanguageChanged;
+            SummaryReceiptPreview = string.Empty;
+            SingleMarkedReceiptPreview = string.Empty;
         }
 
         private void SetStatusKey(string key)

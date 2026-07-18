@@ -27,6 +27,7 @@ using Win7POS.Wpf.Infrastructure.Displays;
 using Win7POS.Wpf.Localization;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Receipt;
+using Win7POS.Core.Reports;
 using Win7POS.Wpf.Printing;
 using Win7POS.Wpf.Products;
 
@@ -299,6 +300,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 });
 
                 panel.Children.Add(MakeButton("Open DailyReportDialog", OpenDailyReport));
+                panel.Children.Add(MakeButton("Open SalesRegisterDialog", OpenSalesRegister));
                 panel.Children.Add(MakeButton("Open UserManagementDialog", OpenUserManagement));
                 panel.Children.Add(MakeButton("Open SettingsHubDialog", OpenSettingsHub));
                 panel.Children.Add(MakeButton("Open CustomerDisplaySettingsDialog", OpenCustomerDisplaySettings));
@@ -341,6 +343,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
             private void OpenUserManagement(object sender, RoutedEventArgs e)
             {
                 var dialog = CreateUserManagementDialog();
+                dialog.Owner = this;
+                dialog.ShowDialog();
+            }
+
+            private void OpenSalesRegister(object sender, RoutedEventArgs e)
+            {
+                var dialog = CreateSalesRegisterDialog();
                 dialog.Owner = this;
                 dialog.ShowDialog();
             }
@@ -388,12 +397,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var printerTestReceiptPass = VerifyPrinterTestReceiptBuilder();
                     var receiptShopSnapshotPass = await VerifyReceiptShopSnapshotReprintAsync().ConfigureAwait(true);
                     var activeDrawerSettingsValidationPass = await VerifyActiveDrawerSettingsValidationAsync().ConfigureAwait(true);
+                    var dailyCloseReceiptPass = VerifyDailyCloseReceiptWidthAndParity();
+                    var receiptArchiveRemovalPass = VerifyReceiptArchiveRemoval();
+                    var salesRegisterRapidSelectionPass = await VerifySalesRegisterRapidSelectionAsync().ConfigureAwait(true);
                     var samples = new List<LifecycleSample>();
                     var weakWindows = new List<LifecycleWindowReference>();
                     for (var cycle = 1; cycle <= 20; cycle++)
                     {
                         _status.Text = "Lifecycle cycle " + cycle.ToString(CultureInfo.InvariantCulture) + "/20";
                         await OpenThenCloseAsync(CreateDailyReportDialog(), weakWindows).ConfigureAwait(true);
+                        await OpenThenCloseAsync(CreateSalesRegisterDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(CreateUserManagementDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(new SettingsHubDialog(), weakWindows).ConfigureAwait(true);
                         await OpenThenCloseAsync(CreateCustomerDisplaySettingsDialog(), weakWindows).ConfigureAwait(true);
@@ -407,6 +420,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     // Displace the last async/focus references held by WPF and the caller so
                     // the 20 measured instances are not mistaken for framework-local roots.
                     await OpenThenCloseAsync(CreateDailyReportDialog(), null).ConfigureAwait(true);
+                    await OpenThenCloseAsync(CreateSalesRegisterDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(CreateUserManagementDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(new SettingsHubDialog(), null).ConfigureAwait(true);
                     await OpenThenCloseAsync(CreateCustomerDisplaySettingsDialog(), null).ConfigureAwait(true);
@@ -473,16 +487,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var displaySubscriptionsAfter = CustomerDisplayManager.ActiveDisplaySettingsSubscriptions;
                     var monotonicPrivateBytes = IsStrictlyIncreasing(samples.Select(x => x.PrivateBytes).ToList());
                     var monotonicHandles = IsStrictlyIncreasing(samples.Select(x => (long)x.HandleCount).ToList());
-                    var passed = openWindows == 0 && languageHandlersAfter == languageHandlersBefore &&
+                    var passed = residual == 0 && residualViewModelCount == 0 &&
+                                 openWindows == 0 && languageHandlersAfter == languageHandlersBefore &&
                                  displaySubscriptionsAfter == displaySubscriptionsBefore && displayWindowPass &&
                                  printerCommandPolicyPass && printerSelectionBindingPass &&
                                  cashDrawerParsingPass && receiptColumnFitPass &&
                                  printerTestReceiptPass && receiptShopSnapshotPass &&
-                                 activeDrawerSettingsValidationPass &&
+                                 activeDrawerSettingsValidationPass && dailyCloseReceiptPass &&
+                                 receiptArchiveRemovalPass && salesRegisterRapidSelectionPass &&
                                  !monotonicPrivateBytes && !monotonicHandles;
                     return string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0}: cycles=20; printerSettingsCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}; receiptShopSnapshotPass={22}; activeDrawerSettingsValidationPass={23}",
+                        "{0}: cycles=20; dailyReportCycles=20; salesRegisterCycles=20; printerSettingsCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}; receiptShopSnapshotPass={22}; activeDrawerSettingsValidationPass={23}; dailyCloseReceiptPass={24}; receiptArchiveRemovalPass={25}; salesRegisterRapidSelectionPass={26}",
                         passed ? "PASS" : "FAIL",
                         residual,
                         residualTypes,
@@ -506,7 +522,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         printerTestReceiptPass,
                         printerSelectionBindingPass,
                         receiptShopSnapshotPass,
-                        activeDrawerSettingsValidationPass);
+                        activeDrawerSettingsValidationPass,
+                        dailyCloseReceiptPass,
+                        receiptArchiveRemovalPass,
+                        salesRegisterRapidSelectionPass);
                 }
                 finally
                 {
@@ -680,7 +699,78 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         printerViewModel.Dispose();
                 }
 
-                return "PASS: posFooter=True; paymentPreview=True; printerPreview=True";
+                await CaptureReceiptSurfaceDialogsAsync(outputDirectory).ConfigureAwait(true);
+
+                return "PASS: posFooter=True; paymentPreview=True; printerPreview=True; salesRegisterPreview=True; dailyClosePreview=True; compact1024x600=True";
+            }
+
+            private async Task CaptureReceiptSurfaceDialogsAsync(string outputDirectory)
+            {
+                foreach (var compact in new[] { false, true })
+                {
+                    var salesVm = new SalesRegisterViewModel(new PosWorkflowService(), useReceipt42: true);
+                    var salesDialog = new SalesRegisterDialog(salesVm)
+                    {
+                        Owner = this,
+                        Width = compact ? 1000 : 1180,
+                        Height = compact ? 560 : 700
+                    };
+                    try
+                    {
+                        salesDialog.Show();
+                        for (var attempt = 0; attempt < 100 && salesVm.IsBusy; attempt++)
+                            await Task.Delay(25).ConfigureAwait(true);
+                        if (salesVm.SalesList.Count > 0)
+                            salesVm.SelectedSale = salesVm.SalesList[0];
+                        for (var attempt = 0; attempt < 120 && salesVm.IsPreviewLoading; attempt++)
+                            await Task.Delay(25).ConfigureAwait(true);
+                        await Dispatcher.InvokeAsync(
+                            () => { },
+                            System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                        SaveVisual(
+                            salesDialog.Content as FrameworkElement,
+                            Path.Combine(
+                                outputDirectory,
+                                compact
+                                    ? "sales-register-receipt-preview-1024x600.png"
+                                    : "sales-register-receipt-preview.png"));
+                    }
+                    finally
+                    {
+                        if (salesDialog.IsVisible) salesDialog.Close();
+                    }
+
+                    var dailyVm = new DailyReportViewModel(new PosWorkflowService());
+                    var dailyDialog = new DailyReportDialog(dailyVm)
+                    {
+                        Owner = this,
+                        Width = compact ? 1000 : 1180,
+                        Height = compact ? 560 : 700
+                    };
+                    try
+                    {
+                        dailyDialog.Show();
+                        for (var attempt = 0; attempt < 120 &&
+                             (dailyVm.IsBusy || string.IsNullOrWhiteSpace(dailyVm.SummaryReceiptPreview)); attempt++)
+                        {
+                            await Task.Delay(25).ConfigureAwait(true);
+                        }
+                        await Dispatcher.InvokeAsync(
+                            () => { },
+                            System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                        SaveVisual(
+                            dailyDialog.Content as FrameworkElement,
+                            Path.Combine(
+                                outputDirectory,
+                                compact
+                                    ? "daily-close-receipt-preview-1024x600.png"
+                                    : "daily-close-receipt-preview.png"));
+                    }
+                    finally
+                    {
+                        if (dailyDialog.IsVisible) dailyDialog.Close();
+                    }
+                }
             }
 
             public async Task<string> CaptureSettingsAuditAsync(string outputDirectory)
@@ -864,6 +954,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 return new DailyReportDialog(new DailyReportViewModel(new PosWorkflowService()));
             }
 
+            private static SalesRegisterDialog CreateSalesRegisterDialog()
+            {
+                return new SalesRegisterDialog(new SalesRegisterViewModel(
+                    new PosWorkflowService(),
+                    useReceipt42: true));
+            }
+
             private static UserManagementDialog CreateUserManagementDialog()
             {
                 return new UserManagementDialog(new UserManagementViewModel());
@@ -989,7 +1086,6 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 {
                     PrinterName = queue.Name,
                     ReceiptEnabled = true,
-                    SaveCopyToFile = false,
                     CashDrawerEnabled = false,
                     TestReceiptPreview = BuildQaPrinterTestReceipt()
                 };
@@ -1018,7 +1114,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var previewScroll = dialog.FindName("TestReceiptPreviewScrollViewer") as ScrollViewer;
                     var testPrintButton = dialog.FindName("TestPrintButton") as Button;
                     var advanced = dialog.FindName("AdvancedOptionsExpander") as Expander;
-                    var outputDirectory = dialog.FindName("OutputDirectoryPanel") as StackPanel;
+                    var receiptHistoryInfo = dialog.FindName("ReceiptHistoryStorageInfo") as Border;
                     var drawer = dialog.FindName("CashDrawerExpander") as Expander;
                     var drawerDetails = dialog.FindName("CashDrawerDetailsPanel") as StackPanel;
                     var detected = dialog.FindName("DetectedPrintersExpander") as Expander;
@@ -1032,8 +1128,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                            testPrintButton != null && testPrintButton.IsEnabled &&
                                            testPrintButton.HorizontalAlignment == HorizontalAlignment.Stretch &&
                                            advanced != null && !advanced.IsExpanded &&
-                                           outputDirectory != null &&
-                                           outputDirectory.Visibility == Visibility.Collapsed &&
+                                           receiptHistoryInfo != null &&
+                                           !receiptHistoryInfo.IsVisible &&
                                            drawer != null && !drawer.IsExpanded &&
                                            drawerDetails != null &&
                                            drawerDetails.Visibility == Visibility.Collapsed &&
@@ -1044,13 +1140,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     advanced.IsExpanded = true;
                     drawer.IsExpanded = true;
                     detected.IsExpanded = true;
-                    vm.SaveCopyToFile = true;
                     vm.CashDrawerEnabled = true;
                     await Dispatcher.InvokeAsync(
                         () => { },
                         System.Windows.Threading.DispatcherPriority.ApplicationIdle);
 
-                    var progressiveDisclosurePass = outputDirectory.Visibility == Visibility.Visible &&
+                    var progressiveDisclosurePass = receiptHistoryInfo.IsVisible &&
                                                      drawerDetails.Visibility == Visibility.Visible &&
                                                      detectedPrinters.Items.Count == 1;
                     return primaryStatePass && progressiveDisclosurePass;
@@ -1434,8 +1529,6 @@ VALUES(@saleId, NULL, 'QA-SNAPSHOT-LINE', 'Snapshot product', 1, 1250, 1250);",
                     AutoPrint = before.AutoPrint,
                     AllowWindowsDefault = before.AllowWindowsDefault,
                     AllowVirtualPrinters = before.AllowVirtualPrinters,
-                    SaveCopyToFile = before.SaveCopyToFile,
-                    OutputDirectory = before.OutputDirectory,
                     CashDrawerCommand = " ",
                     CashDrawerEnabled = true,
                     CashDrawerMode = "printer_kick",
@@ -1454,6 +1547,141 @@ VALUES(@saleId, NULL, 'QA-SNAPSHOT-LINE', 'Snapshot product', 1, 1250, 1250);",
                     return string.Equals(after.CashDrawerCommand, before.CashDrawerCommand, StringComparison.Ordinal) &&
                            after.CashDrawerEnabled == before.CashDrawerEnabled &&
                            string.Equals(after.CashDrawerMode, before.CashDrawerMode, StringComparison.Ordinal);
+                }
+            }
+
+            private static bool VerifyDailyCloseReceiptWidthAndParity()
+            {
+                var model = new DailyTakingsReceiptModel
+                {
+                    Date = new DateTime(2026, 7, 17),
+                    PeriodStart = new DateTime(2026, 7, 17),
+                    PeriodEnd = new DateTime(2026, 7, 17),
+                    OperatorName = "Operatore QA con nome volutamente molto lungo",
+                    GeneratedAt = new DateTimeOffset(2026, 7, 17, 22, 30, 0, TimeSpan.Zero),
+                    SalesCount = 987654,
+                    GrossSalesAmount = 9876543210,
+                    DiscountsAmount = 123456789,
+                    TaxAmount = 187654321,
+                    RefundsAmount = 87654321,
+                    VoidsAmount = 7654321,
+                    NetAmount = 9543209876,
+                    CashAmount = 4321098765,
+                    CardAmount = 5222111111,
+                    MixedSalesCount = 12345,
+                    ChangeAmount = 1234567,
+                    OpeningAmount = 100000,
+                    ClosingAmount = 4320000000,
+                    ExpectedCashAmount = 4322222222,
+                    DifferenceAmount = -2222222,
+                    PendingSyncCount = 123,
+                    RetrySyncCount = 45,
+                    BlockedSyncCount = 6
+                };
+                var shop = new ReceiptShopInfo
+                {
+                    Name = "QA 日常营业结算商店名称非常长",
+                    Address = "Avenida de validación internacional extremadamente larga 12345",
+                    City = "Santiago",
+                    Rut = "76.123.456-7",
+                    Footer = "Grazie · Gracias · 谢谢"
+                };
+                var cultures = new[] { "en-US", "es-CL", "it-IT", "zh-CN" };
+                foreach (var width in new[] { 32, 42 })
+                {
+                    foreach (var culture in cultures)
+                    {
+                        var options = new ReceiptOptions
+                        {
+                            Width = width,
+                            Currency = "CLP",
+                            CultureName = culture,
+                            Labels = ReceiptLabels.English
+                        };
+                        var labels = new DailyCloseReceiptLabels
+                        {
+                            BusinessDate = "Data commerciale / Fecha comercial / 营业日期",
+                            Period = "Periodo di rendicontazione estremamente lungo",
+                            Operator = "Operatore responsabile / 操作员",
+                            Discounts = "Sconti complessivi applicati",
+                            Tax = "Imposte",
+                            Mixed = "Pagamenti misti",
+                            Voids = "Annullamenti",
+                            ExpectedCash = "Contanti attesi nel cassetto",
+                            OpeningAmount = "Importo iniziale",
+                            ClosingAmount = "Importo di chiusura",
+                            Difference = "Differenza negativa",
+                            PendingSync = "Sincronizzazioni in attesa",
+                            RetrySync = "Sincronizzazioni da riprovare",
+                            BlockedSync = "Sincronizzazioni bloccate",
+                            Generated = "Generato il"
+                        };
+                        var preview = Win7POS.Core.Reports.DailyCloseReceiptTextRenderer.Render(
+                            model, shop, options, labels);
+                        var printed = Win7POS.Core.Reports.DailyCloseReceiptTextRenderer.Render(
+                            model, shop, options, labels);
+                        if (!string.Equals(preview, printed, StringComparison.Ordinal)) return false;
+                        var lines = preview.Replace("\r\n", "\n").Split('\n');
+                        if (lines.Any(line => ReceiptTextLayout.VisibleWidth(line) > width)) return false;
+                    }
+                }
+
+                return true;
+            }
+
+            private static bool VerifyReceiptArchiveRemoval()
+            {
+                var forbiddenNames = new[]
+                {
+                    "SaveCopyToFile",
+                    "OutputDirectory",
+                    "OutputPath"
+                };
+                var types = new[]
+                {
+                    typeof(ReceiptPrintOptions),
+                    typeof(PosPrinterSettings),
+                    typeof(PrinterSettingsViewModel),
+                    typeof(PosPrintResult)
+                };
+                return types.All(type => forbiddenNames.All(name =>
+                    type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) == null &&
+                    type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) == null));
+            }
+
+            private static async Task<bool> VerifySalesRegisterRapidSelectionAsync()
+            {
+                var service = new PosWorkflowService();
+                var vm = new SalesRegisterViewModel(service, useReceipt42: true);
+                try
+                {
+                    vm.LoadCommand.Execute(null);
+                    for (var attempt = 0; attempt < 80 && vm.IsBusy; attempt++)
+                        await Task.Delay(25).ConfigureAwait(true);
+                    if (vm.SalesList.Count < 2) return false;
+
+                    for (var index = 0; index < 20; index++)
+                    {
+                        vm.SelectedSale = vm.SalesList[index % vm.SalesList.Count];
+                        await Task.Delay(2).ConfigureAwait(true);
+                    }
+
+                    var expectedSelection = vm.SalesList[vm.SalesList.Count - 1];
+                    vm.SelectedSale = expectedSelection;
+                    for (var attempt = 0; attempt < 120 && vm.IsPreviewLoading; attempt++)
+                        await Task.Delay(25).ConfigureAwait(true);
+
+                    var expected = await service
+                        .GetReceiptPreviewBySaleIdAsync(expectedSelection.SaleId, true)
+                        .ConfigureAwait(true);
+                    return !vm.IsPreviewLoading &&
+                           vm.HasReceiptPreview &&
+                           vm.PrintCommand.CanExecute(null) &&
+                           string.Equals(vm.DetailReceiptPreview, expected, StringComparison.Ordinal);
+                }
+                finally
+                {
+                    vm.Dispose();
                 }
             }
 
@@ -1536,8 +1764,8 @@ VALUES(@saleId, NULL, 'QA-SNAPSHOT-LINE', 'Snapshot product', 1, 1250, 1250);",
                 var lines = first.Replace("\r\n", "\n").Split('\n');
                 var preview32 = build.Invoke(null, new object[] { shop, false, createdAt }) as string;
                 var lines32 = (preview32 ?? string.Empty).Replace("\r\n", "\n").Split('\n');
-                return lines.All(line => line.Length <= 42) &&
-                       lines32.All(line => line.Length <= 32) &&
+                return lines.All(line => ReceiptTextLayout.VisibleWidth(line) <= 42) &&
+                       lines32.All(line => ReceiptTextLayout.VisibleWidth(line) <= 32) &&
                        first.IndexOf("QA CAFÉ", StringComparison.Ordinal) >= 0 &&
                        first.IndexOf("76.123.456-7", StringComparison.Ordinal) >= 0 &&
                        first.IndexOf("Caffè", StringComparison.Ordinal) >= 0 &&
@@ -1560,7 +1788,16 @@ VALUES(@saleId, NULL, 'QA-SNAPSHOT-LINE', 'Snapshot product', 1, 1250, 1250);",
                     throwOnError: false);
                 var build = rendererType?.GetMethod(
                     "BuildReceipt",
-                    BindingFlags.Static | BindingFlags.NonPublic);
+                    BindingFlags.Static | BindingFlags.NonPublic,
+                    binder: null,
+                    types: new[]
+                    {
+                        typeof(Sale),
+                        typeof(IReadOnlyList<SaleLine>),
+                        typeof(bool),
+                        typeof(ReceiptShopInfo)
+                    },
+                    modifiers: null);
                 if (build == null) return false;
 
                 const long total = 14691;
@@ -1651,7 +1888,8 @@ VALUES(@saleId, NULL, 'QA-SNAPSHOT-LINE', 'Snapshot product', 1, 1250, 1250);",
                                 return false;
 
                             var width = use42 ? 42 : 32;
-                            if (expected.Replace("\r\n", "\n").Split('\n').Any(line => line.Length > width))
+                            if (expected.Replace("\r\n", "\n").Split('\n')
+                                .Any(line => ReceiptTextLayout.VisibleWidth(line) > width))
                                 return false;
                         }
                     }
@@ -1812,7 +2050,8 @@ VALUES(@saleId, NULL, 'QA-SNAPSHOT-LINE', 'Snapshot product', 1, 1250, 1250);",
                                 expected.IndexOf(PosLocalization.T("receipt.totalDiscounts"), StringComparison.Ordinal) < 0 ||
                                 expected.IndexOf(PosLocalization.T("common.cash"), StringComparison.Ordinal) < 0 ||
                                 expected.IndexOf(PosLocalization.T("common.card"), StringComparison.Ordinal) < 0 ||
-                                expected.Replace("\r\n", "\n").Split('\n').Any(line => line.Length > width))
+                                expected.Replace("\r\n", "\n").Split('\n')
+                                    .Any(line => ReceiptTextLayout.VisibleWidth(line) > width))
                             {
                                 return false;
                             }
@@ -1899,20 +2138,24 @@ VALUES(@saleId, NULL, 'QA-SNAPSHOT-LINE', 'Snapshot product', 1, 1250, 1250);",
                                     StringComparison.Ordinal);
                                 var expectedMaxWidth = string.IsNullOrEmpty(expected)
                                     ? 0
-                                    : expected.Replace("\r\n", "\n").Split('\n').Max(line => line.Length);
+                                    : expected.Replace("\r\n", "\n").Split('\n')
+                                        .Max(ReceiptTextLayout.VisibleWidth);
                                 var sampleMaxWidth = string.IsNullOrEmpty(sample)
                                     ? 0
-                                    : sample.Replace("\r\n", "\n").Split('\n').Max(line => line.Length);
+                                    : sample.Replace("\r\n", "\n").Split('\n')
+                                        .Max(ReceiptTextLayout.VisibleWidth);
                                 var cashPresent = !string.IsNullOrEmpty(expected) &&
                                                   expected.IndexOf(PosLocalization.T("common.cash"), StringComparison.Ordinal) >= 0;
                                 var cardPresent = !string.IsNullOrEmpty(expected) &&
                                                   expected.IndexOf(PosLocalization.T("common.card"), StringComparison.Ordinal) >= 0;
                                 var normalizedSample = (sample ?? string.Empty)
                                     .Replace("\r", string.Empty)
-                                    .Replace("\n", string.Empty);
+                                    .Replace("\n", string.Empty)
+                                    .Replace(" ", string.Empty);
                                 var normalizedMarker = PosLocalization.T("printer.testReceiptMarker")
                                     .Replace("\r", string.Empty)
-                                    .Replace("\n", string.Empty);
+                                    .Replace("\n", string.Empty)
+                                    .Replace(" ", string.Empty);
                                 var markerPresent = normalizedSample.IndexOf(
                                     normalizedMarker,
                                     StringComparison.Ordinal) >= 0;

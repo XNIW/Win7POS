@@ -120,6 +120,27 @@ if (-not $fail) {
         Pass "ReleasePack does not bundle CLI diagnostics folder"
     }
 
+    $receiptArchiveFolders = Get-ChildItem -Path $root -Recurse -Directory -ErrorAction Stop |
+        Where-Object { $_.Name -match '(?i)^(receipts?|receipt[-_ ]archives?|scontrini)$' }
+    if ($receiptArchiveFolders) {
+        Fail "ReleasePack contains automatic receipt archive folders: $($receiptArchiveFolders.FullName -join ', ')"
+    }
+    else {
+        Pass "ReleasePack contains no automatic receipt archive folder"
+    }
+
+    $receiptArchiveFiles = Get-ChildItem -Path $root -Recurse -File -ErrorAction Stop |
+        Where-Object {
+            $_.Extension.ToLowerInvariant() -in @('.png', '.jpg', '.jpeg', '.bmp', '.pdf', '.txt') -and
+            $_.BaseName -match '(?i)^(receipt|scontrino|daily[-_ ]summary|daily[-_ ]close)[-_ ]?(sale|refund|void|test|qa|\d)'
+        }
+    if ($receiptArchiveFiles) {
+        Fail "ReleasePack contains receipt archive/sample output: $($receiptArchiveFiles.Name -join ', ')"
+    }
+    else {
+        Pass "ReleasePack contains no receipt archive/sample output"
+    }
+
     foreach ($name in $forbiddenFiles) {
         $found = Get-ChildItem -Path $root -Recurse -File -Filter $name -ErrorAction SilentlyContinue |
             Select-Object -First 1

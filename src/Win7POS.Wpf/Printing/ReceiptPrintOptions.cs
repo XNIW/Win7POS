@@ -5,8 +5,6 @@ namespace Win7POS.Wpf.Printing
         public string PrinterName { get; set; } = string.Empty;
         public int Copies { get; set; } = 1;
         public int CharactersPerLine { get; set; } = 42;
-        public bool SaveCopyToFile { get; set; }
-        public string OutputPath { get; set; } = string.Empty;
 
         /// <summary>True = scontrino (prima riga nome negozio in grassetto e più grande). False = fiscale/PDF (tutto uniforme).</summary>
         public bool UseReceiptHeaderStyle { get; set; } = true;

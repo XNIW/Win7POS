@@ -53,6 +53,11 @@ $operatorSwitch = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xa
 $posView = Read-Text "src/Win7POS.Wpf/Pos/PosView.xaml"
 $paymentView = Read-Text "src/Win7POS.Wpf/Pos/PaymentView.xaml"
 $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
+$salesRegister = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SalesRegisterDialog.xaml"
+$salesRegisterViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SalesRegisterViewModel.cs"
+$dailyReportView = Read-Text "src/Win7POS.Wpf/Pos/DailyReportView.xaml"
+$dailyReportViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DailyReportViewModel.cs"
+$printerSettings = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsDialog.xaml"
 $syncCenter = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterDialog.xaml"
 $syncCenterCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterDialog.xaml.cs"
 $syncCenterViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterViewModel.cs"
@@ -390,6 +395,31 @@ Test-ContainsAll "POS status is shown as toast, not footer line" ($posView + $po
     'PosNoticeSeverity',
     'PosNoticePolicy.GetAutoDismissDelay',
     'DismissStatusToastCommand'
+)
+
+Test-ContainsAll "Sales Register exposes a lazy selectable receipt preview" ($salesRegister + $salesRegisterViewModel) @(
+    'sales.previewTab',
+    'DetailReceiptPreview',
+    'IsPreviewLoading',
+    'sales.previewEmpty',
+    'FontFamily="Consolas"',
+    'IsReadOnly="True"',
+    'VirtualizingPanel.IsVirtualizing="True"',
+    'VirtualizingPanel.VirtualizationMode="Recycling"'
+)
+
+Test-ContainsAll "Daily Close uses an 80mm receipt-paper preview" ($dailyReportView + $dailyReportViewModel) @(
+    'AutomationProperties.AutomationId="DailyCloseReceiptPreview"',
+    'SummaryReceiptPreview',
+    'FontFamily="Consolas"',
+    'IsReadOnly="True"',
+    'Background="#FFFDF8"',
+    'PrintReceiptTextAsync(SummaryReceiptPreview'
+)
+
+Test-ContainsAll "Printer Settings explains receipt history storage" $printerSettings @(
+    'x:Name="ReceiptHistoryStorageInfo"',
+    'printer.receiptHistoryStorageInfo'
 )
 
 if ($posView.IndexOf('Text="{Binding StatusMessage}"', [StringComparison]::Ordinal) -ge 0) {

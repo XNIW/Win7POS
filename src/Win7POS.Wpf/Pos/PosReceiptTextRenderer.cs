@@ -18,19 +18,35 @@ namespace Win7POS.Wpf.Pos
             bool use42,
             ReceiptShopInfo shop = null)
         {
-            if (sale == null) throw new ArgumentNullException(nameof(sale));
+            return BuildReceipt(SalesReceiptRenderModel.Create(sale, lines, shop), use42);
+        }
+
+        internal static string BuildReceipt(SalesReceiptRenderModel input, bool use42)
+        {
+            if (input == null) throw new ArgumentNullException(nameof(input));
+            var columns = use42 ? 42 : 32;
 
             var renderedLines = new List<string>(ReceiptFormatter.Format(
-                sale,
-                lines,
-                PosLocalization.CreateReceiptOptions(use42, "receipt.title"),
-                shop ?? new ReceiptShopInfo()));
+                input,
+                PosLocalization.CreateReceiptOptions(use42, "receipt.title")));
+
+            if (input.Sale.Kind == (int)SaleKind.Refund ||
+                input.Sale.Kind == (int)SaleKind.Void)
+            {
+                renderedLines.InsertRange(
+                    0,
+                    ReceiptTextLayout.WrapText(
+                        PosLocalization.T("refund.receiptHeader"),
+                        columns));
+            }
 
             // Il codice resta anche in chiaro: la stampa fisica può aggiungere il Code128.
-            if (!string.IsNullOrEmpty(sale.Code))
+            if (!string.IsNullOrEmpty(input.Sale.Code))
             {
                 renderedLines.Add(string.Empty);
-                renderedLines.Add(PosLocalization.T("receipt.title") + ": " + sale.Code);
+                renderedLines.AddRange(ReceiptTextLayout.WrapText(
+                    PosLocalization.T("receipt.title") + ": " + input.Sale.Code,
+                    columns));
             }
 
             return string.Join(Environment.NewLine, renderedLines);

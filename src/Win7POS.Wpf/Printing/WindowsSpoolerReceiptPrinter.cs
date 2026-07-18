@@ -44,17 +44,8 @@ namespace Win7POS.Wpf.Printing
             if (receiptText == null) throw new ArgumentNullException(nameof(receiptText));
             if (opt == null) throw new ArgumentNullException(nameof(opt));
 
-            // 1) Optional: save copy to file (debug / no printer)
-            if (opt.SaveCopyToFile && !string.IsNullOrWhiteSpace(opt.OutputPath))
-            {
-                var dir = Path.GetDirectoryName(opt.OutputPath);
-                if (!string.IsNullOrWhiteSpace(dir))
-                    Directory.CreateDirectory(dir);
-
-                File.WriteAllText(opt.OutputPath, receiptText);
-            }
-
-            // 2) Print via Windows spooler driver
+            // Sales history in SQLite is the only receipt archive. Printing never
+            // creates an automatic image/PDF/text copy on disk.
             await TryPrintWithRetryAsync(receiptText, opt).ConfigureAwait(false);
         }
 

@@ -159,21 +159,18 @@
                                                    Foreground="#7A4E18"
                                                    TextWrapping="Wrap"
                                                    Margin="22,0,0,12"/>
-                                        <CheckBox Content="{loc:Loc printer.saveCopy}"
-                                                  IsChecked="{Binding SaveCopyToFile, Mode=TwoWay}"
-                                                  Margin="0,0,0,8"/>
-                                        <StackPanel x:Name="OutputDirectoryPanel"
-                                                    AutomationProperties.AutomationId="PrinterSettings.OutputDirectory"
-                                                    Visibility="{Binding SaveCopyToFile, Converter={StaticResource BoolToVis}}"
-                                                    Margin="22,0,0,0">
-                                            <TextBlock Text="{loc:Loc printer.outputDirectory}"
-                                                       Style="{StaticResource FormLabelTextStyle}"
-                                                       Margin="0,0,0,5"/>
-                                            <TextBox MinHeight="34"
-                                                     Text="{Binding OutputDirectory, UpdateSourceTrigger=PropertyChanged}"
-                                                     Style="{StaticResource ModernTextBoxStyle}"
-                                                     ToolTip="{loc:Loc printer.outputDirectoryTooltip}"/>
-                                        </StackPanel>
+                                        <Border x:Name="ReceiptHistoryStorageInfo"
+                                                Background="#F4EFF8"
+                                                BorderBrush="#D9CEE8"
+                                                BorderThickness="1"
+                                                CornerRadius="7"
+                                                Padding="10,8"
+                                                Margin="0,4,0,0">
+                                            <TextBlock Text="{loc:Loc printer.receiptHistoryStorageInfo}"
+                                                       FontSize="11"
+                                                       Foreground="#5F4A6E"
+                                                       TextWrapping="Wrap"/>
+                                        </Border>
                                     </StackPanel>
                                 </Expander>
                             </Border>
