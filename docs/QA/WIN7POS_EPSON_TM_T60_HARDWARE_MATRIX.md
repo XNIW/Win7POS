@@ -58,6 +58,9 @@ No Epson ZIP, EXE, INF, PDF, driver binary or photograph is stored in Git.
 | QA card receipt | PASS_PHYSICAL_NO_DRAWER | QA card-only sale `VMRQIA8J5KE3` printed completely; the operator confirmed that the drawer stayed closed. |
 | Receipt reprint | PASS_PHYSICAL_NO_DRAWER | One reprint of persisted cash sale `VMRQI73CRZQ6` printed correctly; no sale, movement or outbox duplicate was created and the operator confirmed that the drawer stayed closed. |
 | Printer off / paused after commit | PASS_COMMIT_BEFORE_PRINT_NO_DUPLICATE | Card-only sale `VMRQIK583IXD` committed while the queue was paused, reported a retryable print failure, and remained a single sale/line/movement/outbox entry. After resume, one `Print last` produced the receipt; the operator confirmed correct paper output and no drawer opening. |
+| Final direct fiscal 32/42 addendum | PASS_PHYSICAL_NO_DRAWER_2026-07-19 | The dedicated no-database harness submitted one 32-column and one 42-column fiscal QA slip. The operator confirmed legible/cut output and correct widths/codes; both carried non-fiscal/no-sale/no-drawer warnings. |
+| Final exact receipt original/reprint | PASS_PHYSICAL_IDENTICAL_NO_DRAWER_2026-07-19 | Jobs 3 and 4 had identical text and request hashes. The operator confirmed identical physical slips, no extra copy and a closed drawer. |
+| Final daily close 32/42 addendum | PASS_PHYSICAL_NO_DRAWER_2026-07-19 | One 32-column and one 42-column daily-close QA slip printed in the same awaited sequence. The operator confirmed correct widths, legible/cut output and no drawer opening. |
 
 Photo evidence is retained outside Git as
 `windows-notepad-80mm-pass.png`, SHA-256
@@ -95,6 +98,7 @@ No row below is marked PASS until a physical opening or non-opening is observed.
 | Receipt renderer alignment | PASS; exact parity for cash, card and mixed payments, including line/cart discounts, in EN/ES/IT/ZH at 32/42 columns; shop data is frozen from preview through completed-sale output and the printer sample uses the same sale barcode path plus the no-sale marker |
 | POS footer touch geometry | PASS; Pay matches the visible tools width and edge alignment at 1280x720 and 1024x600 |
 | Manual drawer physical evidence | PASS_PHYSICAL; one production-code submission returned successfully and the operator confirmed exactly one opening; one matching log entry, pre/post queue `Normal`/0, isolated root contains no database; retained manifest hash above |
+| Final receipt-surface physical addendum | PASS_PHYSICAL; six sequential one-copy jobs, 32/42 fiscal, exact original/reprint and 32/42 daily close; operator confirmed all six, no extras and no drawer opening; manifest SHA-256 `F635BB9DC6FC45A8DD5A881CDA1EB0E1AB3CF5288542569A43395279699FE1DA` |
 
 The source now uses Win7 Unicode spooler APIs, bounded/cached discovery, strict
 `ESC p` parsing and task-based single-flight test actions. A malformed non-empty
@@ -102,18 +106,22 @@ drawer command cannot silently fall back to a physical pulse.
 
 ## Current classification
 
-`TRANSACTIONAL_MATRIX_PASS_RECEIPT_SURFACE_ADDENDUM_PENDING`
+`RECEIPT_SURFACE_ADDENDUM_PASS_WINDOWS7_AND_DISCONNECTED_DRAWER_OPEN`
 
 Windows/APD/Notepad, the Win7POS fictitious receipt and the transactional cash,
 card, reprint and paused/resumed-queue matrix are physically proven. Exactly one
 transactional drawer opening was observed for cash; card and both reprint paths
-kept it closed. Counts remained idempotent and the queue returned `Normal` with
-zero jobs. The receipt-surface/daily-close addendum, disconnected-drawer row and
-physical Windows 7 row remain open, so merge is still blocked.
+kept it closed. The final no-database sequence also physically proves direct
+fiscal 32/42, identical receipt original/reprint and daily close 32/42 with zero
+drawer calls. Counts remained idempotent and the queue returned `Normal` with
+zero jobs. The receipt-surface PR #7 merge gate is closed. The disconnected-drawer,
+authenticated settings and physical Windows 7 rows remain open for full hardware
+certification and are not represented as PASS.
 
 ## Publication
 
 Implementation commit `7d1ef84` is published on
 `codex/hardware-epson-tm-t60-20260717-161122`. Draft pull request
-<https://github.com/XNIW/Win7POS/pull/7> targets `main`. No merge or auto-merge
-was requested; the open physical rows remain explicit review constraints.
+<https://github.com/XNIW/Win7POS/pull/7> targets `main`. The final unpublished
+closure commit and exact-head CI remain required before merge; no force push or
+rebase is permitted.

@@ -116,8 +116,10 @@
                                             <TextBlock Text="{loc:Loc printer.copies}"
                                                        Style="{StaticResource FormLabelTextStyle}"
                                                        Margin="0,0,0,5"/>
-                                            <TextBox MinHeight="34"
+                                            <TextBox x:Name="CopiesTextBox"
+                                                     MinHeight="34"
                                                      Text="{Binding Copies, UpdateSourceTrigger=PropertyChanged}"
+                                                     MaxLength="1"
                                                      Style="{StaticResource ModernTextBoxStyle}"
                                                      ToolTip="{loc:Loc printer.copiesTooltip}"/>
                                         </StackPanel>
@@ -218,6 +220,7 @@
                                                        Style="{StaticResource FormLabelTextStyle}"
                                                        Margin="0,11,0,5"/>
                                             <TextBox MinHeight="34"
+                                                     MaxLength="64"
                                                      Text="{Binding CashDrawerCommand, UpdateSourceTrigger=PropertyChanged}"
                                                      Style="{StaticResource ModernTextBoxStyle}"
                                                      ToolTip="{loc:Loc printer.drawerCommandTooltip}"/>

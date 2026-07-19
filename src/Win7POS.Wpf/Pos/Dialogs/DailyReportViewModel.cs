@@ -51,6 +51,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private int _markedPreviewVersion;
         private bool _isMarkedPreviewLoading;
         private int _dailyPreviewVersion;
+        private int _historyLoadVersion;
+        private int _activeHistoryLoadVersion;
 
         private long _periodNetAmount;
         private long _periodGrossAmount;
@@ -218,13 +220,31 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string HistoryFromText
         {
             get => _historyFromText;
-            set { _historyFromText = value ?? string.Empty; OnPropertyChanged(); OnPropertyChanged(nameof(HasInvalidHistoryRange)); (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); }
+            set
+            {
+                var normalized = value ?? string.Empty;
+                if (string.Equals(_historyFromText, normalized, StringComparison.Ordinal)) return;
+                _historyFromText = normalized;
+                InvalidateHistoryLoad();
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasInvalidHistoryRange));
+                (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            }
         }
 
         public string HistoryToText
         {
             get => _historyToText;
-            set { _historyToText = value ?? string.Empty; OnPropertyChanged(); OnPropertyChanged(nameof(HasInvalidHistoryRange)); (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged(); }
+            set
+            {
+                var normalized = value ?? string.Empty;
+                if (string.Equals(_historyToText, normalized, StringComparison.Ordinal)) return;
+                _historyToText = normalized;
+                InvalidateHistoryLoad();
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasInvalidHistoryRange));
+                (LoadHistoryCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            }
         }
 
         public ObservableCollection<HistoryRow> HistoryRows { get; }
@@ -749,11 +769,21 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return;
             }
 
+            var version = Interlocked.Increment(ref _historyLoadVersion);
+            Volatile.Write(ref _activeHistoryLoadVersion, version);
+            var capturedTabIndex = SelectedTabIndex;
+            var capturedFromText = HistoryFromText;
+            var capturedToText = HistoryToText;
             IsBusy = true;
             try
             {
                 var includeFiscalPrinted = true;
                 var summaries = await _service.GetDailySummariesAsync(from, to, includeFiscalPrinted).ConfigureAwait(true);
+                if (!IsHistoryLoadCurrent(
+                    version,
+                    capturedTabIndex,
+                    capturedFromText,
+                    capturedToText)) return;
                 CancelMarkedPreviewLoad();
                 SingleMarkedReceiptPreview = string.Empty;
                 foreach (var row in HistoryRows)
@@ -815,12 +845,46 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             catch (Exception ex)
             {
-                Status = PosLocalization.F("reports.historyLoadError", ex.Message);
+                if (IsHistoryLoadCurrent(
+                    version,
+                    capturedTabIndex,
+                    capturedFromText,
+                    capturedToText))
+                {
+                    Status = PosLocalization.F("reports.historyLoadError", ex.Message);
+                }
             }
             finally
             {
-                IsBusy = false;
+                if (Interlocked.CompareExchange(
+                    ref _activeHistoryLoadVersion,
+                    0,
+                    version) == version)
+                {
+                    IsBusy = false;
+                }
             }
+        }
+
+        private bool IsHistoryLoadCurrent(
+            int version,
+            int capturedTabIndex,
+            string capturedFromText,
+            string capturedToText)
+        {
+            return !_disposed &&
+                   version == Volatile.Read(ref _historyLoadVersion) &&
+                   version == Volatile.Read(ref _activeHistoryLoadVersion) &&
+                   SelectedTabIndex == capturedTabIndex &&
+                   string.Equals(HistoryFromText, capturedFromText, StringComparison.Ordinal) &&
+                   string.Equals(HistoryToText, capturedToText, StringComparison.Ordinal);
+        }
+
+        private void InvalidateHistoryLoad()
+        {
+            Interlocked.Increment(ref _historyLoadVersion);
+            if (Interlocked.Exchange(ref _activeHistoryLoadVersion, 0) != 0)
+                IsBusy = false;
         }
 
         private bool CanLoadHistory()
@@ -832,6 +896,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>Reset completo stato Storico quando si torna al tab Giornaliero.</summary>
         private void ResetHistoryState()
         {
+            InvalidateHistoryLoad();
             CancelHistoryPreviewLoad();
             CancelMarkedPreviewLoad();
             IsHistoryPreviewLoading = false;
@@ -1311,13 +1376,20 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             if (_disposed) return;
             _disposed = true;
+            InvalidateHistoryLoad();
             CancelHistoryPreviewLoad();
             CancelMarkedPreviewLoad();
             PosLocalization.Current.LanguageChanged -= OnLanguageChanged;
+            foreach (var row in HistoryRows)
+                row.PropertyChanged -= OnHistoryRowPropertyChanged;
+            HistoryRows.Clear();
             IsHistoryPreviewLoading = false;
             IsMarkedPreviewLoading = false;
             SummaryReceiptPreview = string.Empty;
             SingleMarkedReceiptPreview = string.Empty;
+            ExportRequested = null;
+            RequestExportScopeChoice = null;
+            PropertyChanged = null;
         }
 
         private void SetStatusKey(string key)

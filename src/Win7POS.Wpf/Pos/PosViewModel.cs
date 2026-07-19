@@ -15,7 +15,6 @@ using Win7POS.Core.Models;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Security;
 using Win7POS.Core.Util;
-using Win7POS.Wpf.Fiscal;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Pos.Dialogs;
@@ -27,7 +26,7 @@ using Win7POS.Wpf.Products;
 namespace Win7POS.Wpf.Pos
 {
     /// <summary>ViewModel POS. Tutti i punti sensibili passano da Demand/TryDemandOrOverride: vendita (PosSell), pagamento (PosPay), sconto, refund, void, sospendi/recupera carrello, registro vendite, ristampa, impostazioni negozio/stampante, backup/restore DB, manutenzione DB, modifica catalogo, utenti/ruoli.</summary>
-    public sealed class PosViewModel : INotifyPropertyChanged
+    public sealed class PosViewModel : INotifyPropertyChanged, IDisposable
     {
         private readonly PosWorkflowService _service;
         private readonly FileLogger _logger;
@@ -46,6 +45,9 @@ namespace Win7POS.Wpf.Pos
         private bool _isStatusToastVisible;
         private PosNoticeSeverity _statusToastSeverity = PosNoticeSeverity.Info;
         private readonly DispatcherTimer _statusToastTimer;
+        private readonly EventHandler _statusToastTickHandler;
+        private readonly EventHandler _languageChangedHandler;
+        private bool _disposed;
         private string _receiptPreview = string.Empty;
         private bool _useReceipt42 = true;
         private bool _isLoadingSettings;
@@ -299,11 +301,12 @@ namespace Win7POS.Wpf.Pos
             _overrideAuthService = overrideAuthService;
             _userRepo = userRepo;
             _statusToastTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
-            _statusToastTimer.Tick += (_, __) =>
+            _statusToastTickHandler = (_, __) =>
             {
                 _statusToastTimer.Stop();
                 IsStatusToastVisible = false;
             };
+            _statusToastTimer.Tick += _statusToastTickHandler;
             DismissStatusToastCommand = new RelayCommand(_ => DismissStatusToast());
 
             AddBarcodeCommand = new AsyncRelayCommand(AddBarcodeAsync, _ => !IsBusy, _logger);
@@ -338,14 +341,16 @@ namespace Win7POS.Wpf.Pos
             RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy, _logger);
             OpenUserManagementCommand = new AsyncRelayCommand(OpenUserManagementAsync, _ => !IsBusy && (_permissionService == null || _permissionService.Has(PermissionCodes.UsersManage)), _logger);
             CatalogEvents.CatalogChanged += OnCatalogChanged;
-            PosLocalization.Current.LanguageChanged += (_, __) =>
+            _languageChangedHandler = (_, __) =>
             {
+                if (_disposed) return;
                 OnPropertyChanged(nameof(PendingInputQuantityDisplay));
                 foreach (var row in CartItems)
                 {
                     row.RaiseLocalizedProperties();
                 }
             };
+            PosLocalization.Current.LanguageChanged += _languageChangedHandler;
             PublishCustomerCartSnapshot();
             SetStatus(PosLocalization.Current.Text("pos.status.ready"), PosNoticeSeverity.Info, suppressToast: true);
         }
@@ -358,6 +363,7 @@ namespace Win7POS.Wpf.Pos
 
         private void OnCatalogChanged(string barcode)
         {
+            if (_disposed) return;
             if (string.IsNullOrEmpty(barcode))
             {
                 _ = RefreshCartFromDatabaseAsync(PosLocalization.Current.Text("pos.status.cartSyncedDb"));
@@ -717,15 +723,16 @@ namespace Win7POS.Wpf.Pos
                 NextBoletaNumber = nextBoleta
             };
 
-            var fiscalPdf = new FiscalPdfService();
             using var vm = new PaymentViewModel(Total, draft,
-                (text, code) => fiscalPdf.GenerateFiscalPdfAsync(text, code),
-                async (text, code) => await _service.PrintReceiptTextAsync(
-                    text,
-                    UseReceipt42,
-                    "FISCAL_" + code,
-                    isFiscalPrint: true,
-                    automaticAfterSale: true).ConfigureAwait(true),
+                async (text, code) =>
+                {
+                    await _service.PrintReceiptTextAsync(
+                        text,
+                        UseReceipt42,
+                        "FISCAL_" + code,
+                        isFiscalPrint: true,
+                        automaticAfterSale: true).ConfigureAwait(true);
+                },
                 openDrawerDefault: IsCashDrawerConfigured && _printerSettings.CashDrawerOpenOnCashSale);
 
             PublishCustomerState(CustomerDisplayState.Payment, "payment");
@@ -786,6 +793,13 @@ namespace Win7POS.Wpf.Pos
             IsPaymentCommitInProgress = true;
             try
             {
+                if (vm.AutoPrintFiscalBoleta && vm.CashAmountMinor > 0)
+                {
+                    vm.NextBoletaNumber = await _service
+                        .ReserveFiscalBoletaNumberAsync(vm.NextBoletaNumber)
+                        .ConfigureAwait(true);
+                }
+
                 var payment = new PosPaymentInfo
                 {
                     CashAmountMinor = vm.CashAmountMinor,
@@ -811,7 +825,7 @@ namespace Win7POS.Wpf.Pos
 
                 await TryAutoOpenDrawerAfterPaymentAsync(vm).ConfigureAwait(true);
 
-                var fiscalPrinted = false;
+                var fiscalBoletaPrinted = false;
                 if (vm.ShouldPrint)
                 {
                     var printed = await PrintReceiptAsync(ReceiptPreview, result.SaleCode, automaticAfterSale: true).ConfigureAwait(true);
@@ -828,17 +842,71 @@ namespace Win7POS.Wpf.Pos
                     }
                 }
 
-                if (vm.AutoPrintPdfSii)
-                    fiscalPrinted = await vm.TriggerAutoPrintPdfIfEnabledAsync().ConfigureAwait(true);
-
-                if (fiscalPrinted)
+                if (vm.AutoPrintFiscalBoleta)
                 {
-                    await _service.MarkPdfPrintedAsync(result.SaleId).ConfigureAwait(true);
-                    await _service.SetFiscalBoletaNumberAsync(vm.NextBoletaNumber).ConfigureAwait(true);
+                    try
+                    {
+                        fiscalBoletaPrinted = await vm
+                            .TriggerAutoPrintFiscalBoletaIfEnabledAsync()
+                            .ConfigureAwait(true);
+                    }
+                    catch (Exception fiscalPrintEx)
+                    {
+                        _logger.LogError(
+                            fiscalPrintEx,
+                            "Fiscal boleta print failed after sale commit. saleCode=" +
+                            result.SaleCode +
+                            " boletaNumber=" +
+                            vm.NextBoletaNumber.ToString(CultureInfo.InvariantCulture));
+                        SetStatus(
+                            PosLocalization.Current.Format(
+                                "pos.status.paymentOkFiscalPrintFailed",
+                                result.SaleCode,
+                                vm.NextBoletaNumber),
+                            PosNoticeSeverity.Warning);
+                        ModernMessageDialog.Show(
+                            DialogOwnerHelper.GetSafeOwner(),
+                            PosLocalization.Current.Text("pos.status.printFailedTitle"),
+                            PosLocalization.Current.Format(
+                                "printer.fiscalSaleSavedPrintWarning",
+                                vm.NextBoletaNumber,
+                                string.IsNullOrWhiteSpace(fiscalPrintEx.Message)
+                                    ? PosLocalization.Current.Text("pos.status.receiptNotPrintedCheckPrinter")
+                                    : fiscalPrintEx.Message));
+                    }
                 }
 
-                if (!fiscalPrinted && vm.AutoPrintPdfSii && vm.CardAmountMinor > 0 && vm.CashAmountMinor == 0)
-                SetStatus(PosLocalization.Current.Format("pos.status.paymentOkCardOnly", result.SaleCode), PosNoticeSeverity.Warning);
+                if (fiscalBoletaPrinted)
+                {
+                    try
+                    {
+                        await _service.MarkPdfPrintedAsync(result.SaleId).ConfigureAwait(true);
+                    }
+                    catch (Exception fiscalStatusEx)
+                    {
+                        _logger.LogError(
+                            fiscalStatusEx,
+                            "Fiscal boleta printed but status persistence failed. saleCode=" +
+                            result.SaleCode +
+                            " boletaNumber=" +
+                            vm.NextBoletaNumber.ToString(CultureInfo.InvariantCulture));
+                        SetStatus(
+                            PosLocalization.Current.Format(
+                                "pos.status.paymentOkFiscalStatusSaveFailed",
+                                result.SaleCode,
+                                vm.NextBoletaNumber),
+                            PosNoticeSeverity.Warning);
+                        ModernMessageDialog.Show(
+                            DialogOwnerHelper.GetSafeOwner(),
+                            PosLocalization.Current.Text("pos.status.printFailedTitle"),
+                            PosLocalization.Current.Format(
+                                "printer.fiscalPrintedStatusSaveWarning",
+                                vm.NextBoletaNumber));
+                    }
+                }
+
+                if (!fiscalBoletaPrinted && vm.AutoPrintFiscalBoleta && vm.CardAmountMinor > 0 && vm.CashAmountMinor == 0)
+                    SetStatus(PosLocalization.Current.Format("pos.status.paymentOkCardOnly", result.SaleCode), PosNoticeSeverity.Warning);
 
                 QueueSalesSyncAfterPayment();
                 await LoadRecentSalesAsync().ConfigureAwait(true);
@@ -1192,7 +1260,9 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 var outputPath = await _service.BackupDbAsync().ConfigureAwait(true);
-                _operatorSession?.LogSecurityEvent(SecurityEventCodes.DbBackup, "path=" + (outputPath ?? ""));
+                _operatorSession?.LogSecurityEvent(
+                    SecurityEventCodes.DbBackup,
+                    "backupFile=" + Path.GetFileName(outputPath ?? string.Empty));
                 SetStatus(PosLocalization.Current.Format("pos.status.dbBackupCreated", outputPath), PosNoticeSeverity.Success);
             }
             catch (Exception ex)
@@ -1209,6 +1279,15 @@ namespace Win7POS.Wpf.Pos
 
         private async Task OpenPrinterSettingsAsync()
         {
+            if (App.IsSafeStart)
+            {
+                SetStatus(
+                    PosLocalization.Current.Text("printer.settingsDisabledSafeStart"),
+                    PosNoticeSeverity.Warning);
+                RequestFocusBarcode();
+                return;
+            }
+
             if (!(await TryDemandOrOverrideAsync(PermissionCodes.SettingsPrinter, PosLocalization.Current.Text("printer.title")).ConfigureAwait(true))) { RequestFocusBarcode(); return; }
             var vm = new PrinterSettingsViewModel
             {
@@ -1380,7 +1459,7 @@ namespace Win7POS.Wpf.Pos
             return new PosPrinterSettings
             {
                 PrinterName = vm.PrinterName,
-                Copies = vm.ParsedCopies < 1 ? 1 : vm.ParsedCopies,
+                Copies = vm.ParsedCopies,
                 ReceiptEnabled = vm.ReceiptEnabled,
                 AutoPrint = vm.AutoPrint,
                 AllowWindowsDefault = vm.AllowWindowsDefault,
@@ -2202,6 +2281,19 @@ namespace Win7POS.Wpf.Pos
             => DiscountKeys.IsDiscount(barcode ?? "");
 
         public event PropertyChangedEventHandler PropertyChanged;
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            CatalogEvents.CatalogChanged -= OnCatalogChanged;
+            PosLocalization.Current.LanguageChanged -= _languageChangedHandler;
+            _statusToastTimer.Stop();
+            _statusToastTimer.Tick -= _statusToastTickHandler;
+            FocusBarcodeRequested = null;
+            CustomerDisplaySnapshotChanged = null;
+            PropertyChanged = null;
+        }
         private void OnPropertyChanged([CallerMemberName] string name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
 

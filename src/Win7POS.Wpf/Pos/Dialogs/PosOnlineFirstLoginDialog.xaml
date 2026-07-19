@@ -179,7 +179,7 @@
                     <TextBlock x:Name="ConnectButtonText" Text="{loc:Loc access.login.signIn}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click">
+            <Button x:Name="CancelButton" MinWidth="100" Height="42" IsCancel="True" Style="{StaticResource DialogCancelButtonStyle}" Click="Cancel_Click">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -209,7 +210,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 var info = ResolveReceiptPrinter();
                 if (info == null)
                     return PosLocalization.T("printer.noPosPrinterConfigured");
-                return info.StatusText + (info.IsVirtual ? " - " + PosLocalization.T("printer.virtualNotRecommended") : string.Empty);
+                return info.StatusText + (!info.IsPhysical ? " - " + PosLocalization.T("printer.virtualNotRecommended") : string.Empty);
             }
         }
 
@@ -217,7 +218,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             !CashDrawerEnabled ||
             (!string.IsNullOrWhiteSpace(CashDrawerCommand) &&
              WindowsSpoolerReceiptPrinter.IsCashDrawerCommandValid(CashDrawerCommand));
-        public bool IsValid => ParsedCopies >= 1 && IsCashDrawerCommandValid;
+        public bool IsValid => ParsedCopies >= 1 &&
+                               ParsedCopies <= ReceiptPrintOptions.MaximumCopies &&
+                               IsCashDrawerCommandValid;
         public bool IsTestOperationInProgress => _isTestOperationInProgress;
         public Task ActiveTestOperation => _activeTestOperation;
         public Task ActiveRefreshOperation => _activeRefreshOperation;
@@ -226,13 +229,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             !_disposed &&
             !IsTestOperationInProgress &&
             ReceiptEnabled &&
-            IsUsableQueue(ResolveReceiptPrinter(), AllowVirtualPrinters);
+            IsUsableQueue(
+                ResolveReceiptPrinter(),
+                allowVirtualPrinter: AllowVirtualPrinters,
+                requirePhysicalOutput: false);
         public bool CanTestCashDrawer =>
             !_disposed &&
             !IsTestOperationInProgress &&
             CashDrawerEnabled &&
             IsCashDrawerCommandValid &&
-            IsUsableQueue(ResolveCashDrawerPrinter(), allowVirtualPrinter: false);
+            IsUsableQueue(
+                ResolveCashDrawerPrinter(),
+                allowVirtualPrinter: false,
+                requirePhysicalOutput: true);
 
         public string TestPrintStatusMessage => CanTestPrint
             ? PosLocalization.T("printer.testPrintReady")
@@ -251,7 +260,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             get
             {
-                if (!int.TryParse(Copies, out var value)) return 0;
+                if (!int.TryParse(Copies, NumberStyles.None, CultureInfo.InvariantCulture, out var value)) return 0;
                 return value;
             }
         }
@@ -425,14 +434,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
             return FindPrinter(name);
         }
 
-        private static bool IsUsableQueue(InstalledPrinterInfo printer, bool allowVirtualPrinter)
+        private static bool IsUsableQueue(
+            InstalledPrinterInfo printer,
+            bool allowVirtualPrinter,
+            bool requirePhysicalOutput)
         {
             return printer != null &&
                    !string.IsNullOrWhiteSpace(printer.Name) &&
+                   printer.IsInventoryFresh &&
                    printer.IsAvailable &&
                    !printer.IsOffline &&
                    !printer.IsPaused &&
-                   (allowVirtualPrinter || !printer.IsVirtual);
+                   (printer.IsPhysical || (!requirePhysicalOutput && allowVirtualPrinter));
         }
 
         private void OnLanguageChanged(object sender, EventArgs e)

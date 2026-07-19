@@ -80,7 +80,7 @@ $requiredProperties = @(
     @{ Name = "IsAvailable"; Type = "bool" },
     @{ Name = "IsOffline"; Type = "bool" },
     @{ Name = "IsPaused"; Type = "bool" },
-    @{ Name = "IsVirtual"; Type = "bool" },
+    @{ Name = "IsInventoryFresh"; Type = "bool" },
     @{ Name = "StatusText"; Type = "string" },
     @{ Name = "Notes"; Type = "string" }
 )
@@ -98,6 +98,10 @@ if ($missingProperties.Count -eq 0) {
 else {
     Fail "installed-printer model missing fields: $($missingProperties -join ', ')"
 }
+
+Require-Pattern "installed-printer model uses tri-state output classification" $model 'enum\s+PrinterOutputKind[\s\S]{0,300}Unknown\s*=\s*0[\s\S]{0,120}Physical\s*=\s*1[\s\S]{0,120}Virtual\s*=\s*2[\s\S]*public\s+PrinterOutputKind\s+OutputKind'
+Require-Pattern "installed-printer model exposes compatibility virtual and proven-physical projections" $model 'public\s+bool\s+IsVirtual[\s\S]{0,500}PrinterOutputKind\.Virtual[\s\S]{0,500}public\s+bool\s+IsPhysical\s*=>\s*OutputKind\s*==\s*PrinterOutputKind\.Physical'
+Require-Pattern "installed-printer model can clone cached inventory as stale" $model 'CloneWithInventoryFreshness\s*\([\s\S]{0,900}IsInventoryFresh\s*=\s*isInventoryFresh'
 
 $nativeContract = @(
     "EnumPrintersW",
@@ -148,7 +152,9 @@ Require-Pattern "actual driver mapping reaches InstalledPrinterInfo" $discovery 
 Require-Pattern "actual port mapping reaches InstalledPrinterInfo" $discovery 'CreateFromSpooler[\s\S]{0,2400}PortName\s*=\s*printer\.PortName'
 Require-Pattern "offline and paused mapping reaches InstalledPrinterInfo" $discovery 'IsOffline\s*=\s*[^,;\r\n]*IsOffline[\s\S]*IsPaused\s*=\s*[^,;\r\n]*IsPaused|IsPaused\s*=\s*[^,;\r\n]*IsPaused[\s\S]*IsOffline\s*=\s*[^,;\r\n]*IsOffline'
 Require-Pattern "managed fallback labels missing native metadata explicitly" $discovery 'CreateFromManagedPrinter[\s\S]{0,1600}DriverName\s*=\s*string\.Empty[\s\S]*PortName\s*=\s*string\.Empty[\s\S]*metadata unavailable'
-Require-Pattern "virtual classification considers driver and port metadata" $discovery 'IsLikelyVirtualPrinter\s*\(\s*printer\.Name\s*,\s*printer\.DriverName\s*,\s*printer\.PortName\s*(,|\))'
+Require-Pattern "output classification considers queue, driver, port and spooler attributes" $discovery 'ClassifyOutputKind\s*\(\s*printer\.Name\s*,\s*printer\.DriverName\s*,\s*printer\.PortName\s*,\s*printer\.Attributes\s*\)'
+Require-Pattern "virtual hints take precedence over physical port hints" $discovery 'VirtualPortHints[\s\S]{0,500}return\s+PrinterOutputKind\.Virtual[\s\S]{0,500}PhysicalPortPrefixes[\s\S]{0,300}return\s+PrinterOutputKind\.Physical'
+Require-Pattern "unproven output remains unknown" $discovery 'return\s+PrinterOutputKind\.Unknown\s*;'
 
 $spoolerMappingBody = Get-MethodBody $discovery 'private\s+static\s+InstalledPrinterInfo\s+CreateFromSpooler\s*\('
 if ([string]::IsNullOrWhiteSpace($spoolerMappingBody)) {
@@ -180,7 +186,7 @@ Require-Pattern "native discovery is best-effort per failed spooler query" $best
 Require-Pattern "default-printer lookup retains a managed fallback" $discovery 'GetDefaultPrinterName\([\s\S]*WindowsSpoolerPrinterInventory[\s\S]*PrintDocument'
 Require-Pattern "printer discovery executes outside the UI thread" $workflow 'Task\.Run<[^>]*InstalledPrinterInfo[^>]*>|Task\.Run\s*\('
 Require-Pattern "printer discovery has a bounded timeout" $workflow 'Task\.WhenAny\s*\([\s\S]{0,300}Task\.Delay\s*\(\s*PrinterDiscoveryTimeoutMilliseconds\s*\)'
-Require-Pattern "printer discovery returns cached inventory on failure or timeout" $workflow '_lastPrinterDiscovery[\s\S]*Printer discovery failed[\s\S]*_lastPrinterDiscovery[\s\S]*Printer discovery timed out[\s\S]*_lastPrinterDiscovery'
+Require-Pattern "printer discovery returns cached inventory marked stale on failure or timeout" $workflow '_lastPrinterDiscovery[\s\S]*Printer discovery failed[\s\S]*ClonePrinterInventory\s*\(\s*_lastPrinterDiscovery\s*,\s*isFresh:\s*false\s*\)[\s\S]*Printer discovery timed out[\s\S]*ClonePrinterInventory\s*\(\s*_lastPrinterDiscovery\s*,\s*isFresh:\s*false\s*\)'
 Forbid-Pattern "operational printer resolution never bypasses bounded discovery" $workflow 'WindowsPrinterDiscovery\.(FindPrinter|GetDefaultPrinterName)\s*\('
 
 $operationalDiscoveryMethods = @(
@@ -230,7 +236,6 @@ Forbid-Pattern "printer discovery has no WMI, System.Printing, or WinRT dependen
 Forbid-Pattern "WPF project has no WMI, System.Printing, or Windows SDK reference" $wpfProject '(?i)System\.Management|System\.Printing|Microsoft\.Windows\.SDK\.Contracts'
 
 $allowedWpfPackages = @(
-    "PDFsharp-gdi",
     "ZXing.Net.Bindings.Windows.Compatibility"
 )
 $packageMatches = [regex]::Matches($wpfProject, '<PackageReference\s+Include="([^"]+)"')
@@ -251,7 +256,18 @@ else {
 Require-Pattern "printer diagnostics UI displays actual driver name" $dialogXaml '\{Binding\s+DriverName\}'
 Require-Pattern "printer diagnostics UI displays actual port name" $dialogXaml '\{Binding\s+PortName\}'
 Require-Pattern "printer diagnostics UI displays computed availability state" $dialogXaml '\{Binding\s+StatusText\}'
-Require-Pattern "summary exposes default, availability, offline, paused and virtual state" $model 'public\s+string\s+Summary[\s\S]*IsDefault[\s\S]*IsVirtual[\s\S]*IsPaused[\s\S]*IsOffline[\s\S]*IsAvailable'
+Require-Pattern "summary exposes default, output kind, freshness, availability, offline and paused state" $model 'public\s+string\s+Summary[\s\S]*IsDefault[\s\S]*IsVirtual[\s\S]*PrinterOutputKind\.Unknown[\s\S]*IsInventoryFresh[\s\S]*IsPaused[\s\S]*IsOffline[\s\S]*IsAvailable'
+
+$resolverBody = Get-MethodBody $workflow 'private\s+static\s+InstalledPrinterInfo\s+ResolvePrinterNameOrThrow\s*\('
+if ([string]::IsNullOrWhiteSpace($resolverBody)) {
+    Fail "printer resolver body missing"
+}
+else {
+    Require-Pattern "printer resolver rejects stale inventory" $resolverBody '!resolved\.IsInventoryFresh'
+    Require-Pattern "automatic and drawer paths require proven physical output" $resolverBody '!resolved\.IsPhysical[\s\S]{0,180}requirePhysicalOutput'
+    Require-Pattern "unknown or virtual output requires explicit opt-in" $resolverBody '!resolved\.IsPhysical[\s\S]{0,220}!allowVirtualPrinters'
+}
+Require-Pattern "UI smoke covers tri-state classification and stale inventory" $uiSmoke 'VerifyPrinterOutputClassificationAndStaleClone[\s\S]*PrinterOutputKind\.Physical[\s\S]*PrinterOutputKind\.Unknown[\s\S]*PrinterOutputKind\.Virtual[\s\S]*CloneWithInventoryFreshness\s*\(\s*false\s*\)'
 
 Require-Pattern "printer settings view model implements IDisposable" $viewModel 'class\s+PrinterSettingsViewModel\s*:\s*[^\{\r\n]*IDisposable'
 Require-Pattern "printer settings view model has idempotent disposal" $viewModel '_disposed[\s\S]*public\s+void\s+Dispose\s*\(\s*\)[\s\S]*_disposed'

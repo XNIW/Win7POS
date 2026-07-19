@@ -119,7 +119,33 @@ Require-Pattern "operator switch cannot bypass an expired lease" $operatorSwitch
 Require-Pattern "trusted mirror lookup binds opaque shop and staff ids" $userRepo 'FindTrustedRemoteStaffUsernameAsync[\s\S]{0,1800}remote_shop_id[\s\S]{0,500}remote_staff_id'
 Require-Pattern "trusted mirror lookup binds the credential version" $userRepo 'FindTrustedRemoteStaffUsernameAsync[\s\S]{0,2200}remote_credential_version[\s\S]{0,300}staffCredentialVersion'
 Require-Pattern "offline login binds requested staff to the trusted lease" $accessDialog 'staff_identity_mismatch[\s\S]{0,900}FindTrustedRemoteStaffUsernameAsync'
-Require-Pattern "online completion and authenticated recovery resolve the lease-bound mirror" $accessDialog 'CompleteOnlineSignInAsync[\s\S]{0,700}FindLeaseBoundRemoteStaffUsernameAsync[\s\S]*LoginRemoteMirrorForRecoveryAsync[\s\S]{0,700}FindLeaseBoundRemoteStaffUsernameAsync'
+Require-Pattern "online completion resolves the lease-bound mirror" $accessDialog 'CompleteOnlineSignInAsync[\s\S]{0,700}FindLeaseBoundRemoteStaffUsernameAsync'
+$unsafeCatalogBranch = [regex]::Match(
+    $accessDialog,
+    'if\s*\(result\.Success\s*&&\s*!result\.CanOpenPos\)[\s\S]*?(?=\r?\n\s*var\s+failureKind)').Value
+if ($unsafeCatalogBranch -match 'FindLeaseBoundRemoteStaffUsernameAsync' -and
+    $unsafeCatalogBranch -notmatch 'LoginLocalUsernameAsync|LoginRemoteMirrorForRecoveryAsync|AccessMode\s*=|DialogResult\s*=') {
+    Pass "unsafe catalog prepares recovery without authenticating or committing access"
+}
+else {
+    Fail "unsafe catalog must not authenticate or commit before explicit recovery acceptance"
+}
+Require-Pattern "explicit remote recovery re-challenge uses normal lease-bound login" $accessDialog 'RunRemoteRecoveryLoginAsync[\s\S]{0,1800}LoginRemoteMirrorForRecoveryAsync[\s\S]{0,1800}AccessMode\s*=\s*PosAuthenticatedAccessMode\.Normal'
+if ($accessDialog -match 'OperatorSessionHolder\.Current\s*=') {
+    Fail "access dialog must not replace the shared operator session"
+}
+else {
+    Pass "access dialog preserves the shared operator session object"
+}
+$catalogRetryMethod = [regex]::Match(
+    $accessDialog,
+    'private\s+async\s+Task\s+RunCatalogRetryAsync\(\)[\s\S]*?(?=\r?\n\s*private\s+)').Value
+if ($catalogRetryMethod -match 'OperatorSessionHolder\.Current[\s\S]{0,120}IsLoggedIn') {
+    Fail "catalog retry must not accept an unrelated already-logged-in operator"
+}
+else {
+    Pass "catalog retry requires the pending shop/staff credential path"
+}
 Require-Pattern "operator switch resolves only the staff bound to the trusted lease" $operatorSwitch 'PosTrustedDeviceStore[\s\S]{0,2200}FindTrustedRemoteStaffUsernameAsync'
 if ($operatorSwitch -match 'GetByUsernameAsync\(normalized\)' -or
     $operatorSwitch -match 'FindRemoteStaffUsernameAsync\(_shopCode,\s*normalized\)') {

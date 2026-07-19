@@ -155,6 +155,25 @@ if ($restoreBody -notmatch "File\.Copy\(backupDbPath, tempRestorePath, true\)" -
     Pass "restore installs the validated temporary copy and covers source TOCTOU"
 }
 
+$tempPathIndex = $restoreBody.IndexOf("var tempRestorePath", [System.StringComparison]::Ordinal)
+$tempTryIndex = if ($tempPathIndex -ge 0) {
+    $restoreBody.IndexOf("try", $tempPathIndex, [System.StringComparison]::Ordinal)
+} else { -1 }
+$tempCopyIndex = $restoreBody.IndexOf("File.Copy(backupDbPath, tempRestorePath, true)", [System.StringComparison]::Ordinal)
+$tempCleanupIndex = $restoreBody.IndexOf("File.Delete(tempRestorePath)", [System.StringComparison]::Ordinal)
+$tempFinallyIndex = if ($tempCleanupIndex -ge 0) {
+    $restoreBody.LastIndexOf("finally", $tempCleanupIndex, [System.StringComparison]::Ordinal)
+} else { -1 }
+if ($tempPathIndex -lt 0 -or
+    $tempTryIndex -le $tempPathIndex -or
+    $tempCopyIndex -le $tempTryIndex -or
+    $tempFinallyIndex -le $tempCopyIndex -or
+    $tempCleanupIndex -le $tempFinallyIndex) {
+    Fail "validated restore copy creation must be inside the same try/finally that removes its temporary files"
+} else {
+    Pass "validated restore copy creation is covered by deterministic temporary-file cleanup"
+}
+
 if ($atomicInstaller -notmatch "File\.Replace\(candidatePath, liveDatabasePath, atomicRollbackPath\)" -or
     $atomicInstaller -notmatch "File\.Replace\(rollbackPath, liveDatabasePath, null\)" -or
     $atomicInstaller -notmatch "PhasePrepared" -or

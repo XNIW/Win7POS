@@ -19,7 +19,7 @@ sales receipts use one immutable persisted-value snapshot and one renderer.
 | Void receipt | `PosReceiptTextRenderer` with reversal header | exact rendered string | YES | persisted void economics and lines | NO | NO | refund/POS workflow |
 | Daily close, current or historical day | `DailyCloseReceiptTextRenderer` | exact `SummaryReceiptPreview` or same dedicated renderer | YES | existing `DailySalesSummary` calculations | NO | NO | `DailyReportViewModel.Dispose` |
 | Multi-day daily summary | shared `ReceiptTextLayout` aggregate string | exact aggregate string | YES | persisted daily summaries | NO | NO | `DailyReportViewModel.Dispose` |
-| Fiscal PDF / boleta | `FiscalPdfService` | explicit fiscal document workflow | separate surface | persisted fiscal/sale data | NO | Explicit fiscal behavior retained | fiscal workflow |
+| Boleta direct print | `PaymentViewModel` fiscal preview | exact `FiscalPreviewText` sent to configured spooler | YES | current payment draft, selected boleta number and cached shop data | NO | NO | payment workflow |
 | Daily CSV export | export preview/status only | explicit user-chosen export | separate surface | daily summaries | NO | Explicit export retained | Daily Report |
 | Customer display | `CustomerDisplayProjection` | not printed | not a paper receipt | current cart/payment projection | NO | NO | `CustomerDisplayManager.Dispose` |
 
@@ -36,29 +36,44 @@ sales receipts use one immutable persisted-value snapshot and one renderer.
 - The selected printer profile controls 32/42 columns. Tests reject any physical
   line whose visible width exceeds the selected profile.
 - `WindowsSpoolerReceiptPrinter` only submits to the spooler. It has no receipt
-  text/image/PDF archive writer.
+  or boleta text/image/PDF archive writer.
 - Legacy automatic-copy setting keys are no longer read or written, so an old
   value cannot reactivate file output. Existing user files are not scanned or
   deleted.
-- Fiscal PDFs, explicit exports and database backups are separate and remain
-  unchanged.
+- The automatic fiscal PDF writer and its PDF library are absent. The legacy
+  `sales.pdf_printed` column remains only as a compatibility status flag for a
+  successfully printed boleta; it is not a path or stored document.
+- Explicit CSV exports and database backups remain separate user actions.
 
 ## Automated checkpoint
 
-- Required source gates: `32/32 PASS`, including
+- Required source-and-release gates: `35/35 PASS`, including direct-boleta/no-PDF checks in
   `check-pos-receipt-surface-consistency.ps1`.
-- Solution Release build: PASS, 0 errors; only offline NuGet vulnerability-feed
-  warnings.
-- WPF net48/x86 and UI harness x86 builds: PASS, 0 warnings/errors.
-- Receipt alignment harness: PASS for cash/card/mixed, line/cart discounts,
-  EN/ES/IT/ZH and 32/42 columns.
-- Lifecycle run after the disposal fix: 20 Daily Report, 20 Sales Register and
-  20 Printer Settings cycles; zero residual windows/ViewModels; language and
-  display handlers returned to baseline; private bytes and handles were not
-  monotonic.
-- The current host's Application Control policy later blocked newly rebuilt
-  unsigned test/runtime binaries (`0x800711C7`). The solution and focused
-  checkers compile, while the final MSTest/CLI rerun must be taken from CI or the
-  trusted Release Pack rather than misreported as a product failure.
+- Core tests: `298/298 PASS`, zero skipped.
+- WPF net48/x86 and UI harness x86 isolated builds: PASS with zero warnings and
+  zero errors; neither output contains `PdfSharp` or a generated PDF.
+- Focused x86 runtime harness: `fiscalDirectPrintNoArchivePass=True` for cash,
+  card-only and simulated spooler failure; the QA data root contained zero PDF
+  files and no export directory after the run.
+- The same configured `ReceiptPrintOptions.Copies` value is used for receipt and
+  boleta jobs. Invalid copy counts fail before a spooler task is created; the
+  supported range is one through three.
 
-Physical post-change reprint and daily-close output remain the final merge gate.
+## Physical receipt-surface addendum — 2026-07-19
+
+The dedicated no-database physical harness submitted exactly six sequential,
+awaited, one-copy jobs to `EPSON TM-T60 Receipt` on the Windows 11 QA host:
+fiscal 32 columns, fiscal 42 columns, receipt original, byte-identical receipt
+reprint request, daily close 32 columns and daily close 42 columns. Every slip
+was marked `QA - PRINTER TEST`, `NON FISCAL`, `NO SALE SAVED` and `NO DRAWER`.
+
+The atomic manifest records `SUBMITTED_JOBS=6`, `DRAWER_CALLS=0`, absent database
+artifacts and identical request hashes for jobs 3 and 4. The operator visually
+confirmed exactly six legible/cut slips, correct widths and codes, identical
+original/reprint output, no extras and a closed drawer. The queue returned
+`Normal` with zero jobs. Evidence is retained outside Git at
+`C:\Dev\Win7POS-QA\hardware\Epson-TM-T60\20260719-pr7-final-01\physical-printer-qa.txt`,
+SHA-256 `F635BB9DC6FC45A8DD5A881CDA1EB0E1AB3CF5288542569A43395279699FE1DA`.
+
+This closes the PR #7 receipt-surface physical merge gate. It does not constitute
+a physical Windows 7 SP1 run, which remains `NOT_RUN_WIN7_PHYSICAL`.

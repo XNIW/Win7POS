@@ -44,6 +44,18 @@ namespace Win7POS.Wpf.Printing
             "fax:"
         };
 
+        private static readonly string[] PhysicalPortPrefixes =
+        {
+            "ESDPRT",
+            "USB",
+            "DOT4",
+            "LPT",
+            "COM",
+            "WSD",
+            "IP_",
+            "TCP_"
+        };
+
         public static IReadOnlyList<InstalledPrinterInfo> GetInstalledPrinters()
         {
             var printersByName = new Dictionary<string, InstalledPrinterInfo>(StringComparer.OrdinalIgnoreCase);
@@ -118,17 +130,26 @@ namespace Win7POS.Wpf.Printing
 
         public static bool IsLikelyVirtualPrinter(string printerName, string driverName, string portName)
         {
-            return IsLikelyVirtualPrinter(printerName, driverName, portName, 0);
+            return ClassifyOutputKind(printerName, driverName, portName, 0) ==
+                   PrinterOutputKind.Virtual;
         }
 
-        private static bool IsLikelyVirtualPrinter(
+        public static PrinterOutputKind ClassifyOutputKind(
+            string printerName,
+            string driverName,
+            string portName)
+        {
+            return ClassifyOutputKind(printerName, driverName, portName, 0);
+        }
+
+        private static PrinterOutputKind ClassifyOutputKind(
             string printerName,
             string driverName,
             string portName,
             uint printerAttributes)
         {
             if ((printerAttributes & WindowsSpoolerPrinterInventory.PrinterAttributeFax) != 0)
-                return true;
+                return PrinterOutputKind.Virtual;
 
             var textValues = new[]
             {
@@ -139,12 +160,23 @@ namespace Win7POS.Wpf.Printing
             if (textValues.Any(value => VirtualPrinterHints.Any(
                 hint => value.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0)))
             {
-                return true;
+                return PrinterOutputKind.Virtual;
             }
 
             var port = (portName ?? string.Empty).Trim();
-            return VirtualPortHints.Any(
-                hint => port.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (VirtualPortHints.Any(
+                hint => port.IndexOf(hint, StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                return PrinterOutputKind.Virtual;
+            }
+
+            if (PhysicalPortPrefixes.Any(prefix =>
+                port.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            {
+                return PrinterOutputKind.Physical;
+            }
+
+            return PrinterOutputKind.Unknown;
         }
 
         private static InstalledPrinterInfo CreateFromSpooler(
@@ -175,11 +207,12 @@ namespace Win7POS.Wpf.Printing
             {
                 Name = printer.Name,
                 IsDefault = string.Equals(printer.Name, defaultName, StringComparison.OrdinalIgnoreCase),
-                IsVirtual = IsLikelyVirtualPrinter(
+                OutputKind = ClassifyOutputKind(
                     printer.Name,
                     printer.DriverName,
                     printer.PortName,
                     printer.Attributes),
+                IsInventoryFresh = true,
                 IsAvailable = isAvailable,
                 IsOffline = isOffline,
                 IsPaused = isPaused,
@@ -202,14 +235,17 @@ namespace Win7POS.Wpf.Printing
             bool spoolerInventoryAvailable)
         {
             var managedQueueValid = IsManagedPrinterValid(printerName);
+            var outputKind = ClassifyOutputKind(printerName, string.Empty, string.Empty);
             return new InstalledPrinterInfo
             {
                 Name = printerName,
                 IsDefault = string.Equals(printerName, defaultName, StringComparison.OrdinalIgnoreCase),
-                IsVirtual = IsLikelyVirtualPrinter(printerName),
+                OutputKind = outputKind,
+                IsInventoryFresh = true,
                 // Managed enumeration does not expose enough metadata to prove
-                // that a queue is safe for unattended POS output.
-                IsAvailable = false,
+                // that a queue is physical. A valid queue remains available for
+                // an explicit, operator-approved virtual/unknown print only.
+                IsAvailable = managedQueueValid,
                 IsOffline = false,
                 IsPaused = false,
                 DriverName = string.Empty,

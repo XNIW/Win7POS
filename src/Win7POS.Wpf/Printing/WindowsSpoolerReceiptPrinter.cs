@@ -16,6 +16,9 @@ namespace Win7POS.Wpf.Printing
     public sealed class WindowsSpoolerReceiptPrinter : IReceiptPrinter
     {
         private static readonly FileLogger _logger = new FileLogger("WindowsSpoolerReceiptPrinter");
+        private static readonly object PrinterEffectSync = new object();
+        private static readonly Dictionary<string, Task> PrinterEffectTails =
+            new Dictionary<string, Task>(StringComparer.OrdinalIgnoreCase);
         private const string SiiMarker = "Timbre Electrónico SII";
 
         // regolazioni richieste: spazio bianco sopra QR + QR più stretto su carta
@@ -41,12 +44,21 @@ namespace Win7POS.Wpf.Printing
 
         public async Task PrintAsync(string receiptText, ReceiptPrintOptions opt)
         {
+            PrinterHardwareSafety.DemandHardwareOutputAllowed();
             if (receiptText == null) throw new ArgumentNullException(nameof(receiptText));
             if (opt == null) throw new ArgumentNullException(nameof(opt));
+            if (!ReceiptPrintOptions.IsValidCopyCount(opt.Copies))
+                throw new InvalidOperationException(PosLocalization.T("printer.invalidCopies"));
 
             // Sales history in SQLite is the only receipt archive. Printing never
             // creates an automatic image/PDF/text copy on disk.
-            await TryPrintWithRetryAsync(receiptText, opt).ConfigureAwait(false);
+            var snapshot = CloneOptions(opt);
+            var printTask = StartExclusivePrinterEffect(
+                snapshot.PrinterName,
+                () => PrintOnce(receiptText, snapshot));
+            await AwaitEffectWithinTimeoutAsync(
+                printTask,
+                PosLocalization.T("printer.printTimedOut")).ConfigureAwait(false);
         }
 
         private const byte EscPosEscape = 27;
@@ -54,20 +66,16 @@ namespace Win7POS.Wpf.Printing
 
         public async Task OpenCashDrawerAsync(ReceiptPrintOptions opt)
         {
+            PrinterHardwareSafety.DemandHardwareOutputAllowed();
             if (opt == null) return;
-            var cmd = (opt.CashDrawerCommand ?? string.Empty).Trim();
-            var bytes = ParseCashDrawerCommand(cmd);
-            var drawerTask = Task.Run(() => TryOpenCashDrawer(opt.PrinterName, bytes, cmd));
-            var completed = await Task.WhenAny(
+            var printerName = (opt.PrinterName ?? string.Empty).Trim();
+            var bytes = ParseCashDrawerCommand(opt.CashDrawerCommand);
+            var drawerTask = StartExclusivePrinterEffect(
+                printerName,
+                () => TryOpenCashDrawer(printerName, bytes));
+            await AwaitEffectWithinTimeoutAsync(
                 drawerTask,
-                Task.Delay(PrintAttemptTimeoutMilliseconds)).ConfigureAwait(false);
-            if (completed != drawerTask)
-            {
-                // Do not retry: the driver may still emit the original pulse.
-                throw new TimeoutException(PosLocalization.T("printer.drawerTimedOut"));
-            }
-
-            await drawerTask.ConfigureAwait(false);
+                PosLocalization.T("printer.drawerTimedOut")).ConfigureAwait(false);
         }
 
         public static bool IsCashDrawerCommandValid(string command)
@@ -84,7 +92,7 @@ namespace Win7POS.Wpf.Printing
         }
 
         /// <summary>ESC/POS kick drawer: ESC p m t1 t2. Non usa fallback sulla stampante predefinita Windows.</summary>
-        private static void TryOpenCashDrawer(string printerName, byte[] bytes, string cmdForLog)
+        private static void TryOpenCashDrawer(string printerName, byte[] bytes)
         {
             if (bytes == null || bytes.Length == 0) return;
 
@@ -93,7 +101,7 @@ namespace Win7POS.Wpf.Printing
                 throw new InvalidOperationException(PosLocalization.T("printer.cashDrawerNotConfigured"));
 
             var bytesStr = string.Join(",", bytes.Select(b => b.ToString()));
-            _logger.LogInfo("CashDrawer: stampante=\"" + (effectivePrinter ?? "") + "\" comando=" + (cmdForLog ?? "") + " bytes=[" + bytesStr + "]");
+            _logger.LogInfo("CashDrawer: stampante=\"" + effectivePrinter + "\" bytes=[" + bytesStr + "]");
             try
             {
                 RawPrinterHelper.SendBytesToPrinter(effectivePrinter, bytes);
@@ -105,10 +113,16 @@ namespace Win7POS.Wpf.Printing
             }
         }
 
+        public const int MaximumCashDrawerCommandLength = 64;
+
         private static byte[] ParseCashDrawerCommand(string cmd)
         {
-            if (string.IsNullOrWhiteSpace(cmd))
+            if (cmd == null ||
+                cmd.Length > MaximumCashDrawerCommandLength ||
+                string.IsNullOrWhiteSpace(cmd))
                 throw InvalidCashDrawerCommand();
+
+            cmd = cmd.Trim();
 
             // Accetta la sintassi storica con virgole, punti e virgola o spazi, ma
             // non ignora mai token vuoti o caratteri non numerici. Un comando non
@@ -150,8 +164,8 @@ namespace Win7POS.Wpf.Printing
                 "Invalid ESC/POS cash-drawer command. Expected 27,112,m,t1,t2 with m 0/1/48/49, byte timings 0..255 and t1 < t2.");
         }
 
-        private const int RetryDelayMs = 300;
         private const int PrintAttemptTimeoutMilliseconds = 5000;
+        private const int MaximumReceiptPages = 128;
         private const int ThermalPaper80mmMin = 300;
         private const int ThermalPaper80mmMax = 330;
         private const int DefaultCharactersPerLine = 42;
@@ -160,54 +174,111 @@ namespace Win7POS.Wpf.Printing
         private const float MinimumReceiptFontSizePoints = 5f;
         private const float PrintableWidthSafetyFactor = 0.97f;
 
-        private static async Task TryPrintWithRetryAsync(string receiptText, ReceiptPrintOptions opt)
+        private static ReceiptPrintOptions CloneOptions(ReceiptPrintOptions source)
         {
-            try
+            return new ReceiptPrintOptions
             {
-                await PrintOnceWithinTimeoutAsync(receiptText, opt).ConfigureAwait(false);
-            }
-            catch (TimeoutException)
-            {
-                // A timed-out spooler call can still submit later. Retrying would
-                // make the physical outcome ambiguous and risks a duplicate receipt.
-                throw;
-            }
-            catch
-            {
-                await Task.Delay(RetryDelayMs).ConfigureAwait(false);
-                await PrintOnceWithinTimeoutAsync(receiptText, opt).ConfigureAwait(false);
-            }
+                PrinterName = source.PrinterName ?? string.Empty,
+                Copies = source.Copies,
+                CharactersPerLine = source.CharactersPerLine,
+                UseReceiptHeaderStyle = source.UseReceiptHeaderStyle,
+                SaleCodeForBarcode = source.SaleCodeForBarcode ?? string.Empty,
+                CashDrawerCommand = source.CashDrawerCommand ?? string.Empty
+            };
         }
 
-        private static async Task PrintOnceWithinTimeoutAsync(string receiptText, ReceiptPrintOptions opt)
+        private static Task StartExclusivePrinterEffect(string printerName, Action effect)
         {
-            var printTask = Task.Run(() => PrintOnce(receiptText, opt));
-            var completed = await Task.WhenAny(
-                printTask,
-                Task.Delay(PrintAttemptTimeoutMilliseconds)).ConfigureAwait(false);
-            if (completed != printTask)
+            if (effect == null) throw new ArgumentNullException(nameof(effect));
+            var key = (printerName ?? string.Empty).Trim();
+            if (key.Length == 0)
+                throw new InvalidOperationException(PosLocalization.T("printer.receiptPrinterNotConfigured"));
+
+            Task current;
+            lock (PrinterEffectSync)
             {
-                throw new TimeoutException(PosLocalization.T("printer.printTimedOut"));
+                if (PrinterEffectTails.TryGetValue(key, out var existing))
+                {
+                    if (!existing.IsCompleted)
+                        throw new InvalidOperationException(
+                            PosLocalization.T("printer.effectStillInProgress"));
+
+                    PrinterEffectTails.Remove(key);
+                }
+
+                current = Task.Run(effect);
+                PrinterEffectTails[key] = current;
             }
 
-            await printTask.ConfigureAwait(false);
+            current.ContinueWith(
+                completedEffect =>
+                {
+                    if (completedEffect.IsFaulted)
+                    {
+                        var ignored = completedEffect.Exception;
+                    }
+
+                    lock (PrinterEffectSync)
+                    {
+                        if (PrinterEffectTails.TryGetValue(key, out var tail) &&
+                            ReferenceEquals(tail, completedEffect))
+                        {
+                            PrinterEffectTails.Remove(key);
+                        }
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            return current;
+        }
+
+        private static async Task AwaitEffectWithinTimeoutAsync(
+            Task effectTask,
+            string timeoutMessage,
+            int timeoutMilliseconds = PrintAttemptTimeoutMilliseconds)
+        {
+            if (timeoutMilliseconds <= 0)
+                throw new ArgumentOutOfRangeException(nameof(timeoutMilliseconds));
+            var completed = await Task.WhenAny(
+                effectTask,
+                Task.Delay(timeoutMilliseconds)).ConfigureAwait(false);
+            if (completed != effectTask)
+            {
+                // The physical operation may still complete after the caller stops
+                // waiting. Its exclusive tail rejects every later effect on the
+                // same printer until the outcome is no longer indeterminate.
+                throw new TimeoutException(timeoutMessage);
+            }
+
+            await effectTask.ConfigureAwait(false);
         }
 
         private static void PrintOnce(string receiptText, ReceiptPrintOptions opt)
         {
             if (string.IsNullOrWhiteSpace(opt.PrinterName))
                 throw new InvalidOperationException(PosLocalization.T("printer.receiptPrinterNotConfigured"));
+            if (!ReceiptPrintOptions.IsValidCopyCount(opt.Copies))
+                throw new InvalidOperationException(PosLocalization.T("printer.invalidCopies"));
 
             var lines = receiptText.Replace("\r\n", "\n").Split('\n');
             var lineIndex = 0;
             var saleCodeForBarcode = NormalizeSaleCodeForBarcode(opt.SaleCodeForBarcode);
             var barcodePrinted = string.IsNullOrEmpty(saleCodeForBarcode);
+            var pageCount = 0;
 
             using (var doc = new PrintDocument())
             {
                 doc.PrinterSettings.PrinterName = opt.PrinterName;
 
-                doc.PrinterSettings.Copies = (short)Math.Max(1, opt.Copies);
+                if (!doc.PrinterSettings.IsValid)
+                    throw new InvalidOperationException(
+                        PosLocalization.T("printer.selectedQueueUnavailable"));
+                var driverMaximumCopies = doc.PrinterSettings.MaximumCopies;
+                if (driverMaximumCopies > 0 && opt.Copies > driverMaximumCopies)
+                    throw new InvalidOperationException(
+                        PosLocalization.T("printer.copiesUnsupportedByDriver"));
+                doc.PrinterSettings.Copies = checked((short)opt.Copies);
 
                 // Margini a zero; offset reale da HardMargin (area non stampabile driver)
                 doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
@@ -261,6 +332,12 @@ namespace Win7POS.Wpf.Printing
 
                     doc.PrintPage += (s, e) =>
                     {
+                        pageCount++;
+                        if (pageCount > MaximumReceiptPages)
+                            throw new InvalidOperationException("Receipt exceeded the safe page limit.");
+                        var startLineIndex = lineIndex;
+                        var startBarcodePrinted = barcodePrinted;
+
                         // The printer Graphics origin is already translated to the
                         // printable surface. Adding HardMarginX/Y again clips Epson
                         // output twice, so all layout uses the visible graphics bounds.
@@ -394,20 +471,32 @@ namespace Win7POS.Wpf.Printing
 
                                     if (y + gap + barH > bottom)
                                     {
-                                        e.HasMorePages = true;
-                                        return;
+                                        // Defer to the next page. The common epilogue
+                                        // below verifies that this page made progress.
                                     }
-
-                                    y += gap;
-                                    float barX = x + (printableW - barW) / 2f;
-                                    e.Graphics.DrawImage(barcodeBmp, barX, y, barW, barH);
+                                    else
+                                    {
+                                        y += gap;
+                                        float barX = x + (printableW - barW) / 2f;
+                                        e.Graphics.DrawImage(barcodeBmp, barX, y, barW, barH);
+                                        barcodePrinted = true;
+                                    }
+                                }
+                                else
+                                {
+                                    barcodePrinted = true;
                                 }
                             }
-
-                            barcodePrinted = true;
                         }
 
                         e.HasMorePages = lineIndex < lines.Length || !barcodePrinted;
+                        EnsurePageProgress(
+                            pageCount,
+                            e.HasMorePages,
+                            startLineIndex,
+                            lineIndex,
+                            startBarcodePrinted,
+                            barcodePrinted);
                     };
 
                     doc.EndPrint += (s, e) =>
@@ -432,6 +521,25 @@ namespace Win7POS.Wpf.Printing
                     if (siiImg != null) siiImg.Dispose();
                     if (bodyFormat != null) bodyFormat.Dispose();
                 }
+            }
+        }
+
+        private static void EnsurePageProgress(
+            int pageCount,
+            bool hasMorePages,
+            int startLineIndex,
+            int endLineIndex,
+            bool startBarcodePrinted,
+            bool endBarcodePrinted)
+        {
+            if (pageCount > MaximumReceiptPages)
+                throw new InvalidOperationException("Receipt exceeded the safe page limit.");
+            if (hasMorePages &&
+                startLineIndex == endLineIndex &&
+                startBarcodePrinted == endBarcodePrinted)
+            {
+                throw new InvalidOperationException(
+                    "Receipt page made no progress; printing was stopped safely.");
             }
         }
 

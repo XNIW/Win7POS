@@ -173,11 +173,16 @@ $requiredFiles = @(
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
     "src/Win7POS.Wpf/Pos/PosWorkflowService.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/PaymentViewModel.cs",
+    "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs",
+    "src/Win7POS.Wpf/Pos/PosViewModel.cs",
+    "src/Win7POS.Wpf/Printing/PrinterHardwareSafety.cs",
+    "src/Win7POS.Wpf/Printing/WindowsSpoolerReceiptPrinter.cs",
     "src/Win7POS.Wpf/Infrastructure/StartupTrace.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     ".github/workflows/release-pack.yml",
     "installer/Win7POS.iss",
     "scripts/check-release-pack-completeness.ps1",
+    "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs",
     "scripts/win7pos/collect-win7-startup-diagnostics.bat"
 )
 
@@ -196,6 +201,11 @@ $appXaml = Read-Text "src/Win7POS.Wpf/App.xaml"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $posWorkflow = Read-Text "src/Win7POS.Wpf/Pos/PosWorkflowService.cs"
 $paymentViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PaymentViewModel.cs"
+$accessDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
+$posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
+$hardwareSafety = Read-Text "src/Win7POS.Wpf/Printing/PrinterHardwareSafety.cs"
+$receiptSpooler = Read-Text "src/Win7POS.Wpf/Printing/WindowsSpoolerReceiptPrinter.cs"
+$uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $startupTrace = Read-Text "src/Win7POS.Wpf/Infrastructure/StartupTrace.cs"
 $catalogPull = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosLocalization.cs"
@@ -411,15 +421,41 @@ else {
 }
 
 if ($posWorkflow -notmatch 'TrySyncSalesOutboxNoThrowAsync[\s\S]{0,260}if\s*\(App\.IsSafeStart\)[\s\S]{0,180}return' -or
-    $paymentViewModel -notmatch '_autoPrintPdfSii\s*=\s*!App\.IsSafeStart' -or
+    $paymentViewModel -notmatch '_autoPrintFiscalBoleta\s*=\s*!App\.IsSafeStart' -or
     $paymentViewModel -notmatch 'effectiveValue\s*=\s*!App\.IsSafeStart\s*&&\s*value' -or
-    $paymentViewModel -notmatch 'TriggerAutoPrintPdfIfEnabledAsync[\s\S]{0,180}if\s*\(App\.IsSafeStart\)[\s\S]{0,80}return\s+false' -or
-    $paymentViewModel -notmatch 'StampaPdfAsync\(\)[\s\S]{0,180}if\s*\(App\.IsSafeStart\)[\s\S]{0,80}return\s+false' -or
-    $paymentViewModel -notmatch '_generateFiscalPdf\s*!=\s*null\s*&&\s*!App\.IsSafeStart') {
+    $paymentViewModel -notmatch 'TriggerAutoPrintFiscalBoletaIfEnabledAsync[\s\S]{0,180}if\s*\(App\.IsSafeStart\)[\s\S]{0,80}return\s+false' -or
+    $paymentViewModel -notmatch 'PrintFiscalBoletaAsync\(\)[\s\S]{0,180}if\s*\(App\.IsSafeStart\)[\s\S]{0,80}return\s+false' -or
+    $paymentViewModel -notmatch '_printFiscalToThermal\(FiscalPreviewText,\s*SaleCode\)' -or
+    $paymentViewModel -match 'FiscalPdfService|GenerateFiscalPdfAsync|ExportsDirectory|File\.Delete|Task\.Delay\(15000\)') {
     Fail "safe-start must block post-sale sync and automatic fiscal printing"
 }
 else {
-    Pass "safe-start blocks post-sale sync and all fiscal PDF output paths"
+    Pass "safe-start blocks post-sale sync; enabled boletas print directly without fiscal PDF output"
+}
+
+if ($hardwareSafety -notmatch 'if\s*\(App\.IsSafeStart\)[\s\S]*throw\s+new\s+InvalidOperationException' -or
+    $receiptSpooler -notmatch 'PrintAsync[\s\S]{0,260}PrinterHardwareSafety\.DemandHardwareOutputAllowed' -or
+    $receiptSpooler -notmatch 'OpenCashDrawerAsync[\s\S]{0,260}PrinterHardwareSafety\.DemandHardwareOutputAllowed' -or
+    $posWorkflow -notmatch 'GetInstalledPrintersAsync[\s\S]{0,260}if\s*\(App\.IsSafeStart\)[\s\S]{0,120}Array\.Empty<InstalledPrinterInfo>' -or
+    $posWorkflow -notmatch 'effectiveAutoPrint\s*=\s*autoPrint\s*&&\s*!App\.IsSafeStart' -or
+    $posViewModel -notmatch 'OpenPrinterSettingsAsync[\s\S]{0,260}if\s*\(App\.IsSafeStart\)' -or
+    $uiSmoke -notmatch 'VerifySafeStartHardwareBoundaryAsync[\s\S]*lastMileBlocked') {
+    Fail "safe-start must block discovery, settings and all printer/cash-drawer last-mile effects"
+}
+else {
+    Pass "safe-start is an executable printer/cash-drawer hardware boundary"
+}
+
+if ($accessDialog -notmatch 'IsAdminWebOptionsAllowedForCurrentLaunch[\s\S]*App\.IsSafeStart[\s\S]*BaseUri\.IsLoopback' -or
+    $accessDialog -notmatch 'OnConnectClick[\s\S]*TryCreateAdminWebOptionsForCurrentLaunch[\s\S]*BootstrapAsync' -or
+    $accessDialog -notmatch 'RunCatalogRetryAsync[\s\S]*IsAdminWebOptionsAllowedForCurrentLaunch[\s\S]*TryCreateAdminWebOptionsForCurrentLaunch[\s\S]*TryPullInitialCatalogAsync' -or
+    $accessDialog -notmatch 'AdvancedExpander\.IsEnabled\s*=\s*enabled\s*&&\s*!App\.IsSafeStart' -or
+    $accessDialog -notmatch 'BaseUrlBox\.IsEnabled\s*=\s*enabled\s*&&\s*!App\.IsSafeStart' -or
+    $uiSmoke -notmatch 'loopbackAllowed[\s\S]*stagingBlocked') {
+    Fail "safe-start must allow only loopback Admin Web and lock external URL editing before bootstrap/catalog calls"
+}
+else {
+    Pass "safe-start blocks external Admin Web at the request boundary"
 }
 
 if ($mainWindow -notmatch 'TriggerAdaptiveOnlineRefreshAsync[\s\S]{0,450}App\.IsSafeStart[\s\S]{0,900}authorization_lease_denied' -or
@@ -468,8 +504,9 @@ else {
 }
 
 if ($workflow -notmatch "check-required-gates\.ps1" -or
-    $workflow -notmatch "check-release-pack-completeness\.ps1[\s\S]*-ReleasePackSource\s+dist/Win7POS" -or
-    $workflow -notmatch "check-required-gates\.ps1\s+-ReleasePackSource\s+dist/Win7POS") {
+    $workflow -notmatch 'check-release-pack-completeness\.ps1[\s\S]{0,500}"-ReleasePackSource",\s*"dist/Win7POS"' -or
+    $workflow -notmatch 'check-required-gates\.ps1[\s\S]{0,500}"-ReleasePackSource",\s*"dist/Win7POS"' -or
+    $workflow -notmatch 'Invoke-CheckedProcess[\s\S]*LASTEXITCODE\s+-ne\s+0') {
     Fail "ReleasePack workflow does not run startup and package validators"
 }
 else {

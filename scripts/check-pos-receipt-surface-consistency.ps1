@@ -37,6 +37,9 @@ $salesRenderer = Read-Required "src/Win7POS.Wpf/Pos/PosReceiptTextRenderer.cs"
 $dailyRenderer = Read-Required "src/Win7POS.Wpf/Pos/DailyCloseReceiptTextRenderer.cs"
 $workflow = Read-Required "src/Win7POS.Wpf/Pos/PosWorkflowService.cs"
 $payment = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/PaymentViewModel.cs"
+$paymentXaml = Read-Required "src/Win7POS.Wpf/Pos/PaymentView.xaml"
+$posViewModel = Read-Required "src/Win7POS.Wpf/Pos/PosViewModel.cs"
+$wpfProject = Read-Required "src/Win7POS.Wpf/Win7POS.Wpf.csproj"
 $historyVm = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/SalesRegisterViewModel.cs"
 $historyXaml = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/SalesRegisterDialog.xaml"
 $dailyVm = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/DailyReportViewModel.cs"
@@ -56,6 +59,23 @@ Require-Pattern "WPF sales renderer constructs one immutable snapshot" $salesRen
 Require-Pattern "refund and void metadata stays in the authoritative sales renderer" $salesRenderer 'SaleKind\.Refund[\s\S]*SaleKind\.Void[\s\S]*refund\.receiptHeader'
 
 Require-Pattern "payment preview uses authoritative sales renderer" $payment 'PosReceiptTextRenderer\.BuildReceipt'
+Require-Pattern "fiscal boleta prints its preview text directly" $payment 'PrintFiscalBoletaAsync[\s\S]*_printFiscalToThermal\(FiscalPreviewText,\s*SaleCode\)'
+Forbid-Pattern "fiscal boleta operational failures are not converted to a hidden false result" $payment 'PrintFiscalBoletaAsync[\s\S]{0,700}catch\s*\([\s\S]{0,160}return\s+false'
+Require-Pattern "payment wires fiscal boleta to the configured receipt spooler" $posViewModel 'new\s+PaymentViewModel\([\s\S]{0,500}PrintReceiptTextAsync\([\s\S]{0,260}isFiscalPrint:\s*true[\s\S]{0,120}automaticAfterSale:\s*true'
+Require-Pattern "post-commit fiscal print failure is logged and shown with reserved boleta context" $posViewModel 'CompleteSaleAsync[\s\S]*TriggerAutoPrintFiscalBoletaIfEnabledAsync[\s\S]{0,500}catch\s*\(Exception\s+fiscalPrintEx\)[\s\S]{0,900}LogError[\s\S]{0,900}paymentOkFiscalPrintFailed[\s\S]{0,900}fiscalSaleSavedPrintWarning'
+Require-Pattern "printed status is marked only after confirmed fiscal output" $posViewModel 'if\s*\(fiscalBoletaPrinted\)[\s\S]{0,900}MarkPdfPrintedAsync'
+Require-Pattern "printed-status persistence failure is isolated and warns against duplicate reprint" $posViewModel 'catch\s*\(Exception\s+fiscalStatusEx\)[\s\S]{0,1800}fiscalPrintedStatusSaveWarning'
+Forbid-Pattern "printed-status persistence failure sends no second physical print" $posViewModel 'catch\s*\(Exception\s+fiscalStatusEx\)[\s\S]{0,1800}(TriggerAutoPrintFiscalBoletaIfEnabledAsync|PrintReceiptTextAsync)'
+Forbid-Pattern "fiscal print path creates no PDF or delayed cleanup" ($payment + $posViewModel) 'FiscalPdfService|GenerateFiscalPdfAsync|ExportsDirectory|File\.Delete|Task\.Delay\(15000\)'
+Forbid-Pattern "payment UI exposes no local PDF workflow" $paymentXaml '(?i)\bPDF\b'
+Forbid-Pattern "WPF runtime has no PDF writer package" $wpfProject '(?i)PDFsharp'
+$fiscalPdfServicePath = Join-Path $repoRoot "src/Win7POS.Wpf/Fiscal/FiscalPdfService.cs"
+if (Test-Path -LiteralPath $fiscalPdfServicePath -PathType Leaf) {
+    Fail "automatic fiscal PDF writer must be removed"
+}
+else {
+    Pass "automatic fiscal PDF writer removed"
+}
 Require-Pattern "final sale and printer sample use authoritative sales preview path" $workflow 'BuildReceiptPreview\([\s\S]*PosReceiptTextRenderer\.BuildReceipt[\s\S]*BuildPrinterTestReceipt'
 Require-Pattern "historical preview is reconstructed on demand from persisted sale and lines" $workflow 'GetReceiptPreviewBySaleIdAsync[\s\S]*GetByIdAsync\(saleId\)[\s\S]*GetLinesBySaleIdAsync\(saleId\)[\s\S]*GetReceiptShopInfoNoLockAsync\(sale\)'
 Require-Pattern "historical print sends the exact selected preview" $historyVm 'var\s+preview\s*=\s*DetailReceiptPreview[\s\S]*PrintReceiptTextAsync\(\s*preview'
@@ -76,6 +96,7 @@ Require-Pattern "Printer Settings explains SQLite history without file copies" $
 $archiveRuntime = $printOptions + $spooler + $workflow + $printerVm + $settingKeys
 Forbid-Pattern "automatic receipt-copy settings are removed from runtime" $archiveRuntime 'SaveCopyToFile|ReceiptOutputDirectory|SavedCopyPath|ReceiptSaveCopy'
 Forbid-Pattern "receipt printer contains no receipt archive writer" $spooler '(?i)File\.(WriteAllText|WriteAllBytes|Create|OpenWrite|AppendAllText)|Directory\.CreateDirectory|StreamWriter'
+Require-Pattern "receipt and boleta jobs use the shared safe physical copy policy" ($printOptions + $workflow + $spooler) 'MaximumCopies\s*=\s*3[\s\S]*IsValidCopyCount[\s\S]*Copies\s*=\s*ReceiptPrintOptions\.IsValidCopyCount\(printer\.Copies\)[\s\S]*checked\s*\(\s*\(short\)opt\.Copies\s*\)'
 
 Require-Pattern "core tests cover immutable snapshot, widths, languages and daily parity" $coreTests 'FreezesPersistedEconomicsAndShopSnapshot[\s\S]*Fit32And42[\s\S]*en-US[\s\S]*zh-CN[\s\S]*DailyClose_PreviewAndPrintTextAreDeterministicAndFit32And42'
 Require-Pattern "UI lifecycle covers Sales Register and Daily Close 20 times" $uiSmoke 'salesRegisterCycles=20[\s\S]*dailyReportCycles=20|dailyReportCycles=20[\s\S]*salesRegisterCycles=20'
@@ -83,6 +104,8 @@ Require-Pattern "UI harness verifies archive API removal" $uiSmoke 'VerifyReceip
 Require-Pattern "UI harness verifies rapid history selection fencing" $uiSmoke 'VerifySalesRegisterRapidSelectionAsync[\s\S]*salesRegisterRapidSelectionPass'
 Require-Pattern "UI harness verifies daily-history stale-preview fencing" $uiSmoke 'VerifyDailyHistoryPreviewFencingAsync[\s\S]*dailyHistoryPreviewFencingPass'
 Require-Pattern "UI harness verifies daily-date stale-preview fencing" $uiSmoke 'VerifyDailyDatePreviewFencing[\s\S]*dailyDatePreviewFencingPass'
+Require-Pattern "UI harness proves fiscal printer exceptions propagate" $uiSmoke 'expectedFailure[\s\S]*ReferenceEquals\(ex,\s*expectedFailure\)'
+Require-Pattern "UI harness proves copy limits fail before hardware" $uiSmoke 'VerifyPrinterCopyCountPolicyAsync[\s\S]*QA INVALID COPY COUNT MUST NOT PRINT'
 
 if ($fail) {
     Write-Host "`n=== RESULT: FAIL ===" -ForegroundColor Red

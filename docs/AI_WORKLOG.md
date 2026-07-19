@@ -642,3 +642,51 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Final validation: required gates 32/32, Core tests 291/291 with zero skipped,
   full Release solution and WPF/harness Release x86 builds PASS with zero
   warnings/errors.
+
+## 2026-07-18 - Direct boleta printing without automatic PDF files
+
+- Removed the post-sale fiscal PDF writer, its delayed 15-second cleanup and the
+  `PDFsharp-gdi` runtime dependency. The old flow could leave a PDF in `exports`
+  after a spooler failure, application exit or cleanup error.
+- The selected boleta preview and number now go directly to the configured
+  Windows receipt spooler. Receipt and boleta jobs keep the configured physical
+  copy count; no image, text or PDF archive is created by either path.
+- Preserved cash-only auto-print policy, Safe Start blocking, sale commit order,
+  boleta-number advancement after successful printing, synchronization/outbox
+  payloads and the legacy `sales.pdf_printed` compatibility flag. That column is
+  document status only and stores no path or file.
+- Updated the payment UI and EN/ES/IT/ZH copy to describe direct boleta printing,
+  print status and same-number physical copies instead of a local PDF workflow.
+- Added a focused x86 harness check for cash, card-only and simulated printer
+  failure plus filesystem snapshots. Result: PASS, zero generated PDF files and
+  no export directory in the isolated QA root.
+- Final validation on source state: required gates 32/32, Core tests 291/291,
+  WPF net48/x86 and UI harness x86 isolated builds PASS with zero warnings/errors;
+  both build outputs contained zero `PdfSharp` DLLs and zero PDFs. A physical
+  post-relaunch boleta print remains the hardware confirmation gate.
+
+## 2026-07-19 - PR #7 cumulative closure and physical receipt addendum
+
+- Completed a cumulative review of every published and unpublished PR #7 change.
+  Two security findings were corrected: a normal remote mirror can no longer
+  receive lease-free recovery treatment, and cancelling an operator change
+  cannot commit the candidate identity. Independent final review reports
+  P0/P1/P2 open as zero.
+- Hardened the physical boundary with a final Safe Start guard, per-printer
+  single-flight rejection after an indeterminate timeout, strict one-to-three
+  copy validation and explicit post-commit fiscal-print failure guidance that
+  preserves the reserved boleta number without triggering a second print.
+- Hardened release provenance, exact runtime inventory, strict UTF-8 no-BOM
+  manifests, secret/privacy rejection, Win7 dependency closure and obsolete
+  runtime cleanup. Five negative fixtures confirmed fail-closed behavior for a
+  changed payload, UTF-16 BOM, secret marker, `.env.*` payload and nested root.
+- Final local software evidence: Core `298/298`, canonical source-and-release
+  gates `35/35`, dialog standards `34/34`, WPF and UI harness Release net48/x86
+  builds with zero warnings/errors, and the 20-cycle lifecycle run with zero
+  residual ViewModels or windows.
+- The dedicated physical harness submitted one sequence of six one-copy jobs to
+  the Epson TM-T60: fiscal 32/42, identical receipt original/reprint and daily
+  close 32/42. The manifest records six submissions, zero drawer calls and no
+  database artifacts; the operator confirmed all six slips, correct output,
+  no duplicates and a closed drawer. The Windows 11 host result closes the PR #7
+  receipt-surface gate; physical Windows 7 remains `NOT_RUN_WIN7_PHYSICAL`.

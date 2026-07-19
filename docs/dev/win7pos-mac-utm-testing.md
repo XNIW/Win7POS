@@ -86,7 +86,7 @@ Prerequisiti guest Windows 7 dedotti da codice e documentazione:
 - Override test: variabile `WIN7POS_DATA_DIR`.
 - Config Admin Web opzionale: `WIN7POS_ADMIN_WEB_BASE_URL` o `pos-admin-web.config` nella data dir.
 - Stampante/cassetto: il codice usa Windows spooler/raw printer; per smoke test senza hardware saltare o usare stampante PDF/salvataggio file dove disponibile.
-- PDF/QR/Excel: presenti dipendenze `PDFsharp-gdi`, `ZXing.Net.Bindings.Windows.Compatibility`, `ClosedXML`, `ExcelDataReader`.
+- Barcode/QR/Excel: presenti dipendenze `ZXing.Net.Bindings.Windows.Compatibility`, `ClosedXML`, `ExcelDataReader`; la stampa automatica della boleta non genera file PDF.
 
 Non sono stati dedotti driver fiscali esterni obbligatori, credenziali hardcoded o accesso diretto Supabase nel POS WPF.
 

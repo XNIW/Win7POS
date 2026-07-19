@@ -69,6 +69,14 @@ namespace Win7POS.Core.Security
 
     public static class PosAccessRecoveryPolicy
     {
+        public static bool IsLeaseFreeLocalRecovery(
+            PosShellMode shellMode,
+            PosAuthenticatedAccessMode accessMode)
+        {
+            return shellMode == PosShellMode.Recovery &&
+                accessMode == PosAuthenticatedAccessMode.LocalRecovery;
+        }
+
         public static PosAccessRecoveryDecision Evaluate(
             PosUserBootstrapState state,
             PosAccessFailureKind failureKind)

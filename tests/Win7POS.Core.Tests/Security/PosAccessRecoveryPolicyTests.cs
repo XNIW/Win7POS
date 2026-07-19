@@ -228,6 +228,30 @@ public sealed class PosAccessRecoveryPolicyTests
     }
 
     [TestMethod]
+    public void NormalRemoteAccessInRecoveryShell_RemainsLeaseBound()
+    {
+        Assert.IsFalse(PosAccessRecoveryPolicy.IsLeaseFreeLocalRecovery(
+            PosShellMode.Recovery,
+            PosAuthenticatedAccessMode.Normal));
+    }
+
+    [TestMethod]
+    public void LocalRecoveryAccessInRecoveryShell_IsLeaseFree()
+    {
+        Assert.IsTrue(PosAccessRecoveryPolicy.IsLeaseFreeLocalRecovery(
+            PosShellMode.Recovery,
+            PosAuthenticatedAccessMode.LocalRecovery));
+    }
+
+    [TestMethod]
+    public void LocalRecoveryAccessOutsideRecoveryShell_IsNotLeaseFree()
+    {
+        Assert.IsFalse(PosAccessRecoveryPolicy.IsLeaseFreeLocalRecovery(
+            PosShellMode.Pos,
+            PosAuthenticatedAccessMode.LocalRecovery));
+    }
+
+    [TestMethod]
     [DataRow(PermissionCodes.CatalogView, true)]
     [DataRow(PermissionCodes.CatalogEdit, true)]
     [DataRow(PermissionCodes.CatalogImport, true)]

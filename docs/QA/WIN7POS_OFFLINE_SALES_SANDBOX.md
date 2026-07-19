@@ -87,9 +87,12 @@ display name instead of the CLR type name.
 
 ## Hardware
 
-Receipt printing and the cash drawer are disabled in every new sandbox. Enable
-them manually only when a physical hardware test is explicitly intended. The
-shop name and receipt footer identify the data as QA / non-fiscal.
+Safe Start keeps receipt printing, printer discovery, printer settings and the
+cash drawer hardware-disabled for the entire sandbox launch. They cannot be
+enabled manually. Physical printer QA must use the dedicated printer harness in
+a separate, explicitly authorized run; it must never reuse an offline-sales
+sandbox. The shop name and receipt footer identify sandbox data as QA /
+non-fiscal.
 
 ## Limits
 

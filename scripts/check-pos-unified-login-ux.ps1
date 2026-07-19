@@ -116,6 +116,9 @@ $requiredKeys = @(
     "access.login.offlineMirrorMissing",
     "access.login.onlineDeniedNoOfflineFallback",
     "access.login.onlineDeniedLocalRecoveryAvailable",
+    "access.login.remoteRecovery",
+    "access.login.remoteRecoveryHelp",
+    "access.login.remoteRecoverySignIn",
     "access.login.shopSwitchBlockedOutbox",
     "access.login.recoveryOnlineRequired",
     "access.login.invalidCredentials",
@@ -222,7 +225,8 @@ Assert-Contains "recovery lifecycle opens the real access dialog" $uiSmoke "new 
 Assert-Contains "shell evaluates catalog before PosView" $main "PosShellStartupPolicy.Determine"
 Assert-Contains "shell has controlled recovery mode" $main "EnterRecoveryModeAsync"
 Assert-Contains "local recovery explains that online access is required for POS" $main 'localRecoveryAccess ? "access.login.recoveryOnlineRequired"'
-Assert-Contains "recovery shell suppresses authorization lease shutdown" $main 'if (_recoveryMode)'
+Assert-Contains "only proven local recovery is lease-free" $recoveryPolicy "IsLeaseFreeLocalRecovery"
+Assert-Contains "shell derives lease behavior from access provenance" $main "HasLeaseFreeLocalRecoveryAccess"
 Assert-Contains "recovery shell stops the normal sync status timer" $main '_syncStatusTimer?.Stop()'
 if ($main -match 'TriggerAdaptiveOnlineRefreshAsync[\s\S]{0,450}_authenticatedAccessMode\s*==\s*PosAuthenticatedAccessMode\.LocalRecovery' -and
     $main -match 'ShowSyncCenterDialog\(Window owner = null\)[\s\S]{0,260}_authenticatedAccessMode\s*==\s*PosAuthenticatedAccessMode\.LocalRecovery') {
@@ -231,6 +235,7 @@ if ($main -match 'TriggerAdaptiveOnlineRefreshAsync[\s\S]{0,450}_authenticatedAc
     Fail "recovery shell must block every Sync Center execution path"
 }
 Assert-Contains "recovery shell uses restricted product permissions" $main "new LocalRecoveryPermissionService(session)"
+Assert-Contains "remote recovery keeps the normal lease-bound permission service" $main "new PermissionService(session)"
 Assert-Contains "recovery shell suspends an existing POS view without discarding its cart" $main "SuspendPosViewForRecovery"
 if ($main -match 'OpenPosAccessForOperatorChangeAsync[\s\S]{0,2400}AccessMode\s*==\s*PosAuthenticatedAccessMode\.LocalRecovery[\s\S]{0,900}await\s+EnterRecoveryModeAsync\(factory\)') {
     Pass "operator change downgrades a local recovery login"
@@ -245,23 +250,37 @@ if ($main -match 'MainTabControl_SelectionChanged[\s\S]{0,500}!IsRecoveryTab[\s\
 $permissionMethod = [regex]::Match(
     $main,
     'private\s+bool\s+HasCurrentPermission\(string\s+permissionCode\)[\s\S]*?(?=\r?\n\s*private\s+)').Value
-$recoveryPermissionIndex = $permissionMethod.IndexOf(
-    'LocalRecoveryPermissionPolicy.IsGranted(user, permissionCode)',
+$leaseFreeIndex = $permissionMethod.IndexOf(
+    'HasLeaseFreeLocalRecoveryAccess()',
     [System.StringComparison]::Ordinal)
 $normalLeaseIndex = $permissionMethod.IndexOf(
     'session.EnsureAuthorizationValid()',
     [System.StringComparison]::Ordinal)
-if ($recoveryPermissionIndex -ge 0 -and $normalLeaseIndex -gt $recoveryPermissionIndex) {
-    Pass "recovery permission branch bypasses the normal lease check"
+$recoveryPermissionIndex = $permissionMethod.IndexOf(
+    'LocalRecoveryPermissionPolicy.IsGranted(user, permissionCode)',
+    [System.StringComparison]::Ordinal)
+if ($leaseFreeIndex -ge 0 -and $normalLeaseIndex -gt $leaseFreeIndex -and
+    $recoveryPermissionIndex -gt $normalLeaseIndex) {
+    Pass "remote recovery validates its lease before the recovery allowlist"
 } else {
-    Fail "recovery permissions must be resolved before and without the normal lease check"
+    Fail "recovery permissions must bypass the lease only for proven local-recovery provenance"
 }
 Assert-Contains "recovery blocks payment surface activation" $main "CancelActivePaymentForRecovery"
-if ($main -match '!accessAccepted[\s\S]{0,300}AccessMode\s*==\s*PosAuthenticatedAccessMode\.LocalRecovery[\s\S]{0,600}EnterRecoveryModeAsync\(factory\)') {
-    Pass "cancel after authenticated unsafe catalog still downgrades the shell"
+$operatorChangeMethod = [regex]::Match(
+    $main,
+    'private\s+async\s+Task<bool>\s+OpenPosAccessForOperatorChangeAsync[\s\S]*?(?=\r?\n\s*private\s+)').Value
+$cancelBranch = [regex]::Match(
+    $operatorChangeMethod,
+    'if\s*\(!accessAccepted[^\{]*\{[\s\S]*?(?=\r?\n\s*var\s+session\s*=)').Value
+if ($cancelBranch.Length -gt 0 -and
+    $cancelBranch -notmatch '_authenticatedAccessMode\s*=(?!=)' -and
+    $cancelBranch -notmatch 'EnterRecoveryModeAsync\(') {
+    Pass "cancelled POS access never commits an access mode or enters recovery"
 } else {
-    Fail "authenticated unsafe catalog must downgrade the shell even when access dialog is cancelled"
+    Fail "cancelled POS access must not commit identity or recovery shell state"
 }
+Assert-Contains "cancelled operator change rechecks trusted identity binding" $operatorChangeMethod "IsSessionBoundToCurrentTrustedIdentityAsync"
+Assert-Contains "trusted identity mismatch forces the stale session out" $operatorChangeMethod "existingSession.LogoutForced()"
 if ($main -match 'private\s+async\s+Task<bool>\s+ExitRecoveryModeAsync\(\)[\s\S]{0,500}HasNormalAuthorizedAccessForRecoveryExit\(\)[\s\S]{0,3500}_recoveryMode\s*=\s*false') {
     Pass "recovery exit validates normal authorized access before opening POS"
 } else {

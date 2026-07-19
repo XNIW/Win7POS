@@ -105,22 +105,26 @@ to cash sale `VMRQI73CRZQ6`; the card, reprint and resumed-reprint paths added n
 drawer event. The Epson queue returned `Normal`, zero jobs, with Spooler running
 and automatic. The operator confirmed all four paper/drawer outcomes.
 
-## Remaining physical closure
+## Receipt-surface addendum closure — 2026-07-19
 
-The previously blocked Printer Settings inspection and Win7POS fictitious print
-have now been completed. The following remain open and must not be represented
-as PASS:
+The dedicated no-database harness submitted one awaited six-job sequence to the
+real Epson queue: direct fiscal 32/42, exact receipt original/reprint and daily
+close 32/42. The operator confirmed all six legible/cut slips, correct widths and
+codes, identical original/reprint output, no extras and no drawer opening. The
+manifest recorded one copy per job, identical request hashes for jobs 3/4, zero
+drawer calls, no database artifacts and a final normal/empty queue.
+
+This closes the receipt-surface addendum and the PR #7 physical merge gate. The
+following remain open and must not be represented as PASS:
 
 - authenticated settings persistence across a real operator session;
 - the separate authenticated Printer Settings UI test-drawer action and
   disconnected-drawer behavior;
-- receipt-surface parity and the dedicated 80 mm daily-close addendum, including
-  its final reprint/daily-close physical check;
 - a physical Windows 7 SP1 run.
 
-Until those rows close, the accurate classification is
-`TRANSACTIONAL_MATRIX_PASS_RECEIPT_SURFACE_ADDENDUM_PENDING`, not
-`TM_T60_PRINT_AND_DRAWER_PASS`.
+The accurate classification is
+`RECEIPT_SURFACE_ADDENDUM_PASS_WINDOWS7_AND_DISCONNECTED_DRAWER_OPEN`, not full
+hardware certification.
 
 ## Publication
 

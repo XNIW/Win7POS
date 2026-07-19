@@ -2,6 +2,9 @@ namespace Win7POS.Wpf.Printing
 {
     public sealed class ReceiptPrintOptions
     {
+        public const int MinimumCopies = 1;
+        public const int MaximumCopies = 3;
+
         public string PrinterName { get; set; } = string.Empty;
         public int Copies { get; set; } = 1;
         public int CharactersPerLine { get; set; } = 42;
@@ -14,5 +17,10 @@ namespace Win7POS.Wpf.Printing
 
         /// <summary>Istruzione ESC/POS per cassetto (es. "27,112,0,25,250"). Vuoto o malformato viene rifiutato.</summary>
         public string CashDrawerCommand { get; set; } = string.Empty;
+
+        public static bool IsValidCopyCount(int copies)
+        {
+            return copies >= MinimumCopies && copies <= MaximumCopies;
+        }
     }
 }

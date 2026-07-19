@@ -34,6 +34,13 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
+[InstallDelete]
+; Remove obsolete app-local diagnostics/PDF runtime left by older installers.
+; ProgramData and every operator data folder remain untouched.
+Type: files; Name: "{app}\PdfSharp*.dll"
+Type: files; Name: "{app}\Win7POS.Cli.*"
+Type: files; Name: "{app}\Win7POS.Wpf.UiSmokeHarness.*"
+
 [Files]
 ; Pack all files produced by release-pack into Program Files\Win7POS
 Source: "{#MyAppSourceDir}\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion

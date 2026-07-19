@@ -6,6 +6,9 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -23,6 +26,7 @@ using Win7POS.Wpf.Pos;
 using Win7POS.Wpf.Pos.Dialogs;
 using Win7POS.Wpf.Pos.CustomerDisplay;
 using Win7POS.Wpf.Pos.Online;
+using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Infrastructure.Displays;
 using Win7POS.Wpf.Localization;
 using Win7POS.Core.Pos;
@@ -54,7 +58,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 return;
             }
 
-            var restrictedSeed = HasArg(args, "--offline-sales-sandbox") ||
+            var physicalPrinterQa = HasArg(args, "--physical-printer-qa");
+            var restrictedSeed = physicalPrinterQa ||
+                                 HasArg(args, "--offline-sales-sandbox") ||
                                  (HasArg(args, "--seed") && HasArg(args, "--seed-trusted-session"));
             var verifyOfflineSalesSandboxSafety =
                 HasArg(args, "--verify-offline-sales-sandbox-safety");
@@ -75,6 +81,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                HasArg(args, "--printer-presentation") ||
                                HasArg(args, "--pos-footer-layout") ||
                                HasArg(args, "--receipt-rendering-alignment") ||
+                               HasArg(args, "--fiscal-direct-print") ||
+                               physicalPrinterQa ||
                                HasArg(args, "--capture-ux-artifacts") ||
                                HasArg(args, "--capture-settings-audit") ||
                                verifyOfflineSalesSandboxSafety ||
@@ -150,6 +158,30 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var launcher = new HarnessWindow();
                     app.MainWindow = launcher;
                     launcher.Show();
+                    if (physicalPrinterQa)
+                    {
+                        if (!HasArg(args, "--no-drawer"))
+                            throw new InvalidOperationException("--physical-printer-qa requires explicit --no-drawer.");
+                        var printerName = ValueAfter(args, "--printer-name");
+                        if (string.IsNullOrWhiteSpace(printerName))
+                            throw new InvalidOperationException("--physical-printer-qa requires --printer-name.");
+                        var result = await launcher.RunPhysicalPrinterQaAsync(
+                            printerName,
+                            dataDir).ConfigureAwait(true);
+                        app.Shutdown(result.StartsWith(
+                            "SUBMITTED_AWAITING_VISUAL_CONFIRMATION",
+                            StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
+                    if (HasArg(args, "--fiscal-direct-print"))
+                    {
+                        var result = await launcher.RunFiscalDirectPrintCheckAsync().ConfigureAwait(true);
+                        File.WriteAllText(Path.Combine(dataDir, "fiscal-direct-print.txt"), result);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
                     if (HasArg(args, "--printer-selection-binding"))
                     {
                         var result = await launcher.RunPrinterSelectionBindingCheckAsync().ConfigureAwait(true);
@@ -487,6 +519,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     DbInitializer.EnsureCreated(PosDbOptions.Default());
                     var languageHandlersBefore = GetLanguageChangedHandlerCount();
                     var displaySubscriptionsBefore = CustomerDisplayManager.ActiveDisplaySettingsSubscriptions;
+                    var safeStartHardwareBoundaryPass = await VerifySafeStartHardwareBoundaryAsync().ConfigureAwait(true);
+                    var printerCopyCountPolicyPass = await VerifyPrinterCopyCountPolicyAsync().ConfigureAwait(true);
                     var printerCommandPolicyPass = await VerifyPrinterCommandPolicyAsync().ConfigureAwait(true);
                     var printerSelectionBindingPass = await VerifyPrinterSelectionBindingAsync().ConfigureAwait(true);
                     var cashDrawerParsingPass = VerifyCashDrawerCommandParsing();
@@ -495,10 +529,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var receiptShopSnapshotPass = await VerifyReceiptShopSnapshotReprintAsync().ConfigureAwait(true);
                     var activeDrawerSettingsValidationPass = await VerifyActiveDrawerSettingsValidationAsync().ConfigureAwait(true);
                     var dailyCloseReceiptPass = VerifyDailyCloseReceiptWidthAndParity();
-                    var receiptArchiveRemovalPass = VerifyReceiptArchiveRemoval();
+                    var receiptArchiveRemovalPass = await VerifyReceiptArchiveRemovalAsync().ConfigureAwait(true);
                     var salesRegisterRapidSelectionPass = await VerifySalesRegisterRapidSelectionAsync().ConfigureAwait(true);
                     var dailyHistoryPreviewFencingPass = await VerifyDailyHistoryPreviewFencingAsync().ConfigureAwait(true);
                     var dailyDatePreviewFencingPass = VerifyDailyDatePreviewFencing();
+                    var physicalPrinterQaPayloadPass = VerifyPhysicalPrinterQaPayloads();
+                    var logRedactionVectorsPass = VerifyLogRedactionTestVectors();
                     var samples = new List<LifecycleSample>();
                     var weakWindows = new List<LifecycleWindowReference>();
                     for (var cycle = 1; cycle <= 20; cycle++)
@@ -592,12 +628,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                  cashDrawerParsingPass && receiptColumnFitPass &&
                                  printerTestReceiptPass && receiptShopSnapshotPass &&
                                  activeDrawerSettingsValidationPass && dailyCloseReceiptPass &&
-                                 receiptArchiveRemovalPass && salesRegisterRapidSelectionPass &&
-                                 dailyHistoryPreviewFencingPass && dailyDatePreviewFencingPass &&
-                                 !monotonicPrivateBytes && !monotonicHandles;
+                                  receiptArchiveRemovalPass && salesRegisterRapidSelectionPass &&
+                                  dailyHistoryPreviewFencingPass && dailyDatePreviewFencingPass &&
+                                   physicalPrinterQaPayloadPass && logRedactionVectorsPass &&
+                                   safeStartHardwareBoundaryPass && printerCopyCountPolicyPass &&
+                                   !monotonicPrivateBytes && !monotonicHandles;
                     return string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0}: cycles=20; dailyReportCycles=20; salesRegisterCycles=20; printerSettingsCycles=20; recoveryAccessCycles=20; startOfDayCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}; receiptShopSnapshotPass={22}; activeDrawerSettingsValidationPass={23}; dailyCloseReceiptPass={24}; receiptArchiveRemovalPass={25}; salesRegisterRapidSelectionPass={26}; dailyHistoryPreviewFencingPass={27}; dailyDatePreviewFencingPass={28}; collectionAttempts={29}",
+                        "{0}: cycles=20; dailyReportCycles=20; salesRegisterCycles=20; printerSettingsCycles=20; recoveryAccessCycles=20; startOfDayCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}; receiptShopSnapshotPass={22}; activeDrawerSettingsValidationPass={23}; dailyCloseReceiptPass={24}; receiptArchiveRemovalPass={25}; salesRegisterRapidSelectionPass={26}; dailyHistoryPreviewFencingPass={27}; dailyDatePreviewFencingPass={28}; physicalPrinterQaPayloadPass={29}; logRedactionVectorsPass={30}; safeStartHardwareBoundaryPass={31}; printerCopyCountPolicyPass={32}; collectionAttempts={33}",
                         passed ? "PASS" : "FAIL",
                         residual,
                         residualTypes,
@@ -627,6 +665,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         salesRegisterRapidSelectionPass,
                         dailyHistoryPreviewFencingPass,
                         dailyDatePreviewFencingPass,
+                        physicalPrinterQaPayloadPass,
+                        logRedactionVectorsPass,
+                        safeStartHardwareBoundaryPass,
+                        printerCopyCountPolicyPass,
                         collectionAttempts);
                 }
                 finally
@@ -644,6 +686,124 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "{0}: printerSelectionBindingPass={1}",
                     passed ? "PASS" : "FAIL",
                     passed);
+            }
+
+            public async Task<string> RunFiscalDirectPrintCheckAsync()
+            {
+                var passed = await VerifyReceiptArchiveRemovalAsync().ConfigureAwait(true);
+                return string.Format(
+                    CultureInfo.InvariantCulture,
+                    "{0}: fiscalDirectPrintNoArchivePass={1}",
+                    passed ? "PASS" : "FAIL",
+                    passed);
+            }
+
+            public async Task<string> RunPhysicalPrinterQaAsync(
+                string requestedPrinterName,
+                string dataDirectory)
+            {
+                if (string.IsNullOrWhiteSpace(requestedPrinterName))
+                    throw new ArgumentException("Printer name is required.", nameof(requestedPrinterName));
+                if (string.IsNullOrWhiteSpace(dataDirectory) || !Path.IsPathRooted(dataDirectory))
+                    throw new InvalidOperationException("Physical printer QA requires an absolute data directory.");
+                if (Directory.EnumerateFileSystemEntries(dataDirectory).Any())
+                    throw new InvalidOperationException("Physical printer QA requires a fresh empty data directory.");
+
+                EnsureNoPhysicalQaDatabaseArtifacts(dataDirectory);
+                var matches = WindowsPrinterDiscovery.GetInstalledPrinters()
+                    .Where(printer => printer != null && string.Equals(
+                        printer.Name,
+                        requestedPrinterName.Trim(),
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                if (matches.Count != 1)
+                    throw new InvalidOperationException("The requested printer must resolve to exactly one installed queue.");
+
+                var queue = matches[0];
+                if (!queue.IsInventoryFresh ||
+                    !queue.IsAvailable ||
+                    !queue.IsPhysical ||
+                    queue.IsOffline ||
+                    queue.IsPaused)
+                {
+                    throw new InvalidOperationException(
+                        "The requested queue is not a fresh, available, proven physical printer.");
+                }
+
+                var jobs = BuildPhysicalPrinterQaJobs(queue.Name);
+                ValidatePhysicalPrinterQaJobs(jobs);
+                var manifestPath = Path.Combine(dataDirectory, "physical-printer-qa.txt");
+                var runUtc = DateTimeOffset.UtcNow;
+                var submitted = 0;
+                var status = "PREPARED_NOT_SUBMITTED";
+                var detail = "none";
+                var printer = new WindowsSpoolerReceiptPrinter();
+                WritePhysicalPrinterQaManifest(
+                    manifestPath,
+                    status,
+                    detail,
+                    runUtc,
+                    queue,
+                    jobs,
+                    submitted,
+                    dataDirectory);
+
+                for (var index = 0; index < jobs.Count; index++)
+                {
+                    try
+                    {
+                        await printer.PrintAsync(jobs[index].Text, jobs[index].Options)
+                            .ConfigureAwait(true);
+                        jobs[index].Submitted = true;
+                        submitted++;
+                        EnsureNoPhysicalQaDatabaseArtifacts(dataDirectory);
+                        status = submitted == jobs.Count
+                            ? "SUBMITTED_AWAITING_VISUAL_CONFIRMATION"
+                            : "SUBMITTED_PARTIAL_AWAITING_REMAINING_JOBS";
+                        WritePhysicalPrinterQaManifest(
+                            manifestPath,
+                            status,
+                            detail,
+                            runUtc,
+                            queue,
+                            jobs,
+                            submitted,
+                            dataDirectory);
+                    }
+                    catch (TimeoutException ex)
+                    {
+                        status = "INDETERMINATE_DO_NOT_RETRY";
+                        detail = ex.GetType().Name + ": " + ManifestValue(ex.Message);
+                        WritePhysicalPrinterQaManifest(
+                            manifestPath,
+                            status,
+                            detail,
+                            runUtc,
+                            queue,
+                            jobs,
+                            submitted,
+                            dataDirectory);
+                        return File.ReadAllText(manifestPath);
+                    }
+                    catch (Exception ex)
+                    {
+                        status = "FAILED_NO_RETRY";
+                        detail = ex.GetType().Name + ": " + ManifestValue(ex.Message);
+                        WritePhysicalPrinterQaManifest(
+                            manifestPath,
+                            status,
+                            detail,
+                            runUtc,
+                            queue,
+                            jobs,
+                            submitted,
+                            dataDirectory);
+                        return File.ReadAllText(manifestPath);
+                    }
+                }
+
+                EnsureNoPhysicalQaDatabaseArtifacts(dataDirectory);
+                return File.ReadAllText(manifestPath);
             }
 
             public async Task<string> RunPrinterPresentationCheckAsync()
@@ -768,6 +928,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         DriverName = "EPSON TM-T60 Receipt5",
                         PortName = "ESDPRT001",
                         IsDefault = true,
+                        OutputKind = PrinterOutputKind.Physical,
+                        IsInventoryFresh = true,
                         IsAvailable = true,
                         StatusText = "Ready"
                     }
@@ -1183,10 +1345,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         DriverName = "QA Driver",
                         PortName = "QA001",
                         IsDefault = true,
+                        OutputKind = PrinterOutputKind.Physical,
+                        IsInventoryFresh = true,
                         IsAvailable = true,
                         IsOffline = false,
                         IsPaused = false,
-                        IsVirtual = false,
                         StatusText = "Ready",
                         Notes = "Lifecycle-only synthetic queue"
                     }
@@ -1202,10 +1365,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     DriverName = "QA Driver",
                     PortName = "QA001",
                     IsDefault = true,
+                    OutputKind = PrinterOutputKind.Physical,
+                    IsInventoryFresh = true,
                     IsAvailable = true,
                     IsOffline = false,
                     IsPaused = false,
-                    IsVirtual = false,
                     StatusText = "Ready"
                 };
                 var vm = new PrinterSettingsViewModel
@@ -1275,10 +1439,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     DriverName = "QA Driver",
                     PortName = "QA001",
                     IsDefault = true,
+                    OutputKind = PrinterOutputKind.Physical,
+                    IsInventoryFresh = true,
                     IsAvailable = true,
                     IsOffline = false,
                     IsPaused = false,
-                    IsVirtual = false,
                     StatusText = "Ready"
                 };
                 var vm = new PrinterSettingsViewModel
@@ -1312,6 +1477,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var previewCard = dialog.FindName("TestReceiptPreviewCard") as Border;
                     var previewScroll = dialog.FindName("TestReceiptPreviewScrollViewer") as ScrollViewer;
                     var testPrintButton = dialog.FindName("TestPrintButton") as Button;
+                    var copiesTextBox = dialog.FindName("CopiesTextBox") as TextBox;
                     var advanced = dialog.FindName("AdvancedOptionsExpander") as Expander;
                     var receiptHistoryInfo = dialog.FindName("ReceiptHistoryStorageInfo") as Border;
                     var drawer = dialog.FindName("CashDrawerExpander") as Expander;
@@ -1324,8 +1490,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                            previewScroll != null &&
                                            previewScroll.HorizontalScrollBarVisibility ==
                                            ScrollBarVisibility.Disabled &&
-                                           testPrintButton != null && testPrintButton.IsEnabled &&
-                                           testPrintButton.HorizontalAlignment == HorizontalAlignment.Stretch &&
+                                            testPrintButton != null && testPrintButton.IsEnabled &&
+                                            testPrintButton.HorizontalAlignment == HorizontalAlignment.Stretch &&
+                                            copiesTextBox != null && copiesTextBox.MaxLength == 1 &&
                                            advanced != null && !advanced.IsExpanded &&
                                            receiptHistoryInfo != null &&
                                            !receiptHistoryInfo.IsVisible &&
@@ -1455,6 +1622,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     DriverName = "QA Driver",
                     PortName = "QA001",
                     IsDefault = true,
+                    OutputKind = PrinterOutputKind.Physical,
+                    IsInventoryFresh = true,
                     IsAvailable = true,
                     StatusText = "Ready"
                 };
@@ -1469,6 +1638,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 try
                 {
                     vm.ReplaceInstalledPrinters(new[] { queue });
+                    foreach (var validCopies in new[] { "1", "3" })
+                    {
+                        vm.Copies = validCopies;
+                        if (!vm.IsValid || !vm.ConfirmCommand.CanExecute(null)) return false;
+                    }
+                    foreach (var invalidCopies in new[] { "0", "4", "-1", " 1", "2147483648", "not-a-number" })
+                    {
+                        vm.Copies = invalidCopies;
+                        if (vm.IsValid || vm.ConfirmCommand.CanExecute(null)) return false;
+                    }
+                    vm.Copies = "1";
                     if (!vm.TestPrintCommand.CanExecute(null) || !vm.TestCashDrawerCommand.CanExecute(null))
                         return false;
 
@@ -1496,7 +1676,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (!vm.TestPrintCommand.CanExecute(null) || vm.TestCashDrawerCommand.CanExecute(null))
                         return false;
 
-                    queue.IsVirtual = false;
+                    queue.OutputKind = PrinterOutputKind.Unknown;
+                    if (!vm.TestPrintCommand.CanExecute(null) || vm.TestCashDrawerCommand.CanExecute(null))
+                        return false;
+
+                    queue.OutputKind = PrinterOutputKind.Physical;
                     vm.PrinterName = string.Empty;
                     vm.CashDrawerPrinterName = string.Empty;
                     vm.AllowWindowsDefault = false;
@@ -1507,12 +1691,24 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (!vm.TestPrintCommand.CanExecute(null) || vm.TestCashDrawerCommand.CanExecute(null))
                         return false;
 
-                    queue.IsVirtual = false;
+                    queue.OutputKind = PrinterOutputKind.Physical;
                     vm.PrinterName = queue.Name;
                     vm.CashDrawerPrinterName = queue.Name;
                     vm.CashDrawerCommand = "27,112,0,25,250";
                     if (!vm.TestPrintCommand.CanExecute(null) || !vm.TestCashDrawerCommand.CanExecute(null))
                         return false;
+
+                    queue.IsInventoryFresh = false;
+                    if (vm.TestPrintCommand.CanExecute(null) || vm.TestCashDrawerCommand.CanExecute(null))
+                        return false;
+                    queue.IsInventoryFresh = true;
+
+                    if (!VerifyPrinterOutputClassificationAndStaleClone(queue) ||
+                        !VerifyReceiptPageProgressGuard() ||
+                        !await VerifySharedPrinterEffectCoordinatorAsync().ConfigureAwait(true))
+                    {
+                        return false;
+                    }
 
                     var printRelease = new TaskCompletionSource<bool>();
                     var printCalls = 0;
@@ -1588,6 +1784,519 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
             }
 
+            private static bool VerifyPrinterOutputClassificationAndStaleClone(
+                InstalledPrinterInfo physicalQueue)
+            {
+                if (WindowsPrinterDiscovery.ClassifyOutputKind(
+                        "EPSON TM-T60 Receipt",
+                        "EPSON TM-T60 Receipt5",
+                        "ESDPRT001") != PrinterOutputKind.Physical ||
+                    WindowsPrinterDiscovery.ClassifyOutputKind(
+                        "QA Queue",
+                        "QA Driver",
+                        "QA001") != PrinterOutputKind.Unknown ||
+                    WindowsPrinterDiscovery.ClassifyOutputKind(
+                        "Microsoft Print to PDF",
+                        "PDF Driver",
+                        "USB001") != PrinterOutputKind.Virtual ||
+                    WindowsPrinterDiscovery.ClassifyOutputKind(
+                        "Virtual Queue",
+                        "QA Driver",
+                        "FILE:") != PrinterOutputKind.Virtual)
+                {
+                    return false;
+                }
+
+                var stale = physicalQueue.CloneWithInventoryFreshness(false);
+                if (ReferenceEquals(stale, physicalQueue) ||
+                    stale.IsInventoryFresh ||
+                    !physicalQueue.IsInventoryFresh ||
+                    stale.OutputKind != PrinterOutputKind.Physical)
+                {
+                    return false;
+                }
+
+                var resolver = typeof(PosWorkflowService).GetMethod(
+                    "ResolvePrinterNameOrThrow",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                if (resolver == null) return false;
+
+                var unknown = new InstalledPrinterInfo
+                {
+                    Name = "QA Unknown Queue",
+                    OutputKind = PrinterOutputKind.Unknown,
+                    IsInventoryFresh = true,
+                    IsAvailable = true,
+                    StatusText = "Ready"
+                };
+                try
+                {
+                    var manual = resolver.Invoke(
+                        null,
+                        new object[]
+                        {
+                            unknown.Name,
+                            new[] { unknown },
+                            false,
+                            true,
+                            false
+                        }) as InstalledPrinterInfo;
+                    if (!ReferenceEquals(manual, unknown)) return false;
+                }
+                catch
+                {
+                    return false;
+                }
+
+                return ResolverRejects(resolver, unknown, requirePhysicalOutput: true) &&
+                       ResolverRejects(resolver, stale, requirePhysicalOutput: false);
+            }
+
+            private static bool ResolverRejects(
+                MethodInfo resolver,
+                InstalledPrinterInfo printer,
+                bool requirePhysicalOutput)
+            {
+                try
+                {
+                    resolver.Invoke(
+                        null,
+                        new object[]
+                        {
+                            printer.Name,
+                            new[] { printer },
+                            false,
+                            true,
+                            requirePhysicalOutput
+                        });
+                    return false;
+                }
+                catch (TargetInvocationException ex)
+                {
+                    return ex.InnerException is InvalidOperationException;
+                }
+            }
+
+            private static bool VerifyReceiptPageProgressGuard()
+            {
+                var guard = typeof(WindowsSpoolerReceiptPrinter).GetMethod(
+                    "EnsurePageProgress",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                if (guard == null) return false;
+
+                try
+                {
+                    guard.Invoke(null, new object[] { 1, true, 0, 1, false, false });
+                    guard.Invoke(null, new object[] { 1, true, 1, 1, false, true });
+                    guard.Invoke(null, new object[] { 1, false, 1, 1, true, true });
+                }
+                catch
+                {
+                    return false;
+                }
+
+                return PageProgressGuardRejects(
+                           guard,
+                           new object[] { 1, true, 0, 0, false, false }) &&
+                       PageProgressGuardRejects(
+                           guard,
+                           new object[] { 129, false, 0, 0, true, true });
+            }
+
+            private static bool PageProgressGuardRejects(MethodInfo guard, object[] arguments)
+            {
+                try
+                {
+                    guard.Invoke(null, arguments);
+                    return false;
+                }
+                catch (TargetInvocationException ex)
+                {
+                    return ex.InnerException is InvalidOperationException;
+                }
+            }
+
+            private static async Task<bool> VerifySafeStartHardwareBoundaryAsync()
+            {
+                var safeStartProperty = typeof(Win7POS.Wpf.App).GetProperty(
+                    "IsSafeStart",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                var safeStartSetter = safeStartProperty?.GetSetMethod(true);
+                var tailsField = typeof(WindowsSpoolerReceiptPrinter).GetField(
+                    "PrinterEffectTails",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                var discoveryTaskField = typeof(PosWorkflowService).GetField(
+                    "_printerDiscoveryTask",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                var adminWebGuard = typeof(PosOnlineFirstLoginDialog).GetMethod(
+                    "IsAdminWebOptionsAllowedForCurrentLaunch",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                if (safeStartProperty == null || safeStartSetter == null ||
+                    tailsField == null || discoveryTaskField == null || adminWebGuard == null)
+                {
+                    return false;
+                }
+
+                var originalSafeStart = (bool)safeStartProperty.GetValue(null);
+                var tailsBefore = tailsField.GetValue(null) as System.Collections.IDictionary;
+                var tailCountBefore = tailsBefore?.Count ?? 0;
+                var service = new PosWorkflowService();
+                var settingsBefore = await service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                try
+                {
+                    safeStartSetter.Invoke(null, new object[] { true });
+                    var loopbackAllowed = (bool)adminWebGuard.Invoke(
+                        null,
+                        new object[] { new PosAdminWebOptions(new Uri("http://127.0.0.1:9/")) });
+                    var stagingBlocked = !(bool)adminWebGuard.Invoke(
+                        null,
+                        new object[] { new PosAdminWebOptions(new Uri("https://staging.example.invalid/")) });
+                    var blockedSettings = ClonePrinterSettings(settingsBefore);
+                    blockedSettings.ReceiptEnabled = true;
+                    blockedSettings.PrinterName = "QA MUST NOT REACH HARDWARE";
+
+                    var workflowBlocked =
+                        await ExpectInvalidOperationAsync(() => service.TestReceiptPrinterAsync(
+                            blockedSettings,
+                            "QA MUST NOT PRINT",
+                            false)).ConfigureAwait(true) &&
+                        await ExpectInvalidOperationAsync(() => service.PrintReceiptTextAsync(
+                            "QA MUST NOT PRINT",
+                            false,
+                            "QA_SAFE_START",
+                            explicitUserAction: true)).ConfigureAwait(true) &&
+                        await ExpectInvalidOperationAsync(() => service.OpenCashDrawerAsync()).ConfigureAwait(true) &&
+                        await ExpectInvalidOperationAsync(() => service.TestCashDrawerAsync(
+                            "QA MUST NOT REACH HARDWARE",
+                            "27,112,0,25,250")).ConfigureAwait(true) &&
+                        await ExpectInvalidOperationAsync(() => service.SetPrinterSettingsAsync(
+                            blockedSettings)).ConfigureAwait(true);
+
+                    var inventory = await service.GetInstalledPrintersAsync().ConfigureAwait(true);
+                    var spooler = new WindowsSpoolerReceiptPrinter();
+                    var lastMileBlocked =
+                        await ExpectInvalidOperationAsync(() => spooler.PrintAsync(
+                            "QA MUST NOT PRINT",
+                            new ReceiptPrintOptions
+                            {
+                                PrinterName = "QA MUST NOT REACH HARDWARE",
+                                Copies = 1
+                            })).ConfigureAwait(true) &&
+                        await ExpectInvalidOperationAsync(() => spooler.OpenCashDrawerAsync(
+                            new ReceiptPrintOptions
+                            {
+                                PrinterName = "QA MUST NOT REACH HARDWARE",
+                                CashDrawerCommand = "27,112,0,25,250"
+                            })).ConfigureAwait(true);
+
+                    var settingsAfter = await service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                    var tailsAfter = tailsField.GetValue(null) as System.Collections.IDictionary;
+                    return loopbackAllowed && stagingBlocked &&
+                           workflowBlocked &&
+                           lastMileBlocked &&
+                           inventory != null && inventory.Count == 0 &&
+                           discoveryTaskField.GetValue(service) == null &&
+                           (tailsAfter?.Count ?? 0) == tailCountBefore &&
+                           settingsAfter.ReceiptEnabled == settingsBefore.ReceiptEnabled &&
+                           string.Equals(
+                               settingsAfter.PrinterName,
+                               settingsBefore.PrinterName,
+                               StringComparison.Ordinal);
+                }
+                finally
+                {
+                    safeStartSetter.Invoke(null, new object[] { originalSafeStart });
+                }
+            }
+
+            private static async Task<bool> VerifyPrinterCopyCountPolicyAsync()
+            {
+                if (!ReceiptPrintOptions.IsValidCopyCount(1) ||
+                    !ReceiptPrintOptions.IsValidCopyCount(3) ||
+                    ReceiptPrintOptions.IsValidCopyCount(0) ||
+                    ReceiptPrintOptions.IsValidCopyCount(4) ||
+                    ReceiptPrintOptions.IsValidCopyCount(int.MaxValue))
+                {
+                    return false;
+                }
+
+                var service = new PosWorkflowService();
+                var before = await service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+                var settings = new SettingsRepository(factory);
+                var primaryKey = AppSettingKeys.PosPrinterReceiptCopies;
+                const string legacyKey = "printer.copies";
+                var primaryBefore = await settings.GetStringAsync(primaryKey).ConfigureAwait(true);
+                var legacyBefore = await settings.GetStringAsync(legacyKey).ConfigureAwait(true);
+                var tailsField = typeof(WindowsSpoolerReceiptPrinter).GetField(
+                    "PrinterEffectTails",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                if (tailsField == null) return false;
+                var tailsBefore = tailsField.GetValue(null) as System.Collections.IDictionary;
+                var tailCountBefore = tailsBefore?.Count ?? 0;
+
+                try
+                {
+                    foreach (var invalidCopies in new[] { 0, 4, int.MaxValue })
+                    {
+                        var invalid = ClonePrinterSettings(before);
+                        invalid.Copies = invalidCopies;
+                        if (!await ExpectInvalidOperationAsync(() => service.SetPrinterSettingsAsync(invalid))
+                                .ConfigureAwait(true))
+                        {
+                            return false;
+                        }
+
+                        var unchanged = await service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                        if (unchanged.Copies != before.Copies) return false;
+                    }
+
+                    var maximum = ClonePrinterSettings(before);
+                    maximum.Copies = ReceiptPrintOptions.MaximumCopies;
+                    await service.SetPrinterSettingsAsync(maximum).ConfigureAwait(true);
+                    var maximumRoundTrip = await service.GetPrinterSettingsAsync().ConfigureAwait(true);
+                    if (maximumRoundTrip.Copies != ReceiptPrintOptions.MaximumCopies) return false;
+
+                    await settings.SetIntAsync(primaryKey, 999).ConfigureAwait(true);
+                    await settings.SetIntAsync(legacyKey, 999).ConfigureAwait(true);
+                    var corruptRead = await new PosWorkflowService()
+                        .GetPrinterSettingsAsync()
+                        .ConfigureAwait(true);
+                    if (corruptRead.Copies != ReceiptPrintOptions.MinimumCopies) return false;
+
+                    var spooler = new WindowsSpoolerReceiptPrinter();
+                    foreach (var invalidCopies in new[] { 0, 4, int.MaxValue })
+                    {
+                        if (!await ExpectInvalidOperationAsync(() => spooler.PrintAsync(
+                                "QA INVALID COPY COUNT MUST NOT PRINT",
+                                new ReceiptPrintOptions
+                                {
+                                    PrinterName = "QA MUST NOT REACH HARDWARE",
+                                    Copies = invalidCopies
+                                })).ConfigureAwait(true))
+                        {
+                            return false;
+                        }
+                    }
+
+                    var tailsAfter = tailsField.GetValue(null) as System.Collections.IDictionary;
+                    return (tailsAfter?.Count ?? 0) == tailCountBefore;
+                }
+                finally
+                {
+                    await RestoreAppSettingAsync(factory, primaryKey, primaryBefore).ConfigureAwait(true);
+                    await RestoreAppSettingAsync(factory, legacyKey, legacyBefore).ConfigureAwait(true);
+                }
+            }
+
+            private static PosPrinterSettings ClonePrinterSettings(PosPrinterSettings source)
+            {
+                return new PosPrinterSettings
+                {
+                    PrinterName = source?.PrinterName ?? string.Empty,
+                    Copies = source?.Copies ?? ReceiptPrintOptions.MinimumCopies,
+                    ReceiptEnabled = source?.ReceiptEnabled ?? false,
+                    AutoPrint = source?.AutoPrint ?? false,
+                    AllowWindowsDefault = source?.AllowWindowsDefault ?? false,
+                    AllowVirtualPrinters = source?.AllowVirtualPrinters ?? false,
+                    CashDrawerCommand = source?.CashDrawerCommand ?? string.Empty,
+                    CashDrawerEnabled = source?.CashDrawerEnabled ?? false,
+                    CashDrawerMode = source?.CashDrawerMode ?? "disabled",
+                    CashDrawerPrinterName = source?.CashDrawerPrinterName ?? string.Empty,
+                    CashDrawerOpenOnCashSale = source?.CashDrawerOpenOnCashSale ?? false
+                };
+            }
+
+            private static async Task RestoreAppSettingAsync(
+                SqliteConnectionFactory factory,
+                string key,
+                string value)
+            {
+                using (var connection = factory.Open())
+                {
+                    if (value == null)
+                    {
+                        await connection.ExecuteAsync(
+                            "DELETE FROM app_settings WHERE key = @key",
+                            new { key }).ConfigureAwait(true);
+                        return;
+                    }
+
+                    await connection.ExecuteAsync(@"
+INSERT INTO app_settings(key, value) VALUES(@key, @value)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                        new { key, value }).ConfigureAwait(true);
+                }
+            }
+
+            private static async Task<bool> ExpectInvalidOperationAsync(Func<Task> action)
+            {
+                try
+                {
+                    await action().ConfigureAwait(true);
+                    return false;
+                }
+                catch (InvalidOperationException)
+                {
+                    return true;
+                }
+            }
+
+            private static async Task<bool> VerifySharedPrinterEffectCoordinatorAsync()
+            {
+                var startEffect = typeof(WindowsSpoolerReceiptPrinter).GetMethod(
+                    "StartExclusivePrinterEffect",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                var awaitEffect = typeof(WindowsSpoolerReceiptPrinter).GetMethod(
+                    "AwaitEffectWithinTimeoutAsync",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                var tailsField = typeof(WindowsSpoolerReceiptPrinter).GetField(
+                    "PrinterEffectTails",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                if (startEffect == null || awaitEffect == null || tailsField == null) return false;
+
+                var printerName = "QA Effect " + Guid.NewGuid().ToString("N");
+                var otherPrinterName = "QA Effect Other " + Guid.NewGuid().ToString("N");
+                var firstStarted = new TaskCompletionSource<bool>();
+                var releaseFirst = new TaskCompletionSource<bool>();
+                var secondStarted = new TaskCompletionSource<bool>();
+                Task first = null;
+                try
+                {
+                    first = startEffect.Invoke(
+                        null,
+                        new object[]
+                        {
+                            printerName,
+                            new Action(() =>
+                            {
+                                firstStarted.TrySetResult(true);
+                                releaseFirst.Task.GetAwaiter().GetResult();
+                            })
+                        }) as Task;
+                    if (first == null ||
+                        await Task.WhenAny(firstStarted.Task, Task.Delay(2000)).ConfigureAwait(true) != firstStarted.Task)
+                    {
+                        return false;
+                    }
+
+                    try
+                    {
+                        startEffect.Invoke(
+                            null,
+                            new object[]
+                            {
+                                printerName.ToLowerInvariant(),
+                                new Action(() => secondStarted.TrySetResult(true))
+                            });
+                        return false;
+                    }
+                    catch (TargetInvocationException ex) when (ex.InnerException is InvalidOperationException)
+                    {
+                    }
+
+                    var otherStarted = false;
+                    var other = startEffect.Invoke(
+                        null,
+                        new object[]
+                        {
+                            otherPrinterName,
+                            new Action(() => otherStarted = true)
+                        }) as Task;
+                    if (other == null) return false;
+                    await other.ConfigureAwait(true);
+                    if (!otherStarted) return false;
+
+                    var boundedWait = awaitEffect.Invoke(
+                        null,
+                        new object[] { first, "QA expected timeout", 50 }) as Task;
+                    if (boundedWait == null) return false;
+                    try
+                    {
+                        await boundedWait.ConfigureAwait(true);
+                        return false;
+                    }
+                    catch (TimeoutException)
+                    {
+                    }
+
+                    try
+                    {
+                        startEffect.Invoke(
+                            null,
+                            new object[]
+                            {
+                                printerName,
+                                new Action(() => secondStarted.TrySetResult(true))
+                            });
+                        return false;
+                    }
+                    catch (TargetInvocationException ex) when (ex.InnerException is InvalidOperationException)
+                    {
+                    }
+
+                    releaseFirst.TrySetResult(true);
+                    await first.ConfigureAwait(true);
+                    await Task.Delay(50).ConfigureAwait(true);
+                    if (secondStarted.Task.IsCompleted) return false;
+
+                    var afterTimeoutStarted = false;
+                    var afterTimeout = startEffect.Invoke(
+                        null,
+                        new object[]
+                        {
+                            printerName,
+                            new Action(() => afterTimeoutStarted = true)
+                        }) as Task;
+                    if (afterTimeout == null) return false;
+                    await afterTimeout.ConfigureAwait(true);
+                    if (!afterTimeoutStarted || secondStarted.Task.IsCompleted) return false;
+
+                    var faulted = startEffect.Invoke(
+                        null,
+                        new object[]
+                        {
+                            printerName,
+                            new Action(() => { throw new InvalidOperationException("QA expected effect failure"); })
+                        }) as Task;
+                    if (faulted == null) return false;
+                    try
+                    {
+                        await faulted.ConfigureAwait(true);
+                        return false;
+                    }
+                    catch (InvalidOperationException)
+                    {
+                    }
+
+                    var continued = false;
+                    var afterFault = startEffect.Invoke(
+                        null,
+                        new object[]
+                        {
+                            printerName,
+                            new Action(() => continued = true)
+                        }) as Task;
+                    if (afterFault == null) return false;
+                    await afterFault.ConfigureAwait(true);
+                    await Task.Delay(50).ConfigureAwait(true);
+                    var tails = tailsField.GetValue(null) as System.Collections.IDictionary;
+                    return continued &&
+                           !secondStarted.Task.IsCompleted &&
+                           (tails == null ||
+                            (!tails.Contains(printerName) && !tails.Contains(otherPrinterName)));
+                }
+                finally
+                {
+                    releaseFirst.TrySetResult(true);
+                    if (first != null)
+                    {
+                        try { await first.ConfigureAwait(true); }
+                        catch { }
+                    }
+                }
+            }
+
             private static bool VerifyCashDrawerCommandParsing()
             {
                 var parse = typeof(WindowsSpoolerReceiptPrinter).GetMethod(
@@ -1625,7 +2334,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "27,112,0,25,25",
                     "27,112,0,50,25",
                     "27,112,0,25",
-                    "27,112,0,25,250,0"
+                    "27,112,0,25,250,0",
+                    new string(' ', WindowsSpoolerReceiptPrinter.MaximumCashDrawerCommandLength + 1),
+                    new string('1', WindowsSpoolerReceiptPrinter.MaximumCashDrawerCommandLength + 1),
+                    new string('9', 10000)
                 };
                 return invalid.All(command =>
                     !TryParseCashDrawerCommandForSmoke(parse, command, out _));
@@ -1828,28 +2540,208 @@ VALUES(@saleId, NULL, 'QA-SNAPSHOT-LINE', 'Snapshot product', 1, 1250, 1250);",
                 return true;
             }
 
-            private static bool VerifyReceiptArchiveRemoval()
+            private static async Task<bool> VerifyReceiptArchiveRemovalAsync()
             {
                 var forbiddenNames = new[]
                 {
                     "SaveCopyToFile",
                     "OutputDirectory",
-                    "OutputPath"
+                    "OutputPath",
+                    "GenerateFiscalPdf"
                 };
                 var types = new[]
                 {
                     typeof(ReceiptPrintOptions),
                     typeof(PosPrinterSettings),
                     typeof(PrinterSettingsViewModel),
-                    typeof(PosPrintResult)
+                    typeof(PosPrintResult),
+                    typeof(PaymentViewModel)
                 };
-                return types.All(type => forbiddenNames.All(name =>
+                var archiveApiRemoved = types.All(type => forbiddenNames.All(name =>
                     type.GetProperty(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) == null &&
                     type.GetField(name, BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic) == null));
+                if (!archiveApiRemoved) return false;
+
+                var safeStartProperty = typeof(Win7POS.Wpf.App).GetProperty(
+                    "IsSafeStart",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                var isSafeStart = safeStartProperty != null &&
+                                  safeStartProperty.GetValue(null) is bool safeStartEnabled &&
+                                  safeStartEnabled;
+                var exportDirectory = Win7POS.Core.AppPaths.ExportsDirectory;
+                var before = Directory.Exists(exportDirectory)
+                    ? new HashSet<string>(Directory.GetFiles(exportDirectory, "*.pdf", SearchOption.AllDirectories), StringComparer.OrdinalIgnoreCase)
+                    : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var createdByCheck = new List<string>();
+                try
+                {
+                    PaymentReceiptDraft lastDraft = null;
+                    foreach (var use42 in new[] { false, true })
+                    {
+                        var draft = new PaymentReceiptDraft
+                        {
+                            SaleCode = "QA-DIRECT-BOLETA-" + (use42 ? "42" : "32"),
+                            CreatedAtMs = new DateTimeOffset(2026, 7, 17, 12, 0, 0, TimeSpan.Zero)
+                                .ToUnixTimeMilliseconds(),
+                            NextBoletaNumber = 42,
+                            UseReceipt42 = use42,
+                            ShopInfo = new ReceiptShopInfo
+                            {
+                                Name = "QA Direct Print con nombre muy largo 中文",
+                                Rut = "76.000.000-0",
+                                BusinessGiro = "Validación de impresión térmica únicamente",
+                                LegalRepresentativeRut = "12.345.678-9",
+                                Address = "QA only - dirección de validación muy larga 12345",
+                                City = "Santiago"
+                            }
+                        };
+                        lastDraft = draft;
+                        var printCalls = 0;
+                        string printedText = null;
+                        string printedCode = null;
+                        using (var vm = new PaymentViewModel(
+                            1000,
+                            draft,
+                            (text, code) =>
+                            {
+                                printCalls++;
+                                printedText = text;
+                                printedCode = code;
+                                return Task.CompletedTask;
+                            },
+                            openDrawerDefault: false))
+                        {
+                            vm.NextBoletaNumber = 1;
+                            if (vm.NextBoletaNumber != 42) return false;
+                            vm.CashReceived = "1000";
+                            vm.CardAmount = "0";
+                            vm.AutoPrintFiscalBoleta = true;
+
+                            var cashPrinted = await vm.TriggerAutoPrintFiscalBoletaIfEnabledAsync().ConfigureAwait(true);
+                            if (isSafeStart)
+                            {
+                                if (cashPrinted || printCalls != 0 || vm.AutoPrintFiscalBoleta) return false;
+                            }
+                            else
+                            {
+                                var width = use42 ? 42 : 32;
+                                var markerCount = (printedText ?? string.Empty)
+                                    .Replace("\r\n", "\n")
+                                    .Split('\n')
+                                    .Count(line => string.Equals(
+                                        line,
+                                        FiscalBoletaTextRenderer.SiiStampMarker,
+                                        StringComparison.Ordinal));
+                                if (!cashPrinted || printCalls != 1 ||
+                                    !string.Equals(printedText, vm.FiscalPreviewText, StringComparison.Ordinal) ||
+                                    !string.Equals(printedCode, draft.SaleCode, StringComparison.Ordinal) ||
+                                    markerCount != 1 ||
+                                    (printedText ?? string.Empty).Replace("\r\n", "\n").Split('\n')
+                                        .Any(line => ReceiptTextLayout.VisibleWidth(line) > width) ||
+                                    !string.Equals(vm.FiscalStatus, PosLocalization.T("payment.printed"), StringComparison.Ordinal))
+                                    return false;
+
+                                vm.CashReceived = "0";
+                                vm.CardAmount = "1000";
+                                var cardPrinted = await vm.TriggerAutoPrintFiscalBoletaIfEnabledAsync().ConfigureAwait(true);
+                                if (cardPrinted || printCalls != 1 ||
+                                    !string.Equals(vm.FiscalStatus, PosLocalization.T("payment.notPrintedCardOnly"), StringComparison.Ordinal))
+                                    return false;
+                            }
+                        }
+                    }
+
+                    if (!isSafeStart)
+                    {
+                        var expectedFailure = new InvalidOperationException("QA spooler failure");
+                        var failedPrintCalls = 0;
+                        using (var failingVm = new PaymentViewModel(
+                            1000,
+                            lastDraft,
+                            (text, code) =>
+                            {
+                                failedPrintCalls++;
+                                return Task.FromException(expectedFailure);
+                            },
+                            openDrawerDefault: false))
+                        {
+                            failingVm.CashReceived = "1000";
+                            failingVm.AutoPrintFiscalBoleta = true;
+                            try
+                            {
+                                await failingVm.TriggerAutoPrintFiscalBoletaIfEnabledAsync().ConfigureAwait(true);
+                                return false;
+                            }
+                            catch (InvalidOperationException ex)
+                            {
+                                if (!ReferenceEquals(ex, expectedFailure) ||
+                                    failedPrintCalls != 1 ||
+                                    string.Equals(
+                                        failingVm.FiscalStatus,
+                                        PosLocalization.T("payment.printed"),
+                                        StringComparison.Ordinal))
+                                {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+
+                    if (Directory.Exists(exportDirectory))
+                    {
+                        createdByCheck.AddRange(Directory.GetFiles(exportDirectory, "*.pdf", SearchOption.AllDirectories)
+                            .Where(path => !before.Contains(path)));
+                    }
+
+                    return createdByCheck.Count == 0;
+                }
+                finally
+                {
+                    if (Directory.Exists(exportDirectory))
+                    {
+                        createdByCheck.AddRange(Directory.GetFiles(exportDirectory, "*.pdf", SearchOption.AllDirectories)
+                            .Where(path => !before.Contains(path) && !createdByCheck.Contains(path, StringComparer.OrdinalIgnoreCase)));
+                    }
+
+                    foreach (var path in createdByCheck.Distinct(StringComparer.OrdinalIgnoreCase))
+                    {
+                        try { File.Delete(path); }
+                        catch { }
+                    }
+                }
             }
 
             private static async Task<bool> VerifySalesRegisterRapidSelectionAsync()
             {
+                var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+                var seedPrefix = "QA-RAPID-SELECTION-" + Guid.NewGuid().ToString("N");
+                using (var conn = factory.Open())
+                {
+                    for (var index = 0; index < 2; index++)
+                    {
+                        var saleId = await conn.ExecuteScalarAsync<long>(@"
+INSERT INTO sales(code, createdAt, kind, total, paidCash, paidCard, change)
+VALUES(@code, @createdAt, 0, @total, @total, 0, 0);
+SELECT last_insert_rowid();",
+                            new
+                            {
+                                code = seedPrefix + "-" + index.ToString(CultureInfo.InvariantCulture),
+                                createdAt = DateTimeOffset.Now.AddMinutes(-index).ToUnixTimeMilliseconds(),
+                                total = 1000L + index
+                            }).ConfigureAwait(true);
+                        await conn.ExecuteAsync(@"
+INSERT INTO sale_lines(saleId, productId, barcode, name, quantity, unitPrice, lineTotal)
+VALUES(@saleId, NULL, @barcode, @name, 1, @total, @total);",
+                            new
+                            {
+                                saleId,
+                                barcode = seedPrefix + "-LINE-" + index.ToString(CultureInfo.InvariantCulture),
+                                name = "QA rapid selection item " + index.ToString(CultureInfo.InvariantCulture),
+                                total = 1000L + index
+                            }).ConfigureAwait(true);
+                    }
+                }
+
                 var service = new PosWorkflowService();
                 var vm = new SalesRegisterViewModel(service, useReceipt42: true);
                 try
@@ -2558,6 +3450,527 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                 public int Cash { get; }
                 public int Card { get; }
                 public int Change { get; }
+            }
+
+            private static IReadOnlyList<PhysicalPrinterQaJob> BuildPhysicalPrinterQaJobs(
+                string printerName)
+            {
+                const long totalMinor = 14691;
+                const long vatMinor = 2345;
+                const int syntheticFiscalNumber = 990001;
+                var createdAt = new DateTimeOffset(2026, 7, 19, 15, 0, 0, TimeSpan.Zero);
+                var createdAtMs = createdAt.ToUnixTimeMilliseconds();
+                var shop = new ReceiptShopInfo
+                {
+                    Name = "QA PRINTER TEST SHOP",
+                    Address = "Avenida QA 123",
+                    City = "Santiago",
+                    Rut = "76.123.456-7",
+                    Phone = "+56 2 0000 0000",
+                    Footer = "QA ONLY - THANK YOU",
+                    BusinessGiro = "QA TEST SALES",
+                    LegalRepresentativeRut = "11.111.111-1"
+                };
+
+                var fiscal32 = PrefixPhysicalQaWarnings(
+                    "QA CASE: FISCAL 32 SYNTHETIC",
+                    FiscalBoletaTextRenderer.Render(
+                        shop,
+                        createdAtMs,
+                        syntheticFiscalNumber,
+                        totalMinor,
+                        vatMinor,
+                        32));
+                var fiscal42 = PrefixPhysicalQaWarnings(
+                    "QA CASE: FISCAL 42 SYNTHETIC",
+                    FiscalBoletaTextRenderer.Render(
+                        shop,
+                        createdAtMs,
+                        syntheticFiscalNumber,
+                        totalMinor,
+                        vatMinor,
+                        42));
+
+                var draft = new PaymentReceiptDraft
+                {
+                    SaleCode = "TEST-NO-SALE",
+                    CreatedAtMs = createdAtMs,
+                    UseReceipt42 = true,
+                    DefaultPrint = false,
+                    ShopInfo = shop,
+                    NextBoletaNumber = syntheticFiscalNumber,
+                    CartLines = new List<PaymentReceiptDraftLine>
+                    {
+                        new PaymentReceiptDraftLine
+                        {
+                            Barcode = "QA-COFFEE",
+                            Name = "QA café producto",
+                            Quantity = 2,
+                            UnitPrice = 6173,
+                            LineTotal = 12346
+                        },
+                        new PaymentReceiptDraftLine
+                        {
+                            Barcode = "QA-PACK",
+                            Name = "QA paquete pingüino",
+                            Quantity = 1,
+                            UnitPrice = 2345,
+                            LineTotal = 2345
+                        }
+                    }
+                };
+                string receiptText;
+                using (var payment = new PaymentViewModel(
+                    totalMinor,
+                    draft,
+                    printFiscalToThermal: null,
+                    openDrawerDefault: false))
+                {
+                    payment.CashReceived = "7000";
+                    payment.CardAmount = "7691";
+                    receiptText = PrefixPhysicalQaWarnings(
+                        "QA CASE: RECEIPT ORIGINAL/REPRINT",
+                        payment.ReceiptPreviewText);
+                }
+
+                var dailyModel = new DailyTakingsReceiptModel
+                {
+                    Date = new DateTime(2026, 7, 19),
+                    PeriodStart = new DateTime(2026, 7, 19),
+                    PeriodEnd = new DateTime(2026, 7, 19),
+                    OperatorName = "QA OPERATOR",
+                    GeneratedAt = createdAt,
+                    SalesCount = 3,
+                    GrossSalesAmount = 24691,
+                    DiscountsAmount = 1000,
+                    TaxAmount = 3942,
+                    RefundsAmount = 2000,
+                    VoidsAmount = 0,
+                    NetAmount = 21691,
+                    CashAmount = 14000,
+                    CardAmount = 7691,
+                    MixedSalesCount = 1,
+                    ChangeAmount = 309,
+                    OpeningAmount = 50000,
+                    ClosingAmount = 63691,
+                    ExpectedCashAmount = 63691,
+                    DifferenceAmount = 0,
+                    PendingSyncCount = 0,
+                    RetrySyncCount = 0,
+                    BlockedSyncCount = 0
+                };
+                var daily32 = PrefixPhysicalQaWarnings(
+                    "QA CASE: DAILY CLOSE 32",
+                    DailyCloseReceiptTextRenderer.Render(
+                        dailyModel,
+                        shop,
+                        new ReceiptOptions
+                        {
+                            Width = 32,
+                            Currency = "CLP",
+                            CultureName = "en-US",
+                            Labels = ReceiptLabels.English
+                        },
+                        DailyCloseReceiptLabels.English));
+                var daily42 = PrefixPhysicalQaWarnings(
+                    "QA CASE: DAILY CLOSE 42",
+                    DailyCloseReceiptTextRenderer.Render(
+                        dailyModel,
+                        shop,
+                        new ReceiptOptions
+                        {
+                            Width = 42,
+                            Currency = "CLP",
+                            CultureName = "en-US",
+                            Labels = ReceiptLabels.English
+                        },
+                        DailyCloseReceiptLabels.English));
+
+                var receiptOptions = CreatePhysicalPrinterQaOptions(
+                    printerName,
+                    42,
+                    useReceiptHeaderStyle: true,
+                    saleCodeForBarcode: "TEST-NO-SALE");
+                return new List<PhysicalPrinterQaJob>
+                {
+                    new PhysicalPrinterQaJob(
+                        "fiscal-32",
+                        fiscal32,
+                        CreatePhysicalPrinterQaOptions(printerName, 32, false, string.Empty)),
+                    new PhysicalPrinterQaJob(
+                        "fiscal-42",
+                        fiscal42,
+                        CreatePhysicalPrinterQaOptions(printerName, 42, false, string.Empty)),
+                    new PhysicalPrinterQaJob("receipt-original", receiptText, receiptOptions),
+                    new PhysicalPrinterQaJob("receipt-reprint-identical", receiptText, receiptOptions),
+                    new PhysicalPrinterQaJob(
+                        "daily-close-32",
+                        daily32,
+                        CreatePhysicalPrinterQaOptions(printerName, 32, true, string.Empty)),
+                    new PhysicalPrinterQaJob(
+                        "daily-close-42",
+                        daily42,
+                        CreatePhysicalPrinterQaOptions(printerName, 42, true, string.Empty))
+                };
+            }
+
+            private static ReceiptPrintOptions CreatePhysicalPrinterQaOptions(
+                string printerName,
+                int columns,
+                bool useReceiptHeaderStyle,
+                string saleCodeForBarcode)
+            {
+                return new ReceiptPrintOptions
+                {
+                    PrinterName = printerName,
+                    Copies = 1,
+                    CharactersPerLine = columns,
+                    UseReceiptHeaderStyle = useReceiptHeaderStyle,
+                    SaleCodeForBarcode = saleCodeForBarcode ?? string.Empty,
+                    CashDrawerCommand = string.Empty
+                };
+            }
+
+            private static string PrefixPhysicalQaWarnings(string qaCase, string body)
+            {
+                return string.Join(
+                    Environment.NewLine,
+                    new[]
+                    {
+                        "QA - PRINTER TEST",
+                        "NON FISCAL",
+                        "NO SALE SAVED",
+                        "NO DRAWER",
+                        qaCase ?? string.Empty,
+                        string.Empty,
+                        body ?? string.Empty
+                    });
+            }
+
+            private static bool VerifyPhysicalPrinterQaPayloads()
+            {
+                var manifestPath = Path.Combine(
+                    Path.GetTempPath(),
+                    "win7pos-physical-qa-manifest-" + Guid.NewGuid().ToString("N") + ".txt");
+                try
+                {
+                    var jobs = BuildPhysicalPrinterQaJobs("QA PHYSICAL PRINTER");
+                    ValidatePhysicalPrinterQaJobs(jobs);
+                    WritePhysicalPrinterQaManifestAtomically(
+                        manifestPath,
+                        new[] { "STATUS=FIRST" });
+                    WritePhysicalPrinterQaManifestAtomically(
+                        manifestPath,
+                        new[] { "STATUS=SECOND" });
+                    return jobs.Count == 6 &&
+                           jobs.All(job => !job.Submitted) &&
+                           jobs.All(job => job.Options.Copies == 1) &&
+                           jobs.All(job => string.IsNullOrEmpty(job.Options.CashDrawerCommand)) &&
+                           string.Equals(
+                               File.ReadAllText(manifestPath).Trim(),
+                               "STATUS=SECOND",
+                               StringComparison.Ordinal) &&
+                           !File.Exists(manifestPath + ".pending");
+                }
+                catch
+                {
+                    return false;
+                }
+                finally
+                {
+                    try { File.Delete(manifestPath); } catch { }
+                    try { File.Delete(manifestPath + ".pending"); } catch { }
+                }
+            }
+
+            private static bool VerifyLogRedactionTestVectors()
+            {
+                const string sessionSecret = "SessionSecret123456";
+                const string refreshSecret = "RefreshSecret123456";
+                const string clientSecret = "ClientSecret123456";
+                const string apiSecret = "ApiSecret123456";
+                const string passwordSecret = "CorrectHorseBatteryStaple";
+                const string credentialSecret = "CredentialSecret123456";
+                const string pinSecret = "12345678";
+                const string dbSecret = "DatabaseSecret123456";
+                const string bearerSecret = "BearerSecret123456";
+                const string prefixSecret = "sk-abcdefghijklmnopqrstuvwxyz";
+                const string jwtSecret = "eyJheader12345.payload12345.signature12345";
+                const string privateKeyBody = "PRIVATEKEYBODY123456789";
+                const string truncatedPrivateKeyBody = "TRUNCATEDPRIVATEKEYBODY987654321";
+                var input = string.Join(
+                    Environment.NewLine,
+                    new[]
+                    {
+                        "session_token=" + sessionSecret,
+                        "refresh-token=" + refreshSecret,
+                        "{\"client_secret\":\"" + clientSecret + "\",\"api_key\":\"" + apiSecret + "\"}",
+                        "password=" + passwordSecret,
+                        "credential:" + credentialSecret,
+                        "pin=" + pinSecret,
+                        "db_password=" + dbSecret,
+                        "Authorization: Bearer " + bearerSecret,
+                        prefixSecret,
+                        jwtSecret,
+                        "-----BEGIN PRIVATE KEY-----",
+                        privateKeyBody,
+                        "-----END PRIVATE KEY-----",
+                        "-----BEGIN RSA PRIVATE KEY-----",
+                        truncatedPrivateKeyBody
+                    });
+                var outputs = new[]
+                {
+                    InvokePrivateRedactor(
+                        typeof(Win7POS.Wpf.Infrastructure.FileLogger),
+                        "Sanitize",
+                        input),
+                    InvokePrivateRedactor(
+                        typeof(Win7POS.Wpf.Infrastructure.StartupTrace),
+                        "Sanitize",
+                        input),
+                    InvokePrivateRedactor(
+                        typeof(DbInitializer),
+                        "SanitizeLogMessage",
+                        input)
+                };
+                var secrets = new[]
+                {
+                    sessionSecret,
+                    refreshSecret,
+                    clientSecret,
+                    apiSecret,
+                    passwordSecret,
+                    credentialSecret,
+                    pinSecret,
+                    dbSecret,
+                    bearerSecret,
+                    prefixSecret,
+                    jwtSecret,
+                    privateKeyBody,
+                    "-----END PRIVATE KEY-----",
+                    truncatedPrivateKeyBody,
+                    "-----BEGIN RSA PRIVATE KEY-----"
+                };
+                return outputs.All(output =>
+                    !string.IsNullOrWhiteSpace(output) &&
+                    output.IndexOf("[redacted]", StringComparison.Ordinal) >= 0 &&
+                    output.IndexOf("[private-key-redacted]", StringComparison.Ordinal) >= 0 &&
+                    secrets.All(secret => output.IndexOf(secret, StringComparison.Ordinal) < 0));
+            }
+
+            private static string InvokePrivateRedactor(Type type, string methodName, string input)
+            {
+                var method = type.GetMethod(
+                    methodName,
+                    BindingFlags.Static | BindingFlags.NonPublic);
+                if (method == null)
+                    throw new MissingMethodException(type.FullName, methodName);
+                return method.Invoke(null, new object[] { input }) as string ?? string.Empty;
+            }
+
+            private static void ValidatePhysicalPrinterQaJobs(
+                IReadOnlyList<PhysicalPrinterQaJob> jobs)
+            {
+                if (jobs == null || jobs.Count != 6)
+                    throw new InvalidOperationException("Physical printer QA must contain exactly six jobs.");
+
+                foreach (var job in jobs)
+                {
+                    if (job == null ||
+                        job.Options == null ||
+                        job.Options.Copies != 1 ||
+                        !string.IsNullOrEmpty(job.Options.CashDrawerCommand) ||
+                        (job.Options.CharactersPerLine != 32 && job.Options.CharactersPerLine != 42))
+                    {
+                        throw new InvalidOperationException(
+                            "Every physical printer QA job must be one-copy, drawer-free and 32/42 columns.");
+                    }
+
+                    var lines = SplitReceiptLines(job.Text);
+                    if (lines.Length < 5 ||
+                        !string.Equals(lines[0], "QA - PRINTER TEST", StringComparison.Ordinal) ||
+                        !string.Equals(lines[1], "NON FISCAL", StringComparison.Ordinal) ||
+                        !string.Equals(lines[2], "NO SALE SAVED", StringComparison.Ordinal) ||
+                        !string.Equals(lines[3], "NO DRAWER", StringComparison.Ordinal) ||
+                        lines.Any(line => ReceiptTextLayout.VisibleWidth(line) > job.Options.CharactersPerLine))
+                    {
+                        throw new InvalidOperationException(
+                            "Physical printer QA warning prefix or width bound is invalid.");
+                    }
+                }
+
+                if (SplitReceiptLines(jobs[0].Text).Count(line =>
+                        string.Equals(line, FiscalBoletaTextRenderer.SiiStampMarker, StringComparison.Ordinal)) != 1 ||
+                    SplitReceiptLines(jobs[1].Text).Count(line =>
+                        string.Equals(line, FiscalBoletaTextRenderer.SiiStampMarker, StringComparison.Ordinal)) != 1)
+                {
+                    throw new InvalidOperationException("Each fiscal QA job must contain one standalone SII marker.");
+                }
+
+                if (!string.Equals(jobs[2].Text, jobs[3].Text, StringComparison.Ordinal) ||
+                    !string.Equals(jobs[2].TextSha256, jobs[3].TextSha256, StringComparison.Ordinal) ||
+                    !string.Equals(jobs[2].RequestSha256, jobs[3].RequestSha256, StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "Receipt original and reprint QA requests must be byte-for-byte identical.");
+                }
+            }
+
+            private static string[] SplitReceiptLines(string text)
+            {
+                return (text ?? string.Empty).Replace("\r\n", "\n").Split('\n');
+            }
+
+            private static void WritePhysicalPrinterQaManifest(
+                string manifestPath,
+                string status,
+                string detail,
+                DateTimeOffset runUtc,
+                InstalledPrinterInfo queue,
+                IReadOnlyList<PhysicalPrinterQaJob> jobs,
+                int submitted,
+                string dataDirectory)
+            {
+                var lines = new List<string>
+                {
+                    "STATUS=" + ManifestValue(status),
+                    "DETAIL=" + ManifestValue(detail),
+                    "RUN_UTC=" + runUtc.ToString("O", CultureInfo.InvariantCulture),
+                    "PRINTER_NAME=" + ManifestValue(queue?.Name),
+                    "PRINTER_DRIVER=" + ManifestValue(queue?.DriverName),
+                    "PRINTER_PORT=" + ManifestValue(queue?.PortName),
+                    "PRINTER_OUTPUT_KIND=" + (queue?.OutputKind.ToString() ?? "missing"),
+                    "PRINTER_INVENTORY_FRESH=" + BoolManifest(queue?.IsInventoryFresh == true),
+                    "PRINTER_AVAILABLE=" + BoolManifest(queue?.IsAvailable == true),
+                    "PRINTER_PHYSICAL=" + BoolManifest(queue?.IsPhysical == true),
+                    "EXPECTED_JOBS=6",
+                    "SUBMITTED_JOBS=" + submitted.ToString(CultureInfo.InvariantCulture),
+                    "COPIES_PER_JOB=1",
+                    "DRAWER_CALLS=0",
+                    "FISCAL_NUMBER_SOURCE=SYNTHETIC_NOT_RESERVED",
+                    "FISCAL_NUMBER=990001",
+                    "HASH_ENCODING=SHA256_UTF8_NO_BOM",
+                    "REQUEST_HASH_SCHEMA=printer,copies,columns,header,barcode,drawer,text_sha256 joined as key=value with LF",
+                    "DATABASE_ARTIFACTS=" + (PhysicalQaDatabaseArtifactsPresent(dataDirectory) ? "PRESENT" : "ABSENT"),
+                    "RECEIPT_3_4_TEXT_IDENTICAL=" + BoolManifest(string.Equals(
+                        jobs[2].TextSha256,
+                        jobs[3].TextSha256,
+                        StringComparison.Ordinal)),
+                    "RECEIPT_3_4_REQUEST_IDENTICAL=" + BoolManifest(string.Equals(
+                        jobs[2].RequestSha256,
+                        jobs[3].RequestSha256,
+                        StringComparison.Ordinal)),
+                    "VISUAL_CONFIRMATION=REQUIRED"
+                };
+
+                for (var index = 0; index < jobs.Count; index++)
+                {
+                    var job = jobs[index];
+                    var prefix = "JOB_" + (index + 1).ToString(CultureInfo.InvariantCulture) + "_";
+                    lines.Add(prefix + "ROLE=" + ManifestValue(job.Role));
+                    lines.Add(prefix + "COLUMNS=" + job.Options.CharactersPerLine.ToString(CultureInfo.InvariantCulture));
+                    lines.Add(prefix + "COPIES=" + job.Options.Copies.ToString(CultureInfo.InvariantCulture));
+                    lines.Add(prefix + "USE_RECEIPT_HEADER_STYLE=" + BoolManifest(job.Options.UseReceiptHeaderStyle));
+                    lines.Add(prefix + "SALE_CODE_FOR_BARCODE=" + ManifestValue(job.Options.SaleCodeForBarcode));
+                    lines.Add(prefix + "DRAWER_COMMAND_EMPTY=" + BoolManifest(string.IsNullOrEmpty(job.Options.CashDrawerCommand)));
+                    lines.Add(prefix + "TEXT_SHA256=" + job.TextSha256);
+                    lines.Add(prefix + "REQUEST_SHA256=" + job.RequestSha256);
+                    lines.Add(prefix + "SUBMITTED=" + BoolManifest(job.Submitted));
+                }
+
+                WritePhysicalPrinterQaManifestAtomically(manifestPath, lines);
+            }
+
+            private static void WritePhysicalPrinterQaManifestAtomically(
+                string manifestPath,
+                IReadOnlyList<string> lines)
+            {
+                var pendingPath = manifestPath + ".pending";
+                using (var stream = new FileStream(
+                    pendingPath,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None))
+                using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
+                {
+                    foreach (var line in lines ?? new string[0])
+                        writer.WriteLine(line ?? string.Empty);
+                    writer.Flush();
+                    stream.Flush(true);
+                }
+
+                if (File.Exists(manifestPath))
+                    File.Replace(pendingPath, manifestPath, null);
+                else
+                    File.Move(pendingPath, manifestPath);
+            }
+
+            private static void EnsureNoPhysicalQaDatabaseArtifacts(string dataDirectory)
+            {
+                if (PhysicalQaDatabaseArtifactsPresent(dataDirectory))
+                    throw new InvalidOperationException("Physical printer QA created an unexpected POS database artifact.");
+            }
+
+            private static bool PhysicalQaDatabaseArtifactsPresent(string dataDirectory)
+            {
+                return Directory.EnumerateFiles(
+                        dataDirectory,
+                        "pos.db*",
+                        SearchOption.AllDirectories)
+                    .Any();
+            }
+
+            private static string BoolManifest(bool value) => value ? "true" : "false";
+
+            private static string ManifestValue(string value)
+            {
+                return (value ?? string.Empty)
+                    .Replace("\r", " ")
+                    .Replace("\n", " ")
+                    .Trim();
+            }
+
+            private static string Sha256Hex(string value)
+            {
+                using (var sha256 = SHA256.Create())
+                {
+                    var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(value ?? string.Empty));
+                    return BitConverter.ToString(hash).Replace("-", string.Empty);
+                }
+            }
+
+            private sealed class PhysicalPrinterQaJob
+            {
+                public PhysicalPrinterQaJob(
+                    string role,
+                    string text,
+                    ReceiptPrintOptions options)
+                {
+                    Role = role ?? string.Empty;
+                    Text = text ?? string.Empty;
+                    Options = options ?? throw new ArgumentNullException(nameof(options));
+                    TextSha256 = Sha256Hex(Text);
+                    var canonicalRequest = string.Join(
+                        "\n",
+                        new[]
+                        {
+                            "printer=" + (Options.PrinterName ?? string.Empty),
+                            "copies=" + Options.Copies.ToString(CultureInfo.InvariantCulture),
+                            "columns=" + Options.CharactersPerLine.ToString(CultureInfo.InvariantCulture),
+                            "header=" + BoolManifest(Options.UseReceiptHeaderStyle),
+                            "barcode=" + (Options.SaleCodeForBarcode ?? string.Empty),
+                            "drawer=" + (Options.CashDrawerCommand ?? string.Empty),
+                            "text_sha256=" + TextSha256
+                        });
+                    RequestSha256 = Sha256Hex(canonicalRequest);
+                }
+
+                public string Role { get; }
+                public string Text { get; }
+                public ReceiptPrintOptions Options { get; }
+                public string TextSha256 { get; }
+                public string RequestSha256 { get; }
+                public bool Submitted { get; set; }
             }
 
             private static string BuildQaPrinterTestReceipt()

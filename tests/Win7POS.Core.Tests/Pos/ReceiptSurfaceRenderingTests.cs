@@ -143,6 +143,53 @@ public sealed class ReceiptSurfaceRenderingTests
         }
     }
 
+    [TestMethod]
+    public void FiscalBoleta_PreviewAndPrintTextAreDeterministicCompleteAndFit32And42()
+    {
+        var createdAtMs = new DateTimeOffset(2020, 6, 15, 12, 30, 0, TimeSpan.Zero)
+            .ToUnixTimeMilliseconds();
+        var expectedDate = DateTimeOffset.FromUnixTimeMilliseconds(createdAtMs)
+            .ToLocalTime()
+            .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        var shop = Shop();
+        shop.Name = "Negozio fiscale estremamente lungo 中文 pingüino città qualità";
+        shop.Rut = "RUT 76.123.456-7 con testo di verifica molto lungo";
+        shop.BusinessGiro = "Commercio internazionale e servizi de alimentación 中文";
+        shop.LegalRepresentativeRut = "12.345.678-9 rappresentante verificato";
+        shop.Address = "Avenida internacional de validación extremadamente larga 12345";
+        shop.City = "Santiago metropolitana 中文";
+
+        foreach (var width in new[] { 32, 42 })
+        {
+            var preview = FiscalBoletaTextRenderer.Render(
+                shop,
+                createdAtMs,
+                int.MaxValue,
+                long.MaxValue,
+                1_472_334_122_581_234_567,
+                width);
+            var printed = FiscalBoletaTextRenderer.Render(
+                shop,
+                createdAtMs,
+                int.MaxValue,
+                long.MaxValue,
+                1_472_334_122_581_234_567,
+                width);
+
+            Assert.AreEqual(preview, printed);
+            Assert.IsTrue(preview.SplitLines().All(line => ReceiptTextLayout.VisibleWidth(line) <= width),
+                "Fiscal boleta overflowed " + width + " columns:\n" + preview);
+            StringAssert.Contains(preview, expectedDate);
+            StringAssert.Contains(preview, "2.147.483.647");
+            StringAssert.Contains(preview, "9.223.372.036.854.775.807");
+            StringAssert.Contains(preview, "1.472.334.122.581.234.567");
+            Assert.AreEqual(
+                1,
+                preview.SplitLines().Count(line =>
+                    string.Equals(line, FiscalBoletaTextRenderer.SiiStampMarker, StringComparison.Ordinal)));
+        }
+    }
+
     private static Sale Sale(
         long total,
         long paidCash,
