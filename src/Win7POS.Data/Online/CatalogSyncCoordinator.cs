@@ -53,7 +53,13 @@ namespace Win7POS.Data.Online
             int rows = 0,
             long durationMilliseconds = 0,
             string resumeCursor = null,
-            string code = null)
+            string code = null,
+            bool outboxWorkRemaining = false,
+            int? nextPollAfterSeconds = null,
+            int? heartbeatAfterSeconds = null,
+            bool catalogPullAttempted = false,
+            string catalogPullSkippedCode = null,
+            long? nextOutboxRetryAt = null)
         {
             Success = success;
             AuthenticationDenied = authenticationDenied;
@@ -65,18 +71,37 @@ namespace Win7POS.Data.Online
             DurationMilliseconds = Math.Max(0, durationMilliseconds);
             ResumeCursor = resumeCursor ?? string.Empty;
             Code = code ?? string.Empty;
+            OutboxWorkRemaining = outboxWorkRemaining;
+            NextPollAfterSeconds = CatalogHeartbeatPolicy.NormalizePollSeconds(nextPollAfterSeconds);
+            HeartbeatAfterSeconds = NormalizePositiveSeconds(heartbeatAfterSeconds);
+            CatalogPullAttempted = catalogPullAttempted;
+            CatalogPullSkippedCode = catalogPullSkippedCode ?? string.Empty;
+            NextOutboxRetryAt = nextOutboxRetryAt.HasValue && nextOutboxRetryAt.Value >= 0
+                ? nextOutboxRetryAt
+                : null;
         }
 
         public bool AuthenticationDenied { get; }
         public string Code { get; }
+        public bool CatalogPullAttempted { get; }
+        public string CatalogPullSkippedCode { get; }
         public long DurationMilliseconds { get; }
         public bool HasMore { get; }
+        public int? HeartbeatAfterSeconds { get; }
+        public int? NextPollAfterSeconds { get; }
+        public long? NextOutboxRetryAt { get; }
         public bool Offline { get; }
+        public bool OutboxWorkRemaining { get; }
         public int Pages { get; }
         public bool ReceivedChanges { get; }
         public string ResumeCursor { get; }
         public int Rows { get; }
         public bool Success { get; }
+
+        private static int? NormalizePositiveSeconds(int? value)
+        {
+            return value.HasValue && value.Value > 0 ? value : null;
+        }
 
         internal static CatalogSyncRunResult FromDecision(CatalogSyncDecision decision)
         {
@@ -227,12 +252,7 @@ namespace Win7POS.Data.Online
                     }
                 }
 
-                if (_diagnostics != null)
-                {
-                    await _diagnostics.RecordAsync(request, lastResult, _clock.UtcNow)
-                        .ConfigureAwait(false);
-                }
-
+                var shouldYield = false;
                 lock (_sync)
                 {
                     if (lastResult.AuthenticationDenied)
@@ -258,8 +278,26 @@ namespace Win7POS.Data.Online
                     if (runsThisDrain >= 2 && _hasPending)
                     {
                         _drainTask = null;
-                        return lastResult;
+                        shouldYield = true;
                     }
+                }
+
+                if (_diagnostics != null)
+                {
+                    try
+                    {
+                        await _diagnostics.RecordAsync(request, lastResult, _clock.UtcNow)
+                            .ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Diagnostics must never weaken auth-stop or lane scheduling.
+                    }
+                }
+
+                if (shouldYield)
+                {
+                    return lastResult;
                 }
             }
         }
@@ -332,17 +370,29 @@ namespace Win7POS.Data.Online
                 var incremental = request.Decision.Mode == CatalogSyncMode.Incremental ||
                     request.Decision.Mode == CatalogSyncMode.ResumeIncremental;
                 var full = request.Decision.Mode == CatalogSyncMode.Full;
-                if (incremental)
+                if (!result.CatalogPullAttempted &&
+                    result.Success &&
+                    !string.IsNullOrWhiteSpace(result.CatalogPullSkippedCode))
+                {
+                    await IncrementAsync(conn, tx, Prefix + "heartbeat_skip_count").ConfigureAwait(false);
+                    await SetAsync(
+                        conn,
+                        tx,
+                        Prefix + "last_skip_code",
+                        result.CatalogPullSkippedCode).ConfigureAwait(false);
+                }
+                else if (result.CatalogPullAttempted && incremental)
                 {
                     await IncrementAsync(conn, tx, Prefix + "total_incremental_runs").ConfigureAwait(false);
                 }
-                else if (full)
+                else if (result.CatalogPullAttempted && full)
                 {
                     await IncrementAsync(conn, tx, Prefix + "total_full_runs").ConfigureAwait(false);
                 }
 
-                if (request.Decision.Mode == CatalogSyncMode.ResumeIncremental ||
-                    request.Trigger == CatalogSyncTrigger.PartialResume)
+                if (result.CatalogPullAttempted &&
+                    (request.Decision.Mode == CatalogSyncMode.ResumeIncremental ||
+                     request.Trigger == CatalogSyncTrigger.PartialResume))
                 {
                     await IncrementAsync(conn, tx, Prefix + "partial_resume_count").ConfigureAwait(false);
                 }
@@ -364,11 +414,11 @@ namespace Win7POS.Data.Online
                 if (result.Success)
                 {
                     await SetAsync(conn, tx, Prefix + "last_success_at", recorded).ConfigureAwait(false);
-                    if (incremental)
+                    if (result.CatalogPullAttempted && incremental)
                     {
                         await SetAsync(conn, tx, Prefix + "last_incremental_at", recorded).ConfigureAwait(false);
                     }
-                    else if (full)
+                    else if (result.CatalogPullAttempted && full)
                     {
                         await SetAsync(conn, tx, Prefix + "last_full_at", recorded).ConfigureAwait(false);
                     }

@@ -108,6 +108,32 @@ public sealed class SupplierImportDataTests
     }
 
     [TestMethod]
+    public async Task CatalogImportOutboxRepository_ByIdClaimFindsRowsBeyondPendingPageLimit()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogImportOutboxRepository(db.Factory);
+        long targetId = 0;
+        for (var index = 1; index <= 51; index++)
+        {
+            targetId = await repository.EnqueueAsync(BuildCatalogEntry(
+                "by-id-" + index.ToString(CultureInfo.InvariantCulture),
+                100 + index));
+        }
+
+        Assert.IsTrue(await repository.MarkOriginBlockedAsync(
+            targetId,
+            "origin_shop_mismatch",
+            1767225600000L));
+        Assert.AreEqual("failed_blocked", await ScalarStringAsync(
+            db.Factory,
+            "SELECT status FROM catalog_import_outbox WHERE id = " +
+            targetId.ToString(CultureInfo.InvariantCulture)));
+        Assert.AreEqual(50, await ScalarLongAsync(
+            db.Factory,
+            "SELECT COUNT(1) FROM catalog_import_outbox WHERE status = 'pending'"));
+    }
+
+    [TestMethod]
     public async Task CatalogImportOutboxRepository_PrepareAttemptAsync_LeasesInProgressRows()
     {
         using var db = TestDb.Create();
@@ -142,10 +168,61 @@ public sealed class SupplierImportDataTests
 
         Assert.IsTrue(await repository.PrepareAttemptAsync(id, nowMs));
         Assert.IsTrue(await repository.MarkAckedAsync(id, "server-acked", "server-request-acked", nowMs + 1000, expectedAttemptCount: 1));
+        Assert.AreEqual(1, await ScalarLongAsync(
+            db.Factory,
+            "SELECT CAST(value AS INTEGER) FROM app_settings WHERE key = '" +
+            CatalogShopStateRepository.ImportAckGenerationKey + "'"));
+        Assert.IsFalse(await repository.MarkAckedAsync(
+            id,
+            "server-duplicate",
+            "server-request-duplicate",
+            nowMs + 1500,
+            expectedAttemptCount: 1));
+        Assert.AreEqual(1, await ScalarLongAsync(
+            db.Factory,
+            "SELECT CAST(value AS INTEGER) FROM app_settings WHERE key = '" +
+            CatalogShopStateRepository.ImportAckGenerationKey + "'"));
         Assert.IsFalse(await repository.MarkRetryAsync(id, "timeout", nowMs + 30000, nowMs + 2000, expectedAttemptCount: 1));
         Assert.IsFalse(await repository.MarkBlockedAsync(id, "late_block", nowMs + 3000, expectedAttemptCount: 1));
 
         Assert.AreEqual("acked", await ScalarStringAsync(db.Factory, "SELECT status FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
+    }
+
+    [TestMethod]
+    public async Task CatalogImportCancelledClaim_ReleasesAttemptTwelveWithoutBlocking()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogImportOutboxRepository(db.Factory);
+        const long nowMs = 1767225600000L;
+        var id = await repository.EnqueueAsync(BuildCatalogEntry("cancel-at-limit", 41));
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+UPDATE catalog_import_outbox
+SET status = 'retry', attempt_count = 11, next_retry_at = 0, updated_at = @updatedAt
+WHERE id = @id;",
+                new { id, updatedAt = nowMs - 1 });
+        }
+
+        Assert.IsTrue(await repository.PrepareAttemptAsync(id, nowMs));
+        Assert.IsTrue(await repository.ReleaseAttemptAsync(
+            id,
+            "cancelled",
+            nowMs,
+            nowMs,
+            expectedAttemptCount: 12));
+        Assert.IsFalse(await repository.ReleaseAttemptAsync(
+            id,
+            "cancelled",
+            nowMs,
+            nowMs,
+            expectedAttemptCount: 12));
+        Assert.AreEqual("retry", await ScalarStringAsync(
+            db.Factory,
+            "SELECT status FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
+        Assert.AreEqual(11, await ScalarLongAsync(
+            db.Factory,
+            "SELECT attempt_count FROM catalog_import_outbox WHERE id = " + id.ToString(CultureInfo.InvariantCulture)));
     }
 
     [TestMethod]

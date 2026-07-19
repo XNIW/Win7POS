@@ -121,27 +121,31 @@ namespace Win7POS.Wpf.Pos.Online
                     progress);
             }
 
-            var heartbeatOk = await TryHeartbeatAsync(options, trustedSession, result, settings, progress, cancellationToken)
+            var heartbeat = await TryHeartbeatAsync(options, trustedSession, result, settings, progress, cancellationToken)
                 .ConfigureAwait(false);
             if (!result.CanOpenPos && result.RequiresOperatorAction)
             {
                 return result;
             }
 
-            if (!heartbeatOk)
+            if (!_store.TryRead(out var refreshedTrustedSession) ||
+                !IsSameTrustedSession(trustedSession, refreshedTrustedSession))
+            {
+                return Block(
+                    result,
+                    "trusted_session_changed",
+                    T("startOfDay.blockAuthDenied"),
+                    "session",
+                    progress);
+            }
+
+            trustedSession = refreshedTrustedSession;
+            if (!heartbeat.Success)
             {
                 if (result.RestoreNeedsReview)
                 {
                     return Block(result, "restore_needs_review", T("startOfDay.blockRestoreReview"), "session", progress);
                 }
-
-                return ContinueLocal(
-                    result,
-                    T("startOfDay.continueBackground"),
-                    shouldContinueInBackground: true,
-                    requiresOperatorAction: false,
-                    "session",
-                    progress);
             }
 
             if (result.RestoreNeedsReview)
@@ -164,7 +168,12 @@ namespace Win7POS.Wpf.Pos.Online
 
             Report(progress, "outbox", "ok", T("startOfDay.stepOutbox"));
             Report(progress, "sales", "active", T("startOfDay.stepSales"));
-            await TrySalesSyncAsync(options, result, cancellationToken).ConfigureAwait(false);
+            var salesDrain = await TrySalesSyncAsync(options, result, cancellationToken).ConfigureAwait(false);
+            if (salesDrain.AuthenticationDenied)
+            {
+                return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "sales", progress);
+            }
+
             await RefreshOutboxAsync(result, sales, _factory).ConfigureAwait(false);
             var salesDrainDecision = StartOfDaySalesDrainPolicy.Evaluate(
                 result.PendingSales,
@@ -184,8 +193,19 @@ namespace Win7POS.Wpf.Pos.Online
 
             Report(progress, "sales", salesComplete ? "ok" : "warning", T("startOfDay.stepSales"));
             Report(progress, "catalog-import", "active", T("startOfDay.stepCatalogImport"));
-            var catalogImportComplete = await TryCatalogImportSyncAsync(options, trustedSession, result, cancellationToken).ConfigureAwait(false);
+            var catalogImportDrain = await TryCatalogImportSyncAsync(
+                options,
+                trustedSession,
+                result,
+                cancellationToken).ConfigureAwait(false);
+            if (catalogImportDrain.AuthenticationDenied)
+            {
+                return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "catalog-import", progress);
+            }
+
             await RefreshOutboxAsync(result, sales, _factory).ConfigureAwait(false);
+            var catalogImportComplete = result.PendingCatalogImports == 0 &&
+                result.RetryCatalogImports == 0;
             if (await HasStoredAuthDeniedAsync(settings).ConfigureAwait(false))
             {
                 return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "catalog-import", progress);
@@ -197,8 +217,73 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             Report(progress, "catalog-import", catalogImportComplete ? "ok" : "warning", T("startOfDay.stepCatalogImport"));
+            if (!heartbeat.Success)
+            {
+                return ContinueLocal(
+                    result,
+                    T("startOfDay.continueBackground"),
+                    shouldContinueInBackground: true,
+                    requiresOperatorAction: false,
+                    "catalog",
+                    progress);
+            }
+
             Report(progress, "catalog", "active", T("startOfDay.stepCatalog"));
-            var catalogComplete = await TryCatalogDeltaAsync(options, result, cancellationToken).ConfigureAwait(false);
+            var postImportCatalogState = new CatalogShopStateRepository(_factory);
+            var postImportBinding = await postImportCatalogState.EnsureAndLoadCursorAsync(
+                trustedSession.ShopId,
+                trustedSession.ShopCode).ConfigureAwait(false);
+            var postImportRevision = postImportBinding.IsValid
+                ? await postImportCatalogState.LoadRevisionStateAsync(
+                    trustedSession.ShopId,
+                    trustedSession.ShopCode,
+                    postImportBinding.Epoch).ConfigureAwait(false)
+                : new CatalogRevisionState(
+                    heartbeat.Decision?.ObservedRevision,
+                    heartbeat.CommittedRevision,
+                    string.Empty,
+                    string.Empty,
+                    importAckStateValid: false);
+            var postImportHeartbeatDecision = CatalogHeartbeatPolicy.Evaluate(
+                heartbeat.Decision?.ObservedRevision,
+                heartbeat.CatalogChangesAvailable,
+                heartbeat.Decision?.NextPollAfterSeconds,
+                postImportRevision.CommittedRevision,
+                fullOrRepairRequired: false,
+                partialCursorPending: heartbeat.PartialCursorPending,
+                manualTrigger: false,
+                catalogImportAckPending: postImportRevision.ImportAckReconciliationPending);
+            var catalogSkipConfirmed = postImportHeartbeatDecision.ShouldSkipCatalogPull &&
+                postImportBinding.IsValid &&
+                await postImportCatalogState.TryConfirmCatalogUnchangedAsync(
+                    trustedSession.ShopId,
+                    trustedSession.ShopCode,
+                    postImportBinding.Epoch,
+                    postImportHeartbeatDecision.ObservedRevision,
+                    postImportRevision.CommittedRevision,
+                    postImportRevision.ImportAckGeneration,
+                    clearStaleError: catalogImportComplete).ConfigureAwait(false);
+            var catalogOutcome = catalogSkipConfirmed
+                ? PosCatalogPullOutcome.CompletedOk(0)
+                : await TryCatalogDeltaAsync(
+                    options,
+                    trustedSession,
+                    result,
+                    cancellationToken).ConfigureAwait(false);
+            if (catalogOutcome.AuthDenied)
+            {
+                return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "catalog", progress);
+            }
+
+            var catalogComplete = catalogSkipConfirmed || catalogOutcome.Completed;
+            if (catalogSkipConfirmed)
+            {
+                result.CatalogStatus = "unchanged";
+                await RecordHeartbeatSkipBestEffortAsync(
+                    trustedSession,
+                    postImportBinding.Cursor,
+                    postImportHeartbeatDecision.Code).ConfigureAwait(false);
+            }
             if (await HasStoredAuthDeniedAsync(settings).ConfigureAwait(false))
             {
                 return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "catalog", progress);
@@ -208,7 +293,9 @@ namespace Win7POS.Wpf.Pos.Online
             result.RequiresOperatorAction = false;
             result.ShouldContinueInBackground = !salesComplete || !catalogImportComplete || !catalogComplete;
             result.BlockingReason = string.Empty;
-            result.CatalogStatus = catalogComplete ? "completed" : "background";
+            result.CatalogStatus = catalogSkipConfirmed
+                ? "unchanged"
+                : catalogComplete ? "completed" : "background";
             result.StatusMessage = result.ShouldContinueInBackground
                 ? T("startOfDay.continueBackground")
                 : T("startOfDay.complete");
@@ -303,7 +390,7 @@ namespace Win7POS.Wpf.Pos.Online
             }
         }
 
-        private async Task<bool> TryHeartbeatAsync(
+        private async Task<StartOfDayHeartbeatResult> TryHeartbeatAsync(
             PosAdminWebOptions options,
             PosTrustedDeviceSession trustedSession,
             StartOfDaySyncResult result,
@@ -316,29 +403,70 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 try
                 {
+                    var catalogState = new CatalogShopStateRepository(_factory);
+                    var binding = await catalogState.EnsureAndLoadCursorAsync(
+                        trustedSession.ShopId,
+                        trustedSession.ShopCode).ConfigureAwait(false);
+                    if (!binding.IsValid)
+                    {
+                        result.LastTransientError = binding.Code;
+                        return StartOfDayHeartbeatResult.Failed();
+                    }
+
+                    var revision = await catalogState.LoadRevisionStateAsync(
+                        trustedSession.ShopId,
+                        trustedSession.ShopCode,
+                        binding.Epoch).ConfigureAwait(false);
+                    var delta = await catalogState.LoadDeltaChainAsync(
+                        trustedSession.ShopId,
+                        trustedSession.ShopCode,
+                        binding.Epoch).ConfigureAwait(false);
                     var response = await client.HeartbeatAsync(new PosHeartbeatRequest
                     {
                         AppVersion = typeof(PosStartOfDaySyncService).Assembly.GetName().Version?.ToString(),
+                        CatalogRevision = revision.CommittedRevision,
                         DeviceToken = trustedSession.DeviceToken,
                         PosSessionId = trustedSession.PosSessionId,
                         SessionToken = trustedSession.SessionToken,
                         ShopDeviceId = trustedSession.ShopDeviceId,
                     }, cts.Token).ConfigureAwait(false);
 
-                    if (response.Success && response.Value != null)
+                    if (response.Success && response.Value != null && response.Value.Ok)
                     {
                         _store.SaveHeartbeat(trustedSession, response.Value);
+                        var decision = CatalogHeartbeatPolicy.Evaluate(
+                            response.Value.CatalogRevision,
+                            response.Value.CatalogChangesAvailable,
+                            response.Value.NextPollAfterSeconds,
+                            revision.CommittedRevision,
+                            fullOrRepairRequired: result.RestoreNeedsReview,
+                            partialCursorPending: delta.IsValid && delta.HasState,
+                            manualTrigger: false,
+                            catalogImportAckPending: revision.ImportAckReconciliationPending);
+                        if (decision.ObservedRevision.Length > 0)
+                        {
+                            await catalogState.StoreObservedRevisionAsync(
+                                trustedSession.ShopId,
+                                trustedSession.ShopCode,
+                                decision.ObservedRevision,
+                                DateTimeOffset.UtcNow,
+                                binding.Epoch).ConfigureAwait(false);
+                        }
                         Report(progress, "session", "ok", T("startOfDay.stepSession"));
-                        return true;
+                        return StartOfDayHeartbeatResult.Succeeded(
+                            decision,
+                            response.Value.CatalogChangesAvailable,
+                            revision.CommittedRevision,
+                            delta.IsValid && delta.HasState);
                     }
 
-                    if (response.Denied)
+                    var responseCode = FirstNonEmpty(response.Value?.Code, response.Code);
+                    if (response.Denied || SharedAuthStopPolicy.IsAuthenticationDenied(responseCode))
                     {
+                        Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "session", progress);
                         _store.Clear();
-                        await settings.SetStringAsync(LastCatalogErrorSettingKey, "auth_denied").ConfigureAwait(false);
-                        await settings.SetStringAsync(LastSalesErrorSettingKey, "auth_denied").ConfigureAwait(false);
-                        await settings.SetStringAsync(CatalogBootstrapStatusSettingKey, "failed_auth_denied").ConfigureAwait(false);
-                        return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "session", progress).CanOpenPos;
+                        await StoreAuthDeniedBestEffortAsync(settings, "heartbeat").ConfigureAwait(false);
+                        return StartOfDayHeartbeatResult.Failed();
                     }
 
                     result.LastTransientError = SafeCode(response.Code);
@@ -349,7 +477,7 @@ namespace Win7POS.Wpf.Pos.Online
                         " serverRequestId=" + SafeId(response.ServerRequestId) +
                         " cfRay=" + SafeId(response.CfRay));
                     Report(progress, "session", "warning", T("startOfDay.networkSlow"));
-                    return false;
+                    return StartOfDayHeartbeatResult.Failed();
                 }
                 catch (OperationCanceledException)
                 {
@@ -361,19 +489,19 @@ namespace Win7POS.Wpf.Pos.Online
                     result.LastTransientError = "heartbeat_timeout";
                     Report(progress, "session", "warning", T("startOfDay.networkSlow"));
                     _logger.LogWarning("Start-of-day heartbeat timeout.");
-                    return false;
+                    return StartOfDayHeartbeatResult.Failed();
                 }
                 catch (Exception ex)
                 {
                     result.LastTransientError = "heartbeat_exception";
                     Report(progress, "session", "warning", T("startOfDay.networkSlow"));
                     _logger.LogWarning("Start-of-day heartbeat failed.", ex);
-                    return false;
+                    return StartOfDayHeartbeatResult.Failed();
                 }
             }
         }
 
-        private async Task<bool> TrySalesSyncAsync(
+        private async Task<OutboxDrainResult> TrySalesSyncAsync(
             PosAdminWebOptions options,
             StartOfDaySyncResult result,
             CancellationToken cancellationToken)
@@ -382,10 +510,9 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 try
                 {
-                    await new PosSalesSyncService(_factory)
+                    return await new PosSalesSyncService(_factory)
                         .TrySyncPendingAsync(options, cts.Token)
                         .ConfigureAwait(false);
-                    return true;
                 }
                 catch (OperationCanceledException)
                 {
@@ -396,19 +523,24 @@ namespace Win7POS.Wpf.Pos.Online
 
                     result.LastTransientError = "sales_timeout";
                     _logger.LogWarning("Start-of-day sales sync timeout; continuing with local sale-safe catalog.");
-                    return false;
+                    return OutboxDrainResult.Empty(
+                        failureKind: SyncFailureKind.Timeout,
+                        diagnosticCode: "sales_timeout");
                 }
                 catch (Exception ex)
                 {
                     result.LastTransientError = "sales_exception";
                     _logger.LogWarning("Start-of-day sales sync failed; continuing with local sale-safe catalog.", ex);
-                    return false;
+                    return OutboxDrainResult.Empty(
+                        failureKind: SyncFailureKind.Unexpected,
+                        diagnosticCode: "sales_exception");
                 }
             }
         }
 
-        private async Task<bool> TryCatalogDeltaAsync(
+        private async Task<PosCatalogPullOutcome> TryCatalogDeltaAsync(
             PosAdminWebOptions options,
+            PosTrustedDeviceSession trustedSession,
             StartOfDaySyncResult result,
             CancellationToken cancellationToken)
         {
@@ -416,15 +548,22 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 try
                 {
-                    var completed = await new PosCatalogPullService(_factory)
-                        .TryPullCatalogAsync(options, cts.Token)
+                    var outcome = await new PosCatalogPullService(_factory)
+                        .TryPullIncrementalCatalogAsync(options, trustedSession, cts.Token)
                         .ConfigureAwait(false);
-                    if (!completed)
+                    if (outcome.AuthDenied)
+                    {
+                        _store.Clear();
+                        await StoreAuthDeniedBestEffortAsync(
+                            new SettingsRepository(_factory),
+                            "catalog").ConfigureAwait(false);
+                    }
+                    else if (!outcome.Completed)
                     {
                         result.LastTransientError = "catalog_background";
                     }
 
-                    return completed;
+                    return outcome;
                 }
                 catch (OperationCanceledException)
                 {
@@ -435,18 +574,26 @@ namespace Win7POS.Wpf.Pos.Online
 
                     result.LastTransientError = "catalog_timeout";
                     _logger.LogWarning("Start-of-day catalog delta timeout; continuing with local sale-safe catalog.");
-                    return false;
+                    return PosCatalogPullOutcome.Failure(
+                        "catalog_timeout",
+                        authDenied: false,
+                        hasMore: false,
+                        pagesProcessed: 0);
                 }
                 catch (Exception ex)
                 {
                     result.LastTransientError = "catalog_exception";
                     _logger.LogWarning("Start-of-day catalog delta failed; continuing with local sale-safe catalog.", ex);
-                    return false;
+                    return PosCatalogPullOutcome.Failure(
+                        "catalog_exception",
+                        authDenied: false,
+                        hasMore: false,
+                        pagesProcessed: 0);
                 }
             }
         }
 
-        private async Task<bool> TryCatalogImportSyncAsync(
+        private async Task<OutboxDrainResult> TryCatalogImportSyncAsync(
             PosAdminWebOptions options,
             PosTrustedDeviceSession trustedSession,
             StartOfDaySyncResult result,
@@ -459,19 +606,15 @@ namespace Win7POS.Wpf.Pos.Online
                     var sync = await new CatalogImportSyncService(_factory)
                         .SyncPendingAsync(options, trustedSession, cts.Token)
                         .ConfigureAwait(false);
-                    if (sync.RequiresTrustClear)
+                    result.CatalogImportAckedThisRun = sync.Acked > 0;
+                    if (sync.AuthenticationDenied)
                     {
                         _store.Clear();
                         var settings = new SettingsRepository(_factory);
-                        await settings.SetStringAsync(LastCatalogErrorSettingKey, "auth_denied").ConfigureAwait(false);
-                        await settings.SetStringAsync(LastSalesErrorSettingKey, "auth_denied").ConfigureAwait(false);
-                        await settings.SetStringAsync(CatalogBootstrapStatusSettingKey, "failed_auth_denied").ConfigureAwait(false);
+                        await StoreAuthDeniedBestEffortAsync(settings, "catalog_import").ConfigureAwait(false);
                     }
 
-                    var summary = await new CatalogImportOutboxRepository(_factory)
-                        .GetSummaryAsync()
-                        .ConfigureAwait(false);
-                    return !sync.RequiresTrustClear && summary.PendingOrRetry == 0;
+                    return sync;
                 }
                 catch (OperationCanceledException)
                 {
@@ -482,14 +625,64 @@ namespace Win7POS.Wpf.Pos.Online
 
                     result.LastTransientError = "catalog_import_timeout";
                     _logger.LogWarning("Start-of-day catalog import sync timeout; continuing only if outbox remains retryable.");
-                    return false;
+                    return OutboxDrainResult.Empty(
+                        failureKind: SyncFailureKind.Timeout,
+                        diagnosticCode: "catalog_import_timeout");
                 }
                 catch (Exception ex)
                 {
                     result.LastTransientError = "catalog_import_exception";
                     _logger.LogWarning("Start-of-day catalog import sync failed; continuing only if outbox remains retryable.", ex);
-                    return false;
+                    return OutboxDrainResult.Empty(
+                        failureKind: SyncFailureKind.Unexpected,
+                        diagnosticCode: "catalog_import_exception");
                 }
+            }
+        }
+
+        private async Task StoreAuthDeniedBestEffortAsync(
+            SettingsRepository settings,
+            string lane)
+        {
+            try
+            {
+                await settings.SetStringAsync(LastCatalogErrorSettingKey, "auth_denied").ConfigureAwait(false);
+                await settings.SetStringAsync(LastSalesErrorSettingKey, "auth_denied").ConfigureAwait(false);
+                await settings.SetStringAsync(CatalogBootstrapStatusSettingKey, "failed_auth_denied").ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    "Start-of-day auth-stop settings persistence deferred: lane=" + SafeCode(lane),
+                    ex);
+            }
+        }
+
+        private async Task RecordHeartbeatSkipBestEffortAsync(
+            PosTrustedDeviceSession trustedSession,
+            string cursor,
+            string code)
+        {
+            try
+            {
+                var decision = CatalogSyncPolicy.Evaluate(
+                    CatalogSyncTrigger.StartOfDay,
+                    new CatalogSyncState(cursor));
+                await new CatalogSyncDiagnosticsRepository(_factory).RecordAsync(
+                    new CatalogSyncRunRequest(
+                        FirstNonEmpty(trustedSession?.ShopId, trustedSession?.ShopCode),
+                        CatalogSyncTrigger.StartOfDay,
+                        decision),
+                    new CatalogSyncRunResult(
+                        success: true,
+                        code: code,
+                        catalogPullAttempted: false,
+                        catalogPullSkippedCode: code),
+                    DateTimeOffset.UtcNow).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning("Start-of-day heartbeat skip diagnostics deferred.", ex);
             }
         }
 
@@ -651,6 +844,61 @@ namespace Win7POS.Wpf.Pos.Online
 
             return safe;
         }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            foreach (var value in values ?? Array.Empty<string>())
+            {
+                var normalized = (value ?? string.Empty).Trim();
+                if (normalized.Length > 0)
+                {
+                    return normalized;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static bool IsSameTrustedSession(
+            PosTrustedDeviceSession expected,
+            PosTrustedDeviceSession current)
+        {
+            return expected != null && current != null &&
+                string.Equals(expected.PosSessionId, current.PosSessionId, StringComparison.Ordinal) &&
+                string.Equals(expected.ShopDeviceId, current.ShopDeviceId, StringComparison.Ordinal) &&
+                string.Equals(expected.ShopId, current.ShopId, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(expected.ShopCode, current.ShopCode, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private sealed class StartOfDayHeartbeatResult
+        {
+            public bool? CatalogChangesAvailable { get; private set; }
+            public string CommittedRevision { get; private set; } = string.Empty;
+            public CatalogHeartbeatDecision Decision { get; private set; }
+            public bool PartialCursorPending { get; private set; }
+            public bool Success { get; private set; }
+
+            public static StartOfDayHeartbeatResult Failed()
+            {
+                return new StartOfDayHeartbeatResult();
+            }
+
+            public static StartOfDayHeartbeatResult Succeeded(
+                CatalogHeartbeatDecision decision,
+                bool? catalogChangesAvailable,
+                string committedRevision,
+                bool partialCursorPending)
+            {
+                return new StartOfDayHeartbeatResult
+                {
+                    CatalogChangesAvailable = catalogChangesAvailable,
+                    CommittedRevision = committedRevision ?? string.Empty,
+                    Decision = decision,
+                    PartialCursorPending = partialCursorPending,
+                    Success = true
+                };
+            }
+        }
     }
 
     public sealed class StartOfDaySyncResult
@@ -669,6 +917,7 @@ namespace Win7POS.Wpf.Pos.Online
         public int BlockedCatalogImports { get; set; }
         public string CatalogStatus { get; set; } = string.Empty;
         public bool CatalogSaleSafe { get; set; }
+        internal bool CatalogImportAckedThisRun { get; set; }
         public bool RestoreNeedsReview { get; set; }
         public string LastTransientError { get; set; } = string.Empty;
     }

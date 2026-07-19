@@ -59,7 +59,8 @@ public sealed class SyncSchedulerPolicyTests
         foreach (var result in new[]
         {
             new CatalogSyncRunResult(success: true, hasMore: true),
-            new CatalogSyncRunResult(success: true, receivedChanges: true)
+            new CatalogSyncRunResult(success: true, receivedChanges: true),
+            new CatalogSyncRunResult(success: true, outboxWorkRemaining: true)
         })
         {
             var decision = CatalogSyncSchedulerPolicy.Evaluate(result, 4, 0.2);
@@ -67,6 +68,93 @@ public sealed class SyncSchedulerPolicyTests
             Assert.AreEqual(5d, decision.Delay.TotalSeconds);
             Assert.AreEqual(0, decision.FailureCount);
         }
+    }
+
+    [TestMethod]
+    public void ServerPollHint_IsJitteredClampedAndLimitedByHeartbeatCadence()
+    {
+        var low = CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(true, nextPollAfterSeconds: 30),
+            0,
+            0);
+        var midpoint = CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(true, nextPollAfterSeconds: 30),
+            0,
+            0.5);
+        var high = CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(true, nextPollAfterSeconds: 300),
+            0,
+            1);
+        var heartbeatBound = CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(
+                true,
+                nextPollAfterSeconds: 300,
+                heartbeatAfterSeconds: 60),
+            0,
+            0.5);
+
+        Assert.AreEqual(24d, low.Delay.TotalSeconds);
+        Assert.AreEqual(30d, midpoint.Delay.TotalSeconds);
+        Assert.AreEqual(300d, high.Delay.TotalSeconds);
+        Assert.AreEqual(60d, heartbeatBound.Delay.TotalSeconds);
+    }
+
+    [TestMethod]
+    public void FastCatchUpRetryAndAuthTakePrecedenceOverServerPollHint()
+    {
+        Assert.AreEqual(5d, CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(true, hasMore: true, nextPollAfterSeconds: 300),
+            0,
+            0.5).Delay.TotalSeconds);
+        Assert.AreEqual(CatalogSyncScheduleKind.Retry, CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(false, nextPollAfterSeconds: 300),
+            0,
+            0.5).Kind);
+        Assert.IsFalse(CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(false, authenticationDenied: true, nextPollAfterSeconds: 300),
+            0,
+            0.5).ShouldPoll);
+    }
+
+    [TestMethod]
+    public void NextOutboxRetryDeadline_BoundsIdleFailureAndFastCatchUpWithoutZeroSpin()
+    {
+        const long nowMs = 1767225600000L;
+        var idle = CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(
+                true,
+                nextPollAfterSeconds: 300,
+                nextOutboxRetryAt: nowMs + 10000L),
+            0,
+            0.5,
+            nowMs);
+        var failure = CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(
+                false,
+                nextOutboxRetryAt: nowMs + 10000L),
+            3,
+            0.5,
+            nowMs);
+        var fast = CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(
+                true,
+                receivedChanges: true,
+                nextOutboxRetryAt: nowMs + 1000L),
+            0,
+            0.5,
+            nowMs);
+        var alreadyDue = CatalogSyncSchedulerPolicy.Evaluate(
+            new CatalogSyncRunResult(
+                true,
+                nextOutboxRetryAt: nowMs - 1L),
+            0,
+            0.5,
+            nowMs);
+
+        Assert.AreEqual(10d, idle.Delay.TotalSeconds);
+        Assert.AreEqual(10d, failure.Delay.TotalSeconds);
+        Assert.AreEqual(1d, fast.Delay.TotalSeconds);
+        Assert.AreEqual(1d, alreadyDue.Delay.TotalSeconds);
     }
 
     [TestMethod]
@@ -206,6 +294,34 @@ public sealed class SyncSchedulerPolicyTests
     }
 
     [TestMethod]
+    public async Task AuthDeniedStopsBeforeThrowingDiagnosticsCanFaultTheDrain()
+    {
+        var runs = 0;
+        var coordinator = new CatalogSyncCoordinator(
+            "shop-auth-diagnostics",
+            (_, _) =>
+            {
+                Interlocked.Increment(ref runs);
+                return Task.FromResult(new CatalogSyncRunResult(
+                    success: false,
+                    authenticationDenied: true));
+            },
+            new ThrowingDiagnostics());
+
+        var denied = await coordinator.TriggerAsync(
+            CatalogSyncTrigger.Periodic,
+            new CatalogSyncState("cursor"));
+        var stopped = await coordinator.TriggerAsync(
+            CatalogSyncTrigger.Manual,
+            new CatalogSyncState("cursor"));
+
+        Assert.IsTrue(denied.AuthenticationDenied);
+        Assert.IsTrue(stopped.AuthenticationDenied);
+        Assert.IsTrue(coordinator.AuthenticationStopped);
+        Assert.AreEqual(1, runs);
+    }
+
+    [TestMethod]
     public async Task Diagnostics_OneFullAmongOneHundredOneRunsKeepsRatioAtOrBelowOnePercent()
     {
         using var db = TestDb.Create();
@@ -218,7 +334,12 @@ public sealed class SyncSchedulerPolicyTests
                 new CatalogSyncState("cursor-" + index));
             await diagnostics.RecordAsync(
                 Request(CatalogSyncTrigger.Periodic, decision),
-                new CatalogSyncRunResult(true, pages: 1, rows: 10, durationMilliseconds: 5),
+                new CatalogSyncRunResult(
+                    true,
+                    pages: 1,
+                    rows: 10,
+                    durationMilliseconds: 5,
+                    catalogPullAttempted: true),
                 at.AddSeconds(index));
         }
 
@@ -229,7 +350,12 @@ public sealed class SyncSchedulerPolicyTests
                 administratorRepairAuthorized: true));
         await diagnostics.RecordAsync(
             Request(CatalogSyncTrigger.AdministratorRepair, fullDecision),
-            new CatalogSyncRunResult(true, pages: 20, rows: 1000, durationMilliseconds: 200),
+            new CatalogSyncRunResult(
+                true,
+                pages: 20,
+                rows: 1000,
+                durationMilliseconds: 200,
+                catalogPullAttempted: true),
             at.AddMinutes(2));
 
         using var verify = db.Factory.Open();
@@ -239,6 +365,51 @@ public sealed class SyncSchedulerPolicyTests
         Assert.IsTrue(ratio <= 1m, ratio.ToString());
         Assert.AreEqual(100L, await ReadLongAsync(verify, "total_incremental_runs"));
         Assert.AreEqual(1L, await ReadLongAsync(verify, "total_full_runs"));
+    }
+
+    [TestMethod]
+    public async Task Diagnostics_HeartbeatSkipsDoNotInflateIncrementalRunCountsOrTimestamps()
+    {
+        using var db = TestDb.Create();
+        var diagnostics = new CatalogSyncDiagnosticsRepository(db.Factory);
+        var decision = CatalogSyncPolicy.Evaluate(
+            CatalogSyncTrigger.Periodic,
+            new CatalogSyncState("cursor"));
+        var firstAt = DateTimeOffset.Parse("2026-07-19T12:00:00Z");
+        await diagnostics.RecordAsync(
+            Request(CatalogSyncTrigger.Periodic, decision),
+            new CatalogSyncRunResult(true, catalogPullAttempted: true),
+            firstAt);
+        for (var index = 0; index < 5; index++)
+        {
+            await diagnostics.RecordAsync(
+                Request(CatalogSyncTrigger.Periodic, decision),
+                new CatalogSyncRunResult(
+                    true,
+                    catalogPullAttempted: false,
+                    catalogPullSkippedCode: "catalog_unchanged_at_committed_revision"),
+                firstAt.AddMinutes(index + 1));
+        }
+        await diagnostics.RecordAsync(
+            Request(CatalogSyncTrigger.Periodic, decision),
+            new CatalogSyncRunResult(
+                false,
+                catalogPullAttempted: false,
+                catalogPullSkippedCode: "heartbeat_timeout"),
+            firstAt.AddMinutes(10));
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, await ReadLongAsync(verify, "total_incremental_runs"));
+        Assert.AreEqual(0L, await ReadLongAsync(verify, "total_full_runs"));
+        Assert.AreEqual(5L, await ReadLongAsync(verify, "heartbeat_skip_count"));
+        Assert.AreEqual(
+            firstAt.ToUniversalTime().ToString("O"),
+            await verify.ExecuteScalarAsync<string>(
+                "SELECT value FROM app_settings WHERE key = @key;",
+                new { key = CatalogSyncDiagnosticsRepository.Prefix + "last_incremental_at" }));
+        Assert.AreEqual("0", await verify.ExecuteScalarAsync<string>(
+            "SELECT value FROM app_settings WHERE key = @key;",
+            new { key = CatalogSyncDiagnosticsRepository.Prefix + "full_ratio_percent" }));
     }
 
     private static CatalogSyncRunRequest Request(
@@ -278,6 +449,17 @@ public sealed class SyncSchedulerPolicyTests
         public void Dispose()
         {
             try { Directory.Delete(Root, true); } catch { }
+        }
+    }
+
+    private sealed class ThrowingDiagnostics : ICatalogSyncDiagnosticsSink
+    {
+        public Task RecordAsync(
+            CatalogSyncRunRequest request,
+            CatalogSyncRunResult result,
+            DateTimeOffset recordedAt)
+        {
+            throw new InvalidOperationException("diagnostics unavailable");
         }
     }
 }

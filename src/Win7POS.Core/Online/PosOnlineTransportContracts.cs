@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.Serialization;
 
 namespace Win7POS.Core.Online
@@ -104,6 +105,9 @@ namespace Win7POS.Core.Online
     {
         [DataMember(Name = "appVersion", EmitDefaultValue = false)]
         public string AppVersion { get; set; }
+
+        [DataMember(Name = "catalogRevision", EmitDefaultValue = false)]
+        public string CatalogRevision { get; set; }
 
         [DataMember(Name = "deviceToken")]
         public string DeviceToken { get; set; }
@@ -355,6 +359,55 @@ namespace Win7POS.Core.Online
     [DataContract]
     public sealed class PosHeartbeatResponse
     {
+        private object _catalogChangesAvailableWire;
+        private object _catalogRevisionWire;
+        private object _nextPollAfterSecondsWire;
+
+        [DataMember(Name = "code", EmitDefaultValue = false)]
+        public string Code { get; set; }
+
+        [IgnoreDataMember]
+        public bool? CatalogChangesAvailable
+        {
+            get { return CatalogHeartbeatWireValue.AsBoolean(_catalogChangesAvailableWire); }
+            set { _catalogChangesAvailableWire = value; }
+        }
+
+        [DataMember(Name = "catalogChangesAvailable", EmitDefaultValue = false)]
+        private object CatalogChangesAvailableWire
+        {
+            get { return _catalogChangesAvailableWire; }
+            set { _catalogChangesAvailableWire = value; }
+        }
+
+        [IgnoreDataMember]
+        public string CatalogRevision
+        {
+            get { return CatalogHeartbeatWireValue.AsRevision(_catalogRevisionWire); }
+            set { _catalogRevisionWire = value; }
+        }
+
+        [DataMember(Name = "catalogRevision", EmitDefaultValue = false)]
+        private object CatalogRevisionWire
+        {
+            get { return _catalogRevisionWire; }
+            set { _catalogRevisionWire = value; }
+        }
+
+        [IgnoreDataMember]
+        public int? NextPollAfterSeconds
+        {
+            get { return CatalogHeartbeatWireValue.AsInt32(_nextPollAfterSecondsWire); }
+            set { _nextPollAfterSecondsWire = value; }
+        }
+
+        [DataMember(Name = "nextPollAfterSeconds", EmitDefaultValue = false)]
+        private object NextPollAfterSecondsWire
+        {
+            get { return _nextPollAfterSecondsWire; }
+            set { _nextPollAfterSecondsWire = value; }
+        }
+
         [DataMember(Name = "ok")]
         public bool Ok { get; set; }
 
@@ -363,6 +416,48 @@ namespace Win7POS.Core.Online
 
         [DataMember(Name = "session")]
         public PosSessionResponse Session { get; set; }
+    }
+
+    internal static class CatalogHeartbeatWireValue
+    {
+        internal static bool? AsBoolean(object value)
+        {
+            return value is bool boolean ? boolean : (bool?)null;
+        }
+
+        internal static int? AsInt32(object value)
+        {
+            if (value is int int32) return int32;
+            if (value is long int64 && int64 >= int.MinValue && int64 <= int.MaxValue)
+            {
+                return (int)int64;
+            }
+            if (value is short int16) return int16;
+            if (value is byte uint8) return uint8;
+            if (value is decimal decimalValue &&
+                decimal.Truncate(decimalValue) == decimalValue &&
+                decimalValue >= int.MinValue && decimalValue <= int.MaxValue)
+            {
+                return (int)decimalValue;
+            }
+            if (value is double doubleValue &&
+                !double.IsNaN(doubleValue) &&
+                !double.IsInfinity(doubleValue) &&
+                Math.Truncate(doubleValue) == doubleValue &&
+                doubleValue >= int.MinValue && doubleValue <= int.MaxValue)
+            {
+                return (int)doubleValue;
+            }
+
+            return null;
+        }
+
+        internal static string AsRevision(object value)
+        {
+            return value is string text
+                ? CatalogHeartbeatPolicy.NormalizeRevision(text)
+                : string.Empty;
+        }
     }
 
     [DataContract]

@@ -92,7 +92,7 @@ WHERE id = @id;",
     }
 
     [TestMethod]
-    public async Task CatalogDrain_BlocksShopMismatchBeforeAttemptOrNetwork()
+    public async Task CatalogDrain_ClaimsThenBlocksShopMismatchWithoutNetwork()
     {
         using var db = TestDb.Create();
         await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
@@ -107,11 +107,11 @@ WHERE id = @id;",
             CancellationToken.None);
 
         Assert.AreEqual(1, run.Blocked);
-        Assert.AreEqual("origin_shop_mismatch", run.LastErrorCode);
+        Assert.AreEqual("origin_shop_mismatch", run.DiagnosticCode);
         using var conn = db.Factory.Open();
         Assert.AreEqual("failed_blocked", await conn.ExecuteScalarAsync<string>(
             "SELECT status FROM catalog_import_outbox LIMIT 1;"));
-        Assert.AreEqual(0L, await conn.ExecuteScalarAsync<long>(
+        Assert.AreEqual(1L, await conn.ExecuteScalarAsync<long>(
             "SELECT attempt_count FROM catalog_import_outbox LIMIT 1;"));
     }
 
@@ -254,6 +254,214 @@ UPDATE sale_lines SET name = 'Mutated line' WHERE saleId = @saleId;",
                 new { originalId });
         }
         Assert.IsTrue(await sales.IsReversalDependencyReadyAsync(refundId));
+    }
+
+    [TestMethod]
+    public async Task ReversalDependencyDeferral_DoesNotConsumeAttemptsOrBecomeBlocked()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var sales = new SaleRepository(db.Factory);
+        var originalId = await InsertSaleAsync(sales, "DEFER-ORIGINAL", SaleKind.Sale);
+        var refundId = await InsertSaleAsync(sales, "DEFER-REFUND", SaleKind.Refund, originalId);
+        const long startMs = 1767225600000L;
+
+        for (var index = 0; index < 15; index++)
+        {
+            var nowMs = startMs + (index * 10000L);
+            var item = (await sales.GetPendingSalesSyncOutboxAsync(50, nowMs))
+                .Single(row => row.SaleId == refundId);
+            Assert.AreEqual(0, item.AttemptCount);
+            Assert.IsTrue(await sales.PrepareSalesSyncAttemptAsync(
+                item.Id,
+                item.ClientBatchId,
+                item.PayloadJson,
+                item.PayloadHash,
+                nowMs,
+                item.AttemptCount,
+                item.Status,
+                item.NextRetryAt,
+                item.LeaseObservedAt));
+            Assert.IsTrue(await sales.DeferSalesSyncDependencyAsync(
+                item.Id,
+                refundId,
+                "original_sale_not_acked",
+                nowMs + 5000L,
+                nowMs,
+                expectedAttemptCount: 1));
+        }
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual("retry", await verify.ExecuteScalarAsync<string>(
+            "SELECT status FROM sales_sync_outbox WHERE sale_id = @refundId;",
+            new { refundId }));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(
+            "SELECT attempt_count FROM sales_sync_outbox WHERE sale_id = @refundId;",
+            new { refundId }));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM sales_sync_outbox WHERE sale_id = @refundId AND status = 'failed_blocked';",
+            new { refundId }));
+    }
+
+    [TestMethod]
+    public async Task ReversalDependency_PermanentlyImpossibleStatesBlockInsteadOfWaiting()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var sales = new SaleRepository(db.Factory);
+        var originalId = await InsertSaleAsync(
+            sales,
+            "DEPENDENCY-ORIGINAL",
+            SaleKind.Sale,
+            originalQuantity: 2);
+        var firstRefundId = await InsertSaleAsync(
+            sales,
+            "DEPENDENCY-FIRST",
+            SaleKind.Refund,
+            originalId);
+        var secondRefundId = await InsertSaleAsync(
+            sales,
+            "DEPENDENCY-SECOND",
+            SaleKind.Refund,
+            originalId);
+
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(
+                "UPDATE sales_sync_outbox SET status = 'failed_blocked' WHERE sale_id = @originalId;",
+                new { originalId });
+        }
+
+        var originalBlocked = await sales.EvaluateReversalDependencyAsync(firstRefundId);
+        Assert.AreEqual(ReversalDependencyState.PermanentBlock, originalBlocked.State);
+        Assert.AreEqual("original_sale_blocked", originalBlocked.Code);
+
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+UPDATE sales_sync_outbox SET status = 'acked' WHERE sale_id = @originalId;
+UPDATE sales_sync_outbox SET status = 'failed_blocked' WHERE sale_id = @firstRefundId;",
+                new { originalId, firstRefundId });
+        }
+
+        var priorBlocked = await sales.EvaluateReversalDependencyAsync(secondRefundId);
+        Assert.AreEqual(ReversalDependencyState.PermanentBlock, priorBlocked.State);
+        Assert.AreEqual("prior_reversal_blocked", priorBlocked.Code);
+
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(
+                "UPDATE sales SET kind = @refundKind WHERE id = @originalId;",
+                new { originalId, refundKind = (int)SaleKind.Refund });
+        }
+
+        var invalidOriginal = await sales.EvaluateReversalDependencyAsync(firstRefundId);
+        Assert.AreEqual(ReversalDependencyState.PermanentBlock, invalidOriginal.State);
+        Assert.AreEqual("original_sale_missing", invalidOriginal.Code);
+    }
+
+    [TestMethod]
+    public async Task CancelledSalesClaim_ReleasesAttemptTwelveWithoutBlocking()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var sales = new SaleRepository(db.Factory);
+        var saleId = await InsertSaleAsync(sales, "CANCEL-AT-LIMIT", SaleKind.Sale);
+        const long nowMs = 1767225600000L;
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+UPDATE sales_sync_outbox
+SET status = 'retry', attempt_count = 11, next_retry_at = 0, updated_at = @updatedAt
+WHERE sale_id = @saleId;",
+                new { saleId, updatedAt = nowMs - 1 });
+        }
+
+        var item = (await sales.GetPendingSalesSyncOutboxAsync(50, nowMs))
+            .Single(row => row.SaleId == saleId);
+        Assert.IsTrue(await sales.PrepareSalesSyncAttemptAsync(
+            item.Id,
+            item.ClientBatchId,
+            item.PayloadJson,
+            item.PayloadHash,
+            nowMs,
+            expectedAttemptCount: 11,
+            item.Status,
+            item.NextRetryAt,
+            item.LeaseObservedAt));
+        Assert.IsTrue(await sales.ReleaseSalesSyncAttemptAsync(
+            item.Id,
+            saleId,
+            "cancelled",
+            nowMs,
+            nowMs,
+            expectedAttemptCount: 12));
+        Assert.IsFalse(await sales.ReleaseSalesSyncAttemptAsync(
+            item.Id,
+            saleId,
+            "cancelled",
+            nowMs,
+            nowMs,
+            expectedAttemptCount: 12));
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual("retry", await verify.ExecuteScalarAsync<string>(
+            "SELECT status FROM sales_sync_outbox WHERE sale_id = @saleId;",
+            new { saleId }));
+        Assert.AreEqual(11L, await verify.ExecuteScalarAsync<long>(
+            "SELECT attempt_count FROM sales_sync_outbox WHERE sale_id = @saleId;",
+            new { saleId }));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM sales_sync_outbox WHERE sale_id = @saleId AND status = 'failed_blocked';",
+            new { saleId }));
+    }
+
+    [TestMethod]
+    public async Task SalesClaim_IsNullSafeAndRejectsAStaleSnapshot()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var sales = new SaleRepository(db.Factory);
+        var saleId = await InsertSaleAsync(sales, "NULL-SNAPSHOT", SaleKind.Sale);
+        const long nowMs = 1767225600000L;
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+UPDATE sales_sync_outbox
+SET client_batch_id = NULL,
+    payload_json = NULL,
+    payload_hash = NULL,
+    next_retry_at = 0,
+    updated_at = @updatedAt
+WHERE sale_id = @saleId;",
+                new { saleId, updatedAt = nowMs - 1 });
+        }
+
+        var snapshot = (await sales.GetPendingSalesSyncOutboxAsync(50, nowMs))
+            .Single(row => row.SaleId == saleId);
+        Assert.IsNull(snapshot.ClientBatchId);
+        Assert.IsNull(snapshot.PayloadJson);
+        Assert.IsNull(snapshot.PayloadHash);
+        Assert.IsTrue(await sales.PrepareSalesSyncAttemptAsync(
+            snapshot.Id,
+            snapshot.ClientBatchId,
+            snapshot.PayloadJson,
+            snapshot.PayloadHash,
+            nowMs,
+            snapshot.AttemptCount,
+            snapshot.Status,
+            snapshot.NextRetryAt,
+            snapshot.LeaseObservedAt));
+        Assert.IsFalse(await sales.PrepareSalesSyncAttemptAsync(
+            snapshot.Id,
+            snapshot.ClientBatchId,
+            snapshot.PayloadJson,
+            snapshot.PayloadHash,
+            nowMs,
+            snapshot.AttemptCount,
+            snapshot.Status,
+            snapshot.NextRetryAt,
+            snapshot.LeaseObservedAt));
     }
 
     [TestMethod]

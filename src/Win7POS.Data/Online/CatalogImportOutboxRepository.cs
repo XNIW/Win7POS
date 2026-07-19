@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
+using Win7POS.Core.Online;
 using Win7POS.Data.Repositories;
 
 namespace Win7POS.Data.Online
@@ -125,6 +127,7 @@ SELECT
   status AS Status,
   attempt_count AS AttemptCount,
   next_retry_at AS NextRetryAt,
+  COALESCE(last_attempt_at, updated_at, 0) AS LeaseObservedAt,
   last_error_code AS LastErrorCode
 FROM catalog_import_outbox
 WHERE (
@@ -139,6 +142,38 @@ ORDER BY id ASC
 LIMIT @take;",
                     new { take, nowMs, staleInProgressBefore }).ConfigureAwait(false);
                 return rows.ToList();
+            }
+        }
+
+        public async Task<OutboxDrainState> GetDrainStateAsync(long nowMs)
+        {
+            using (var conn = _factory.Open())
+            {
+                var staleInProgressBefore = nowMs - CatalogImportInProgressLeaseMilliseconds;
+                var state = await conn.QuerySingleAsync<CatalogImportDrainStateRow>(@"
+SELECT
+  COALESCE(SUM(CASE
+    WHEN status IN ('pending', 'retry') AND next_retry_at <= @nowMs THEN 1
+    WHEN status = 'in_progress'
+      AND COALESCE(last_attempt_at, updated_at, 0) <= @staleInProgressBefore THEN 1
+    ELSE 0
+  END), 0) AS RemainingDue,
+  MIN(CASE
+    WHEN status IN ('pending', 'retry') AND next_retry_at > @nowMs
+      THEN next_retry_at
+    WHEN status = 'in_progress'
+      AND COALESCE(last_attempt_at, updated_at, 0) > @staleInProgressBefore
+      THEN COALESCE(last_attempt_at, updated_at, 0) + @leaseMilliseconds
+    ELSE NULL
+  END) AS NextRetryAt
+FROM catalog_import_outbox;",
+                    new
+                    {
+                        nowMs,
+                        staleInProgressBefore,
+                        leaseMilliseconds = CatalogImportInProgressLeaseMilliseconds
+                    }).ConfigureAwait(false);
+                return new OutboxDrainState(state.RemainingDue, state.NextRetryAt);
             }
         }
 
@@ -193,6 +228,13 @@ WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked');").Configu
 
         public async Task<bool> PrepareAttemptAsync(long outboxId, long nowMs)
         {
+            var item = await GetByIdForClaimAsync(outboxId).ConfigureAwait(false);
+            return item != null && await PrepareAttemptAsync(item, nowMs).ConfigureAwait(false);
+        }
+
+        public async Task<bool> PrepareAttemptAsync(CatalogImportOutboxItem item, long nowMs)
+        {
+            if (item == null) throw new ArgumentNullException(nameof(item));
             using (var conn = _factory.Open())
             {
                 var staleInProgressBefore = nowMs - CatalogImportInProgressLeaseMilliseconds;
@@ -203,6 +245,11 @@ SET status = 'in_progress',
     last_attempt_at = @nowMs,
     updated_at = @nowMs
 WHERE id = @outboxId
+  AND status = @expectedStatus
+  AND attempt_count = @expectedAttemptCount
+  AND payload_hash = @expectedPayloadHash
+  AND next_retry_at = @expectedNextRetryAt
+  AND COALESCE(last_attempt_at, updated_at, 0) = @expectedLeaseObservedAt
   AND (
     (
       status IN ('pending', 'retry')
@@ -213,25 +260,60 @@ WHERE id = @outboxId
       AND COALESCE(last_attempt_at, updated_at, 0) <= @staleInProgressBefore
     )
   );",
-                    new { outboxId, nowMs, staleInProgressBefore }).ConfigureAwait(false);
+                    new
+                    {
+                        outboxId = item.Id,
+                        nowMs,
+                        staleInProgressBefore,
+                        expectedStatus = item.Status,
+                        expectedAttemptCount = item.AttemptCount,
+                        expectedPayloadHash = item.PayloadHash,
+                        expectedNextRetryAt = item.NextRetryAt,
+                        expectedLeaseObservedAt = item.LeaseObservedAt
+                    }).ConfigureAwait(false);
                 return rows == 1;
             }
         }
 
         public async Task<bool> MarkOriginBlockedAsync(long outboxId, string errorCode, long nowMs)
         {
+            var item = await GetByIdForClaimAsync(outboxId).ConfigureAwait(false);
+            if (item == null || !await PrepareAttemptAsync(item, nowMs).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            return await MarkBlockedAsync(
+                outboxId,
+                errorCode,
+                nowMs,
+                item.AttemptCount + 1).ConfigureAwait(false);
+        }
+
+        private async Task<CatalogImportOutboxItem> GetByIdForClaimAsync(long outboxId)
+        {
             using (var conn = _factory.Open())
             {
-                var rows = await conn.ExecuteAsync(@"
-UPDATE catalog_import_outbox
-SET status = 'failed_blocked',
-    last_error_code = @errorCode,
-    last_error_at = @nowMs,
-    updated_at = @nowMs
-WHERE id = @outboxId
-  AND status IN ('pending', 'retry', 'in_progress');",
-                    new { outboxId, errorCode, nowMs }).ConfigureAwait(false);
-                return rows == 1;
+                return await conn.QuerySingleOrDefaultAsync<CatalogImportOutboxItem>(@"
+SELECT
+  id AS Id,
+  client_import_id AS ClientImportId,
+  idempotency_key AS IdempotencyKey,
+  schema_version AS SchemaVersion,
+  operation_type AS OperationType,
+  origin_shop_id AS OriginShopId,
+  origin_shop_code AS OriginShopCode,
+  source AS Source,
+  payload_json AS PayloadJson,
+  payload_hash AS PayloadHash,
+  status AS Status,
+  attempt_count AS AttemptCount,
+  next_retry_at AS NextRetryAt,
+  COALESCE(last_attempt_at, updated_at, 0) AS LeaseObservedAt,
+  last_error_code AS LastErrorCode
+FROM catalog_import_outbox
+WHERE id = @outboxId;",
+                    new { outboxId }).ConfigureAwait(false);
             }
         }
 
@@ -301,6 +383,40 @@ WHERE id = @outboxId
 
                     await ApplyRemoteProductIdsAsync(conn, tx, ack.RemoteProductIds).ConfigureAwait(false);
                     await ApplyRemotePriceIdsAsync(conn, tx, ack.RemotePriceIds, idempotencyKey).ConfigureAwait(false);
+                    var rawGeneration = await conn.ExecuteScalarAsync<string>(
+                        "SELECT value FROM app_settings WHERE key = @key;",
+                        new { key = CatalogShopStateRepository.ImportAckGenerationKey },
+                        tx).ConfigureAwait(false);
+                    var normalizedGeneration = (rawGeneration ?? string.Empty).Trim();
+                    long generation;
+                    if (normalizedGeneration.Length == 0)
+                    {
+                        generation = 0;
+                    }
+                    else if (!long.TryParse(
+                        normalizedGeneration,
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out generation) || generation < 0)
+                    {
+                        throw new InvalidOperationException("catalog_import_ack_generation_invalid");
+                    }
+
+                    if (generation == long.MaxValue)
+                    {
+                        throw new InvalidOperationException("catalog_import_ack_generation_exhausted");
+                    }
+
+                    await conn.ExecuteAsync(@"
+INSERT INTO app_settings(key, value)
+VALUES(@key, @value)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                        new
+                        {
+                            key = CatalogShopStateRepository.ImportAckGenerationKey,
+                            value = (generation + 1L).ToString(CultureInfo.InvariantCulture)
+                        },
+                        tx).ConfigureAwait(false);
                     tx.Commit();
                     return true;
                 }
@@ -328,6 +444,35 @@ SET status = 'retry',
 WHERE id = @outboxId
   AND status = 'in_progress'
   AND attempt_count = @expectedAttemptCount;",
+                    new { outboxId, errorCode, nextRetryAt, nowMs, expectedAttemptCount }).ConfigureAwait(false);
+                return rows == 1;
+            }
+        }
+
+        public async Task<bool> ReleaseAttemptAsync(
+            long outboxId,
+            string errorCode,
+            long nextRetryAt,
+            long nowMs,
+            int expectedAttemptCount)
+        {
+            if (expectedAttemptCount <= 0) throw new ArgumentException("expected attempt count is required.");
+
+            using (var conn = _factory.Open())
+            {
+                var rows = await conn.ExecuteAsync(@"
+UPDATE catalog_import_outbox
+SET status = 'retry',
+    attempt_count = attempt_count - 1,
+    next_retry_at = @nextRetryAt,
+    last_attempt_at = NULL,
+    last_error_code = @errorCode,
+    last_error_at = @nowMs,
+    updated_at = @nowMs
+WHERE id = @outboxId
+  AND status = 'in_progress'
+  AND attempt_count = @expectedAttemptCount
+  AND attempt_count > 0;",
                     new { outboxId, errorCode, nextRetryAt, nowMs, expectedAttemptCount }).ConfigureAwait(false);
                 return rows == 1;
             }
@@ -660,6 +805,12 @@ WHERE barcode = @barcode
             public string Status { get; set; } = string.Empty;
         }
 
+        private sealed class CatalogImportDrainStateRow
+        {
+            public long? NextRetryAt { get; set; }
+            public long RemainingDue { get; set; }
+        }
+
         private sealed class CatalogImportExistingRow
         {
             public string ClientImportId { get; set; } = string.Empty;
@@ -692,6 +843,7 @@ WHERE barcode = @barcode
         public long Id { get; set; }
         public string IdempotencyKey { get; set; } = string.Empty;
         public string LastErrorCode { get; set; } = string.Empty;
+        public long LeaseObservedAt { get; set; }
         public long NextRetryAt { get; set; }
         public string OperationType { get; set; } = string.Empty;
         public string OriginShopCode { get; set; } = string.Empty;

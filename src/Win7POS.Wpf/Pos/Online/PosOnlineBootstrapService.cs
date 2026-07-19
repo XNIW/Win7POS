@@ -221,7 +221,25 @@ namespace Win7POS.Wpf.Pos.Online
                 try
                 {
                     var salesSync = new PosSalesSyncService(_factory);
-                    await salesSync.TrySyncPendingAsync(options, cancellationToken).ConfigureAwait(false);
+                    var salesDrain = await salesSync
+                        .TrySyncPendingAsync(options, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (salesDrain.AuthenticationDenied)
+                    {
+                        _logger.LogWarning(
+                            "Bootstrap stopped after sales sync authorization denial: category=online.bootstrap.sales code=auth_denied");
+                        return PosOnlineBootstrapResult.Failure(
+                            "auth_denied",
+                            PosLocalization.T("onlineFirstLogin.authorizationFailed"),
+                            true,
+                            result.ClientRequestId,
+                            result.ServerRequestId,
+                            result.CfRay);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -266,6 +284,10 @@ namespace Win7POS.Wpf.Pos.Online
                         result.ClientRequestId,
                         result.ServerRequestId,
                         result.CfRay);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {

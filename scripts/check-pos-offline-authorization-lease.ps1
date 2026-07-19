@@ -168,7 +168,7 @@ else {
 
 Require-Pattern "sales contract emits clientOriginalLineId additively" $contracts 'DataMember\(Name\s*=\s*"clientOriginalLineId",\s*EmitDefaultValue\s*=\s*false\)'
 Require-Pattern "new reversal payload binds original line" $salesBuilder 'reversal_original_line_missing[\s\S]*ClientOriginalLineId\s*=\s*isReversal'
-Require-Pattern "legacy reversal payload is blocked before network" $salesSync 'HasCompleteReversalBindings\(request\)[\s\S]*MarkPreflightBlockedAsync\(item,\s*"reversal_original_line_missing"'
+Require-Pattern "legacy reversal payload is blocked after CAS claim and before network" $salesSync 'PrepareSalesSyncAttemptAsync[\s\S]*HasCompleteReversalBindings\(request\)[\s\S]*MarkBlockedAsync\(item,\s*"reversal_original_line_missing"[\s\S]*SalesSyncAsync'
 
 $directPinCallFiles = Get-ChildItem -Path (Join-Path $repoRoot "src/Win7POS.Wpf") -Recurse -File -Filter "*.cs" |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |

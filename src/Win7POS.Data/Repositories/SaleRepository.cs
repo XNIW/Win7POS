@@ -12,6 +12,25 @@ using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
 {
+    public enum ReversalDependencyState
+    {
+        Ready = 0,
+        Wait = 1,
+        PermanentBlock = 2
+    }
+
+    public sealed class ReversalDependencyDecision
+    {
+        public ReversalDependencyDecision(ReversalDependencyState state, string code)
+        {
+            State = state;
+            Code = code ?? string.Empty;
+        }
+
+        public string Code { get; }
+        public ReversalDependencyState State { get; }
+    }
+
     public sealed class SaleRepository
     {
         public const long SalesSyncInProgressLeaseMilliseconds = 15 * 60 * 1000L;
@@ -838,6 +857,36 @@ LIMIT 1;").ConfigureAwait(false);
             };
         }
 
+        public async Task<OutboxDrainState> GetSalesSyncDrainStateAsync(long nowMs)
+        {
+            using var conn = _factory.Open();
+            var staleInProgressBefore = nowMs - SalesSyncInProgressLeaseMilliseconds;
+            var state = await conn.QuerySingleAsync<SalesSyncDrainStateRow>(@"
+SELECT
+  COALESCE(SUM(CASE
+    WHEN status IN ('pending', 'retry') AND next_retry_at <= @nowMs THEN 1
+    WHEN status = 'in_progress'
+      AND COALESCE(last_attempt_at, updated_at, 0) <= @staleInProgressBefore THEN 1
+    ELSE 0
+  END), 0) AS RemainingDue,
+  MIN(CASE
+    WHEN status IN ('pending', 'retry') AND next_retry_at > @nowMs
+      THEN next_retry_at
+    WHEN status = 'in_progress'
+      AND COALESCE(last_attempt_at, updated_at, 0) > @staleInProgressBefore
+      THEN COALESCE(last_attempt_at, updated_at, 0) + @leaseMilliseconds
+    ELSE NULL
+  END) AS NextRetryAt
+FROM sales_sync_outbox;",
+                new
+                {
+                    nowMs,
+                    staleInProgressBefore,
+                    leaseMilliseconds = SalesSyncInProgressLeaseMilliseconds
+                }).ConfigureAwait(false);
+            return new OutboxDrainState(state.RemainingDue, state.NextRetryAt);
+        }
+
         public async Task<bool> HasUnresolvedSalesSyncOutboxAsync()
         {
             using var conn = _factory.Open();
@@ -850,6 +899,12 @@ WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked');").Configu
         }
 
         public async Task<bool> IsReversalDependencyReadyAsync(long saleId)
+        {
+            var decision = await EvaluateReversalDependencyAsync(saleId).ConfigureAwait(false);
+            return decision.State == ReversalDependencyState.Ready;
+        }
+
+        public async Task<ReversalDependencyDecision> EvaluateReversalDependencyAsync(long saleId)
         {
             using var conn = _factory.Open();
             var row = await conn.QuerySingleOrDefaultAsync<ReversalDependencyRow>(@"
@@ -873,6 +928,15 @@ SELECT
       AND prior.id < current.id
       AND COALESCE(prior_outbox.status, '') <> 'acked'
   ) AS PriorReversalNotAcked
+  ,(
+    SELECT COUNT(1)
+    FROM sales prior
+    LEFT JOIN sales_sync_outbox prior_outbox ON prior_outbox.sale_id = prior.id
+    WHERE prior.related_sale_id = current.related_sale_id
+      AND prior.kind IN (@kindRefund, @kindVoid)
+      AND prior.id < current.id
+      AND (prior_outbox.status IS NULL OR prior_outbox.status = 'failed_blocked')
+  ) AS PriorReversalPermanent
 FROM sales current
 LEFT JOIN sales original ON original.id = current.related_sale_id
 LEFT JOIN sales_sync_outbox original_outbox ON original_outbox.sale_id = original.id
@@ -888,28 +952,72 @@ WHERE current.id = @saleId;",
                 }).ConfigureAwait(false);
             if (row == null)
             {
-                return false;
+                return Dependency(ReversalDependencyState.PermanentBlock, "missing_sale");
             }
 
             if (row.Kind != (int)SaleKind.Refund && row.Kind != (int)SaleKind.Void)
             {
-                return true;
+                return Dependency(ReversalDependencyState.Ready, string.Empty);
             }
 
-            return row.RelatedSaleId.HasValue &&
-                row.OriginalKind == (int)SaleKind.Sale &&
-                string.Equals(row.OriginalOutboxStatus, "acked", StringComparison.Ordinal) &&
-                row.PriorReversalNotAcked == 0 &&
-                string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
-                    row.OriginalOriginShopId,
-                    row.OriginalOriginShopCode,
-                    row.CurrentOriginShopId,
-                    row.CurrentOriginShopCode)) &&
-                string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
-                    row.OriginalOriginShopId,
-                    row.OriginalOriginShopCode,
-                    row.OfficialShopId,
-                    row.OfficialShopCode));
+            if (!row.RelatedSaleId.HasValue || row.OriginalKind != (int)SaleKind.Sale)
+            {
+                return Dependency(ReversalDependencyState.PermanentBlock, "original_sale_missing");
+            }
+
+            var currentBindingError = OutboxShopBinding.GetMismatchCode(
+                row.OriginalOriginShopId,
+                row.OriginalOriginShopCode,
+                row.CurrentOriginShopId,
+                row.CurrentOriginShopCode);
+            if (!string.IsNullOrWhiteSpace(currentBindingError))
+            {
+                return Dependency(ReversalDependencyState.PermanentBlock, currentBindingError);
+            }
+
+            var officialBindingError = OutboxShopBinding.GetMismatchCode(
+                row.OriginalOriginShopId,
+                row.OriginalOriginShopCode,
+                row.OfficialShopId,
+                row.OfficialShopCode);
+            if (!string.IsNullOrWhiteSpace(officialBindingError))
+            {
+                return Dependency(ReversalDependencyState.PermanentBlock, officialBindingError);
+            }
+
+            if (string.Equals(row.OriginalOutboxStatus, "failed_blocked", StringComparison.Ordinal))
+            {
+                return Dependency(ReversalDependencyState.PermanentBlock, "original_sale_blocked");
+            }
+
+            if (string.IsNullOrWhiteSpace(row.OriginalOutboxStatus))
+            {
+                return Dependency(ReversalDependencyState.PermanentBlock, "original_sale_outbox_missing");
+            }
+
+            if (!string.Equals(row.OriginalOutboxStatus, "acked", StringComparison.Ordinal))
+            {
+                return Dependency(ReversalDependencyState.Wait, "original_sale_not_acked");
+            }
+
+            if (row.PriorReversalPermanent > 0)
+            {
+                return Dependency(ReversalDependencyState.PermanentBlock, "prior_reversal_blocked");
+            }
+
+            if (row.PriorReversalNotAcked > 0)
+            {
+                return Dependency(ReversalDependencyState.Wait, "prior_reversal_not_acked");
+            }
+
+            return Dependency(ReversalDependencyState.Ready, string.Empty);
+        }
+
+        private static ReversalDependencyDecision Dependency(
+            ReversalDependencyState state,
+            string code)
+        {
+            return new ReversalDependencyDecision(state, code);
         }
 
         public async Task<IReadOnlyDictionary<long, string>> GetRemoteProductIdsAsync(IEnumerable<long> productIds)
@@ -941,6 +1049,45 @@ WHERE current.id = @saleId;",
             long nowMs,
             int expectedAttemptCount)
         {
+            using (var lookup = _factory.Open())
+            {
+                var snapshot = await lookup.QuerySingleOrDefaultAsync<SalesSyncClaimSnapshot>(@"
+SELECT
+  status AS Status,
+  next_retry_at AS NextRetryAt,
+  COALESCE(last_attempt_at, updated_at, 0) AS LeaseObservedAt
+FROM sales_sync_outbox
+WHERE id = @outboxId;",
+                    new { outboxId }).ConfigureAwait(false);
+                if (snapshot == null)
+                {
+                    return false;
+                }
+
+                return await PrepareSalesSyncAttemptAsync(
+                    outboxId,
+                    clientBatchId,
+                    payloadJson,
+                    payloadHash,
+                    nowMs,
+                    expectedAttemptCount,
+                    snapshot.Status,
+                    snapshot.NextRetryAt,
+                    snapshot.LeaseObservedAt).ConfigureAwait(false);
+            }
+        }
+
+        public async Task<bool> PrepareSalesSyncAttemptAsync(
+            long outboxId,
+            string clientBatchId,
+            string payloadJson,
+            string payloadHash,
+            long nowMs,
+            int expectedAttemptCount,
+            string expectedStatus,
+            long expectedNextRetryAt,
+            long expectedLeaseObservedAt)
+        {
             using var conn = _factory.Open();
             var staleInProgressBefore = nowMs - SalesSyncInProgressLeaseMilliseconds;
             var rows = await conn.ExecuteAsync(@"
@@ -951,9 +1098,12 @@ SET status = 'in_progress',
     updated_at = @nowMs
 WHERE id = @outboxId
   AND attempt_count = @expectedAttemptCount
-  AND client_batch_id = @clientBatchId
-  AND payload_json = @payloadJson
-  AND payload_hash = @payloadHash
+  AND client_batch_id IS @clientBatchId
+  AND payload_json IS @payloadJson
+  AND payload_hash IS @payloadHash
+  AND status = @expectedStatus
+  AND next_retry_at = @expectedNextRetryAt
+  AND COALESCE(last_attempt_at, updated_at, 0) = @expectedLeaseObservedAt
   AND (
     (
       status IN ('pending', 'retry')
@@ -972,6 +1122,9 @@ WHERE id = @outboxId
                     payloadHash,
                     nowMs,
                     expectedAttemptCount,
+                    expectedStatus,
+                    expectedNextRetryAt,
+                    expectedLeaseObservedAt,
                     staleInProgressBefore
                 }).ConfigureAwait(false);
             return rows == 1;
@@ -1033,6 +1186,61 @@ SET status = 'retry',
 WHERE id = @outboxId
   AND status = 'in_progress'
   AND attempt_count = @expectedAttemptCount;",
+                new { outboxId, saleId, errorCode, nextRetryAt, nowMs, expectedAttemptCount }, tx).ConfigureAwait(false);
+            if (rows != 1)
+            {
+                tx.Rollback();
+                return false;
+            }
+
+            await conn.ExecuteAsync(
+                "UPDATE sales SET sync_status = 'retry' WHERE id = @saleId;",
+                new { saleId },
+                tx).ConfigureAwait(false);
+            tx.Commit();
+            return true;
+        }
+
+        public Task<bool> DeferSalesSyncDependencyAsync(
+            long outboxId,
+            long saleId,
+            string errorCode,
+            long nextRetryAt,
+            long nowMs,
+            int expectedAttemptCount)
+        {
+            return ReleaseSalesSyncAttemptAsync(
+                outboxId,
+                saleId,
+                errorCode,
+                nextRetryAt,
+                nowMs,
+                expectedAttemptCount);
+        }
+
+        public async Task<bool> ReleaseSalesSyncAttemptAsync(
+            long outboxId,
+            long saleId,
+            string errorCode,
+            long nextRetryAt,
+            long nowMs,
+            int expectedAttemptCount)
+        {
+            using var conn = await _factory.OpenAsync().ConfigureAwait(false);
+            using var tx = conn.BeginTransaction();
+            var rows = await conn.ExecuteAsync(@"
+UPDATE sales_sync_outbox
+SET status = 'retry',
+    attempt_count = attempt_count - 1,
+    next_retry_at = @nextRetryAt,
+    last_attempt_at = NULL,
+    last_error_code = @errorCode,
+    last_error_at = @nowMs,
+    updated_at = @nowMs
+WHERE id = @outboxId
+  AND status = 'in_progress'
+  AND attempt_count = @expectedAttemptCount
+  AND attempt_count > 0;",
                 new { outboxId, saleId, errorCode, nextRetryAt, nowMs, expectedAttemptCount }, tx).ConfigureAwait(false);
             if (rows != 1)
             {
@@ -1360,6 +1568,19 @@ SELECT last_insert_rowid();", line, tx).ConfigureAwait(false);
         public string Status { get; set; }
     }
 
+    internal sealed class SalesSyncDrainStateRow
+    {
+        public long? NextRetryAt { get; set; }
+        public long RemainingDue { get; set; }
+    }
+
+    internal sealed class SalesSyncClaimSnapshot
+    {
+        public long LeaseObservedAt { get; set; }
+        public long NextRetryAt { get; set; }
+        public string Status { get; set; }
+    }
+
     public sealed class SaleLineReturnableDto
     {
         public long OriginalLineId { get; set; }
@@ -1425,6 +1646,7 @@ SELECT last_insert_rowid();", line, tx).ConfigureAwait(false);
         public string OfficialShopId { get; set; }
         public string OfficialShopCode { get; set; }
         public long PriorReversalNotAcked { get; set; }
+        public long PriorReversalPermanent { get; set; }
     }
 
     internal sealed class PersistedReversalRow

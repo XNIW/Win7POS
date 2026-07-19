@@ -58,6 +58,8 @@ Require "validation failed maps to block" $service "validation_failed"
 Require "conflict maps to block" $service "conflict"
 Require "auth denied maps to retry/trust clear" $service "auth_denied"
 Require "bounded retry attempts present" $service "MaxAttemptsBeforeBlocked"
+Require "cancelled import claims release their attempt budget" $service "OperationCanceledException[\s\S]{0,700}ReleaseAttemptAsync"
+Require "repository release transition decrements the claimed attempt" $repository "ReleaseAttemptAsync[\s\S]{0,1000}attempt_count\s*=\s*attempt_count\s*-\s*1"
 
 Require "repository has in_progress lease window" $repository "CatalogImportInProgressLeaseMilliseconds"
 Require "repository stale in_progress recovery is lease-gated" $repository "COALESCE\(last_attempt_at, updated_at, 0\) <= @staleInProgressBefore"
