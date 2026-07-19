@@ -84,6 +84,17 @@ published head and refreshed main, so this is not a PR #6 regression.
 - 19,762-row paged full benchmark: `Verified` in 3/3 runs, pending prices zero;
   median `5,488.546 ms`.
 
-Clean committed-head Release Pack, installer and exact-head GitHub runs are the
-remaining publication gates. Merge authorization requires all of them green and
-P0/P1 open at zero.
+## Clean committed-head release evidence
+
+- Normal refresh merge commit:
+  `537777849ed28da291a7ef8e2f390d5a9e1eaa58`.
+- `VERSION.txt`: exact commit, PR6 branch, `Release/x86`, SDK `10.0.301`,
+  `TreeState=clean`.
+- Release Pack completeness and Win7 runtime validators: PASS.
+- Inno Setup 6.7.3 installer: PASS;
+  SHA-256 `22435C2FDDB64E009A62404F62C4F10DA5AE7374032E9949EB0156E786801141`.
+- Release manifest SHA-256:
+  `01B017F76CFAEBFA468482D6B7F843D57AF6E35A671A7E43FA5EAC1A5F446AD2`.
+
+Fresh exact-head GitHub CI and Release Pack runs remain the publication gates.
+Merge authorization requires both green and P0/P1 open at zero.

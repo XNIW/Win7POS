@@ -735,3 +735,6 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   net48/x86 builds with zero warnings/errors. Catalog benchmarks: 2,000-row
   batch median `609.510 ms` (`30.25x` vs legacy) and 19,762-row paged full
   `Verified` in 3/3 runs.
+- Clean refresh merge commit `5377778` produced an exact-commit, clean-tree
+  Release/x86 pack; completeness, Win7 runtime validation and the Inno Setup
+  6.7.3 installer all passed before publication.
