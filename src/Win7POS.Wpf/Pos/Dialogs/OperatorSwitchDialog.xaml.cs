@@ -10,6 +10,7 @@ using Win7POS.Wpf.Chrome;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Localization;
+using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
@@ -174,20 +175,28 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return string.Empty;
             }
 
-            var userRepo = new UserRepository(_factory);
-            if (!string.IsNullOrWhiteSpace(_shopCode))
+            if (!new PosTrustedDeviceStore().TryRead(out var trustedSession) ||
+                trustedSession == null ||
+                string.IsNullOrWhiteSpace(trustedSession.ShopId) ||
+                string.IsNullOrWhiteSpace(trustedSession.ShopCode) ||
+                string.IsNullOrWhiteSpace(trustedSession.StaffId) ||
+                string.IsNullOrWhiteSpace(trustedSession.StaffCode) ||
+                !string.Equals(normalized, trustedSession.StaffCode.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                (!string.IsNullOrWhiteSpace(_shopCode) &&
+                 !string.Equals(_shopCode.Trim(), trustedSession.ShopCode.Trim(), StringComparison.OrdinalIgnoreCase)))
             {
-                var remoteUsername = await userRepo
-                    .FindRemoteStaffUsernameAsync(_shopCode, normalized)
-                    .ConfigureAwait(true);
-                if (!string.IsNullOrWhiteSpace(remoteUsername))
-                {
-                    return remoteUsername;
-                }
+                return string.Empty;
             }
 
-            var localUser = await userRepo.GetByUsernameAsync(normalized).ConfigureAwait(true);
-            return localUser != null && localUser.IsActive ? localUser.Username : string.Empty;
+            var userRepo = new UserRepository(_factory);
+            return await userRepo
+                .FindTrustedRemoteStaffUsernameAsync(
+                    trustedSession.ShopId,
+                    trustedSession.ShopCode,
+                    trustedSession.StaffId,
+                    trustedSession.StaffCode,
+                    trustedSession.StaffCredentialVersion)
+                .ConfigureAwait(true);
         }
 
         private void OnPosAccessClick(object sender, RoutedEventArgs e)

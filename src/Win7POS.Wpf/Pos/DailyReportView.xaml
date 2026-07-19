@@ -216,7 +216,7 @@
                     <!-- Destra: anteprima (colonna stretta) + grafico orario (colonna larga) in orizzontale -->
                     <Grid Grid.Column="2">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="320"/>
+                            <ColumnDefinition Width="350"/>
                             <ColumnDefinition Width="16"/>
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
@@ -229,9 +229,25 @@
                                     <RowDefinition Height="Auto"/>
                                 </Grid.RowDefinitions>
                                 <TextBlock Grid.Row="0" Text="{loc:Loc reports.closePreview}" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,8"/>
-                                <Border Grid.Row="1" BorderBrush="#E8E8E8" BorderThickness="1" CornerRadius="6" Padding="12" Background="#F9F9F9" Margin="0,0,0,10">
+                                <Border Grid.Row="1"
+                                        AutomationProperties.AutomationId="DailyCloseReceiptPreview"
+                                        BorderBrush="#E8E0D6"
+                                        BorderThickness="1"
+                                        CornerRadius="8"
+                                        Padding="10"
+                                        Background="#FFFDF8"
+                                        Margin="0,0,0,10">
                                     <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                        <TextBlock Text="{Binding SummaryReceiptPreview, Mode=OneWay}" FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"/>
+                                        <TextBox Text="{Binding SummaryReceiptPreview, Mode=OneWay}"
+                                                 IsReadOnly="True"
+                                                 BorderThickness="0"
+                                                 Background="Transparent"
+                                                 FontFamily="Consolas"
+                                                 FontSize="11"
+                                                 TextWrapping="NoWrap"
+                                                 AcceptsReturn="True"
+                                                 VerticalScrollBarVisibility="Disabled"
+                                                 HorizontalScrollBarVisibility="Disabled"/>
                                     </ScrollViewer>
                                 </Border>
                                 <Button Grid.Row="2" Height="36" HorizontalAlignment="Stretch" Command="{Binding PrintSummaryCommand}" Style="{StaticResource PrimaryButtonStyle}" ToolTip="{Binding PrintSummaryToolTip, Mode=OneWay}">

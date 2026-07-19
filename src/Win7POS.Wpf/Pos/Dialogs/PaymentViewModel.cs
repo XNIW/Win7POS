@@ -10,16 +10,16 @@ using Win7POS.Core.Models;
 using Win7POS.Core.Receipt;
 using Win7POS.Core.Util;
 using Win7POS.Wpf.Localization;
+using Win7POS.Wpf.Pos;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public enum PaymentActiveField { Cash, Card }
 
-    public sealed class PaymentViewModel : INotifyPropertyChanged
+    public sealed class PaymentViewModel : INotifyPropertyChanged, IDisposable
     {
         private readonly long _totalDueMinor;
         private readonly PaymentReceiptDraft _draft;
-        private readonly Func<string, string, Task<string>> _generateFiscalPdf;
         private readonly Func<string, string, Task> _printFiscalToThermal;
 
         private string _cashReceived = "";
@@ -30,17 +30,17 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _receiptPreviewFirstLine = "";
         private string _receiptPreviewRest = "";
         private int _nextBoletaNumber;
+        private readonly int _minimumBoletaNumber;
         private string _fiscalPreviewText = "";
         private string _fiscalStatus = "";
         private string _fiscalStatusKey = "payment.pending";
-        private bool _autoPrintPdfSii;
+        private bool _autoPrintFiscalBoleta;
         private bool _openDrawerForCurrentPayment;
 
-        public PaymentViewModel(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task<string>> generateFiscalPdf = null, Func<string, string, Task> printFiscalToThermal = null, bool openDrawerDefault = true)
+        public PaymentViewModel(long totalDueMinor, PaymentReceiptDraft draft = null, Func<string, string, Task> printFiscalToThermal = null, bool openDrawerDefault = true)
         {
             _totalDueMinor = totalDueMinor;
             _draft = draft;
-            _generateFiscalPdf = generateFiscalPdf;
             _printFiscalToThermal = printFiscalToThermal;
 
             _cashReceived = totalDueMinor > 0
@@ -50,9 +50,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _activeField = PaymentActiveField.Cash;
 
             _shouldPrint = draft?.DefaultPrint ?? false;
-            _autoPrintPdfSii = true;
+            _autoPrintFiscalBoleta = !App.IsSafeStart;
             _openDrawerForCurrentPayment = openDrawerDefault;
-            _nextBoletaNumber = draft?.NextBoletaNumber ?? 0;
+            _minimumBoletaNumber = Math.Max(1, draft?.NextBoletaNumber ?? 1);
+            _nextBoletaNumber = _minimumBoletaNumber;
             SetFiscalStatusKey("payment.pending");
 
             ConfirmCommand = new RelayCommand(_ => RequestClose?.Invoke(true), _ => IsValid);
@@ -65,19 +66,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
             SetExactTotalCommand = new RelayCommand(_ => SetExactTotal(), _ => true);
             SetRoundedTotalCommand = new RelayCommand(_ => SetRoundedTotal(), _ => true);
             PayAllCardCommand = new RelayCommand(_ => PayAllCard(), _ => true);
-            PrintPdfCommand = new RelayCommand(_ => _ = StampaPdfAsync(), _ => _generateFiscalPdf != null);
-            IncrementBoletaCommand = new RelayCommand(_ => NextBoletaNumber += 1, _ => true);
-            DecrementBoletaCommand = new RelayCommand(_ => { if (NextBoletaNumber > 0) NextBoletaNumber -= 1; }, _ => true);
+            IncrementBoletaCommand = new RelayCommand(
+                _ => NextBoletaNumber = checked(NextBoletaNumber + 1),
+                _ => NextBoletaNumber < int.MaxValue);
+            DecrementBoletaCommand = new RelayCommand(
+                _ => NextBoletaNumber -= 1,
+                _ => NextBoletaNumber > _minimumBoletaNumber);
 
             UpdateReceiptPreviewText();
             UpdateFiscalPreviewText();
-            PosLocalization.Current.LanguageChanged += (_, __) =>
-            {
-                OnPropertyChanged(nameof(NextBoletaNumberLabel));
-                OnPropertyChanged(nameof(PaidLabelPrefix));
-                SetFiscalStatusKey(_fiscalStatusKey);
-                NotifyDerived();
-            };
+            PosLocalization.Current.LanguageChanged += OnLanguageChanged;
         }
 
         public string SaleCode => _draft?.SaleCode ?? "";
@@ -88,17 +86,20 @@ namespace Win7POS.Wpf.Pos.Dialogs
             get => _nextBoletaNumber;
             set
             {
-                if (value < 0) value = 0;
+                if (value < _minimumBoletaNumber) value = _minimumBoletaNumber;
+                if (_nextBoletaNumber == value) return;
                 _nextBoletaNumber = value;
                 OnPropertyChanged();
                 OnPropertyChanged(nameof(NextBoletaNumberText));
                 OnPropertyChanged(nameof(NextBoletaNumberLabel));
                 UpdateFiscalPreviewText();
+                (IncrementBoletaCommand as RelayCommand)?.RaiseCanExecuteChanged();
+                (DecrementBoletaCommand as RelayCommand)?.RaiseCanExecuteChanged();
             }
         }
 
         public string NextBoletaNumberLabel => PosLocalization.Current.Format(
-            "payment.nextPdfNumber",
+            "payment.nextBoletaNumber",
             NextBoletaNumberText);
 
         public string PaidLabelPrefix => PosLocalization.Current.Text("payment.paid") + " ";
@@ -119,10 +120,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _shouldPrint = value; OnPropertyChanged(); }
         }
 
-        public bool AutoPrintPdfSii
+        public bool AutoPrintFiscalBoleta
         {
-            get => _autoPrintPdfSii;
-            set { _autoPrintPdfSii = value; OnPropertyChanged(); }
+            get => _autoPrintFiscalBoleta;
+            set
+            {
+                var effectiveValue = !App.IsSafeStart && value;
+                if (_autoPrintFiscalBoleta == effectiveValue) return;
+                _autoPrintFiscalBoleta = effectiveValue;
+                OnPropertyChanged();
+            }
         }
 
         /// <summary>Per questa vendita: apri cassetto se contanti &gt; 0. Default da impostazioni stampante.</summary>
@@ -199,7 +206,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             !IsCardOverBalance &&
             (long)CashAmountMinor + (long)CardAmountMinor >= _totalDueMinor;
 
-        /// <summary>True se il pagamento include contanti (solo in quel caso si stampa automaticamente il PDF SII).</summary>
+        /// <summary>True se il pagamento include contanti (solo in quel caso si stampa automaticamente la boleta).</summary>
         public bool IsCashPayment => CashAmountMinor > 0;
 
         public int CashAmountMinor => MoneyClp.Parse(CashReceived);
@@ -238,7 +245,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public ICommand SetExactTotalCommand { get; }
         public ICommand SetRoundedTotalCommand { get; }
         public ICommand PayAllCardCommand { get; }
-        public ICommand PrintPdfCommand { get; }
         public ICommand IncrementBoletaCommand { get; }
         public ICommand DecrementBoletaCommand { get; }
 
@@ -277,57 +283,24 @@ namespace Win7POS.Wpf.Pos.Dialogs
             RaiseCanExecuteChanged();
         }
 
-        private static readonly CultureInfo EsCl = CultureInfo.GetCultureInfo("es-CL");
-
-        private static string Fmt(long v) => v.ToString("#,0", EsCl);
-
         private void UpdateFiscalPreviewText()
         {
             var shop = _draft?.ShopInfo ?? new ReceiptShopInfo();
-            var currentDate = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
             long venta = _totalDueMinor;
             long iva = (long)Math.Round(venta * 15.9657 / 100.0, MidpointRounding.AwayFromZero);
-            var formattedAmount = Fmt(venta);
-            var formattedIVA = Fmt(iva);
-            var formattedNum = Fmt(NextBoletaNumber);
-            var giro = string.IsNullOrWhiteSpace(shop.BusinessGiro)
-                ? "Giro: no informado"
-                : "Giro: " + shop.BusinessGiro.Trim();
-            var legalRepresentative = string.IsNullOrWhiteSpace(shop.LegalRepresentativeRut)
-                ? "Representante legal: no informado"
-                : "Representante legal: " + shop.LegalRepresentativeRut.Trim();
-            var address = string.IsNullOrWhiteSpace(shop.Address) ? "Dirección: no informada" : shop.Address.Trim();
-            var city = string.IsNullOrWhiteSpace(shop.City)
-                ? "Ciudad: no informada"
-                : System.Globalization.CultureInfo.CurrentCulture.TextInfo.ToTitleCase(shop.City.Trim().ToLowerInvariant());
-
-            var lines = new List<string>
-            {
-                "",
-                shop.Name ?? "",
-                shop.Rut ?? "",
-                giro,
-                legalRepresentative,
-                address,
-                city,
-                $"BOLETA ELECTRÓNICA NUMERO: {formattedNum}",
-                $"Fecha: {currentDate}",
-                "",
-                "Venta",
-                $"                           $ {formattedAmount}",
-                "",
-                "El IVA incluido en esta boleta es",
-                $"de: $ {formattedIVA}",
-                "",
-                "Timbre Electrónico SII",
-                "Res. 99 de 2014",
-                "Verifique documento en sii.cl"
-            };
-            var full = string.Join(Environment.NewLine, lines);
+            var full = FiscalBoletaTextRenderer.Render(
+                shop,
+                CreatedAtMs,
+                NextBoletaNumber,
+                venta,
+                iva,
+                _draft?.UseReceipt42 == true ? 42 : 32);
             FiscalPreviewText = full;
 
-            const string marker = "Timbre Electrónico SII";
-            var idx = lines.FindIndex(s => (s ?? "").Trim().Equals(marker, StringComparison.OrdinalIgnoreCase));
+            var lines = full.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n').ToList();
+            var idx = lines.FindIndex(s => (s ?? "").Trim().Equals(
+                FiscalBoletaTextRenderer.SiiStampMarker,
+                StringComparison.Ordinal));
             if (idx < 0) idx = lines.Count;
 
             FiscalHeaderText = string.Join(Environment.NewLine, lines.Take(idx));
@@ -338,10 +311,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             OnPropertyChanged(nameof(FiscalPreviewText));
         }
 
-        /// <summary>Se AutoPrintPdfSii è attivo e il pagamento include contanti, stampa il PDF SII. Ritorna true solo se il PDF è stato davvero stampato.</summary>
-        public async Task<bool> TriggerAutoPrintPdfIfEnabledAsync()
+        /// <summary>Se la stampa automatica è attiva e il pagamento include contanti, invia la boleta direttamente alla stampante.</summary>
+        public async Task<bool> TriggerAutoPrintFiscalBoletaIfEnabledAsync()
         {
-            if (!_autoPrintPdfSii)
+            if (App.IsSafeStart)
+                return false;
+
+            if (!_autoPrintFiscalBoleta)
                 return false;
 
             if (CashAmountMinor <= 0)
@@ -350,55 +326,23 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return false;
             }
 
-            return await StampaPdfAsync().ConfigureAwait(true);
+            return await PrintFiscalBoletaAsync().ConfigureAwait(true);
         }
 
-        /// <summary>Genera PDF e invia il testo fiscale alla stampante termica (stessa dello scontrino). File PDF eliminato dopo 15s. Ritorna true se stampato a stampante.</summary>
-        private async Task<bool> StampaPdfAsync()
+        /// <summary>Invia il testo fiscale direttamente alla stampante termica senza creare file locali.</summary>
+        private async Task<bool> PrintFiscalBoletaAsync()
         {
-            if (_generateFiscalPdf == null)
+            if (App.IsSafeStart)
                 return false;
 
-            SetFiscalStatusKey("payment.generatingBoletaPdf");
-            string path = null;
-            try
-            {
-                path = await _generateFiscalPdf(FiscalPreviewText, SaleCode).ConfigureAwait(true);
+            if (_printFiscalToThermal == null)
+                throw new InvalidOperationException(
+                    PosLocalization.T("printer.fiscalPrintUnavailable"));
 
-                if (_printFiscalToThermal != null)
-                {
-                    SetFiscalStatusKey("payment.sendingBoletaPrinter");
-                    await _printFiscalToThermal(FiscalPreviewText, SaleCode).ConfigureAwait(true);
-
-                    if (!string.IsNullOrEmpty(path))
-                    {
-                        var pathToDelete = path;
-                        _ = Task.Run(async () =>
-                        {
-                            await Task.Delay(15000).ConfigureAwait(false);
-                            try
-                            {
-                                if (System.IO.File.Exists(pathToDelete)) System.IO.File.Delete(pathToDelete);
-                            }
-                            catch (System.Exception delEx)
-                            {
-                                try { new Win7POS.Wpf.Infrastructure.FileLogger("PaymentViewModel").LogWarning("Cleanup PDF temporaneo fallito: " + pathToDelete, delEx); } catch { }
-                            }
-                        });
-                    }
-
-                    SetFiscalStatusKey("payment.printed");
-                    return true;
-                }
-
-                SetFiscalStatusKey("payment.pdfGeneratedLocalExport");
-                return false;
-            }
-            catch (Exception)
-            {
-                SetFiscalStatusKey("payment.notPrintedCheckLog");
-                return false;
-            }
+            SetFiscalStatusKey("payment.sendingBoletaPrinter");
+            await _printFiscalToThermal(FiscalPreviewText, SaleCode).ConfigureAwait(true);
+            SetFiscalStatusKey("payment.printed");
+            return true;
         }
 
         private void SetFiscalStatusKey(string key)
@@ -438,20 +382,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 LineTotal = x.LineTotal
             }).ToList();
 
-            var options = PosLocalization.CreateReceiptOptions(_draft.UseReceipt42, "receipt.title");
             var shop = _draft?.ShopInfo ?? new ReceiptShopInfo { Name = "Win7POS", Address = "", Footer = PosLocalization.T("receipt.thanks") };
-
-            var lines = new List<string>(ReceiptFormatter.Format(sale, saleLines, options, shop));
-            // Stessa struttura della stampante: riga con codice vendita in fondo.
-            if (!string.IsNullOrEmpty(sale.Code))
-            {
-                lines.Add("");
-                lines.Add(PosLocalization.T("receipt.title") + ": " + sale.Code);
-            }
-            ReceiptPreviewText = string.Join(Environment.NewLine, lines);
-            // Anteprima = stampa: prima riga (nome negozio) in grassetto e più grande, resto uguale
-            ReceiptPreviewFirstLine = lines.Count > 0 ? (lines[0] ?? "") : "";
-            ReceiptPreviewRest = lines.Count > 1 ? string.Join(Environment.NewLine, lines.Skip(1)) : "";
+            var receiptText = PosReceiptTextRenderer.BuildReceipt(
+                sale,
+                saleLines,
+                _draft.UseReceipt42,
+                shop);
+            ReceiptPreviewText = receiptText;
+            PosReceiptTextRenderer.SplitPreview(
+                receiptText,
+                out var firstLine,
+                out var remainingText);
+            ReceiptPreviewFirstLine = firstLine;
+            ReceiptPreviewRest = remainingText;
         }
 
         private void AppendDigit(object parameter)
@@ -561,7 +504,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
         {
             (ConfirmCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (CancelCommand as RelayCommand)?.RaiseCanExecuteChanged();
-            (PrintPdfCommand as RelayCommand)?.RaiseCanExecuteChanged();
+        }
+
+        private void OnLanguageChanged(object sender, EventArgs e)
+        {
+            OnPropertyChanged(nameof(NextBoletaNumberLabel));
+            OnPropertyChanged(nameof(PaidLabelPrefix));
+            SetFiscalStatusKey(_fiscalStatusKey);
+            NotifyDerived();
+        }
+
+        public void Dispose()
+        {
+            PosLocalization.Current.LanguageChanged -= OnLanguageChanged;
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)

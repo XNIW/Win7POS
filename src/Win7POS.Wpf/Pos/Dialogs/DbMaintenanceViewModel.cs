@@ -20,14 +20,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         private readonly Pos.PosWorkflowService _service;
         private readonly Func<Task<bool>> _demandRestorePermission;
+        private readonly Func<bool> _hasBackupPermission;
+        private readonly Func<bool> _hasCatalogImportPermission;
 
         private string _outputLog = string.Empty;
         private bool _isBusy;
 
-        public DbMaintenanceViewModel(Pos.PosWorkflowService service, Func<Task<bool>> demandRestorePermission = null)
+        public DbMaintenanceViewModel(
+            Pos.PosWorkflowService service,
+            Func<Task<bool>> demandRestorePermission = null,
+            Func<bool> hasBackupPermission = null,
+            Func<bool> hasCatalogImportPermission = null)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _demandRestorePermission = demandRestorePermission;
+            _hasBackupPermission = hasBackupPermission;
+            _hasCatalogImportPermission = hasCatalogImportPermission;
             BackupNowCommand = new AsyncRelayCommand(BackupNowAsync, _ => !IsBusy);
             RestoreBackupCommand = new AsyncRelayCommand(RestoreBackupAsync, _ => !IsBusy);
             IntegrityCheckCommand = new AsyncRelayCommand(IntegrityCheckAsync, _ => !IsBusy);
@@ -66,6 +74,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task BackupNowAsync()
         {
+            if (_hasBackupPermission != null && !_hasBackupPermission())
+            {
+                Append(PosLocalization.F(
+                    "common.permissionDeniedOperation",
+                    PosLocalization.T("operations.dbBackup")));
+                return;
+            }
+
             IsBusy = true;
             try
             {
@@ -209,6 +225,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void OpenSupplierExcelImport()
         {
+            if (_hasCatalogImportPermission != null && !_hasCatalogImportPermission())
+            {
+                Append(PosLocalization.F(
+                    "common.permissionDeniedOperation",
+                    PosLocalization.T("products.operationImportCatalog")));
+                return;
+            }
+
             try
             {
                 var applied = SupplierExcelImportDialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner());

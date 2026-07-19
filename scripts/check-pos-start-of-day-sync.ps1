@@ -268,6 +268,18 @@ if ($dialogXaml -notmatch "StartOfDayProgressBar" -or $dialogXaml -notmatch "Con
     Pass "start-of-day dialog progress/buttons present"
 }
 
+if ($dialogXaml -notmatch "AccessVerifiedPanel" -or
+    $dialogXaml -notmatch "SyncDetailsButton" -or
+    $dialogXaml -notmatch "ActionHelpText" -or
+    $dialog -notmatch "ApplyAuthenticatedAccessStatus" -or
+    $dialog -notmatch "SyncDetailsRequested" -or
+    $main -notmatch "UpdateOperatorDisplay\(session\);[\s\S]{0,1400}RunStartOfDaySyncAsync\(factory\)" -or
+    $main -notmatch "SyncDetailsRequested \+= \(_, __\) => ShowSyncCenterDialog\(dialog\)") {
+    Fail "authenticated identity and actionable sync diagnostics must remain visible at the start-of-day gate"
+} else {
+    Pass "start-of-day separates successful sign-in from the actionable sync gate"
+}
+
 if ($dialog -notmatch "ContentRendered" -or $dialog -notmatch "RunPreflightAsync" -or $dialog -notmatch "Result\?\.CanOpenPos") {
     Fail "start-of-day dialog must run async preflight and gate Continue on CanOpenPos"
 } else {
@@ -287,7 +299,7 @@ if ($authIndex -gt $blockedIndex -or $blockedIndex -gt $retryIndex -or $retryInd
     Pass "status priority preserves critical sales/catalog states"
 }
 
-foreach ($key in @("startOfDay.title", "startOfDay.subtitle", "startOfDay.continue", "startOfDay.wait", "startOfDay.blockCatalogNotSafe", "startOfDay.continueBackground")) {
+foreach ($key in @("startOfDay.title", "startOfDay.subtitle", "startOfDay.accessVerified", "startOfDay.accessVerifiedHelp", "startOfDay.continue", "startOfDay.wait", "startOfDay.checkAgain", "startOfDay.syncDetails", "startOfDay.actionRequiredHelp", "startOfDay.blockCatalogNotSafe", "startOfDay.continueBackground")) {
     if ($translations -notmatch [regex]::Escape($key)) {
         Fail "translation missing: $key"
     }

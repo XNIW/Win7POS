@@ -1,3 +1,4 @@
+using System;
 using Win7POS.Wpf.Chrome;
 
 namespace Win7POS.Wpf.Pos.Dialogs
@@ -9,9 +10,23 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public PrinterSettingsDialog(PrinterSettingsViewModel viewModel)
         {
             InitializeComponent();
-            ViewModel = viewModel;
-            ViewModel.RequestClose += ok => DialogResult = ok;
+            ViewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
+            ViewModel.RequestClose += OnRequestClose;
+            Closed += OnDialogClosed;
             DataContext = ViewModel;
+        }
+
+        private void OnRequestClose(bool ok)
+        {
+            DialogResult = ok;
+        }
+
+        private void OnDialogClosed(object sender, EventArgs e)
+        {
+            Closed -= OnDialogClosed;
+            ViewModel.RequestClose -= OnRequestClose;
+            DataContext = null;
+            ViewModel.Dispose();
         }
     }
 }

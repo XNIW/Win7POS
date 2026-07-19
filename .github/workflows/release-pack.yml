@@ -52,6 +52,13 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          function Invoke-CheckedProcess {
+            param([string]$FilePath, [string[]]$ArgumentList)
+            & $FilePath @ArgumentList
+            if ($LASTEXITCODE -ne 0) {
+              throw "Process failed with exit ${LASTEXITCODE}: $FilePath $($ArgumentList -join ' ')"
+            }
+          }
           if (Test-Path "dist/Win7POS") { Remove-Item -LiteralPath "dist/Win7POS" -Recurse -Force }
           New-Item -ItemType Directory -Force -Path "dist/Win7POS" | Out-Null
 
@@ -60,24 +67,25 @@ jobs:
           Copy-Item -Path (Join-Path $wpfOutput "*") -Destination "dist/Win7POS" -Recurse -Force
           Get-ChildItem -Path "dist/Win7POS" -Recurse -File -Filter "*.pdb" | Remove-Item -Force
 
-          pwsh -NoProfile -File scripts/win7pos/windows/write-release-support-files.ps1 `
-            -OutputDirectory dist/Win7POS `
-            -Configuration Release `
-            -Platform x86 `
-            -SdkVersion 10.0.301 `
-            -CommitSha $env:GITHUB_SHA `
-            -Ref $env:GITHUB_REF_NAME `
-            -GitHubRunNumber $env:GITHUB_RUN_NUMBER
+          Invoke-CheckedProcess -FilePath "pwsh" -ArgumentList @(
+            "-NoProfile", "-File", "scripts/win7pos/windows/write-release-support-files.ps1",
+            "-OutputDirectory", "dist/Win7POS",
+            "-Configuration", "Release",
+            "-Platform", "x86",
+            "-SdkVersion", "10.0.301",
+            "-CommitSha", $env:GITHUB_SHA,
+            "-Ref", $env:GITHUB_REF_NAME,
+            "-GitHubRunNumber", $env:GITHUB_RUN_NUMBER)
 
-          pwsh -NoProfile -File scripts/check-release-pack-completeness.ps1 -ReleasePackSource dist/Win7POS -WriteManifests
-          pwsh -NoProfile -File scripts/check-required-gates.ps1 -ReleasePackSource dist/Win7POS
+          Invoke-CheckedProcess -FilePath "pwsh" -ArgumentList @("-NoProfile", "-File", "scripts/check-release-pack-completeness.ps1", "-ReleasePackSource", "dist/Win7POS", "-WriteManifests", "-ExpectedCommitSha", $env:GITHUB_SHA)
+          Invoke-CheckedProcess -FilePath "pwsh" -ArgumentList @("-NoProfile", "-File", "scripts/check-required-gates.ps1", "-ReleasePackSource", "dist/Win7POS", "-ExpectedCommitSha", $env:GITHUB_SHA)
 
           $stamp = Get-Date -Format "yyyyMMdd_HHmm"
           $zip = "dist/Win7POS_$stamp.zip"
           if (Test-Path $zip) { Remove-Item -LiteralPath $zip -Force }
           Compress-Archive -Path "dist/Win7POS/*" -DestinationPath $zip -Force
-          pwsh -NoProfile -File scripts/check-win7-runtime-release-validation.ps1 -ReleasePackSource $zip
-          pwsh -NoProfile -File scripts/check-pos-online-linking-task084b.ps1 -ReleasePackSource $zip
+          Invoke-CheckedProcess -FilePath "pwsh" -ArgumentList @("-NoProfile", "-File", "scripts/check-win7-runtime-release-validation.ps1", "-ReleasePackSource", $zip, "-ExpectedCommitSha", $env:GITHUB_SHA)
+          Invoke-CheckedProcess -FilePath "pwsh" -ArgumentList @("-NoProfile", "-File", "scripts/check-pos-online-linking-task084b.ps1", "-ReleasePackSource", $zip)
           Write-Host "Created package: $zip"
 
       - name: Install Inno Setup
@@ -108,14 +116,20 @@ jobs:
       - name: Build Installer (Inno Setup)
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           if (!(Test-Path $env:ISCC_EXE)) { throw "ISCC not found: $env:ISCC_EXE" }
+          $installerOutput = "installer/output/Win7POS-Setup.exe"
+          if (Test-Path -LiteralPath $installerOutput) { Remove-Item -LiteralPath $installerOutput -Force }
           & $env:ISCC_EXE "installer/Win7POS.iss"
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit $LASTEXITCODE" }
+          if (!(Test-Path -LiteralPath $installerOutput -PathType Leaf)) { throw "Fresh installer output missing: $installerOutput" }
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v6
         with:
           name: Win7POS-Setup
-          path: installer/output/*.exe
+          path: installer/output/Win7POS-Setup.exe
+          if-no-files-found: error
           retention-days: 14
 
       - name: Upload dist artifact
@@ -123,6 +137,7 @@ jobs:
         with:
           name: Win7POS-dist
           path: dist/Win7POS
+          if-no-files-found: error
           retention-days: 14
 
       - name: Upload release pack artifact
@@ -130,4 +145,5 @@ jobs:
         with:
           name: Win7POS-ReleasePack-x86
           path: dist/Win7POS_*.zip
+          if-no-files-found: error
           retention-days: 14

@@ -53,6 +53,7 @@ $catalog = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 $salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $coordinator = Read-Text "src/Win7POS.Data/Online/CatalogSyncCoordinator.cs"
+$uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $combined = @($client, $logger, $mainWindow, $catalog, $bootstrap, $salesSync, $coordinator) -join "`n"
 
 Require-Marker "client request id header" $client "X-Client-Request-Id"
@@ -62,10 +63,17 @@ Require-Marker "client request id result" $client "ClientRequestId"
 Require-Marker "server request id result" $client "ServerRequestId"
 Require-Marker "POS error response request id" $client "DataMember\(Name\s*=\s*""requestId"""
 
-Require-Marker "JSON token redaction" $logger "sessionToken\|deviceToken\|trustedDeviceToken"
+Require-Marker "camel/snake token redaction" $logger 'session\[_-\]\?token[\s\S]*access\[_-\]\?token[\s\S]*refresh\[_-\]\?token'
+Require-Marker "client secret/API key redaction" $logger 'client\[_-\]\?secret[\s\S]*api\[_-\]\?key[\s\S]*apikey'
 Require-Marker "DB password alias redaction" $logger "db_password\|database password"
 Require-Marker "authorization bearer redaction" $logger "Authorization\\s\*:\\s\*Bearer"
 Require-Marker "POS token prefix redaction" $logger "mcpos_\(device\|session\)"
+Require-Marker "standalone JWT redaction" $logger "eyJ\[A-Za-z0-9_-"
+Require-Marker "standalone secret/private-key redaction" $logger "sb_secret[\s\S]*PRIVATE KEY"
+Require-Marker "executable log-redaction vector method" $uiSmoke "VerifyLogRedactionTestVectors"
+foreach ($vectorMarker in @('client_secret', 'sk-abcdefghijklmnopqrstuvwxyz', 'PRIVATEKEYBODY123456789', 'TRUNCATEDPRIVATEKEYBODY987654321', 'secrets\.All')) {
+    Require-Marker "executable log-redaction vector marker: $vectorMarker" $uiSmoke $vectorMarker
+}
 Require-Marker "log rotation" $logger "RotateIfNeeded"
 
 Require-Marker "bootstrap category" $bootstrap "category=online\.bootstrap"

@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Data;
 using Win7POS.Wpf.Chrome;
@@ -8,15 +9,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
     public partial class UserManagementDialog : DialogShellWindow
     {
         private CollectionViewSource _groupedPermissionsView;
+        private UserManagementViewModel _viewModel;
+        private Action<bool> _requestCloseHandler;
 
         public UserManagementDialog(UserManagementViewModel vm)
         {
+            _viewModel = vm ?? throw new ArgumentNullException(nameof(vm));
             InitializeComponent();
             WindowSizingHelper.ApplyAdaptiveDialogSizing(this, minWidth: 720, minHeight: 480, maxWidthPercent: 0.92, maxHeightPercent: 0.92, allowResize: true);
             vm.OwnerWindow = this;
             DataContext = vm;
             Loaded += OnLoaded;
-            vm.RequestClose += ok =>
+            Closed += OnClosed;
+            _requestCloseHandler = ok =>
             {
                 if (!Dispatcher.CheckAccess())
                 {
@@ -25,6 +30,28 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 }
                 CloseWithResult(ok);
             };
+            vm.RequestClose += _requestCloseHandler;
+        }
+
+        private void OnClosed(object sender, EventArgs e)
+        {
+            Closed -= OnClosed;
+            Loaded -= OnLoaded;
+            if (_viewModel != null)
+            {
+                _viewModel.RequestClose -= _requestCloseHandler;
+                _viewModel.OwnerWindow = null;
+            }
+
+            PermissionItemsControl.ItemsSource = null;
+            if (_groupedPermissionsView != null)
+                _groupedPermissionsView.Source = null;
+            _groupedPermissionsView = null;
+            _requestCloseHandler = null;
+            _viewModel = null;
+            DataContext = null;
+            DialogContent = null;
+            Content = null;
         }
 
         private void OnLoaded(object sender, RoutedEventArgs e)

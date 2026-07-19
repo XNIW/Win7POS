@@ -8,6 +8,7 @@ using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Dialogs;
+using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf.Infrastructure.Security
 {
@@ -15,6 +16,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
     {
         private readonly UserRepository _userRepo;
         private readonly IOperatorSession _session;
+        private readonly PosTrustedDeviceStore _trustedDeviceStore = new PosTrustedDeviceStore();
 
         public OverrideAuthService(UserRepository userRepo, IOperatorSession session)
         {
@@ -29,8 +31,10 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 return (false, null);
             }
 
-            var authorizableUsers = await _userRepo.ListUsersWithPermissionAsync(requiredPermissionCode).ConfigureAwait(true);
-            if (authorizableUsers == null || authorizableUsers.Count == 0)
+            var authorizer = await ResolveLeaseBoundAuthorizerAsync(
+                requiredPermissionCode,
+                adminOnly: false).ConfigureAwait(true);
+            if (authorizer == null)
             {
                 ModernMessageDialog.Show(
                     DialogOwnerHelper.GetSafeOwner(),
@@ -39,27 +43,39 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 return (false, null);
             }
 
-            var items = new List<OverrideOperatorItem>();
-            foreach (var u in authorizableUsers)
+            var items = new List<OverrideOperatorItem>
             {
-                items.Add(new OverrideOperatorItem
+                new OverrideOperatorItem
                 {
-                    Username = u.Username ?? "",
-                    DisplayName = u.DisplayName ?? "",
-                    RoleName = u.RoleName ?? ""
-                });
-            }
+                    Username = authorizer.Username ?? "",
+                    DisplayName = authorizer.DisplayName ?? "",
+                    RoleName = authorizer.RoleName ?? ""
+                }
+            };
 
             async Task<(bool ok, int? userId)> VerifyAsync(string username, string pin)
             {
                 if (!_session.EnsureAuthorizationValid()) return (false, null);
+                var expected = await ResolveLeaseBoundAuthorizerAsync(
+                    requiredPermissionCode,
+                    adminOnly: false).ConfigureAwait(true);
+                if (expected == null ||
+                    !string.Equals(expected.Username, username, StringComparison.OrdinalIgnoreCase))
+                {
+                    return (false, null);
+                }
+
                 var result = await _userRepo.VerifyPinAsync(username, pin).ConfigureAwait(true);
                 var account = result?.User;
-                if (account == null) return (false, null);
-                var hasPermission = account.IsAdmin ||
-                    (account.PermissionCodes != null &&
-                     (account.PermissionCodes.Any(p => p == requiredPermissionCode) || account.PermissionCodes.Any(p => p == PermissionCodes.SecurityOverride)));
-                return hasPermission ? (true, (int?)account.Id) : (false, null);
+                if (account == null || account.Id != expected.Id) return (false, null);
+                if (!_session.EnsureAuthorizationValid()) return (false, null);
+
+                var rebound = await ResolveLeaseBoundAuthorizerAsync(
+                    requiredPermissionCode,
+                    adminOnly: false).ConfigureAwait(true);
+                return rebound != null && rebound.Id == account.Id
+                    ? (true, (int?)account.Id)
+                    : (false, null);
             }
 
             var dlg = new OverrideAuthorizationDialog(operationText, items, VerifyAsync)
@@ -77,8 +93,10 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 return (false, null);
             }
 
-            var authorizableUsers = await _userRepo.ListAdminUsersAsync().ConfigureAwait(true);
-            if (authorizableUsers == null || authorizableUsers.Count == 0)
+            var authorizer = await ResolveLeaseBoundAuthorizerAsync(
+                requiredPermissionCode: null,
+                adminOnly: true).ConfigureAwait(true);
+            if (authorizer == null)
             {
                 ModernMessageDialog.Show(
                     DialogOwnerHelper.GetSafeOwner(),
@@ -87,24 +105,39 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 return (false, null);
             }
 
-            var items = new List<OverrideOperatorItem>();
-            foreach (var u in authorizableUsers)
+            var items = new List<OverrideOperatorItem>
             {
-                items.Add(new OverrideOperatorItem
+                new OverrideOperatorItem
                 {
-                    Username = u.Username ?? "",
-                    DisplayName = u.DisplayName ?? "",
-                    RoleName = u.RoleName ?? ""
-                });
-            }
+                    Username = authorizer.Username ?? "",
+                    DisplayName = authorizer.DisplayName ?? "",
+                    RoleName = authorizer.RoleName ?? ""
+                }
+            };
 
             async Task<(bool ok, int? userId)> VerifyAsync(string username, string pin)
             {
                 if (!_session.EnsureAuthorizationValid()) return (false, null);
+                var expected = await ResolveLeaseBoundAuthorizerAsync(
+                    requiredPermissionCode: null,
+                    adminOnly: true).ConfigureAwait(true);
+                if (expected == null ||
+                    !string.Equals(expected.Username, username, StringComparison.OrdinalIgnoreCase))
+                {
+                    return (false, null);
+                }
+
                 var result = await _userRepo.VerifyPinAsync(username, pin).ConfigureAwait(true);
                 var account = result?.User;
-                if (account == null) return (false, null);
-                return account.IsAdmin ? (true, (int?)account.Id) : (false, null);
+                if (account == null || account.Id != expected.Id) return (false, null);
+                if (!_session.EnsureAuthorizationValid()) return (false, null);
+
+                var rebound = await ResolveLeaseBoundAuthorizerAsync(
+                    requiredPermissionCode: null,
+                    adminOnly: true).ConfigureAwait(true);
+                return rebound != null && rebound.Id == account.Id
+                    ? (true, (int?)account.Id)
+                    : (false, null);
             }
 
             var dlg = new OverrideAuthorizationDialog(operationText, items, VerifyAsync, isAdminOnly: true)
@@ -113,6 +146,48 @@ namespace Win7POS.Wpf.Infrastructure.Security
             };
             var ok = dlg.ShowDialog() == true;
             return ok ? (true, dlg.AuthorizerUserId) : (false, null);
+        }
+
+        private async Task<UserAccount> ResolveLeaseBoundAuthorizerAsync(
+            string requiredPermissionCode,
+            bool adminOnly)
+        {
+            if (!_trustedDeviceStore.TryRead(out var trustedSession) || trustedSession == null)
+            {
+                return null;
+            }
+
+            var username = await _userRepo
+                .FindTrustedRemoteStaffUsernameAsync(
+                    trustedSession.ShopId,
+                    trustedSession.ShopCode,
+                    trustedSession.StaffId,
+                    trustedSession.StaffCode,
+                    trustedSession.StaffCredentialVersion)
+                .ConfigureAwait(true);
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return null;
+            }
+
+            var account = await _userRepo.GetByUsernameAsync(username).ConfigureAwait(true);
+            if (account == null || !account.IsActive)
+            {
+                return null;
+            }
+
+            if (adminOnly)
+            {
+                return account.IsAdmin ? account : null;
+            }
+
+            var hasPermission = account.IsAdmin ||
+                (account.PermissionCodes != null &&
+                 (account.PermissionCodes.Any(permission =>
+                      string.Equals(permission, requiredPermissionCode, StringComparison.Ordinal)) ||
+                  account.PermissionCodes.Any(permission =>
+                      string.Equals(permission, PermissionCodes.SecurityOverride, StringComparison.Ordinal))));
+            return hasPermission ? account : null;
         }
 
         private bool EnsureAuthorizationValid()

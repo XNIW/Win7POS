@@ -501,3 +501,192 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   `TreeState=clean`; installer and ZIP hashes are recorded in the closeout report.
 - Ledger status: PR-A `DONE_MERGED`, PR-B `NEXT`, external certification remains
   `OPEN 0/16`. PR-B was not started.
+
+## 2026-07-17 - Epson receipt alignment, POS footer and drawer pulse
+
+- Enlarged the POS `Pay` touch target to the exact visible width/edges of the
+  right tools panel while retaining the compact single-row footer.
+- Added one shared receipt renderer used by payment preview, completed-sale
+  printing/reprint and the non-persisted Printer Settings sample. Exact alignment
+  is covered for cash, card and mixed payments at 32 and 42 columns, including
+  lossless line/cart discount rows and EN/ES/IT/ZH labels. The shop snapshot is
+  frozen across payment/commit and the fictitious test uses the sale barcode path.
+- Matched the Printer Settings preview hierarchy to the payment preview and made
+  the fictitious sample show both cash and card without creating a sale.
+- Added focused geometry, renderer-parity and visual-capture harness coverage;
+  Release x86 build and targeted checks pass.
+- Fixed the payment localization event subscription so every completed/cancelled
+  payment flow and every harness fixture releases its handler.
+- Submitted one production-code pin-2 drawer command to `EPSON TM-T60 Receipt`
+  in a fresh isolated evidence root, outside the authenticated settings UI. The
+  call returned successfully; pre/post queue observations were `Normal`/0 jobs,
+  one log entry was retained and no `pos.db` was created. The operator later
+  explicitly confirmed exactly one physical opening; no retry or pin-5 pulse was
+  issued.
+- The external backlog is now `OPEN 3/18`: row 15 is the single manual pin-2
+  drawer PASS and rows 17/18 are physical print PASS. Transactional cash/card,
+  reprint/failure and Windows 7 rows remain open. The earlier `OPEN 0/16` entry
+  is the pre-Epson historical snapshot.
+- Implementation and automated coverage were committed as `7d1ef84` and pushed
+  to `codex/hardware-epson-tm-t60-20260717-161122`. Draft PR `#7` targets
+  `main`; no merge or auto-merge was requested.
+
+## 2026-07-18 - Epson transactional matrix physical checkpoint
+
+- Ran the Release x86 application against isolated QA root
+  `C:\POSData\Win7POS-QA\Win7POS-Epson-Transactional-20260718-104809`.
+- Cash sale `VMRQI73CRZQ6` printed and cut; the operator confirmed exactly one
+  drawer opening. Card-only sale `VMRQIA8J5KE3` printed with the drawer closed.
+- Reprinted the persisted cash sale once; counts remained unchanged and the
+  operator confirmed no drawer opening.
+- Paused `EPSON TM-T60 Receipt`, committed card-only sale `VMRQIK583IXD`, observed
+  the explicit saved-sale/print-failed state, resumed the queue and used
+  `Print last` once. The operator confirmed correct paper and no drawer opening.
+- Final evidence: 10 sales, 12 lines, 11 stock movements, 10 outbox rows; no
+  duplicate client sale IDs or movement keys; exactly one drawer log event;
+  printer `Normal`, zero jobs, Spooler running/automatic.
+- Final local regression before the receipt-surface addendum: required gates
+  31/31, Core tests 260/260 with zero skipped, CLI selftest PASS, solution and
+  WPF/harness x86 builds PASS, lifecycle 20 Printer Settings / 50 display /
+  50 manager cycles PASS with zero residual windows/ViewModels.
+- Merge remains blocked by the receipt-surface/daily-close addendum and physical
+  Windows 7 validation; no extra cash transaction or drawer pulse is authorized.
+
+## 2026-07-18 - Local recovery isolation and safe POS re-entry
+
+- Diagnosed online sign-in denial as `shop_switch_blocked_unresolved_outbox`:
+  the isolated Epson QA database belongs to the existing QA shop and still has
+  queued/blocked sales, so credentials for another shop cannot rebind it.
+- Kept the physical database and outbox unchanged. Read-only inspection confirmed
+  that the local QA recovery users are active, local-only and not locked.
+- Added an explicit local-recovery login path that preserves PIN verification and
+  lockout while no longer requiring an online authorization lease for verified
+  local-only users. Normal POS login continues to require the lease.
+- Restricted recovery mode to the user's granted subset of catalog import/edit and
+  database-maintenance permissions. Sales, payment, daily close, settings and
+  security administration remain unavailable until a normal online session for
+  the database's original shop is restored.
+- Hardened recovery transitions: payment is cancelled, online schedulers stop,
+  unsafe tabs are clamped, the existing POS/cart view is suspended and restored,
+  and exiting recovery rechecks a valid normal authorization lease.
+- Added clearer localized feedback for a blocked cross-shop sign-in and focused
+  source/data/policy tests for local-user classification and scoped permissions.
+- Local recovery can never promote itself to normal POS access. Normal offline
+  access, operator switching and override authorization now resolve only the
+  remote mirror bound to the trusted shop/staff IDs, normalized codes and exact
+  credential version. First-run setup uses the dedicated recovery verifier.
+- Final local validation: required gates 32/32, Core tests 291/291, Release
+  solution plus WPF/harness x86 builds PASS. The canonical seeded lifecycle is
+  PASS with 0 residual ViewModels, 0 open windows, stable subscriptions and all
+  functional checks true. The run observed 10 retired `SalesRegisterDialog`
+  window shells with no live ViewModel or open-window retention; these shells
+  remain diagnostic-only and their trend is monitored by the harness.
+
+## 2026-07-18 - Isolated offline sales and payment QA sandbox
+
+- Added a non-shipping launcher that creates a unique, empty data root below the
+  local fixed-drive `POSData\\Win7POS-QA` tree, rejects UNC/device paths and any
+  existing reparse-point ancestor, then rechecks containment after creation.
+- The harness seeds one shop-bound synthetic remote operator, 48 synthetic
+  products, a sale-safe catalog, a 12-hour trusted lease and zero sales/outbox
+  rows. It explicitly verifies that no local-recovery identity was created.
+- The child Win7POS process runs with safe-start and a loopback-only Admin Web
+  endpoint. Post-sale/manual sync, automatic and manual fiscal PDF output,
+  automatic receipt printing and the cash drawer are disabled by default.
+- The documented flow uses the normal offline-mirror sign-in; Local recovery
+  remains a restricted catalog/database-maintenance surface and never opens
+  sales or payments.
+- Actual seed-only validation PASS at
+  `C:\\POSData\\Win7POS-QA\\Offline-Sales-20260718-215001`; lease 12 hours and
+  hardware disabled. Canonical gates 32/32, Core 291/291, Release builds and
+  standard-fixture lifecycle all PASS on the final source state.
+
+## 2026-07-18 - Offline sales sandbox interactive runtime validation
+
+- Logged in through the normal offline mirror against
+  `C:\POSData\Win7POS-QA\Offline-Sales-20260718-220237`; safe-start and the
+  loopback-only Admin Web endpoint remained active throughout the run.
+- Completed one manual-price cash sale for CLP 3,432, one `QA000002` card sale
+  for CLP 550 and one `QA000003` mixed sale for CLP 575 (cash 300/card 275).
+- Final read-only audit: 3 sales, 3 lines, 2 expected stock decrements and 3
+  pristine pending outbox rows with zero attempts/errors/server IDs. Gross CLP
+  4,557, cash CLP 3,732, card CLP 825, change zero; SQLite quick/FK checks PASS.
+- Sales Register receipt previews and Daily Close matched the persisted tenders
+  and totals. Reopening those read-only surfaces left sales, stock, outbox and
+  fiscal flags unchanged; logs contained no print, PDF, spooler, drawer or
+  online-sync attempt.
+- Live UI review exposed the Sales Register operator filter rendering the CLR
+  type name. The shared modern ComboBox template now forwards the WPF item
+  template selector used by `DisplayMemberPath`, with a focused UX source gate.
+- Post-fix validation: required gates 32/32, Core tests 291/291 with zero
+  skipped, full Release solution plus WPF/harness x86 builds PASS with zero
+  warnings/errors. The artifact capture passed POS footer, payment/printer
+  previews, Sales Register, Daily Close and compact 1024x600 layouts.
+
+## 2026-07-18 - Fail-closed offline sandbox resume
+
+- Added an explicit `-ResumeExistingSandbox` launcher mode so the same current
+  synthetic QA run can be reopened without reseeding, replacing sales data or
+  renewing its authorization lease.
+- Resume remains confined below the local fixed-drive `POSData\\Win7POS-QA`
+  tree and now requires the original marker/database/session files, rejects
+  reparse points and repeats the single-instance check immediately before launch.
+- A database-query-only harness verifier requires disabled receipt/drawer flags,
+  blank saved printer names, the exact synthetic shop identity, an explicit raw
+  fiscal lock and a still-valid DPAPI-protected trusted-session lease. Its unique
+  exit code `73` prevents a stale or incompatible harness from being accepted.
+- Regressed fresh seed-only creation successfully, then resumed
+  `C:\POSData\Win7POS-QA\Offline-Sales-20260718-220237` with the Release x86
+  build, safe-start, loopback-only Admin Web endpoint and hardware disabled.
+  Credentials remained manual and were not stored or automated.
+- Final validation: required gates 32/32, Core tests 291/291 with zero skipped,
+  full Release solution and WPF/harness Release x86 builds PASS with zero
+  warnings/errors.
+
+## 2026-07-18 - Direct boleta printing without automatic PDF files
+
+- Removed the post-sale fiscal PDF writer, its delayed 15-second cleanup and the
+  `PDFsharp-gdi` runtime dependency. The old flow could leave a PDF in `exports`
+  after a spooler failure, application exit or cleanup error.
+- The selected boleta preview and number now go directly to the configured
+  Windows receipt spooler. Receipt and boleta jobs keep the configured physical
+  copy count; no image, text or PDF archive is created by either path.
+- Preserved cash-only auto-print policy, Safe Start blocking, sale commit order,
+  boleta-number advancement after successful printing, synchronization/outbox
+  payloads and the legacy `sales.pdf_printed` compatibility flag. That column is
+  document status only and stores no path or file.
+- Updated the payment UI and EN/ES/IT/ZH copy to describe direct boleta printing,
+  print status and same-number physical copies instead of a local PDF workflow.
+- Added a focused x86 harness check for cash, card-only and simulated printer
+  failure plus filesystem snapshots. Result: PASS, zero generated PDF files and
+  no export directory in the isolated QA root.
+- Final validation on source state: required gates 32/32, Core tests 291/291,
+  WPF net48/x86 and UI harness x86 isolated builds PASS with zero warnings/errors;
+  both build outputs contained zero `PdfSharp` DLLs and zero PDFs. A physical
+  post-relaunch boleta print remains the hardware confirmation gate.
+
+## 2026-07-19 - PR #7 cumulative closure and physical receipt addendum
+
+- Completed a cumulative review of every published and unpublished PR #7 change.
+  Two security findings were corrected: a normal remote mirror can no longer
+  receive lease-free recovery treatment, and cancelling an operator change
+  cannot commit the candidate identity. Independent final review reports
+  P0/P1/P2 open as zero.
+- Hardened the physical boundary with a final Safe Start guard, per-printer
+  single-flight rejection after an indeterminate timeout, strict one-to-three
+  copy validation and explicit post-commit fiscal-print failure guidance that
+  preserves the reserved boleta number without triggering a second print.
+- Hardened release provenance, exact runtime inventory, strict UTF-8 no-BOM
+  manifests, secret/privacy rejection, Win7 dependency closure and obsolete
+  runtime cleanup. Five negative fixtures confirmed fail-closed behavior for a
+  changed payload, UTF-16 BOM, secret marker, `.env.*` payload and nested root.
+- Final local software evidence: Core `298/298`, canonical source-and-release
+  gates `35/35`, dialog standards `34/34`, WPF and UI harness Release net48/x86
+  builds with zero warnings/errors, and the 20-cycle lifecycle run with zero
+  residual ViewModels or windows.
+- The dedicated physical harness submitted one sequence of six one-copy jobs to
+  the Epson TM-T60: fiscal 32/42, identical receipt original/reprint and daily
+  close 32/42. The manifest records six submissions, zero drawer calls and no
+  database artifacts; the operator confirmed all six slips, correct output,
+  no duplicates and a closed drawer. The Windows 11 host result closes the PR #7
+  receipt-surface gate; physical Windows 7 remains `NOT_RUN_WIN7_PHYSICAL`.

@@ -37,6 +37,87 @@ public sealed class RemoteStaffMirrorLoginTests
     }
 
     [TestMethod]
+    public async Task RemoteStaffMirror_TrustedLookupRejectsStaleDifferentStaffMirror()
+    {
+        using var db = TestDb.Create();
+        var users = new UserRepository(db.Factory);
+        await users.UpsertRemoteStaffMirrorAsync(BuildMirror(
+            "SHOP-1",
+            "STAFF-ADMIN",
+            "1234",
+            "pos_admin"));
+        await users.UpsertRemoteStaffMirrorAsync(BuildMirror(
+            "SHOP-1",
+            "STAFF-CASHIER",
+            "5678",
+            "cashier"));
+
+        var staleAdmin = await users.FindTrustedRemoteStaffUsernameAsync(
+            "remote-shop-SHOP-1",
+            "SHOP-1",
+            "remote-staff-STAFF-CASHIER",
+            "STAFF-ADMIN",
+            1);
+        var currentCashier = await users.FindTrustedRemoteStaffUsernameAsync(
+            "remote-shop-SHOP-1",
+            "shop-1",
+            "remote-staff-STAFF-CASHIER",
+            "staff-cashier",
+            1);
+
+        Assert.IsNull(staleAdmin);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(currentCashier));
+    }
+
+    [TestMethod]
+    public async Task RemoteStaffMirror_TrustedLookupRequiresExactOpaqueIds()
+    {
+        using var db = TestDb.Create();
+        var users = new UserRepository(db.Factory);
+        await users.UpsertRemoteStaffMirrorAsync(BuildMirror("SHOP-1", "STAFF-1", "1234"));
+
+        var wrongShopId = await users.FindTrustedRemoteStaffUsernameAsync(
+            "remote-shop-SHOP-OTHER",
+            "SHOP-1",
+            "remote-staff-STAFF-1",
+            "STAFF-1",
+            1);
+        var wrongStaffId = await users.FindTrustedRemoteStaffUsernameAsync(
+            "remote-shop-SHOP-1",
+            "SHOP-1",
+            "remote-staff-STAFF-OTHER",
+            "STAFF-1",
+            1);
+
+        Assert.IsNull(wrongShopId);
+        Assert.IsNull(wrongStaffId);
+    }
+
+    [TestMethod]
+    public async Task RemoteStaffMirror_TrustedLookupRejectsStaleCredentialVersion()
+    {
+        using var db = TestDb.Create();
+        var users = new UserRepository(db.Factory);
+        await users.UpsertRemoteStaffMirrorAsync(BuildMirror("SHOP-1", "STAFF-1", "1234"));
+
+        var stale = await users.FindTrustedRemoteStaffUsernameAsync(
+            "remote-shop-SHOP-1",
+            "SHOP-1",
+            "remote-staff-STAFF-1",
+            "STAFF-1",
+            2);
+        var current = await users.FindTrustedRemoteStaffUsernameAsync(
+            "remote-shop-SHOP-1",
+            "SHOP-1",
+            "remote-staff-STAFF-1",
+            "STAFF-1",
+            1);
+
+        Assert.IsNull(stale);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(current));
+    }
+
+    [TestMethod]
     public async Task RemoteStaffMirror_WrongCredentialFailsAndUsesLockout()
     {
         using var db = TestDb.Create();

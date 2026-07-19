@@ -22,7 +22,6 @@ $UseDotnetCli = $false
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 $ProjectPath = Join-Path $RepoRoot "src\Win7POS.Wpf\Win7POS.Wpf.csproj"
 $OutputDir = Join-Path $RepoRoot ("src\Win7POS.Wpf\bin\{0}\{1}\net48" -f $Platform, $Configuration)
-$LegacyOutputDir = Join-Path $RepoRoot ("src\Win7POS.Wpf\bin\{0}\net48" -f $Configuration)
 $DistRoot = Join-Path $RepoRoot "dist"
 $DistDir = Join-Path $DistRoot "Win7POS"
 $ReportPath = Join-Path $DistRoot "Win7POS-build-report.md"
@@ -252,7 +251,6 @@ function Write-BuildReport {
         "Dapper*.dll",
         "Microsoft.Data.Sqlite*.dll",
         "SQLitePCLRaw*.dll",
-        "PDFsharp*.dll",
         "ZXing*.dll",
         "ClosedXML*.dll",
         "ExcelDataReader*.dll"
@@ -274,7 +272,6 @@ function Write-BuildReport {
     $lines.Add("- Configuration: $Configuration") | Out-Null
     $lines.Add("- Platform: $Platform") | Out-Null
     $lines.Add("- Output path: $OutputDir") | Out-Null
-    $lines.Add("- Legacy output fallback: $LegacyOutputDir") | Out-Null
     $lines.Add("- Dist path: $DistDir") | Out-Null
     $lines.Add("- Exe present: $exePresent") | Out-Null
     $lines.Add("- Config present: $(Test-Path $configPath)") | Out-Null
@@ -365,7 +362,7 @@ function Show-DropSummary {
             Write-Host "  OK: $file"
         }
         else {
-            Write-Host "  INFO: not found: $file"
+            throw "Required release payload missing from drop: $file"
         }
     }
 
@@ -398,6 +395,18 @@ function Show-DropSummary {
 try {
     if (-not (Test-IsWindows)) {
         throw "This script must be run on Windows 10/11 Builder. Current OS: $([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)"
+    }
+
+    if (-not [string]::Equals($Platform, "x86", [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Release pack platform must be exactly x86; received '$Platform'."
+    }
+    $Platform = "x86"
+    if (-not [string]::Equals($Configuration, "Release", [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Release pack configuration must be exactly Release; received '$Configuration'."
+    }
+    $Configuration = "Release"
+    if ($SkipBuild) {
+        throw "-SkipBuild is not permitted for a provenance-safe release pack; rebuild exact Release/x86 output."
     }
 
     Set-Location $RepoRoot
@@ -478,6 +487,9 @@ try {
     }
 
     if (-not $SkipBuild) {
+        if (-not $DryRun -and (Test-Path -LiteralPath $OutputDir -PathType Container)) {
+            Remove-Item -LiteralPath $OutputDir -Recurse -Force
+        }
         if ($UseDotnetCli) {
             $buildArgs = @(
                 "build",
@@ -510,14 +522,8 @@ try {
     }
     else {
         $resolvedOutputDir = $OutputDir
-        if (-not (Test-Path $resolvedOutputDir)) {
-            if (Test-Path $LegacyOutputDir) {
-                $resolvedOutputDir = $LegacyOutputDir
-                Add-WarningMessage "Platform output folder not found; using legacy output folder: $LegacyOutputDir"
-            }
-            else {
-                throw "Build output folder not found: $OutputDir"
-            }
+        if (-not (Test-Path -LiteralPath $resolvedOutputDir -PathType Container)) {
+            throw "Exact x86 build output folder not found: $OutputDir"
         }
 
         if (Test-Path $DistDir) {
@@ -542,37 +548,54 @@ try {
         }
 
         $forbiddenPayload = Get-ChildItem -LiteralPath $DistDir -Recurse -File | Where-Object {
-            $_.Extension -in @(".pdb", ".cs", ".xaml", ".csproj", ".db", ".sqlite", ".sln", ".slnx") -or
+            $_.Extension -in @(".pdb", ".cs", ".xaml", ".csproj", ".db", ".sqlite", ".sqlite3", ".sln", ".slnx", ".pdf", ".pem", ".key", ".pfx", ".p12", ".bak", ".dump", ".sql", ".log", ".trace", ".dmp") -or
+            $_.Name -match '(?i)^\.env(?:\.|$)' -or
+            $_.Name -match '(?i)\.(?:db|sqlite|sqlite3)(?:-(?:wal|shm|journal))?$' -or
+            $_.Name -match '(?i)^PdfSharp.*\.dll$' -or
             $_.Name -match '(?i)(token|secret|production).*(json|config|txt)$' -or
             $_.Name -match '(?i)(UiSmokeHarness|qa[-_ ]fixture|screenshots?|customer[-_ ]display.*(?:result|matrix|screenshot)|monitor.*(?:result|fixture|test))'
         }
         if ($forbiddenPayload) {
             throw "Release pack contains forbidden source, database, debug or secret-like files: $($forbiddenPayload.Name -join ', ')"
         }
+        $forbiddenDataFolders = @(Get-ChildItem -LiteralPath $DistDir -Recurse -Directory | Where-Object {
+            $_.Name -match '(?i)^(backups?|logs?|exports?)$'
+        })
+        if ($forbiddenDataFolders.Count -gt 0) {
+            throw "Release pack contains forbidden runtime data folders: $($forbiddenDataFolders.FullName -join ', ')"
+        }
     }
 
     if (-not $DryRun) {
         Show-DropSummary
         $releaseCompletenessChecker = Join-Path $RepoRoot "scripts\check-release-pack-completeness.ps1"
-        & pwsh -NoProfile -File $releaseCompletenessChecker -ReleasePackSource $DistDir
+        & pwsh -NoProfile -File $releaseCompletenessChecker -ReleasePackSource $DistDir -WriteManifests -ExpectedCommitSha $currentCommit
         if ($LASTEXITCODE -ne 0) {
             throw "Release completeness validation failed before installer generation."
+        }
+        $runtimeValidator = Join-Path $RepoRoot "scripts\check-win7-runtime-release-validation.ps1"
+        & pwsh -NoProfile -File $runtimeValidator -ReleasePackSource $DistDir -ExpectedCommitSha $currentCommit
+        if ($LASTEXITCODE -ne 0) {
+            throw "Win7 x86 runtime validation failed before installer generation."
         }
     }
 
     if ($BuildInstaller) {
         $iscc = Find-ISCC
         if (-not $iscc) {
-            Add-WarningMessage "Inno Setup iscc.exe not found. Installer skipped."
+            throw "Inno Setup iscc.exe not found; -BuildInstaller cannot be satisfied."
         }
-        elseif ($DryRun) {
+        if ($DryRun) {
             Write-Host "[DRY-RUN] Would run installer compiler: $iscc $InstallerScript"
         }
         else {
+            if (Test-Path -LiteralPath $InstallerOutput -PathType Leaf) {
+                Remove-Item -LiteralPath $InstallerOutput -Force
+            }
             Invoke-LoggedCommand $iscc @($InstallerScript)
-            $InstallerGenerated = Test-Path $InstallerOutput
+            $InstallerGenerated = Test-Path -LiteralPath $InstallerOutput -PathType Leaf
             if (-not $InstallerGenerated) {
-                Add-WarningMessage "Installer command finished but expected output was not found: $InstallerOutput"
+                throw "Installer command finished but the expected fresh output was not found: $InstallerOutput"
             }
         }
     }

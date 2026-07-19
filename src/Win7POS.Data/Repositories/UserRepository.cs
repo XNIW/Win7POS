@@ -174,8 +174,36 @@ SELECT
          AND TRIM(COALESCE(remote_staff_code, '')) <> ''
          AND TRIM(COALESCE(remote_shop_code, '')) <> '' THEN 1
         ELSE 0
-    END), 0) AS ActiveRemoteMirrors
+    END), 0) AS ActiveRemoteMirrors,
+    COALESCE(SUM(CASE
+        WHEN is_active = 1
+         AND TRIM(COALESCE(username, '')) <> ''
+         AND TRIM(COALESCE(remote_staff_id, '')) = ''
+         AND TRIM(COALESCE(remote_staff_code, '')) = ''
+         AND TRIM(COALESCE(remote_shop_id, '')) = ''
+         AND TRIM(COALESCE(remote_shop_code, '')) = '' THEN 1
+        ELSE 0
+    END), 0) AS ActiveLocalRecoveryUsers
 FROM users").ConfigureAwait(false);
+        }
+
+        public async Task<bool> IsLocalRecoveryUserAsync(string username)
+        {
+            if (string.IsNullOrWhiteSpace(username)) return false;
+
+            using var conn = _factory.Open();
+            var exists = await conn.ExecuteScalarAsync<long>(@"
+SELECT EXISTS(
+    SELECT 1
+    FROM users
+    WHERE username = @username
+      AND is_active = 1
+      AND TRIM(COALESCE(remote_staff_id, '')) = ''
+      AND TRIM(COALESCE(remote_staff_code, '')) = ''
+      AND TRIM(COALESCE(remote_shop_id, '')) = ''
+      AND TRIM(COALESCE(remote_shop_code, '')) = ''
+    LIMIT 1)", new { username }).ConfigureAwait(false);
+            return exists == 1;
         }
 
         public async Task<FirstRunAdminCreateResult> TryCreateFirstRunAdminAsync(
@@ -346,6 +374,47 @@ VALUES(@username, @displayName, @pinHash, @pinSalt, @roleId, 1, @requirePinChang
                   ORDER BY COALESCE(remote_synced_at, updated_at, created_at, 0) DESC, id DESC
                   LIMIT 1",
                 new { shop, staff }).ConfigureAwait(false);
+        }
+
+        public async Task<string> FindTrustedRemoteStaffUsernameAsync(
+            string shopId,
+            string shopCode,
+            string staffId,
+            string staffCode,
+            int staffCredentialVersion)
+        {
+            var normalizedShopId = Normalize(shopId);
+            var normalizedShopCode = Normalize(shopCode);
+            var normalizedStaffId = Normalize(staffId);
+            var normalizedStaffCode = Normalize(staffCode);
+            if (normalizedShopId.Length == 0 ||
+                normalizedShopCode.Length == 0 ||
+                normalizedStaffId.Length == 0 ||
+                normalizedStaffCode.Length == 0)
+            {
+                return null;
+            }
+
+            using var conn = _factory.Open();
+            return await conn.QuerySingleOrDefaultAsync<string>(
+                @"SELECT username
+                  FROM users
+                  WHERE is_active = 1
+                    AND TRIM(COALESCE(remote_shop_id, '')) = @shopId
+                    AND UPPER(TRIM(COALESCE(remote_shop_code, ''))) = UPPER(@shopCode)
+                    AND TRIM(COALESCE(remote_staff_id, '')) = @staffId
+                    AND UPPER(TRIM(COALESCE(remote_staff_code, ''))) = UPPER(@staffCode)
+                    AND COALESCE(remote_credential_version, -1) = @staffCredentialVersion
+                  ORDER BY COALESCE(remote_synced_at, updated_at, created_at, 0) DESC, id DESC
+                  LIMIT 1",
+                new
+                {
+                    shopId = normalizedShopId,
+                    shopCode = normalizedShopCode,
+                    staffId = normalizedStaffId,
+                    staffCode = normalizedStaffCode,
+                    staffCredentialVersion
+                }).ConfigureAwait(false);
         }
 
         public async Task<int> UpsertRemoteStaffMirrorAsync(RemoteStaffMirrorInput input)

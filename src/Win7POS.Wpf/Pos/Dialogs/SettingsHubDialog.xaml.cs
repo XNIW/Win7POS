@@ -16,9 +16,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public event EventHandler CustomerDisplayRequested;
         public event EventHandler<string> LanguageChangedRequested;
 
-        public SettingsHubDialog(bool recoveryMode = false)
+        public SettingsHubDialog(bool recoveryMode = false, bool syncDisabled = false)
         {
             InitializeComponent();
+            if (syncDisabled)
+            {
+                SyncCenterButton.Visibility = Visibility.Collapsed;
+            }
+
             if (recoveryMode)
             {
                 ShopDataButton.Visibility = Visibility.Collapsed;
@@ -26,6 +31,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 UsersRolesButton.Visibility = Visibility.Collapsed;
                 CustomerDisplayButton.Visibility = Visibility.Collapsed;
                 OnlineAccessButton.Visibility = Visibility.Visible;
+                StoreSettingsGrid.Columns = 1;
+                WorkstationSettingsGrid.Columns = 1;
+                AdministrationSettingsGrid.Columns = 1;
             }
         }
 

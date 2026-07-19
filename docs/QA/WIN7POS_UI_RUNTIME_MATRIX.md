@@ -1,5 +1,9 @@
 # Win7POS UI runtime matrix — 2026-07-17
 
+> This matrix preserves the earlier public-staging UI snapshot. Later Epson
+> Printer Settings/payment/footer automation and hardware evidence is tracked in
+> `WIN7POS_EPSON_TM_T60_HARDWARE_MATRIX.md`; the external backlog is authoritative.
+
 ## Certification scope
 
 - Review branch: `release/win7pos-final-review-20260717-015659`.
@@ -32,7 +36,7 @@ application call site.
 | UI-008 | `Pos/Dialogs/LanguageSettingsDialog.xaml` | DialogShellWindow | Settings Hub; hub owner | settings permission | four languages, validation | YES | NO | BLOCKED_AUTHENTICATED_STAGING |
 | UI-009 | `Pos/Dialogs/SyncCenterDialog.xaml` | DialogShellWindow | sync pill; MainWindow | trusted session; sync state | idle/offline/running/retry/blocked/repair | YES | NO | PASS_AUTOMATED lifecycle 20×; visual BLOCKED_AUTHENTICATED_STAGING |
 | UI-010 | `Pos/Dialogs/ShopSettingsDialog.xaml` | DialogShellWindow | Settings Hub; hub owner | administrator; shop snapshot | populated/error/save | YES | NO | BLOCKED_AUTHENTICATED_STAGING |
-| UI-011 | `Pos/Dialogs/PrinterSettingsDialog.xaml` | DialogShellWindow | Settings Hub; hub owner | printer settings | empty/populated/test/error | YES | NO | BLOCKED_AUTHENTICATED_STAGING |
+| UI-011 | `Pos/Dialogs/PrinterSettingsDialog.xaml` | DialogShellWindow | Settings Hub; hub owner | printer settings | empty/populated/test/error | YES | NO | BLOCKED_AUTHENTICATED_STAGING; later addendum evidence is tracked in the Epson matrix |
 | UI-012 | `Pos/Dialogs/DbMaintenanceDialog.xaml` | DialogShellWindow | Settings Hub; hub owner | administrator; local DB | idle/busy/error/confirmation | YES | NO | BLOCKED_AUTHENTICATED_STAGING |
 | UI-013 | `Pos/Dialogs/AboutSupportDialog.xaml` | DialogShellWindow | Settings Hub; hub owner | none | static/support details | YES | NO | BLOCKED_AUTHENTICATED_STAGING |
 | UI-014 | `Pos/Dialogs/PosOnlineFirstLoginDialog.xaml` | DialogShellWindow | startup gate; MainWindow | public staging reachable | empty, focus, online, auth denial | YES | NO | PASS_COMPUTER_USE on public staging |
@@ -91,7 +95,7 @@ application call site.
 | multi-monitor best effort | NOT_RUN_MULTI_MONITOR | one monitor available |
 | IT / ES / ZH runtime | NOT_RUN | authenticated critical matrix blocked |
 | Windows 7 SP1 | NOT_RUN_WIN7_PHYSICAL | no Win7 machine/VM in session |
-| Xprinter / scanner / cash drawer | NOT_RUN_HARDWARE | devices not attached |
+| Xprinter / scanner / cash drawer | HISTORICAL_NOT_RUN_HARDWARE | Pre-Epson snapshot; see the current Epson hardware matrix for later device evidence. |
 
 Screenshots and CSV evidence are stored outside Git under
 `C:\Dev\Win7POS-QA\20260716-215939\visual`.

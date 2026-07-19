@@ -24,6 +24,13 @@ namespace Win7POS.Wpf.Infrastructure.Security
         /// <summary>Esegue login con username e PIN. Ritorna l'esito dell'autenticazione.</summary>
         Task<LoginResult> LoginAsync(string username, string pin);
 
+        /// <summary>
+        /// Verifica esclusivamente un account recovery locale. Non concede una
+        /// autorizzazione POS online e il chiamante deve mantenere la shell recovery
+        /// finche la normale authorization lease non torna valida.
+        /// </summary>
+        Task<LoginResult> LoginLocalRecoveryAsync(string username, string pin);
+
         PosOfflineAuthorizationLeaseDecision EvaluateAuthorizationLease();
 
         bool EnsureAuthorizationValid();

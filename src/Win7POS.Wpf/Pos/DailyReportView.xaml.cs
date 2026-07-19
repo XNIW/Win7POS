@@ -13,6 +13,7 @@ namespace Win7POS.Wpf.Pos
     public partial class DailyReportView : UserControl
     {
         private bool _initialLoadRequested;
+        private DailyReportViewModel _attachedViewModel;
 
         public DailyReportView()
         {
@@ -27,13 +28,12 @@ namespace Win7POS.Wpf.Pos
             _initialLoadRequested = false;
             if (e.OldValue is DailyReportViewModel oldVm)
             {
-                oldVm.ExportRequested -= OnExportRequested;
-                oldVm.RequestExportScopeChoice -= OnRequestExportScopeChoice;
+                DetachViewModel(oldVm);
+                oldVm.Dispose();
             }
             if (e.NewValue is DailyReportViewModel newVm)
             {
-                newVm.ExportRequested += OnExportRequested;
-                newVm.RequestExportScopeChoice += OnRequestExportScopeChoice;
+                AttachViewModel(newVm);
                 RequestInitialLoad(newVm);
             }
         }
@@ -96,16 +96,32 @@ namespace Win7POS.Wpf.Pos
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
             var vm = DataContext as DailyReportViewModel;
+            AttachViewModel(vm);
             RequestInitialLoad(vm);
         }
 
         private void OnUnloaded(object sender, RoutedEventArgs e)
         {
             var vm = DataContext as DailyReportViewModel;
+            DetachViewModel(vm);
+            _initialLoadRequested = false;
+        }
+
+        private void AttachViewModel(DailyReportViewModel vm)
+        {
+            if (vm == null || ReferenceEquals(_attachedViewModel, vm)) return;
+            if (_attachedViewModel != null) DetachViewModel(_attachedViewModel);
+            vm.ExportRequested += OnExportRequested;
+            vm.RequestExportScopeChoice += OnRequestExportScopeChoice;
+            _attachedViewModel = vm;
+        }
+
+        private void DetachViewModel(DailyReportViewModel vm)
+        {
             if (vm == null) return;
             vm.ExportRequested -= OnExportRequested;
             vm.RequestExportScopeChoice -= OnRequestExportScopeChoice;
-            _initialLoadRequested = false;
+            if (ReferenceEquals(_attachedViewModel, vm)) _attachedViewModel = null;
         }
 
         private void RequestInitialLoad(DailyReportViewModel vm)

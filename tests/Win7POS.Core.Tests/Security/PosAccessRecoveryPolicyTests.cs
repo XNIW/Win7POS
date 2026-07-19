@@ -91,7 +91,8 @@ public sealed class PosAccessRecoveryPolicyTests
         {
             TotalUserRows = 1,
             ActiveLoginableUsers = 1,
-            ActiveRemoteMirrors = 0
+            ActiveRemoteMirrors = 0,
+            ActiveLocalRecoveryUsers = 1
         };
 
         var decision = PosAccessRecoveryPolicy.Evaluate(state, PosAccessFailureKind.None);
@@ -99,6 +100,99 @@ public sealed class PosAccessRecoveryPolicyTests
         Assert.AreEqual(PosAccessNextStep.LocalRecoveryLogin, decision.NextStep);
         Assert.IsTrue(decision.CanUseLocalRecoveryLogin);
         Assert.IsFalse(decision.CanCreateLocalAdmin);
+    }
+
+    [TestMethod]
+    public void ExistingLocalRecoveryUser_AuthenticationDenied_KeepsSeparateLocalLoginAvailable()
+    {
+        var state = new PosUserBootstrapState
+        {
+            TotalUserRows = 1,
+            ActiveLoginableUsers = 1,
+            ActiveRemoteMirrors = 0,
+            ActiveLocalRecoveryUsers = 1
+        };
+
+        var decision = PosAccessRecoveryPolicy.Evaluate(state, PosAccessFailureKind.AuthenticationDenied);
+
+        Assert.AreEqual(PosAccessNextStep.LocalRecoveryLogin, decision.NextStep);
+        Assert.IsTrue(decision.CanUseLocalRecoveryLogin);
+        Assert.IsFalse(decision.CanUseOfflineMirror);
+        Assert.IsFalse(decision.CanCreateLocalAdmin);
+    }
+
+    [TestMethod]
+    public void RemoteMirrorOnly_AuthenticationDenied_RemainsDenied()
+    {
+        var state = new PosUserBootstrapState
+        {
+            TotalUserRows = 1,
+            ActiveLoginableUsers = 1,
+            ActiveRemoteMirrors = 1
+        };
+
+        var decision = PosAccessRecoveryPolicy.Evaluate(state, PosAccessFailureKind.AuthenticationDenied);
+
+        Assert.AreEqual(PosAccessNextStep.Denied, decision.NextStep);
+        Assert.IsFalse(decision.CanUseLocalRecoveryLogin);
+    }
+
+    [TestMethod]
+    public void UnclassifiedActiveUser_AuthenticationDenied_DoesNotBecomeLocalRecovery()
+    {
+        var state = new PosUserBootstrapState
+        {
+            TotalUserRows = 1,
+            ActiveLoginableUsers = 1,
+            ActiveRemoteMirrors = 0,
+            ActiveLocalRecoveryUsers = 0
+        };
+
+        var decision = PosAccessRecoveryPolicy.Evaluate(state, PosAccessFailureKind.AuthenticationDenied);
+
+        Assert.AreEqual(PosAccessNextStep.Denied, decision.NextStep);
+        Assert.IsFalse(decision.CanUseLocalRecoveryLogin);
+    }
+
+    [TestMethod]
+    public void MixedRemoteAndLocalUsers_AuthenticationDenied_OffersOnlySeparateLocalLogin()
+    {
+        var state = new PosUserBootstrapState
+        {
+            TotalUserRows = 2,
+            ActiveLoginableUsers = 2,
+            ActiveRemoteMirrors = 1,
+            ActiveLocalRecoveryUsers = 1
+        };
+
+        var decision = PosAccessRecoveryPolicy.Evaluate(state, PosAccessFailureKind.AuthenticationDenied);
+
+        Assert.AreEqual(PosAccessNextStep.LocalRecoveryLogin, decision.NextStep);
+        Assert.IsTrue(decision.CanUseLocalRecoveryLogin);
+        Assert.IsFalse(decision.CanUseOfflineMirror);
+        Assert.IsFalse(decision.CanCreateLocalAdmin);
+    }
+
+    [TestMethod]
+    [DataRow(PosAccessFailureKind.DeviceDenied)]
+    [DataRow(PosAccessFailureKind.PolicyDenied)]
+    [DataRow(PosAccessFailureKind.InvalidContract)]
+    [DataRow(PosAccessFailureKind.InvalidResponse)]
+    public void ExistingLocalRecoveryUser_NonCredentialSecurityDenial_RemainsDenied(
+        PosAccessFailureKind failure)
+    {
+        var state = new PosUserBootstrapState
+        {
+            TotalUserRows = 1,
+            ActiveLoginableUsers = 1,
+            ActiveRemoteMirrors = 0,
+            ActiveLocalRecoveryUsers = 1
+        };
+
+        var decision = PosAccessRecoveryPolicy.Evaluate(state, failure);
+
+        Assert.AreEqual(PosAccessNextStep.Denied, decision.NextStep);
+        Assert.IsFalse(decision.CanUseLocalRecoveryLogin);
     }
 
     [TestMethod]
@@ -110,11 +204,92 @@ public sealed class PosAccessRecoveryPolicyTests
     }
 
     [TestMethod]
-    public void SaleSafeCatalog_ExitsRecoveryShell()
+    public void SaleSafeCatalog_DoesNotElevateLocalRecoveryToPosShell()
+    {
+        Assert.AreEqual(
+            PosShellMode.Recovery,
+            PosShellStartupPolicy.Determine(PosAuthenticatedAccessMode.LocalRecovery, catalogSaleSafe: true));
+    }
+
+    [TestMethod]
+    public void NormalAuthorizedAccessWithSaleSafeCatalog_UsesPosShell()
     {
         Assert.AreEqual(
             PosShellMode.Pos,
-            PosShellStartupPolicy.Determine(PosAuthenticatedAccessMode.LocalRecovery, catalogSaleSafe: true));
+            PosShellStartupPolicy.Determine(PosAuthenticatedAccessMode.Normal, catalogSaleSafe: true));
+    }
+
+    [TestMethod]
+    public void NormalAuthorizedAccessWithUnsafeCatalog_UsesRecoveryShell()
+    {
+        Assert.AreEqual(
+            PosShellMode.Recovery,
+            PosShellStartupPolicy.Determine(PosAuthenticatedAccessMode.Normal, catalogSaleSafe: false));
+    }
+
+    [TestMethod]
+    public void NormalRemoteAccessInRecoveryShell_RemainsLeaseBound()
+    {
+        Assert.IsFalse(PosAccessRecoveryPolicy.IsLeaseFreeLocalRecovery(
+            PosShellMode.Recovery,
+            PosAuthenticatedAccessMode.Normal));
+    }
+
+    [TestMethod]
+    public void LocalRecoveryAccessInRecoveryShell_IsLeaseFree()
+    {
+        Assert.IsTrue(PosAccessRecoveryPolicy.IsLeaseFreeLocalRecovery(
+            PosShellMode.Recovery,
+            PosAuthenticatedAccessMode.LocalRecovery));
+    }
+
+    [TestMethod]
+    public void LocalRecoveryAccessOutsideRecoveryShell_IsNotLeaseFree()
+    {
+        Assert.IsFalse(PosAccessRecoveryPolicy.IsLeaseFreeLocalRecovery(
+            PosShellMode.Pos,
+            PosAuthenticatedAccessMode.LocalRecovery));
+    }
+
+    [TestMethod]
+    [DataRow(PermissionCodes.CatalogView, true)]
+    [DataRow(PermissionCodes.CatalogEdit, true)]
+    [DataRow(PermissionCodes.CatalogImport, true)]
+    [DataRow(PermissionCodes.CatalogPriceEdit, true)]
+    [DataRow(PermissionCodes.DbMaintenance, true)]
+    [DataRow(PermissionCodes.DbBackup, true)]
+    [DataRow(PermissionCodes.DbRestore, true)]
+    [DataRow(PermissionCodes.PosSell, false)]
+    [DataRow(PermissionCodes.DailyCloseRun, false)]
+    [DataRow(PermissionCodes.SettingsPrinter, false)]
+    [DataRow(PermissionCodes.UsersManage, false)]
+    [DataRow(PermissionCodes.SecurityOverride, false)]
+    public void LocalRecoveryPermissionPolicy_AdminRemainsInsideExplicitAllowlist(
+        string permissionCode,
+        bool expected)
+    {
+        var admin = new UserAccount
+        {
+            IsActive = true,
+            RoleCode = "admin"
+        };
+
+        Assert.AreEqual(expected, LocalRecoveryPermissionPolicy.IsGranted(admin, permissionCode));
+    }
+
+    [TestMethod]
+    public void LocalRecoveryPermissionPolicy_NonAdminStillNeedsRolePermission()
+    {
+        var user = new UserAccount
+        {
+            IsActive = true,
+            RoleCode = "manager",
+            PermissionCodes = new[] { PermissionCodes.CatalogView, PermissionCodes.PosSell }
+        };
+
+        Assert.IsTrue(LocalRecoveryPermissionPolicy.IsGranted(user, PermissionCodes.CatalogView));
+        Assert.IsFalse(LocalRecoveryPermissionPolicy.IsGranted(user, PermissionCodes.CatalogImport));
+        Assert.IsFalse(LocalRecoveryPermissionPolicy.IsGranted(user, PermissionCodes.PosSell));
     }
 
     private static PosUserBootstrapState EmptyState()

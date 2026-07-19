@@ -62,13 +62,37 @@ function Test-AppDir([string]$root) {
 
     $required = @(
         "Win7POS.Wpf.exe",
+        "Win7POS.Wpf.exe.config",
         "Win7POS.Core.dll",
         "Win7POS.Data.dll",
+        "ClosedXML.dll",
+        "Dapper.dll",
+        "DocumentFormat.OpenXml.dll",
+        "ExcelDataReader.dll",
+        "ExcelDataReader.DataSet.dll",
+        "ExcelNumberFormat.dll",
+        "Irony.dll",
+        "Microsoft.Bcl.AsyncInterfaces.dll",
         "Microsoft.Data.Sqlite.dll",
+        "SixLabors.Fonts.dll",
         "SQLitePCLRaw.core.dll",
         "SQLitePCLRaw.batteries_v2.dll",
         "SQLitePCLRaw.provider.e_sqlite3.dll",
+        "System.Buffers.dll",
+        "System.Drawing.Common.dll",
+        "System.IO.Packaging.dll",
+        "System.Memory.dll",
+        "System.Numerics.Vectors.dll",
+        "System.Runtime.CompilerServices.Unsafe.dll",
+        "System.Text.Encoding.CodePages.dll",
+        "System.Threading.Tasks.Extensions.dll",
+        "System.ValueTuple.dll",
+        "XLParser.dll",
+        "zxing.dll",
+        "zxing.presentation.dll",
+        "ZXing.Windows.Compatibility.dll",
         "e_sqlite3.dll",
+        "Assets/sii_qrcode.png",
         "README_RUN.txt",
         "VERSION.txt"
     )
@@ -94,12 +118,26 @@ function Test-AppDir([string]$root) {
         }
     }
 
+    $nativeSqlite = Join-Path $root "e_sqlite3.dll"
+    if (Test-Path $nativeSqlite -PathType Leaf) {
+        $nativeMachine = Get-PeMachine $nativeSqlite
+        if ($nativeMachine -ne 0x014c) {
+            Fail ("e_sqlite3.dll must be x86 PE machine 0x014c, found 0x{0:x4}" -f $nativeMachine)
+        }
+        else {
+            Pass "e_sqlite3.dll PE machine is x86"
+        }
+    }
+
     $forbidden = @(
         "Win7POS.Cli.exe",
         "Win7POS.Cli.dll",
         "Win7POS.Cli.deps.json",
         "Win7POS.Cli.runtimeconfig.json",
-        "Win7POS.Cli.pdb"
+        "Win7POS.Cli.pdb",
+        "Win7POS.Wpf.UiSmokeHarness.exe",
+        "Win7POS.Wpf.UiSmokeHarness.dll",
+        "PdfSharp-gdi.dll"
     )
     foreach ($name in $forbidden) {
         $path = Join-Path $root $name

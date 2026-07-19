@@ -2,18 +2,44 @@ using System;
 using System.Windows;
 using System.Windows.Input;
 using Win7POS.Wpf.Chrome;
+using Win7POS.Wpf.Infrastructure;
 
 namespace Win7POS.Wpf.Pos.Dialogs
 {
     public partial class SalesRegisterDialog : DialogShellWindow
     {
+        private SalesRegisterViewModel _viewModel;
+
         public SalesRegisterDialog(SalesRegisterViewModel viewModel)
         {
+            _viewModel = viewModel ?? throw new ArgumentNullException(nameof(viewModel));
             InitializeComponent();
-            // Dimensioni fisse da XAML (980x700, NoResize); niente sizing adattivo per evitare resize con molti scontrini
+            WindowSizingHelper.ApplyAdaptiveDialogSizing(
+                this,
+                minWidth: 720,
+                minHeight: 520,
+                maxWidthPercent: 0.96,
+                maxHeightPercent: 0.96,
+                allowResize: true);
             DataContext = viewModel;
-            viewModel.RequestCloseDialog += () => Dispatcher.BeginInvoke(new Action(() => { try { Close(); } catch { } }));
+            viewModel.RequestCloseDialog += OnRequestCloseDialog;
             Loaded += OnLoaded;
+            Closed += OnClosed;
+        }
+
+        private void OnRequestCloseDialog()
+            => Dispatcher.BeginInvoke(new Action(() => { try { Close(); } catch { } }));
+
+        private void OnClosed(object sender, EventArgs e)
+        {
+            Closed -= OnClosed;
+            Loaded -= OnLoaded;
+            _viewModel.RequestCloseDialog -= OnRequestCloseDialog;
+            _viewModel.Dispose();
+            _viewModel = null;
+            DataContext = null;
+            DialogContent = null;
+            Content = null;
         }
 
         private void CodeSearchBox_KeyDown(object sender, KeyEventArgs e)
