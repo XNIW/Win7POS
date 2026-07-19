@@ -502,6 +502,31 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Ledger status: PR-A `DONE_MERGED`, PR-B `NEXT`, external certification remains
   `OPEN 0/16`. PR-B was not started.
 
+## 2026-07-17 - PR-B versioned SQLite migrations
+
+- Started from main `ad431fe8b7cf4de1bf3bee744bab159b6a95e80c` on
+  `codex/pr-b-versioned-migrations-20260717-143330`; backup branch and verified
+  all-ref bundle were created before implementation.
+- Added an immutable six-entry SHA-256 migration registry and
+  `schema_migrations` ledger, exact legacy metadata detection, verified online
+  backup before ledger bootstrap/upgrade, immediate per-migration transactions,
+  fail-closed checksum/gap/future-ID handling and no-op reopen reconciliation.
+- Added six sanitized SQL generations plus rollback, concurrent startup,
+  tamper, backup failure, restore/re-upgrade and semantic fresh-schema parity
+  coverage. No WAL, package, payload/hash/idempotency, sync-policy or reversal
+  economics change was introduced.
+- Local evidence: canonical gates `31/31`; migration/restore/architecture gates
+  PASS; tests `290/290`, skipped `0`; WPF `net48/x86` 0 warnings/errors; CLI
+  selftest PASS. Solution compilation has 0 errors and four external `NU1900`
+  warnings because the NuGet vulnerability endpoint was unavailable.
+- Catalog regression: 2,000-row batch median `262.188 ms` (`77.21x` versus
+  legacy); 19,762-row paged-full exactness `Verified` in 3/3 iterations.
+- Clean committed-head x86 Release Pack, completeness validator, Win7 runtime
+  validator and Inno Setup 6.7.3 installer: `PASS`.
+- Hardware/settings and sync/efficiency roadmaps record no open P0, six deferred
+  repository-level P1 findings and current-server-compatible follow-up PRs.
+  PR-B is to remain `READY_FOR_REVIEW`; no automatic merge is authorized.
+
 ## 2026-07-17 - Epson receipt alignment, POS footer and drawer pulse
 
 - Enlarged the POS `Pay` touch target to the exact visible width/edges of the
@@ -690,3 +715,26 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   database artifacts; the operator confirmed all six slips, correct output,
   no duplicates and a closed drawer. The Windows 11 host result closes the PR #7
   receipt-surface gate; physical Windows 7 remains `NOT_RUN_WIN7_PHYSICAL`.
+
+## 2026-07-19 - PR-B refresh after PR #7
+
+- Preserved the published PR-B head with a backup branch and verified all-ref
+  bundle, then normally merged PR #7 main `db623a5` without rebase, squash or
+  force push.
+- Kept migration IDs/checksums 0001–0006 immutable and appended
+  `0007-receipt-shop-snapshot` with pinned checksum `a1d12cca...6462`, verified
+  backup and a separate bounded post-PR7 ledgerless baseline.
+- Added a seventh sanitized fixture and fail-closed regressions for false custom
+  predecessor bootstrap, incomplete ownership evidence, malformed current
+  schema, validation-before-reconciliation and restore rollback.
+- Preserved PR #7 receipt/recovery/hardware/release behavior. No sync,
+  payload/hash/idempotency, reversal-economics or WAL/journal-mode change was
+  introduced, and the physical printer was not exercised again.
+- Pre-publication evidence: gates `33/33`, focused migration/fixture/restore
+  `38/38`, full tests `336/336`, CLI selftest PASS, Release solution and WPF
+  net48/x86 builds with zero warnings/errors. Catalog benchmarks: 2,000-row
+  batch median `609.510 ms` (`30.25x` vs legacy) and 19,762-row paged full
+  `Verified` in 3/3 runs.
+- Clean refresh merge commit `5377778` produced an exact-commit, clean-tree
+  Release/x86 pack; completeness, Win7 runtime validation and the Inno Setup
+  6.7.3 installer all passed before publication.
