@@ -17,12 +17,70 @@ public sealed class LocalRecoveryDataTests
 INSERT INTO users(username, display_name, pin_hash, pin_salt, role_id, is_active, created_at, updated_at)
 SELECT 'disabled', 'Disabled', 'hash', 'salt', id, 0, 1, 1 FROM roles WHERE code = 'admin';");
 
-        var state = await new UserRepository(db.Factory).GetBootstrapStateAsync();
+        var users = new UserRepository(db.Factory);
+        var state = await users.GetBootstrapStateAsync();
 
         Assert.AreEqual(1, state.TotalUserRows);
         Assert.AreEqual(0, state.ActiveLoginableUsers);
         Assert.AreEqual(0, state.ActiveRemoteMirrors);
+        Assert.AreEqual(0, state.ActiveLocalRecoveryUsers);
         Assert.IsTrue(state.HasOnlyDisabledUsers);
+        Assert.IsFalse(await users.IsLocalRecoveryUserAsync("disabled"));
+    }
+
+    [TestMethod]
+    public async Task LocalRecoveryIdentity_RejectsRemoteAndPartiallyLinkedUsers()
+    {
+        using var db = TestDb.Create();
+        await db.ExecuteAsync(@"
+INSERT INTO users(
+    username, display_name, pin_hash, pin_salt, role_id, is_active,
+    created_at, updated_at, remote_staff_id, remote_staff_code, remote_shop_code)
+SELECT 'local-recovery', 'Local', 'hash', 'salt', id, 1, 1, 1, NULL, NULL, NULL
+FROM roles WHERE code = 'admin';
+
+INSERT INTO users(
+    username, display_name, pin_hash, pin_salt, role_id, is_active,
+    created_at, updated_at, remote_staff_id, remote_staff_code, remote_shop_code)
+SELECT 'remote-mirror', 'Remote', 'hash', 'salt', id, 1, 1, 1, 'staff-id', 'STAFF', 'SHOP'
+FROM roles WHERE code = 'cashier';
+
+INSERT INTO users(
+    username, display_name, pin_hash, pin_salt, role_id, is_active,
+    created_at, updated_at, remote_staff_id, remote_staff_code, remote_shop_code)
+SELECT 'partial-mirror', 'Partial', 'hash', 'salt', id, 1, 1, 1, 'partial-staff-id', NULL, NULL
+FROM roles WHERE code = 'cashier';
+
+INSERT INTO users(
+    username, display_name, pin_hash, pin_salt, role_id, is_active,
+    created_at, updated_at, remote_staff_id, remote_staff_code, remote_shop_code)
+SELECT 'partial-staff-code', 'Partial staff code', 'hash', 'salt', id, 1, 1, 1, NULL, 'STAFF', NULL
+FROM roles WHERE code = 'cashier';
+
+INSERT INTO users(
+    username, display_name, pin_hash, pin_salt, role_id, is_active,
+    created_at, updated_at, remote_staff_id, remote_staff_code, remote_shop_code)
+SELECT 'partial-shop-code', 'Partial shop code', 'hash', 'salt', id, 1, 1, 1, NULL, NULL, 'SHOP'
+FROM roles WHERE code = 'cashier';
+
+INSERT INTO users(
+    username, display_name, pin_hash, pin_salt, role_id, is_active,
+    created_at, updated_at, remote_staff_id, remote_staff_code, remote_shop_id, remote_shop_code)
+SELECT 'partial-shop-id', 'Partial shop id', 'hash', 'salt', id, 1, 1, 1, NULL, NULL, 'shop-id', NULL
+FROM roles WHERE code = 'cashier';");
+
+        var users = new UserRepository(db.Factory);
+        var state = await users.GetBootstrapStateAsync();
+
+        Assert.AreEqual(6, state.ActiveLoginableUsers);
+        Assert.AreEqual(1, state.ActiveRemoteMirrors);
+        Assert.AreEqual(1, state.ActiveLocalRecoveryUsers);
+        Assert.IsTrue(await users.IsLocalRecoveryUserAsync("local-recovery"));
+        Assert.IsFalse(await users.IsLocalRecoveryUserAsync("remote-mirror"));
+        Assert.IsFalse(await users.IsLocalRecoveryUserAsync("partial-mirror"));
+        Assert.IsFalse(await users.IsLocalRecoveryUserAsync("partial-staff-code"));
+        Assert.IsFalse(await users.IsLocalRecoveryUserAsync("partial-shop-code"));
+        Assert.IsFalse(await users.IsLocalRecoveryUserAsync("partial-shop-id"));
     }
 
     [TestMethod]

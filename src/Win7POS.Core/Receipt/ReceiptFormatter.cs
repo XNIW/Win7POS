@@ -15,13 +15,22 @@ namespace Win7POS.Core.Receipt
             ReceiptOptions options = null,
             ReceiptShopInfo shop = null)
         {
-            if (sale == null) throw new ArgumentNullException(nameof(sale));
+            return Format(SalesReceiptRenderModel.Create(sale, lines, shop), options);
+        }
+
+        public static IReadOnlyList<string> Format(
+            SalesReceiptRenderModel input,
+            ReceiptOptions options = null)
+        {
+            if (input == null) throw new ArgumentNullException(nameof(input));
             options = options ?? ReceiptOptions.Default42();
             var labels = options.Labels ?? ReceiptLabels.English;
-            shop = shop ?? new ReceiptShopInfo();
             var culture = CultureInfo.GetCultureInfo(options.CultureName ?? "en-US");
+            var sale = input.Sale;
+            var lines = input.Lines;
+            var shop = input.Shop;
 
-            var width = options.Width < 16 ? 16 : options.Width;
+            var width = ReceiptTextLayout.NormalizeColumns(options.Width);
             var result = new List<string>();
 
             // Nome negozio in evidenza (maiuscolo = effetto "bold" in testo)
@@ -58,7 +67,7 @@ namespace Win7POS.Core.Receipt
 
             if (lines != null && lines.Count > 0)
             {
-                var discountByProduct = new Dictionary<string, SaleLine>(StringComparer.Ordinal);
+                var discountByProduct = new Dictionary<string, SalesReceiptRenderModel.LineSnapshot>(StringComparer.Ordinal);
                 foreach (var d in lines)
                 {
                     if (d?.Barcode == null || !d.Barcode.StartsWith("DISC:LINE:", StringComparison.Ordinal)) continue;
@@ -111,8 +120,8 @@ namespace Win7POS.Core.Receipt
             }
 
             AddLine(result, width, new string('-', width));
-            var itemCount = lines?.Count(x => x.LineTotal >= 0 && (x.Barcode == null || !x.Barcode.StartsWith("DISC:", StringComparison.Ordinal))) ?? 0;
-            AddLine(result, width, TrimToWidth(labels.Items + ": " + itemCount, width));
+            var itemCount = lines?.Count(x => x.Barcode == null || !x.Barcode.StartsWith("DISC:", StringComparison.Ordinal)) ?? 0;
+            AddLine(result, width, labels.Items + ": " + itemCount);
 
             long subtotale = 0;
             long scontiTotali = 0;
@@ -120,7 +129,7 @@ namespace Win7POS.Core.Receipt
             {
                 foreach (var x in lines)
                 {
-                    if (x.LineTotal >= 0 && (x.Barcode == null || !x.Barcode.StartsWith("DISC:", StringComparison.Ordinal)))
+                    if (x.Barcode == null || !x.Barcode.StartsWith("DISC:", StringComparison.Ordinal))
                         subtotale += x.LineTotal;
                     else if (x.LineTotal < 0)
                         scontiTotali += -x.LineTotal;
@@ -130,9 +139,9 @@ namespace Win7POS.Core.Receipt
             if (scontiTotali > 0)
                 AddLeftRight(result, width, labels.TotalDiscounts, "-" + FormatAmount(scontiTotali, options.Currency, culture));
             AddLeftRight(result, width, labels.Total, FormatAmount(sale.Total, options.Currency, culture));
-            if (sale.PaidCash > 0)
+            if (sale.PaidCash != 0)
                 AddLeftRight(result, width, labels.Cash, FormatAmount(sale.PaidCash, options.Currency, culture));
-            if (sale.PaidCard > 0)
+            if (sale.PaidCard != 0)
                 AddLeftRight(result, width, labels.Card, FormatAmount(sale.PaidCard, options.Currency, culture));
             AddLeftRight(result, width, labels.Change, FormatAmount(sale.Change, options.Currency, culture));
             AddLine(result, width, new string('-', width));
@@ -161,51 +170,23 @@ namespace Win7POS.Core.Receipt
                 return;
             }
 
-            var safe = TrimToWidth(text.Trim(), width);
-            var left = (width - safe.Length) / 2;
-            if (left < 0) left = 0;
-            AddLine(lines, width, new string(' ', left) + safe);
+            foreach (var part in ReceiptTextLayout.WrapText(text, width))
+                lines.Add(ReceiptTextLayout.Center(part, width));
         }
 
         private static void AddLeftRight(List<string> lines, int width, string left, string right)
         {
-            left = left ?? string.Empty;
-            right = right ?? string.Empty;
-            var room = width - right.Length;
-            var l = room <= 1 ? string.Empty : TrimToWidth(left, room - 1);
-            var spaces = width - l.Length - right.Length;
-            if (spaces < 1) spaces = 1;
-            AddLine(lines, width, l + new string(' ', spaces) + right);
+            lines.AddRange(ReceiptTextLayout.TwoColumnLine(left, right, width));
         }
 
         private static void AddLine(List<string> lines, int width, string text)
         {
-            lines.Add(TrimToWidth(text ?? string.Empty, width));
+            lines.AddRange(ReceiptTextLayout.WrapText(text, width));
         }
 
         private static void AddWrappedLine(List<string> lines, int width, string text)
         {
-            var input = text ?? string.Empty;
-            if (input.Length == 0)
-            {
-                AddLine(lines, width, string.Empty);
-                return;
-            }
-
-            var start = 0;
-            while (start < input.Length)
-            {
-                var len = input.Length - start;
-                if (len > width) len = width;
-                AddLine(lines, width, input.Substring(start, len));
-                start += len;
-            }
-        }
-
-        private static string TrimToWidth(string value, int width)
-        {
-            if (string.IsNullOrEmpty(value)) return string.Empty;
-            return value.Length <= width ? value : value.Substring(0, width);
+            lines.AddRange(ReceiptTextLayout.WrapText(text, width));
         }
     }
 }

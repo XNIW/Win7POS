@@ -105,6 +105,15 @@ namespace Win7POS.Data.Migrations
                 var detector = new LegacySchemaDetector(connection);
                 if (!detector.TableExists(LedgerTable))
                 {
+                    if (SchemaMigrationRegistry.IsCanonicalRegistry(_migrations))
+                    {
+                        for (var index = _migrations.Count - 1; index >= 0; index--)
+                        {
+                            if (_migrations[index].RecognizesLedgerlessBaseline(detector))
+                                return new DatabaseInspection(false, index + 1);
+                        }
+                    }
+
                     var satisfiedPrefix = 0;
                     foreach (var migration in _migrations)
                     {

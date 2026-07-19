@@ -11,12 +11,12 @@
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        ResizeMode="NoResize"
+        ResizeMode="CanResize"
         Width="1000"
-        Height="750"
+        Height="700"
         ShowInTaskbar="False"
-        MinWidth="900"
-        MinHeight="640"
+        MinWidth="720"
+        MinHeight="520"
         KeyDown="OnWindowKeyDown">
     <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>
@@ -103,6 +103,9 @@
                     <!-- Lista scontrini -->
                     <ListBox Grid.Row="4" ItemsSource="{Binding SalesList}" SelectedItem="{Binding SelectedSale, Mode=TwoWay}"
                              BorderThickness="0" Background="Transparent" Padding="0,0,4,0"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"
+                             VirtualizingPanel.ScrollUnit="Pixel"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              ScrollViewer.VerticalScrollBarVisibility="Auto"
                              Margin="0,0,0,8">
@@ -154,7 +157,7 @@
                 </Grid>
             </Border>
 
-            <!-- DESTRA: dettaglio vendita (senza anteprima scontrino; Stampa stampa l'intero scontrino) -->
+            <!-- DESTRA: anteprima autorevole + righe persistite della vendita selezionata -->
             <Border Grid.Column="2" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="14">
                 <Grid>
                     <Grid.RowDefinitions>
@@ -179,27 +182,61 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- Righe articoli: area principale con scroll -->
-                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="0,0,0,14">
-                        <ItemsControl ItemsSource="{Binding DetailLines}">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,0,0,10">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        <TextBlock Grid.Column="0" Text="{Binding Name}" TextWrapping="Wrap" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="1" Text="{Binding Quantity, StringFormat='x{0}'}" Margin="12,0" VerticalAlignment="Center" Foreground="#555"/>
-                                        <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay, Mode=OneWay}" Margin="8,0" MinWidth="72" HorizontalAlignment="Right" VerticalAlignment="Center"/>
-                                        <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay, Mode=OneWay}" FontWeight="SemiBold" MinWidth="72" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                    <TabControl Grid.Row="1" Margin="0,0,0,14">
+                        <TabItem Header="{loc:Loc sales.previewTab}">
+                            <Grid Background="White" Margin="8">
+                                <Border Background="#FFFDF8" BorderBrush="#E8E0D6" BorderThickness="1" CornerRadius="8" Padding="12">
+                                    <Grid>
+                                        <TextBox Text="{Binding DetailReceiptPreview, Mode=OneWay}"
+                                                 IsReadOnly="True"
+                                                 BorderThickness="0"
+                                                 Background="Transparent"
+                                                 FontFamily="Consolas"
+                                                 FontSize="12"
+                                                 TextWrapping="NoWrap"
+                                                 AcceptsReturn="True"
+                                                 VerticalScrollBarVisibility="Auto"
+                                                 HorizontalScrollBarVisibility="Disabled"
+                                                 Visibility="{Binding HasReceiptPreview, Converter={StaticResource BoolToVis}}"/>
+                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                    Visibility="{Binding IsPreviewLoading, Converter={StaticResource BoolToVis}}">
+                                            <ProgressBar IsIndeterminate="True" Width="150" Height="5"/>
+                                            <TextBlock Text="{loc:Loc sales.previewLoading}" Foreground="#666" Margin="0,10,0,0"/>
+                                        </StackPanel>
+                                        <TextBlock Text="{loc:Loc sales.previewEmpty}"
+                                                   Foreground="#777"
+                                                   TextAlignment="Center"
+                                                   TextWrapping="Wrap"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Visibility="{Binding ShowPreviewEmptyState, Converter={StaticResource BoolToVis}}"/>
                                     </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </ScrollViewer>
+                                </Border>
+                            </Grid>
+                        </TabItem>
+                        <TabItem Header="{loc:Loc sales.itemsTab}">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="10">
+                                <ItemsControl ItemsSource="{Binding DetailLines}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,0,0,10">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                    <ColumnDefinition Width="Auto"/>
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding Name}" TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="1" Text="{Binding Quantity, StringFormat='x{0}'}" Margin="12,0" VerticalAlignment="Center" Foreground="#555"/>
+                                                <TextBlock Grid.Column="2" Text="{Binding UnitPriceDisplay, Mode=OneWay}" Margin="8,0" MinWidth="72" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                                <TextBlock Grid.Column="3" Text="{Binding LineTotalDisplay, Mode=OneWay}" FontWeight="SemiBold" MinWidth="72" HorizontalAlignment="Right" VerticalAlignment="Center"/>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </TabItem>
+                    </TabControl>
 
                     <!-- Footer: Chiudi + Stampa + Reso/Storno -->
                     <Grid Grid.Row="2" Margin="{StaticResource DialogFooterMargin}">

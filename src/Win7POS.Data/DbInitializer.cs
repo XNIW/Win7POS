@@ -31,18 +31,19 @@ namespace Win7POS.Data
             {
                 SqliteConnectionFactory.RunExclusiveMaintenanceAsync(() =>
                 {
-                    var result = new SchemaMigrationRunner(
+                    new SchemaMigrationRunner(
                         factory,
                         SchemaMigrationRegistry.All,
                         new SchemaMigrationRunnerOptions { Log = LogMigrationInfo })
                         .Run();
 
+                    ValidateCurrentSchema(factory);
+
                     // Outbox rows and system-role grants remain mutable after a
-                    // migration has been recorded. Preserve the pre-PR-B
-                    // idempotent safety reconciliation on later no-op startups;
-                    // the migration runner itself never reapplies a migration.
-                    if (result.WasNoOp)
-                        ReconcileMutableInvariants(factory);
+                    // migration has been recorded. Reconcile after both no-op
+                    // starts and upgrades, but only after the latest structural
+                    // state is known safe; published migrations are never replayed.
+                    ReconcileMutableInvariants(factory);
 
                     return System.Threading.Tasks.Task.CompletedTask;
                 }).GetAwaiter().GetResult();
@@ -427,6 +428,35 @@ CREATE TABLE security_events (
                     column.ColumnName,
                     column.AlterDefinition);
             }
+        }
+
+        private static void ValidateCurrentSchema(SqliteConnectionFactory factory)
+        {
+            using (var connection = factory.Open())
+            {
+                var detector = new LegacySchemaDetector(connection);
+                if (!SchemaMigrationRegistry.IsCurrentSchemaStructurallyValid(detector))
+                {
+                    throw new InvalidDataException(
+                        "SQLite schema does not match the latest published migration state.");
+                }
+            }
+        }
+
+        internal static SchemaColumnDefinition ReceiptShopSnapshotColumn { get; } =
+            Column("sales", "receipt_shop_snapshot", "TEXT", false, "", "TEXT NULL");
+
+        internal static string ReceiptShopSnapshotAlterSql =>
+            "ALTER TABLE sales ADD COLUMN receipt_shop_snapshot TEXT NULL;";
+
+        internal static void EnsureReceiptShopSnapshot(SqliteConnection conn, SqliteTransaction tx)
+        {
+            EnsureColumn(
+                conn,
+                tx,
+                ReceiptShopSnapshotColumn.TableName,
+                ReceiptShopSnapshotColumn.ColumnName,
+                ReceiptShopSnapshotColumn.AlterDefinition);
         }
 
         internal static string DependentSchemaSql => @"
@@ -910,6 +940,11 @@ ALTER TABLE sales ADD COLUMN pdf_printed INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE sales ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending';
 " + DependentSchemaSql + "\n" + CanonicalIndexSql;
 
+        // Frozen whitelist for the brief ledgerless schema published by PR #7.
+        // Keep the PR-B whitelist immutable: migration 0007 owns this column.
+        internal static string PostPr7LedgerlessKnownSchemaSql =>
+            PrBKnownSchemaSql + "\n" + ReceiptShopSnapshotAlterSql;
+
         internal static void EnsureIndexes(SqliteConnection conn, SqliteTransaction tx)
         {
             LogMigrationInfo("index creation phase");
@@ -1089,8 +1124,17 @@ WHERE role_id = @roleId
             var sanitized = (value ?? string.Empty).Replace("\r", " ").Replace("\n", " ");
             sanitized = Regex.Replace(
                 sanitized,
-                @"(?i)(sessionToken|deviceToken|trustedDeviceToken|pin|password|credential)\s*[:=]\s*\S+",
+                @"(?i)(session[_-]?token|device[_-]?token|trusted[_-]?device[_-]?token|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|apikey|token|pin|password|credential|pwd|db_password|database password)\s*[:=]\s*\S+",
                 "$1=[redacted]");
+            sanitized = Regex.Replace(
+                sanitized,
+                @"(?i)(""?(session[_-]?token|device[_-]?token|trusted[_-]?device[_-]?token|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|apikey|token|pin|password|credential|pwd|db_password|database password)""?\s*:\s*"")[^""]+("")",
+                "$1[redacted]$3");
+            sanitized = Regex.Replace(sanitized, @"(?i)(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+/-]+=*", "$1[redacted]");
+            sanitized = Regex.Replace(sanitized, @"(?i)mcpos_(device|session)_[A-Za-z0-9_-]+", "mcpos_$1_[redacted]");
+            sanitized = Regex.Replace(sanitized, @"(?i)\b(?:sk[-_]|sb_secret_)[A-Za-z0-9_-]{12,}\b", "[secret-redacted]");
+            sanitized = Regex.Replace(sanitized, @"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b", "[jwt-redacted]");
+            sanitized = Regex.Replace(sanitized, @"(?is)-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----.*?(?:-----END (?:RSA |OPENSSH |EC )?PRIVATE KEY-----|\z)", "[private-key-redacted]");
             sanitized = Regex.Replace(sanitized, @"[A-Za-z]:\\[^\r\n|]+", "[path]");
             sanitized = Regex.Replace(sanitized, @"/(?:Users|private|tmp|var)/[^\r\n|]+", "[path]");
             return sanitized;

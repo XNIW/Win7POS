@@ -45,14 +45,63 @@ namespace Win7POS.Wpf.Infrastructure.Security
 
         public async Task<LoginResult> LoginAsync(string username, string pin)
         {
+            return await LoginInternalAsync(
+                username,
+                pin,
+                requireAuthorizationLease: true,
+                requireLocalRecoveryUser: false).ConfigureAwait(true);
+        }
+
+        public async Task<LoginResult> LoginLocalRecoveryAsync(string username, string pin)
+        {
+            return await LoginInternalAsync(
+                username,
+                pin,
+                requireAuthorizationLease: false,
+                requireLocalRecoveryUser: true).ConfigureAwait(true);
+        }
+
+        private async Task<LoginResult> LoginInternalAsync(
+            string username,
+            string pin,
+            bool requireAuthorizationLease,
+            bool requireLocalRecoveryUser)
+        {
             if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(pin))
                 return LoginResult.Failed;
 
-            var authorization = EvaluateAuthorizationLease();
-            if (!authorization.Allowed)
+            PosTrustedDeviceSession trustedSession = null;
+            if (requireAuthorizationLease)
             {
-                LogAuthorizationDenied(authorization.Code);
-                return LoginResult.AuthorizationExpired;
+                var authorization = EvaluateAuthorizationLease(out trustedSession);
+                if (!authorization.Allowed)
+                {
+                    LogAuthorizationDenied(authorization.Code);
+                    return LoginResult.AuthorizationExpired;
+                }
+
+                var trustedUsername = await _userRepo
+                    .FindTrustedRemoteStaffUsernameAsync(
+                        trustedSession.ShopId,
+                        trustedSession.ShopCode,
+                        trustedSession.StaffId,
+                        trustedSession.StaffCode,
+                        trustedSession.StaffCredentialVersion)
+                    .ConfigureAwait(true);
+                if (!string.Equals(username, trustedUsername, StringComparison.Ordinal))
+                {
+                    _ = _securityRepo.LogEventAsync(
+                        Sec.LoginFailed,
+                        "username=" + username + ", mode=trusted_remote_mirror, reason=identity_mismatch");
+                    return LoginResult.Failed;
+                }
+            }
+
+            if (requireLocalRecoveryUser &&
+                !await _userRepo.IsLocalRecoveryUserAsync(username).ConfigureAwait(true))
+            {
+                _ = _securityRepo.LogEventAsync(Sec.LoginFailed, "username=" + username + ", mode=local_recovery");
+                return LoginResult.Failed;
             }
 
             var result = await _userRepo.VerifyPinAsync(username, pin).ConfigureAwait(true);
@@ -70,14 +119,25 @@ namespace Win7POS.Wpf.Infrastructure.Security
 
             _currentUser = result.User;
             _ = _userRepo.SetLastLoginAsync(result.User.Id);
-            _ = _securityRepo.LogEventAsync(Sec.LoginSuccess, "userId=" + result.User.Id + ", username=" + result.User.Username);
+            _ = _securityRepo.LogEventAsync(
+                Sec.LoginSuccess,
+                "userId=" + result.User.Id +
+                ", username=" + result.User.Username +
+                (requireLocalRecoveryUser ? ", mode=local_recovery" : string.Empty));
             RaiseSessionChanged();
             return LoginResult.Success;
         }
 
         public PosOfflineAuthorizationLeaseDecision EvaluateAuthorizationLease()
         {
-            var decision = _authorizationLeaseGuard.Evaluate();
+            PosTrustedDeviceSession ignoredSession;
+            return EvaluateAuthorizationLease(out ignoredSession);
+        }
+
+        private PosOfflineAuthorizationLeaseDecision EvaluateAuthorizationLease(
+            out PosTrustedDeviceSession trustedSession)
+        {
+            var decision = _authorizationLeaseGuard.Evaluate(out trustedSession);
             LastAuthorizationFailureCode = decision.Allowed
                 ? string.Empty
                 : decision.Code ?? "authorization_lease_denied";

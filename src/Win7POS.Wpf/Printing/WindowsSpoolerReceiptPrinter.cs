@@ -16,6 +16,9 @@ namespace Win7POS.Wpf.Printing
     public sealed class WindowsSpoolerReceiptPrinter : IReceiptPrinter
     {
         private static readonly FileLogger _logger = new FileLogger("WindowsSpoolerReceiptPrinter");
+        private static readonly object PrinterEffectSync = new object();
+        private static readonly Dictionary<string, Task> PrinterEffectTails =
+            new Dictionary<string, Task>(StringComparer.OrdinalIgnoreCase);
         private const string SiiMarker = "Timbre Electrónico SII";
 
         // regolazioni richieste: spazio bianco sopra QR + QR più stretto su carta
@@ -41,35 +44,55 @@ namespace Win7POS.Wpf.Printing
 
         public async Task PrintAsync(string receiptText, ReceiptPrintOptions opt)
         {
+            PrinterHardwareSafety.DemandHardwareOutputAllowed();
             if (receiptText == null) throw new ArgumentNullException(nameof(receiptText));
             if (opt == null) throw new ArgumentNullException(nameof(opt));
+            if (!ReceiptPrintOptions.IsValidCopyCount(opt.Copies))
+                throw new InvalidOperationException(PosLocalization.T("printer.invalidCopies"));
 
-            // 1) Optional: save copy to file (debug / no printer)
-            if (opt.SaveCopyToFile && !string.IsNullOrWhiteSpace(opt.OutputPath))
-            {
-                var dir = Path.GetDirectoryName(opt.OutputPath);
-                if (!string.IsNullOrWhiteSpace(dir))
-                    Directory.CreateDirectory(dir);
-
-                File.WriteAllText(opt.OutputPath, receiptText);
-            }
-
-            // 2) Print via Windows spooler driver
-            await TryPrintWithRetryAsync(receiptText, opt).ConfigureAwait(false);
+            // Sales history in SQLite is the only receipt archive. Printing never
+            // creates an automatic image/PDF/text copy on disk.
+            var snapshot = CloneOptions(opt);
+            var printTask = StartExclusivePrinterEffect(
+                snapshot.PrinterName,
+                () => PrintOnce(receiptText, snapshot));
+            await AwaitEffectWithinTimeoutAsync(
+                printTask,
+                PosLocalization.T("printer.printTimedOut")).ConfigureAwait(false);
         }
 
-        private const string DefaultCashDrawerCommand = "27,112,0,25,250";
+        private const byte EscPosEscape = 27;
+        private const byte EscPosPulse = 112;
 
-        public Task OpenCashDrawerAsync(ReceiptPrintOptions opt)
+        public async Task OpenCashDrawerAsync(ReceiptPrintOptions opt)
         {
-            if (opt == null) return Task.CompletedTask;
-            var cmd = string.IsNullOrWhiteSpace(opt.CashDrawerCommand) ? DefaultCashDrawerCommand : opt.CashDrawerCommand;
-            var bytes = ParseCashDrawerCommand(cmd);
-            return Task.Run(() => TryOpenCashDrawer(opt.PrinterName, bytes, cmd));
+            PrinterHardwareSafety.DemandHardwareOutputAllowed();
+            if (opt == null) return;
+            var printerName = (opt.PrinterName ?? string.Empty).Trim();
+            var bytes = ParseCashDrawerCommand(opt.CashDrawerCommand);
+            var drawerTask = StartExclusivePrinterEffect(
+                printerName,
+                () => TryOpenCashDrawer(printerName, bytes));
+            await AwaitEffectWithinTimeoutAsync(
+                drawerTask,
+                PosLocalization.T("printer.drawerTimedOut")).ConfigureAwait(false);
+        }
+
+        public static bool IsCashDrawerCommandValid(string command)
+        {
+            try
+            {
+                ParseCashDrawerCommand(command);
+                return true;
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
         }
 
         /// <summary>ESC/POS kick drawer: ESC p m t1 t2. Non usa fallback sulla stampante predefinita Windows.</summary>
-        private static void TryOpenCashDrawer(string printerName, byte[] bytes, string cmdForLog)
+        private static void TryOpenCashDrawer(string printerName, byte[] bytes)
         {
             if (bytes == null || bytes.Length == 0) return;
 
@@ -78,7 +101,7 @@ namespace Win7POS.Wpf.Printing
                 throw new InvalidOperationException(PosLocalization.T("printer.cashDrawerNotConfigured"));
 
             var bytesStr = string.Join(",", bytes.Select(b => b.ToString()));
-            _logger.LogInfo("CashDrawer: stampante=\"" + (effectivePrinter ?? "") + "\" comando=" + (cmdForLog ?? "") + " bytes=[" + bytesStr + "]");
+            _logger.LogInfo("CashDrawer: stampante=\"" + effectivePrinter + "\" bytes=[" + bytesStr + "]");
             try
             {
                 RawPrinterHelper.SendBytesToPrinter(effectivePrinter, bytes);
@@ -90,51 +113,172 @@ namespace Win7POS.Wpf.Printing
             }
         }
 
+        public const int MaximumCashDrawerCommandLength = 64;
+
         private static byte[] ParseCashDrawerCommand(string cmd)
         {
-            if (string.IsNullOrWhiteSpace(cmd)) return new byte[] { 27, 112, 0, 25, 250 };
-            var parts = cmd.Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (cmd == null ||
+                cmd.Length > MaximumCashDrawerCommandLength ||
+                string.IsNullOrWhiteSpace(cmd))
+                throw InvalidCashDrawerCommand();
+
+            cmd = cmd.Trim();
+
+            // Accetta la sintassi storica con virgole, punti e virgola o spazi, ma
+            // non ignora mai token vuoti o caratteri non numerici. Un comando non
+            // vuoto malformato deve fallire prima di raggiungere lo spooler.
+            if (cmd.Any(ch => !(ch >= '0' && ch <= '9') && ch != ',' && ch != ';' && ch != ' ' && ch != '\t'))
+                throw InvalidCashDrawerCommand();
+
             var list = new List<byte>();
-            foreach (var p in parts)
+            var groups = cmd.Split(new[] { ',', ';' }, StringSplitOptions.None);
+            foreach (var group in groups)
             {
-                if (byte.TryParse(p.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out var b))
+                if (string.IsNullOrWhiteSpace(group))
+                    throw InvalidCashDrawerCommand();
+
+                var parts = group.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var part in parts)
+                {
+                    if (!byte.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var b))
+                        throw InvalidCashDrawerCommand();
                     list.Add(b);
+                }
             }
-            return list.Count > 0 ? list.ToArray() : new byte[] { 27, 112, 0, 25, 250 };
+
+            if (list.Count != 5 ||
+                list[0] != EscPosEscape ||
+                list[1] != EscPosPulse ||
+                (list[2] != 0 && list[2] != 1 && list[2] != 48 && list[2] != 49) ||
+                list[3] >= list[4])
+            {
+                throw InvalidCashDrawerCommand();
+            }
+
+            return list.ToArray();
         }
 
-        private const int RetryDelayMs = 300;
+        private static FormatException InvalidCashDrawerCommand()
+        {
+            return new FormatException(
+                "Invalid ESC/POS cash-drawer command. Expected 27,112,m,t1,t2 with m 0/1/48/49, byte timings 0..255 and t1 < t2.");
+        }
+
+        private const int PrintAttemptTimeoutMilliseconds = 5000;
+        private const int MaximumReceiptPages = 128;
         private const int ThermalPaper80mmMin = 300;
         private const int ThermalPaper80mmMax = 330;
+        private const int DefaultCharactersPerLine = 42;
+        private const int MinimumCharactersPerLine = 16;
+        private const int MaximumCharactersPerLine = 96;
+        private const float MinimumReceiptFontSizePoints = 5f;
+        private const float PrintableWidthSafetyFactor = 0.97f;
 
-        private static async Task TryPrintWithRetryAsync(string receiptText, ReceiptPrintOptions opt)
+        private static ReceiptPrintOptions CloneOptions(ReceiptPrintOptions source)
         {
-            try
+            return new ReceiptPrintOptions
             {
-                await Task.Run(() => PrintOnce(receiptText, opt)).ConfigureAwait(false);
-            }
-            catch
+                PrinterName = source.PrinterName ?? string.Empty,
+                Copies = source.Copies,
+                CharactersPerLine = source.CharactersPerLine,
+                UseReceiptHeaderStyle = source.UseReceiptHeaderStyle,
+                SaleCodeForBarcode = source.SaleCodeForBarcode ?? string.Empty,
+                CashDrawerCommand = source.CashDrawerCommand ?? string.Empty
+            };
+        }
+
+        private static Task StartExclusivePrinterEffect(string printerName, Action effect)
+        {
+            if (effect == null) throw new ArgumentNullException(nameof(effect));
+            var key = (printerName ?? string.Empty).Trim();
+            if (key.Length == 0)
+                throw new InvalidOperationException(PosLocalization.T("printer.receiptPrinterNotConfigured"));
+
+            Task current;
+            lock (PrinterEffectSync)
             {
-                await Task.Delay(RetryDelayMs).ConfigureAwait(false);
-                await Task.Run(() => PrintOnce(receiptText, opt)).ConfigureAwait(false);
+                if (PrinterEffectTails.TryGetValue(key, out var existing))
+                {
+                    if (!existing.IsCompleted)
+                        throw new InvalidOperationException(
+                            PosLocalization.T("printer.effectStillInProgress"));
+
+                    PrinterEffectTails.Remove(key);
+                }
+
+                current = Task.Run(effect);
+                PrinterEffectTails[key] = current;
             }
+
+            current.ContinueWith(
+                completedEffect =>
+                {
+                    if (completedEffect.IsFaulted)
+                    {
+                        var ignored = completedEffect.Exception;
+                    }
+
+                    lock (PrinterEffectSync)
+                    {
+                        if (PrinterEffectTails.TryGetValue(key, out var tail) &&
+                            ReferenceEquals(tail, completedEffect))
+                        {
+                            PrinterEffectTails.Remove(key);
+                        }
+                    }
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+            return current;
+        }
+
+        private static async Task AwaitEffectWithinTimeoutAsync(
+            Task effectTask,
+            string timeoutMessage,
+            int timeoutMilliseconds = PrintAttemptTimeoutMilliseconds)
+        {
+            if (timeoutMilliseconds <= 0)
+                throw new ArgumentOutOfRangeException(nameof(timeoutMilliseconds));
+            var completed = await Task.WhenAny(
+                effectTask,
+                Task.Delay(timeoutMilliseconds)).ConfigureAwait(false);
+            if (completed != effectTask)
+            {
+                // The physical operation may still complete after the caller stops
+                // waiting. Its exclusive tail rejects every later effect on the
+                // same printer until the outcome is no longer indeterminate.
+                throw new TimeoutException(timeoutMessage);
+            }
+
+            await effectTask.ConfigureAwait(false);
         }
 
         private static void PrintOnce(string receiptText, ReceiptPrintOptions opt)
         {
             if (string.IsNullOrWhiteSpace(opt.PrinterName))
                 throw new InvalidOperationException(PosLocalization.T("printer.receiptPrinterNotConfigured"));
+            if (!ReceiptPrintOptions.IsValidCopyCount(opt.Copies))
+                throw new InvalidOperationException(PosLocalization.T("printer.invalidCopies"));
 
             var lines = receiptText.Replace("\r\n", "\n").Split('\n');
             var lineIndex = 0;
             var saleCodeForBarcode = NormalizeSaleCodeForBarcode(opt.SaleCodeForBarcode);
             var barcodePrinted = string.IsNullOrEmpty(saleCodeForBarcode);
+            var pageCount = 0;
 
             using (var doc = new PrintDocument())
             {
                 doc.PrinterSettings.PrinterName = opt.PrinterName;
 
-                doc.PrinterSettings.Copies = (short)Math.Max(1, opt.Copies);
+                if (!doc.PrinterSettings.IsValid)
+                    throw new InvalidOperationException(
+                        PosLocalization.T("printer.selectedQueueUnavailable"));
+                var driverMaximumCopies = doc.PrinterSettings.MaximumCopies;
+                if (driverMaximumCopies > 0 && opt.Copies > driverMaximumCopies)
+                    throw new InvalidOperationException(
+                        PosLocalization.T("printer.copiesUnsupportedByDriver"));
+                doc.PrinterSettings.Copies = checked((short)opt.Copies);
 
                 // Margini a zero; offset reale da HardMargin (area non stampabile driver)
                 doc.DefaultPageSettings.Margins = new Margins(0, 0, 0, 0);
@@ -157,6 +301,7 @@ namespace Win7POS.Wpf.Printing
                 Font font = null;
                 Font headerFont = null;
                 Image siiImg = null;
+                StringFormat bodyFormat = null;
                 try
                 {
                     var siiPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "sii_qrcode.png");
@@ -175,18 +320,65 @@ namespace Win7POS.Wpf.Printing
                     catch { font = new Font("Consolas", 9f); }
                     try { headerFont = new Font(font.FontFamily, 10f, FontStyle.Bold); }
                     catch { headerFont = new Font(font.FontFamily, 9f, FontStyle.Bold); }
+                    bodyFormat = new StringFormat(StringFormat.GenericTypographic)
+                    {
+                        FormatFlags = StringFormatFlags.MeasureTrailingSpaces |
+                                      StringFormatFlags.NoWrap
+                    };
 
                     bool headerDone = false;
                     bool useReceiptHeader = opt.UseReceiptHeaderStyle;
+                    bool bodyFontFitted = false;
 
                     doc.PrintPage += (s, e) =>
                     {
-                        float x = e.PageSettings.HardMarginX;
-                        float y = e.PageSettings.HardMarginY;
+                        pageCount++;
+                        if (pageCount > MaximumReceiptPages)
+                            throw new InvalidOperationException("Receipt exceeded the safe page limit.");
+                        var startLineIndex = lineIndex;
+                        var startBarcodePrinted = barcodePrinted;
+
+                        // The printer Graphics origin is already translated to the
+                        // printable surface. Adding HardMarginX/Y again clips Epson
+                        // output twice, so all layout uses the visible graphics bounds.
+                        var visibleBounds = e.Graphics.VisibleClipBounds;
+                        float x = visibleBounds.Left;
+                        float y = visibleBounds.Top;
+                        float printableW = visibleBounds.Width;
+                        float bottom = visibleBounds.Bottom;
+
+                        // ReceiptFormatter produces fixed-column rows. Fit that declared
+                        // column count to the driver's real printable area (not merely the
+                        // nominal 80 mm paper width), otherwise Epson hard margins clip the
+                        // right-hand characters instead of wrapping them.
+                        if (!bodyFontFitted)
+                        {
+                            var oldFont = font;
+                            font = CreateColumnFittedFont(
+                                e.Graphics,
+                                oldFont,
+                                opt.CharactersPerLine,
+                                printableW,
+                                bodyFormat);
+                            oldFont.Dispose();
+
+                            var oldHeaderFont = headerFont;
+                            try
+                            {
+                                headerFont = new Font(
+                                    font.FontFamily,
+                                    Math.Max(font.Size + 1f, font.Size * 1.12f),
+                                    FontStyle.Bold);
+                            }
+                            catch
+                            {
+                                headerFont = new Font(font.FontFamily, font.Size, FontStyle.Bold);
+                            }
+                            oldHeaderFont.Dispose();
+                            bodyFontFitted = true;
+                        }
+
                         float bodyLineHeight = font.GetHeight(e.Graphics);
-                        float headerLineHeight = headerFont.GetHeight(e.Graphics);
-                        float bottom = e.PageBounds.Bottom - e.PageSettings.HardMarginY;
-                        float printableW = e.PageBounds.Width - e.PageSettings.HardMarginX * 2f;
 
                         while (lineIndex < lines.Length)
                         {
@@ -196,14 +388,27 @@ namespace Win7POS.Wpf.Printing
                             if (useReceiptHeader && !headerDone && !string.IsNullOrWhiteSpace(line))
                             {
                                 var text = line.Trim();
-                                var size = e.Graphics.MeasureString(text, headerFont);
-                                float hx = x + (printableW - size.Width) / 2f;
-                                if (hx < x) hx = x;
-                                if (y + headerLineHeight > bottom)
-                                    break;
-                                e.Graphics.DrawString(text, headerFont, Brushes.Black, hx, y);
-                                e.Graphics.DrawString(text, headerFont, Brushes.Black, hx + 0.6f, y); // simulated bold
-                                y += headerLineHeight;
+                                using (var fittedHeaderFont = CreateTextFittedFont(
+                                    e.Graphics,
+                                    headerFont,
+                                    text,
+                                    printableW,
+                                    bodyFormat))
+                                {
+                                    var headerLineHeight = fittedHeaderFont.GetHeight(e.Graphics);
+                                    var size = e.Graphics.MeasureString(
+                                        text,
+                                        fittedHeaderFont,
+                                        PointF.Empty,
+                                        bodyFormat);
+                                    float hx = x + (printableW - size.Width) / 2f;
+                                    if (hx < x) hx = x;
+                                    if (y + headerLineHeight > bottom)
+                                        break;
+                                    e.Graphics.DrawString(text, fittedHeaderFont, Brushes.Black, hx, y, bodyFormat);
+                                    e.Graphics.DrawString(text, fittedHeaderFont, Brushes.Black, hx + 0.6f, y, bodyFormat); // simulated bold
+                                    y += headerLineHeight;
+                                }
                                 headerDone = true;
                                 lineIndex++;
                                 continue;
@@ -227,12 +432,12 @@ namespace Win7POS.Wpf.Printing
                                 y += gapTop;
 
                                 // QR centrato
-                                float imgX = e.PageSettings.HardMarginX + (printableW - w) / 2f;
+                                float imgX = x + (printableW - w) / 2f;
                                 e.Graphics.DrawImage(siiImg, imgX, y, w, h);
                                 y += h + gapBottom;
 
                                 // ORA stampa "Timbre..."
-                                e.Graphics.DrawString(line, font, Brushes.Black, x, y);
+                                e.Graphics.DrawString(line, font, Brushes.Black, x, y, bodyFormat);
                                 y += bodyLineHeight;
 
                                 lineIndex++;
@@ -249,7 +454,7 @@ namespace Win7POS.Wpf.Printing
                                 continue;
                             }
 
-                            e.Graphics.DrawString(line, font, Brushes.Black, x, y);
+                            e.Graphics.DrawString(line, font, Brushes.Black, x, y, bodyFormat);
                             y += bodyLineHeight;
                             lineIndex++;
                         }
@@ -266,20 +471,32 @@ namespace Win7POS.Wpf.Printing
 
                                     if (y + gap + barH > bottom)
                                     {
-                                        e.HasMorePages = true;
-                                        return;
+                                        // Defer to the next page. The common epilogue
+                                        // below verifies that this page made progress.
                                     }
-
-                                    y += gap;
-                                    float barX = e.PageSettings.HardMarginX + (printableW - barW) / 2f;
-                                    e.Graphics.DrawImage(barcodeBmp, barX, y, barW, barH);
+                                    else
+                                    {
+                                        y += gap;
+                                        float barX = x + (printableW - barW) / 2f;
+                                        e.Graphics.DrawImage(barcodeBmp, barX, y, barW, barH);
+                                        barcodePrinted = true;
+                                    }
+                                }
+                                else
+                                {
+                                    barcodePrinted = true;
                                 }
                             }
-
-                            barcodePrinted = true;
                         }
 
                         e.HasMorePages = lineIndex < lines.Length || !barcodePrinted;
+                        EnsurePageProgress(
+                            pageCount,
+                            e.HasMorePages,
+                            startLineIndex,
+                            lineIndex,
+                            startBarcodePrinted,
+                            barcodePrinted);
                     };
 
                     doc.EndPrint += (s, e) =>
@@ -291,6 +508,8 @@ namespace Win7POS.Wpf.Printing
 
                         if (siiImg != null) siiImg.Dispose();
                         siiImg = null;
+                        if (bodyFormat != null) bodyFormat.Dispose();
+                        bodyFormat = null;
                     };
 
                     doc.Print();
@@ -300,8 +519,92 @@ namespace Win7POS.Wpf.Printing
                     if (font != null) font.Dispose();
                     if (headerFont != null) headerFont.Dispose();
                     if (siiImg != null) siiImg.Dispose();
+                    if (bodyFormat != null) bodyFormat.Dispose();
                 }
             }
+        }
+
+        private static void EnsurePageProgress(
+            int pageCount,
+            bool hasMorePages,
+            int startLineIndex,
+            int endLineIndex,
+            bool startBarcodePrinted,
+            bool endBarcodePrinted)
+        {
+            if (pageCount > MaximumReceiptPages)
+                throw new InvalidOperationException("Receipt exceeded the safe page limit.");
+            if (hasMorePages &&
+                startLineIndex == endLineIndex &&
+                startBarcodePrinted == endBarcodePrinted)
+            {
+                throw new InvalidOperationException(
+                    "Receipt page made no progress; printing was stopped safely.");
+            }
+        }
+
+        private static Font CreateColumnFittedFont(
+            Graphics graphics,
+            Font sourceFont,
+            int charactersPerLine,
+            float printableWidth,
+            StringFormat format)
+        {
+            if (graphics == null) throw new ArgumentNullException(nameof(graphics));
+            if (sourceFont == null) throw new ArgumentNullException(nameof(sourceFont));
+            if (format == null) throw new ArgumentNullException(nameof(format));
+
+            var requestedColumns = charactersPerLine <= 0
+                ? DefaultCharactersPerLine
+                : charactersPerLine;
+            var columns = Math.Max(
+                MinimumCharactersPerLine,
+                Math.Min(MaximumCharactersPerLine, requestedColumns));
+            return CreateSampleFittedFont(
+                graphics,
+                sourceFont,
+                new string('W', columns),
+                printableWidth,
+                format);
+        }
+
+        private static Font CreateTextFittedFont(
+            Graphics graphics,
+            Font sourceFont,
+            string text,
+            float printableWidth,
+            StringFormat format)
+        {
+            return CreateSampleFittedFont(
+                graphics,
+                sourceFont,
+                string.IsNullOrEmpty(text) ? "W" : text,
+                printableWidth,
+                format);
+        }
+
+        private static Font CreateSampleFittedFont(
+            Graphics graphics,
+            Font sourceFont,
+            string sample,
+            float printableWidth,
+            StringFormat format)
+        {
+            if (graphics == null) throw new ArgumentNullException(nameof(graphics));
+            if (sourceFont == null) throw new ArgumentNullException(nameof(sourceFont));
+            if (format == null) throw new ArgumentNullException(nameof(format));
+
+            var measuredWidth = graphics.MeasureString(sample, sourceFont, PointF.Empty, format).Width;
+            var targetWidth = Math.Max(1f, printableWidth * PrintableWidthSafetyFactor);
+            var fittedSize = sourceFont.Size;
+            if (measuredWidth > targetWidth && measuredWidth > 0f)
+            {
+                fittedSize = Math.Max(
+                    MinimumReceiptFontSizePoints,
+                    sourceFont.Size * targetWidth / measuredWidth);
+            }
+
+            return new Font(sourceFont.FontFamily, fittedSize, sourceFont.Style, sourceFont.Unit);
         }
     }
 }

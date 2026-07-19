@@ -53,6 +53,11 @@ $operatorSwitch = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xa
 $posView = Read-Text "src/Win7POS.Wpf/Pos/PosView.xaml"
 $paymentView = Read-Text "src/Win7POS.Wpf/Pos/PaymentView.xaml"
 $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
+$salesRegister = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SalesRegisterDialog.xaml"
+$salesRegisterViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SalesRegisterViewModel.cs"
+$dailyReportView = Read-Text "src/Win7POS.Wpf/Pos/DailyReportView.xaml"
+$dailyReportViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DailyReportViewModel.cs"
+$printerSettings = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsDialog.xaml"
 $syncCenter = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterDialog.xaml"
 $syncCenterCode = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterDialog.xaml.cs"
 $syncCenterViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SyncCenterViewModel.cs"
@@ -76,6 +81,17 @@ Test-ContainsAll "ModernTextBoxStyle readable text/caret/selection" $modernStyle
     'Foreground',
     'CaretBrush',
     'SelectionBrush'
+)
+
+Test-ContainsAll "Modern ComboBox selected value honors DisplayMemberPath" $modernStyles @(
+    'x:Name="ContentSite"',
+    'Content="{TemplateBinding SelectionBoxItem}"',
+    'ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"'
+)
+
+Test-ContainsAll "Sales Register operator filter exposes its friendly label" $salesRegister @(
+    'ItemsSource="{Binding OperatorFilterList}"',
+    'DisplayMemberPath="DisplayName"'
 )
 
 Test-ContainsAll "basic vector icon button resources" $modernStyles @(
@@ -248,7 +264,7 @@ Test-ContainsAll "primary surfaces keep responsive layout markers" ($productsVie
     'EnableRowVirtualization="True"',
     '<ColumnDefinition Width="1.05*"/>',
     '<ColumnDefinition Width="1.55*"/>',
-    'Grid.Row="1" Grid.Column="5" Grid.ColumnSpan="2"',
+    'x:Name="FooterPayButton"',
     'Style="{StaticResource PrimaryButtonStyle}"'
 )
 
@@ -291,6 +307,32 @@ Test-ContainsAll "POS footer uses readable disabled button style" $posView @(
     'ClearCartCommand',
     'FooterSecondaryButtonStyle'
 )
+
+Test-ContainsAll "POS checkout footer stays compact and single-line" $posView @(
+    'x:Name="PosCheckoutFooter"',
+    'AutomationProperties.AutomationId="Pos.CheckoutFooter"',
+    'Padding="12,10"',
+    'x:Name="PosToolActionsPanel"',
+    'x:Name="FooterTotalPanel"',
+    'x:Name="FooterPayButton"',
+    'Width="{Binding ActualWidth, ElementName=PosToolActionsPanel}"',
+    'VerticalAlignment="Center"'
+)
+
+if ($posView.IndexOf('Grid.Row="1" Grid.Column="4"', [StringComparison]::Ordinal) -ge 0 -or
+    $posView.IndexOf('Grid.Row="1" Grid.Column="5"', [StringComparison]::Ordinal) -ge 0) {
+    Fail "POS checkout footer still splits total/payment onto a second visual row"
+}
+else {
+    Pass "POS checkout footer aligns actions, total and payment on one visual row"
+}
+
+if ($posView.IndexOf('Background="{StaticResource PrimaryLighterBrush}" Foreground="White"', [StringComparison]::Ordinal) -ge 0) {
+    Fail "POS pay button locally overrides disabled-state colors"
+}
+else {
+    Pass "POS pay button inherits enabled and disabled colors from PrimaryButtonStyle"
+}
 
 Test-ContainsAll "Products searchable filters" $productsView @(
     'ApplyFiltersCommand',
@@ -364,6 +406,31 @@ Test-ContainsAll "POS status is shown as toast, not footer line" ($posView + $po
     'PosNoticeSeverity',
     'PosNoticePolicy.GetAutoDismissDelay',
     'DismissStatusToastCommand'
+)
+
+Test-ContainsAll "Sales Register exposes a lazy selectable receipt preview" ($salesRegister + $salesRegisterViewModel) @(
+    'sales.previewTab',
+    'DetailReceiptPreview',
+    'IsPreviewLoading',
+    'sales.previewEmpty',
+    'FontFamily="Consolas"',
+    'IsReadOnly="True"',
+    'VirtualizingPanel.IsVirtualizing="True"',
+    'VirtualizingPanel.VirtualizationMode="Recycling"'
+)
+
+Test-ContainsAll "Daily Close uses an 80mm receipt-paper preview" ($dailyReportView + $dailyReportViewModel) @(
+    'AutomationProperties.AutomationId="DailyCloseReceiptPreview"',
+    'SummaryReceiptPreview',
+    'FontFamily="Consolas"',
+    'IsReadOnly="True"',
+    'Background="#FFFDF8"',
+    'PrintReceiptTextAsync(SummaryReceiptPreview'
+)
+
+Test-ContainsAll "Printer Settings explains receipt history storage" $printerSettings @(
+    'x:Name="ReceiptHistoryStorageInfo"',
+    'printer.receiptHistoryStorageInfo'
 )
 
 if ($posView.IndexOf('Text="{Binding StatusMessage}"', [StringComparison]::Ordinal) -ge 0) {

@@ -44,6 +44,7 @@ $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.
 $operatorSwitch = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/OperatorSwitchDialog.xaml.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 $logger = Read-Text "src/Win7POS.Wpf/Infrastructure/FileLogger.cs"
+$uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 
 Require-Match "POS access category" $dialog '"pos\.access"'
@@ -71,8 +72,13 @@ Require-Match "Permission denied missing permission field" $mainWindow 'missingP
 Require-Match "Permission denied action field" $mainWindow 'action='
 
 Require-Match "FileLogger redacts credential keywords" $logger 'pin\|password\|credential'
-Require-Match "FileLogger redacts token keyword" $logger 'trustedDeviceToken\|token\|pin'
+Require-Match "FileLogger redacts camel/snake token aliases" $logger 'trusted\[_-\]\?device\[_-\]\?token[\s\S]*access\[_-\]\?token[\s\S]*refresh\[_-\]\?token'
+Require-Match "FileLogger redacts client secret/API key aliases" $logger 'client\[_-\]\?secret[\s\S]*api\[_-\]\?key'
 Require-Match "FileLogger redacts bearer auth" $logger 'Authorization\\s\*:\\s\*Bearer'
+Require-Match "UI smoke executes secret-body redaction vectors" $uiSmoke 'VerifyLogRedactionTestVectors'
+foreach ($vectorMarker in @('CorrectHorseBatteryStaple', 'PRIVATEKEYBODY123456789', 'TRUNCATEDPRIVATEKEYBODY987654321', 'secrets\.All')) {
+    Require-Match "UI smoke secret-body marker: $vectorMarker" $uiSmoke $vectorMarker
+}
 
 Forbid-Match "no CredentialBox.Password inside log calls" $dialog 'Log(?:Access|CatalogRetry|Info|Warning|Error)[\s\S]{0,160}CredentialBox\.Password'
 Forbid-Match "no credential variable logged by key" $dialog '(?i)credential\s*=\s*"\s*\+\s*credential|credential="\s*\+\s*credential|credential=\s*"\s*\+\s*credential'

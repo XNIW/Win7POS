@@ -70,6 +70,8 @@ $runtime = Read-Many @("src/Win7POS.Wpf", "src/Win7POS.Core", "src/Win7POS.Data"
 $release = Read-Many @("installer", "samples", "scripts/set-admin-web-staging-url.bat", "src/Win7POS.Wpf/Win7POS.Wpf.csproj")
 $logger = Read-Text "src/Win7POS.Wpf/Infrastructure/FileLogger.cs"
 $startup = Read-Text "src/Win7POS.Wpf/Infrastructure/StartupTrace.cs"
+$dbInitializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
+$uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $store = Read-Text "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs"
 $options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
 $salesBuilder = Read-Text "src/Win7POS.Data/Online/PosSalesSyncRequestBuilder.cs"
@@ -82,12 +84,29 @@ $accessRecovery = Read-Many @(
     "src/Win7POS.Data/Repositories/UserRepository.cs"
 )
 
-foreach ($field in @("sessionToken", "deviceToken", "trustedDeviceToken", "pin", "password", "credential")) {
-    Require "FileLogger redacts $field" $logger ([regex]::Escape($field))
-    Require "StartupTrace redacts $field" $startup ([regex]::Escape($field))
+foreach ($redactor in @(
+    @{ Label = "session/device token aliases"; Pattern = 'session\[_-\]\?token[\s\S]*device\[_-\]\?token[\s\S]*trusted\[_-\]\?device\[_-\]\?token' },
+    @{ Label = "access/refresh token aliases"; Pattern = 'access\[_-\]\?token[\s\S]*refresh\[_-\]\?token' },
+    @{ Label = "client secret/API key aliases"; Pattern = 'client\[_-\]\?secret[\s\S]*api\[_-\]\?key[\s\S]*apikey' },
+    @{ Label = "credential aliases"; Pattern = 'pin\|password\|credential\|pwd\|db_password' },
+    @{ Label = "bearer tokens"; Pattern = 'Authorization\\s\*:\\s\*Bearer' },
+    @{ Label = "POS tokens"; Pattern = 'mcpos_\(device\|session\)' },
+    @{ Label = "standalone secret prefixes"; Pattern = 'sb_secret' },
+    @{ Label = "standalone JWTs"; Pattern = 'eyJ\[A-Za-z0-9_-' },
+    @{ Label = "private-key headers"; Pattern = 'PRIVATE KEY' }
+)) {
+    Require "FileLogger redacts $($redactor.Label)" $logger $redactor.Pattern
+    Require "StartupTrace redacts $($redactor.Label)" $startup $redactor.Pattern
 }
+Require "DB bootstrap logger redacts token/API aliases" $dbInitializer 'access\[_-\]\?token[\s\S]*client\[_-\]\?secret[\s\S]*api\[_-\]\?key'
+Require "DB bootstrap logger redacts bearer/POS/JWT/private-key forms" $dbInitializer 'Authorization\\s\*:\\s\*Bearer[\s\S]*mcpos_[\s\S]*eyJ[\s\S]*PRIVATE KEY'
 Require "FileLogger applies regex redaction" $logger "Regex\.Replace[\s\S]*\[redacted\]"
 Require "StartupTrace applies regex redaction" $startup "Regex\.Replace[\s\S]*\[redacted\]"
+Require "UI smoke defines executable redaction vectors" $uiSmoke 'VerifyLogRedactionTestVectors'
+foreach ($vectorMarker in @('session_token', 'refresh-token', 'client_secret', 'api_key', 'Authorization: Bearer', 'sk-abcdefghijklmnopqrstuvwxyz', 'eyJheader12345', 'BEGIN PRIVATE KEY', 'TRUNCATEDPRIVATEKEYBODY987654321', 'secrets\.All')) {
+    Require "UI smoke redaction vector marker: $vectorMarker" $uiSmoke $vectorMarker
+}
+Require "lifecycle requires redaction-vector success" $uiSmoke 'logRedactionVectorsPass[\s\S]*physicalPrinterQaPayloadPass\s*&&\s*logRedactionVectorsPass'
 Forbid "direct sensitive runtime logging absent" $runtime "(?i)(Log(?:Info|Warning|Error)|StartupTrace\.Write|Console\.WriteLine)\s*\([^\r\n;]*(trustedDeviceToken|sessionToken|deviceToken|CredentialBox|PinBox|password|credential|payloadJson|payload_json|Authorization\s*:|Bearer)"
 Forbid "literal POS token absent" $runtime "mcpos_(device|session)_[A-Za-z0-9_-]{8,}"
 

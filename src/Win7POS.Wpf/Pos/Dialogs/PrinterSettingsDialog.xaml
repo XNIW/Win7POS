@@ -11,13 +11,13 @@
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
         SizeToContent="Manual"
-        Width="720"
-        Height="760"
+        Width="860"
+        Height="680"
         ShowInTaskbar="False"
-        MinWidth="640"
-        MinHeight="620"
+        MinWidth="760"
+        MinHeight="560"
         MaxWidth="860"
-        MaxHeight="900"
+        MaxHeight="760"
         ResizeMode="CanResize">
     <Grid Margin="0" Background="#F1EDF7">
         <Grid.RowDefinitions>
@@ -28,152 +28,440 @@
 
         <TextBlock Grid.Row="0" Text="{loc:Loc printer.title}" Style="{StaticResource DialogTitleStyle}"/>
 
-        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="18">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <StackPanel>
-                    <TextBlock Text="{loc:Loc printer.saleSavedBeforePrint}" FontSize="12" Foreground="#5C456F" TextWrapping="Wrap" Margin="0,0,0,12"/>
+        <Border Grid.Row="1"
+                Background="#FCFBFE"
+                BorderBrush="#E4DBEF"
+                BorderThickness="1"
+                CornerRadius="10"
+                Padding="16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="12"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
 
-                    <Grid Margin="0,0,0,14">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="Auto"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="{loc:Loc printer.installedPrinters}" FontWeight="SemiBold" FontSize="13" VerticalAlignment="Center"/>
-                        <Button Grid.Column="1" MinWidth="96" Height="32"
-                                Command="{Binding RefreshPrintersCommand}" Style="{StaticResource OutlineButtonStyle}">
-                            <StackPanel Style="{StaticResource IconButtonContent}">
-                                <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
-                                <TextBlock Text="{loc:Loc common.reload}" Margin="8,0,0,0"/>
-                            </StackPanel>
-                        </Button>
-                    </Grid>
+                <Border Grid.Row="0"
+                        Background="#F4EEF8"
+                        BorderBrush="#E4D8EC"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="12,9">
+                    <TextBlock Text="{loc:Loc printer.saleSavedBeforePrint}"
+                               FontSize="12"
+                               Foreground="#5C456F"
+                               TextWrapping="Wrap"/>
+                </Border>
 
-                    <ListBox ItemsSource="{Binding InstalledPrinters}" Height="128" Margin="0,0,0,16"
-                             BorderBrush="#E4DBEF" BorderThickness="1">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Margin="4,3">
-                                    <TextBlock Text="{Binding Summary}" FontWeight="SemiBold" FontSize="12"/>
-                                    <TextBlock FontSize="11" Foreground="#666" TextWrapping="Wrap">
-                                        <Run Text="{Binding StatusText}"/>
-                                        <Run Text=" - "/>
-                                        <Run Text="{Binding Notes}"/>
-                                    </TextBlock>
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="430"/>
+                        <ColumnDefinition Width="14"/>
+                        <ColumnDefinition Width="270"/>
+                    </Grid.ColumnDefinitions>
+
+                    <ScrollViewer Grid.Column="0"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <Border x:Name="ReceiptSettingsCard"
+                                    AutomationProperties.AutomationId="PrinterSettings.ReceiptCard"
+                                    Style="{StaticResource SettingsCardBorderStyle}"
+                                    Margin="0,0,0,10">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                        <Path Data="{StaticResource IconPrinter}"
+                                              Fill="{StaticResource PrimaryBrush}"
+                                              Width="20"
+                                              Height="20"
+                                              Stretch="Uniform"
+                                              Margin="0,0,9,0"/>
+                                        <TextBlock Text="{loc:Loc printer.receiptSection}"
+                                                   Style="{StaticResource TypeSubtitleStyle}"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+
+                                    <CheckBox Content="{loc:Loc printer.receiptEnabled}"
+                                              IsChecked="{Binding ReceiptEnabled, Mode=TwoWay}"
+                                              FontWeight="SemiBold"
+                                              Margin="0,0,0,12"/>
+
+                                    <TextBlock Text="{loc:Loc printer.receiptPrinter}"
+                                               Style="{StaticResource FormLabelTextStyle}"
+                                               Margin="0,0,0,5"/>
+                                    <ComboBox x:Name="ReceiptPrinterCombo"
+                                              AutomationProperties.AutomationId="PrinterSettings.ReceiptPrinter"
+                                              MinHeight="36"
+                                              ItemsSource="{Binding InstalledPrinters}"
+                                              DisplayMemberPath="Summary"
+                                              SelectedValuePath="Name"
+                                              SelectedValue="{Binding PrinterName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+
+                                    <Border Style="{StaticResource FilterChipStyle}"
+                                            HorizontalAlignment="Stretch"
+                                            Margin="0,7,0,0"
+                                            AutomationProperties.LiveSetting="Polite">
+                                        <TextBlock Text="{Binding SelectedPrinterSummary}"
+                                                   Style="{StaticResource TypeCaptionStyle}"
+                                                   TextWrapping="Wrap"/>
+                                    </Border>
+
+                                    <Grid Margin="0,14,0,0">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="110"/>
+                                            <ColumnDefinition Width="18"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{loc:Loc printer.copies}"
+                                                       Style="{StaticResource FormLabelTextStyle}"
+                                                       Margin="0,0,0,5"/>
+                                            <TextBox x:Name="CopiesTextBox"
+                                                     MinHeight="34"
+                                                     Text="{Binding Copies, UpdateSourceTrigger=PropertyChanged}"
+                                                     MaxLength="1"
+                                                     Style="{StaticResource ModernTextBoxStyle}"
+                                                     ToolTip="{loc:Loc printer.copiesTooltip}"/>
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="2"
+                                                  Content="{loc:Loc printer.autoPrint}"
+                                                  IsChecked="{Binding AutoPrint, Mode=TwoWay}"
+                                                  VerticalAlignment="Bottom"
+                                                  Margin="0,0,0,8"/>
+                                    </Grid>
                                 </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                            </Border>
 
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*" MinWidth="320"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
+                            <Border Style="{StaticResource SettingsCardBorderStyle}" Margin="0,0,0,10" Padding="14,12">
+                                <Expander x:Name="AdvancedOptionsExpander"
+                                          AutomationProperties.AutomationId="PrinterSettings.AdvancedOptions"
+                                          IsExpanded="False">
+                                    <Expander.Header>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Path Data="{StaticResource IconSettings}"
+                                                  Fill="{StaticResource PrimaryBrush}"
+                                                  Width="18"
+                                                  Height="18"
+                                                  Stretch="Uniform"
+                                                  Margin="0,0,8,0"/>
+                                            <TextBlock Text="{loc:Loc printer.advancedOptions}"
+                                                       Style="{StaticResource TypeSubtitleStyle}"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Expander.Header>
+                                    <StackPanel Margin="0,12,0,2">
+                                        <CheckBox Content="{loc:Loc printer.allowWindowsDefault}"
+                                                  IsChecked="{Binding AllowWindowsDefault, Mode=TwoWay}"
+                                                  Margin="0,0,0,8"/>
+                                        <CheckBox Content="{loc:Loc printer.allowVirtualPrinters}"
+                                                  IsChecked="{Binding AllowVirtualPrinters, Mode=TwoWay}"
+                                                  Margin="0,0,0,5"/>
+                                        <TextBlock Text="{loc:Loc printer.virtualNotRecommended}"
+                                                   FontSize="11"
+                                                   Foreground="#7A4E18"
+                                                   TextWrapping="Wrap"
+                                                   Margin="22,0,0,12"/>
+                                        <Border x:Name="ReceiptHistoryStorageInfo"
+                                                Background="#F4EFF8"
+                                                BorderBrush="#D9CEE8"
+                                                BorderThickness="1"
+                                                CornerRadius="7"
+                                                Padding="10,8"
+                                                Margin="0,4,0,0">
+                                            <TextBlock Text="{loc:Loc printer.receiptHistoryStorageInfo}"
+                                                       FontSize="11"
+                                                       Foreground="#5F4A6E"
+                                                       TextWrapping="Wrap"/>
+                                        </Border>
+                                    </StackPanel>
+                                </Expander>
+                            </Border>
 
-                        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc printer.receiptPrinter}" FontWeight="SemiBold"/>
-                        <ComboBox Grid.Row="0" Grid.Column="1" Margin="12,0,0,0" MinHeight="34"
-                                  ItemsSource="{Binding InstalledPrinters}"
-                                  DisplayMemberPath="Summary"
-                                  SelectedValuePath="Name"
-                                  SelectedValue="{Binding PrinterName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                  Text="{Binding PrinterName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                  IsEditable="True"/>
+                            <Border Style="{StaticResource SettingsCardBorderStyle}" Margin="0,0,0,10" Padding="14,12">
+                                <Expander x:Name="CashDrawerExpander"
+                                          AutomationProperties.AutomationId="PrinterSettings.CashDrawer"
+                                          IsExpanded="False">
+                                    <Expander.Header>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Path Data="{StaticResource IconCashDrawer}"
+                                                  Fill="{StaticResource PrimaryBrush}"
+                                                  Width="18"
+                                                  Height="18"
+                                                  Stretch="Uniform"
+                                                  Margin="0,0,8,0"/>
+                                            <TextBlock Text="{loc:Loc printer.cashDrawer}"
+                                                       Style="{StaticResource TypeSubtitleStyle}"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Expander.Header>
+                                    <StackPanel Margin="0,12,0,2">
+                                        <CheckBox Content="{loc:Loc printer.drawerModePrinterKick}"
+                                                  IsChecked="{Binding CashDrawerEnabled, Mode=TwoWay}"
+                                                  FontWeight="SemiBold"
+                                                  Margin="0,0,0,8"/>
+                                        <CheckBox Content="{loc:Loc printer.openOnCashSale}"
+                                                  IsChecked="{Binding CashDrawerOpenOnCashSale, Mode=TwoWay}"
+                                                  Margin="0,0,0,10"/>
 
-                        <TextBlock Grid.Row="1" Grid.Column="1" Margin="12,6,0,0" Foreground="#666" FontSize="11"
-                                   Text="{Binding SelectedPrinterSummary}" TextWrapping="Wrap"/>
+                                        <StackPanel x:Name="CashDrawerDetailsPanel"
+                                                    AutomationProperties.AutomationId="PrinterSettings.CashDrawerDetails"
+                                                    Visibility="{Binding CashDrawerEnabled, Converter={StaticResource BoolToVis}}"
+                                                    Margin="22,0,0,0">
+                                            <TextBlock Text="{loc:Loc printer.drawerPrinter}"
+                                                       Style="{StaticResource FormLabelTextStyle}"
+                                                       Margin="0,0,0,5"/>
+                                            <ComboBox MinHeight="34"
+                                                      ItemsSource="{Binding InstalledPrinters}"
+                                                      DisplayMemberPath="Summary"
+                                                      SelectedValuePath="Name"
+                                                      SelectedValue="{Binding CashDrawerPrinterName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
 
-                        <TextBlock Grid.Row="2" Grid.Column="0" Margin="0,14,0,0" VerticalAlignment="Center" Text="{loc:Loc printer.copies}" FontWeight="SemiBold"/>
-                        <TextBox Grid.Row="2" Grid.Column="1" Margin="12,14,0,0" Width="100" HorizontalAlignment="Left" MinHeight="34"
-                                 Text="{Binding Copies, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
-                                 ToolTip="{loc:Loc printer.copiesTooltip}"/>
-                    </Grid>
+                                            <TextBlock Text="{loc:Loc printer.drawerInstruction}"
+                                                       Style="{StaticResource FormLabelTextStyle}"
+                                                       Margin="0,11,0,5"/>
+                                            <TextBox MinHeight="34"
+                                                     MaxLength="64"
+                                                     Text="{Binding CashDrawerCommand, UpdateSourceTrigger=PropertyChanged}"
+                                                     Style="{StaticResource ModernTextBoxStyle}"
+                                                     ToolTip="{loc:Loc printer.drawerCommandTooltip}"/>
 
-                    <UniformGrid Columns="2" Margin="0,18,0,0">
-                        <CheckBox Content="{loc:Loc printer.receiptEnabled}" IsChecked="{Binding ReceiptEnabled, Mode=TwoWay}" Margin="0,0,12,8"/>
-                        <CheckBox Content="{loc:Loc printer.autoPrint}" IsChecked="{Binding AutoPrint, Mode=TwoWay}" Margin="0,0,0,8"/>
-                        <CheckBox Content="{loc:Loc printer.allowWindowsDefault}" IsChecked="{Binding AllowWindowsDefault, Mode=TwoWay}" Margin="0,0,12,8"/>
-                        <CheckBox Content="{loc:Loc printer.allowVirtualPrinters}" IsChecked="{Binding AllowVirtualPrinters, Mode=TwoWay}" Margin="0,0,0,8"/>
-                        <CheckBox Content="{loc:Loc printer.saveCopy}" IsChecked="{Binding SaveCopyToFile, Mode=TwoWay}" Margin="0,0,12,8"/>
-                    </UniformGrid>
+                                            <TextBlock Text="{loc:Loc printer.drawerTestSafety}"
+                                                       Style="{StaticResource TypeCaptionStyle}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,10,0,8"/>
+                                            <Button HorizontalAlignment="Left"
+                                                    MinWidth="150"
+                                                    Height="34"
+                                                    Command="{Binding TestCashDrawerCommand}"
+                                                    Style="{StaticResource OutlineButtonStyle}"
+                                                    ToolTip="{loc:Loc printer.testDrawerTooltip}">
+                                                <StackPanel Style="{StaticResource IconButtonContent}">
+                                                    <Path Data="{StaticResource IconCashDrawer}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                                    <TextBlock Text="{loc:Loc printer.testDrawer}" Margin="8,0,0,0"/>
+                                                </StackPanel>
+                                            </Button>
+                                            <TextBlock Text="{Binding TestCashDrawerStatusMessage}"
+                                                       Style="{StaticResource TypeCaptionStyle}"
+                                                       TextWrapping="Wrap"
+                                                       Margin="0,7,0,0"
+                                                       AutomationProperties.LiveSetting="Polite"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Expander>
+                            </Border>
 
-                    <TextBlock Text="{loc:Loc printer.virtualNotRecommended}" FontSize="11" Foreground="#7A4E18" TextWrapping="Wrap" Margin="0,4,0,14"/>
+                            <Border Style="{StaticResource SettingsCardBorderStyle}" Padding="14,12">
+                                <Expander x:Name="DetectedPrintersExpander"
+                                          AutomationProperties.AutomationId="PrinterSettings.DetectedPrinters"
+                                          IsExpanded="False">
+                                    <Expander.Header>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Path Data="{StaticResource IconSync}"
+                                                  Fill="{StaticResource PrimaryBrush}"
+                                                  Width="18"
+                                                  Height="18"
+                                                  Stretch="Uniform"
+                                                  Margin="0,0,8,0"/>
+                                            <TextBlock Text="{loc:Loc printer.installedPrinters}"
+                                                       Style="{StaticResource TypeSubtitleStyle}"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Expander.Header>
+                                    <StackPanel Margin="0,12,0,2">
+                                        <Grid Margin="0,0,0,10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0"
+                                                       Text="{loc:Loc printer.detectedPrintersHelp}"
+                                                       Style="{StaticResource TypeCaptionStyle}"
+                                                       TextWrapping="Wrap"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,12,0"/>
+                                            <Button Grid.Column="1"
+                                                    MinWidth="96"
+                                                    Height="32"
+                                                    Command="{Binding RefreshPrintersCommand}"
+                                                    Style="{StaticResource OutlineButtonStyle}">
+                                                <StackPanel Style="{StaticResource IconButtonContent}">
+                                                    <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                                    <TextBlock Text="{loc:Loc common.reload}" Margin="8,0,0,0"/>
+                                                </StackPanel>
+                                            </Button>
+                                        </Grid>
 
-                    <Grid Margin="0,0,0,14">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*" MinWidth="320"/>
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc printer.outputDirectory}" FontWeight="SemiBold"/>
-                        <TextBox Grid.Column="1" Margin="12,0,0,0" MinHeight="34"
-                                 Text="{Binding OutputDirectory, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
-                                 ToolTip="{loc:Loc printer.outputDirectoryTooltip}"/>
-                    </Grid>
-
-                    <Button HorizontalAlignment="Left" MinWidth="140" Height="34"
-                            Command="{Binding TestPrintCommand}" Style="{StaticResource OutlineButtonStyle}" Margin="0,0,0,18">
-                        <StackPanel Style="{StaticResource IconButtonContent}">
-                            <Path Data="{StaticResource IconPrint}" Style="{StaticResource ButtonIconPathStyle}"/>
-                            <TextBlock Text="{loc:Loc printer.testPrint}" Margin="8,0,0,0"/>
+                                        <ScrollViewer MaxHeight="210"
+                                                      VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled">
+                                            <ItemsControl x:Name="DetectedPrintersList"
+                                                          AutomationProperties.AutomationId="PrinterSettings.DetectedPrintersList"
+                                                          ItemsSource="{Binding InstalledPrinters}"
+                                                          HorizontalContentAlignment="Stretch">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Border Background="#FAF8FC"
+                                                                BorderBrush="#E8E1ED"
+                                                                BorderThickness="1"
+                                                                CornerRadius="7"
+                                                                Padding="10"
+                                                                Margin="0,0,0,8">
+                                                            <StackPanel>
+                                                                <TextBlock Text="{Binding Name}"
+                                                                           FontWeight="SemiBold"
+                                                                           FontSize="12"
+                                                                           TextWrapping="Wrap"/>
+                                                                <TextBlock Margin="0,4,0,0"
+                                                                           FontSize="11"
+                                                                           Foreground="#5E5663"
+                                                                           TextWrapping="Wrap">
+                                                                    <Run Text="{loc:Loc printer.driverLabel}"/><Run Text=": "/><Run Text="{Binding DriverName}"/>
+                                                                    <Run Text="   "/>
+                                                                    <Run Text="{loc:Loc printer.portLabel}"/><Run Text=": "/><Run Text="{Binding PortName}"/>
+                                                                </TextBlock>
+                                                                <TextBlock Margin="0,2,0,0"
+                                                                           FontSize="11"
+                                                                           Foreground="#5E5663"
+                                                                           TextWrapping="Wrap">
+                                                                    <Run Text="{loc:Loc printer.statusLabel}"/><Run Text=": "/><Run Text="{Binding StatusText}"/>
+                                                                </TextBlock>
+                                                                <WrapPanel Margin="0,7,0,0">
+                                                                    <Border Background="#EFE7F5" CornerRadius="7" Padding="8,3" Margin="0,0,6,5"
+                                                                            Visibility="{Binding IsDefault, Converter={StaticResource BoolToVis}}">
+                                                                        <TextBlock Text="{loc:Loc printer.defaultStatusLabel}" FontSize="10" FontWeight="SemiBold" Foreground="#5E3F86"/>
+                                                                    </Border>
+                                                                    <Border Background="#EAF6EE" CornerRadius="7" Padding="8,3" Margin="0,0,6,5"
+                                                                            Visibility="{Binding IsAvailable, Converter={StaticResource BoolToVis}}">
+                                                                        <TextBlock Text="{loc:Loc printer.availableStatusLabel}" FontSize="10" FontWeight="SemiBold" Foreground="#2F6B46"/>
+                                                                    </Border>
+                                                                    <Border Background="#FBECEC" CornerRadius="7" Padding="8,3" Margin="0,0,6,5"
+                                                                            Visibility="{Binding IsOffline, Converter={StaticResource BoolToVis}}">
+                                                                        <TextBlock Text="{loc:Loc printer.offlineStatusLabel}" FontSize="10" FontWeight="SemiBold" Foreground="#8A3D3D"/>
+                                                                    </Border>
+                                                                    <Border Background="#FFF2DC" CornerRadius="7" Padding="8,3" Margin="0,0,6,5"
+                                                                            Visibility="{Binding IsPaused, Converter={StaticResource BoolToVis}}">
+                                                                        <TextBlock Text="{loc:Loc printer.pausedStatusLabel}" FontSize="10" FontWeight="SemiBold" Foreground="#7A4E18"/>
+                                                                    </Border>
+                                                                    <Border Background="#F1EEF3" CornerRadius="7" Padding="8,3" Margin="0,0,6,5"
+                                                                            Visibility="{Binding IsVirtual, Converter={StaticResource BoolToVis}}">
+                                                                        <TextBlock Text="{loc:Loc printer.virtualStatusLabel}" FontSize="10" FontWeight="SemiBold" Foreground="#5E5663"/>
+                                                                    </Border>
+                                                                </WrapPanel>
+                                                                <TextBlock Text="{Binding Notes}"
+                                                                           Style="{StaticResource TypeCaptionStyle}"
+                                                                           TextWrapping="Wrap"/>
+                                                            </StackPanel>
+                                                        </Border>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </ScrollViewer>
+                                    </StackPanel>
+                                </Expander>
+                            </Border>
                         </StackPanel>
-                    </Button>
+                    </ScrollViewer>
 
-                    <Separator Margin="0,0,0,16"/>
-
-                    <TextBlock Text="{loc:Loc printer.cashDrawer}" FontWeight="SemiBold" FontSize="13" Margin="0,0,0,10"/>
-                    <CheckBox Content="{loc:Loc printer.drawerModePrinterKick}" IsChecked="{Binding CashDrawerEnabled, Mode=TwoWay}" Margin="0,0,0,8"/>
-                    <CheckBox Content="{loc:Loc printer.openOnCashSale}" IsChecked="{Binding CashDrawerOpenOnCashSale, Mode=TwoWay}" Margin="0,0,0,12"/>
-
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="220"/>
-                            <ColumnDefinition Width="*" MinWidth="320"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc printer.drawerPrinter}" FontWeight="SemiBold"/>
-                        <ComboBox Grid.Row="0" Grid.Column="1" Margin="12,0,0,0" MinHeight="34"
-                                  ItemsSource="{Binding InstalledPrinters}"
-                                  DisplayMemberPath="Summary"
-                                  SelectedValuePath="Name"
-                                  SelectedValue="{Binding CashDrawerPrinterName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                  Text="{Binding CashDrawerPrinterName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                  IsEditable="True"/>
-
-                        <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,12,0,0" VerticalAlignment="Center" Text="{loc:Loc printer.drawerInstruction}" FontWeight="SemiBold"/>
-                        <TextBox Grid.Row="1" Grid.Column="1" Margin="12,12,0,0" MinHeight="34"
-                                 Text="{Binding CashDrawerCommand, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"
-                                 ToolTip="{loc:Loc printer.drawerCommandTooltip}"/>
-                    </Grid>
-
-                    <Button Margin="0,12,0,0" HorizontalAlignment="Left" MinWidth="150" Height="34"
-                            Command="{Binding TestCashDrawerCommand}" Style="{StaticResource OutlineButtonStyle}"
-                            ToolTip="{loc:Loc printer.testDrawerTooltip}">
-                        <StackPanel Style="{StaticResource IconButtonContent}">
-                            <Path Data="{StaticResource IconCashDrawer}" Style="{StaticResource ButtonIconPathStyle}"/>
-                            <TextBlock Text="{loc:Loc printer.testDrawer}" Margin="8,0,0,0"/>
-                        </StackPanel>
-                    </Button>
-                    <TextBlock Text="{Binding TestCashDrawerStatusMessage}" FontSize="11" Foreground="#666" Margin="0,8,0,0"
-                               TextWrapping="Wrap" MaxWidth="560" VerticalAlignment="Top"/>
-                </StackPanel>
-            </ScrollViewer>
+                    <Border x:Name="TestReceiptPreviewCard"
+                            Grid.Column="2"
+                            AutomationProperties.AutomationId="PrinterSettings.PreviewCard"
+                            Style="{StaticResource SettingsCardBorderStyle}"
+                            Padding="12">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Orientation="Horizontal">
+                                <Path Data="{StaticResource IconPrint}"
+                                      Fill="{StaticResource PrimaryBrush}"
+                                      Width="19"
+                                      Height="19"
+                                      Stretch="Uniform"
+                                      Margin="0,0,8,0"/>
+                                <TextBlock Text="{loc:Loc printer.testReceiptPreview}"
+                                           Style="{StaticResource TypeSubtitleStyle}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <TextBlock Grid.Row="1"
+                                       Text="{loc:Loc printer.testReceiptPreviewHelp}"
+                                       Margin="0,6,0,10"
+                                       Style="{StaticResource TypeCaptionStyle}"
+                                       TextWrapping="Wrap"/>
+                            <Border Grid.Row="2"
+                                    BorderBrush="#E8E3EC"
+                                    BorderThickness="1"
+                                    CornerRadius="6"
+                                    Padding="9"
+                                    Background="#FAFAFA">
+                                <ScrollViewer x:Name="TestReceiptPreviewScrollViewer"
+                                              AutomationProperties.AutomationId="PrinterSettings.PreviewScroll"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <StackPanel HorizontalAlignment="Left">
+                                        <TextBlock Text="{Binding TestReceiptPreviewFirstLine, Mode=OneWay}"
+                                                   FontFamily="Consolas"
+                                                   FontSize="9.5"
+                                                   FontWeight="Bold"
+                                                   TextWrapping="NoWrap"
+                                                   Margin="0,0,0,2"/>
+                                        <TextBlock Text="{Binding TestReceiptPreviewRest, Mode=OneWay}"
+                                                   FontFamily="Consolas"
+                                                   FontSize="8.5"
+                                                   LineHeight="11.5"
+                                                   TextWrapping="NoWrap"
+                                                   VerticalAlignment="Top"/>
+                                    </StackPanel>
+                                </ScrollViewer>
+                            </Border>
+                            <Button x:Name="TestPrintButton"
+                                    Grid.Row="3"
+                                    AutomationProperties.AutomationId="PrinterSettings.PrintTest"
+                                    Height="40"
+                                    Margin="0,10,0,0"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding TestPrintCommand}"
+                                    Style="{StaticResource OutlineButtonStyle}">
+                                <StackPanel Style="{StaticResource IconButtonContent}">
+                                    <Path Data="{StaticResource IconPrint}" Style="{StaticResource ButtonIconPathStyle}"/>
+                                    <TextBlock Text="{loc:Loc printer.printTestReceipt}" Margin="8,0,0,0"/>
+                                </StackPanel>
+                            </Button>
+                            <TextBlock Grid.Row="4"
+                                       Text="{Binding TestPrintStatusMessage}"
+                                       Margin="0,7,0,0"
+                                       Style="{StaticResource TypeCaptionStyle}"
+                                       TextWrapping="Wrap"
+                                       AutomationProperties.LiveSetting="Polite"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
         </Border>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
-            <Button MinWidth="120" Height="42" Margin="0,0,10,0" Command="{Binding ConfirmCommand}" Style="{StaticResource DialogActionButtonStyle}">
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="{StaticResource DialogFooterMargin}">
+            <Button MinWidth="120"
+                    Height="42"
+                    Margin="0,0,10,0"
+                    IsDefault="True"
+                    Command="{Binding ConfirmCommand}"
+                    Style="{StaticResource DialogActionButtonStyle}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconGo}" Style="{StaticResource ButtonIconPathStyle}"/>
-                    <TextBlock Text="{loc:Loc common.confirm}" Margin="8,0,0,0"/>
+                    <TextBlock Text="{loc:Loc common.save}" Margin="8,0,0,0"/>
                 </StackPanel>
             </Button>
-            <Button MinWidth="120" Height="42" IsCancel="True" Command="{Binding CancelCommand}" Style="{StaticResource DialogCancelButtonStyle}">
+            <Button MinWidth="120"
+                    Height="42"
+                    IsCancel="True"
+                    Command="{Binding CancelCommand}"
+                    Style="{StaticResource DialogCancelButtonStyle}">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                     <TextBlock Text="{loc:Loc common.cancel}" Margin="8,0,0,0"/>

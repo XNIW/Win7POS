@@ -1,5 +1,9 @@
 # Win7POS external certification — 2026-07-17
 
+> Historical snapshot for main `f3e779b`. Epson hardware claims in this snapshot
+> are superseded by `docs/QA/WIN7POS_EPSON_TM_T60_HARDWARE_MATRIX.md` and its closeout report.
+> `docs/QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md` is the current authority.
+
 ## Decision
 
 - External certification: `OPEN`.

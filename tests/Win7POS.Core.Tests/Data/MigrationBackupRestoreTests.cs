@@ -159,6 +159,68 @@ public sealed class MigrationBackupRestoreTests
         Assert.IsFalse(File.Exists(database.LivePath + ".restore-in-progress"));
     }
 
+    [TestMethod]
+    public async Task RestoreWithAuthenticLatestLedgerButMissingReceiptColumn_RollsBackLiveDatabase()
+    {
+        using var database = MigrationFiles.Create();
+        DbInitializer.EnsureCreated(PosDbOptions.ForPath(database.LivePath));
+        using (var live = Open(database.LivePath))
+        {
+            live.Execute(@"
+INSERT INTO sales(code, createdAt, total, paidCash, paidCard, change, receipt_shop_snapshot)
+VALUES('LIVE-SNAPSHOT', 3, 1200, 1200, 0, 0, '{""shop"":""live""}');");
+        }
+
+        SqliteConnectionFactory.ClearAllPools();
+        File.Copy(database.LivePath, database.DeclaredRollbackPath);
+
+        var candidateFactory = new SqliteConnectionFactory(
+            PosDbOptions.ForPath(database.CandidatePath));
+        new SchemaMigrationRunner(
+            candidateFactory,
+            SchemaMigrationRegistry.All.Take(6)).Run();
+        var latest = SchemaMigrationRegistry.Latest;
+        using (var candidate = candidateFactory.Open())
+        {
+            candidate.Execute(@"
+INSERT INTO schema_migrations(
+  migration_id, checksum, description, applied_at, app_version)
+VALUES(
+  @MigrationId, @Checksum, @Description,
+  '2026-07-19T00:00:00.0000000+00:00', '1.0.0');",
+                new
+                {
+                    latest.MigrationId,
+                    latest.Checksum,
+                    latest.Description
+                });
+        }
+        SqliteConnectionFactory.ClearAllPools();
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            new AtomicRestoreInstaller().InstallAsync(
+                database.CandidatePath,
+                database.LivePath,
+                database.DeclaredRollbackPath,
+                () =>
+                {
+                    DbInitializer.EnsureCreated(PosDbOptions.ForPath(database.LivePath));
+                    return Task.CompletedTask;
+                }));
+
+        StringAssert.Contains(error.Message, "latest published migration state");
+        using var verify = Open(database.LivePath);
+        Assert.AreEqual(
+            "{\"shop\":\"live\"}",
+            verify.ExecuteScalar<string>(@"
+SELECT receipt_shop_snapshot
+FROM sales
+WHERE code = 'LIVE-SNAPSHOT';"));
+        AssertLatestLedger(database.LivePath);
+        Assert.IsFalse(File.Exists(database.LivePath + ".restore-in-progress"));
+        await AssertDatabaseValidAsync(database.LivePath);
+    }
+
     private static SchemaMigrationRunner CreateRunner(
         MigrationFiles database,
         Action<string>? log = null)
@@ -249,11 +311,13 @@ INSERT INTO legacy_child(id, parent_id) VALUES(1, 999);");
         {
             Root = root;
             LivePath = Path.Combine(root, "live.db");
+            CandidatePath = Path.Combine(root, "candidate.db");
             BackupDirectory = Path.Combine(root, "backups");
             DeclaredRollbackPath = Path.Combine(root, "declared-rollback.db");
         }
 
         public string BackupDirectory { get; }
+        public string CandidatePath { get; }
         public string DeclaredRollbackPath { get; }
         public string LivePath { get; }
         public string Root { get; }

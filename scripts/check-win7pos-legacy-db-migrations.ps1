@@ -50,7 +50,8 @@ $fixtureFiles = @(
     "legacy_pre_outbox.sql",
     "legacy_pre_shop_binding.sql",
     "legacy_pre_catalog_exactness.sql",
-    "legacy_current_main_unversioned.sql"
+    "legacy_current_main_unversioned.sql",
+    "legacy_post_pr7_unversioned.sql"
 )
 
 foreach ($file in @($migrationFiles + $testFiles)) {
@@ -89,6 +90,11 @@ Require-Text $detector 'HasAllIndexDefinitions' "legacy detection validates full
 Require-Text $registry 'DbInitializer\.CoreSchemaFingerprintSql' "core bootstrap uses the exact legacy structural fingerprint"
 Require-Text $registry 'DbInitializer\.DependentSchemaSql' "dependent bootstrap uses exact table definitions"
 Require-Text $registry 'DbInitializer\.PrBKnownSchemaSql' "ledgerless bootstrap is bounded to the frozen PR-B schema whitelist"
+Require-Text $registry 'IsRecognizedPostPr7LedgerlessBaseline' "post-PR7 ledgerless bootstrap uses a dedicated bounded baseline recognizer"
+Require-Text $registry 'IsCanonicalRegistry' "special ledgerless recognition is restricted to the canonical registry"
+Require-Text $migration 'RecognizesLedgerlessBaseline' "ledgerless baseline recognition is explicit migration metadata"
+Require-Text $initializer 'PostPr7LedgerlessKnownSchemaSql' "post-PR7 receipt schema has a separate frozen whitelist"
+Require-Text $initializer 'ReceiptShopSnapshotColumn' "receipt snapshot is owned by a dedicated additive migration"
 Require-Text $runner 'BeginTransaction\(deferred:\s*false\)' "ledger and migrations use immediate SQLite transactions"
 Require-Text $runner 'Checksum mismatch' "applied checksum mismatches fail closed"
 Require-Text $runner 'ledger contains a gap' "ledger gaps fail closed"
@@ -114,7 +120,8 @@ $expectedIds = @(
     "0003-outbox-catalog-evidence",
     "0004-shop-bound-outbox-backfill",
     "0005-canonical-query-indexes",
-    "0006-system-role-permissions"
+    "0006-system-role-permissions",
+    "0007-receipt-shop-snapshot"
 )
 if (($ids -join "|") -ne ($expectedIds -join "|")) {
     Fail "registry is not the expected append-only ordered migration sequence"
@@ -129,7 +136,8 @@ $expectedChecksums = @(
     "dbc5dae94d81d82fd9043020712471731cb34c1e1d961e00348fcc5cec29eacd",
     "649f49fbe75acf86ecfd354269df305fcece6b81a21e45a5de224f2377992a66",
     "44afcce1cee8d87f0d68f1de472c18f0b5fb6ca474ee94c592d43cf71234da1a",
-    "ade7405f309f563d6734bf5eaafd36df1f2ef6da8bd42ac9b910d1c51b783b8e"
+    "ade7405f309f563d6734bf5eaafd36df1f2ef6da8bd42ac9b910d1c51b783b8e",
+    "a1d12cca8bbfeb57872ee854e18cc32bf98258937d1f7be4be91d925f2ef6462"
 )
 foreach ($checksum in $expectedChecksums) {
     if ($registry -notmatch [regex]::Escape($checksum) -or
@@ -162,7 +170,13 @@ foreach ($token in @(
     "WrongPrimaryKeyOrUniqueConstraint",
     "UnknownColumnOrUniqueCollation",
     "UnknownCheckTriggerForeignKeyOrIndex",
-    "CommentSeparatedCheckConstraint")) {
+    "CommentSeparatedCheckConstraint",
+    "LedgerThrough0006_AppliesOnlyReceiptSnapshotMigrationAndBacksUpFirst",
+    "LedgerlessPostPr7WithUnknownColumn_FailsClosedWithoutLedgerRows",
+    "LedgerlessPostPr7WithMissingOwnershipBackfill_IsNotFalselyBootstrapped",
+    "AuthenticLatestLedgerWithoutReceiptSnapshotColumn_FailsCurrentSchemaValidation",
+    "CanonicalBaselineRecognizer_CannotBootstrapUnsatisfiedCustomPredecessor",
+    "MalformedSchemaWithLedgerThrough0006_DoesNotCommit0007")) {
     if ($runnerTests -notmatch [regex]::Escape($token)) {
         Fail "migration runner regression scenario missing: $token"
     }
@@ -178,10 +192,36 @@ Require-Text $fixtureTests 'ReadSemanticSchema' "fixture tests compare upgraded 
 Require-Text $fixtureTests 'ReadLedgerTimestamps' "fixture tests verify reopen idempotence"
 Require-Text $backupTests 'BackupFailure_LeavesExistingDatabaseAndLedgerUntouched' "backup failure is tested before ledger mutation"
 Require-Text $backupTests 'VerifiedPreMigrationBackup_CanBeRestoredAndUpgradedToLatest' "pre-migration restore and re-upgrade are tested"
+Require-Text $backupTests 'RestoreWithAuthenticLatestLedgerButMissingReceiptColumn_RollsBackLiveDatabase' "restore rejects an authentic latest ledger with missing current schema"
 Require-Text $backupTests 'InvalidForeignKeySource_IsRejectedBeforeLedgerMutation' "invalid backup sources are tested fail-closed"
 Require-Text $backupTests 'BackupIntegrityValidationFailure_LeavesLedgerUntouched' "invalid backup integrity results are tested fail-closed"
 Require-Text $fixtureTests 'ReadFixtureDomainEvidence' "fixture tests preserve seeded domain rows"
 Require-Text $fixtureTests 'ReadBlockedOutboxTimestamps' "repeatable outbox reconciliation does not churn canonical blocked rows"
+Require-Text $fixtureTests 'AssertPostPr7MainWasBootstrappedWithoutReapplying' "post-PR7 ledgerless fixture bootstraps without replay"
+
+$coreSchemaStart = $initializer.IndexOf('internal static string CoreSchemaSql', [StringComparison]::Ordinal)
+$coreSchemaEnd = $initializer.IndexOf('internal static void CreateBaseTables', [StringComparison]::Ordinal)
+$supportedStart = $initializer.IndexOf('internal static SchemaColumnDefinition[] SupportedLegacyColumns', [StringComparison]::Ordinal)
+$supportedEnd = $initializer.IndexOf('internal static string SupportedLegacyColumnMaterial', [StringComparison]::Ordinal)
+$prBStart = $initializer.IndexOf('internal static string PrBKnownSchemaSql', [StringComparison]::Ordinal)
+$prBEnd = $initializer.IndexOf('internal static string PostPr7LedgerlessKnownSchemaSql', [StringComparison]::Ordinal)
+if ($coreSchemaStart -lt 0 -or $coreSchemaEnd -le $coreSchemaStart -or
+    $supportedStart -lt 0 -or $supportedEnd -le $supportedStart -or
+    $prBStart -lt 0 -or $prBEnd -le $prBStart) {
+    Fail "published PR-B schema material boundaries are missing"
+}
+else {
+    $publishedMaterial =
+        $initializer.Substring($coreSchemaStart, $coreSchemaEnd - $coreSchemaStart) +
+        $initializer.Substring($supportedStart, $supportedEnd - $supportedStart) +
+        $initializer.Substring($prBStart, $prBEnd - $prBStart)
+    if ($publishedMaterial -match 'receipt_shop_snapshot') {
+        Fail "receipt snapshot mutated published 0001-0003 schema material"
+    }
+    else {
+        Pass "receipt snapshot is excluded from published 0001-0003 schema material"
+    }
+}
 
 $migrationSource = @($migrationFiles + "src/Win7POS.Data/DbInitializer.cs") |
     ForEach-Object { Read-RepoText $_ } |

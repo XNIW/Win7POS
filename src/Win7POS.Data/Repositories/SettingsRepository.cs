@@ -72,6 +72,68 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
             return SetStringAsync(key, value.ToString(CultureInfo.InvariantCulture));
         }
 
+        /// <summary>
+        /// Atomically reserves a positive integer that never moves backwards.
+        /// If <paramref name="requested"/> is not greater than the stored value,
+        /// the next integer is reserved instead. Corrupt or exhausted state fails
+        /// closed so callers cannot accidentally reuse an identifier.
+        /// </summary>
+        public async Task<int> ReserveMonotonicIntAsync(string key, int requested)
+        {
+            if (string.IsNullOrWhiteSpace(key)) throw new ArgumentException("key is empty");
+            if (requested <= 0) throw new ArgumentOutOfRangeException(nameof(requested));
+
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction(deferred: false);
+            try
+            {
+                var raw = await conn.QuerySingleOrDefaultAsync<string>(
+                    "SELECT value FROM app_settings WHERE key = @key",
+                    new { key },
+                    tx).ConfigureAwait(false);
+
+                var current = 0;
+                if (raw != null &&
+                    (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out current) ||
+                     current < 0))
+                {
+                    throw new InvalidOperationException(
+                        "The monotonic integer setting is invalid and cannot be reserved safely.");
+                }
+
+                int reserved;
+                if (requested > current)
+                {
+                    reserved = requested;
+                }
+                else
+                {
+                    if (current == int.MaxValue)
+                        throw new InvalidOperationException(
+                            "The monotonic integer setting is exhausted and cannot be reserved safely.");
+                    reserved = checked(current + 1);
+                }
+
+                await conn.ExecuteAsync(@"
+INSERT INTO app_settings(key, value) VALUES(@key, @value)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                    new
+                    {
+                        key,
+                        value = reserved.ToString(CultureInfo.InvariantCulture)
+                    },
+                    tx).ConfigureAwait(false);
+                tx.Commit();
+                return reserved;
+            }
+            catch
+            {
+                try { tx.Rollback(); }
+                catch { }
+                throw;
+            }
+        }
+
         public Task<string> GetLastPosLoginShopCodeAsync()
         {
             return GetStringAsync(PosLoginLastShopCodeKey);

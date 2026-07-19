@@ -1,5 +1,6 @@
 param(
-    [string]$ReleasePackSource = ""
+    [string]$ReleasePackSource = "",
+    [string]$ExpectedCommitSha = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -38,7 +39,9 @@ $sourceGates = @(
     "check-pos-revenue-copy.ps1",
     "check-win7pos-restore-guard.ps1",
     "check-pos-start-of-day-sync.ps1",
-    "check-pos-printer-cashdrawer-safety.ps1"
+    "check-pos-printer-cashdrawer-safety.ps1",
+    "check-pos-printer-driver-discovery.ps1",
+    "check-pos-receipt-surface-consistency.ps1"
 )
 
 $releaseOnlyGates = @(
@@ -68,15 +71,37 @@ function Invoke-RequiredGate {
     $arguments = @("-NoProfile", "-File", $path)
     if ($UseReleasePack) {
         $arguments += @("-ReleasePackSource", $ReleasePackSource)
+        if (-not [string]::IsNullOrWhiteSpace($ExpectedCommitSha) -and
+            $gate -in @("check-release-pack-completeness.ps1", "check-win7-runtime-release-validation.ps1")) {
+            $arguments += @("-ExpectedCommitSha", $ExpectedCommitSha)
+        }
     }
 
-    $output = & $pwsh @arguments 2>&1
+    $output = @(& $pwsh @arguments 2>&1)
     $exitCode = $LASTEXITCODE
-    if ($exitCode -eq 0) {
+    $outputLines = @($output | ForEach-Object { $_.ToString() })
+    $reportedErrorRecords = @($output | Where-Object {
+        $_ -is [System.Management.Automation.ErrorRecord]
+    })
+    $reportedFailure = @($outputLines | Where-Object {
+        $_ -match '^\s*FAIL(?:\s*:|\s|$)' -or
+        $_ -match '^\s*(?:===\s*)?RESULT:\s*FAIL(?:\s*===)?\s*$' -or
+        $_ -match '^\s*ERROR(?:\s*:|\s|$)'
+    })
+    if ($exitCode -eq 0 -and
+        $reportedFailure.Count -eq 0 -and
+        $reportedErrorRecords.Count -eq 0) {
         $results.Add([pscustomobject]@{ Gate = $Label; Result = "PASS"; Detail = "" }) | Out-Null
     }
     else {
-        $essential = @($output | Where-Object { $_ -match '^(FAIL|Exception|.*: line |.*missing|.*must )' } | Select-Object -Last 4) -join " | "
+        $essential = @($outputLines | Where-Object {
+            $_ -match '^\s*(FAIL|ERROR)(?:\s*:|\s|$)' -or
+            $_ -match '^\s*(?:===\s*)?RESULT:\s*FAIL(?:\s*===)?\s*$' -or
+            $_ -match '^(Exception|.*: line |.*missing|.*must )'
+        } | Select-Object -Last 4) -join " | "
+        if ([string]::IsNullOrWhiteSpace($essential) -and $reportedErrorRecords.Count -gt 0) {
+            $essential = "stderr/ErrorRecord: " + (($reportedErrorRecords | Select-Object -Last 2 | ForEach-Object { $_.ToString() }) -join " | ")
+        }
         if ([string]::IsNullOrWhiteSpace($essential)) { $essential = "exit $exitCode" }
         $results.Add([pscustomobject]@{ Gate = $Label; Result = "FAIL"; Detail = $essential }) | Out-Null
     }

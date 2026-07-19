@@ -110,19 +110,77 @@ matrix=" + DbInitializer.SecuritySeedMaterial,
                     DbInitializer.SeedSecurity,
                     detector => DbInitializer.IsSecuritySeedSatisfied(
                         detector.Connection,
-                        detector.Transaction))
+                        detector.Transaction)),
+
+                new SchemaMigration(
+                    "0007-receipt-shop-snapshot",
+                    "Add the immutable shop snapshot used by historical receipt reprints.",
+                    @"0007-receipt-shop-snapshot/v1
+sales=receipt_shop_snapshot:TEXT NULL
+operation=DbInitializer.EnsureReceiptShopSnapshot
+definition=" + DbInitializer.ReceiptShopSnapshotColumn.ToCanonicalMaterial() + @"
+ledgerless-baseline=" + DbInitializer.PostPr7LedgerlessKnownSchemaSql + @"
+ledgerless-invariants=supported-columns,dependent-ownership,safe-outbox,canonical-indexes,security-seed
+postcondition=current-structural-schema",
+                    "a1d12cca8bbfeb57872ee854e18cc32bf98258937d1f7be4be91d925f2ef6462",
+                    "1.0.0",
+                    "Additive nullable column; older readers ignore it, while downgrade requires restoring the verified backup.",
+                    true,
+                    DbInitializer.EnsureReceiptShopSnapshot,
+                    IsCurrentSchemaStructurallyValid,
+                    IsRecognizedPostPr7LedgerlessBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
 
         public static SchemaMigration Latest => Registered[Registered.Count - 1];
 
+        internal static bool IsCanonicalRegistry(IReadOnlyList<SchemaMigration> migrations)
+        {
+            if (migrations == null || migrations.Count != Registered.Count)
+                return false;
+            for (var index = 0; index < Registered.Count; index++)
+            {
+                if (!string.Equals(
+                        migrations[index].MigrationId,
+                        Registered[index].MigrationId,
+                        StringComparison.Ordinal) ||
+                    !string.Equals(
+                        migrations[index].Checksum,
+                        Registered[index].Checksum,
+                        StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+        {
+            if (detector == null)
+                throw new ArgumentNullException(nameof(detector));
+            return
+                HasBaseSchema(detector, DbInitializer.PostPr7LedgerlessKnownSchemaSql) &&
+                HasSupportedLegacyColumns(detector) &&
+                HasDependentSchema(detector) &&
+                HasCanonicalIndexes(detector) &&
+                detector.ColumnMatchesDefinition(DbInitializer.ReceiptShopSnapshotColumn);
+        }
+
         private static bool HasBaseSchema(LegacySchemaDetector detector)
+        {
+            return HasBaseSchema(detector, DbInitializer.PrBKnownSchemaSql);
+        }
+
+        private static bool HasBaseSchema(
+            LegacySchemaDetector detector,
+            string allowedSchemaSql)
         {
             return
                 detector.HasKnownTableDefinitions(
                     DbInitializer.CoreSchemaFingerprintSql,
-                    DbInitializer.PrBKnownSchemaSql,
+                    allowedSchemaSql,
                     "products", "sales", "sale_lines", "app_settings", "audit_log",
                     "suppliers", "categories", "product_meta", "product_price_history",
                     "held_carts", "held_cart_lines", "roles", "users", "role_permissions",
@@ -141,14 +199,7 @@ matrix=" + DbInitializer.SecuritySeedMaterial,
         private static bool HasDependentSchemaAndOwnership(LegacySchemaDetector detector)
         {
             return
-                detector.HasAllColumnDefinitions(DbInitializer.DependentLegacyColumns) &&
-                detector.HasKnownTableDefinitions(
-                    DbInitializer.DependentSchemaSql,
-                    DbInitializer.PrBKnownSchemaSql,
-                    "local_stock_movements", "sales_sync_outbox", "catalog_import_outbox",
-                    "remote_catalog_pending_prices", "remote_catalog_product_references",
-                    "remote_catalog_price_ownership", "remote_catalog_price_evidence_quarantine") &&
-                detector.HasForeignKey("sales_sync_outbox", "sale_id", "sales", "id", "CASCADE") &&
+                HasDependentSchema(detector) &&
                 detector.NoRows(@"
 SELECT 1
 FROM (
@@ -172,6 +223,19 @@ WHERE NOT EXISTS (
   WHERE ownership.remote_price_id = evidence.remote_price_id
     AND ownership.remote_product_id = evidence.remote_product_id)
 LIMIT 1;");
+        }
+
+        private static bool HasDependentSchema(LegacySchemaDetector detector)
+        {
+            return
+                detector.HasAllColumnDefinitions(DbInitializer.DependentLegacyColumns) &&
+                detector.HasKnownTableDefinitions(
+                    DbInitializer.DependentSchemaSql,
+                    DbInitializer.PrBKnownSchemaSql,
+                    "local_stock_movements", "sales_sync_outbox", "catalog_import_outbox",
+                    "remote_catalog_pending_prices", "remote_catalog_product_references",
+                    "remote_catalog_price_ownership", "remote_catalog_price_evidence_quarantine") &&
+                detector.HasForeignKey("sales_sync_outbox", "sale_id", "sales", "id", "CASCADE");
         }
 
         private static bool HasSafeOutboxBindings(LegacySchemaDetector detector)
@@ -247,6 +311,19 @@ LIMIT 1;");
         private static bool HasCanonicalIndexes(LegacySchemaDetector detector)
         {
             return detector.HasAllIndexDefinitions(DbInitializer.CanonicalIndexSql);
+        }
+
+        private static bool IsRecognizedPostPr7LedgerlessBaseline(LegacySchemaDetector detector)
+        {
+            return
+                IsCurrentSchemaStructurallyValid(detector) &&
+                HasSupportedLegacyColumns(detector) &&
+                HasDependentSchemaAndOwnership(detector) &&
+                HasSafeOutboxBindings(detector) &&
+                HasCanonicalIndexes(detector) &&
+                DbInitializer.IsSecuritySeedSatisfied(
+                    detector.Connection,
+                    detector.Transaction);
         }
     }
 }

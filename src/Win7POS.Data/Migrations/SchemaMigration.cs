@@ -14,6 +14,7 @@ namespace Win7POS.Data.Migrations
 
         private readonly Action<SqliteConnection, SqliteTransaction> _apply;
         private readonly Func<LegacySchemaDetector, bool> _isSatisfied;
+        private readonly Func<LegacySchemaDetector, bool> _recognizesLedgerlessBaseline;
 
         public SchemaMigration(
             string migrationId,
@@ -33,7 +34,8 @@ namespace Win7POS.Data.Migrations
                 rollbackCompatibility,
                 requiresBackup,
                 apply,
-                isSatisfied)
+                isSatisfied,
+                null)
         {
         }
 
@@ -47,6 +49,31 @@ namespace Win7POS.Data.Migrations
             bool requiresBackup,
             Action<SqliteConnection, SqliteTransaction> apply,
             Func<LegacySchemaDetector, bool> isSatisfied)
+            : this(
+                migrationId,
+                description,
+                checksumMaterial,
+                expectedChecksum,
+                minimumApplicationVersion,
+                rollbackCompatibility,
+                requiresBackup,
+                apply,
+                isSatisfied,
+                null)
+        {
+        }
+
+        public SchemaMigration(
+            string migrationId,
+            string description,
+            string checksumMaterial,
+            string expectedChecksum,
+            string minimumApplicationVersion,
+            string rollbackCompatibility,
+            bool requiresBackup,
+            Action<SqliteConnection, SqliteTransaction> apply,
+            Func<LegacySchemaDetector, bool> isSatisfied,
+            Func<LegacySchemaDetector, bool> recognizesLedgerlessBaseline)
         {
             if (string.IsNullOrWhiteSpace(migrationId) ||
                 !MigrationIdPattern.IsMatch(migrationId))
@@ -89,6 +116,7 @@ namespace Win7POS.Data.Migrations
             RequiresBackup = requiresBackup;
             _apply = apply ?? throw new ArgumentNullException(nameof(apply));
             _isSatisfied = isSatisfied ?? throw new ArgumentNullException(nameof(isSatisfied));
+            _recognizesLedgerlessBaseline = recognizesLedgerlessBaseline;
         }
 
         public string MigrationId { get; }
@@ -106,6 +134,12 @@ namespace Win7POS.Data.Migrations
         internal bool IsSatisfied(LegacySchemaDetector detector)
         {
             return _isSatisfied(detector);
+        }
+
+        internal bool RecognizesLedgerlessBaseline(LegacySchemaDetector detector)
+        {
+            return _recognizesLedgerlessBaseline != null &&
+                _recognizesLedgerlessBaseline(detector);
         }
 
         private static string ComputeChecksum(string value)

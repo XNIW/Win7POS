@@ -273,11 +273,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 Roles.Clear();
                 foreach (var r in roles)
                     Roles.Add(r);
-                if (SelectedUser != null)
-                {
-                    var again = Users.FirstOrDefault(x => x.Id == SelectedUser.Id);
-                    SelectedUser = again;
-                }
+                var selectedUserId = SelectedUser?.Id ?? 0;
+                var selectedUser = selectedUserId > 0
+                    ? FilteredUsers.FirstOrDefault(x => x.Id == selectedUserId)
+                    : null;
+                SelectedUser = selectedUser ?? FilteredUsers.FirstOrDefault();
                 Status = PosLocalization.T("users.loaded");
                 IsDirty = false;
             }

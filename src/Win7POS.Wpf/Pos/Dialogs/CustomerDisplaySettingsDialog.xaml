@@ -19,85 +19,126 @@
         </StackPanel>
 
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <StackPanel>
-                <Border Style="{StaticResource SettingsCardBorderStyle}" Margin="0,0,0,12">
-                    <StackPanel>
-                        <TextBlock Text="{loc:Loc customerDisplay.settings.status}" FontSize="16" FontWeight="SemiBold"/>
-                        <TextBlock Margin="0,6,0,0"><Run Text="{Binding MonitorCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Loc customerDisplay.settings.monitorsDetected}"/></TextBlock>
-                        <TextBlock Text="{Binding TopologyText}" Style="{StaticResource MutedTextStyle}"/>
-                        <ItemsControl ItemsSource="{Binding Monitors}" Margin="0,8,0,0">
-                            <ItemsControl.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayName}" Margin="0,2"/></DataTemplate></ItemsControl.ItemTemplate>
-                        </ItemsControl>
-                    </StackPanel>
-                </Border>
+            <Grid Margin="0,0,6,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="12"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
 
-                <Border Style="{StaticResource SettingsCardBorderStyle}" Margin="0,0,0,12">
-                    <StackPanel>
-                        <CheckBox Content="{loc:Loc customerDisplay.settings.enabled}" IsChecked="{Binding Enabled}" FontWeight="SemiBold"/>
-                        <StackPanel Orientation="Horizontal" Margin="0,10,0,8">
-                            <RadioButton Content="{loc:Loc customerDisplay.settings.auto}" IsChecked="{Binding Automatic}" Margin="0,0,20,0"/>
-                            <RadioButton Content="{loc:Loc customerDisplay.settings.manual}" IsChecked="{Binding Manual}"/>
+                <StackPanel Grid.Column="0">
+                    <Border Style="{StaticResource SettingsCardBorderStyle}" Margin="0,0,0,12">
+                        <StackPanel>
+                            <DockPanel>
+                                <Border DockPanel.Dock="Right" Style="{StaticResource FilterChipStyle}" Padding="8,3">
+                                    <TextBlock>
+                                        <Run Text="{Binding MonitorCount, Mode=OneWay}"/><Run Text=" "/><Run Text="{loc:Loc customerDisplay.settings.monitorsDetected}"/>
+                                    </TextBlock>
+                                </Border>
+                                <TextBlock Text="{loc:Loc customerDisplay.settings.status}" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <TextBlock Text="{Binding TopologyText}" Style="{StaticResource MutedTextStyle}" Margin="0,7,0,0"/>
+                            <ItemsControl ItemsSource="{Binding Monitors}" Margin="0,6,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate><TextBlock Text="{Binding DisplayName}" Margin="0,2" TextWrapping="Wrap"/></DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
                         </StackPanel>
-                        <Grid>
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="170"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Text="{loc:Loc customerDisplay.settings.cashierMonitor}" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding Monitors}" DisplayMemberPath="DisplayName" SelectedValuePath="DeviceName" SelectedValue="{Binding CashierMonitor}" Margin="8,4"/>
-                            <TextBlock Grid.Row="1" Text="{loc:Loc customerDisplay.settings.customerMonitor}" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Monitors}" DisplayMemberPath="DisplayName" SelectedValuePath="DeviceName" SelectedValue="{Binding CustomerMonitor}" Margin="8,4"/>
-                        </Grid>
-                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                            <Button Style="{StaticResource OutlineButtonStyle}" Click="OnInvertClick" Margin="0,0,8,0" Content="{loc:Loc customerDisplay.settings.invert}"/>
-                            <Button Style="{StaticResource OutlineButtonStyle}" Click="OnResetAutomaticClick" Content="{loc:Loc customerDisplay.settings.resetAuto}"/>
+                    </Border>
+
+                    <Border Style="{StaticResource SettingsCardBorderStyle}" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc customerDisplay.settings.routing}" FontSize="16" FontWeight="SemiBold"/>
+                            <CheckBox Content="{loc:Loc customerDisplay.settings.enabled}" IsChecked="{Binding Enabled}" FontWeight="SemiBold" Margin="0,10,0,0"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,10,0,8">
+                                <RadioButton Content="{loc:Loc customerDisplay.settings.auto}" IsChecked="{Binding Automatic}" Margin="0,0,20,0"/>
+                                <RadioButton Content="{loc:Loc customerDisplay.settings.manual}" IsChecked="{Binding Manual}"/>
+                            </StackPanel>
+
+                            <TextBlock Text="{loc:Loc customerDisplay.settings.cashierMonitor}" Style="{StaticResource FormLabelTextStyle}" Margin="0,4,0,4"/>
+                            <ComboBox ItemsSource="{Binding Monitors}" SelectedValuePath="DeviceName" SelectedValue="{Binding CashierMonitor}">
+                                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayName}" TextWrapping="Wrap"/></DataTemplate></ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Text="{loc:Loc customerDisplay.settings.customerMonitor}" Style="{StaticResource FormLabelTextStyle}" Margin="0,10,0,4"/>
+                            <ComboBox ItemsSource="{Binding Monitors}" SelectedValuePath="DeviceName" SelectedValue="{Binding CustomerMonitor}">
+                                <ComboBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding DisplayName}" TextWrapping="Wrap"/></DataTemplate></ComboBox.ItemTemplate>
+                            </ComboBox>
+
+                            <UniformGrid Columns="2" Margin="-4,8,-4,-4">
+                                <Button Style="{StaticResource OutlineButtonStyle}" Click="OnInvertClick" Margin="4" MinHeight="42" Content="{loc:Loc customerDisplay.settings.invert}"/>
+                                <Button Style="{StaticResource OutlineButtonStyle}" Click="OnResetAutomaticClick" Margin="4" MinHeight="42" Content="{loc:Loc customerDisplay.settings.resetAuto}"/>
+                            </UniformGrid>
                         </StackPanel>
-                    </StackPanel>
-                </Border>
+                    </Border>
 
-                <Border Style="{StaticResource SettingsCardBorderStyle}" Margin="0,0,0,12">
-                    <StackPanel>
-                        <TextBlock Text="{loc:Loc customerDisplay.settings.actions}" FontSize="16" FontWeight="SemiBold"/>
-                        <WrapPanel Margin="0,10,0,0">
-                            <Button Style="{StaticResource OutlineButtonStyle}" Click="OnIdentifyClick" Margin="0,0,8,8" Content="{loc:Loc customerDisplay.settings.identify}"/>
-                            <Button Style="{StaticResource OutlineButtonStyle}" Click="OnPreviewClick" Margin="0,0,8,8" Content="{loc:Loc customerDisplay.settings.preview}"/>
-                            <Button Style="{StaticResource OutlineButtonStyle}" Click="OnOpenClick" Margin="0,0,8,8" Content="{loc:Loc customerDisplay.settings.open}"/>
-                            <Button Style="{StaticResource OutlineButtonStyle}" Click="OnCloseDisplayClick" Margin="0,0,8,8" Content="{loc:Loc customerDisplay.settings.close}"/>
-                        </WrapPanel>
-                    </StackPanel>
-                </Border>
+                    <Border Style="{StaticResource SettingsCardBorderStyle}">
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc customerDisplay.settings.control}" FontSize="16" FontWeight="SemiBold"/>
+                            <UniformGrid Columns="2" Margin="-4,6,-4,-4">
+                                <Button Style="{StaticResource OutlineButtonStyle}" Click="OnIdentifyClick" Margin="4" MinHeight="42" Content="{loc:Loc customerDisplay.settings.identify}"/>
+                                <Button Style="{StaticResource OutlineButtonStyle}" Click="OnPreviewClick" Margin="4" MinHeight="42" Content="{loc:Loc customerDisplay.settings.preview}"/>
+                                <Button Style="{StaticResource OutlineButtonStyle}" Click="OnOpenClick" Margin="4" MinHeight="42" Content="{loc:Loc customerDisplay.settings.open}"/>
+                                <Button Style="{StaticResource OutlineButtonStyle}" Click="OnCloseDisplayClick" Margin="4" MinHeight="42" Content="{loc:Loc customerDisplay.settings.close}"/>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
 
-                <Border Style="{StaticResource SettingsCardBorderStyle}">
-                    <StackPanel>
-                        <TextBlock Text="{loc:Loc customerDisplay.settings.visual}" FontSize="16" FontWeight="SemiBold"/>
-                        <UniformGrid Columns="2" Margin="0,10,0,0">
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.autoOpen}" IsChecked="{Binding AutoOpen}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.fullScreen}" IsChecked="{Binding FullScreen}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.workArea}" IsChecked="{Binding UseWorkingArea}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.topmost}" IsChecked="{Binding AlwaysOnTop}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.followMinimize}" IsChecked="{Binding FollowMinimize}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.reopen}" IsChecked="{Binding ReopenOnReturn}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.showShop}" IsChecked="{Binding ShowShopName}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.showBarcode}" IsChecked="{Binding ShowBarcode}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.showUnit}" IsChecked="{Binding ShowUnitPrice}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.showLine}" IsChecked="{Binding ShowLineTotal}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.showSubtotal}" IsChecked="{Binding ShowSubtotal}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.showDiscount}" IsChecked="{Binding ShowDiscount}"/>
-                            <CheckBox Content="{loc:Loc customerDisplay.settings.showCount}" IsChecked="{Binding ShowItemCount}"/>
-                        </UniformGrid>
-                        <Grid Margin="0,12,0,0">
-                            <Grid.ColumnDefinitions><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/><ColumnDefinition Width="120"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                            <TextBlock Text="{loc:Loc customerDisplay.settings.theme}" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Column="1" ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}" Margin="8,4"/>
-                            <TextBlock Grid.Column="2" Text="{loc:Loc customerDisplay.settings.font}" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Column="3" ItemsSource="{Binding FontScales}" SelectedItem="{Binding FontScale}" Margin="8,4"/>
-                            <TextBlock Grid.Row="1" Text="{loc:Loc customerDisplay.settings.language}" VerticalAlignment="Center"/>
-                            <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding Languages}" SelectedItem="{Binding CustomerLanguage}" Margin="8,4"/>
-                            <TextBlock Grid.Row="1" Grid.Column="2" Text="{loc:Loc customerDisplay.settings.thankYou}" VerticalAlignment="Center"/>
-                            <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding ThankYouSeconds}" Margin="8,4"/>
-                        </Grid>
-                    </StackPanel>
-                </Border>
-            </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <Border Style="{StaticResource SettingsCardBorderStyle}" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc customerDisplay.settings.content}" FontSize="16" FontWeight="SemiBold"/>
+                            <UniformGrid Columns="2" Margin="0,9,0,0">
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.showShop}" IsChecked="{Binding ShowShopName}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.showBarcode}" IsChecked="{Binding ShowBarcode}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.showUnit}" IsChecked="{Binding ShowUnitPrice}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.showLine}" IsChecked="{Binding ShowLineTotal}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.showSubtotal}" IsChecked="{Binding ShowSubtotal}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.showDiscount}" IsChecked="{Binding ShowDiscount}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.showCount}" IsChecked="{Binding ShowItemCount}" Margin="0,3"/>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource SettingsCardBorderStyle}" Margin="0,0,0,12">
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc customerDisplay.settings.behavior}" FontSize="16" FontWeight="SemiBold"/>
+                            <UniformGrid Columns="2" Margin="0,9,0,0">
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.autoOpen}" IsChecked="{Binding AutoOpen}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.fullScreen}" IsChecked="{Binding FullScreen}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.workArea}" IsChecked="{Binding UseWorkingArea}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.topmost}" IsChecked="{Binding AlwaysOnTop}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.followMinimize}" IsChecked="{Binding FollowMinimize}" Margin="0,3"/>
+                                <CheckBox Content="{loc:Loc customerDisplay.settings.reopen}" IsChecked="{Binding ReopenOnReturn}" Margin="0,3"/>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource SettingsCardBorderStyle}">
+                        <StackPanel>
+                            <TextBlock Text="{loc:Loc customerDisplay.settings.appearance}" FontSize="16" FontWeight="SemiBold"/>
+                            <UniformGrid Columns="2" Margin="-4,6,-4,-4">
+                                <StackPanel Margin="4">
+                                    <TextBlock Text="{loc:Loc customerDisplay.settings.theme}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,0,4"/>
+                                    <ComboBox ItemsSource="{Binding Themes}" SelectedItem="{Binding Theme}"/>
+                                </StackPanel>
+                                <StackPanel Margin="4">
+                                    <TextBlock Text="{loc:Loc customerDisplay.settings.font}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,0,4"/>
+                                    <ComboBox ItemsSource="{Binding FontScales}" SelectedItem="{Binding FontScale}"/>
+                                </StackPanel>
+                                <StackPanel Margin="4">
+                                    <TextBlock Text="{loc:Loc customerDisplay.settings.language}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,0,4"/>
+                                    <ComboBox ItemsSource="{Binding Languages}" SelectedItem="{Binding CustomerLanguage}"/>
+                                </StackPanel>
+                                <StackPanel Margin="4">
+                                    <TextBlock Text="{loc:Loc customerDisplay.settings.thankYou}" Style="{StaticResource FormLabelTextStyle}" Margin="0,0,0,4"/>
+                                    <TextBox Text="{Binding ThankYouSeconds}" Style="{StaticResource ModernTextBoxStyle}"/>
+                                </StackPanel>
+                            </UniformGrid>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
         </ScrollViewer>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">

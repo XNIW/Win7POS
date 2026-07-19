@@ -2,14 +2,17 @@
 
 ## Scope and status
 
-This roadmap is the read-only hardware/settings follow-up to PR-B. PR-B does not
-change scanner input, printer/spooler behavior, cash-drawer output, customer
-display runtime, or operations scheduling.
+This roadmap is the hardware/settings follow-up to PR-B. The PR-B migration
+delta does not change scanner input, printer/spooler behavior, cash-drawer
+output, customer-display runtime or operations scheduling; PR #7 behavior below
+is the current baseline.
 
 - Current-main reproducible P0: `0`.
 - Current-main reproducible P1: `0`.
 - Physical Windows 7 SP1, scanner, Xprinter, drawer, dual-monitor and DPI/language
   certification remains external and open.
+- Epson TM-T60 receipt surfaces are physically verified on Windows 11; this is
+  not a substitute for the still-open Windows 7 physical run.
 - All proposed settings below are live-apply (`restart required = NO`).
 - Hardware configuration never proves that hardware is connected. Health must
   distinguish `Healthy`, `Warning`, `Unknown`, `Disabled`, and `Needs test`.
@@ -20,9 +23,9 @@ display runtime, or operations scheduling.
 | --- | --- | --- |
 | Settings | Generic string KV store; printer settings are saved through several independent writes. | `SettingsRepository.cs`, `PosWorkflowService.cs` |
 | Scanner | Keyboard-wedge input is a focused text box submitted by Enter; there are no typed normalization keys or isolated scanner test. | `PosView.xaml`, `PosView.xaml.cs`, `PosViewModel.cs` |
-| Printer | Installed queues are enumerated and basic settings validity is exposed; spooler jobs/queue/port health are not diagnosed. | `WindowsPrinterDiscovery.cs`, `InstalledPrinterInfo.cs` |
-| Receipt | Legacy `pos.useReceipt42` selects 32/42-column formatting, while paper selection remains centered on 80 mm. | `PosWorkflowService.cs`, `ReceiptOptions.cs`, `WindowsSpoolerReceiptPrinter.cs` |
-| Drawer | Disabled by default and protected from virtual targets, but custom raw bytes are permissive. | `PrinterSettingsDialog.xaml`, `WindowsSpoolerReceiptPrinter.cs` |
+| Printer | Installed queues expose driver, port, status, offline/paused state and physical-vs-virtual classification; atomic settings and live job-count diagnostics remain follow-up work. | `WindowsPrinterDiscovery.cs`, `WindowsSpoolerPrinterInventory.cs`, `InstalledPrinterInfo.cs` |
+| Receipt | Shared renderers produce direct-spooler receipt, fiscal-boleta and daily-close text at 32/42 columns; copies are strictly 1–3 and no automatic PDF/archive remains. Width selection still uses legacy `pos.useReceipt42` rather than a typed profile. | `PosReceiptTextRenderer.cs`, `FiscalBoletaTextRenderer.cs`, `DailyCloseReceiptTextRenderer.cs`, `ReceiptPrintOptions.cs`, `WindowsSpoolerReceiptPrinter.cs` |
+| Drawer | Disabled by default, protected from virtual targets and restricted to an exact validated ESC/POS pulse shape. | `PrinterSettingsDialog.xaml`, `PrinterHardwareSafety.cs`, `WindowsSpoolerReceiptPrinter.cs` |
 | Backup | Manual online backup is integrity/FK verified; no schedule, retention, or selectable destination exists. | `SqliteOnlineBackup.cs`, `DbMaintenanceRepository.cs` |
 | Customer display | Typed atomic settings, Win7-safe topology, non-activating window, privacy projection and hot-plug handling already exist. | `CustomerDisplaySettings*.cs`, `CustomerDisplayManager.cs` |
 
@@ -55,11 +58,9 @@ a discoverable USB device.
 | `pos.printer.receipt.enabled` | bool | `false` | Boolean | `settings.printer` | No | None specific. | Fail closed with no queue. |
 | `pos.printer.receipt.name` | string | `""` | Installed queue, max 255; empty only when disabled or explicit default allowed | `settings.printer` | No | Unicode/remote queues and slow drivers. | Missing, renamed, offline, physical and virtual targets. |
 | `pos.printer.receipt.auto_print_after_sale` | bool | `false` | Requires enabled and a valid non-interactive target | `settings.printer` | No | PDF/XPS may open UI. | Sale remains committed; no prompt; post-sale warning. |
-| `pos.printer.receipt.copies` | int | `1` | 1–5 | `settings.printer` | No | Avoid unbounded jobs and the downstream `short` cast. | 0/1/5/6/`int.MaxValue`; exact fake-spooler count. |
+| `pos.printer.receipt.copies` | int | `1` | 1–3 | `settings.printer` | No | Keep one bounded validation policy across preview, sale and reprint. | 0/1/3/4/`int.MaxValue`; exact fake-spooler count. |
 | `pos.printer.receipt.allow_windows_default` | bool | `false` | Boolean | `settings.printer` | No | Windows default can change or become virtual. | Changed, empty and virtual default. |
 | `pos.printer.receipt.allow_virtual_printers` | bool | `false` | Manual explicit print only; never auto-print | `settings.printer` | No | Virtual drivers can require dialogs. | Manual consent allowed; automatic path blocked. |
-| `pos.printer.receipt.save_copy` | bool | `false` | Boolean | `settings.printer` | No | Disk/ACL failure. | Disk full/access denied cannot invalidate the sale. |
-| `pos.printer.receipt.output_directory` | path | managed `data\receipts` | Absolute local directory; final path `<240` chars; no URI/credential | `settings.printer` | No | Win7 `MAX_PATH`, ACL, slow shares. | Invalid/long/read-only; path absent from logs/audit. |
 | `pos.printer.receipt.profile` | enum | `thermal_80mm_42col` | `thermal_58mm_32col`, `thermal_80mm_42col` | `settings.printer` | No | Localized paper names and inconsistent drivers. | Pure paper selector, fallback, 32/42 formatting and matching test print. |
 
 Compatibility: when `pos.printer.receipt.profile` is absent, map
@@ -74,7 +75,7 @@ Compatibility: when `pos.printer.receipt.profile` is absent, map
 | `pos.cashdrawer.printer_name` | string | `""` | Installed non-virtual queue; empty means receipt queue | `settings.printer` | No | Renamed/offline queue. | Receipt fallback, missing queue, virtual block. |
 | `pos.cashdrawer.open_on_cash_sale` | bool | `true` | Boolean | `settings.printer` | No | None specific. | Cash opens; card/non-cash does not. |
 | `pos.cashdrawer.preset` | enum | `escpos_pin2` | `escpos_pin2`, `escpos_pin5`, `custom` | `settings.printer` | No | Pulse wiring differs by device. | Exact pin2/pin5 bytes and round-trip. |
-| `pos.cashdrawer.command` | string | `27,112,0,25,250` | Custom only; exact `ESC p m t1 t2`, `m` in `0,1,48,49`, times 0–255 | `settings.printer` | No | Invalid RAW bytes may print garbage. | Missing/extra/non-numeric/out-of-range bytes rejected. |
+| `pos.cashdrawer.command` | string | `27,112,0,25,250` | Custom only; exact `ESC p m t1 t2`, `m` in `0,1,48,49`, times 0–255 and `t1 < t2` | `settings.printer` | No | Invalid RAW bytes may print garbage. | Missing/extra/non-numeric/out-of-range/order violations rejected. |
 
 `pos.cashdrawer.enabled` remains a read-only compatibility alias when `mode` is
 missing; it is not a second editable value.
@@ -98,7 +99,7 @@ missing; it is not a second editable value.
   `CashDrawerPresetPolicy`.
 - Scanner test cannot alter cart/catalog or open quick-create.
 - Queue diagnostics cannot block UI or accumulate timed-out tasks.
-- Extend `check-pos-printer-cashdrawer-safety.ps1`.
+- Preserve and extend `check-pos-printer-cashdrawer-safety.ps1`.
 - Physical smoke: Win7 SP1 x86, Enter/Tab scanner, 58/80 mm, offline queue,
   Xprinter, and pin2/pin5 drawer.
 
@@ -210,6 +211,7 @@ Additional behavior:
    and atomic audit.
 3. `PR-H3`: branding, idle content, privacy, test pattern and topology polish.
 
-The current risks (unbounded copy count, permissive RAW drawer bytes, non-atomic
-printer save, 80 mm bias, no backup schedule/retention and missing settings audit)
-remain roadmap-level. They are not promoted artificially to P0/P1.
+The current risks (non-atomic printer save, 80 mm bias, no live job-count
+diagnostic, no backup schedule/retention and missing settings audit) remain
+roadmap-level. Copy count and RAW drawer validation were closed by PR #7 and are
+not carried forward as open findings.

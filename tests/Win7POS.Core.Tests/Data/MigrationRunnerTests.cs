@@ -11,6 +11,9 @@ namespace Win7POS.Core.Tests.Data;
 [TestClass]
 public sealed class MigrationRunnerTests
 {
+    private static readonly SchemaColumnDefinition ReceiptSnapshotDefinition =
+        new("sales", "receipt_shop_snapshot", "TEXT", false, "", "TEXT NULL");
+
     [TestMethod]
     public void Registry_IsOrderedUniqueAndChecksummed()
     {
@@ -22,11 +25,12 @@ public sealed class MigrationRunnerTests
             ["0003-outbox-catalog-evidence"] = "dbc5dae94d81d82fd9043020712471731cb34c1e1d961e00348fcc5cec29eacd",
             ["0004-shop-bound-outbox-backfill"] = "649f49fbe75acf86ecfd354269df305fcece6b81a21e45a5de224f2377992a66",
             ["0005-canonical-query-indexes"] = "44afcce1cee8d87f0d68f1de472c18f0b5fb6ca474ee94c592d43cf71234da1a",
-            ["0006-system-role-permissions"] = "ade7405f309f563d6734bf5eaafd36df1f2ef6da8bd42ac9b910d1c51b783b8e"
+            ["0006-system-role-permissions"] = "ade7405f309f563d6734bf5eaafd36df1f2ef6da8bd42ac9b910d1c51b783b8e",
+            ["0007-receipt-shop-snapshot"] = "a1d12cca8bbfeb57872ee854e18cc32bf98258937d1f7be4be91d925f2ef6462"
         };
 
-        Assert.AreEqual(6, migrations.Count);
-        Assert.AreEqual("0006-system-role-permissions", SchemaMigrationRegistry.Latest.MigrationId);
+        Assert.AreEqual(7, migrations.Count);
+        Assert.AreEqual("0007-receipt-shop-snapshot", SchemaMigrationRegistry.Latest.MigrationId);
         CollectionAssert.AreEqual(
             migrations.Select(item => item.MigrationId).OrderBy(item => item, StringComparer.Ordinal).ToArray(),
             migrations.Select(item => item.MigrationId).ToArray());
@@ -76,7 +80,12 @@ public sealed class MigrationRunnerTests
         using var database = MigrationDatabase.Create();
         DbInitializer.EnsureCreated(database.Options);
         using (var connection = database.Factory.Open())
-            connection.Execute("DROP TABLE schema_migrations;");
+        {
+            connection.Execute(@"
+INSERT INTO sales(code, createdAt, total, paidCash, paidCard, change, receipt_shop_snapshot)
+VALUES('SNAPSHOT-BASELINE', 1, 1000, 1000, 0, 0, '{""shop"":""QA""}');
+DROP TABLE schema_migrations;");
+        }
 
         var backupCalls = 0;
         var runner = new SchemaMigrationRunner(
@@ -96,6 +105,209 @@ public sealed class MigrationRunnerTests
             verify.ExecuteScalar<long>(
                 "SELECT COUNT(1) FROM schema_migrations WHERE app_version IS NOT NULL;"),
             "Bootstrapped historical rows must remain distinguishable from applied migrations.");
+        Assert.AreEqual(
+            "{\"shop\":\"QA\"}",
+            verify.ExecuteScalar<string>(@"
+SELECT receipt_shop_snapshot
+FROM sales
+WHERE code = 'SNAPSHOT-BASELINE';"),
+            "Ledger bootstrap must preserve the immutable receipt snapshot.");
+    }
+
+    [TestMethod]
+    public void LedgerThrough0006_AppliesOnlyReceiptSnapshotMigrationAndBacksUpFirst()
+    {
+        using var database = MigrationDatabase.Create();
+        new SchemaMigrationRunner(
+            database.Factory,
+            SchemaMigrationRegistry.All.Take(6)).Run();
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+INSERT INTO sales(code, createdAt, total, paidCash, paidCard, change)
+VALUES('PRE-0007', 2, 750, 750, 0, 0);");
+        }
+
+        var backupCalls = 0;
+        var result = new SchemaMigrationRunner(
+            database.Factory,
+            SchemaMigrationRegistry.All,
+            OptionsThatCountBackups(() => backupCalls++)).Run();
+
+        Assert.AreEqual(1, backupCalls);
+        Assert.AreEqual(0, result.BootstrappedMigrationIds.Count);
+        CollectionAssert.AreEqual(
+            new[] { "0007-receipt-shop-snapshot" },
+            result.AppliedMigrationIds.ToArray());
+        using var verify = database.Factory.Open();
+        Assert.IsTrue(new LegacySchemaDetector(verify).ColumnMatchesDefinition(
+            ReceiptSnapshotDefinition));
+        Assert.AreEqual(
+            "PRE-0007|750|",
+            verify.ExecuteScalar<string>(@"
+SELECT code || '|' || total || '|' || COALESCE(receipt_shop_snapshot, '')
+FROM sales
+WHERE code = 'PRE-0007';"));
+        AssertLatestLedger(database.Factory);
+    }
+
+    [TestMethod]
+    public void LedgerlessPostPr7WithUnknownColumn_FailsClosedWithoutLedgerRows()
+    {
+        using var database = MigrationDatabase.Create();
+        DbInitializer.EnsureCreated(database.Options);
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+DROP TABLE schema_migrations;
+ALTER TABLE sales ADD COLUMN unknown_future_state TEXT NULL;");
+        }
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            new SchemaMigrationRunner(
+                database.Factory,
+                SchemaMigrationRegistry.All,
+                OptionsThatCountBackups(() => { })).Run());
+
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(
+            0L,
+            verify.ExecuteScalar<long>("SELECT COUNT(1) FROM schema_migrations;"));
+    }
+
+    [TestMethod]
+    public void LedgerlessPostPr7WithMissingOwnershipBackfill_IsNotFalselyBootstrapped()
+    {
+        using var database = MigrationDatabase.Create();
+        DbInitializer.EnsureCreated(database.Options);
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+INSERT INTO remote_catalog_pending_prices(
+  remote_price_id, remote_product_id, type, price, effective_at, source, created_at)
+VALUES(
+  'PRICE-UNOWNED', 'PRODUCT-UNOWNED', 'retail', 900,
+  '2026-07-19T00:00:00Z', 'qa', '2026-07-19T00:00:00Z');
+DROP TABLE schema_migrations;");
+        }
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            new SchemaMigrationRunner(
+                database.Factory,
+                SchemaMigrationRegistry.All,
+                OptionsThatCountBackups(() => { })).Run());
+
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(
+            0L,
+            verify.ExecuteScalar<long>("SELECT COUNT(1) FROM schema_migrations;"),
+            "Unsatisfied 0003 ownership evidence must never be ledgered as historical.");
+        Assert.AreEqual(
+            0L,
+            verify.ExecuteScalar<long>(
+                "SELECT COUNT(1) FROM remote_catalog_price_ownership WHERE remote_price_id='PRICE-UNOWNED';"));
+    }
+
+    [TestMethod]
+    public void AuthenticLatestLedgerWithoutReceiptSnapshotColumn_FailsCurrentSchemaValidation()
+    {
+        using var database = MigrationDatabase.Create();
+        new SchemaMigrationRunner(
+            database.Factory,
+            SchemaMigrationRegistry.All.Take(6)).Run();
+        var latest = SchemaMigrationRegistry.Latest;
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+DELETE FROM role_permissions
+WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
+  AND permission_code = 'pos.sell';
+INSERT INTO schema_migrations(
+  migration_id, checksum, description, applied_at, app_version)
+VALUES(
+  @MigrationId, @Checksum, @Description,
+  '2026-07-19T00:00:00.0000000+00:00', '1.0.0');",
+                new
+                {
+                    latest.MigrationId,
+                    latest.Checksum,
+                    latest.Description
+                });
+        }
+
+        var error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            DbInitializer.EnsureCreated(database.Options));
+
+        StringAssert.Contains(error.Message, "latest published migration state");
+        using var verify = database.Factory.Open();
+        Assert.IsFalse(new LegacySchemaDetector(verify).ColumnMatchesDefinition(
+            ReceiptSnapshotDefinition));
+        Assert.AreEqual(
+            0L,
+            verify.ExecuteScalar<long>(@"
+SELECT COUNT(1)
+FROM role_permissions
+WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
+  AND permission_code = 'pos.sell';"),
+            "Structural rejection must happen before mutable security reconciliation.");
+    }
+
+    [TestMethod]
+    public void CanonicalBaselineRecognizer_CannotBootstrapUnsatisfiedCustomPredecessor()
+    {
+        using var database = MigrationDatabase.Create();
+        DbInitializer.EnsureCreated(database.Options);
+        using (var connection = database.Factory.Open())
+            connection.Execute("DROP TABLE schema_migrations;");
+
+        var probe = ProbeMigration(
+            "custom-predecessor-v1",
+            (connection, transaction) =>
+                connection.Execute(
+                    "CREATE TABLE custom_predecessor(id INTEGER PRIMARY KEY);",
+                    transaction: transaction),
+            "0000-custom-predecessor",
+            "custom_predecessor");
+        var result = new SchemaMigrationRunner(
+            database.Factory,
+            new[] { probe, SchemaMigrationRegistry.Latest },
+            OptionsThatCountBackups(() => { })).Run();
+
+        Assert.AreEqual(0, result.BootstrappedMigrationIds.Count);
+        CollectionAssert.AreEqual(
+            new[] { "0000-custom-predecessor", "0007-receipt-shop-snapshot" },
+            result.AppliedMigrationIds.ToArray());
+        using var verify = database.Factory.Open();
+        Assert.IsTrue(new LegacySchemaDetector(verify).TableExists("custom_predecessor"));
+    }
+
+    [TestMethod]
+    public void MalformedSchemaWithLedgerThrough0006_DoesNotCommit0007()
+    {
+        using var database = MigrationDatabase.Create();
+        new SchemaMigrationRunner(
+            database.Factory,
+            SchemaMigrationRegistry.All.Take(6)).Run();
+        using (var connection = database.Factory.Open())
+            connection.Execute("ALTER TABLE sales ADD COLUMN unknown_future_state TEXT NULL;");
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            new SchemaMigrationRunner(
+                database.Factory,
+                SchemaMigrationRegistry.All,
+                OptionsThatCountBackups(() => { })).Run());
+
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(
+            6L,
+            verify.ExecuteScalar<long>("SELECT COUNT(1) FROM schema_migrations;"));
+        Assert.AreEqual(
+            0L,
+            verify.ExecuteScalar<long>(@"
+SELECT COUNT(1)
+FROM pragma_table_info('sales')
+WHERE name = 'receipt_shop_snapshot';"),
+            "0007 DDL and ledger row must roll back together on unsupported prior schema.");
     }
 
     [TestMethod]

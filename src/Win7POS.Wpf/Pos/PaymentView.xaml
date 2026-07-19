@@ -18,7 +18,7 @@
             <ColumnDefinition Width="1.55*"/>
         </Grid.ColumnDefinitions>
 
-        <!-- Col 0: Scontrino + Stampa PDF, dimensionata in base all'anteprima scontrino -->
+        <!-- Col 0: scontrino + stampa diretta della boleta -->
         <Border Grid.Row="0" Grid.Column="0" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" CornerRadius="8" Margin="0,0,6,0" Padding="6">
             <Grid>
                 <Grid.RowDefinitions>
@@ -46,8 +46,8 @@
                                    TextWrapping="NoWrap" VerticalAlignment="Top"/>
                     </StackPanel>
                 </ScrollViewer>
-                <!-- PDF: Boleta + switch stampa automatica -->
-                <GroupBox Grid.Row="2" Header="PDF" Margin="0,6,0,0" Padding="5"
+                <!-- Boleta fiscale: numero e stampa automatica diretta -->
+                <GroupBox Grid.Row="2" Header="{loc:Loc payment.fiscalBoleta}" Margin="0,6,0,0" Padding="5"
                           BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
                     <StackPanel>
                         <Button x:Name="BoletaNumberButton"
@@ -63,7 +63,7 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{loc:Loc payment.autoBoletaCashOnly}" FontSize="13" FontWeight="SemiBold" Foreground="#2E2236" VerticalAlignment="Center" TextWrapping="Wrap"/>
                             <ToggleButton Grid.Column="1" Style="{StaticResource TinyToggleSwitchStyle}"
-                                          IsChecked="{Binding AutoPrintPdfSii, Mode=TwoWay}"
+                                          IsChecked="{Binding AutoPrintFiscalBoleta, Mode=TwoWay}"
                                           Margin="6,0,0,0" VerticalAlignment="Center"/>
                         </Grid>
                     </StackPanel>
@@ -71,7 +71,7 @@
             </Grid>
         </Border>
 
-        <!-- Col 1: Boleta/PDF locale - più spazio, area pulita -->
+        <!-- Col 1: stato della stampa diretta della boleta -->
         <Border Grid.Row="0" Grid.Column="1"
                 BorderBrush="#E0E0E0"
                 BorderThickness="1"
@@ -84,7 +84,7 @@
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="{loc:Loc payment.localPdf}" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,10"/>
+                <TextBlock Grid.Row="0" Text="{loc:Loc payment.fiscalPrintStatus}" FontWeight="SemiBold" FontSize="12" Foreground="#555" Margin="0,0,0,10"/>
                 <Border Grid.Row="1" Background="#FAFAFA" CornerRadius="6" BorderBrush="#E5E5E5" BorderThickness="1" Padding="12">
                     <TextBlock Text="{Binding FiscalStatus, Mode=OneWay}"
                                Foreground="#888" FontSize="13" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"/>

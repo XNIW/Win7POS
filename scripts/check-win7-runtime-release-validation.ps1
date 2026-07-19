@@ -1,5 +1,6 @@
 param(
-    [string]$ReleasePackSource = ""
+    [string]$ReleasePackSource = "",
+    [string]$ExpectedCommitSha = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -66,6 +67,17 @@ function Test-ReleasePackSource([string]$source) {
         Fail "ReleasePack source missing: $source"
         return
     }
+    $resolved = (Resolve-Path -LiteralPath $resolved).Path
+
+    $packChecker = Join-Path $repoRoot "scripts\check-release-pack-completeness.ps1"
+    $pwsh = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+    if (-not $pwsh) { $pwsh = (Get-Command powershell -ErrorAction Stop).Source }
+    & $pwsh -NoProfile -File $packChecker -ReleasePackSource $resolved -ExpectedCommitSha $ExpectedCommitSha
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Canonical release completeness/manifest validation failed"
+        return
+    }
+    Pass "Canonical release completeness and manifest validation passed"
 
     $root = $resolved
     $tempDir = $null
@@ -87,21 +99,45 @@ function Test-ReleasePackSource([string]$source) {
             "Win7POS.Wpf.exe.config",
             "Win7POS.Core.dll",
             "Win7POS.Data.dll",
+            "ClosedXML.dll",
+            "Dapper.dll",
+            "DocumentFormat.OpenXml.dll",
+            "ExcelDataReader.dll",
+            "ExcelDataReader.DataSet.dll",
+            "ExcelNumberFormat.dll",
+            "Irony.dll",
+            "Microsoft.Bcl.AsyncInterfaces.dll",
             "Microsoft.Data.Sqlite.dll",
+            "SixLabors.Fonts.dll",
             "SQLitePCLRaw.core.dll",
             "SQLitePCLRaw.batteries_v2.dll",
             "SQLitePCLRaw.provider.e_sqlite3.dll",
+            "System.Buffers.dll",
+            "System.Drawing.Common.dll",
+            "System.IO.Packaging.dll",
+            "System.Memory.dll",
+            "System.Numerics.Vectors.dll",
+            "System.Runtime.CompilerServices.Unsafe.dll",
+            "System.Text.Encoding.CodePages.dll",
+            "System.Threading.Tasks.Extensions.dll",
+            "System.ValueTuple.dll",
+            "XLParser.dll",
+            "zxing.dll",
+            "zxing.presentation.dll",
+            "ZXing.Windows.Compatibility.dll",
             "e_sqlite3.dll",
+            "Assets/sii_qrcode.png",
             "README_RUN.txt",
             "RELEASE_CHECKLIST.txt",
             "VERSION.txt",
-            "check-win7-prereqs.ps1"
+            "check-win7-prereqs.ps1",
+            "APP-FILES.txt",
+            "SHA256SUMS.txt"
         )
 
         foreach ($name in $requiredFiles) {
-            $found = Get-ChildItem -Path $root -Recurse -File -Filter $name -ErrorAction SilentlyContinue |
-                Select-Object -First 1
-            if ($null -eq $found) {
+            $requiredPath = Join-Path $root $name
+            if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
                 Fail "ReleasePack missing required runtime file: $name"
             }
             else {
@@ -109,15 +145,44 @@ function Test-ReleasePackSource([string]$source) {
             }
         }
 
-        $exe = Get-ChildItem -Path $root -Recurse -File -Filter "Win7POS.Wpf.exe" -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-        if ($null -ne $exe) {
-            $machine = Get-PeMachine $exe.FullName
+        $exePath = Join-Path $root "Win7POS.Wpf.exe"
+        if (Test-Path -LiteralPath $exePath -PathType Leaf) {
+            $machine = Get-PeMachine $exePath
             if ($machine -ne 0x014c) {
                 Fail ("Win7POS.Wpf.exe must be PE32 x86 machine 0x014c, found 0x{0:x4}" -f $machine)
             }
             else {
                 Pass "Win7POS.Wpf.exe PE machine is x86"
+            }
+        }
+
+        $nativeSqlitePath = Join-Path $root "e_sqlite3.dll"
+        if (Test-Path -LiteralPath $nativeSqlitePath -PathType Leaf) {
+            $nativeMachine = Get-PeMachine $nativeSqlitePath
+            if ($nativeMachine -ne 0x014c) {
+                Fail ("e_sqlite3.dll must be PE32 x86 machine 0x014c, found 0x{0:x4}" -f $nativeMachine)
+            }
+            else {
+                Pass "e_sqlite3.dll PE machine is x86"
+            }
+        }
+
+        $configPath = Join-Path $root "Win7POS.Wpf.exe.config"
+        if (Test-Path -LiteralPath $configPath -PathType Leaf) {
+            try {
+                [xml]$configXml = [System.IO.File]::ReadAllText($configPath)
+                $supportedRuntime = $configXml.configuration.startup.supportedRuntime
+                if ($null -eq $supportedRuntime -or
+                    $supportedRuntime.version -ne "v4.0" -or
+                    $supportedRuntime.sku -ne ".NETFramework,Version=v4.8") {
+                    Fail "Win7POS.Wpf.exe.config must target CLR v4.0 / .NET Framework 4.8"
+                }
+                else {
+                    Pass "Win7POS.Wpf.exe.config targets CLR v4.0 / .NET Framework 4.8"
+                }
+            }
+            catch {
+                Fail "Win7POS.Wpf.exe.config is not valid XML: $($_.Exception.Message)"
             }
         }
 
@@ -139,10 +204,21 @@ function Test-ReleasePackSource([string]$source) {
             }
         }
 
-        $readme = Get-ChildItem -Path $root -Recurse -File -Filter "README_RUN.txt" -ErrorAction SilentlyContinue |
-            Select-Object -First 1
-        if ($null -ne $readme) {
-            $readmeText = [System.IO.File]::ReadAllText($readme.FullName)
+        $forbiddenThermalOnlyPayload = @(Get-ChildItem -LiteralPath $root -Recurse -File -ErrorAction Stop |
+            Where-Object {
+                $_.Extension -ieq ".pdf" -or
+                $_.Name -match '(?i)^PdfSharp.*\.dll$'
+            })
+        if ($forbiddenThermalOnlyPayload.Count -gt 0) {
+            Fail "Thermal-only runtime contains PDF payload/runtime: $($forbiddenThermalOnlyPayload.Name -join ', ')"
+        }
+        else {
+            Pass "Thermal-only runtime contains no PDF payload or PdfSharp DLL"
+        }
+
+        $readmePath = Join-Path $root "README_RUN.txt"
+        if (Test-Path -LiteralPath $readmePath -PathType Leaf) {
+            $readmeText = [System.IO.File]::ReadAllText($readmePath)
             Require-Text "README_RUN mentions Windows 7 SP1" $readmeText "Windows 7 SP1"
             Require-Text "README_RUN mentions .NET Framework 4.8" $readmeText "\.NET Framework 4\.8"
             Require-Text "README_RUN mentions Visual C++ Runtime x86" $readmeText "Visual C\+\+ Runtime x86"
@@ -195,12 +271,15 @@ if (-not $fail) {
     Require-Text "Release workflow uses deterministic .NET 10 SDK" $workflow 'dotnet-version:\s*"10\.0\.301"'
     Require-Text "Release workflow builds WPF Release x86" $workflow 'dotnet build src/Win7POS\.Wpf/Win7POS\.Wpf\.csproj[\s\S]*-c Release[\s\S]*-p:Platform=x86[\s\S]*-p:PlatformTarget=x86'
     Require-Text "Release workflow copies WPF net48 x86 output" $workflow 'src/Win7POS\.Wpf/bin/x86/Release/net48'
-    Require-Text "Release workflow validates pack folder" $workflow 'check-release-pack-completeness\.ps1[\s\S]*-ReleasePackSource dist/Win7POS'
+    Require-Text "Release workflow validates pack folder" $workflow 'check-release-pack-completeness\.ps1[\s\S]{0,500}"-ReleasePackSource",\s*"dist/Win7POS"'
     Require-Text "Release workflow validates Win7 runtime folder through canonical gates" ($workflow + $requiredGates) 'check-required-gates\.ps1[\s\S]*check-win7-runtime-release-validation\.ps1'
-    Require-Text "Release workflow validates Win7 runtime zip" $workflow 'check-win7-runtime-release-validation\.ps1[\s\S]*-ReleasePackSource \$zip'
+    Require-Text "Release workflow validates Win7 runtime zip" $workflow 'check-win7-runtime-release-validation\.ps1[\s\S]{0,500}"-ReleasePackSource",\s*\$zip'
+    Require-Text "Release workflow fails on every child-process exit" $workflow 'function\s+Invoke-CheckedProcess[\s\S]*LASTEXITCODE\s+-ne\s+0[\s\S]*throw'
     Require-Text "Release workflow installs Inno Setup through Chocolatey" $workflow 'choco install innosetup --yes --no-progress'
     Require-Text "Release workflow resolves and exports ISCC" $workflow 'ISCC_EXE=\$iscc[\s\S]*GITHUB_ENV[\s\S]*\$env:ISCC_EXE'
     Require-Text "Release workflow validates ISCC without a nonzero help command" $workflow 'VersionInfo\.FileVersion[\s\S]*ISCC ready'
+    Require-Text "Release workflow requires a fresh exact installer artifact" $workflow 'installer/output/Win7POS-Setup\.exe[\s\S]*Remove-Item[\s\S]*ISCC failed[\s\S]*Fresh installer output missing'
+    Require-Text "Release workflow fails when expected artifacts are absent" $workflow 'if-no-files-found:\s*error'
 
     if ($workflow -match 'jrsoftware\.org/download\.php|Invoke-WebRequest[\s\S]{0,200}innosetup') {
         Fail "Release workflow must not execute an unverified dynamic Inno Setup download"
@@ -217,12 +296,21 @@ if (-not $fail) {
     }
 
     Require-Text "Pack check requires Microsoft.Data.Sqlite" $packCheck "Microsoft\.Data\.Sqlite\.dll"
+    Require-Text "Pack check requires Dapper/transitive runtime closure and fiscal QR asset" $packCheck 'Dapper\.dll[\s\S]*ExcelNumberFormat\.dll[\s\S]*System\.Memory\.dll[\s\S]*Assets/sii_qrcode\.png'
+    Require-Text "Pack check validates exact commit provenance" $packCheck 'ExpectedCommitSha[\s\S]*VERSION\.txt CommitSHA does not match'
     Require-Text "Pack check forbids CLI deps/runtimeconfig/pdb" $packCheck "Win7POS\.Cli\.deps\.json[\s\S]*Win7POS\.Cli\.runtimeconfig\.json[\s\S]*Win7POS\.Cli\.pdb"
 
     Require-Text "Installer requires Windows 7 SP1" $installer "(?m)^MinVersion=6\.1sp1\r?$"
     Require-Text "Installer checks .NET 4.8 release key" $installer "IsDotNet48OrLaterInstalled[\s\S]*ReleaseValue\s*>=\s*528040"
     Require-Text "Installer checks VC++ x86 runtime" $installer "VisualStudio\\14\.0\\VC\\Runtimes\\x86"
     Require-Text "Installer requires admin" $installer "(?m)^PrivilegesRequired=admin\r?$"
+    Require-Text "Installer removes obsolete app-local PDF and diagnostic binaries on upgrade" $installer '\[InstallDelete\][\s\S]*\{app\}\\PdfSharp\*\.dll[\s\S]*\{app\}\\Win7POS\.Cli\.\*[\s\S]*\{app\}\\Win7POS\.Wpf\.UiSmokeHarness\.\*'
+    if ($installer -match '(?im)^Type:\s*[^\r\n]*ProgramData') {
+        Fail "Installer upgrade cleanup must never target ProgramData"
+    }
+    else {
+        Pass "Installer upgrade cleanup does not target ProgramData"
+    }
 
     Require-Text "Smoke checklist includes prereq script" $smoke "scripts[\\/]+win7-smoke[\\/]+check-win7-prereqs\.ps1"
     Require-Text "Smoke checklist covers Visual C++ Runtime x86" $smoke "Visual C\+\+ Runtime x86"

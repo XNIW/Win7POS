@@ -60,6 +60,7 @@ public sealed class LegacyMigrationFixtureTests
     [DataRow("legacy_pre_shop_binding.sql")]
     [DataRow("legacy_pre_catalog_exactness.sql")]
     [DataRow("legacy_current_main_unversioned.sql")]
+    [DataRow("legacy_post_pr7_unversioned.sql")]
     public async Task SanitizedLegacyFixture_UpgradesToLatestWithoutDataLossAndReopensAsNoOp(
         string fixtureFileName)
     {
@@ -108,7 +109,9 @@ public sealed class LegacyMigrationFixtureTests
         if (string.Equals(fixtureFileName, "legacy_pre_shop_binding.sql", StringComparison.Ordinal))
             AssertAmbiguousLegacyOutboxIsBlocked(database.LivePath);
         if (string.Equals(fixtureFileName, "legacy_current_main_unversioned.sql", StringComparison.Ordinal))
-            AssertCurrentMainWasBootstrappedWithoutReapplying(database.LivePath);
+            AssertPrePr7MainAppliedOnlyReceiptSnapshot(database.LivePath);
+        if (string.Equals(fixtureFileName, "legacy_post_pr7_unversioned.sql", StringComparison.Ordinal))
+            AssertPostPr7MainWasBootstrappedWithoutReapplying(database.LivePath);
 
         var ledgerBefore = ReadLedgerTimestamps(database.LivePath);
         var blockedOutboxBefore = ReadBlockedOutboxTimestamps(database.LivePath);
@@ -144,7 +147,21 @@ ORDER BY migration_id;").ToArray();
             rows.Select(item => item.Checksum).ToArray());
     }
 
-    private static void AssertCurrentMainWasBootstrappedWithoutReapplying(string databasePath)
+    private static void AssertPrePr7MainAppliedOnlyReceiptSnapshot(string databasePath)
+    {
+        using var connection = Open(databasePath);
+        var appliedIds = connection.Query<string>(@"
+SELECT migration_id
+FROM schema_migrations
+WHERE app_version IS NOT NULL
+ORDER BY migration_id;").ToArray();
+        CollectionAssert.AreEqual(
+            new[] { "0007-receipt-shop-snapshot" },
+            appliedIds,
+            "The historical pre-PR7 schema must bootstrap 0001-0006 and apply only 0007.");
+    }
+
+    private static void AssertPostPr7MainWasBootstrappedWithoutReapplying(string databasePath)
     {
         using var connection = Open(databasePath);
         var rowsWithApplicationVersion = connection.ExecuteScalar<long>(@"
@@ -152,7 +169,14 @@ SELECT COUNT(1)
 FROM schema_migrations
 WHERE app_version IS NOT NULL;");
         Assert.AreEqual(0L, rowsWithApplicationVersion,
-            "The already-current main schema must be detected and ledgered, not replayed.");
+            "The exact post-PR7 schema must be detected as a historical baseline, not replayed.");
+        Assert.AreEqual(
+            "{\"shopName\":\"Negozio QA Ñ\",\"address\":\"Via Unicode 7\"}",
+            connection.ExecuteScalar<string>(@"
+SELECT receipt_shop_snapshot
+FROM sales
+WHERE code = 'POST-PR7-SNAPSHOT';"),
+            "The immutable Unicode receipt snapshot must survive ledger bootstrap unchanged.");
     }
 
     private static void AssertAmbiguousLegacyOutboxIsBlocked(string databasePath)

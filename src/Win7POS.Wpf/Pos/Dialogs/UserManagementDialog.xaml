@@ -219,7 +219,11 @@
                             <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc firstRun.operatorName}"/>
                             <TextBox Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource ModernTextBoxStyle}"/>
                             <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc users.role}"/>
-                            <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" ItemsSource="{Binding Roles}" SelectedValue="{Binding SelectedRoleId}" SelectedValuePath="Id" DisplayMemberPath="Name" MinHeight="34"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1" Margin="0,0,0,8" ItemsSource="{Binding Roles}" SelectedValue="{Binding SelectedRoleId}" SelectedValuePath="Id" MinHeight="34">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate><TextBlock Text="{Binding Name}"/></DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                             <TextBlock Grid.Row="3" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,8,8" Text="{loc:Loc users.accessStatus}"/>
                             <StackPanel Grid.Row="3" Grid.Column="1" Margin="0,0,0,8" Orientation="Horizontal">
                                 <CheckBox IsChecked="{Binding IsActive}" VerticalAlignment="Center" Margin="0,0,8,0"/>

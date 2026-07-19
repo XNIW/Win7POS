@@ -3,6 +3,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Input;
 using Win7POS.Core.Models;
@@ -15,7 +16,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 {
     public enum SalesRegisterFilter { Oggi, Ieri, Ultimi7Giorni, Mese, Periodo }
 
-    public sealed class SalesRegisterViewModel : INotifyPropertyChanged
+    public sealed class SalesRegisterViewModel : INotifyPropertyChanged, IDisposable
     {
         private readonly PosWorkflowService _service;
         private readonly bool _useReceipt42;
@@ -30,11 +31,16 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private SaleRow _selectedSale;
         private string _detailSummary = "";
         private string _detailReceiptPreview = "";
-        private bool _showReceiptPreview = true;
+        private bool _isPreviewLoading;
         private OperatorFilterItem _selectedOperator;
         private readonly bool _canViewAll;
         private readonly int? _forceOperatorId;
         private bool _isUnlocked;
+        private CancellationTokenSource _selectionLoadCts;
+        private int _selectionVersion;
+        private CancellationTokenSource _listLoadCts;
+        private int _listLoadVersion;
+        private bool _disposed;
 
         public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, Action<long, SalesRegisterViewModel> onRequestRefund = null, bool isRefundScanMode = false, System.Collections.Generic.IReadOnlyList<(int id, string displayName)> operators = null, bool canViewAll = true, int? forceOperatorId = null, IOverrideAuthService overrideAuthService = null)
         {
@@ -57,17 +63,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
 
             LoadCommand = new AsyncRelayCommand(LoadAsync, _ => !IsBusy);
-            PrintCommand = new AsyncRelayCommand(PrintAsync, _ => !IsBusy && SelectedSale != null);
+            PrintCommand = new AsyncRelayCommand(PrintAsync, _ => !IsBusy && !IsPreviewLoading && SelectedSale != null && HasReceiptPreview);
             RefundCommand = new AsyncRelayCommand(RefundAsync, _ => !IsBusy && SelectedSale != null && SelectedSale.Kind == (int)SaleKind.Sale && !SelectedSale.IsVoided);
             ToggleFiscalPrintedModeCommand = new AsyncRelayCommand(ToggleFiscalPrintedModeAsync, _ => !IsBusy && _overrideAuthService != null);
 
             _onRequestRefund = onRequestRefund;
 
-            PropertyChanged += (s, e) =>
-            {
-                if (e.PropertyName == nameof(SelectedSale))
-                    _ = LoadDetailsAsync();
-            };
             PosLocalization.Current.LanguageChanged += OnLanguageChanged;
         }
 
@@ -175,6 +176,19 @@ namespace Win7POS.Wpf.Pos.Dialogs
             set { _isBusy = value; OnPropertyChanged(); RaiseCanExecuteChanged(); }
         }
 
+        public bool IsPreviewLoading
+        {
+            get => _isPreviewLoading;
+            private set
+            {
+                if (_isPreviewLoading == value) return;
+                _isPreviewLoading = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(ShowPreviewEmptyState));
+                RaiseCanExecuteChanged();
+            }
+        }
+
         public SaleRow SelectedSale
         {
             get => _selectedSale;
@@ -183,9 +197,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (ReferenceEquals(_selectedSale, value)) return;
                 _selectedSale = value;
                 OnPropertyChanged();
+                OnPropertyChanged(nameof(HasSelectedSale));
+                ClearSelectedSaleDetail();
+                StartSelectedSaleLoad(value);
                 RaiseCanExecuteChanged();
             }
         }
+
+        public bool HasSelectedSale => SelectedSale != null;
 
         public string DetailSummary
         {
@@ -196,14 +215,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public string DetailReceiptPreview
         {
             get => _detailReceiptPreview;
-            set { _detailReceiptPreview = value ?? ""; OnPropertyChanged(); }
+            private set
+            {
+                _detailReceiptPreview = value ?? "";
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(HasReceiptPreview));
+                OnPropertyChanged(nameof(ShowPreviewEmptyState));
+                RaiseCanExecuteChanged();
+            }
         }
 
-        public bool ShowReceiptPreview
-        {
-            get => _showReceiptPreview;
-            set { _showReceiptPreview = value; OnPropertyChanged(); }
-        }
+        public bool HasReceiptPreview => !string.IsNullOrWhiteSpace(DetailReceiptPreview);
+        public bool ShowPreviewEmptyState => !IsPreviewLoading && !HasReceiptPreview;
 
         public ICommand LoadCommand { get; }
         public ICommand PrintCommand { get; }
@@ -224,6 +247,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayName)));
             }
+
+            internal void ClearSubscribers() => PropertyChanged = null;
         }
 
         private void GetCurrentRange(out long fromMs, out long toMs)
@@ -261,6 +286,10 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task LoadAsync()
         {
+            CancelListLoad();
+            var cts = new CancellationTokenSource();
+            _listLoadCts = cts;
+            var version = ++_listLoadVersion;
             IsBusy = true;
             try
             {
@@ -275,6 +304,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 if (!string.IsNullOrWhiteSpace(CodeSearch))
                 {
                     items = await _service.GetSalesByCodeFilterAsync(CodeSearch, includeFiscalPrinted).ConfigureAwait(true);
+                    cts.Token.ThrowIfCancellationRequested();
+                    if (!IsCurrentListLoad(version)) return;
                     Status = PosLocalization.F("sales.searchStatus", items.Count);
                 }
                 else
@@ -291,6 +322,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     else
                         operatorId = _forceOperatorId;
                     items = await _service.GetSalesBetweenAsync(fromMs, toMs, operatorId, includeFiscalPrinted).ConfigureAwait(true);
+                    cts.Token.ThrowIfCancellationRequested();
+                    if (!IsCurrentListLoad(version)) return;
 
                     var countVendite = items.Count(i => i.Kind == (int)SaleKind.Sale && !i.VoidedBySaleId.HasValue);
                     var countResi = items.Count(i => i.Kind == (int)SaleKind.Refund);
@@ -313,6 +346,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
                 foreach (var x in items)
                 {
+                    cts.Token.ThrowIfCancellationRequested();
+                    if (!IsCurrentListLoad(version)) return;
                     var when = DateTimeOffset.FromUnixTimeMilliseconds(x.CreatedAtMs).ToLocalTime();
                     var isVoided = x.VoidedBySaleId.HasValue;
                     var kind = x.Kind;
@@ -337,29 +372,58 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     }
                 }
             }
+            catch (OperationCanceledException)
+            {
+            }
             catch (Exception ex)
             {
-                Status = PosLocalization.F("common.errorWithMessage", ex.Message);
+                if (IsCurrentListLoad(version))
+                    Status = PosLocalization.F("common.errorWithMessage", ex.Message);
             }
             finally
             {
-                IsBusy = false;
+                if (IsCurrentListLoad(version)) IsBusy = false;
             }
         }
 
-        private async Task LoadDetailsAsync()
+        private bool IsCurrentListLoad(int version)
+            => !_disposed && version == _listLoadVersion;
+
+        private void CancelListLoad()
         {
-            if (SelectedSale == null)
+            var cts = _listLoadCts;
+            _listLoadCts = null;
+            _listLoadVersion++;
+            if (cts == null) return;
+            try { cts.Cancel(); } catch { }
+            cts.Dispose();
+        }
+
+        private void StartSelectedSaleLoad(SaleRow selected)
+        {
+            CancelSelectedSaleLoad();
+            if (selected == null || _disposed)
             {
-                DetailLines.Clear();
-                DetailSummary = "";
-                DetailReceiptPreview = "";
+                IsPreviewLoading = false;
                 return;
             }
 
+            var cts = new CancellationTokenSource();
+            _selectionLoadCts = cts;
+            var version = ++_selectionVersion;
+            IsPreviewLoading = true;
+            _ = LoadDetailsAsync(selected, version, cts.Token);
+        }
+
+        private async Task LoadDetailsAsync(SaleRow selected, int version, CancellationToken cancellationToken)
+        {
+            if (selected == null) return;
+
             try
             {
-                var detail = await _service.GetSaleDetailsAsync(SelectedSale.SaleId).ConfigureAwait(true);
+                var detail = await _service.GetSaleDetailsAsync(selected.SaleId).ConfigureAwait(true);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!IsCurrentSelection(selected, version)) return;
                 if (detail == null)
                 {
                     DetailSummary = PosLocalization.T("sales.notFound");
@@ -385,14 +449,45 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     MoneyClp.Format(detail.Sale.Change),
                     DocumentStatusText(detail.Sale));
 
-                var preview = await _service.GetReceiptPreviewBySaleIdAsync(SelectedSale.SaleId, _useReceipt42).ConfigureAwait(true);
+                var preview = await _service.GetReceiptPreviewBySaleIdAsync(selected.SaleId, _useReceipt42).ConfigureAwait(true);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!IsCurrentSelection(selected, version)) return;
                 DetailReceiptPreview = preview ?? "";
+            }
+            catch (OperationCanceledException)
+            {
             }
             catch
             {
-                DetailSummary = PosLocalization.T("sales.detailLoadError");
-                DetailReceiptPreview = "";
+                if (IsCurrentSelection(selected, version))
+                {
+                    DetailSummary = PosLocalization.T("sales.detailLoadError");
+                    DetailReceiptPreview = "";
+                }
             }
+            finally
+            {
+                if (IsCurrentSelection(selected, version)) IsPreviewLoading = false;
+            }
+        }
+
+        private bool IsCurrentSelection(SaleRow selected, int version)
+            => !_disposed && version == _selectionVersion && ReferenceEquals(SelectedSale, selected);
+
+        private void CancelSelectedSaleLoad()
+        {
+            var cts = _selectionLoadCts;
+            _selectionLoadCts = null;
+            if (cts == null) return;
+            try { cts.Cancel(); } catch { }
+            cts.Dispose();
+        }
+
+        private void ClearSelectedSaleDetail()
+        {
+            DetailLines.Clear();
+            DetailSummary = string.Empty;
+            DetailReceiptPreview = string.Empty;
         }
 
         private static string DocumentStatusText(Sale sale)
@@ -414,12 +509,18 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task PrintAsync()
         {
-            if (SelectedSale == null) return;
+            var selected = SelectedSale;
+            var preview = DetailReceiptPreview;
+            if (selected == null || string.IsNullOrWhiteSpace(preview)) return;
             IsBusy = true;
             try
             {
-                await _service.PrintReceiptBySaleIdAsync(SelectedSale.SaleId, _useReceipt42).ConfigureAwait(true);
-                Status = PosLocalization.F("sales.printStarted", SelectedSale.SaleCode);
+                await _service.PrintReceiptTextAsync(
+                    preview,
+                    _useReceipt42,
+                    "SALE_" + selected.SaleCode,
+                    explicitUserAction: true).ConfigureAwait(true);
+                Status = PosLocalization.F("sales.printStarted", selected.SaleCode);
             }
             catch (Exception ex)
             {
@@ -475,15 +576,27 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 option.NotifyLanguageChanged();
             }
 
-            if (SelectedSale != null)
-            {
-                _ = LoadDetailsAsync();
-            }
+            StartSelectedSaleLoad(SelectedSale);
+        }
 
-            if (!IsBusy)
-            {
-                _ = LoadAsync();
-            }
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            CancelListLoad();
+            CancelSelectedSaleLoad();
+            PosLocalization.Current.LanguageChanged -= OnLanguageChanged;
+            ClearSelectedSaleDetail();
+            foreach (var sale in SalesList) sale.ClearSubscribers();
+            foreach (var option in OperatorFilterList) option.ClearSubscribers();
+            SalesList.Clear();
+            OperatorFilterList.Clear();
+            (LoadCommand as AsyncRelayCommand)?.ClearSubscribers();
+            (PrintCommand as AsyncRelayCommand)?.ClearSubscribers();
+            (RefundCommand as AsyncRelayCommand)?.ClearSubscribers();
+            (ToggleFiscalPrintedModeCommand as AsyncRelayCommand)?.ClearSubscribers();
+            RequestCloseDialog = null;
+            PropertyChanged = null;
         }
 
         private void OnPropertyChanged([CallerMemberName] string name = null)
@@ -513,6 +626,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(KindText)));
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(VoidedText)));
             }
+
+            internal void ClearSubscribers() => PropertyChanged = null;
         }
 
         public sealed class DetailLineRow
@@ -550,6 +665,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             }
             public event EventHandler CanExecuteChanged;
             public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
+            public void ClearSubscribers() => CanExecuteChanged = null;
         }
     }
 }

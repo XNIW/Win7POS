@@ -2,10 +2,10 @@
 
 ## Scope and compatibility rule
 
-This is the read-only sync/performance/release follow-up to PR-B. PR-B does not
-change `CatalogSyncPolicy`, `CatalogSyncCoordinator`, `MainWindow` scheduling,
-sales/catalog-import services, repository paging, HTTP contracts, payload/hash,
-idempotency, or reversal economics.
+This is the sync/performance/release follow-up to PR-B. The PR-B migration delta
+does not change `CatalogSyncPolicy`, `CatalogSyncCoordinator`, `MainWindow`
+scheduling, sales/catalog-import services, repository paging, HTTP contracts,
+payload/hash, idempotency or reversal economics.
 
 Every future contract field is optional. If the current Admin server omits it,
 Win7POS must preserve the current 24–36 second catalog cadence, five-second
@@ -16,15 +16,16 @@ and fail-closed exactness semantics.
 
 | ID | Priority | Finding | Evidence / impact |
 | --- | --- | --- | --- |
-| P1-SYNC-01 | P1 | Auth denial clears trust, but the outer sequential run can continue with the previously captured session. | `PosSalesSyncService.cs:279-290`; `MainWindow.xaml.cs:816-829,982-990` |
-| P1-SYNC-02 | P1 | Heartbeat, sales, catalog import and catalog are serialized under catalog-oriented scheduling; a sales backlog over 25 rows can wait a full idle interval. | `MainWindow.xaml.cs:746-847`; `CatalogSyncSchedulerPolicy.cs:50-76` |
-| P1-PERF-01 | P1 | Per-lane clients and fully buffered/copy/re-encode JSON amplify allocations on x86. | `PosAdminWebClient.cs:119-127,278-330` |
+| P1-SYNC-01 | P1 | Auth denial clears trust, but the outer sequential run can continue with the previously captured session. | `PosSalesSyncService.cs:279-290`; `MainWindow.xaml.cs:829-949` |
+| P1-SYNC-02 | P1 | Heartbeat, sales, catalog import and catalog are serialized under catalog-oriented scheduling; a sales backlog over 25 rows can wait a full idle interval. | `MainWindow.xaml.cs:829-921`; `CatalogSyncSchedulerPolicy.cs:50-76` |
+| P1-PERF-01 | P1 | Per-lane clients and fully buffered/copy/re-encode JSON amplify allocations on x86. | `PosAdminWebClient.cs:109-160,268-330` |
 | P1-PERF-02 | P1 | Each catalog page reloads broad local ID maps and full refresh retains/duplicates authoritative CLR sets, approaching pages × catalog work. | `RemoteCatalogBatchRepository.cs:106-154`; `ProductRepository.cs:2003-2069`; `PosCatalogPullService.cs:810-828,978-1004` |
-| P1-REL-01 | P1 | Dependency/actions/toolchain are not fully locked; no SBOM, signing/timestamp verification or automated vulnerability/license gate exists. | `.github/workflows/*.yml`; repository package inventory |
-| P1-REL-02 | P1 | Local `-BuildInstaller` can warn and skip when ISCC/output is missing. | `scripts/win7pos/windows/build-release-x86.ps1:563-577` |
+| P1-REL-01 | P1 | Dependency/actions remain incompletely locked; SBOM, signing/timestamp, attestation, reproducibility comparison and automated vulnerability/license gates remain open. | `.github/workflows/*.yml`; repository package inventory |
 
-P0 is `0`. These six P1 items are explicitly deferred to follow-up PRs; none
-requires widening PR-B.
+P0 is `0`. These five open P1 items (four sync/performance plus one composite
+supply-chain item) are explicitly deferred to follow-up PRs; none requires
+widening PR-B. PR #7 closed former `P1-REL-02`: an explicitly requested local
+installer build now fails closed when the compiler or exact output is missing.
 
 ## A — Additive Admin heartbeat contract
 
@@ -136,8 +137,9 @@ logging canaries.
 - Preserve transaction-per-page, cursor CAS, identity conflict, tombstone,
   exactness, no-hard-delete and immutable ownership behavior.
 - For full exactness, stream authoritative IDs into a generation-keyed durable
-  SQLite staging table introduced by a later versioned migration. Do not use a
-  connection-local temp table across page connections.
+  SQLite staging table introduced by a later append-only migration after 0007;
+  never overload or mutate 0007. Do not use a connection-local temp table across
+  page connections.
 
 ### Keyset product pagination
 
@@ -186,12 +188,13 @@ it is useful synthetic evidence but not physical Win7/x86 certification.
 
 ## Release and supply-chain follow-up
 
-- Add `permissions: contents: read` to CI and `persist-credentials: false` to
-  checkout.
+- PR #7 already closed fail-closed installer generation, exact clean-tree
+  provenance/manifests, privacy/secret rejection and Win7 runtime inventory.
+- Add least-privilege permissions to the remaining CI workflow and set
+  `persist-credentials: false` on every checkout.
 - Pin Actions to full commit SHAs with controlled dependency updates.
 - Generate NuGet lock files and restore in locked mode.
-- Pin Inno Setup version and verify compiler/package hash; fail closed whenever
-  installer build was requested.
+- Pin the Inno Setup version and verify the compiler/package hash.
 - Derive one protected-tag semantic version across assembly, `VERSION`,
   installer metadata and filenames.
 - SHA-256 Authenticode-sign binary/installer with RFC3161 timestamp compatible
@@ -208,15 +211,17 @@ item.
 
 ## Recommended PR sequence
 
-1. `SYNC-1`: optional Admin fields, observed/committed revision, typed outbox
-   result and compatibility tests.
-2. `SYNC-2`: generation-scoped supervisor, shared auth-stop, independent lanes
+1. Admin backend `catalog-v2`: stable snapshot/revision/summary and deterministic
+   continuation, in its own server repository PR.
+2. `SYNC-1`: ambiguous-end guard, optional Admin fields, observed/committed
+   revision, typed outbox result and compatibility tests.
+3. `SYNC-2`: generation-scoped supervisor, shared auth-stop, independent lanes
    and start-of-day integration.
-3. `PERF-1`: reused transport and bounded direct-stream deserialization.
-4. `PERF-2`: run context, page-scoped lookup, authoritative-ID staging
-   migration and real x86 benchmark gate.
-5. `PERF-3`: keyset paging and bounded logging after profiling.
-6. `RELEASE-1`: locked dependency/actions/toolchain, fail-closed installer,
-   unified version, SBOM, signing and provenance.
+4. `PERF-1`: reused transport, bounded direct-stream deserialization, per-run
+   apply context, page-scoped lookups and real x86 benchmark evidence.
+5. `PERF-2`: authoritative-ID staging migration, keyset paging and bounded
+   logging after profiling.
+6. `RELEASE-1`: locked dependency/actions/toolchain, unified version, SBOM,
+   signing/timestamp, attestation and reproducibility comparison.
 
 Every step retains a tested current-server fallback.

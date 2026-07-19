@@ -216,7 +216,7 @@
 
         <!-- Destra: Inserimento / Scanner (solo BarcodeBox + Sconto + Add) -->
         <Border Grid.Row="0" Grid.Column="1" BorderBrush="{StaticResource BorderBrush}" BorderThickness="1" Padding="14" Background="{StaticResource BackgroundLightBrush}" CornerRadius="8" Margin="0,0,0,0">
-            <StackPanel>
+            <StackPanel x:Name="PosToolActionsPanel">
                 <TextBlock Text="{loc:Loc pos.cart.scannerTitle}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,12"/>
                 <TextBlock Text="{loc:Loc pos.cart.barcode}" FontSize="12" Foreground="#6B5B73" Margin="0,0,0,6"/>
                 <TextBox x:Name="BarcodeBox"
@@ -270,13 +270,15 @@
             </StackPanel>
         </Border>
 
-        <!-- Basso: Sospendi + Recupera + Svuota + Articoli: N + Totale grande + Paga -->
-        <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,12,0,0" Background="{StaticResource PrimaryBrush}" Padding="16,14" CornerRadius="8">
+        <!-- Barra operativa compatta: tutte le azioni restano sulla stessa linea -->
+        <Border x:Name="PosCheckoutFooter"
+                Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                AutomationProperties.AutomationId="Pos.CheckoutFooter"
+                Margin="0,8,0,0"
+                Background="{StaticResource PrimaryBrush}"
+                Padding="12,10"
+                CornerRadius="8">
             <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
@@ -286,37 +288,43 @@
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" Command="{Binding SuspendCartCommand}"
+                <Button x:Name="FooterSuspendButton"
+                        Grid.Column="0" Command="{Binding SuspendCartCommand}"
                         Style="{StaticResource FooterSecondaryButtonStyle}"
-                        MinWidth="90" Height="42" Margin="0,0,0,0">
+                        MinWidth="90" Height="42" Margin="0" VerticalAlignment="Center">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconSuspend}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc pos.cart.suspend}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
-                <Button Grid.Column="1" Command="{Binding RecoverCartCommand}"
+                <Button x:Name="FooterRecoverButton"
+                        Grid.Column="1" Command="{Binding RecoverCartCommand}"
                         Style="{StaticResource FooterSecondaryButtonStyle}"
-                        MinWidth="90" Height="42" Margin="10,0,0,0">
+                        MinWidth="90" Height="42" Margin="10,0,0,0" VerticalAlignment="Center">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconRecover}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc pos.cart.recover}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
-                <Button Grid.Column="2" Command="{Binding ClearCartCommand}"
+                <Button x:Name="FooterClearButton"
+                        Grid.Column="2" Command="{Binding ClearCartCommand}"
                         Style="{StaticResource FooterSecondaryButtonStyle}"
-                        MinWidth="90" Height="42" Margin="10,0,0,0">
+                        MinWidth="90" Height="42" Margin="10,0,0,0" VerticalAlignment="Center">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconClear}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc pos.cart.clear}" Margin="8,0,0,0"/>
                     </StackPanel>
                 </Button>
-                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0,0,0">
+                <StackPanel x:Name="FooterItemsSummary"
+                            Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center" Margin="20,0,0,0">
                     <TextBlock Foreground="White" FontSize="14" Text="{loc:Loc pos.cart.itemsCountPrefix}"/>
                     <TextBlock Foreground="White" FontSize="14" Margin="4,0,0,0" Text="{Binding ItemsCount}"/>
                 </StackPanel>
-                <Grid Grid.Row="1" Grid.Column="4"
+                <Grid x:Name="FooterTotalPanel"
+                      Grid.Column="4"
+                      AutomationProperties.AutomationId="Pos.FooterTotal"
                       Width="280"
-                      Margin="0,10,18,0"
+                      Margin="16,0,12,0"
                       HorizontalAlignment="Right"
                       VerticalAlignment="Center">
                     <Grid.RowDefinitions>
@@ -338,9 +346,6 @@
 
                     <TextBlock Grid.Row="0" Grid.Column="2"
                                Text="{Binding FinalTotalDisplay}"
-                               Foreground="#FF9A8B"
-                               FontSize="30"
-                               FontWeight="Bold"
                                HorizontalAlignment="Right"
                                VerticalAlignment="Center">
                         <TextBlock.Style>
@@ -375,10 +380,15 @@
                                    FontWeight="SemiBold"/>
                     </StackPanel>
                 </Grid>
-                <Button Grid.Row="1" Grid.Column="5" Grid.ColumnSpan="2" MinWidth="180" Height="48" Margin="0,10,0,0" FontSize="16" FontWeight="SemiBold"
+                <Button x:Name="FooterPayButton"
+                        Grid.Column="5" Grid.ColumnSpan="2"
+                        AutomationProperties.AutomationId="Pos.FooterPay"
+                        Width="{Binding ActualWidth, ElementName=PosToolActionsPanel}"
+                        MinWidth="180" Height="48" Margin="0,0,3,0"
+                        VerticalAlignment="Center"
+                        FontSize="16" FontWeight="SemiBold"
                         Command="{Binding PayCommand}"
-                        Style="{StaticResource PrimaryButtonStyle}"
-                        Background="{StaticResource PrimaryLighterBrush}" Foreground="White">
+                        Style="{StaticResource PrimaryButtonStyle}">
                     <StackPanel Style="{StaticResource IconButtonContent}">
                         <Path Data="{StaticResource IconPay}" Style="{StaticResource ButtonIconPathStyle}"/>
                         <TextBlock Text="{loc:Loc common.pay}" Margin="8,0,0,0"/>

@@ -45,10 +45,11 @@ namespace Win7POS.Core.Security
         public int TotalUserRows { get; set; }
         public int ActiveLoginableUsers { get; set; }
         public int ActiveRemoteMirrors { get; set; }
+        public int ActiveLocalRecoveryUsers { get; set; }
 
         public bool IsNewDatabase => TotalUserRows == 0;
         public bool HasOnlyDisabledUsers => TotalUserRows > 0 && ActiveLoginableUsers == 0;
-        public bool HasActiveLocalRecoveryUsers => ActiveLoginableUsers > 0 && ActiveRemoteMirrors == 0;
+        public bool HasActiveLocalRecoveryUsers => ActiveLocalRecoveryUsers > 0;
     }
 
     public sealed class PosAccessRecoveryDecision
@@ -68,11 +69,28 @@ namespace Win7POS.Core.Security
 
     public static class PosAccessRecoveryPolicy
     {
+        public static bool IsLeaseFreeLocalRecovery(
+            PosShellMode shellMode,
+            PosAuthenticatedAccessMode accessMode)
+        {
+            return shellMode == PosShellMode.Recovery &&
+                accessMode == PosAuthenticatedAccessMode.LocalRecovery;
+        }
+
         public static PosAccessRecoveryDecision Evaluate(
             PosUserBootstrapState state,
             PosAccessFailureKind failureKind)
         {
             if (state == null) throw new ArgumentNullException(nameof(state));
+
+            // An online credential denial must never create an administrator or reuse a
+            // remote mirror offline. It may, however, leave an already-provisioned local
+            // recovery account available through its separate username/PIN challenge.
+            if (failureKind == PosAccessFailureKind.AuthenticationDenied &&
+                state.HasActiveLocalRecoveryUsers)
+            {
+                return new PosAccessRecoveryDecision(PosAccessNextStep.LocalRecoveryLogin, failureKind);
+            }
 
             if (IsDenied(failureKind))
             {
@@ -191,7 +209,7 @@ namespace Win7POS.Core.Security
             PosAuthenticatedAccessMode accessMode,
             bool catalogSaleSafe)
         {
-            if (!catalogSaleSafe)
+            if (accessMode == PosAuthenticatedAccessMode.LocalRecovery || !catalogSaleSafe)
             {
                 return PosShellMode.Recovery;
             }
@@ -199,4 +217,5 @@ namespace Win7POS.Core.Security
             return PosShellMode.Pos;
         }
     }
+
 }

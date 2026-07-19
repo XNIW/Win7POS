@@ -1,4 +1,11 @@
-# Win7POS current-main audit and PR-B migration design
+# Historical Win7POS current-main audit and original PR-B migration design
+
+> Historical snapshot: “current main” below means
+> `ad431fe8b7cf4de1bf3bee744bab159b6a95e80c` as audited on 2026-07-17. It
+> predates PR #7’s normal merge `db623a5bf61c026662fe967b905b62940bec52e9`
+> and the post-PR7 PR-B refresh/0007. Do not use the six-migration, six-fixture,
+> P1, external-backlog or validation counts below as current evidence; see the
+> PR-B refresh closeout and authoritative external backlog.
 
 ## Provenance and scope
 
@@ -171,3 +178,25 @@ environmental condition. GitHub CI remains the independent exact-head authority.
 PR-B is structurally ready for review after clean-head release validation and
 the GitHub CI, performance and release-pack workflows succeed on the exact PR
 head. No automatic merge is authorized.
+
+## 2026-07-19 refresh after PR #7
+
+- PR #7 was normally merged as
+  `db623a5bf61c026662fe967b905b62940bec52e9`; its exact-head and post-merge CI
+  and Release Pack runs passed.
+- PR-B was refreshed by a normal merge of that main, without rebase, squash or
+  force push. Receipt/recovery/hardware behavior from PR #7 is preserved.
+- `receipt_shop_snapshot` is intentionally absent from the immutable materials
+  and checksum pins for 0001–0006. New migration
+  `0007-receipt-shop-snapshot` owns the additive `TEXT NULL` column.
+- The legacy inventory is now 91 additive column effects including 0007. A
+  fresh or upgraded latest database contains the same application tables as
+  post-PR7 main plus `schema_migrations`; no payload/hash/idempotency, reversal
+  economics, sync policy or WAL/journal-mode change is introduced.
+- Exact post-PR7 ledgerless databases are recognized only when the full frozen
+  structure and prior migration data invariants match; they bootstrap 0001–0007
+  with null application versions. Pre-PR7 databases bootstrap only their
+  satisfied prefix and apply 0007 normally after a verified backup.
+- Current validation counts and exact refreshed head are recorded in the PR-B
+  closeout entry after the final local and GitHub runs; the `31/31` and `290/290`
+  values above remain the historical 2026-07-17 snapshot.
