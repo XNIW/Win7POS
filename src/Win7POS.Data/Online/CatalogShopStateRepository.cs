@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Dapper;
+using Win7POS.Core.Online;
 
 namespace Win7POS.Data.Online
 {
@@ -15,6 +16,10 @@ namespace Win7POS.Data.Online
         public const string BoundShopIdKey = "pos.catalog.bound_shop_id";
         public const string CompletenessCodeKey = "pos.catalog.exactness.code";
         public const string CompletenessStatusKey = "pos.catalog.exactness.status";
+        public const string CommittedRevisionAtKey = "pos.catalog.committed_revision_at";
+        public const string CommittedRevisionKey = "pos.catalog.committed_revision";
+        public const string ImportAckGenerationKey = "pos.catalog.import_ack_generation";
+        public const string ImportReconciledGenerationKey = "pos.catalog.import_reconciled_generation";
         public const string DeltaChainActiveKey = "pos.catalog.delta_chain.active";
         public const string DeltaChainCatalogVersionKey = "pos.catalog.delta_chain.catalog_version";
         public const string DeltaChainCursorFingerprintsKey = "pos.catalog.delta_chain.cursor_fingerprints";
@@ -46,6 +51,8 @@ namespace Win7POS.Data.Online
         public const string LastSyncAtKey = "pos.catalog.last_sync_at";
         public const string LastSyncCursorKey = "pos.catalog.last_sync_cursor";
         public const string LastSyncModeKey = "pos.catalog.last_sync_mode";
+        public const string ObservedRevisionAtKey = "pos.catalog.observed_revision_at";
+        public const string ObservedRevisionKey = "pos.catalog.observed_revision";
         public const string RepairRequiredKey = "pos.catalog.exactness.repair_required";
         public const string TransitionEpochKey = "pos.catalog.transition_epoch";
         public const string SaleSafeAtKey = "pos.catalog.sale_safe_at";
@@ -99,13 +106,15 @@ namespace Win7POS.Data.Online
                 var hasExistingState = await conn.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1)
 FROM app_settings
-WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey)
+WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @ImportAckGenerationKey, @ImportReconciledGenerationKey)
   AND TRIM(value) <> '';",
                     new
                     {
                         CursorKey = LastSyncCursorKey,
                         SaleSafeKey = SaleSafeAtKey,
-                        LastSyncKey = LastSyncAtKey
+                        LastSyncKey = LastSyncAtKey,
+                        ImportAckGenerationKey,
+                        ImportReconciledGenerationKey
                     },
                     tx).ConfigureAwait(false) > 0;
 
@@ -115,14 +124,23 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey)
                     {
                         await conn.ExecuteAsync(@"
 DELETE FROM app_settings
-WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey, @LastSyncModeKey);",
+WHERE key IN (
+  @CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey, @LastSyncModeKey,
+  @ObservedRevisionKey, @ObservedRevisionAtKey, @CommittedRevisionKey, @CommittedRevisionAtKey,
+  @ImportAckGenerationKey, @ImportReconciledGenerationKey);",
                             new
                             {
                                 CursorKey = LastSyncCursorKey,
                                 InitialCompletedKey = InitialCompletedAtKey,
-                                LastSyncKey = LastSyncAtKey,
-                                LastSyncModeKey,
-                                SaleSafeKey = SaleSafeAtKey
+                                 LastSyncKey = LastSyncAtKey,
+                                 LastSyncModeKey,
+                                 ObservedRevisionKey,
+                                 ObservedRevisionAtKey,
+                                 CommittedRevisionKey,
+                                 CommittedRevisionAtKey,
+                                 ImportAckGenerationKey,
+                                 ImportReconciledGenerationKey,
+                                 SaleSafeKey = SaleSafeAtKey
                             },
                             tx).ConfigureAwait(false);
                     }
@@ -457,6 +475,164 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey, @Las
             }
         }
 
+        public async Task<CatalogRevisionState> LoadRevisionStateAsync(
+            string trustedShopId,
+            string trustedShopCode,
+            long expectedEpoch = -1)
+        {
+            using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction())
+            {
+                await RequireBindingAsync(
+                    conn,
+                    tx,
+                    trustedShopId,
+                    trustedShopCode,
+                    expectedEpoch).ConfigureAwait(false);
+                var importAckRaw = await GetAsync(conn, tx, ImportAckGenerationKey).ConfigureAwait(false);
+                var importReconciledRaw = await GetAsync(conn, tx, ImportReconciledGenerationKey).ConfigureAwait(false);
+                var ackParsed = TryParseNonNegativeGeneration(importAckRaw, out var importAckGeneration);
+                var reconciledParsed = TryParseNonNegativeGeneration(
+                    importReconciledRaw,
+                    out var importReconciledGeneration);
+                var ackStateValid = ackParsed &&
+                    reconciledParsed &&
+                    importReconciledGeneration <= importAckGeneration;
+                var state = new CatalogRevisionState(
+                    CatalogHeartbeatPolicy.NormalizeRevision(
+                        await GetAsync(conn, tx, ObservedRevisionKey).ConfigureAwait(false)),
+                    CatalogHeartbeatPolicy.NormalizeRevision(
+                        await GetAsync(conn, tx, CommittedRevisionKey).ConfigureAwait(false)),
+                    await GetAsync(conn, tx, ObservedRevisionAtKey).ConfigureAwait(false),
+                    await GetAsync(conn, tx, CommittedRevisionAtKey).ConfigureAwait(false),
+                    importAckGeneration,
+                    importReconciledGeneration,
+                    ackStateValid);
+                tx.Commit();
+                return state;
+            }
+        }
+
+        public async Task StoreObservedRevisionAsync(
+            string trustedShopId,
+            string trustedShopCode,
+            string revision,
+            DateTimeOffset observedAt,
+            long expectedEpoch)
+        {
+            var normalizedRevision = CatalogHeartbeatPolicy.NormalizeRevision(revision);
+            if (normalizedRevision.Length == 0)
+            {
+                return;
+            }
+
+            using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction())
+            {
+                await RequireBindingAsync(
+                    conn,
+                    tx,
+                    trustedShopId,
+                    trustedShopCode,
+                    expectedEpoch).ConfigureAwait(false);
+                await SetAsync(conn, tx, ObservedRevisionKey, normalizedRevision).ConfigureAwait(false);
+                await SetAsync(
+                    conn,
+                    tx,
+                    ObservedRevisionAtKey,
+                    observedAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)).ConfigureAwait(false);
+                tx.Commit();
+            }
+        }
+
+        public async Task<bool> TryConfirmCatalogUnchangedAsync(
+            string trustedShopId,
+            string trustedShopCode,
+            long expectedEpoch,
+            string expectedObservedRevision,
+            string expectedCommittedRevision,
+            long expectedAckGeneration,
+            bool clearStaleError)
+        {
+            var expectedObserved = CatalogHeartbeatPolicy.NormalizeRevision(expectedObservedRevision);
+            var expectedCommitted = CatalogHeartbeatPolicy.NormalizeRevision(expectedCommittedRevision);
+            if (expectedObserved.Length == 0 ||
+                !string.Equals(expectedObserved, expectedCommitted, StringComparison.Ordinal) ||
+                expectedAckGeneration < 0)
+            {
+                return false;
+            }
+
+            using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction())
+            {
+                await RequireBindingAsync(
+                    conn,
+                    tx,
+                    trustedShopId,
+                    trustedShopCode,
+                    expectedEpoch).ConfigureAwait(false);
+                var observed = CatalogHeartbeatPolicy.NormalizeRevision(
+                    await GetAsync(conn, tx, ObservedRevisionKey).ConfigureAwait(false));
+                var committed = CatalogHeartbeatPolicy.NormalizeRevision(
+                    await GetAsync(conn, tx, CommittedRevisionKey).ConfigureAwait(false));
+                var ackRaw = await GetAsync(conn, tx, ImportAckGenerationKey).ConfigureAwait(false);
+                var reconciledRaw = await GetAsync(conn, tx, ImportReconciledGenerationKey).ConfigureAwait(false);
+                var repairRaw = await GetAsync(conn, tx, RepairRequiredKey).ConfigureAwait(false);
+                var deltaCheckpointKeys = await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM app_settings
+WHERE key GLOB @pattern;",
+                    new { pattern = DeltaChainPrefix + "*" },
+                    tx).ConfigureAwait(false);
+                var lastError = Normalize(await GetAsync(conn, tx, "pos.catalog.last_error").ConfigureAwait(false));
+                var safeEvaluation = await EvaluateSaleSafetyAsync(
+                    conn,
+                    tx,
+                    allowLegacyUnbound: false).ConfigureAwait(false);
+
+                var valid = string.Equals(observed, expectedObserved, StringComparison.Ordinal) &&
+                    string.Equals(committed, expectedCommitted, StringComparison.Ordinal) &&
+                    TryParseNonNegativeGeneration(ackRaw, out var ackGeneration) &&
+                    TryParseNonNegativeGeneration(reconciledRaw, out var reconciledGeneration) &&
+                    ackGeneration == expectedAckGeneration &&
+                    reconciledGeneration == expectedAckGeneration &&
+                    TryParseOptionalBinaryFlag(repairRaw, out var repairRequired) &&
+                    !repairRequired &&
+                    deltaCheckpointKeys == 0 &&
+                    safeEvaluation.IsSaleSafe &&
+                    !string.Equals(
+                        lastError,
+                        CatalogPaginationSafetyPolicy.AmbiguousEndCode,
+                        StringComparison.Ordinal);
+                if (!valid)
+                {
+                    tx.Commit();
+                    return false;
+                }
+
+                if (clearStaleError)
+                {
+                    await SetAsync(conn, tx, "pos.catalog.last_error", string.Empty).ConfigureAwait(false);
+                    await SetAsync(conn, tx, "pos.catalog.bootstrap_status", "completed").ConfigureAwait(false);
+                    await SetAsync(conn, tx, "pos.catalog.last_has_more", "0").ConfigureAwait(false);
+                }
+
+                await SetAsync(
+                    conn,
+                    tx,
+                    "pos.catalog.sync.last_skip_code",
+                    "catalog_unchanged_at_committed_revision").ConfigureAwait(false);
+                await SetAsync(
+                    conn,
+                    tx,
+                    "pos.catalog.sync.last_checked_at",
+                    DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture)).ConfigureAwait(false);
+                tx.Commit();
+                return true;
+            }
+        }
+
         public async Task ResetForRestoreReviewAsync(
             string trustedShopId,
             string trustedShopCode)
@@ -508,14 +684,23 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey, @Las
                     nextEpoch.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
                 await conn.ExecuteAsync(@"
 DELETE FROM app_settings
-WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey, @LastSyncModeKey);",
+WHERE key IN (
+  @CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey, @LastSyncModeKey,
+  @ObservedRevisionKey, @ObservedRevisionAtKey, @CommittedRevisionKey, @CommittedRevisionAtKey,
+  @ImportAckGenerationKey, @ImportReconciledGenerationKey);",
                     new
                     {
                         CursorKey = LastSyncCursorKey,
                         InitialCompletedKey = InitialCompletedAtKey,
-                        LastSyncKey = LastSyncAtKey,
-                        LastSyncModeKey,
-                        SaleSafeKey = SaleSafeAtKey
+                         LastSyncKey = LastSyncAtKey,
+                         LastSyncModeKey,
+                         ObservedRevisionKey,
+                         ObservedRevisionAtKey,
+                         CommittedRevisionKey,
+                         CommittedRevisionAtKey,
+                         ImportAckGenerationKey,
+                         ImportReconciledGenerationKey,
+                         SaleSafeKey = SaleSafeAtKey
                     },
                     tx).ConfigureAwait(false);
                 await ClearExactnessAsync(conn, tx).ConfigureAwait(false);
@@ -578,14 +763,18 @@ WHERE key IN (@CursorKey, @SaleSafeKey, @LastSyncKey, @InitialCompletedKey, @Las
                     (currentEpoch + 1).ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
                 await conn.ExecuteAsync(@"
 DELETE FROM app_settings
-WHERE key IN (@CursorKey, @SaleSafeKey, @InitialCompletedKey, @LastSyncKey, @LastSyncModeKey);",
+WHERE key IN (
+  @CursorKey, @SaleSafeKey, @InitialCompletedKey, @LastSyncKey, @LastSyncModeKey,
+  @CommittedRevisionKey, @CommittedRevisionAtKey);",
                     new
                     {
                         CursorKey = LastSyncCursorKey,
                         InitialCompletedKey = InitialCompletedAtKey,
-                        LastSyncKey = LastSyncAtKey,
-                        LastSyncModeKey,
-                        SaleSafeKey = SaleSafeAtKey
+                         LastSyncKey = LastSyncAtKey,
+                         LastSyncModeKey,
+                         CommittedRevisionKey,
+                         CommittedRevisionAtKey,
+                         SaleSafeKey = SaleSafeAtKey
                     },
                     tx).ConfigureAwait(false);
                 await ClearExactnessAsync(conn, tx).ConfigureAwait(false);
@@ -804,7 +993,9 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
             string generatedAt,
             long expectedEpoch = -1,
             string expectedPreviousCursor = null,
-            string expectedPreviousMode = null)
+            string expectedPreviousMode = null,
+            string committedRevision = null,
+            long? reconciledImportAckGeneration = null)
         {
             var value = string.IsNullOrWhiteSpace(generatedAt)
                 ? DateTimeOffset.UtcNow.ToString("O")
@@ -831,6 +1022,36 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
                 if (string.IsNullOrWhiteSpace(initialCompleted))
                 {
                     await SetAsync(conn, tx, InitialCompletedAtKey, value).ConfigureAwait(false);
+                }
+
+                var normalizedRevision = CatalogHeartbeatPolicy.NormalizeRevision(committedRevision);
+                if (normalizedRevision.Length > 0)
+                {
+                    await SetAsync(conn, tx, CommittedRevisionKey, normalizedRevision).ConfigureAwait(false);
+                    await SetAsync(conn, tx, CommittedRevisionAtKey, value).ConfigureAwait(false);
+                }
+
+                if (reconciledImportAckGeneration.HasValue)
+                {
+                    var ackRaw = await GetAsync(conn, tx, ImportAckGenerationKey).ConfigureAwait(false);
+                    var reconciledRaw = await GetAsync(conn, tx, ImportReconciledGenerationKey).ConfigureAwait(false);
+                    if (!TryParseNonNegativeGeneration(ackRaw, out var currentAckGeneration) ||
+                        !TryParseNonNegativeGeneration(reconciledRaw, out var currentReconciledGeneration) ||
+                        currentReconciledGeneration > currentAckGeneration ||
+                        reconciledImportAckGeneration.Value < 0 ||
+                        reconciledImportAckGeneration.Value > currentAckGeneration)
+                    {
+                        throw new InvalidOperationException("catalog_import_ack_generation_invalid");
+                    }
+
+                    var nextReconciled = Math.Max(
+                        currentReconciledGeneration,
+                        reconciledImportAckGeneration.Value);
+                    await SetAsync(
+                        conn,
+                        tx,
+                        ImportReconciledGenerationKey,
+                        nextReconciled.ToString(CultureInfo.InvariantCulture)).ConfigureAwait(false);
                 }
 
                 tx.Commit();
@@ -1421,6 +1642,23 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
         private static string Normalize(string value)
         {
             return (value ?? string.Empty).Trim();
+        }
+
+        private static bool TryParseNonNegativeGeneration(string value, out long generation)
+        {
+            var normalized = Normalize(value);
+            if (normalized.Length == 0)
+            {
+                generation = 0;
+                return true;
+            }
+
+            return long.TryParse(
+                    normalized,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out generation) &&
+                generation >= 0;
         }
     }
 

@@ -2965,7 +2965,7 @@ CREATE TABLE users (
                 session.ShopCode).ConfigureAwait(false);
             var scenarios = realSessionMode
                 ? new[] { "accepted-" + Guid.NewGuid().ToString("N").Substring(0, 12) }
-                : new[] { "accepted", "duplicate", "idempotent", "validation_failed", "conflict", "mismatch", "idempotency_mismatch", "shop_mismatch", "auth_denied", "timeout" };
+                : new[] { "accepted", "duplicate", "idempotent", "validation_failed", "conflict", "mismatch", "idempotency_mismatch", "shop_mismatch", "auth_denied", "timeout", "retryable" };
             var ids = new Dictionary<string, long>(StringComparer.OrdinalIgnoreCase);
             for (var i = 0; i < scenarios.Length; i++)
             {
@@ -2989,19 +2989,19 @@ CREATE TABLE users (
                     .ConfigureAwait(false);
                 if (realSessionMode)
                 {
-                    Assert(result.Total == 1, "Real catalog import sync must process the seeded row.");
+                    Assert(result.Attempted == 1, "Real catalog import sync must process the seeded row.");
                     Assert(result.Acked == 1, "Real catalog import sync row must be acked.");
                     Assert(result.Blocked == 0, "Real catalog import sync must not block the seeded row.");
                     Assert(result.Retried == 0, "Real catalog import sync must not leave the seeded row retrying.");
-                    Assert(!result.RequiresTrustClear, "Real catalog import sync must not request trust clear.");
+                    Assert(!result.AuthenticationDenied, "Real catalog import sync must not request trust clear.");
                 }
                 else
                 {
-                    Assert(result.Total == scenarios.Length, "Catalog import sync must process all seeded rows.");
+                    Assert(result.Attempted == scenarios.Length - 2, "Catalog import sync must stop after the first auth denial.");
                     Assert(result.Acked == 3, "Accepted/duplicate/idempotent rows must be acked.");
                     Assert(result.Blocked == 5, "Validation/conflict/mismatch/idempotency/shop rows must be blocked.");
-                    Assert(result.Retried == 2, "Auth/timeout rows must be retry.");
-                    Assert(result.RequiresTrustClear, "Auth denied response must request trust clear.");
+                    Assert(result.Retried == 1, "Auth denial must be retried and stop the batch before timeout.");
+                    Assert(result.AuthenticationDenied, "Auth denied response must request trust clear.");
                 }
             }
 
@@ -3021,9 +3021,65 @@ CREATE TABLE users (
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["idempotency_mismatch"]).ConfigureAwait(false) == "failed_blocked", "idempotency mismatch status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["shop_mismatch"]).ConfigureAwait(false) == "failed_blocked", "shop mismatch status mismatch.");
                 Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["auth_denied"]).ConfigureAwait(false) == "retry", "auth_denied status mismatch.");
-                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["timeout"]).ConfigureAwait(false) == "retry", "timeout status mismatch.");
+                Assert(await ReadCatalogImportOutboxStatusAsync(factory, ids["timeout"]).ConfigureAwait(false) == "pending", "auth-stop must leave later timeout row untouched.");
 
-                var retryExhaustionId = ids["timeout"];
+                var cancelledId = ids["timeout"];
+                using (var conn = factory.Open())
+                {
+                    await ExecuteSqliteAsync(
+                        conn,
+                        null,
+                        @"UPDATE catalog_import_outbox
+                          SET status = 'retry',
+                              attempt_count = 11,
+                              next_retry_at = 0,
+                              last_attempt_at = NULL,
+                              updated_at = @nowMs
+                          WHERE id = @outboxId;",
+                        "@nowMs", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        "@outboxId", cancelledId).ConfigureAwait(false);
+                }
+
+                Assert(
+                    await ReadCatalogImportOutboxAttemptCountAsync(factory, cancelledId).ConfigureAwait(false) == 11,
+                    "Cancellation fixture must start at attempt 11.");
+                var cancellationObserved = false;
+                using (var cancellationCts = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
+                {
+                    try
+                    {
+                        await new CatalogImportSyncService(factory)
+                            .SyncPendingAsync(adminOptions, session, 1, cancellationCts.Token)
+                            .ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        cancellationObserved = true;
+                    }
+                }
+
+                Assert(cancellationObserved, "Caller cancellation must propagate from the import drain.");
+                Assert(
+                    await ReadCatalogImportOutboxStatusAsync(factory, cancelledId).ConfigureAwait(false) == "retry",
+                    "Cancelled claim must return to retry.");
+                Assert(
+                    await ReadCatalogImportOutboxAttemptCountAsync(factory, cancelledId).ConfigureAwait(false) == 11,
+                    "Cancelled claim must not consume attempt 12.");
+                using (var conn = factory.Open())
+                {
+                    await ExecuteSqliteAsync(
+                        conn,
+                        null,
+                        @"UPDATE catalog_import_outbox
+                          SET next_retry_at = @nextRetryAt,
+                              updated_at = @nowMs
+                          WHERE id = @outboxId;",
+                        "@nextRetryAt", DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeMilliseconds(),
+                        "@nowMs", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        "@outboxId", cancelledId).ConfigureAwait(false);
+                }
+
+                var retryExhaustionId = ids["retryable"];
                 using (var conn = factory.Open())
                 {
                     await ExecuteSqliteAsync(
@@ -3039,21 +3095,12 @@ CREATE TABLE users (
                         "@nowMs", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                         "@outboxId", retryExhaustionId).ConfigureAwait(false);
                 }
-
-                Assert(
-                    await ReadCatalogImportOutboxAttemptCountAsync(factory, retryExhaustionId).ConfigureAwait(false) == 11,
-                    "Retry exhaustion fixture must start at attempt 11.");
-                using (var exhaustionCts = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
-                {
-                    var exhaustion = await new CatalogImportSyncService(factory)
-                        .SyncPendingAsync(adminOptions, session, 1, exhaustionCts.Token)
-                        .ConfigureAwait(false);
-                    Assert(exhaustion.Total == 1, "Retry exhaustion run must process exactly one row.");
-                    Assert(exhaustion.Prepared == 1, "Retry exhaustion run must prepare exactly one transient attempt.");
-                    Assert(exhaustion.Blocked == 1, "Attempt 12 must transition the transient row to failed_blocked.");
-                    Assert(exhaustion.Retried == 0, "Attempt 12 must not schedule another retry.");
-                }
-
+                var exhaustion = await new CatalogImportSyncService(factory)
+                    .SyncPendingAsync(adminOptions, session, 1, CancellationToken.None)
+                    .ConfigureAwait(false);
+                Assert(exhaustion.Attempted == 1, "Retry exhaustion run must claim exactly one transient attempt.");
+                Assert(exhaustion.Blocked == 1, "Attempt 12 must transition the transient row to failed_blocked.");
+                Assert(exhaustion.Retried == 0, "Attempt 12 must not schedule another retry.");
                 Assert(
                     await ReadCatalogImportOutboxStatusAsync(factory, retryExhaustionId).ConfigureAwait(false) == "failed_blocked",
                     "Retry exhaustion status mismatch.");
@@ -6008,6 +6055,16 @@ SELECT last_insert_rowid();";
                 if (scenario == "timeout")
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5), CancellationToken.None).ConfigureAwait(false);
+                    return;
+                }
+
+                if (scenario == "retryable")
+                {
+                    await WriteJsonAsync(
+                        stream,
+                        503,
+                        "{\"ok\":false,\"code\":\"server_busy\",\"message\":\"retry later\"}",
+                        cancellationToken).ConfigureAwait(false);
                     return;
                 }
 

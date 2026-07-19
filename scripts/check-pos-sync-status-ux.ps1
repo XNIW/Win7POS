@@ -121,6 +121,29 @@ if ($syncCenterCode -notmatch "_fullRepairRunning" -or
 if ($syncCenterViewModel -notmatch "BuildSafeDiagnostics" -or
     $syncCenterViewModel -match "DeviceToken|SessionToken|ShopCode|StaffDisplayName" -or
     $syncCenterViewModel -notmatch "cursor_fingerprint") { Fail "Sync Center diagnostics must expose only redacted safe codes and counts" } else { Pass "Sync Center diagnostics are redacted" }
+if ($reader -notmatch "ObservedRevisionKey" -or
+    $reader -notmatch "CommittedRevisionKey" -or
+    $reader -notmatch "CatalogRevisionMatchCode" -or
+    $syncCenterViewModel -notmatch "CatalogObservedRevisionText" -or
+    $syncCenterViewModel -notmatch "CatalogCommittedRevisionText" -or
+    $syncCenter -notmatch "CatalogObservedRevisionText" -or
+    $syncCenter -notmatch "CatalogCommittedRevisionText") {
+    Fail "Sync Center must surface redacted observed/committed catalog revision state"
+} else {
+    Pass "Sync Center surfaces redacted observed/committed catalog revision state"
+}
+if ($reader -notmatch "CatalogHasError" -or
+    $syncCenterViewModel -notmatch "CatalogHasError" -or
+    $syncCenterViewModel -notmatch "CatalogErrorText" -or
+    $syncCenterViewModel -notmatch 'catalog\.error=' -or
+    $syncCenterViewModel -notmatch 'catalog\.observed_revision_fingerprint=' -or
+    $syncCenterViewModel -notmatch 'catalog\.committed_revision_fingerprint=' -or
+    $syncCenterViewModel -notmatch 'catalog\.revision_status=' -or
+    $syncCenter -notmatch "CatalogErrorText") {
+    Fail "catalog errors and revision fingerprints must be visible and safely copyable"
+} else {
+    Pass "catalog errors and revision fingerprints are visible and safely copyable"
+}
 if ($settingsHub -notmatch "OnSyncCenterClick" -or $mainXaml -notmatch "OnSyncStatusPillClick" -or $mainCode -notmatch "RestoreScannerFocus") { Fail "Sync Center must be reachable from shell/settings and restore scanner focus" } else { Pass "Sync Center entry points and scanner focus restoration present" }
 if ($shopDialog -match "RepairCatalogCommand" -or $shopViewModel -match "RepairCatalogAsync|TryRepairCatalogAsync") { Fail "Shop settings must remain diagnostic-only and not duplicate Full Repair logic" } else { Pass "Shop settings is diagnostic-only" }
 if ($shopDialog -notmatch 'IsEnabled="\{Binding CanClose\}"' -or $shopViewModel -notmatch "CanClose\s*=>\s*!IsBusy" -or $shopViewModel -notmatch "OnPropertyChanged\(nameof\(CanClose\)\)") { Fail "shop settings close action must follow its active load state" } else { Pass "shop settings close action follows active load state" }
@@ -134,7 +157,7 @@ if ($shopViewModel -notmatch "INotifyPropertyChanged,\s*IDisposable" -or
 } else {
     Pass "shop settings releases localization and data context on close"
 }
-foreach ($key in @("sync.catalogCompleteness", "sync.catalogLocalCounts", "sync.catalogSyncMode", "sync.catalogRepairRequired", "sync.catalogNotSaleSafe", "sync.center.title", "sync.center.syncNow", "sync.center.retryCheckpoint", "sync.center.fullRepair", "sync.center.copyDiagnostics", "sync.center.repairConfirm")) {
+foreach ($key in @("sync.catalogCompleteness", "sync.catalogLocalCounts", "sync.catalogSyncMode", "sync.catalogRepairRequired", "sync.catalogNotSaleSafe", "sync.center.observedRevision", "sync.center.committedRevision", "sync.center.revisionStatus", "sync.center.revision.match", "sync.center.revision.mismatch", "sync.center.revision.unknown", "sync.center.attention", "sync.center.title", "sync.center.syncNow", "sync.center.retryCheckpoint", "sync.center.fullRepair", "sync.center.copyDiagnostics", "sync.center.repairConfirm")) {
     if ($localization -notmatch [regex]::Escape($key)) { Fail "catalog exactness localization missing key: $key" }
 }
 

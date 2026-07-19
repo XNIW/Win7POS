@@ -174,6 +174,53 @@ public sealed class CatalogExactnessTests
     }
 
     [TestMethod]
+    public async Task TwoPageFullRefresh_RepeatedReferenceRowsUseDistinctExactnessEvidence()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        var evidence = new CatalogFullLaneEvidenceTracker();
+        var page = new PosCatalogPayload
+        {
+            Categories = new[]
+            {
+                new PosCatalogCategoryResponse
+                {
+                    CategoryId = "category-1",
+                    Name = "Category",
+                    UpdatedAt = "2026-07-19T01:00:00Z"
+                }
+            },
+            Suppliers = new[]
+            {
+                new PosCatalogSupplierResponse
+                {
+                    SupplierId = "supplier-1",
+                    Name = "Supplier",
+                    UpdatedAt = "2026-07-19T01:00:00Z"
+                }
+            }
+        };
+        evidence.Add(page);
+        var counts = evidence.Add(page);
+        var context = CompleteContext(products: 2, categories: counts.Categories, suppliers: counts.Suppliers, prices: 2);
+        context.Pages = 2;
+
+        var exactness = await new CatalogFullRefreshReconciler(db.Factory)
+            .ReconcileAndVerifyAsync(
+                new[] { "product-1", "product-2" },
+                evidence.CategoryIds,
+                evidence.SupplierIds,
+                "2026-07-19T01:00:00Z",
+                Summary(products: 2, categories: 1, suppliers: 1, prices: 2),
+                context);
+
+        Assert.AreEqual(string.Empty, evidence.ConflictCode);
+        Assert.AreEqual(CatalogCompletenessStatus.Verified, exactness.Status);
+        Assert.AreEqual(0L, exactness.Audit.DuplicateAuthoritativeCategoryIds);
+        Assert.AreEqual(0L, exactness.Audit.DuplicateAuthoritativeSupplierIds);
+    }
+
+    [TestMethod]
     public async Task MissingSummary_RemainsExplicitlyUnverifiedForLegacyServer()
     {
         using var db = TestDb.Create();
@@ -438,6 +485,273 @@ VALUES('WHITESPACE-REMOTE', 'Whitespace identity', 100, '   ', 1);");
                 "SHOP-A",
                 "2026-07-14T04:00:00Z",
                 binding.Epoch));
+    }
+
+    [TestMethod]
+    public async Task ObservedAndCommittedRevisions_AreSeparateDurableAndCommitOnlyWithSaleSafety()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db, "shop-a", "SHOP-A");
+        var state = new CatalogShopStateRepository(db.Factory);
+        var binding = await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+
+        await state.StoreObservedRevisionAsync(
+            "shop-a",
+            "SHOP-A",
+            " revision-2 ",
+            DateTimeOffset.Parse("2026-07-14T02:00:00Z"),
+            binding.Epoch);
+        var observedOnly = await new CatalogShopStateRepository(db.Factory)
+            .LoadRevisionStateAsync("shop-a", "SHOP-A", binding.Epoch);
+        Assert.AreEqual("revision-2", observedOnly.ObservedRevision);
+        Assert.AreEqual(string.Empty, observedOnly.CommittedRevision);
+
+        var audit = await CreateCleanAuditAsync(db);
+        var verified = CatalogExactnessVerifier.Evaluate(
+            Summary(products: 2, categories: 1, suppliers: 1, prices: 2),
+            audit,
+            CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2));
+        await state.StoreExactnessAsync("shop-a", "SHOP-A", verified, binding.Epoch);
+        Assert.IsTrue(await state.StorePullCursorAsync(
+            "shop-a",
+            "SHOP-A",
+            "revision-cursor",
+            "2026-07-14T03:00:00Z",
+            binding.Epoch,
+            "full_refresh",
+            authoritativeSnapshotCommitted: true));
+        await state.StoreSaleSafeAsync(
+            "shop-a",
+            "SHOP-A",
+            "2026-07-14T03:00:00Z",
+            binding.Epoch,
+            committedRevision: "revision-1");
+
+        var committed = await state.LoadRevisionStateAsync("shop-a", "SHOP-A", binding.Epoch);
+        Assert.AreEqual("revision-2", committed.ObservedRevision);
+        Assert.AreEqual("revision-1", committed.CommittedRevision);
+        Assert.IsFalse(committed.IsMatch);
+
+        var mismatchSummary = Summary(products: 3, categories: 1, suppliers: 1, prices: 2);
+        mismatchSummary.ActiveProducts = 2;
+        await state.StoreExactnessAsync(
+            "shop-a",
+            "SHOP-A",
+            CatalogExactnessVerifier.Evaluate(
+                mismatchSummary,
+                audit,
+                CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2)),
+            binding.Epoch);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => state.StoreSaleSafeAsync(
+            "shop-a",
+            "SHOP-A",
+            "2026-07-14T04:00:00Z",
+            binding.Epoch,
+            committedRevision: "revision-2"));
+        Assert.AreEqual(
+            "revision-1",
+            (await state.LoadRevisionStateAsync("shop-a", "SHOP-A", binding.Epoch)).CommittedRevision);
+
+        await state.RequestFullRepairAsync("shop-a", "SHOP-A", binding.Epoch);
+        var afterRepairBinding = await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        var afterRepair = await state.LoadRevisionStateAsync(
+            "shop-a",
+            "SHOP-A",
+            afterRepairBinding.Epoch);
+        Assert.AreEqual("revision-2", afterRepair.ObservedRevision);
+        Assert.AreEqual(string.Empty, afterRepair.CommittedRevision);
+    }
+
+    [TestMethod]
+    public async Task ImportAckWatermark_ReconcilesOnlyWithSaleSafeAndGuardsHeartbeatSkip()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db, "shop-a", "SHOP-A");
+        var state = new CatalogShopStateRepository(db.Factory);
+        var binding = await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        await state.StoreObservedRevisionAsync(
+            "shop-a",
+            "SHOP-A",
+            "revision-2",
+            DateTimeOffset.Parse("2026-07-19T12:00:00Z"),
+            binding.Epoch);
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+INSERT INTO app_settings(key, value)
+VALUES(@ackKey, '2'), (@reconciledKey, '0')
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                new
+                {
+                    ackKey = CatalogShopStateRepository.ImportAckGenerationKey,
+                    reconciledKey = CatalogShopStateRepository.ImportReconciledGenerationKey
+                });
+        }
+
+        var audit = await CreateCleanAuditAsync(db);
+        var verified = CatalogExactnessVerifier.Evaluate(
+            Summary(products: 2, categories: 1, suppliers: 1, prices: 2),
+            audit,
+            CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2));
+        await state.StoreExactnessAsync("shop-a", "SHOP-A", verified, binding.Epoch);
+        Assert.IsTrue(await state.StorePullCursorAsync(
+            "shop-a",
+            "SHOP-A",
+            "cursor-partial-reconcile",
+            "2026-07-19T12:01:00Z",
+            binding.Epoch,
+            "full_refresh",
+            authoritativeSnapshotCommitted: true));
+        await state.StoreSaleSafeAsync(
+            "shop-a",
+            "SHOP-A",
+            "2026-07-19T12:01:00Z",
+            binding.Epoch,
+            committedRevision: "revision-2",
+            reconciledImportAckGeneration: 1);
+
+        var partiallyReconciled = await state.LoadRevisionStateAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch);
+        Assert.AreEqual(2L, partiallyReconciled.ImportAckGeneration);
+        Assert.AreEqual(1L, partiallyReconciled.ReconciledImportAckGeneration);
+        Assert.IsTrue(partiallyReconciled.ImportAckReconciliationPending);
+        Assert.IsFalse(await state.TryConfirmCatalogUnchangedAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch,
+            "revision-2",
+            "revision-2",
+            expectedAckGeneration: 2,
+            clearStaleError: true));
+
+        await state.RequestFullRepairAsync("shop-a", "SHOP-A", binding.Epoch);
+        binding = await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        var afterRepair = await state.LoadRevisionStateAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch);
+        Assert.AreEqual(2L, afterRepair.ImportAckGeneration);
+        Assert.AreEqual(1L, afterRepair.ReconciledImportAckGeneration);
+
+        await state.StoreExactnessAsync("shop-a", "SHOP-A", verified, binding.Epoch);
+        Assert.IsTrue(await state.StorePullCursorAsync(
+            "shop-a",
+            "SHOP-A",
+            "cursor-fully-reconciled",
+            "2026-07-19T12:02:00Z",
+            binding.Epoch,
+            "full_refresh",
+            authoritativeSnapshotCommitted: true));
+        await state.StoreSaleSafeAsync(
+            "shop-a",
+            "SHOP-A",
+            "2026-07-19T12:02:00Z",
+            binding.Epoch,
+            committedRevision: "revision-2",
+            reconciledImportAckGeneration: 2);
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+INSERT INTO app_settings(key, value)
+VALUES('pos.catalog.last_error', 'timeout'),
+      ('pos.catalog.bootstrap_status', 'failed_retryable'),
+      ('pos.catalog.last_has_more', '1')
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;");
+        }
+
+        Assert.IsTrue(await state.TryConfirmCatalogUnchangedAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch,
+            "revision-2",
+            "revision-2",
+            expectedAckGeneration: 2,
+            clearStaleError: true));
+        using (var conn = db.Factory.Open())
+        {
+            Assert.AreEqual(string.Empty, await conn.ExecuteScalarAsync<string>(
+                "SELECT value FROM app_settings WHERE key = 'pos.catalog.last_error';"));
+            Assert.AreEqual("completed", await conn.ExecuteScalarAsync<string>(
+                "SELECT value FROM app_settings WHERE key = 'pos.catalog.bootstrap_status';"));
+            Assert.AreEqual("0", await conn.ExecuteScalarAsync<string>(
+                "SELECT value FROM app_settings WHERE key = 'pos.catalog.last_has_more';"));
+            await conn.ExecuteAsync(@"
+INSERT INTO app_settings(key, value)
+VALUES(@key, 'orphaned-version')
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                new { key = CatalogShopStateRepository.DeltaChainCatalogVersionKey });
+        }
+
+        Assert.IsFalse(await state.TryConfirmCatalogUnchangedAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch,
+            "revision-2",
+            "revision-2",
+            expectedAckGeneration: 2,
+            clearStaleError: true));
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(
+                "DELETE FROM app_settings WHERE key = @key;",
+                new { key = CatalogShopStateRepository.DeltaChainCatalogVersionKey });
+            await conn.ExecuteAsync(@"
+UPDATE app_settings
+SET value = @code
+WHERE key = 'pos.catalog.last_error';",
+                new { code = CatalogPaginationSafetyPolicy.AmbiguousEndCode });
+        }
+
+        Assert.IsFalse(await state.TryConfirmCatalogUnchangedAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch,
+            "revision-2",
+            "revision-2",
+            expectedAckGeneration: 2,
+            clearStaleError: true));
+    }
+
+    [TestMethod]
+    public async Task ImportAckWatermark_CorruptOrReversedStateFailsClosed()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db, "shop-a", "SHOP-A");
+        var state = new CatalogShopStateRepository(db.Factory);
+        var binding = await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+
+        async Task<CatalogRevisionState> WriteAndLoadAsync(string ack, string reconciled)
+        {
+            using (var conn = db.Factory.Open())
+            {
+                await conn.ExecuteAsync(@"
+INSERT INTO app_settings(key, value)
+VALUES(@ackKey, @ack), (@reconciledKey, @reconciled)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                    new
+                    {
+                        ack,
+                        ackKey = CatalogShopStateRepository.ImportAckGenerationKey,
+                        reconciled,
+                        reconciledKey = CatalogShopStateRepository.ImportReconciledGenerationKey
+                    });
+            }
+
+            return await state.LoadRevisionStateAsync(
+                "shop-a",
+                "SHOP-A",
+                binding.Epoch);
+        }
+
+        var malformed = await WriteAndLoadAsync("not-a-number", "0");
+        Assert.IsFalse(malformed.ImportAckStateValid);
+        Assert.IsTrue(malformed.ImportAckReconciliationPending);
+
+        var reversed = await WriteAndLoadAsync("1", "2");
+        Assert.IsFalse(reversed.ImportAckStateValid);
+        Assert.IsTrue(reversed.ImportAckReconciliationPending);
     }
 
     [TestMethod]

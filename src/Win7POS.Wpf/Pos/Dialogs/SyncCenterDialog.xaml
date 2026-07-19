@@ -82,6 +82,10 @@
                             <TextBlock x:Name="CatalogCursorText" Text="{Binding CatalogCursorText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                             <TextBlock x:Name="CatalogRowsText" Text="{Binding CatalogRowsText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,12,8"/>
                             <TextBlock x:Name="CatalogFullRatioText" Text="{Binding CatalogFullRatioText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="CatalogObservedRevisionText" Text="{Binding CatalogObservedRevisionText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,12,8"/>
+                            <TextBlock x:Name="CatalogCommittedRevisionText" Text="{Binding CatalogCommittedRevisionText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+                            <TextBlock x:Name="CatalogRevisionMatchText" Text="{Binding CatalogRevisionMatchText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,12,8"/>
+                            <TextBlock x:Name="CatalogErrorText" Text="{Binding CatalogErrorText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,0,0,8"/>
                         </UniformGrid>
                         <TextBlock x:Name="CatalogVerificationText" Text="{Binding CatalogVerificationText}" Style="{StaticResource TypeBodyStyle}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,6,0,0"/>
                         <TextBlock x:Name="CatalogCountsText" Text="{Binding CatalogCountsText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,5,0,0"/>
@@ -104,6 +108,7 @@
                                 <TextBlock Text="{loc:Loc sync.center.sales}" Style="{StaticResource TypeSubtitleStyle}"/>
                             </StackPanel>
                             <TextBlock x:Name="SalesQueueText" Text="{Binding SalesQueueText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                            <TextBlock x:Name="SalesDrainText" Text="{Binding SalesDrainText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                             <TextBlock x:Name="SalesLastAckText" Text="{Binding SalesLastAckText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                             <TextBlock x:Name="SalesErrorText" Text="{Binding SalesErrorText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                         </StackPanel>
@@ -115,6 +120,7 @@
                                 <TextBlock Text="{loc:Loc sync.center.imports}" Style="{StaticResource TypeSubtitleStyle}"/>
                             </StackPanel>
                             <TextBlock x:Name="ImportQueueText" Text="{Binding ImportQueueText}" Style="{StaticResource TypeBodyStyle}" TextWrapping="Wrap" Margin="0,12,0,0"/>
+                            <TextBlock x:Name="ImportDrainText" Text="{Binding ImportDrainText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                             <TextBlock x:Name="ImportLastAckText" Text="{Binding ImportLastAckText}" Style="{StaticResource TypeCaptionStyle}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                         </StackPanel>
                     </Border>

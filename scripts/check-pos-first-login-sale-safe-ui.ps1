@@ -166,7 +166,8 @@ if ($saleSafeWriteIndex -lt $hasMoreIndex) {
     Pass "catalog sale-safe marker is after HasMore guard"
 }
 
-if ($catalogPull -notmatch "result\.Denied\s*&&\s*clearStoredStateOnDenied[\s\S]{0,160}_store\.Clear\(\)") {
+if ($catalogPull -notmatch "authenticationDenied\s*&&\s*clearStoredStateOnDenied[\s\S]{0,180}_store\.Clear\(\)" -or
+    $catalogPull -notmatch "SharedAuthStopPolicy\.IsAuthenticationDenied\(resultCode\)") {
     Fail "catalog retry/partial errors must not clear trust unless auth is denied"
 } else {
     Pass "catalog clears trust only on auth denied"

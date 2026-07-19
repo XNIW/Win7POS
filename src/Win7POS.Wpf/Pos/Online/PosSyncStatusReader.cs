@@ -50,9 +50,13 @@ namespace Win7POS.Wpf.Pos.Online
             var settings = new SettingsRepository(_factory);
             var sales = new SaleRepository(_factory);
             var outbox = await sales.GetSalesSyncOutboxSummaryAsync().ConfigureAwait(false);
-            var catalogOutbox = await new CatalogImportOutboxRepository(_factory)
+            var catalogOutboxRepository = new CatalogImportOutboxRepository(_factory);
+            var catalogOutbox = await catalogOutboxRepository
                 .GetSummaryAsync()
                 .ConfigureAwait(false);
+            var drainNow = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            var salesDrain = await sales.GetSalesSyncDrainStateAsync(drainNow).ConfigureAwait(false);
+            var importDrain = await catalogOutboxRepository.GetDrainStateAsync(drainNow).ConfigureAwait(false);
 
             _trustedDeviceStore.TryRead(out var trustedSession);
 
@@ -63,6 +67,7 @@ namespace Win7POS.Wpf.Pos.Online
             var catalogBootstrapStatus = await settings.GetStringAsync(CatalogBootstrapStatusSettingKey).ConfigureAwait(false);
             var catalogSaleSafeAt = await settings.GetStringAsync(CatalogSaleSafeAtSettingKey).ConfigureAwait(false);
             var catalogSyncMode = await settings.GetStringAsync(CatalogShopStateRepository.LastSyncModeKey).ConfigureAwait(false);
+            var catalogDiagnosticMode = await settings.GetStringAsync(CatalogSyncDiagnosticsPrefix + "last_mode").ConfigureAwait(false);
             var catalogCursor = await settings.GetStringAsync(CatalogShopStateRepository.LastSyncCursorKey).ConfigureAwait(false);
             var catalogLastTrigger = await settings.GetStringAsync(CatalogSyncDiagnosticsPrefix + "last_trigger").ConfigureAwait(false);
             var catalogLastFullReason = await settings.GetStringAsync(CatalogSyncDiagnosticsPrefix + "last_full_reason").ConfigureAwait(false);
@@ -71,6 +76,10 @@ namespace Win7POS.Wpf.Pos.Online
             var catalogRows = await settings.GetStringAsync(CatalogSyncDiagnosticsPrefix + "rows").ConfigureAwait(false);
             var catalogDuration = await settings.GetStringAsync(CatalogSyncDiagnosticsPrefix + "duration_ms").ConfigureAwait(false);
             var catalogFullRatio = await settings.GetStringAsync(CatalogSyncDiagnosticsPrefix + "full_ratio_percent").ConfigureAwait(false);
+            var catalogObservedRevision = await settings.GetStringAsync(
+                CatalogShopStateRepository.ObservedRevisionKey).ConfigureAwait(false);
+            var catalogCommittedRevision = await settings.GetStringAsync(
+                CatalogShopStateRepository.CommittedRevisionKey).ConfigureAwait(false);
             var catalogState = new CatalogShopStateRepository(_factory);
             var catalogExactness = await catalogState.LoadExactnessAsync().ConfigureAwait(false);
             var catalogSaleSafety = await catalogState
@@ -87,6 +96,9 @@ namespace Win7POS.Wpf.Pos.Online
             var policyStaffOfflineMirror = await settings.GetStringAsync(PolicyStaffOfflineMirrorSettingKey).ConfigureAwait(false);
             var policyTaxStatus = await settings.GetStringAsync(PolicyTaxStatusSettingKey).ConfigureAwait(false);
             var policyWarning = await settings.GetStringAsync(PolicyWarningSettingKey).ConfigureAwait(false);
+            var catalogRevisionMatchCode = RevisionMatchCode(
+                catalogObservedRevision,
+                catalogCommittedRevision);
             var requiresAttention =
                 outbox.Blocked > 0 ||
                 catalogOutbox.Blocked > 0 ||
@@ -95,6 +107,7 @@ namespace Win7POS.Wpf.Pos.Online
                 !catalogSaleSafety.IsSaleSafe ||
                 catalogExactness.Status != CatalogCompletenessStatus.Verified ||
                 catalogExactness.RepairRequired ||
+                string.Equals(catalogRevisionMatchCode, "mismatch", StringComparison.Ordinal) ||
                 CatalogRequiresAttention(catalogBootstrapStatus, lastCatalogError, lastCatalogHasMore) ||
                 !string.IsNullOrWhiteSpace(lastSalesError);
             var connectivityState = ConnectivityState(trustedSession);
@@ -111,7 +124,12 @@ namespace Win7POS.Wpf.Pos.Online
                 CatalogCountsText = CatalogCountsText(catalogExactness),
                 CatalogCursorFingerprint = RedactedFingerprint(catalogCursor),
                 CatalogDurationMilliseconds = ParseNonNegativeLong(catalogDuration),
+                CatalogErrorCode = SafeCode(lastCatalogError),
                 CatalogErrorText = T("sync.lastCatalogError") + ": " + SafeCode(lastCatalogError),
+                CatalogHasError = !string.IsNullOrWhiteSpace(lastCatalogError),
+                CatalogObservedRevisionFingerprint = RedactedFingerprint(catalogObservedRevision),
+                CatalogCommittedRevisionFingerprint = RedactedFingerprint(catalogCommittedRevision),
+                CatalogRevisionMatchCode = catalogRevisionMatchCode,
                 CatalogFullRatioPercent = SafeNumber(catalogFullRatio),
                 CatalogHasMore = lastCatalogHasMore,
                 CatalogLastFullReasonCode = SafeCode(catalogLastFullReason),
@@ -126,7 +144,8 @@ namespace Win7POS.Wpf.Pos.Online
                     catalogSaleSafety),
                 CatalogSaleSafe = catalogSaleSafety.IsSaleSafe,
                 CatalogSaleSafetyCode = SafeCode(catalogSaleSafety.ReasonCode),
-                CatalogSyncModeText = CatalogSyncModeText(catalogSyncMode),
+                CatalogSyncModeText = CatalogSyncModeText(
+                    FirstNonEmpty(catalogDiagnosticMode, catalogSyncMode)),
                 CatalogRows = ParseNonNegativeLong(catalogRows),
                 CatalogVersionText = T("sync.catalog") + ": " + (string.IsNullOrWhiteSpace(lastCatalogVersion) ? T("sync.versionUnavailable") : lastCatalogVersion.Trim()),
                 ConnectivityState = connectivityState,
@@ -137,7 +156,9 @@ namespace Win7POS.Wpf.Pos.Online
                 ImportBlocked = catalogOutbox.Blocked,
                 ImportInProgress = catalogOutbox.InProgress,
                 ImportLastAckText = FormatEpochMilliseconds(catalogOutbox.LastAckedAt),
+                ImportNextRetryText = FormatEpochMilliseconds(importDrain.NextRetryAt),
                 ImportPending = catalogOutbox.Pending,
+                ImportRemainingDue = importDrain.RemainingDue,
                 ImportRetry = catalogOutbox.Retry,
                 LastCatalogSyncText = T("sync.lastCatalog") + ": " + FormatIso(lastCatalog),
                 LastOnlineText = T("sync.sessionVerified") + ": " + FormatIso(trustedSession?.LastOkServerAt),
@@ -151,7 +172,9 @@ namespace Win7POS.Wpf.Pos.Online
                 SalesErrorText = T("sync.lastSalesError") + ": " + SafeCode(lastSalesError),
                 SalesInProgress = outbox.InProgress,
                 SalesLastAckText = FormatEpochMilliseconds(outbox.LastAckedAt),
+                SalesNextRetryText = FormatEpochMilliseconds(salesDrain.NextRetryAt),
                 SalesPending = outbox.Pending,
+                SalesRemainingDue = salesDrain.RemainingDue,
                 SalesRetry = outbox.Retry,
                 StaffText = StaffText(trustedSession),
                 SummaryText = SummaryText(
@@ -175,6 +198,20 @@ namespace Win7POS.Wpf.Pos.Online
         private static string T(string key)
         {
             return PosLocalization.Current.Text(key);
+        }
+
+        private static string RevisionMatchCode(string observed, string committed)
+        {
+            var normalizedObserved = CatalogHeartbeatPolicy.NormalizeRevision(observed);
+            var normalizedCommitted = CatalogHeartbeatPolicy.NormalizeRevision(committed);
+            if (normalizedObserved.Length == 0 || normalizedCommitted.Length == 0)
+            {
+                return "unknown";
+            }
+
+            return string.Equals(normalizedObserved, normalizedCommitted, StringComparison.Ordinal)
+                ? "match"
+                : "mismatch";
         }
 
         private static string ConnectivityState(PosTrustedDeviceSession session)
@@ -560,9 +597,22 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 modeText = T("sync.catalogModeFullRefresh");
             }
-            else if (string.Equals(normalized, "delta", StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(normalized, "delta", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(normalized, "Incremental", StringComparison.OrdinalIgnoreCase))
             {
                 modeText = T("sync.catalogModeDelta");
+            }
+            else if (string.Equals(normalized, "ResumeIncremental", StringComparison.OrdinalIgnoreCase))
+            {
+                modeText = T("sync.catalogInterruptedResume");
+            }
+            else if (string.Equals(normalized, "Full", StringComparison.OrdinalIgnoreCase))
+            {
+                modeText = T("sync.catalogModeFullRefresh");
+            }
+            else if (string.Equals(normalized, "Blocked", StringComparison.OrdinalIgnoreCase))
+            {
+                modeText = T("sync.blocked");
             }
             else
             {
@@ -786,7 +836,12 @@ namespace Win7POS.Wpf.Pos.Online
         public string CatalogCountsText { get; set; } = string.Empty;
         public string CatalogCursorFingerprint { get; set; } = string.Empty;
         public long CatalogDurationMilliseconds { get; set; }
+        public string CatalogErrorCode { get; set; } = string.Empty;
         public string CatalogErrorText { get; set; } = string.Empty;
+        public bool CatalogHasError { get; set; }
+        public string CatalogObservedRevisionFingerprint { get; set; } = string.Empty;
+        public string CatalogCommittedRevisionFingerprint { get; set; } = string.Empty;
+        public string CatalogRevisionMatchCode { get; set; } = string.Empty;
         public string CatalogFullRatioPercent { get; set; } = string.Empty;
         public bool CatalogHasMore { get; set; }
         public string CatalogLastFullReasonCode { get; set; } = string.Empty;
@@ -809,7 +864,9 @@ namespace Win7POS.Wpf.Pos.Online
         public long ImportBlocked { get; set; }
         public long ImportInProgress { get; set; }
         public string ImportLastAckText { get; set; } = string.Empty;
+        public string ImportNextRetryText { get; set; } = string.Empty;
         public long ImportPending { get; set; }
+        public long ImportRemainingDue { get; set; }
         public long ImportRetry { get; set; }
         public string LastCatalogSyncText { get; set; } = string.Empty;
         public string LastOnlineText { get; set; } = string.Empty;
@@ -823,7 +880,9 @@ namespace Win7POS.Wpf.Pos.Online
         public string SalesErrorText { get; set; } = string.Empty;
         public long SalesInProgress { get; set; }
         public string SalesLastAckText { get; set; } = string.Empty;
+        public string SalesNextRetryText { get; set; } = string.Empty;
         public long SalesPending { get; set; }
+        public long SalesRemainingDue { get; set; }
         public long SalesRetry { get; set; }
         public string StaffText { get; set; } = string.Empty;
         public string SummaryText { get; set; } = string.Empty;

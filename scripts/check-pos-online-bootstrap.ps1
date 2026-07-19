@@ -191,7 +191,8 @@ if ($dialog -notmatch "result\.CanOpenPos[\s\S]{0,220}CompleteOnlineSignInAsync"
 $completeSignInMethod = [regex]::Match($dialog, "private\s+async\s+Task<bool>\s+CompleteOnlineSignInAsync[\s\S]*?private\s+async\s+Task<bool>\s+TryOfflineSignInAsync").Value
 if ($completeSignInMethod -notmatch "EnsureCatalogSaleSafeForAccessAsync[\s\S]*DialogResult\s*=\s*true") { Fail "online completion must recheck sale-safe catalog before closing" } else { Pass "online completion rechecks sale-safe catalog before closing" }
 if ($catalogPull -notmatch "pos\.catalog\.sale_safe_at" -or $catalogPull -notmatch "pos\.catalog\.initial_completed_at") { Fail "catalog sale-safe completion settings missing" } else { Pass "catalog sale-safe completion settings present" }
-if ($catalogPull -notmatch "result\.Denied\s*&&\s*clearStoredStateOnDenied[\s\S]{0,120}_store\.Clear\(\)") { Fail "catalog trust clear must be guarded by auth denied" } else { Pass "catalog trust clear guarded by auth denied" }
+if ($catalogPull -notmatch "authenticationDenied\s*&&\s*clearStoredStateOnDenied[\s\S]{0,160}_store\.Clear\(\)" -or
+    $catalogPull -notmatch "result\.Denied\s*\|\|[\s\S]{0,100}SharedAuthStopPolicy\.IsAuthenticationDenied\(resultCode\)") { Fail "catalog trust clear must be guarded by transport or body auth denial" } else { Pass "catalog trust clear guarded by auth denial" }
 if ($dialog -notmatch "new\s+CancellationTokenSource\(TimeSpan\.FromMinutes\(6\)\)") { Fail "online first-login/catalog timeout must allow the large initial catalog" } else { Pass "online first-login/catalog uses the long bootstrap timeout" }
 if ($userRepo -notmatch "UpsertRemoteStaffMirrorAsync") { Fail "UserRepository remote staff upsert missing" } else { Pass "UserRepository remote staff upsert present" }
 if ($initializer -notmatch "remote_staff_id") { Fail "remote staff id column missing" } else { Pass "remote staff id column present" }

@@ -46,199 +46,271 @@ namespace Win7POS.Wpf.Pos.Online
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task<bool> TrySyncPendingAsync(
+        public async Task<OutboxDrainResult> TrySyncPendingAsync(
             PosAdminWebOptions options,
             CancellationToken cancellationToken)
         {
+            var run = new SalesDrainAccumulator();
             if (options == null)
             {
-                return false;
+                run.SetFailure(SyncFailureKind.Configuration, "missing_admin_web_options");
+                return await CompleteAsync(run).ConfigureAwait(false);
             }
 
             if (Interlocked.CompareExchange(ref _syncInFlight, 1, 0) != 0)
             {
                 _logger.LogInfo("Sales sync skipped: already running.");
-                return false;
+                run.SetFailure(SyncFailureKind.ConcurrentDrain, "sales_sync_already_running");
+                return await CompleteAsync(run).ConfigureAwait(false);
             }
 
             await StoreSalesSyncInProgressAsync(true).ConfigureAwait(false);
 
             try
             {
-            if (!_store.TryRead(out var trustedSession))
-            {
-                return false;
-            }
-
-            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var pending = await _sales
-                .GetPendingSalesSyncOutboxAsync(MaxOutboxItemsPerRun, nowMs)
-                .ConfigureAwait(false);
-
-            if (pending.Count == 0)
-            {
-                return true;
-            }
-
-            var syncedAny = false;
-            using (var client = new PosAdminWebClient(options))
-            {
-                foreach (var item in pending)
+                if (!_store.TryRead(out var trustedSession))
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var preparedAttempt = 0;
+                    run.SetFailure(SyncFailureKind.Configuration, "missing_trusted_session");
+                    return await CompleteAsync(run).ConfigureAwait(false);
+                }
 
-                    try
+                var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                var pending = await _sales
+                    .GetPendingSalesSyncOutboxAsync(MaxOutboxItemsPerRun, nowMs)
+                    .ConfigureAwait(false);
+
+                if (pending.Count == 0)
+                {
+                    return await CompleteAsync(run).ConfigureAwait(false);
+                }
+
+                using (var client = new PosAdminWebClient(options))
+                {
+                    foreach (var item in pending)
                     {
-                        var bindingError = OutboxShopBinding.GetMismatchCode(
-                            item.OriginShopId,
-                            item.OriginShopCode,
-                            trustedSession.ShopId,
-                            trustedSession.ShopCode);
-                        if (string.IsNullOrWhiteSpace(bindingError) &&
-                            !string.Equals(item.SchemaVersion, PosOnlineContract.SalesSchemaVersion, StringComparison.Ordinal))
-                        {
-                            bindingError = "schema_mismatch";
-                        }
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var preparedAttempt = 0;
 
-                        if (!string.IsNullOrWhiteSpace(bindingError))
+                        try
                         {
-                            await MarkPreflightBlockedAsync(item, bindingError, nowMs).ConfigureAwait(false);
-                            continue;
-                        }
-
-                        var sale = await _sales.GetByIdAsync(item.SaleId).ConfigureAwait(false);
-                        var lines = await _sales.GetLinesBySaleIdAsync(item.SaleId).ConfigureAwait(false);
-                        if (sale == null || lines.Count == 0)
-                        {
-                            await MarkPreflightBlockedAsync(item, "missing_sale", nowMs).ConfigureAwait(false);
-                            continue;
-                        }
-
-                        if (!string.Equals(item.OperationType, GetOperationType(sale), StringComparison.Ordinal))
-                        {
-                            await MarkPreflightBlockedAsync(item, "operation_type_mismatch", nowMs).ConfigureAwait(false);
-                            continue;
-                        }
-
-                        if (!await _sales.IsReversalDependencyReadyAsync(item.SaleId).ConfigureAwait(false))
-                        {
-                            _logger.LogInfo(
-                                "Sales sync deferred: category=sales.sync code=original_sale_not_acked" +
-                                " clientSaleId=" + SafeId(item.ClientSaleId));
-                            continue;
-                        }
-
-                        if (string.IsNullOrWhiteSpace(sale.ClientSaleId))
-                        {
-                            sale.ClientSaleId = item.ClientSaleId;
-                        }
-
-                        if (string.IsNullOrWhiteSpace(item.PayloadJson) ||
-                            string.IsNullOrWhiteSpace(item.PayloadHash) ||
-                            !string.Equals(
-                                PosSalesSyncRequestBuilder.Sha256Hex(item.PayloadJson),
+                            var claimAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                            if (!await _sales.PrepareSalesSyncAttemptAsync(
+                                item.Id,
+                                item.ClientBatchId,
+                                item.PayloadJson,
                                 item.PayloadHash,
-                                StringComparison.OrdinalIgnoreCase))
-                        {
-                            await MarkPreflightBlockedAsync(item, "payload_hash_mismatch", nowMs).ConfigureAwait(false);
-                            continue;
-                        }
+                                claimAt,
+                                item.AttemptCount,
+                                item.Status,
+                                item.NextRetryAt,
+                                item.LeaseObservedAt).ConfigureAwait(false))
+                            {
+                                run.SetFailureIfNone(
+                                    SyncFailureKind.ConcurrentDrain,
+                                    "sales_sync_claim_lost");
+                                continue;
+                            }
 
-                        var request = PosSalesSyncRequestBuilder.DeserializeCanonical(item.PayloadJson);
-                        if (!IsExpectedPersistedRequest(request, item, sale))
-                        {
-                            await MarkPreflightBlockedAsync(item, "persisted_payload_mismatch", nowMs).ConfigureAwait(false);
-                            continue;
-                        }
+                            preparedAttempt = item.AttemptCount + 1;
+                            run.Attempted++;
 
-                        if (!PosSalesSyncRequestBuilder.HasCompleteReversalBindings(request))
-                        {
-                            await MarkPreflightBlockedAsync(item, "reversal_original_line_missing", nowMs).ConfigureAwait(false);
-                            continue;
-                        }
+                            var bindingError = OutboxShopBinding.GetMismatchCode(
+                                item.OriginShopId,
+                                item.OriginShopCode,
+                                trustedSession.ShopId,
+                                trustedSession.ShopCode);
+                            if (string.IsNullOrWhiteSpace(bindingError) &&
+                                !string.Equals(item.SchemaVersion, PosOnlineContract.SalesSchemaVersion, StringComparison.Ordinal))
+                            {
+                                bindingError = "schema_mismatch";
+                            }
 
-                        var economicsError = await _sales
-                            .GetPersistedReversalEconomicsErrorAsync(item.SaleId, request)
-                            .ConfigureAwait(false);
-                        if (!string.IsNullOrWhiteSpace(economicsError))
-                        {
-                            await MarkPreflightBlockedAsync(item, economicsError, nowMs).ConfigureAwait(false);
-                            continue;
-                        }
+                            if (!string.IsNullOrWhiteSpace(bindingError))
+                            {
+                                await MarkBlockedAsync(
+                                    item,
+                                    bindingError,
+                                    claimAt,
+                                    preparedAttempt,
+                                    run,
+                                    SyncFailureKind.LocalValidation).ConfigureAwait(false);
+                                continue;
+                            }
 
-                        request.AppVersion = typeof(PosSalesSyncService).Assembly.GetName().Version?.ToString();
-                        request.DeviceToken = trustedSession.DeviceToken;
-                        request.PosSessionId = trustedSession.PosSessionId;
-                        request.SessionToken = trustedSession.SessionToken;
-                        request.ShopDeviceId = trustedSession.ShopDeviceId;
-                        var syncAttemptId = CreateSyncAttemptId();
-                        var payloadJson = PosSalesSyncRequestBuilder.SerializeRedacted(request);
-                        var payloadHash = PosSalesSyncRequestBuilder.Sha256Hex(payloadJson);
-                        if (!string.Equals(payloadJson, item.PayloadJson, StringComparison.Ordinal) ||
-                            !string.Equals(payloadHash, item.PayloadHash, StringComparison.OrdinalIgnoreCase) ||
-                            !string.Equals(request.Batch.ClientBatchId, item.ClientBatchId, StringComparison.Ordinal))
-                        {
-                            await MarkPreflightBlockedAsync(item, "payload_hash_mismatch", nowMs).ConfigureAwait(false);
-                            continue;
-                        }
+                            var sale = await _sales.GetByIdAsync(item.SaleId).ConfigureAwait(false);
+                            var lines = await _sales.GetLinesBySaleIdAsync(item.SaleId).ConfigureAwait(false);
+                            if (sale == null || lines.Count == 0)
+                            {
+                                await MarkBlockedAsync(item, "missing_sale", claimAt, preparedAttempt, run, SyncFailureKind.LocalValidation)
+                                    .ConfigureAwait(false);
+                                continue;
+                            }
 
-                        if (!await _sales.PrepareSalesSyncAttemptAsync(
-                            item.Id,
-                            request.Batch.ClientBatchId,
-                            payloadJson,
-                            payloadHash,
-                            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                            item.AttemptCount).ConfigureAwait(false))
-                        {
-                            continue;
-                        }
+                            if (!string.Equals(item.OperationType, GetOperationType(sale), StringComparison.Ordinal))
+                            {
+                                await MarkBlockedAsync(item, "operation_type_mismatch", claimAt, preparedAttempt, run, SyncFailureKind.LocalValidation)
+                                    .ConfigureAwait(false);
+                                continue;
+                            }
 
-                        preparedAttempt = item.AttemptCount + 1;
+                            var dependency = await _sales.EvaluateReversalDependencyAsync(item.SaleId)
+                                .ConfigureAwait(false);
+                            if (dependency.State == ReversalDependencyState.PermanentBlock)
+                            {
+                                await MarkBlockedAsync(
+                                    item,
+                                    dependency.Code,
+                                    claimAt,
+                                    preparedAttempt,
+                                    run,
+                                    SyncFailureKind.LocalValidation).ConfigureAwait(false);
+                                continue;
+                            }
 
-                        _logger.LogInfo(
-                            "Sales sync started: category=sales.sync syncAttemptId=" + syncAttemptId +
-                            " clientBatchId=" + SafeId(request.Batch?.ClientBatchId) +
-                            " clientSaleId=" + SafeId(sale.ClientSaleId ?? item.ClientSaleId) +
-                            " attempt=" + (item.AttemptCount + 1).ToString());
-                        var result = await client.SalesSyncAsync(request, cancellationToken).ConfigureAwait(false);
-                        _logger.LogInfo(
-                            "Sales sync response: category=sales.sync syncAttemptId=" + syncAttemptId +
-                            " code=" + SafeCode(result.Code) +
-                            " clientRequestId=" + SafeId(result.ClientRequestId) +
-                            " serverRequestId=" + SafeId(result.ServerRequestId) +
-                            " cfRay=" + SafeId(result.CfRay));
-                        if (await ApplyResultAsync(
-                            item,
-                            sale,
-                            result,
-                            syncAttemptId,
-                            request.Batch.ClientBatchId,
-                            preparedAttempt).ConfigureAwait(false))
-                        {
-                            syncedAny = true;
+                            if (dependency.State == ReversalDependencyState.Wait)
+                            {
+                                _logger.LogInfo(
+                                    "Sales sync deferred: category=sales.sync code=" + SafeCode(dependency.Code) +
+                                    " clientSaleId=" + SafeId(item.ClientSaleId));
+                                await MarkDependencyDeferredAsync(
+                                    item,
+                                    dependency.Code,
+                                    preparedAttempt,
+                                    run).ConfigureAwait(false);
+                                continue;
+                            }
+
+                            if (string.IsNullOrWhiteSpace(sale.ClientSaleId))
+                            {
+                                sale.ClientSaleId = item.ClientSaleId;
+                            }
+
+                            if (string.IsNullOrWhiteSpace(item.PayloadJson) ||
+                                string.IsNullOrWhiteSpace(item.PayloadHash) ||
+                                !string.Equals(
+                                    PosSalesSyncRequestBuilder.Sha256Hex(item.PayloadJson),
+                                    item.PayloadHash,
+                                    StringComparison.OrdinalIgnoreCase))
+                            {
+                                await MarkBlockedAsync(item, "payload_hash_mismatch", claimAt, preparedAttempt, run, SyncFailureKind.LocalValidation)
+                                    .ConfigureAwait(false);
+                                continue;
+                            }
+
+                            var request = PosSalesSyncRequestBuilder.DeserializeCanonical(item.PayloadJson);
+                            if (!IsExpectedPersistedRequest(request, item, sale))
+                            {
+                                await MarkBlockedAsync(item, "persisted_payload_mismatch", claimAt, preparedAttempt, run, SyncFailureKind.LocalValidation)
+                                    .ConfigureAwait(false);
+                                continue;
+                            }
+
+                            if (!PosSalesSyncRequestBuilder.HasCompleteReversalBindings(request))
+                            {
+                                await MarkBlockedAsync(item, "reversal_original_line_missing", claimAt, preparedAttempt, run, SyncFailureKind.LocalValidation)
+                                    .ConfigureAwait(false);
+                                continue;
+                            }
+
+                            var economicsError = await _sales
+                                .GetPersistedReversalEconomicsErrorAsync(item.SaleId, request)
+                                .ConfigureAwait(false);
+                            if (!string.IsNullOrWhiteSpace(economicsError))
+                            {
+                                await MarkBlockedAsync(item, economicsError, claimAt, preparedAttempt, run, SyncFailureKind.LocalValidation)
+                                    .ConfigureAwait(false);
+                                continue;
+                            }
+
+                            request.AppVersion = typeof(PosSalesSyncService).Assembly.GetName().Version?.ToString();
+                            request.DeviceToken = trustedSession.DeviceToken;
+                            request.PosSessionId = trustedSession.PosSessionId;
+                            request.SessionToken = trustedSession.SessionToken;
+                            request.ShopDeviceId = trustedSession.ShopDeviceId;
+                            var syncAttemptId = CreateSyncAttemptId();
+                            var payloadJson = PosSalesSyncRequestBuilder.SerializeRedacted(request);
+                            var payloadHash = PosSalesSyncRequestBuilder.Sha256Hex(payloadJson);
+                            if (!string.Equals(payloadJson, item.PayloadJson, StringComparison.Ordinal) ||
+                                !string.Equals(payloadHash, item.PayloadHash, StringComparison.OrdinalIgnoreCase) ||
+                                !string.Equals(request.Batch.ClientBatchId, item.ClientBatchId, StringComparison.Ordinal))
+                            {
+                                await MarkBlockedAsync(item, "payload_hash_mismatch", claimAt, preparedAttempt, run, SyncFailureKind.LocalValidation)
+                                    .ConfigureAwait(false);
+                                continue;
+                            }
+
+                            _logger.LogInfo(
+                                "Sales sync started: category=sales.sync syncAttemptId=" + syncAttemptId +
+                                " clientBatchId=" + SafeId(request.Batch?.ClientBatchId) +
+                                " clientSaleId=" + SafeId(sale.ClientSaleId ?? item.ClientSaleId) +
+                                " attempt=" + preparedAttempt.ToString());
+                            var result = await client.SalesSyncAsync(request, cancellationToken).ConfigureAwait(false);
+                            _logger.LogInfo(
+                                "Sales sync response: category=sales.sync syncAttemptId=" + syncAttemptId +
+                                " code=" + SafeCode(result.Code) +
+                                " clientRequestId=" + SafeId(result.ClientRequestId) +
+                                " serverRequestId=" + SafeId(result.ServerRequestId) +
+                                " cfRay=" + SafeId(result.CfRay));
+                            var authenticationDenied = await ApplyResultAsync(
+                                item,
+                                sale,
+                                result,
+                                syncAttemptId,
+                                request.Batch.ClientBatchId,
+                                preparedAttempt,
+                                run).ConfigureAwait(false);
+                            if (authenticationDenied)
+                            {
+                                break;
+                            }
                         }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning("Sales sync item skipped.", ex);
-                        if (preparedAttempt > 0)
+                        catch (OperationCanceledException)
                         {
-                            await MarkRetryAsync(item, "exception", preparedAttempt).ConfigureAwait(false);
+                            if (preparedAttempt > 0)
+                            {
+                                try
+                                {
+                                    var releaseAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                                    await _sales.ReleaseSalesSyncAttemptAsync(
+                                        item.Id,
+                                        item.SaleId,
+                                        "cancelled",
+                                        releaseAt,
+                                        releaseAt,
+                                        preparedAttempt).ConfigureAwait(false);
+                                }
+                                catch (Exception ex)
+                                {
+                                    // A local transition failure must not replace the caller's
+                                    // cancellation. The bounded in-progress lease remains recoverable.
+                                    _logger.LogWarning(
+                                        "Sales sync cancellation retry persistence failed.",
+                                        ex);
+                                }
+                            }
+                            throw;
                         }
-                        else
+                        catch (Exception ex)
                         {
-                            await MarkPreflightBlockedAsync(item, "local_preflight_failed", nowMs).ConfigureAwait(false);
+                            _logger.LogWarning("Sales sync item skipped.", ex);
+                            if (preparedAttempt > 0)
+                            {
+                                await MarkRetryAsync(
+                                    item,
+                                    "exception",
+                                    preparedAttempt,
+                                    run,
+                                    SyncFailureKind.Unexpected).ConfigureAwait(false);
+                            }
+                            else
+                            {
+                                run.SetFailureIfNone(SyncFailureKind.Unexpected, "local_preflight_failed");
+                            }
                         }
                     }
                 }
-            }
 
-            return syncedAny;
+                return await CompleteAsync(run).ConfigureAwait(false);
             }
             finally
             {
@@ -274,41 +346,73 @@ namespace Win7POS.Wpf.Pos.Online
             PosOnlineResult<PosSalesSyncResponse> result,
             string syncAttemptId,
             string expectedClientBatchId,
-            int preparedAttempt)
+            int preparedAttempt,
+            SalesDrainAccumulator run)
         {
             if (!result.Success || result.Value == null || !result.Value.Ok)
             {
-                if (result.Denied)
+                var responseCode = ResolveFailureCode(result);
+                if (result.Denied || SharedAuthStopPolicy.IsAuthenticationDenied(responseCode))
                 {
-                    _store.Clear();
-                    await StoreSalesSyncFailureAsync("auth_denied").ConfigureAwait(false);
-                    await MarkRetryAsync(item, "auth_denied", preparedAttempt).ConfigureAwait(false);
+                    // Authentication is a transport-generation fact. Preserve it even if
+                    // another worker wins the local retry transition CAS.
+                    run.SetFailure(SyncFailureKind.AuthenticationDenied, "auth_denied");
+                    try
+                    {
+                        _store.Clear();
+                        await StoreSalesSyncFailureAsync("auth_denied").ConfigureAwait(false);
+                        await MarkRetryAsync(
+                            item,
+                            "auth_denied",
+                            preparedAttempt,
+                            run,
+                            SyncFailureKind.AuthenticationDenied,
+                            allowPermanentBlock: false).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(
+                            "Sales sync auth-stop local persistence failed; batch remains stopped.",
+                            ex);
+                    }
                     _logger.LogWarning(
                         "Sales sync auth denied: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
                         " clientSaleId=" + SafeId(item.ClientSaleId) +
                         " serverRequestId=" + SafeId(result.ServerRequestId));
-                    return false;
+                    return true;
                 }
 
-                if (IsBlockedFailure(result.Code))
+                if (IsBlockedFailure(responseCode))
                 {
-                    await StoreSalesSyncFailureAsync(result.Code).ConfigureAwait(false);
-                    await MarkBlockedAsync(item, result.Code, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), preparedAttempt)
+                    await StoreSalesSyncFailureAsync(responseCode).ConfigureAwait(false);
+                    await MarkBlockedAsync(
+                        item,
+                        responseCode,
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        preparedAttempt,
+                        run,
+                        SyncFailureKind.PermanentRemote)
                         .ConfigureAwait(false);
                     _logger.LogWarning(
                         "Sales sync blocked: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
                         " clientSaleId=" + SafeId(item.ClientSaleId) +
-                        " code=" + SafeCode(result.Code) +
+                        " code=" + responseCode +
                         " serverRequestId=" + SafeId(result.ServerRequestId));
                     return false;
                 }
 
-                await StoreSalesSyncFailureAsync(result.Code).ConfigureAwait(false);
-                await MarkRetryAsync(item, result.Code, preparedAttempt).ConfigureAwait(false);
+                var failureKind = GetRetryableFailureKind(responseCode);
+                await StoreSalesSyncFailureAsync(responseCode).ConfigureAwait(false);
+                await MarkRetryAsync(
+                    item,
+                    responseCode,
+                    preparedAttempt,
+                    run,
+                    failureKind).ConfigureAwait(false);
                 _logger.LogWarning(
                     "Sales sync retry scheduled: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
                     " clientSaleId=" + SafeId(item.ClientSaleId) +
-                    " code=" + SafeCode(result.Code) +
+                    " code=" + responseCode +
                     " serverRequestId=" + SafeId(result.ServerRequestId));
                 return false;
             }
@@ -321,7 +425,12 @@ namespace Win7POS.Wpf.Pos.Online
 
             if (ack == null)
             {
-                await MarkRetryAsync(item, "missing_ack", preparedAttempt).ConfigureAwait(false);
+                await MarkRetryAsync(
+                    item,
+                    "missing_ack",
+                    preparedAttempt,
+                    run,
+                    SyncFailureKind.RetryableRemote).ConfigureAwait(false);
                 _logger.LogWarning(
                     "Sales sync missing ack: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
                     " clientSaleId=" + SafeId(item.ClientSaleId) +
@@ -334,7 +443,13 @@ namespace Win7POS.Wpf.Pos.Online
                 var ackCode = "ack_" + SafeCode(ack.Status);
                 if (IsBlockedAckStatus(ack.Status))
                 {
-                    await MarkBlockedAsync(item, ackCode, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), preparedAttempt)
+                    await MarkBlockedAsync(
+                        item,
+                        ackCode,
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        preparedAttempt,
+                        run,
+                        SyncFailureKind.PermanentRemote)
                         .ConfigureAwait(false);
                     _logger.LogWarning(
                         "Sales sync ack blocked: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
@@ -344,7 +459,12 @@ namespace Win7POS.Wpf.Pos.Online
                     return false;
                 }
 
-                await MarkRetryAsync(item, ackCode, preparedAttempt).ConfigureAwait(false);
+                await MarkRetryAsync(
+                    item,
+                    ackCode,
+                    preparedAttempt,
+                    run,
+                    SyncFailureKind.RetryableRemote).ConfigureAwait(false);
                 _logger.LogWarning(
                     "Sales sync ack unknown: category=sales.sync syncAttemptId=" + SafeId(syncAttemptId) +
                     " clientSaleId=" + SafeId(item.ClientSaleId) +
@@ -360,7 +480,9 @@ namespace Win7POS.Wpf.Pos.Online
                     item,
                     "client_batch_mismatch",
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                    preparedAttempt).ConfigureAwait(false);
+                    preparedAttempt,
+                    run,
+                    SyncFailureKind.PermanentRemote).ConfigureAwait(false);
                 return false;
             }
 
@@ -375,7 +497,9 @@ namespace Win7POS.Wpf.Pos.Online
                     item,
                     "response_shop_mismatch",
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                    preparedAttempt).ConfigureAwait(false);
+                    preparedAttempt,
+                    run,
+                    SyncFailureKind.PermanentRemote).ConfigureAwait(false);
                 return false;
             }
 
@@ -389,8 +513,11 @@ namespace Win7POS.Wpf.Pos.Online
                 preparedAttempt).ConfigureAwait(false);
             if (!acked)
             {
+                run.SetFailureIfNone(SyncFailureKind.ConcurrentDrain, "sales_sync_ack_cas_lost");
                 return false;
             }
+
+            run.Acked++;
 
             await PosOnlineShopSnapshot.SaveAsync(_factory, result.Value.Shop).ConfigureAwait(false);
             await StoreSalesSyncSuccessAsync(result.Value.ServerTime).ConfigureAwait(false);
@@ -400,59 +527,123 @@ namespace Win7POS.Wpf.Pos.Online
                 " clientBatchId=" + SafeId(result.Value.Batch?.ClientBatchId) +
                 " ackStatus=" + SafeCode(ack.Status) +
                 " serverRequestId=" + SafeId(result.ServerRequestId));
-            return true;
+            return false;
         }
 
-        private async Task MarkRetryAsync(SalesSyncOutboxItem item, string errorCode, int preparedAttempt)
+        private async Task<bool> MarkRetryAsync(
+            SalesSyncOutboxItem item,
+            string errorCode,
+            int preparedAttempt,
+            SalesDrainAccumulator run,
+            SyncFailureKind failureKind,
+            bool allowPermanentBlock = true)
         {
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             await StoreSalesSyncFailureAsync(errorCode).ConfigureAwait(false);
             var attempts = Math.Max(1, preparedAttempt);
-            if (attempts >= MaxAttemptsBeforeBlocked)
+            if (allowPermanentBlock && attempts >= MaxAttemptsBeforeBlocked)
             {
-                await MarkBlockedAsync(item, errorCode, nowMs, preparedAttempt).ConfigureAwait(false);
-                return;
+                return await MarkBlockedAsync(
+                    item,
+                    errorCode,
+                    nowMs,
+                    preparedAttempt,
+                    run,
+                    failureKind).ConfigureAwait(false);
             }
 
             var delaySeconds = Math.Min(300, 10 * attempts);
-            await _sales.MarkSalesSyncRetryAsync(
+            var transitioned = await _sales.MarkSalesSyncRetryAsync(
                 item.Id,
                 item.SaleId,
                 SafeCode(errorCode),
                 nowMs + delaySeconds * 1000L,
                 nowMs,
                 preparedAttempt).ConfigureAwait(false);
+            if (transitioned)
+            {
+                run.Retried++;
+                run.SetFailure(failureKind, SafeCode(errorCode));
+            }
+            else
+            {
+                run.SetFailureIfNone(SyncFailureKind.ConcurrentDrain, "sales_sync_retry_cas_lost");
+            }
+
+            return transitioned;
         }
 
-        private async Task MarkBlockedAsync(
+        private async Task<bool> MarkDependencyDeferredAsync(
+            SalesSyncOutboxItem item,
+            string errorCode,
+            int preparedAttempt,
+            SalesDrainAccumulator run)
+        {
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            await StoreSalesSyncFailureAsync(errorCode).ConfigureAwait(false);
+            var transitioned = await _sales.DeferSalesSyncDependencyAsync(
+                item.Id,
+                item.SaleId,
+                SafeCode(errorCode),
+                nowMs + 5000L,
+                nowMs,
+                preparedAttempt).ConfigureAwait(false);
+            if (transitioned)
+            {
+                run.Retried++;
+                run.SetFailure(SyncFailureKind.RetryableRemote, SafeCode(errorCode));
+            }
+            else
+            {
+                run.SetFailureIfNone(
+                    SyncFailureKind.ConcurrentDrain,
+                    "sales_sync_dependency_cas_lost");
+            }
+
+            return transitioned;
+        }
+
+        private async Task<bool> MarkBlockedAsync(
             SalesSyncOutboxItem item,
             string errorCode,
             long nowMs,
-            int preparedAttempt)
+            int preparedAttempt,
+            SalesDrainAccumulator run,
+            SyncFailureKind failureKind)
         {
             await StoreSalesSyncFailureAsync(errorCode).ConfigureAwait(false);
-            await _sales.MarkSalesSyncBlockedAsync(
+            var transitioned = await _sales.MarkSalesSyncBlockedAsync(
                 item.Id,
                 item.SaleId,
                 SafeCode(errorCode),
                 nowMs,
                 preparedAttempt).ConfigureAwait(false);
+            if (transitioned)
+            {
+                run.Blocked++;
+                run.SetFailure(failureKind, SafeCode(errorCode));
+            }
+            else
+            {
+                run.SetFailureIfNone(SyncFailureKind.ConcurrentDrain, "sales_sync_block_cas_lost");
+            }
+
+            return transitioned;
         }
 
-        private async Task MarkPreflightBlockedAsync(
-            SalesSyncOutboxItem item,
-            string errorCode,
-            long nowMs)
+        private async Task<OutboxDrainResult> CompleteAsync(SalesDrainAccumulator run)
         {
-            await StoreSalesSyncFailureAsync(errorCode).ConfigureAwait(false);
-            await _sales.MarkSalesSyncOriginBlockedAsync(
-                item.Id,
-                item.SaleId,
-                SafeCode(errorCode),
-                nowMs,
-                item.Status,
-                item.AttemptCount,
-                item.LeaseObservedAt).ConfigureAwait(false);
+            var state = await _sales.GetSalesSyncDrainStateAsync(
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
+            return new OutboxDrainResult(
+                run.Attempted,
+                run.Acked,
+                run.Retried,
+                run.Blocked,
+                state.RemainingDue,
+                state.NextRetryAt,
+                run.FailureKind,
+                run.DiagnosticCode);
         }
 
         private static string GetOperationType(Sale sale)
@@ -500,6 +691,44 @@ namespace Win7POS.Wpf.Pos.Online
                    string.Equals(code, "conflict", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static string ResolveFailureCode(PosOnlineResult<PosSalesSyncResponse> result)
+        {
+            if (result == null)
+            {
+                return "remote_rejected";
+            }
+
+            if (result.Value != null && !result.Value.Ok)
+            {
+                var bodyCode = (result.Value.Code ?? string.Empty).Trim();
+                if (bodyCode.Length == 0 ||
+                    string.Equals(bodyCode, "success", StringComparison.OrdinalIgnoreCase))
+                {
+                    return "remote_rejected";
+                }
+
+                return SafeCode(bodyCode);
+            }
+
+            return result.Success ? "remote_rejected" : SafeCode(result.Code);
+        }
+
+        private static SyncFailureKind GetRetryableFailureKind(string code)
+        {
+            if (string.Equals(code, "timeout", StringComparison.OrdinalIgnoreCase))
+            {
+                return SyncFailureKind.Timeout;
+            }
+
+            if (string.Equals(code, "network_error", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(code, "io_error", StringComparison.OrdinalIgnoreCase))
+            {
+                return SyncFailureKind.Network;
+            }
+
+            return SyncFailureKind.RetryableRemote;
+        }
+
         private static bool IsAcceptedAckStatus(string status)
         {
             return string.Equals(status, "accepted", StringComparison.OrdinalIgnoreCase) ||
@@ -523,8 +752,27 @@ namespace Win7POS.Wpf.Pos.Online
 
         private static string SafeCode(string code)
         {
-            var normalized = TrimOrNull(code, 80);
-            return string.IsNullOrWhiteSpace(normalized) ? "failure" : normalized;
+            var normalized = (TrimOrNull(code, 80) ?? string.Empty).ToLowerInvariant();
+            if (normalized.Length == 0)
+            {
+                return "failure";
+            }
+
+            for (var index = 0; index < normalized.Length; index++)
+            {
+                var character = normalized[index];
+                var allowed = (character >= 'a' && character <= 'z') ||
+                    (character >= '0' && character <= '9') ||
+                    character == '_' ||
+                    character == '-' ||
+                    character == '.';
+                if (!allowed)
+                {
+                    return "failure";
+                }
+            }
+
+            return normalized;
         }
 
         private static string SafeId(string value)
@@ -544,6 +792,36 @@ namespace Win7POS.Wpf.Pos.Online
             return normalized.Length > maxLength
                 ? normalized.Substring(0, maxLength)
                 : normalized;
+        }
+
+        private sealed class SalesDrainAccumulator
+        {
+            public int Acked { get; set; }
+            public int Attempted { get; set; }
+            public int Blocked { get; set; }
+            public string DiagnosticCode { get; private set; } = string.Empty;
+            public SyncFailureKind FailureKind { get; private set; }
+            public int Retried { get; set; }
+
+            public void SetFailure(SyncFailureKind kind, string code)
+            {
+                if (FailureKind == SyncFailureKind.AuthenticationDenied &&
+                    kind != SyncFailureKind.AuthenticationDenied)
+                {
+                    return;
+                }
+
+                FailureKind = kind;
+                DiagnosticCode = code ?? string.Empty;
+            }
+
+            public void SetFailureIfNone(SyncFailureKind kind, string code)
+            {
+                if (FailureKind == SyncFailureKind.None)
+                {
+                    SetFailure(kind, code);
+                }
+            }
         }
     }
 }

@@ -54,6 +54,10 @@ if ($sync -notmatch "Interlocked\.CompareExchange" -or $sync -notmatch "Sales sy
 if ($sync -notmatch "StoreSalesSyncInProgressAsync\(true\)" -or $sync -notmatch "StoreSalesSyncInProgressAsync\(false\)") { Fail "sales sync in-progress status missing" } else { Pass "sales sync in-progress status persisted" }
 
 if ($sync -notmatch "MaxAttemptsBeforeBlocked\s*=\s*12") { Fail "max attempts before blocked missing" } else { Pass "max attempts before blocked present" }
+if ($sync -notmatch "OperationCanceledException[\s\S]{0,900}ReleaseSalesSyncAttemptAsync" -or
+    $saleRepo -notmatch "ReleaseSalesSyncAttemptAsync[\s\S]{0,1200}attempt_count\s*=\s*attempt_count\s*-\s*1") {
+    Fail "cancelled sales claims must release their CAS attempt without consuming retry budget"
+} else { Pass "cancelled sales claims release their attempt budget" }
 if ($sync -notmatch "Math\.Min\(300,\s*10\s*\*\s*attempts\)" -or $sync -notmatch "MarkSalesSyncRetryAsync") { Fail "retry backoff scheduling missing" } else { Pass "retry/backoff scheduling present" }
 if ($sync -notmatch "MarkSalesSyncBlockedAsync" -or $sync -notmatch "failed_blocked") { Fail "blocked sales status missing" } else { Pass "blocked sales status present" }
 if ($sync -notmatch "validation_failed" -or $sync -notmatch "conflict") { Fail "validation/conflict failures must be blocked" } else { Pass "validation/conflict failures are handled" }
@@ -80,7 +84,15 @@ if ($statusReader -notmatch "last_error" -or $statusReader -notmatch "SalesError
 
 if ($builder -notmatch "SerializeRedacted" -or $builder -notmatch "DeviceToken = null" -or $builder -notmatch "SessionToken = null") { Fail "sales sync payload persistence must redact tokens" } else { Pass "sales sync payload persistence redacts tokens" }
 if ($saleRepo -notmatch "SerializeCanonical" -or $saleRepo -notmatch "payload_hash" -or $sync -notmatch "Sha256Hex\(item\.PayloadJson\)" -or $sync -notmatch "payload_hash_mismatch") { Fail "sales payload/hash immutability missing" } else { Pass "sales payload/hash are immutable from enqueue through retry" }
-if ($saleRepo -notmatch "IsReversalDependencyReadyAsync" -or $saleRepo -notmatch "ValidateReversalBoundaryAsync" -or $sync -notmatch "original_sale_not_acked") { Fail "refund/void original sale dependency missing" } else { Pass "refund/void wait for coherent acknowledged original sale" }
+if ($saleRepo -notmatch "EvaluateReversalDependencyAsync" -or
+    $saleRepo -notmatch "ReversalDependencyState\.PermanentBlock" -or
+    $saleRepo -notmatch "prior_reversal_blocked" -or
+    $saleRepo -notmatch "original_sale_blocked" -or
+    $saleRepo -notmatch "ValidateReversalBoundaryAsync" -or
+    $sync -notmatch "dependency\.State\s*==\s*ReversalDependencyState\.Wait" -or
+    $sync -notmatch "dependency\.State\s*==\s*ReversalDependencyState\.PermanentBlock") {
+    Fail "refund/void dependency must distinguish bounded wait from permanent block"
+} else { Pass "refund/void dependency distinguishes wait from permanent block" }
 if ($salesScope -match "DELETE\s+FROM\s+sales_sync_outbox") { Fail "destructive sales_sync_outbox cleanup detected" } else { Pass "no destructive outbox cleanup detected" }
 if ($salesScope -match "DROP\s+TABLE\s+sales_sync_outbox") { Fail "destructive sales_sync_outbox drop detected" } else { Pass "no outbox drop detected" }
 

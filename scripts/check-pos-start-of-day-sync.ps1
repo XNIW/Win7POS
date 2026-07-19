@@ -170,6 +170,38 @@ if ($service -notmatch "response\.Denied" -or $service -notmatch "_store\.Clear\
     Pass "start-of-day blocks auth denied and clears trust"
 }
 
+if ($service -notmatch "var salesDrain = await TrySalesSyncAsync" -or
+    $service -notmatch "salesDrain\.AuthenticationDenied" -or
+    $service -notmatch "Task<OutboxDrainResult> TrySalesSyncAsync") {
+    Fail "start-of-day must stop the next lane directly from the typed sales auth result"
+} else {
+    Pass "start-of-day uses typed sales auth-stop before the next lane"
+}
+
+if ($service -notmatch "var catalogImportDrain = await TryCatalogImportSyncAsync" -or
+    $service -notmatch "catalogImportDrain\.AuthenticationDenied" -or
+    $service -notmatch "Task<OutboxDrainResult> TryCatalogImportSyncAsync") {
+    Fail "start-of-day must stop the next lane directly from the typed import auth result"
+} else {
+    Pass "start-of-day uses typed import auth-stop before the next lane"
+}
+
+if ($service -notmatch "RecordHeartbeatSkipBestEffortAsync" -or
+    $service -notmatch "CatalogSyncDiagnosticsRepository" -or
+    $service -notmatch "catalogPullAttempted:\s*false") {
+    Fail "start-of-day heartbeat skips must reach shared diagnostics"
+} else {
+    Pass "start-of-day heartbeat skips reach shared diagnostics"
+}
+
+if ($service -notmatch "Task<PosCatalogPullOutcome> TryCatalogDeltaAsync" -or
+    $service -notmatch "catalogOutcome\.AuthDenied" -or
+    $service -notmatch "TryPullIncrementalCatalogAsync") {
+    Fail "start-of-day must preserve typed catalog auth denial before opening POS"
+} else {
+    Pass "start-of-day preserves typed catalog auth denial"
+}
+
 if ($service -notmatch "ContinueLocal" -or $service -notmatch "ShouldContinueInBackground\s*=\s*shouldContinueInBackground" -or $service -notmatch "catalog_timeout" -or $service -notmatch "sales_timeout") {
     Fail "start-of-day must allow sale-safe startup with retryable timeout/background sync"
 } else {

@@ -28,7 +28,7 @@ namespace Win7POS.Data.Online
             _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
         }
 
-        public Task<CatalogImportSyncRunResult> SyncPendingAsync(
+        public Task<OutboxDrainResult> SyncPendingAsync(
             PosAdminWebOptions options,
             PosTrustedDeviceSession trustedSession,
             CancellationToken cancellationToken)
@@ -36,7 +36,7 @@ namespace Win7POS.Data.Online
             return SyncPendingAsync(options, trustedSession, MaxOutboxItemsPerRun, cancellationToken);
         }
 
-        public async Task<CatalogImportSyncRunResult> SyncPendingAsync(
+        public async Task<OutboxDrainResult> SyncPendingAsync(
             PosAdminWebOptions options,
             PosTrustedDeviceSession trustedSession,
             int maxItems,
@@ -45,22 +45,20 @@ namespace Win7POS.Data.Online
             if (options == null) throw new ArgumentNullException(nameof(options));
             if (trustedSession == null) throw new ArgumentNullException(nameof(trustedSession));
 
-            var result = new CatalogImportSyncRunResult();
+            var run = new DrainAccumulator();
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             if (!HasRequiredTrust(trustedSession))
             {
-                result.LastErrorCode = "missing_trusted_session";
-                result.Skipped = true;
-                return result;
+                run.SetFailure(SyncFailureKind.Configuration, "missing_trusted_session");
+                return await CompleteAsync(run, nowMs).ConfigureAwait(false);
             }
 
             var take = Math.Max(1, Math.Min(maxItems, MaxOutboxItemsPerRun));
-            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var pending = await _outbox.GetPendingAsync(take, nowMs).ConfigureAwait(false);
-            result.Total = pending.Count;
 
             if (pending.Count == 0)
             {
-                return result;
+                return await CompleteAsync(run, nowMs).ConfigureAwait(false);
             }
 
             using (var client = new PosAdminWebClient(options))
@@ -68,164 +66,257 @@ namespace Win7POS.Data.Online
                 foreach (var item in pending)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    await SyncOneAsync(client, trustedSession, item, result, cancellationToken).ConfigureAwait(false);
+                    var stop = await SyncOneAsync(
+                        client,
+                        trustedSession,
+                        item,
+                        run,
+                        cancellationToken).ConfigureAwait(false);
+                    if (stop)
+                    {
+                        break;
+                    }
                 }
             }
 
-            return result;
+            return await CompleteAsync(
+                run,
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
         }
 
-        private async Task SyncOneAsync(
+        private async Task<bool> SyncOneAsync(
             PosAdminWebClient client,
             PosTrustedDeviceSession trustedSession,
             CatalogImportOutboxItem item,
-            CatalogImportSyncRunResult run,
+            DrainAccumulator run,
             CancellationToken cancellationToken)
         {
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var bindingError = OutboxShopBinding.GetMismatchCode(
-                item.OriginShopId,
-                item.OriginShopCode,
-                trustedSession.ShopId,
-                trustedSession.ShopCode);
-            if (string.IsNullOrWhiteSpace(bindingError) &&
-                !string.Equals(item.OperationType, "catalog_import", StringComparison.Ordinal))
+            if (!await _outbox.PrepareAttemptAsync(item, nowMs).ConfigureAwait(false))
             {
-                bindingError = "operation_type_mismatch";
+                run.SetFailureIfNone(SyncFailureKind.ConcurrentDrain, "catalog_import_claim_lost");
+                return false;
             }
 
-            if (!string.IsNullOrWhiteSpace(bindingError))
-            {
-                if (await _outbox.MarkOriginBlockedAsync(item.Id, bindingError, nowMs).ConfigureAwait(false))
-                {
-                    run.Blocked++;
-                    run.LastErrorCode = bindingError;
-                }
-
-                return;
-            }
-
-            if (!await _outbox.PrepareAttemptAsync(item.Id, nowMs).ConfigureAwait(false))
-            {
-                return;
-            }
-
-            run.Prepared++;
-
+            run.Attempted++;
             var preparedAttempt = item.AttemptCount + 1;
-            var validation = CatalogImportOutboxPayloadValidator.Validate(item);
-            if (!validation.IsValid)
+            try
             {
-                if (await _outbox.MarkBlockedAsync(item.Id, validation.Code, nowMs, preparedAttempt).ConfigureAwait(false))
+                var bindingError = OutboxShopBinding.GetMismatchCode(
+                    item.OriginShopId,
+                    item.OriginShopCode,
+                    trustedSession.ShopId,
+                    trustedSession.ShopCode);
+                if (string.IsNullOrWhiteSpace(bindingError) &&
+                    !string.Equals(item.OperationType, "catalog_import", StringComparison.Ordinal))
                 {
-                    run.Blocked++;
-                    run.InvalidPayload++;
-                    run.LastErrorCode = validation.Code;
+                    bindingError = "operation_type_mismatch";
                 }
 
-                return;
-            }
-
-            var request = validation.Request;
-            AttachTrust(request, trustedSession, item);
-            AttachAttemptMetadata(request, item, preparedAttempt);
-
-            var response = await client.CatalogImportAsync(request, cancellationToken).ConfigureAwait(false);
-            if (!response.Success)
-            {
-                await MarkRemoteFailureAsync(item, preparedAttempt, response.Code, response.Denied, run).ConfigureAwait(false);
-                return;
-            }
-
-            var remote = response.Value;
-            var remoteCode = FirstNonEmpty(remote == null ? null : remote.Code, "remote_not_ok");
-            if (remote == null || !remote.Ok)
-            {
-                await MarkRemoteFailureAsync(item, preparedAttempt, remoteCode, false, run).ConfigureAwait(false);
-                return;
-            }
-
-            var responseShopError = GetResponseShopMismatchCode(item, remote);
-            if (!string.IsNullOrWhiteSpace(responseShopError))
-            {
-                if (await _outbox.MarkBlockedAsync(
-                    item.Id,
-                    "response_shop_mismatch",
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                    preparedAttempt).ConfigureAwait(false))
-                {
-                    run.Blocked++;
-                    run.LastErrorCode = "response_shop_mismatch";
-                }
-
-                return;
-            }
-
-            var batchStatus = FirstNonEmpty(remote.Batch == null ? null : remote.Batch.Status, remote.Code);
-            if (IsBlockedStatus(batchStatus) || HasBlockedItem(remote.Items))
-            {
-                if (await _outbox.MarkBlockedAsync(
-                    item.Id,
-                    FirstNonEmpty(batchStatus, "remote_blocked"),
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                    preparedAttempt).ConfigureAwait(false))
-                {
-                    run.Blocked++;
-                    run.LastErrorCode = FirstNonEmpty(batchStatus, "remote_blocked");
-                }
-
-                return;
-            }
-
-            if (IsAckStatus(batchStatus))
-            {
-                var remoteBatchMismatch = GetRemoteBatchMismatchCode(item, remote.Batch);
-                if (!string.IsNullOrWhiteSpace(remoteBatchMismatch))
+                if (!string.IsNullOrWhiteSpace(bindingError))
                 {
                     if (await _outbox.MarkBlockedAsync(
                         item.Id,
-                        remoteBatchMismatch,
+                        bindingError,
+                        nowMs,
+                        preparedAttempt).ConfigureAwait(false))
+                    {
+                        run.Blocked++;
+                        run.SetFailure(SyncFailureKind.LocalValidation, bindingError);
+                    }
+
+                    return false;
+                }
+
+                var validation = CatalogImportOutboxPayloadValidator.Validate(item);
+                if (!validation.IsValid)
+                {
+                    if (await _outbox.MarkBlockedAsync(item.Id, validation.Code, nowMs, preparedAttempt).ConfigureAwait(false))
+                    {
+                        run.Blocked++;
+                        run.SetFailure(SyncFailureKind.LocalValidation, validation.Code);
+                    }
+
+                    return false;
+                }
+
+                var request = validation.Request;
+                AttachTrust(request, trustedSession, item);
+                AttachAttemptMetadata(request, item, preparedAttempt);
+
+                var response = await client
+                    .CatalogImportAsync(request, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!response.Success)
+                {
+                    return await MarkRemoteFailureAsync(
+                        item,
+                        preparedAttempt,
+                        response.Code,
+                        response.Denied,
+                        run).ConfigureAwait(false);
+                }
+
+                var remote = response.Value;
+                var remoteCode = FirstNonEmpty(remote == null ? null : remote.Code, "remote_not_ok");
+                if (remote == null || !remote.Ok)
+                {
+                    return await MarkRemoteFailureAsync(
+                        item,
+                        preparedAttempt,
+                        remoteCode,
+                        false,
+                        run).ConfigureAwait(false);
+                }
+
+                var responseShopError = GetResponseShopMismatchCode(item, remote);
+                if (!string.IsNullOrWhiteSpace(responseShopError))
+                {
+                    if (await _outbox.MarkBlockedAsync(
+                        item.Id,
+                        "response_shop_mismatch",
                         DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                         preparedAttempt).ConfigureAwait(false))
                     {
                         run.Blocked++;
-                        run.LastErrorCode = remoteBatchMismatch;
+                        run.SetFailure(SyncFailureKind.PermanentRemote, "response_shop_mismatch");
                     }
 
-                    return;
+                    return false;
                 }
 
-                var ack = BuildAckResult(item, request, remote, response.ServerRequestId);
-                if (await _outbox.MarkAckedAsync(
-                    item.Id,
-                    ack,
-                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                    preparedAttempt).ConfigureAwait(false))
+                var batchStatus = FirstNonEmpty(remote.Batch == null ? null : remote.Batch.Status, remote.Code);
+                if (IsBlockedStatus(batchStatus) || HasBlockedItem(remote.Items))
                 {
-                    run.Acked++;
+                    if (await _outbox.MarkBlockedAsync(
+                        item.Id,
+                        SafeDiagnosticCode(FirstNonEmpty(batchStatus, "remote_blocked")),
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        preparedAttempt).ConfigureAwait(false))
+                    {
+                        run.Blocked++;
+                        run.SetFailure(
+                            SyncFailureKind.PermanentRemote,
+                            SafeDiagnosticCode(FirstNonEmpty(batchStatus, "remote_blocked")));
+                    }
+
+                    return false;
                 }
 
-                return;
-            }
+                if (IsAckStatus(batchStatus))
+                {
+                    var remoteBatchMismatch = GetRemoteBatchMismatchCode(item, remote.Batch);
+                    if (!string.IsNullOrWhiteSpace(remoteBatchMismatch))
+                    {
+                        if (await _outbox.MarkBlockedAsync(
+                            item.Id,
+                            remoteBatchMismatch,
+                            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                            preparedAttempt).ConfigureAwait(false))
+                        {
+                            run.Blocked++;
+                            run.SetFailure(SyncFailureKind.PermanentRemote, remoteBatchMismatch);
+                        }
 
-            if (IsAuthDenied(batchStatus))
+                        return false;
+                    }
+
+                    var ack = BuildAckResult(item, request, remote, response.ServerRequestId);
+                    if (await _outbox.MarkAckedAsync(
+                        item.Id,
+                        ack,
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        preparedAttempt).ConfigureAwait(false))
+                    {
+                        run.Acked++;
+                    }
+                    else
+                    {
+                        run.SetFailureIfNone(
+                            SyncFailureKind.ConcurrentDrain,
+                            "catalog_import_ack_cas_lost");
+                    }
+
+                    return false;
+                }
+
+                if (IsAuthDenied(batchStatus))
+                {
+                    run.SetFailure(SyncFailureKind.AuthenticationDenied, "auth_denied");
+                    await MarkRetryOrBlockedAsync(
+                        item,
+                        preparedAttempt,
+                        "auth_denied",
+                        SyncFailureKind.AuthenticationDenied,
+                        run,
+                        allowPermanentBlock: false).ConfigureAwait(false);
+                    return true;
+                }
+
+                await MarkRetryOrBlockedAsync(
+                    item,
+                    preparedAttempt,
+                    FirstNonEmpty(batchStatus, "remote_retry"),
+                    SyncFailureKind.RetryableRemote,
+                    run).ConfigureAwait(false);
+                return false;
+            }
+            catch (OperationCanceledException)
             {
-                run.RequiresTrustClear = true;
-                await MarkRetryOrBlockedAsync(item, preparedAttempt, "auth_denied", run).ConfigureAwait(false);
-                return;
+                try
+                {
+                    var releaseAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                    await _outbox.ReleaseAttemptAsync(
+                        item.Id,
+                        "cancelled",
+                        releaseAt,
+                        releaseAt,
+                        preparedAttempt).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Preserve the caller's cancellation; the bounded in-progress
+                    // lease makes a failed local transition recoverable.
+                }
+                throw;
             }
+            catch (Exception)
+            {
+                try
+                {
+                    await MarkRetryOrBlockedAsync(
+                        item,
+                        preparedAttempt,
+                        run.FailureKind == SyncFailureKind.AuthenticationDenied
+                            ? "auth_denied"
+                            : "exception",
+                        run.FailureKind == SyncFailureKind.AuthenticationDenied
+                            ? SyncFailureKind.AuthenticationDenied
+                            : SyncFailureKind.Unexpected,
+                        run,
+                        allowPermanentBlock:
+                            run.FailureKind != SyncFailureKind.AuthenticationDenied).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Preserve the original remote auth-stop or failure classification;
+                    // the stale lease remains bounded and recoverable.
+                }
 
-            await MarkRetryOrBlockedAsync(item, preparedAttempt, FirstNonEmpty(batchStatus, "remote_retry"), run).ConfigureAwait(false);
+                return run.FailureKind == SyncFailureKind.AuthenticationDenied;
+            }
         }
 
-        private async Task MarkRemoteFailureAsync(
+        private async Task<bool> MarkRemoteFailureAsync(
             CatalogImportOutboxItem item,
             int preparedAttempt,
             string code,
             bool denied,
-            CatalogImportSyncRunResult run)
+            DrainAccumulator run)
         {
-            var normalizedCode = denied || IsAuthDenied(code) ? "auth_denied" : FirstNonEmpty(code, "network_error");
+            var normalizedCode = denied || IsAuthDenied(code)
+                ? "auth_denied"
+                : SafeDiagnosticCode(FirstNonEmpty(code, "network_error"));
             if (IsBlockedStatus(normalizedCode))
             {
                 if (await _outbox.MarkBlockedAsync(
@@ -235,29 +326,41 @@ namespace Win7POS.Data.Online
                     preparedAttempt).ConfigureAwait(false))
                 {
                     run.Blocked++;
-                    run.LastErrorCode = normalizedCode;
+                    run.SetFailure(SyncFailureKind.PermanentRemote, normalizedCode);
                 }
 
-                return;
+                return false;
             }
 
-            if (IsAuthDenied(normalizedCode))
+            var failureKind = IsAuthDenied(normalizedCode)
+                ? SyncFailureKind.AuthenticationDenied
+                : GetRetryableFailureKind(normalizedCode);
+            if (failureKind == SyncFailureKind.AuthenticationDenied)
             {
-                run.RequiresTrustClear = true;
+                run.SetFailure(SyncFailureKind.AuthenticationDenied, "auth_denied");
             }
-
-            await MarkRetryOrBlockedAsync(item, preparedAttempt, normalizedCode, run).ConfigureAwait(false);
+            await MarkRetryOrBlockedAsync(
+                item,
+                preparedAttempt,
+                normalizedCode,
+                failureKind,
+                run,
+                allowPermanentBlock:
+                    failureKind != SyncFailureKind.AuthenticationDenied).ConfigureAwait(false);
+            return failureKind == SyncFailureKind.AuthenticationDenied;
         }
 
         private async Task MarkRetryOrBlockedAsync(
             CatalogImportOutboxItem item,
             int preparedAttempt,
             string code,
-            CatalogImportSyncRunResult run)
+            SyncFailureKind failureKind,
+            DrainAccumulator run,
+            bool allowPermanentBlock = true)
         {
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            var normalizedCode = FirstNonEmpty(code, "retry");
-            if (preparedAttempt >= MaxAttemptsBeforeBlocked)
+            var normalizedCode = SafeDiagnosticCode(FirstNonEmpty(code, "retry"));
+            if (allowPermanentBlock && preparedAttempt >= MaxAttemptsBeforeBlocked)
             {
                 if (await _outbox.MarkBlockedAsync(item.Id, normalizedCode, nowMs, preparedAttempt).ConfigureAwait(false))
                 {
@@ -277,7 +380,21 @@ namespace Win7POS.Data.Online
                 }
             }
 
-            run.LastErrorCode = normalizedCode;
+            run.SetFailure(failureKind, normalizedCode);
+        }
+
+        private async Task<OutboxDrainResult> CompleteAsync(DrainAccumulator run, long nowMs)
+        {
+            var state = await _outbox.GetDrainStateAsync(nowMs).ConfigureAwait(false);
+            return new OutboxDrainResult(
+                run.Attempted,
+                run.Acked,
+                run.Retried,
+                run.Blocked,
+                state.RemainingDue,
+                state.NextRetryAt,
+                run.FailureKind,
+                run.DiagnosticCode);
         }
 
         private static long ComputeNextRetryAt(long nowMs, int preparedAttempt)
@@ -594,7 +711,23 @@ namespace Win7POS.Data.Online
 
         private static bool IsAuthDenied(string status)
         {
-            return IsOneOf(status, "auth_denied", "unauthorized", "forbidden");
+            return SharedAuthStopPolicy.IsAuthenticationDenied(status);
+        }
+
+        private static SyncFailureKind GetRetryableFailureKind(string code)
+        {
+            if (string.Equals(code, "timeout", StringComparison.OrdinalIgnoreCase))
+            {
+                return SyncFailureKind.Timeout;
+            }
+
+            if (string.Equals(code, "network_error", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(code, "io_error", StringComparison.OrdinalIgnoreCase))
+            {
+                return SyncFailureKind.Network;
+            }
+
+            return SyncFailureKind.RetryableRemote;
         }
 
         private static bool IsOneOf(string value, params string[] candidates)
@@ -616,6 +749,31 @@ namespace Win7POS.Data.Online
             return string.IsNullOrWhiteSpace(left) ? right : left.Trim();
         }
 
+        private static string SafeDiagnosticCode(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim().ToLowerInvariant();
+            if (normalized.Length == 0 || normalized.Length > 96)
+            {
+                return "outbox_failure";
+            }
+
+            for (var index = 0; index < normalized.Length; index++)
+            {
+                var character = normalized[index];
+                var allowed = (character >= 'a' && character <= 'z') ||
+                    (character >= '0' && character <= '9') ||
+                    character == '_' ||
+                    character == '-' ||
+                    character == '.';
+                if (!allowed)
+                {
+                    return "outbox_failure";
+                }
+            }
+
+            return normalized;
+        }
+
         private static string TrimOrNull(string value)
         {
             var trimmed = (value ?? string.Empty).Trim();
@@ -623,17 +781,34 @@ namespace Win7POS.Data.Online
         }
     }
 
-    public sealed class CatalogImportSyncRunResult
+    internal sealed class DrainAccumulator
     {
         public int Acked { get; set; }
+        public int Attempted { get; set; }
         public int Blocked { get; set; }
-        public int InvalidPayload { get; set; }
-        public string LastErrorCode { get; set; } = string.Empty;
-        public int Prepared { get; set; }
-        public bool RequiresTrustClear { get; set; }
+        public string DiagnosticCode { get; private set; } = string.Empty;
+        public SyncFailureKind FailureKind { get; private set; }
         public int Retried { get; set; }
-        public bool Skipped { get; set; }
-        public int Total { get; set; }
+
+        public void SetFailure(SyncFailureKind kind, string code)
+        {
+            if (FailureKind == SyncFailureKind.AuthenticationDenied &&
+                kind != SyncFailureKind.AuthenticationDenied)
+            {
+                return;
+            }
+
+            FailureKind = kind;
+            DiagnosticCode = code ?? string.Empty;
+        }
+
+        public void SetFailureIfNone(SyncFailureKind kind, string code)
+        {
+            if (FailureKind == SyncFailureKind.None)
+            {
+                SetFailure(kind, code);
+            }
+        }
     }
 
     public static class CatalogImportOutboxPayloadValidator

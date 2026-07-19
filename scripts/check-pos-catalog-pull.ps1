@@ -22,12 +22,17 @@ $required = @(
     "src/Win7POS.Data/Online/CatalogFullRefreshReconciler.cs",
     "src/Win7POS.Data/Online/CatalogShopStateRepository.cs",
     "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs",
+    "src/Win7POS.Data/Online/CatalogFullResponseStageRepository.cs",
+    "src/Win7POS.Core/Online/CatalogFullLaneEvidenceTracker.cs",
+    "src/Win7POS.Core/Online/CatalogPaginationSafetyPolicy.cs",
     "src/Win7POS.Data/Repositories/RemoteCatalogBatchRepository.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
     "tests/Win7POS.Core.Tests/Data/CatalogExactnessTests.cs",
+    "tests/Win7POS.Core.Tests/Data/CatalogFullResponseStageRepositoryTests.cs",
     "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs",
-    "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs"
+    "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs",
+    "tests/Win7POS.Core.Tests/Online/CatalogPaginationSafetyPolicyTests.cs"
 )
 
 foreach ($path in $required) {
@@ -42,6 +47,9 @@ if ($fail) {
 
 $client = (Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs") + "`n" + (Read-Text "src/Win7POS.Core/Online/PosOnlineTransportContracts.cs")
 $service = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
+$fullLaneEvidence = Read-Text "src/Win7POS.Core/Online/CatalogFullLaneEvidenceTracker.cs"
+$paginationPolicy = Read-Text "src/Win7POS.Core/Online/CatalogPaginationSafetyPolicy.cs"
+$fullStage = Read-Text "src/Win7POS.Data/Online/CatalogFullResponseStageRepository.cs"
 $shopState = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.cs"
 $catalogImportOutbox = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
 $fullRefresh = Read-Text "src/Win7POS.Data/Online/CatalogFullRefreshReconciler.cs"
@@ -59,6 +67,7 @@ $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $catalogExactnessTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogExactnessTests.cs"
 $batchRepositoryTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs"
 $restoreTests = Read-Text "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs"
+$paginationTests = Read-Text "tests/Win7POS.Core.Tests/Online/CatalogPaginationSafetyPolicyTests.cs"
 $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.csproj |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) } |
@@ -67,6 +76,7 @@ $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.c
 if ($client -notmatch "/api/pos/catalog/pull") { Fail "catalog pull path missing" } else { Pass "catalog pull path present" }
 if ($client -notmatch "CatalogPullAsync") { Fail "CatalogPullAsync missing" } else { Pass "CatalogPullAsync present" }
 if ($service -notmatch "PosTrustedDeviceStore") { Fail "trusted device store not used for catalog pull" } else { Pass "trusted device store used" }
+if ($mainWindow -notmatch "if\s*\(outcome\.AuthDenied\)[\s\S]{0,500}store\.Clear\(\)[\s\S]{0,500}authenticationDenied:\s*true") { Fail "coordinated catalog auth denial must clear trust and stop the scheduler" } else { Pass "coordinated catalog auth denial clears trust and stops" }
 if ($service -notmatch "RemoteCatalogBatchRepository" -or
     $service -notmatch "ApplyAsync\(\s*batch,\s*cancellationToken,\s*new\s+RemoteCatalogCommitFence") { Fail "catalog pages are not delegated to the fenced batch repository with cancellation" } else { Pass "catalog pages use the cancellation-aware fenced batch repository" }
 if ($batchRepository -notmatch "class RemoteCatalogBatchRepository" -or $batchRepository -notmatch "Task<RemoteCatalogBatchApplyResult>\s+ApplyAsync") { Fail "remote catalog batch repository contract missing" } else { Pass "remote catalog batch repository contract present" }
@@ -118,20 +128,42 @@ if ($service -notmatch "Limit\s*=\s*CatalogPullPageLimit") { Fail "catalog pull 
 if ($service -notmatch "PosCatalogPullProgress" -or $service -notmatch "IProgress<PosCatalogPullProgress>" -or $service -notmatch "ForCatalogPage") { Fail "catalog pull progress callback missing" } else { Pass "catalog pull progress callback present" }
 if ($service -match "MaxCatalogPullPages\s*=\s*10") { Fail "catalog pull page cap regressed to unsafe low value" } else { Pass "unsafe MaxCatalogPullPages=10 absent" }
 if ($service -notmatch "MaxBackgroundCatalogPullPages") { Fail "background catalog pull cap missing" } else { Pass "background catalog pull cap present" }
-$bootstrapCapMatch = [regex]::Match($service, "MaxBootstrapCatalogPullPages\s*=\s*(\d+)")
-if (-not $bootstrapCapMatch.Success) {
-    Fail "bootstrap catalog pull cap missing"
-} elseif ([int]$bootstrapCapMatch.Groups[1].Value -lt 60) {
-    Fail "bootstrap catalog pull cap too low for large first sync"
-} else {
-    Pass "bootstrap catalog pull cap supports large first sync"
-}
+$hardCapMatch = [regex]::Match($service, "MaxAuthoritativeCatalogPullPages\s*=\s*(\d+)")
+if (-not $hardCapMatch.Success -or [int]$hardCapMatch.Groups[1].Value -lt 100) {
+    Fail "authoritative catalog hard ceiling is missing or too low for 100,000-row lanes"
+} else { Pass "authoritative catalog hard ceiling supports 100,000-row lanes" }
 if ($service -notmatch "effectiveMaxPages" -or
-    $service -notmatch "Math\.Max\([\s\S]*MaxBootstrapCatalogPullPages" -or
+    $service -notmatch "firstPageBudget\.PageBudget" -or
+    $paginationPolicy -notmatch "CalculatePageBudget" -or
+    $paginationPolicy -notmatch "Math\.Max\(" -or
     $service -notmatch "for\s*\(var page = 1; page <= effectiveMaxPages; page\+\+\)") {
-    Fail "a server-selected full_refresh on the background path can remain trapped by the delta page cap"
+    Fail "server-selected full_refresh does not use an authoritative lane-derived budget"
 } else {
-    Pass "server-selected full_refresh dynamically uses the bootstrap drain cap"
+    Pass "server-selected full_refresh uses the authoritative lane-derived budget"
+}
+if ($paginationPolicy -notmatch "ExpandFullPageBudgetForTombstoneContinuation" -or
+    $paginationPolicy -notmatch "!cumulative\.HasAnyTombstones" -or
+    $service -notmatch "ExpandFullPageBudgetForTombstoneContinuation" -or
+    $paginationTests -notmatch "FullHasMore_TombstonesCanContinueBeyondActiveSummaryBudget") {
+    Fail "full tombstone chains must drain beyond the active-only summary budget within the hard ceiling"
+} else {
+    Pass "full tombstone chains drain to a validated terminal page beyond the active-only summary budget"
+}
+if ($fullLaneEvidence -notmatch "ProductActiveTombstoneConflictCode" -or
+    $fullLaneEvidence -notmatch "CategoryActiveTombstoneConflictCode" -or
+    $fullLaneEvidence -notmatch "SupplierActiveTombstoneConflictCode" -or
+    $fullLaneEvidence -notmatch "DetectActiveTombstoneOverlap" -or
+    $paginationTests -notmatch "FullLaneEvidence_RejectsActiveTombstoneOverlapBeforePromotion") {
+    Fail "full snapshot active/tombstone overlap must fail before destructive promotion"
+} else {
+    Pass "full snapshot active/tombstone overlap fails before destructive promotion"
+}
+if ($mainWindow -notmatch "BuildCatalogSyncContextAsync[\s\S]{0,900}catalog_sync_context_failed" -or
+    $mainWindow -notmatch "catalog_sync_context_failed[\s\S]{0,120}catalogPullAttempted:\s*false" -or
+    $mainWindow -notmatch "if\s*\(coordinator == null\)[\s\S]{0,420}Task\.Delay\(schedule\.Delay, cancellationToken\)") {
+    Fail "catalog scheduler context failures must return a transient result instead of terminating the loop"
+} else {
+    Pass "catalog scheduler context failures return a transient retry result"
 }
 if ($service -notmatch "TryPullInitialCatalogAsync") { Fail "initial catalog pull path missing" } else { Pass "initial catalog pull path present" }
 if ($service -notmatch "completed" -or $service -notmatch "partial_has_more" -or $service -notmatch "failed_retryable" -or $service -notmatch "failed_auth_denied") { Fail "catalog bootstrap status values incomplete" } else { Pass "catalog bootstrap status values present" }
@@ -142,7 +174,7 @@ if ($service -notmatch "cursorSaved=" -or $service -notmatch "!fullRefresh") { F
 if ($service -notmatch "CatalogPullWithRetryAsync") { Fail "catalog pull retry helper missing" } else { Pass "catalog pull retry helper present" }
 if ($service -notmatch "Task.Delay") { Fail "catalog pull backoff missing" } else { Pass "catalog pull backoff present" }
 if ($service -notmatch "var\s+committedCursor\s*=\s*binding\.Cursor" -or
-    $service -notmatch "var\s+requestCursor\s*=\s*committedCursor" -or
+    $service -notmatch "var\s+requestCursor" -or
     $service -notmatch "SyncCursor\s*=\s*requestCursor" -or
     $service -notmatch "EnsureAndLoadCursorAsync") { Fail "catalog pull syncCursor is not loaded from committed shop-bound state" } else { Pass "catalog pull syncCursor uses committed shop-bound state" }
 $capturedSessionCheckIndex = $service.IndexOf("ValidateCapturedSessionAsync")
@@ -150,13 +182,14 @@ $bindingIndex = $service.IndexOf("EnsureAndLoadCursorAsync")
 $networkIndex = $service.IndexOf("new PosAdminWebClient")
 if ($capturedSessionCheckIndex -lt 0 -or $bindingIndex -lt 0 -or $networkIndex -lt 0 -or $capturedSessionCheckIndex -gt $bindingIndex -or $capturedSessionCheckIndex -gt $networkIndex -or $shopState -notmatch "catalog_session_shop_changed") { Fail "captured catalog session must be revalidated inside the transition barrier before bind/network" } else { Pass "captured catalog session is revalidated before bind/network" }
 if ($shopState -notmatch "pos\.catalog\.bound_shop_id" -or $shopState -notmatch "pos\.catalog\.bound_shop_code" -or $shopState -notmatch "Catalog state shop binding mismatch") { Fail "persistent catalog shop binding missing" } else { Pass "persistent catalog shop binding present" }
-if ($service -notmatch "responseShopError[\s\S]*response_shop_mismatch[\s\S]*ApplyCatalogAsync") { Fail "catalog response shop must be validated before local apply" } else { Pass "catalog response shop validated before local apply" }
+if ($service -notmatch "stagedResponseShopError[\s\S]*response_shop_mismatch[\s\S]*ApplyCatalogAsync") { Fail "catalog response shop must be validated before local apply" } else { Pass "catalog response shop validated before local apply" }
 if ($service -notmatch "var\s+authoritativeProductIds\s*=\s*new List<string>" -or
-    $service -notmatch "var\s+authoritativeCategoryIds\s*=\s*new List<string>" -or
-    $service -notmatch "var\s+authoritativeSupplierIds\s*=\s*new List<string>") {
-    Fail "full refresh must retain raw authoritative ID rows for duplicate/invalid evidence"
+    $service -notmatch "var\s+authoritativeCategoryIds\s*=\s*new HashSet<string>" -or
+    $service -notmatch "var\s+authoritativeSupplierIds\s*=\s*new HashSet<string>" -or
+    $service -notmatch "CatalogFullLaneEvidenceTracker") {
+    Fail "full refresh must retain raw product rows and distinct validated reference identities"
 } else {
-    Pass "full refresh retains raw authoritative ID rows"
+    Pass "full refresh retains raw product evidence and distinct reference identities"
 }
 $rawIdCollector = [regex]::Match($service, "private static void AddRemoteIds[\s\S]*?(?=\r?\n\s*private static)").Value
 if ($rawIdCollector -notmatch "ICollection<string>" -or
@@ -178,28 +211,69 @@ if ($service -notmatch "RequestFullRepairWhileBarrierHeldAsync" -or
 }
 if ($service -notmatch "IsCatalogCursorRejectionCode" -or
     $service -notmatch "requestCursor\.Length\s*>\s*0" -or
+    $service -notmatch "requestCursor\s*=\s*string\.Empty" -or
     $service -notmatch "request\.SyncCursor\s*=\s*requestCursor" -or
-    $service -notmatch "seenCursorFingerprints\.Clear\(\)" -or
     $service -notmatch '"cursor_expired"' -or
     $service -notmatch '"cursor_rejected"') {
-    Fail "server-rejected/expired cursors must reset shop-bound state and retry once from the authoritative boundary"
+    Fail "server-rejected/expired cursors must probe an empty authoritative boundary without destructive state change"
 } else {
-    Pass "expired/rejected cursors trigger a controlled full-refresh boundary retry"
+    Pass "expired/rejected cursors probe a controlled non-destructive full-refresh boundary"
 }
 $catalogApplyIndex = $service.IndexOf("var applyStats = await ApplyCatalogAsync(")
-$fullBoundaryIndex = $service.IndexOf("if (page == 1 && pageIsFullRefresh && !fullBoundaryPrepared)")
-$fullBoundaryBlock = if ($catalogApplyIndex -gt $fullBoundaryIndex -and $fullBoundaryIndex -ge 0) {
-    $service.Substring($fullBoundaryIndex, $catalogApplyIndex - $fullBoundaryIndex)
-} else {
-    ""
-}
+$ambiguityGuardIndex = $service.IndexOf("var paginationSafety = CatalogPaginationSafetyPolicy.EvaluateTerminalPage(")
+$compatibilityIndex = $service.IndexOf("var compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull")
+$responseShopIndex = $service.IndexOf("var stagedResponseShopError = OutboxShopBinding.GetMismatchCode(")
+$stageAppendIndex = $service.IndexOf("fullStage.AppendAsync(")
+$promotionMarkerIndex = $service.IndexOf("Only a completely drained and protocol-validated full chain")
+$promotionResetIndex = if ($promotionMarkerIndex -ge 0) {
+    $service.IndexOf("RequestFullRepairWhileBarrierHeldAsync(", $promotionMarkerIndex)
+} else { -1 }
+$stagedApplyIndex = $service.IndexOf("var stagedStats = await ApplyCatalogAsync(")
 if ($catalogApplyIndex -lt 0 -or
-    $fullBoundaryIndex -lt 0 -or
-    $fullBoundaryBlock -notmatch "RequestFullRepairWhileBarrierHeldAsync[\s\S]*EnsureAndLoadCursorAsync[\s\S]*fullBoundaryPrepared\s*=\s*true[\s\S]*CatalogPullWithRetryAsync") {
-    Fail "automatic full_refresh must reset repair/cursor state before the first page is applied"
+    $ambiguityGuardIndex -lt 0 -or
+    $compatibilityIndex -lt $ambiguityGuardIndex -or
+    $responseShopIndex -lt $compatibilityIndex -or
+    $stageAppendIndex -lt $responseShopIndex -or
+    $promotionMarkerIndex -lt $stageAppendIndex -or
+    $promotionResetIndex -lt $promotionMarkerIndex -or
+    $stagedApplyIndex -lt $promotionResetIndex -or
+    $service -notmatch "var\s+requestCursor\s*=\s*networkCursor" -or
+    $service -notmatch "networkCursor\s*=\s*result\.Value\.SyncCursor") {
+    Fail "full_refresh must validate every response, advance the network cursor, stage the drained chain, then reset/apply"
 } else {
-    Pass "full_refresh fences a new epoch and re-requests before local apply"
+    Pass "full_refresh validates and stages the drained cursor chain before reset/apply"
 }
+$preStageValidationBlock = if ($stageAppendIndex -gt $ambiguityGuardIndex -and $ambiguityGuardIndex -ge 0) {
+    $service.Substring($ambiguityGuardIndex, $stageAppendIndex - $ambiguityGuardIndex)
+} else { "" }
+if ($preStageValidationBlock -match "ApplyCatalogAsync") {
+    Fail "full response may be applied before pagination/compatibility/shop validation and durable staging"
+} else {
+    Pass "full response is not applied before validation and durable staging"
+}
+if ($fullStage -notmatch "MaximumPageBytes\s*=\s*8\s*\*\s*1024\s*\*\s*1024" -or
+    $fullStage -notmatch "MaximumRunBytes\s*=\s*512L\s*\*\s*1024L\s*\*\s*1024L" -or
+    $fullStage -notmatch "DataContractJsonSerializer" -or
+    $fullStage -notmatch "DELETE FROM app_settings WHERE key GLOB @pattern" -or
+    $fullStage -notmatch "LoadPageAsync" -or
+    $service -notmatch "fullStage\.BeginAsync" -or
+    $service -notmatch "fullStage\.AppendAsync" -or
+    $service -notmatch "fullStage\.LoadPageAsync" -or
+    $service -notmatch "fullStage\.ClearAsync") {
+    Fail "bounded durable full-chain staging contract is incomplete"
+} else {
+    Pass "full-chain staging is durable, generation-scoped and bounded"
+}
+$ambiguityFailureBlock = [regex]::Match(
+    $service,
+    'if \(!paginationSafety\.Allowed\)[\s\S]*?(?=\r?\n\s*if \(page == 1 && pageIsFullRefresh\))').Value
+if ($paginationPolicy -notmatch "server_catalog_pagination_ambiguous" -or
+    $ambiguityFailureBlock -notmatch "StoreCatalogFailureAsync" -or
+    $ambiguityFailureBlock -notmatch "BootstrapStatusFailedRetryable" -or
+    $ambiguityFailureBlock -notmatch "PosCatalogPullOutcome\.Failure" -or
+    $ambiguityFailureBlock -match "RequestFullRepair|ApplyCatalogAsync|StoreCatalogDiagnosticsAsync") {
+    Fail "ambiguous terminal page must fail visibly without reset/apply/cursor persistence"
+} else { Pass "ambiguous terminal page fails visibly without changing catalog generation" }
 $skippedRowsIndex = $service.IndexOf("applyStats.RowsSkipped > 0")
 $diagnosticsIndex = $service.IndexOf("StoreCatalogDiagnosticsAsync(")
 if ($batchRepository -notmatch "RowsSkipped" -or
