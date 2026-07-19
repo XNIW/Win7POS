@@ -387,7 +387,17 @@ $offlineQaIsFailClosed =
     $offlineQaLauncher -match 'StartsWith\(\$qaPrefix' -and
     $offlineQaLauncher -match 'Assert-NoExistingReparsePointAncestor' -and
     $offlineQaLauncher -match 'FileAttributes\]::ReparsePoint' -and
+    $offlineQaLauncher -match 'ResumeExistingSandbox requires an explicit DataDir' -and
+    $offlineQaLauncher -match 'QA OFFLINE SANDBOX - TEST / NON FISCAL' -and
+    $offlineQaLauncher -match 'if \(-not \$ResumeExistingSandbox\) \{\s*\$seedArguments' -and
+    $offlineQaLauncher -match '--verify-offline-sales-sandbox-safety' -and
+    $offlineQaLauncher -match 'verifyProcess\.ExitCode -ne 73' -and
+    $uiSmoke -match 'VerifyOfflineSalesSandboxSafetyAsync' -and
+    $uiSmoke -match 'Shutdown\(OfflineSalesSafetyVerifiedExitCode\)' -and
+    $uiSmoke -match 'hardware output is enabled' -and
+    $uiSmoke -match 'synthetic shop identity or fiscal lock is invalid' -and
     $offlineQaDocs -match 'must never reuse' -and
+    $offlineQaDocs -match 'does not intentionally alter\s+existing sales, stock or outbox rows' -and
     $offlineQaDocs -match 'Do not choose \*\*Local\s+recovery sign-in\*\*'
 if ($offlineQaIsFailClosed) {
     Pass "offline sales QA launcher is isolated, loopback-only and hardware-disabled by default"

@@ -622,3 +622,23 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   skipped, full Release solution plus WPF/harness x86 builds PASS with zero
   warnings/errors. The artifact capture passed POS footer, payment/printer
   previews, Sales Register, Daily Close and compact 1024x600 layouts.
+
+## 2026-07-18 - Fail-closed offline sandbox resume
+
+- Added an explicit `-ResumeExistingSandbox` launcher mode so the same current
+  synthetic QA run can be reopened without reseeding, replacing sales data or
+  renewing its authorization lease.
+- Resume remains confined below the local fixed-drive `POSData\\Win7POS-QA`
+  tree and now requires the original marker/database/session files, rejects
+  reparse points and repeats the single-instance check immediately before launch.
+- A database-query-only harness verifier requires disabled receipt/drawer flags,
+  blank saved printer names, the exact synthetic shop identity, an explicit raw
+  fiscal lock and a still-valid DPAPI-protected trusted-session lease. Its unique
+  exit code `73` prevents a stale or incompatible harness from being accepted.
+- Regressed fresh seed-only creation successfully, then resumed
+  `C:\POSData\Win7POS-QA\Offline-Sales-20260718-220237` with the Release x86
+  build, safe-start, loopback-only Admin Web endpoint and hardware disabled.
+  Credentials remained manual and were not stored or automated.
+- Final validation: required gates 32/32, Core tests 291/291 with zero skipped,
+  full Release solution and WPF/harness Release x86 builds PASS with zero
+  warnings/errors.

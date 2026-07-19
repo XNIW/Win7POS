@@ -41,6 +41,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private const string QaOfflineStaffCode = "qa-admin";
         private const string QaOfflineStaffId = "qa-admin-local";
         private const string QaOfflineCredential = "2468";
+        private const int OfflineSalesSafetyVerifiedExitCode = 73;
         private static string _receiptAlignmentFailure = string.Empty;
 
         [STAThread]
@@ -55,6 +56,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             var restrictedSeed = HasArg(args, "--offline-sales-sandbox") ||
                                  (HasArg(args, "--seed") && HasArg(args, "--seed-trusted-session"));
+            var verifyOfflineSalesSandboxSafety =
+                HasArg(args, "--verify-offline-sales-sandbox-safety");
             if (restrictedSeed)
             {
                 dataDir = EnsureSyntheticTrustedSessionSeedPath(dataDir);
@@ -74,6 +77,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                HasArg(args, "--receipt-rendering-alignment") ||
                                HasArg(args, "--capture-ux-artifacts") ||
                                HasArg(args, "--capture-settings-audit") ||
+                               verifyOfflineSalesSandboxSafety ||
                                HasArg(args, "--lifecycle");
 
             Environment.SetEnvironmentVariable("WIN7POS_DATA_DIR", dataDir);
@@ -95,6 +99,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 try
                 {
+                    if (verifyOfflineSalesSandboxSafety)
+                    {
+                        await QaFixture.VerifyOfflineSalesSandboxSafetyAsync().ConfigureAwait(true);
+                        QaFixture.VerifyTrustedDeviceSession(QaOfflineShopName);
+                        app.Shutdown(OfflineSalesSafetyVerifiedExitCode);
+                        return;
+                    }
+
                     if (HasArg(args, "--offline-sales-sandbox"))
                     {
                         EnsureSyntheticTrustedSessionSeedPath(dataDir);
@@ -2731,6 +2743,52 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
 
         private static class QaFixture
         {
+            public static async Task VerifyOfflineSalesSandboxSafetyAsync()
+            {
+                var options = PosDbOptions.Default();
+                if (!File.Exists(options.DbPath))
+                {
+                    throw new InvalidOperationException(
+                        "Offline sales sandbox database is missing.");
+                }
+
+                var factory = new SqliteConnectionFactory(options);
+                var printer = await new PosWorkflowService()
+                    .GetPrinterSettingsAsync()
+                    .ConfigureAwait(false);
+                if (printer.ReceiptEnabled || printer.AutoPrint ||
+                    printer.AllowWindowsDefault || printer.AllowVirtualPrinters ||
+                    printer.CashDrawerEnabled || printer.CashDrawerOpenOnCashSale ||
+                    !string.IsNullOrWhiteSpace(printer.PrinterName) ||
+                    !string.IsNullOrWhiteSpace(printer.CashDrawerPrinterName) ||
+                    !string.Equals(printer.CashDrawerMode, "disabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        "Offline sales sandbox resume refused because hardware output is enabled.");
+                }
+
+                var officialShop = await new ShopOfficialSnapshotRepository(factory)
+                    .GetAsync()
+                    .ConfigureAwait(false);
+                string rawFiscalLock;
+                using (var conn = factory.Open())
+                {
+                    rawFiscalLock = await conn.ExecuteScalarAsync<string>(
+                        "SELECT value FROM app_settings WHERE key = 'pos.official_shop.fiscal_locked';")
+                        .ConfigureAwait(false);
+                }
+                if (!string.Equals(rawFiscalLock?.Trim(), "1", StringComparison.Ordinal) ||
+                    !officialShop.FiscalIdentityLockedByPlatform ||
+                    !string.Equals(officialShop.ShopId, QaShopId, StringComparison.Ordinal) ||
+                    !string.Equals(officialShop.ShopCode, QaShopCode, StringComparison.Ordinal) ||
+                    !string.Equals(officialShop.ShopName, QaOfflineShopName, StringComparison.Ordinal) ||
+                    !string.Equals(officialShop.Source, "qa_harness", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "Offline sales sandbox resume refused because its synthetic shop identity or fiscal lock is invalid.");
+                }
+            }
+
             public static async Task SeedOfflineSalesSandboxAsync()
             {
                 var options = PosDbOptions.Default();
@@ -2782,13 +2840,7 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                     }
                 }
 
-                var printer = await new PosWorkflowService().GetPrinterSettingsAsync().ConfigureAwait(false);
-                if (printer.ReceiptEnabled || printer.AutoPrint || printer.CashDrawerEnabled ||
-                    printer.AllowWindowsDefault || printer.AllowVirtualPrinters)
-                {
-                    throw new InvalidOperationException(
-                        "Offline sales sandbox hardware defaults are not disabled.");
-                }
+                await VerifyOfflineSalesSandboxSafetyAsync().ConfigureAwait(false);
 
                 if (!await PosCatalogPullService.IsCatalogSaleSafeAsync(factory).ConfigureAwait(false))
                 {

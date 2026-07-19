@@ -27,6 +27,31 @@ The launcher:
   loopback;
 - disables sales sync, automatic receipt/fiscal printing and the cash drawer.
 
+To reopen the same synthetic run during its existing authorization lease, close
+Win7POS and explicitly pass its directory:
+
+```powershell
+pwsh -File scripts/start-offline-sales-qa.ps1 `
+  -DataDir C:\POSData\Win7POS-QA\Offline-Sales-YYYYMMDD-HHMMSS `
+  -ResumeExistingSandbox
+```
+
+Resume mode requires the original non-empty sandbox marker and data files below
+`C:\POSData\Win7POS-QA`, rejects reparse points and runs a database-read-only,
+fail-closed check that saved printer names, receipt output, cash-drawer output,
+the synthetic shop identity, the authorization lease and the fiscal lock remain
+valid. A unique verifier exit code prevents a stale harness from being accepted.
+It does not reseed, replace or renew the lease, and does not intentionally alter
+existing sales, stock or outbox rows; normal application startup may run
+idempotent schema migrations and write diagnostics. Safe Start and the
+loopback-only endpoint remain mandatory. Use it only to continue the same
+current QA run; it is never a way to reuse a shop, Epson validation or production
+data directory.
+
+`-SkipBuild` is intended only for an already validated local build; the launcher
+still requires the verifier's current success code and fails closed for a stale
+or incompatible harness.
+
 In the normal access form keep shop code `QA-SHOP`, enter staff code `qa-admin`
 and the existing synthetic QA PIN manually, then choose **Sign in**. The local
 loopback request fails closed and the normal offline-mirror flow verifies the

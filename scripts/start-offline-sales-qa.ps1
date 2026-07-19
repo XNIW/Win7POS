@@ -4,7 +4,8 @@ param(
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
     [switch]$SkipBuild,
-    [switch]$SeedOnly
+    [switch]$SeedOnly,
+    [switch]$ResumeExistingSandbox
 )
 
 $ErrorActionPreference = "Stop"
@@ -136,6 +137,49 @@ function Assert-NoExistingReparsePointAncestor {
     }
 }
 
+function Assert-OfflineQaSandboxFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CanonicalPath
+    )
+
+    $requiredFiles = @(
+        "pos.db",
+        "pos-trusted-device.json",
+        "QA-OFFLINE-SANDBOX.txt"
+    )
+    foreach ($fileName in $requiredFiles) {
+        $path = Join-Path $CanonicalPath $fileName
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            throw "Offline sales QA requires sandbox file $fileName."
+        }
+        $item = Get-Item -LiteralPath $path -Force
+        if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw "Offline sales QA does not allow a reparse-point sandbox file: $path"
+        }
+        if ($item.Length -le 0) {
+            throw "Offline sales QA requires a non-empty sandbox file: $path"
+        }
+    }
+
+    $markerPath = Join-Path $CanonicalPath "QA-OFFLINE-SANDBOX.txt"
+    $markerItem = Get-Item -LiteralPath $markerPath -Force
+    if ($markerItem.Length -gt 4096) {
+        throw "Offline sales QA marker is unexpectedly large: $markerPath"
+    }
+    $sandboxMarker = Get-Content -LiteralPath $markerPath -Raw
+    if ($sandboxMarker -notmatch 'QA OFFLINE SANDBOX - TEST / NON FISCAL') {
+        throw "Offline sales QA marker is invalid: $CanonicalPath"
+    }
+}
+
+if ($ResumeExistingSandbox -and $SeedOnly) {
+    throw "ResumeExistingSandbox cannot be combined with SeedOnly."
+}
+if ($ResumeExistingSandbox -and [string]::IsNullOrWhiteSpace($DataDir)) {
+    throw "ResumeExistingSandbox requires an explicit DataDir."
+}
+
 if ([string]::IsNullOrWhiteSpace($DataDir)) {
     $driveRoot = [System.IO.Path]::GetPathRoot($repoRoot)
     $qaBase = Join-Path $driveRoot "POSData\Win7POS-QA"
@@ -146,7 +190,12 @@ $validatedPath = Get-CanonicalLocalQaPath -Path $DataDir
 $fullDataDir = $validatedPath.DataDir
 Assert-NoExistingReparsePointAncestor -CanonicalPath $fullDataDir
 
-if (Test-Path -LiteralPath $fullDataDir -PathType Container) {
+if ($ResumeExistingSandbox) {
+    if (-not (Test-Path -LiteralPath $fullDataDir -PathType Container)) {
+        throw "Offline sales QA resume requires an existing data directory: $fullDataDir"
+    }
+}
+elseif (Test-Path -LiteralPath $fullDataDir -PathType Container) {
     if (Get-ChildItem -LiteralPath $fullDataDir -Force | Select-Object -First 1) {
         throw "Offline sales QA requires a new or empty data directory: $fullDataDir"
     }
@@ -156,12 +205,17 @@ if (-not $SeedOnly -and (Get-Process -Name "Win7POS.Wpf" -ErrorAction SilentlyCo
     throw "Close the current Win7POS window before launching the isolated offline QA instance."
 }
 
-New-Item -ItemType Directory -Path $fullDataDir -Force | Out-Null
+if (-not $ResumeExistingSandbox) {
+    New-Item -ItemType Directory -Path $fullDataDir -Force | Out-Null
+}
 $postCreatePath = Get-CanonicalLocalQaPath -Path (Resolve-Path -LiteralPath $fullDataDir).Path
 if (-not [string]::Equals($postCreatePath.DataDir, $fullDataDir, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Offline sales QA DataDir changed during creation."
 }
 Assert-NoExistingReparsePointAncestor -CanonicalPath $postCreatePath.DataDir
+if ($ResumeExistingSandbox) {
+    Assert-OfflineQaSandboxFiles -CanonicalPath $fullDataDir
+}
 
 if (-not $SkipBuild) {
     $dotnet = Find-CompatibleDotnet
@@ -184,32 +238,43 @@ if (-not (Test-Path -LiteralPath $appExe -PathType Leaf)) {
     throw "Win7POS executable not found: $appExe"
 }
 
-$seedArguments = @(
-    "--data-dir",
-    ('"{0}"' -f $fullDataDir),
-    "--offline-sales-sandbox"
-)
-$seedProcess = Start-Process `
-    -FilePath $harnessExe `
-    -ArgumentList $seedArguments `
-    -WorkingDirectory (Split-Path -Parent $harnessExe) `
-    -WindowStyle Hidden `
-    -Wait `
-    -PassThru
-if ($seedProcess.ExitCode -ne 0) {
-    throw "Offline sales QA seed failed with exit code $($seedProcess.ExitCode)."
+if (-not $ResumeExistingSandbox) {
+    $seedArguments = @(
+        "--data-dir",
+        ('"{0}"' -f $fullDataDir),
+        "--offline-sales-sandbox"
+    )
+    $seedProcess = Start-Process `
+        -FilePath $harnessExe `
+        -ArgumentList $seedArguments `
+        -WorkingDirectory (Split-Path -Parent $harnessExe) `
+        -WindowStyle Hidden `
+        -Wait `
+        -PassThru
+    if ($seedProcess.ExitCode -ne 0) {
+        throw "Offline sales QA seed failed with exit code $($seedProcess.ExitCode)."
+    }
+}
+else {
+    $verifyArguments = @(
+        "--data-dir",
+        ('"{0}"' -f $fullDataDir),
+        "--verify-offline-sales-sandbox-safety"
+    )
+    $verifyProcess = Start-Process `
+        -FilePath $harnessExe `
+        -ArgumentList $verifyArguments `
+        -WorkingDirectory (Split-Path -Parent $harnessExe) `
+        -WindowStyle Hidden `
+        -Wait `
+        -PassThru
+    if ($verifyProcess.ExitCode -ne 73) {
+        throw "Offline sales QA safety verification failed with exit code $($verifyProcess.ExitCode)."
+    }
 }
 
-$requiredSeedFiles = @(
-    "pos.db",
-    "pos-trusted-device.json",
-    "QA-OFFLINE-SANDBOX.txt"
-)
-foreach ($fileName in $requiredSeedFiles) {
-    $path = Join-Path $fullDataDir $fileName
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        throw "Offline sales QA seed did not create $fileName."
-    }
+if (-not $ResumeExistingSandbox) {
+    Assert-OfflineQaSandboxFiles -CanonicalPath $fullDataDir
 }
 
 if ($SeedOnly) {
@@ -226,6 +291,9 @@ $previousDataDir = $env:WIN7POS_DATA_DIR
 $previousSafeStart = $env:WIN7POS_SAFE_START
 $previousAdminWeb = $env:WIN7POS_ADMIN_WEB_BASE_URL
 try {
+    if (Get-Process -Name "Win7POS.Wpf" -ErrorAction SilentlyContinue) {
+        throw "Close the current Win7POS window before launching the isolated offline QA instance."
+    }
     $env:WIN7POS_DATA_DIR = $fullDataDir
     $env:WIN7POS_SAFE_START = "1"
     $env:WIN7POS_ADMIN_WEB_BASE_URL = "http://127.0.0.1:9"
@@ -245,7 +313,7 @@ finally {
 }
 
 [pscustomobject]@{
-    Mode = "OfflineSalesQa"
+    Mode = if ($ResumeExistingSandbox) { "OfflineSalesQaResume" } else { "OfflineSalesQa" }
     ProcessId = $appProcess.Id
     DataDir = $fullDataDir
     LeaseHours = 12
