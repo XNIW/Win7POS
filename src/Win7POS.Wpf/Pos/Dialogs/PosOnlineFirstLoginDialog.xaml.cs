@@ -418,7 +418,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         return;
                     }
 
-                    ShowError(result.Message);
+                    ShowError(LocalizeOnlineBootstrapFailure(result.Code, result.Message));
                     if (result.RequiresRetry)
                     {
                         FinishAccessAttempt(ref attemptFinished, attemptId, attemptTimer, "blocked", "online", "catalog_retry_required");
@@ -510,8 +510,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             string mode)
         {
             LogAccessInfo(attemptId, "offline_mirror_start", "mode=" + SafeAuditValue(mode));
-            var username = await new UserRepository(_factory)
-                .FindRemoteStaffUsernameAsync(shopCode, staffCode)
+            var username = await FindLeaseBoundRemoteStaffUsernameAsync(shopCode, staffCode)
                 .ConfigureAwait(true);
             if (string.IsNullOrWhiteSpace(username))
             {
@@ -571,9 +570,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     return false;
                 }
 
+                if (trustedSession == null ||
+                    string.IsNullOrWhiteSpace(trustedSession.StaffId) ||
+                    !string.Equals(
+                        NormalizeCode(trustedSession.StaffCode),
+                        staffCode,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    LogAccessWarning(
+                        attemptId,
+                        "offline_login_result",
+                        "result=blocked reason=staff_identity_mismatch");
+                    ShowError(PosLocalization.T("access.login.offlineMirrorMissing"));
+                    return false;
+                }
+
                 LogAccessInfo(attemptId, "offline_mirror_start", "mode=offline");
                 var username = await new UserRepository(_factory)
-                    .FindRemoteStaffUsernameAsync(shopCode, staffCode)
+                    .FindTrustedRemoteStaffUsernameAsync(
+                        trustedSession.ShopId,
+                        trustedSession.ShopCode,
+                        trustedSession.StaffId,
+                        trustedSession.StaffCode,
+                        trustedSession.StaffCredentialVersion)
                     .ConfigureAwait(true);
 
                 if (string.IsNullOrWhiteSpace(username))
@@ -620,7 +639,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             string username,
             string credential,
             string attemptId,
-            string mode)
+            string mode,
+            bool localRecovery = false)
         {
             LogAccessInfo(attemptId, "local_login_start", "mode=" + SafeAuditValue(mode));
             var session = OperatorSessionHolder.Current;
@@ -631,7 +651,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 return false;
             }
 
-            var loginResult = await session.LoginAsync(username, credential).ConfigureAwait(true);
+            var loginResult = localRecovery
+                ? await session.LoginLocalRecoveryAsync(username, credential).ConfigureAwait(true)
+                : await session.LoginAsync(username, credential).ConfigureAwait(true);
             switch (loginResult)
             {
                 case LoginResult.AuthorizationExpired:
@@ -686,8 +708,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             string credential,
             string attemptId)
         {
-            var username = await new UserRepository(_factory)
-                .FindRemoteStaffUsernameAsync(shopCode, staffCode)
+            var username = await FindLeaseBoundRemoteStaffUsernameAsync(shopCode, staffCode)
                 .ConfigureAwait(true);
             if (string.IsNullOrWhiteSpace(username))
             {
@@ -705,6 +726,34 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 "recovery_login_result",
                 "result=" + (loggedIn ? "success" : "failed") + " source=online_mirror");
             return loggedIn;
+        }
+
+        private async Task<string> FindLeaseBoundRemoteStaffUsernameAsync(
+            string requestedShopCode,
+            string requestedStaffCode)
+        {
+            if (!_trustedDeviceStore.TryRead(out var trustedSession) ||
+                trustedSession == null ||
+                !string.Equals(
+                    NormalizeCode(trustedSession.ShopCode),
+                    NormalizeCode(requestedShopCode),
+                    StringComparison.OrdinalIgnoreCase) ||
+                !string.Equals(
+                    NormalizeCode(trustedSession.StaffCode),
+                    NormalizeCode(requestedStaffCode),
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return await new UserRepository(_factory)
+                .FindTrustedRemoteStaffUsernameAsync(
+                    trustedSession.ShopId,
+                    trustedSession.ShopCode,
+                    trustedSession.StaffId,
+                    trustedSession.StaffCode,
+                    trustedSession.StaffCredentialVersion)
+                .ConfigureAwait(true);
         }
 
         private async Task RunLocalRecoveryLoginAsync()
@@ -726,7 +775,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 BeginBusySignIn(PosLocalization.T("common.loading"));
-                if (!await LoginLocalUsernameAsync(username, credential, attemptId, "local_recovery").ConfigureAwait(true))
+                if (!await LoginLocalUsernameAsync(
+                    username,
+                    credential,
+                    attemptId,
+                    "local_recovery",
+                    localRecovery: true).ConfigureAwait(true))
                 {
                     EndBusyAllowFreshLogin();
                     EnterLocalRecoveryLoginMode();
@@ -734,16 +788,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     return;
                 }
 
-                var catalogSaleSafe = await PosCatalogPullService
-                    .IsCatalogSaleSafeAsync(_factory)
-                    .ConfigureAwait(true);
-                AccessMode = catalogSaleSafe
-                    ? PosAuthenticatedAccessMode.Normal
-                    : PosAuthenticatedAccessMode.LocalRecovery;
+                // A local-recovery identity is deliberately never promoted to a
+                // normal POS operator. Full offline POS access must use the
+                // shop-bound remote mirror flow in TryOfflineSignInAsync.
+                AccessMode = PosAuthenticatedAccessMode.LocalRecovery;
                 LogAccessInfo(
                     attemptId,
                     "local_recovery_result",
-                    "result=success catalogSaleSafe=" + BoolText(catalogSaleSafe));
+                    "result=success accessMode=LocalRecovery");
                 DialogResult = true;
                 Close();
             }
@@ -1707,6 +1759,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
                         ? PosLocalization.T("onlineFirstLogin.serverNotConfigured")
                         : reason;
             }
+        }
+
+        private static string LocalizeOnlineBootstrapFailure(string code, string message)
+        {
+            var normalized = NormalizeSafeCode(code);
+            if (string.Equals(
+                normalized,
+                "shop_switch_blocked_unresolved_outbox",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                return PosLocalization.T("access.login.shopSwitchBlockedOutbox");
+            }
+
+            return string.IsNullOrWhiteSpace(message)
+                ? PosLocalization.T("onlineFirstLogin.connectionFailed")
+                : message;
         }
 
         private static string NormalizeCode(string value)

@@ -273,7 +273,7 @@ if ($dialogXaml -notmatch "AccessVerifiedPanel" -or
     $dialogXaml -notmatch "ActionHelpText" -or
     $dialog -notmatch "ApplyAuthenticatedAccessStatus" -or
     $dialog -notmatch "SyncDetailsRequested" -or
-    $main -notmatch "UpdateOperatorDisplay\(session\);[\s\S]{0,900}RunStartOfDaySyncAsync\(factory\)" -or
+    $main -notmatch "UpdateOperatorDisplay\(session\);[\s\S]{0,1400}RunStartOfDaySyncAsync\(factory\)" -or
     $main -notmatch "SyncDetailsRequested \+= \(_, __\) => ShowSyncCenterDialog\(dialog\)") {
     Fail "authenticated identity and actionable sync diagnostics must remain visible at the start-of-day gate"
 } else {

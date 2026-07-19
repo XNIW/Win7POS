@@ -51,7 +51,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _activeField = PaymentActiveField.Cash;
 
             _shouldPrint = draft?.DefaultPrint ?? false;
-            _autoPrintPdfSii = true;
+            _autoPrintPdfSii = !App.IsSafeStart;
             _openDrawerForCurrentPayment = openDrawerDefault;
             _nextBoletaNumber = draft?.NextBoletaNumber ?? 0;
             SetFiscalStatusKey("payment.pending");
@@ -66,7 +66,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             SetExactTotalCommand = new RelayCommand(_ => SetExactTotal(), _ => true);
             SetRoundedTotalCommand = new RelayCommand(_ => SetRoundedTotal(), _ => true);
             PayAllCardCommand = new RelayCommand(_ => PayAllCard(), _ => true);
-            PrintPdfCommand = new RelayCommand(_ => _ = StampaPdfAsync(), _ => _generateFiscalPdf != null);
+            PrintPdfCommand = new RelayCommand(
+                _ => _ = StampaPdfAsync(),
+                _ => _generateFiscalPdf != null && !App.IsSafeStart);
             IncrementBoletaCommand = new RelayCommand(_ => NextBoletaNumber += 1, _ => true);
             DecrementBoletaCommand = new RelayCommand(_ => { if (NextBoletaNumber > 0) NextBoletaNumber -= 1; }, _ => true);
 
@@ -117,7 +119,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public bool AutoPrintPdfSii
         {
             get => _autoPrintPdfSii;
-            set { _autoPrintPdfSii = value; OnPropertyChanged(); }
+            set
+            {
+                var effectiveValue = !App.IsSafeStart && value;
+                if (_autoPrintPdfSii == effectiveValue) return;
+                _autoPrintPdfSii = effectiveValue;
+                OnPropertyChanged();
+            }
         }
 
         /// <summary>Per questa vendita: apri cassetto se contanti &gt; 0. Default da impostazioni stampante.</summary>
@@ -336,6 +344,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>Se AutoPrintPdfSii è attivo e il pagamento include contanti, stampa il PDF SII. Ritorna true solo se il PDF è stato davvero stampato.</summary>
         public async Task<bool> TriggerAutoPrintPdfIfEnabledAsync()
         {
+            if (App.IsSafeStart)
+                return false;
+
             if (!_autoPrintPdfSii)
                 return false;
 
@@ -351,6 +362,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         /// <summary>Genera PDF e invia il testo fiscale alla stampante termica (stessa dello scontrino). File PDF eliminato dopo 15s. Ritorna true se stampato a stampante.</summary>
         private async Task<bool> StampaPdfAsync()
         {
+            if (App.IsSafeStart)
+                return false;
+
             if (_generateFiscalPdf == null)
                 return false;
 

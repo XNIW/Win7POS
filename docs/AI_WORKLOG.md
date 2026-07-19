@@ -551,3 +551,52 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   50 manager cycles PASS with zero residual windows/ViewModels.
 - Merge remains blocked by the receipt-surface/daily-close addendum and physical
   Windows 7 validation; no extra cash transaction or drawer pulse is authorized.
+
+## 2026-07-18 - Local recovery isolation and safe POS re-entry
+
+- Diagnosed online sign-in denial as `shop_switch_blocked_unresolved_outbox`:
+  the isolated Epson QA database belongs to the existing QA shop and still has
+  queued/blocked sales, so credentials for another shop cannot rebind it.
+- Kept the physical database and outbox unchanged. Read-only inspection confirmed
+  that the local QA recovery users are active, local-only and not locked.
+- Added an explicit local-recovery login path that preserves PIN verification and
+  lockout while no longer requiring an online authorization lease for verified
+  local-only users. Normal POS login continues to require the lease.
+- Restricted recovery mode to the user's granted subset of catalog import/edit and
+  database-maintenance permissions. Sales, payment, daily close, settings and
+  security administration remain unavailable until a normal online session for
+  the database's original shop is restored.
+- Hardened recovery transitions: payment is cancelled, online schedulers stop,
+  unsafe tabs are clamped, the existing POS/cart view is suspended and restored,
+  and exiting recovery rechecks a valid normal authorization lease.
+- Added clearer localized feedback for a blocked cross-shop sign-in and focused
+  source/data/policy tests for local-user classification and scoped permissions.
+- Local recovery can never promote itself to normal POS access. Normal offline
+  access, operator switching and override authorization now resolve only the
+  remote mirror bound to the trusted shop/staff IDs, normalized codes and exact
+  credential version. First-run setup uses the dedicated recovery verifier.
+- Final local validation: required gates 32/32, Core tests 291/291, Release
+  solution plus WPF/harness x86 builds PASS. The canonical seeded lifecycle is
+  PASS with 0 residual ViewModels, 0 open windows, stable subscriptions and all
+  functional checks true. The run observed 10 retired `SalesRegisterDialog`
+  window shells with no live ViewModel or open-window retention; these shells
+  remain diagnostic-only and their trend is monitored by the harness.
+
+## 2026-07-18 - Isolated offline sales and payment QA sandbox
+
+- Added a non-shipping launcher that creates a unique, empty data root below the
+  local fixed-drive `POSData\\Win7POS-QA` tree, rejects UNC/device paths and any
+  existing reparse-point ancestor, then rechecks containment after creation.
+- The harness seeds one shop-bound synthetic remote operator, 48 synthetic
+  products, a sale-safe catalog, a 12-hour trusted lease and zero sales/outbox
+  rows. It explicitly verifies that no local-recovery identity was created.
+- The child Win7POS process runs with safe-start and a loopback-only Admin Web
+  endpoint. Post-sale/manual sync, automatic and manual fiscal PDF output,
+  automatic receipt printing and the cash drawer are disabled by default.
+- The documented flow uses the normal offline-mirror sign-in; Local recovery
+  remains a restricted catalog/database-maintenance surface and never opens
+  sales or payments.
+- Actual seed-only validation PASS at
+  `C:\\POSData\\Win7POS-QA\\Offline-Sales-20260718-215001`; lease 12 hours and
+  hardware disabled. Canonical gates 32/32, Core 291/291, Release builds and
+  standard-fixture lifecycle all PASS on the final source state.

@@ -45,10 +45,11 @@ namespace Win7POS.Core.Security
         public int TotalUserRows { get; set; }
         public int ActiveLoginableUsers { get; set; }
         public int ActiveRemoteMirrors { get; set; }
+        public int ActiveLocalRecoveryUsers { get; set; }
 
         public bool IsNewDatabase => TotalUserRows == 0;
         public bool HasOnlyDisabledUsers => TotalUserRows > 0 && ActiveLoginableUsers == 0;
-        public bool HasActiveLocalRecoveryUsers => ActiveLoginableUsers > ActiveRemoteMirrors;
+        public bool HasActiveLocalRecoveryUsers => ActiveLocalRecoveryUsers > 0;
     }
 
     public sealed class PosAccessRecoveryDecision
@@ -200,7 +201,7 @@ namespace Win7POS.Core.Security
             PosAuthenticatedAccessMode accessMode,
             bool catalogSaleSafe)
         {
-            if (!catalogSaleSafe)
+            if (accessMode == PosAuthenticatedAccessMode.LocalRecovery || !catalogSaleSafe)
             {
                 return PosShellMode.Recovery;
             }
@@ -208,4 +209,5 @@ namespace Win7POS.Core.Security
             return PosShellMode.Pos;
         }
     }
+
 }

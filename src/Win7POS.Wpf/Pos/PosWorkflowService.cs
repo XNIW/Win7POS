@@ -2069,6 +2069,12 @@ namespace Win7POS.Wpf.Pos
 
         private async Task TrySyncSalesOutboxNoThrowAsync()
         {
+            if (App.IsSafeStart)
+            {
+                _logger.LogInfo("POS sales sync skipped: safe-start");
+                return;
+            }
+
             try
             {
                 if (!PosAdminWebOptions.TryLoad(out var options, out _))

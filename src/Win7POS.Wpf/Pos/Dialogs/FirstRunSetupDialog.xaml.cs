@@ -87,7 +87,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 }
 
                 var session = OperatorSessionHolder.Current;
-                if (session == null || await session.LoginAsync(username, pin).ConfigureAwait(true) != LoginResult.Success)
+                if (session == null ||
+                    await session.LoginLocalRecoveryAsync(username, pin).ConfigureAwait(true) != LoginResult.Success)
                 {
                     ShowError(PosLocalization.T("firstRun.sessionFailed"));
                     return;

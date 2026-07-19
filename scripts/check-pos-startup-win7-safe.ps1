@@ -171,6 +171,8 @@ $requiredFiles = @(
     "src/Win7POS.Wpf/App.xaml.cs",
     "src/Win7POS.Wpf/App.xaml",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
+    "src/Win7POS.Wpf/Pos/PosWorkflowService.cs",
+    "src/Win7POS.Wpf/Pos/Dialogs/PaymentViewModel.cs",
     "src/Win7POS.Wpf/Infrastructure/StartupTrace.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     ".github/workflows/release-pack.yml",
@@ -192,6 +194,8 @@ if ($fail) {
 $app = Read-Text "src/Win7POS.Wpf/App.xaml.cs"
 $appXaml = Read-Text "src/Win7POS.Wpf/App.xaml"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$posWorkflow = Read-Text "src/Win7POS.Wpf/Pos/PosWorkflowService.cs"
+$paymentViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PaymentViewModel.cs"
 $startupTrace = Read-Text "src/Win7POS.Wpf/Infrastructure/StartupTrace.cs"
 $catalogPull = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosLocalization.cs"
@@ -404,6 +408,27 @@ if ($mainWindow -match "TryOnlineBootstrapFirstRunAsync" -or
 }
 else {
     Pass "safe-start skips automatic startup online refresh"
+}
+
+if ($posWorkflow -notmatch 'TrySyncSalesOutboxNoThrowAsync[\s\S]{0,260}if\s*\(App\.IsSafeStart\)[\s\S]{0,180}return' -or
+    $paymentViewModel -notmatch '_autoPrintPdfSii\s*=\s*!App\.IsSafeStart' -or
+    $paymentViewModel -notmatch 'effectiveValue\s*=\s*!App\.IsSafeStart\s*&&\s*value' -or
+    $paymentViewModel -notmatch 'TriggerAutoPrintPdfIfEnabledAsync[\s\S]{0,180}if\s*\(App\.IsSafeStart\)[\s\S]{0,80}return\s+false' -or
+    $paymentViewModel -notmatch 'StampaPdfAsync\(\)[\s\S]{0,180}if\s*\(App\.IsSafeStart\)[\s\S]{0,80}return\s+false' -or
+    $paymentViewModel -notmatch '_generateFiscalPdf\s*!=\s*null\s*&&\s*!App\.IsSafeStart') {
+    Fail "safe-start must block post-sale sync and automatic fiscal printing"
+}
+else {
+    Pass "safe-start blocks post-sale sync and all fiscal PDF output paths"
+}
+
+if ($mainWindow -notmatch 'TriggerAdaptiveOnlineRefreshAsync[\s\S]{0,450}App\.IsSafeStart[\s\S]{0,900}authorization_lease_denied' -or
+    $mainWindow -notmatch 'ShowSyncCenterDialog\(Window owner = null\)[\s\S]{0,260}App\.IsSafeStart' -or
+    $mainWindow -notmatch 'new SettingsHubDialog\([\s\S]{0,180}App\.IsSafeStart') {
+    Fail "safe-start must block manual catalog sync and hide Sync Center"
+}
+else {
+    Pass "safe-start blocks manual catalog sync and hides Sync Center"
 }
 
 if ($app -notmatch "App\.OnStartup entered" -or

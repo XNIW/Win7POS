@@ -124,7 +124,7 @@
                         </Grid>
                     </Button>
 
-                    <Button Style="{StaticResource CompactSettingsCardButtonStyle}" Click="OnSyncCenterClick" AutomationProperties.Name="{loc:Loc sync.center.open}">
+                    <Button x:Name="SyncCenterButton" Style="{StaticResource CompactSettingsCardButtonStyle}" Click="OnSyncCenterClick" AutomationProperties.Name="{loc:Loc sync.center.open}">
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="34"/><ColumnDefinition Width="*"/><ColumnDefinition Width="22"/></Grid.ColumnDefinitions>
                             <Path Grid.Column="0" Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}" Width="22" Height="22"/>

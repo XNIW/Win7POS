@@ -62,7 +62,9 @@ $required = @(
     "src/Win7POS.Core/Models/Sale.cs",
     "src/Win7POS.Data/DbInitializer.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
-    "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
+    "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs",
+    "scripts/start-offline-sales-qa.ps1",
+    "docs/QA/WIN7POS_OFFLINE_SALES_SANDBOX.md"
 )
 
 foreach ($path in $required) {
@@ -85,7 +87,9 @@ $saleModel = Read-Text "src/Win7POS.Core/Models/Sale.cs"
 $dbInitializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
 $uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
-$combined = $discovery + $spooler + $dialog + $dialogVm + $workflow + $posVm + $keys + $translations + $uiSmoke
+$offlineQaLauncher = Read-Text "scripts/start-offline-sales-qa.ps1"
+$offlineQaDocs = Read-Text "docs/QA/WIN7POS_OFFLINE_SALES_SANDBOX.md"
+$combined = $discovery + $spooler + $dialog + $dialogVm + $workflow + $posVm + $keys + $translations + $uiSmoke + $offlineQaLauncher + $offlineQaDocs
 
 if ($discovery -notmatch "PrinterSettings\.InstalledPrinters" -or $discovery -notmatch "IsLikelyVirtualPrinter" -or $discovery -notmatch "GetDefaultPrinterName") {
     Fail "Win7-safe printer discovery/default/virtual detection missing"
@@ -345,12 +349,50 @@ $trustedSeedIsFailClosed =
     $uiSmoke -match 'EnsureSyntheticTrustedSessionSeedPath\(dataDir\)' -and
     $uiSmoke -match 'Path\.IsPathRooted\(dataDir\)' -and
     $uiSmoke -match '"Win7POS-QA"' -and
+    $uiSmoke -match 'DriveType\.Fixed' -and
+    $uiSmoke -match 'existingAncestor' -and
+    $uiSmoke -match 'FileAttributes\.ReparsePoint' -and
     $uiSmoke -match 'Directory\.EnumerateFileSystemEntries\(fullPath\)\.Any\(\)' -and
     $uiSmoke -match 'PosOnlineContract\.OfflineAuthorizationMaxAgeSeconds'
+$trustedSeedGuardIndex = $uiSmoke.IndexOf(
+    'dataDir = EnsureSyntheticTrustedSessionSeedPath(dataDir);',
+    [System.StringComparison]::Ordinal)
+$seedDirectoryCreateIndex = $uiSmoke.IndexOf(
+    'Directory.CreateDirectory(dataDir);',
+    [System.StringComparison]::Ordinal)
+$trustedSeedIsFailClosed = $trustedSeedIsFailClosed -and
+    $trustedSeedGuardIndex -ge 0 -and
+    $seedDirectoryCreateIndex -gt $trustedSeedGuardIndex
 if ($trustedSeedIsFailClosed) {
     Pass "synthetic trusted-session seed is explicit and restricted to a new Win7POS-QA directory"
 } else {
     Fail "synthetic trusted-session seed must be explicit and fail closed outside a new Win7POS-QA directory"
+}
+
+$offlineQaIsFailClosed =
+    $uiSmoke -match 'HasArg\(args,\s*"--offline-sales-sandbox"\)' -and
+    $uiSmoke -match 'SeedOfflineSalesSandboxAsync' -and
+    $uiSmoke -match 'SeedOfflineSalesOperatorAsync' -and
+    $uiSmoke -match 'UpsertRemoteStaffMirrorAsync' -and
+    $uiSmoke -match 'remoteUsers\s*!=\s*1\s*\|\|\s*localRecoveryUsers\s*!=\s*0' -and
+    $uiSmoke -match 'Offline sales sandbox seed postconditions failed' -and
+    $uiSmoke -match 'VerifyTrustedDeviceSession' -and
+    $uiSmoke -match 'ReceiptEnabled\s*=\s*false' -and
+    $uiSmoke -match 'CashDrawerEnabled\s*=\s*false' -and
+    $offlineQaLauncher -match 'WIN7POS_SAFE_START\s*=\s*"1"' -and
+    $offlineQaLauncher -match 'WIN7POS_ADMIN_WEB_BASE_URL\s*=\s*"http://127\.0\.0\.1:9"' -and
+    $offlineQaLauncher -match 'Get-Process\s+-Name\s+"Win7POS\.Wpf"' -and
+    $offlineQaLauncher -match 'Get-CanonicalLocalQaPath' -and
+    $offlineQaLauncher -match 'DriveType\]::Fixed' -and
+    $offlineQaLauncher -match 'StartsWith\(\$qaPrefix' -and
+    $offlineQaLauncher -match 'Assert-NoExistingReparsePointAncestor' -and
+    $offlineQaLauncher -match 'FileAttributes\]::ReparsePoint' -and
+    $offlineQaDocs -match 'must never reuse' -and
+    $offlineQaDocs -match 'Do not choose \*\*Local\s+recovery sign-in\*\*'
+if ($offlineQaIsFailClosed) {
+    Pass "offline sales QA launcher is isolated, loopback-only and hardware-disabled by default"
+} else {
+    Fail "offline sales QA launcher must remain isolated and fail closed"
 }
 
 if ($translations -match 'printer\.testInvalidCommand' -and

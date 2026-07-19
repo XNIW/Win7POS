@@ -16,9 +16,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public event EventHandler CustomerDisplayRequested;
         public event EventHandler<string> LanguageChangedRequested;
 
-        public SettingsHubDialog(bool recoveryMode = false)
+        public SettingsHubDialog(bool recoveryMode = false, bool syncDisabled = false)
         {
             InitializeComponent();
+            if (syncDisabled)
+            {
+                SyncCenterButton.Visibility = Visibility.Collapsed;
+            }
+
             if (recoveryMode)
             {
                 ShopDataButton.Visibility = Visibility.Collapsed;

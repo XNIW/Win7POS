@@ -25,8 +25,15 @@ namespace Win7POS.Wpf.Pos.Online
 
         public PosOfflineAuthorizationLeaseDecision Evaluate()
         {
+            PosTrustedDeviceSession ignoredSession;
+            return Evaluate(out ignoredSession);
+        }
+
+        public PosOfflineAuthorizationLeaseDecision Evaluate(out PosTrustedDeviceSession trustedSession)
+        {
             lock (_sync)
             {
+                trustedSession = null;
                 if (!_store.TryRead(out var session))
                 {
                     return PosOfflineAuthorizationLeasePolicy.Evaluate(null, _utcNow());
@@ -40,6 +47,8 @@ namespace Win7POS.Wpf.Pos.Online
                 {
                     return decision;
                 }
+
+                trustedSession = session;
 
                 if (!_estimatedServerHighWater.HasValue ||
                     decision.EstimatedServerNow > _estimatedServerHighWater)

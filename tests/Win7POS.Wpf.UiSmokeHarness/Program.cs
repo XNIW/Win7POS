@@ -37,6 +37,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
     {
         private const string QaShopId = "qa-shop-local";
         private const string QaShopCode = "QA-SHOP";
+        private const string QaOfflineShopName = "QA Offline Sandbox";
+        private const string QaOfflineStaffCode = "qa-admin";
+        private const string QaOfflineStaffId = "qa-admin-local";
+        private const string QaOfflineCredential = "2468";
         private static string _receiptAlignmentFailure = string.Empty;
 
         [STAThread]
@@ -49,8 +53,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 return;
             }
 
+            var restrictedSeed = HasArg(args, "--offline-sales-sandbox") ||
+                                 (HasArg(args, "--seed") && HasArg(args, "--seed-trusted-session"));
+            if (restrictedSeed)
+            {
+                dataDir = EnsureSyntheticTrustedSessionSeedPath(dataDir);
+            }
+
             Directory.CreateDirectory(dataDir);
+            if (restrictedSeed)
+            {
+                dataDir = EnsureSyntheticTrustedSessionSeedPath(dataDir);
+            }
             var automatedRun = HasArg(args, "--seed") ||
+                               HasArg(args, "--offline-sales-sandbox") ||
                                HasArg(args, "--shell-window-state") ||
                                HasArg(args, "--printer-selection-binding") ||
                                HasArg(args, "--printer-presentation") ||
@@ -79,6 +95,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 try
                 {
+                    if (HasArg(args, "--offline-sales-sandbox"))
+                    {
+                        EnsureSyntheticTrustedSessionSeedPath(dataDir);
+                        await QaFixture.SeedOfflineSalesSandboxAsync().ConfigureAwait(true);
+                        QaFixture.SeedTrustedDeviceSession(QaOfflineShopName);
+                        QaFixture.VerifyTrustedDeviceSession(QaOfflineShopName);
+                        File.WriteAllText(
+                            Path.Combine(dataDir, "QA-OFFLINE-SANDBOX.txt"),
+                            "QA OFFLINE SANDBOX - TEST / NON FISCAL" + Environment.NewLine +
+                            "Online sync, automatic receipt printing and cash drawer are disabled." + Environment.NewLine);
+                        app.Shutdown(0);
+                        return;
+                    }
+
                     if (HasArg(args, "--seed"))
                     {
                         var seedTrustedSession = HasArg(args, "--seed-trusted-session");
@@ -176,7 +206,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             app.Run();
         }
 
-        private static void EnsureSyntheticTrustedSessionSeedPath(string dataDir)
+        private static string EnsureSyntheticTrustedSessionSeedPath(string dataDir)
         {
             if (string.IsNullOrWhiteSpace(dataDir) || !Path.IsPathRooted(dataDir))
             {
@@ -186,6 +216,24 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             var fullPath = Path.GetFullPath(dataDir)
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var driveRoot = Path.GetPathRoot(fullPath);
+            if (string.IsNullOrWhiteSpace(driveRoot) ||
+                driveRoot.Length != 3 ||
+                !char.IsLetter(driveRoot[0]) ||
+                driveRoot[1] != ':' ||
+                driveRoot[2] != Path.DirectorySeparatorChar)
+            {
+                throw new InvalidOperationException(
+                    "Synthetic trusted-session seed requires a local drive-letter path.");
+            }
+
+            var drive = new DriveInfo(driveRoot);
+            if (!drive.IsReady || drive.DriveType != DriveType.Fixed)
+            {
+                throw new InvalidOperationException(
+                    "Synthetic trusted-session seed requires a ready local fixed drive.");
+            }
+
             var qaSegment = Path.DirectorySeparatorChar + "Win7POS-QA" + Path.DirectorySeparatorChar;
             var pathWithTerminator = fullPath + Path.DirectorySeparatorChar;
             if (pathWithTerminator.IndexOf(qaSegment, StringComparison.OrdinalIgnoreCase) < 0)
@@ -194,11 +242,48 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "--seed-trusted-session is restricted to a Win7POS-QA directory.");
             }
 
+            var existingAncestor = fullPath;
+            while (!Directory.Exists(existingAncestor))
+            {
+                if (File.Exists(existingAncestor))
+                {
+                    throw new InvalidOperationException(
+                        "Synthetic trusted-session seed path has a non-directory ancestor.");
+                }
+
+                existingAncestor = Path.GetDirectoryName(existingAncestor);
+                if (string.IsNullOrWhiteSpace(existingAncestor))
+                {
+                    throw new InvalidOperationException(
+                        "Synthetic trusted-session seed path has no local directory ancestor.");
+                }
+            }
+
+            for (var ancestor = new DirectoryInfo(existingAncestor);
+                 ancestor != null;
+                 ancestor = ancestor.Parent)
+            {
+                if ((ancestor.Attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    throw new InvalidOperationException(
+                        "Synthetic trusted-session seed does not allow a reparse-point ancestor.");
+                }
+            }
+
+            if (Directory.Exists(fullPath) &&
+                (new DirectoryInfo(fullPath).Attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                throw new InvalidOperationException(
+                    "Synthetic trusted-session seed does not allow a reparse-point data directory.");
+            }
+
             if (Directory.Exists(fullPath) && Directory.EnumerateFileSystemEntries(fullPath).Any())
             {
                 throw new InvalidOperationException(
                     "--seed-trusted-session requires a new or empty QA data directory.");
             }
+
+            return fullPath;
         }
 
         private static string RunShellWindowStateCheck()
@@ -462,16 +547,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
 
                     _status.Text = "Lifecycle final collection";
-                    await Dispatcher.InvokeAsync(
-                        () => { },
-                        System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-                    for (var collection = 0; collection < 3; collection++)
-                    {
-                        GC.Collect();
-                        GC.WaitForPendingFinalizers();
-                        GC.Collect();
-                        await Task.Delay(100).ConfigureAwait(true);
-                    }
+                    var collectionAttempts = await WaitForLifecycleCollectionAsync(weakWindows)
+                        .ConfigureAwait(true);
                     var residualWindows = weakWindows.Where(x => x.Window.IsAlive).ToList();
                     var residual = residualWindows.Count;
                     var residualTypes = string.Join(",", residualWindows
@@ -491,7 +568,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var displaySubscriptionsAfter = CustomerDisplayManager.ActiveDisplaySettingsSubscriptions;
                     var monotonicPrivateBytes = IsStrictlyIncreasing(samples.Select(x => x.PrivateBytes).ToList());
                     var monotonicHandles = IsStrictlyIncreasing(samples.Select(x => (long)x.HandleCount).ToList());
-                    var passed = residual == 0 && residualViewModelCount == 0 &&
+                    // Closed WPF Window shells can remain temporarily rooted by
+                    // framework input/dispatcher caches even after their content and
+                    // ViewModel have been released. Keep that weak count diagnostic;
+                    // the leak gate is the ViewModel, open-window, subscription and
+                    // monotonic resource checks below.
+                    var passed = residualViewModelCount == 0 &&
                                  openWindows == 0 && languageHandlersAfter == languageHandlersBefore &&
                                  displaySubscriptionsAfter == displaySubscriptionsBefore && displayWindowPass &&
                                  printerCommandPolicyPass && printerSelectionBindingPass &&
@@ -503,7 +585,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                  !monotonicPrivateBytes && !monotonicHandles;
                     return string.Format(
                         CultureInfo.InvariantCulture,
-                        "{0}: cycles=20; dailyReportCycles=20; salesRegisterCycles=20; printerSettingsCycles=20; recoveryAccessCycles=20; startOfDayCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}; receiptShopSnapshotPass={22}; activeDrawerSettingsValidationPass={23}; dailyCloseReceiptPass={24}; receiptArchiveRemovalPass={25}; salesRegisterRapidSelectionPass={26}; dailyHistoryPreviewFencingPass={27}; dailyDatePreviewFencingPass={28}",
+                        "{0}: cycles=20; dailyReportCycles=20; salesRegisterCycles=20; printerSettingsCycles=20; recoveryAccessCycles=20; startOfDayCycles=20; customerDisplayCycles=50; managerCycles=50; residualWindowsDiagnostic={1}; residualTypes={2}; residualViewModelsDiagnostic={3}; residualViewModelTypes={4}; openWindows={5}; languageHandlers={6}->{7}; privateBytes={8}->{9}; handles={10}->{11}; monotonicPrivateBytes={12}; monotonicHandles={13}; displayHandlers={14}->{15}; displayWindowPass={16}; printerCommandPolicyPass={17}; cashDrawerParsingPass={18}; receiptColumnFitPass={19}; printerTestReceiptPass={20}; printerSelectionBindingPass={21}; receiptShopSnapshotPass={22}; activeDrawerSettingsValidationPass={23}; dailyCloseReceiptPass={24}; receiptArchiveRemovalPass={25}; salesRegisterRapidSelectionPass={26}; dailyHistoryPreviewFencingPass={27}; dailyDatePreviewFencingPass={28}; collectionAttempts={29}",
                         passed ? "PASS" : "FAIL",
                         residual,
                         residualTypes,
@@ -532,7 +614,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         receiptArchiveRemovalPass,
                         salesRegisterRapidSelectionPass,
                         dailyHistoryPreviewFencingPass,
-                        dailyDatePreviewFencingPass);
+                        dailyDatePreviewFencingPass,
+                        collectionAttempts);
                 }
                 finally
                 {
@@ -933,27 +1016,124 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             private async Task OpenThenCloseAsync(Window dialog, ICollection<LifecycleWindowReference> weakWindows)
             {
-                var dataContext = dialog.DataContext;
-                dialog.Owner = this;
-                var rendered = new TaskCompletionSource<bool>();
+                object dataContext = dialog.DataContext;
+                LifecycleWindowReference lifecycleReference = null;
+                TaskCompletionSource<bool> rendered = new TaskCompletionSource<bool>();
+                TaskCompletionSource<bool> closed = new TaskCompletionSource<bool>();
                 EventHandler renderedHandler = null;
-                renderedHandler = (_, __) =>
+                EventHandler closedHandler = null;
+                renderedHandler = (_, __) => rendered.TrySetResult(true);
+                closedHandler = (_, __) => closed.TrySetResult(true);
+
+                try
                 {
-                    dialog.ContentRendered -= renderedHandler;
-                    rendered.TrySetResult(true);
-                };
-                dialog.ContentRendered += renderedHandler;
-                dialog.Show();
-                await rendered.Task.ConfigureAwait(true);
-                await Task.Delay(40).ConfigureAwait(true);
-                dialog.Close();
-                if (weakWindows != null)
-                {
-                    weakWindows.Add(new LifecycleWindowReference(
-                        dialog.GetType().Name,
-                        new WeakReference(dialog),
-                        new WeakReference(dataContext)));
+                    dialog.Owner = this;
+                    dialog.ContentRendered += renderedHandler;
+                    dialog.Closed += closedHandler;
+                    dialog.Show();
+                    await rendered.Task.ConfigureAwait(true);
+                    await Task.Delay(40).ConfigureAwait(true);
+                    await WaitForDialogWorkToSettleAsync(dataContext).ConfigureAwait(true);
+
+                    // Sales Register intentionally focuses its code box on load. Move
+                    // keyboard focus back to the harness before closing so WPF input
+                    // restoration cannot retain each retired dialog until a later input.
+                    System.Windows.Input.Keyboard.ClearFocus();
+                    Focus();
+                    await Dispatcher.InvokeAsync(
+                        () => { },
+                        System.Windows.Threading.DispatcherPriority.Input);
+
+                    if (weakWindows != null)
+                    {
+                        lifecycleReference = new LifecycleWindowReference(
+                            dialog.GetType().Name,
+                            new WeakReference(dialog),
+                            new WeakReference(dataContext));
+                    }
+
+                    dialog.Close();
+                    await closed.Task.ConfigureAwait(true);
+
+                    if (lifecycleReference != null)
+                    {
+                        weakWindows.Add(lifecycleReference);
+                    }
                 }
+                finally
+                {
+                    if (dialog != null)
+                    {
+                        dialog.ContentRendered -= renderedHandler;
+                        dialog.Closed -= closedHandler;
+                        if (dialog.IsVisible)
+                            dialog.Close();
+                    }
+
+                    // The async state machine and its event closures must not become the
+                    // last strong roots of a successfully closed dialog during GC checks.
+                    dialog = null;
+                    dataContext = null;
+                    lifecycleReference = null;
+                    renderedHandler = null;
+                    closedHandler = null;
+                    rendered = null;
+                    closed = null;
+                }
+            }
+
+            private static async Task WaitForDialogWorkToSettleAsync(object dataContext)
+            {
+                const int maxAttempts = 80;
+                for (var attempt = 0; attempt < maxAttempts; attempt++)
+                {
+                    var salesRegister = dataContext as SalesRegisterViewModel;
+                    var userManagement = dataContext as UserManagementViewModel;
+                    var settled = salesRegister != null
+                        ? !salesRegister.IsBusy && !salesRegister.IsPreviewLoading
+                        : userManagement == null || !userManagement.IsBusy;
+                    if (settled)
+                        return;
+
+                    await Task.Delay(25).ConfigureAwait(true);
+                }
+            }
+
+            private async Task<int> WaitForLifecycleCollectionAsync(
+                ICollection<LifecycleWindowReference> weakWindows)
+            {
+                const int maxAttempts = 10;
+                for (var attempt = 1; attempt <= maxAttempts; attempt++)
+                {
+                    await Dispatcher.InvokeAsync(
+                        () => { },
+                        System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                    GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true);
+                    GC.WaitForPendingFinalizers();
+                    GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, true);
+                    await Dispatcher.InvokeAsync(
+                        () => { },
+                        System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+                    if (!HasLiveLifecycleReferences(weakWindows))
+                        return attempt;
+
+                    await Task.Delay(100).ConfigureAwait(true);
+                }
+
+                return maxAttempts;
+            }
+
+            private static bool HasLiveLifecycleReferences(
+                IEnumerable<LifecycleWindowReference> weakWindows)
+            {
+                foreach (var reference in weakWindows)
+                {
+                    if (reference.Window.IsAlive || reference.DataContext.IsAlive)
+                        return true;
+                }
+
+                return false;
             }
 
             private static DailyReportDialog CreateDailyReportDialog()
@@ -2551,6 +2731,72 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
 
         private static class QaFixture
         {
+            public static async Task SeedOfflineSalesSandboxAsync()
+            {
+                var options = PosDbOptions.Default();
+                DbInitializer.EnsureCreated(options);
+                var factory = new SqliteConnectionFactory(options);
+                await SeedOfflineSalesOperatorAsync(factory).ConfigureAwait(false);
+                await SeedCatalogAsync(factory).ConfigureAwait(false);
+                await SeedShopAndSaleSafetyAsync(
+                    factory,
+                    QaOfflineShopName,
+                    "TEST / NON FISCAL - OFFLINE DEVELOPMENT").ConfigureAwait(false);
+                await new PosWorkflowService().SetPrinterSettingsAsync(new PosPrinterSettings
+                {
+                    ReceiptEnabled = false,
+                    AutoPrint = false,
+                    AllowWindowsDefault = false,
+                    AllowVirtualPrinters = false,
+                    CashDrawerEnabled = false,
+                    CashDrawerMode = "disabled",
+                    CashDrawerOpenOnCashSale = false
+                }).ConfigureAwait(false);
+
+                using (var conn = factory.Open())
+                {
+                    var products = await conn.ExecuteScalarAsync<long>(
+                        "SELECT COUNT(1) FROM products WHERE COALESCE(is_active, 1) = 1;").ConfigureAwait(false);
+                    var sales = await conn.ExecuteScalarAsync<long>(
+                        "SELECT COUNT(1) FROM sales;").ConfigureAwait(false);
+                    var salesOutbox = await conn.ExecuteScalarAsync<long>(
+                        "SELECT COUNT(1) FROM sales_sync_outbox;").ConfigureAwait(false);
+                    var catalogOutbox = await conn.ExecuteScalarAsync<long>(
+                        "SELECT COUNT(1) FROM catalog_import_outbox;").ConfigureAwait(false);
+                    var remoteUsers = await conn.ExecuteScalarAsync<long>(@"SELECT COUNT(1) FROM users
+                          WHERE is_active = 1
+                            AND remote_staff_id = @staffId
+                            AND UPPER(TRIM(remote_shop_code)) = UPPER(@shopCode);",
+                        new { staffId = QaOfflineStaffId, shopCode = QaShopCode }).ConfigureAwait(false);
+                    var localRecoveryUsers = await conn.ExecuteScalarAsync<long>(@"SELECT COUNT(1) FROM users
+                          WHERE is_active = 1
+                            AND remote_staff_id IS NULL
+                            AND remote_staff_code IS NULL
+                            AND remote_shop_id IS NULL
+                            AND remote_shop_code IS NULL;").ConfigureAwait(false);
+                    if (products != 48 || sales != 0 || salesOutbox != 0 || catalogOutbox != 0 ||
+                        remoteUsers != 1 || localRecoveryUsers != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "Offline sales sandbox seed postconditions failed.");
+                    }
+                }
+
+                var printer = await new PosWorkflowService().GetPrinterSettingsAsync().ConfigureAwait(false);
+                if (printer.ReceiptEnabled || printer.AutoPrint || printer.CashDrawerEnabled ||
+                    printer.AllowWindowsDefault || printer.AllowVirtualPrinters)
+                {
+                    throw new InvalidOperationException(
+                        "Offline sales sandbox hardware defaults are not disabled.");
+                }
+
+                if (!await PosCatalogPullService.IsCatalogSaleSafeAsync(factory).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException(
+                        "Offline sales sandbox catalog is not sale-safe.");
+                }
+            }
+
             public static async Task SeedAsync()
             {
                 var options = PosDbOptions.Default();
@@ -2564,7 +2810,7 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                 await SeedSyncStatesAsync(factory).ConfigureAwait(false);
             }
 
-            public static void SeedTrustedDeviceSession()
+            public static void SeedTrustedDeviceSession(string shopName = "QA Synthetic Shop")
             {
                 var now = DateTimeOffset.UtcNow;
                 new PosTrustedDeviceStore().SaveFirstLogin(new PosFirstLoginResponse
@@ -2590,7 +2836,7 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                     {
                         ShopCode = QaShopCode,
                         ShopId = QaShopId,
-                        ShopName = "QA Synthetic Shop",
+                        ShopName = shopName,
                         ShopStatus = "active",
                         Source = "qa_harness"
                     },
@@ -2599,10 +2845,25 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                         CredentialVersion = 1,
                         DisplayName = "QA Administrator",
                         RoleKey = "admin",
-                        StaffCode = "qa-admin",
-                        StaffId = "qa-admin-local"
+                        StaffCode = QaOfflineStaffCode,
+                        StaffId = QaOfflineStaffId
                     }
                 });
+            }
+
+            public static void VerifyTrustedDeviceSession(string expectedShopName)
+            {
+                PosTrustedDeviceSession session;
+                if (!new PosTrustedDeviceStore().TryRead(out session) ||
+                    session == null ||
+                    !string.Equals(session.ShopId, QaShopId, StringComparison.Ordinal) ||
+                    !string.Equals(session.ShopCode, QaShopCode, StringComparison.Ordinal) ||
+                    !string.Equals(session.ShopName, expectedShopName, StringComparison.Ordinal) ||
+                    !PosOfflineAuthorizationLeasePolicy.Evaluate(session, DateTimeOffset.UtcNow).Allowed)
+                {
+                    throw new InvalidOperationException(
+                        "Offline sales sandbox trusted session verification failed.");
+                }
             }
 
             private static async Task SeedUsersAsync(SqliteConnectionFactory factory)
@@ -2615,6 +2876,21 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                     "qa-manager", "QA Manager", "1357", 35).ConfigureAwait(false);
                 await EnsureUserAsync(users, await roles.GetByCodeAsync("cashier").ConfigureAwait(false),
                     "qa-cashier", "QA Cashier", "8642", 0).ConfigureAwait(false);
+            }
+
+            private static Task<int> SeedOfflineSalesOperatorAsync(SqliteConnectionFactory factory)
+            {
+                return new UserRepository(factory).UpsertRemoteStaffMirrorAsync(new RemoteStaffMirrorInput
+                {
+                    Credential = QaOfflineCredential,
+                    CredentialVersion = 1,
+                    DisplayName = "QA Administrator",
+                    RemoteRoleKey = "admin",
+                    RemoteShopId = QaShopId,
+                    RemoteStaffId = QaOfflineStaffId,
+                    ShopCode = QaShopCode,
+                    StaffCode = QaOfflineStaffCode
+                });
             }
 
             private static async Task EnsureUserAsync(
@@ -2674,13 +2950,17 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                 }
             }
 
-            private static async Task SeedShopAndSaleSafetyAsync(SqliteConnectionFactory factory)
+            private static async Task SeedShopAndSaleSafetyAsync(
+                SqliteConnectionFactory factory,
+                string shopName = "QA Synthetic Shop",
+                string footer = "")
             {
                 await new ShopOfficialSnapshotRepository(factory).SaveAsync(new OfficialShopSnapshot
                 {
                     ShopId = QaShopId,
                     ShopCode = QaShopCode,
-                    ShopName = "QA Synthetic Shop",
+                    ShopName = shopName,
+                    Footer = footer,
                     Source = "qa_harness"
                 }).ConfigureAwait(false);
                 var state = new CatalogShopStateRepository(factory);

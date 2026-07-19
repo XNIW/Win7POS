@@ -38,6 +38,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             _viewModel.Dispose();
             _viewModel = null;
             DataContext = null;
+            DialogContent = null;
             Content = null;
         }
 
