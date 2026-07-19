@@ -584,6 +584,7 @@
                                           Content="{TemplateBinding SelectionBoxItem}"
                                           ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
                                           ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                          ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
                                           IsHitTestVisible="False"
                                           Margin="12,0,38,0"
                                           HorizontalAlignment="Left"

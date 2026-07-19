@@ -600,3 +600,25 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   `C:\\POSData\\Win7POS-QA\\Offline-Sales-20260718-215001`; lease 12 hours and
   hardware disabled. Canonical gates 32/32, Core 291/291, Release builds and
   standard-fixture lifecycle all PASS on the final source state.
+
+## 2026-07-18 - Offline sales sandbox interactive runtime validation
+
+- Logged in through the normal offline mirror against
+  `C:\POSData\Win7POS-QA\Offline-Sales-20260718-220237`; safe-start and the
+  loopback-only Admin Web endpoint remained active throughout the run.
+- Completed one manual-price cash sale for CLP 3,432, one `QA000002` card sale
+  for CLP 550 and one `QA000003` mixed sale for CLP 575 (cash 300/card 275).
+- Final read-only audit: 3 sales, 3 lines, 2 expected stock decrements and 3
+  pristine pending outbox rows with zero attempts/errors/server IDs. Gross CLP
+  4,557, cash CLP 3,732, card CLP 825, change zero; SQLite quick/FK checks PASS.
+- Sales Register receipt previews and Daily Close matched the persisted tenders
+  and totals. Reopening those read-only surfaces left sales, stock, outbox and
+  fiscal flags unchanged; logs contained no print, PDF, spooler, drawer or
+  online-sync attempt.
+- Live UI review exposed the Sales Register operator filter rendering the CLR
+  type name. The shared modern ComboBox template now forwards the WPF item
+  template selector used by `DisplayMemberPath`, with a focused UX source gate.
+- Post-fix validation: required gates 32/32, Core tests 291/291 with zero
+  skipped, full Release solution plus WPF/harness x86 builds PASS with zero
+  warnings/errors. The artifact capture passed POS footer, payment/printer
+  previews, Sales Register, Daily Close and compact 1024x600 layouts.

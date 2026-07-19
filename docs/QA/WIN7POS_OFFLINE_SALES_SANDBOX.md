@@ -38,6 +38,28 @@ Test products use barcodes `QA000001` through `QA000048`. Cash, card and mixed
 payments can be committed; their sales, stock movements and outbox rows remain
 inside the sandbox database.
 
+## Validated runtime matrix
+
+The interactive run in
+`C:\POSData\Win7POS-QA\Offline-Sales-20260718-220237` completed three sales:
+
+- manual-price cash: CLP 3,432;
+- `QA000002` card: CLP 550;
+- `QA000003` mixed: CLP 300 cash plus CLP 275 card.
+
+The final read-only audit found 3 sales, 3 lines, 2 expected stock movements and
+3 sales-outbox rows. Gross was CLP 4,557; cash CLP 3,732; card CLP 825; change
+zero. Every outbox row remained `pending` with zero attempts and no server ID.
+The manual-price line correctly had no stock movement; `QA000002` and
+`QA000003` each decremented stock once. Foreign-key checks and SQLite
+`quick_check` passed.
+
+Sales Register previews and Daily Close reproduced the same totals and did not
+change sales, stock, outbox or fiscal state. No print, PDF, spooler or drawer
+activity occurred. A live UI review also caught and corrected the shared
+ComboBox template so the Sales Register operator filter renders its friendly
+display name instead of the CLR type name.
+
 ## Hardware
 
 Receipt printing and the cash drawer are disabled in every new sandbox. Enable

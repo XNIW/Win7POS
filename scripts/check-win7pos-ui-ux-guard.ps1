@@ -83,6 +83,17 @@ Test-ContainsAll "ModernTextBoxStyle readable text/caret/selection" $modernStyle
     'SelectionBrush'
 )
 
+Test-ContainsAll "Modern ComboBox selected value honors DisplayMemberPath" $modernStyles @(
+    'x:Name="ContentSite"',
+    'Content="{TemplateBinding SelectionBoxItem}"',
+    'ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"'
+)
+
+Test-ContainsAll "Sales Register operator filter exposes its friendly label" $salesRegister @(
+    'ItemsSource="{Binding OperatorFilterList}"',
+    'DisplayMemberPath="DisplayName"'
+)
+
 Test-ContainsAll "basic vector icon button resources" $modernStyles @(
     'x:Key="IconButtonContent"',
     'x:Key="ButtonIconPathStyle"',
