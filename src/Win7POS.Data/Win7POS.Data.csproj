@@ -20,4 +20,8 @@
     <LangVersion>8.0</LangVersion>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Win7POS.Core.Tests" />
+  </ItemGroup>
+
 </Project>

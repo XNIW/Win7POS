@@ -93,6 +93,7 @@ if ($fail) {
 }
 
 $client = Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs"
+$streamingTests = Read-Text "tests/Win7POS.Core.Tests/Online/HttpBoundedStreamingTests.cs"
 $store = Read-Text "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs"
 $options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
@@ -144,6 +145,19 @@ $defaultUrlMatch = [regex]::Match($wpfProject, '<AdminWebDefaultBaseUrl[^>]*>([^
 if ($client -notmatch "HttpClient") { Fail "HttpClient missing" } else { Pass "HttpClient present" }
 if ($client -notmatch "SecurityProtocolType\.Tls12") { Fail "TLS 1.2 enforcement missing" } else { Pass "TLS 1.2 present" }
 if ($client -notmatch "Timeout\s*=") { Fail "explicit timeout missing" } else { Pass "timeout present" }
+if ($client -notmatch "SharedTransportEntry" -or
+    $client -notmatch "AcquireSharedTransport" -or
+    $client -notmatch "ReleaseSharedTransport" -or
+    $client -notmatch "CreateTransportKey") { Fail "endpoint/config-scoped HttpClient reuse missing" } else { Pass "endpoint/config-scoped HttpClient reuse present" }
+if ($client -notmatch "HttpCompletionOption\.ResponseHeadersRead") { Fail "streaming response headers mode missing" } else { Pass "ResponseHeadersRead present" }
+if ($client -notmatch "BoundedCountingReadStream" -or
+    $client -notmatch "MaxResponseBodyBytes\s*=\s*8\s*\*\s*1024\s*\*\s*1024" -or
+    $client -notmatch "content\.Headers\.ContentLength") { Fail "bounded response stream missing" } else { Pass "declared and chunked response limits present" }
+if ($client -notmatch "serializer\.ReadObject\(bounded\)" -or
+    $client -match "StringContent|Encoding\.UTF8\.Get(String|Bytes)") { Fail "online transport still uses a byte/string/byte JSON round trip" } else { Pass "request and response DTOs stream without a byte/string/byte round trip" }
+if ($client -notmatch "MaxErrorResponseBodyBytes" -or
+    $streamingTests -notmatch "ChunkedBodyOverEightMiBIsStoppedByCountingStream" -or
+    $streamingTests -notmatch "OversizedUnauthorizedErrorRemainsAuthenticationDenied") { Fail "bounded streaming regression tests missing" } else { Pass "bounded success/error streaming tests present" }
 if ($client -notmatch "/api/pos/auth/first-login") { Fail "first-login path missing" } else { Pass "first-login path present" }
 if ($client -notmatch "/api/pos/session/heartbeat") { Fail "heartbeat path missing" } else { Pass "heartbeat path present" }
 if ($store -notmatch "ProtectedData\.Protect" -or $store -notmatch "ProtectedData\.Unprotect") { Fail "DPAPI storage missing" } else { Pass "DPAPI storage present" }

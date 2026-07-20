@@ -49,11 +49,11 @@ jobs:
           if ($evidence.Count -eq 0) { throw "2,000-row benchmark produced no textual evidence." }
           $evidence | Set-Content -LiteralPath artifacts/performance/catalog-performance-2000.txt -Encoding utf8
 
-      - name: Benchmark full path (19,762 rows)
+      - name: Benchmark full path (19,763 rows)
         shell: pwsh
         env:
           WIN7POS_RUN_CATALOG_BENCHMARK: "1"
-          WIN7POS_CATALOG_BENCHMARK_ROWS: "19762"
+          WIN7POS_CATALOG_BENCHMARK_ROWS: "19763"
           WIN7POS_CATALOG_BENCHMARK_ITERATIONS: "3"
           WIN7POS_CATALOG_BENCHMARK_MODE: "batch-paged-full"
           WIN7POS_CATALOG_BENCHMARK_PAGE_SIZE: "1000"
@@ -62,13 +62,54 @@ jobs:
             -c Release --no-build --no-restore `
             --filter "FullyQualifiedName~CatalogBatchPerformanceTests" `
             --results-directory artifacts/performance `
-            --logger "trx;LogFileName=catalog-performance-19762.trx"
-          if ($LASTEXITCODE -ne 0) { throw "19,762-row catalog benchmark failed." }
+            --logger "trx;LogFileName=catalog-performance-19763.trx"
+          if ($LASTEXITCODE -ne 0) { throw "19,763-row catalog benchmark failed." }
 
-          [xml]$trx = Get-Content -LiteralPath artifacts/performance/catalog-performance-19762.trx -Raw
+          [xml]$trx = Get-Content -LiteralPath artifacts/performance/catalog-performance-19763.trx -Raw
           $evidence = @($trx.SelectNodes("//*[local-name()='StdOut']") | ForEach-Object { $_.InnerText })
-          if ($evidence.Count -eq 0) { throw "19,762-row benchmark produced no textual evidence." }
-          $evidence | Set-Content -LiteralPath artifacts/performance/catalog-performance-19762.txt -Encoding utf8
+          if ($evidence.Count -eq 0) { throw "19,763-row benchmark produced no textual evidence." }
+          $evidence | Set-Content -LiteralPath artifacts/performance/catalog-performance-19763.txt -Encoding utf8
+
+      - name: Benchmark incremental deltas (10, 100 and 1,000 rows)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $evidencePath = "artifacts/performance/catalog-delta-net10-x64.txt"
+          foreach ($rows in @(10, 100, 1000)) {
+            $output = @(& dotnet run `
+              --project tests/Win7POS.CatalogPerformance/Win7POS.CatalogPerformance.csproj `
+              -f net10.0 -c Release --no-build -- `
+              batch-delta $rows 1 1000)
+            if ($LASTEXITCODE -ne 0) { throw "$rows-row catalog delta benchmark failed." }
+            if (($output -join "`n") -notmatch "products=19763") {
+              throw "$rows-row delta did not preserve the 19,763-row catalog."
+            }
+            $output | Add-Content -LiteralPath $evidencePath -Encoding utf8
+          }
+
+      - name: Benchmark actual net48 x86 full path
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = "tests/Win7POS.CatalogPerformance/bin/Release/net48/Win7POS.CatalogPerformance.exe"
+          if (!(Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "net48/x86 benchmark executable missing: $exe"
+          }
+          $output = @(& $exe batch-paged-full 19763 3 1000)
+          if ($LASTEXITCODE -ne 0) { throw "net48/x86 catalog benchmark failed." }
+          $text = $output -join "`n"
+          if ($text -notmatch "is_64_bit=False") { throw "Catalog benchmark did not run as x86." }
+          if (@([regex]::Matches($text, "completeness=Verified")).Count -ne 3) {
+            throw "net48/x86 catalog benchmark did not verify all three iterations."
+          }
+          $delays = @([regex]::Matches($text, "dispatcher_max_delay_ms=([0-9.]+)") |
+            ForEach-Object { [double]$_.Groups[1].Value })
+          if ($delays.Count -ne 3 -or ($delays | Measure-Object -Maximum).Maximum -gt 150) {
+            throw "net48/x86 dispatcher responsiveness exceeded 150 ms."
+          }
+          $output | Set-Content `
+            -LiteralPath artifacts/performance/catalog-performance-19763-net48-x86.txt `
+            -Encoding utf8
 
       - name: Upload benchmark evidence
         if: always()

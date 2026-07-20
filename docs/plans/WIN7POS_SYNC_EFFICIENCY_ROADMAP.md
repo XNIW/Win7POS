@@ -33,12 +33,14 @@ installer build now fails closed when the compiler or exact output is missing.
 - SYNC-1 merged through PR #8 as `6d9a9e0`, closing the pagination,
   revision-compatibility and typed-drain prerequisites described in sections A
   and B.
-- `P1-SYNC-01` and `P1-SYNC-02` are implemented on the separate SYNC-2 branch
-  with a generation-scoped four-lane supervisor, shared auth-stop, stale-write
-  fences and start-of-day reuse. They become `DONE_MERGED` only after exact-head
-  CI, release validation and the normal PR merge complete.
-- `P1-PERF-01` and `P1-PERF-02` remain assigned to the separate PERF-1 branch;
-  no transport or catalog-apply optimization is folded into SYNC-2.
+- `P1-SYNC-01` and `P1-SYNC-02` are `DONE_MERGED` through PR #9 at normal merge
+  commit `1be70172cab56895f66389a99b4a6fa92352c7e2`; exact-head and post-merge CI
+  and Release Pack were green.
+- `P1-PERF-01` and `P1-PERF-02` are implemented on the separate PERF-1 branch:
+  endpoint/config-scoped transport, direct bounded streaming, one catalog apply
+  context per run, prepared-command/map reuse, page-scoped identity/pending-stock
+  queries and a real net48/x86 benchmark. They become `DONE_MERGED` only after
+  the independent PR's exact-head checks and normal merge.
 - Composite supply-chain item `P1-REL-01` remains an independent repository-wide
   release-hardening follow-up and is not silently reclassified by sync delivery.
 
@@ -188,7 +190,7 @@ memory.
 
 ## Benchmark and regression contract
 
-- Synthetic rows: 2,000, 19,762 and 100,000.
+- Synthetic rows: 2,000, 19,763 and 100,000.
 - Page sizes: 100 and 1,000; full and incremental paths.
 - Assert lookup commands/rows scale with page references, not pages × catalog.
 - Add a real `net48/x86` harness sampling peak private bytes, peak working set,
@@ -198,8 +200,11 @@ memory.
 - Retain rollback, pending-stock, tombstone, late-reference, ownership,
   identity-conflict and concurrency-fence tests.
 
-The existing benchmark is `net10/x64` and samples working set after completion;
-it is useful synthetic evidence but not physical Win7/x86 certification.
+PERF-1 now includes net10/x64 and actual net48/x86 process sampling throughout
+the run. The 19,763-row full path is `Verified` in 3/3 iterations on each runtime;
+the x86 median is 6,427.448 ms, peak working set 78,008,320 bytes, peak private
+bytes 62,595,072 and maximum dispatcher delay 24.528 ms. This is a Windows-host
+x86 harness, not physical Windows 7 certification.
 
 ## Release and supply-chain follow-up
 

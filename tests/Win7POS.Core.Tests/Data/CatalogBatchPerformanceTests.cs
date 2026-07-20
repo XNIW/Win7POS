@@ -25,7 +25,8 @@ public sealed class CatalogBatchPerformanceTests
             .Trim()
             .ToLowerInvariant();
         var modes = requestedMode == "legacy" || requestedMode == "batch" ||
-                    requestedMode == "batch-paged" || requestedMode == "batch-paged-full"
+                    requestedMode == "batch-paged" || requestedMode == "batch-paged-full" ||
+                    requestedMode == "batch-delta"
             ? new[] { requestedMode }
             : new[] { "legacy", "batch" };
         var samplesByMode = new Dictionary<string, IReadOnlyList<CatalogBatchPerformanceSample>>(
@@ -40,8 +41,8 @@ public sealed class CatalogBatchPerformanceTests
             samplesByMode[mode] = samples;
             foreach (var sample in samples)
             {
-                Assert.AreEqual(rows, sample.ProductCount);
-                Assert.AreEqual(rows, sample.PriceCount);
+                Assert.AreEqual(sample.ExpectedProductCount, sample.ProductCount);
+                Assert.AreEqual(sample.ExpectedPriceCount, sample.PriceCount);
                 Assert.AreEqual(0L, sample.PendingPriceCount);
                 if (mode == "batch-paged-full")
                     Assert.AreEqual("Verified", sample.ExactnessStatus);

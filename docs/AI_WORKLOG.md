@@ -788,3 +788,35 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   Core/Data suite `417/417` with zero skipped, and WPF net48/x86 build with zero
   warnings/errors. Independent cumulative review reports no open P0/P1; a clean
   exact-commit Release Pack and PR CI remain mandatory publication gates.
+
+## 2026-07-19 - PERF-1 bounded transport and catalog run context
+
+- SYNC-2 was published as PR #9 from exact head `02e6462`, passed branch CI and
+  Release Pack, and merged normally as `1be7017`. Main CI and Release Pack then
+  passed on the merge commit before the separate PERF-1 branch was created.
+- Replaced per-call HTTP transports with endpoint/configuration-scoped reuse,
+  `ResponseHeadersRead`, direct data-contract request/response streaming, an
+  8 MiB success limit, a 64 KiB error limit and a counting stream that also
+  stops chunked/no-length bodies. Cancellation now interrupts a blocked body
+  read; error fields are bounded/control-free and no response body is logged.
+- Added one catalog apply context per sync run. It reuses one SQLite connection,
+  eight prepared commands and small reference maps while retaining a separate
+  immediate transaction and generation/cursor fence per page. Existing product
+  identities, reference cleanup and pending stock are scoped to the current-page
+  staging table; rollback cannot publish page-local maps.
+- Added `HttpBoundedStreamingTests` and `CatalogRunContextPerformanceTests`, and
+  expanded the scheduled/manual performance workflow with 10/100/1,000-row
+  deltas plus a real net48/x86 19,763-row full-path harness.
+- Final measured full-path medians: net10/x64 4,733.787 ms and net48/x86
+  6,427.448 ms, both exactly 19,763 products/prices, zero pending, 20 pages and
+  `Verified` in 3/3 runs. The x86 maxima were 78,008,320-byte working set,
+  62,595,072-byte private memory and 24.528 ms dispatcher delay. Catalog scope
+  queries fell from 120 to 42; prepared-statement creation from 120 to 8.
+- Incremental deltas against 19,763 products completed in 35.645 ms (10),
+  57.850 ms (100) and 215.794 ms (1,000), each in one logical request with no
+  full reconciliation. A 100,000-row x64 scale probe completed in 29,456.767 ms
+  with exact product/price counts and zero pending rows.
+- Pre-publication validation: gates 33/33, solution and WPF net48/x86 builds
+  zero warnings/errors, full suite 428/428 with zero skipped and CLI selftest
+  PASS. The final exact-head suite, clean Release Pack, PR CI and performance
+  workflow remain mandatory. PERF-1 submitted no printer jobs.

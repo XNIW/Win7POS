@@ -17,8 +17,15 @@
   `ea85d91b018ae90f81bead531bcca42253dd64ff`; exact-head CI and release evidence
   are recorded in the worklog and PR body.
 - SYNC-1 correctness: `DONE_MERGED` through PR #8 at
-  `6d9a9e0a863e3cb8310960ca08d395897b23c36c`; SYNC-2 and PERF-1 remain separate
-  dependent deliveries.
+  `6d9a9e0a863e3cb8310960ca08d395897b23c36c`.
+- SYNC-2 supervisor: `DONE_MERGED` through PR #9 at normal merge commit
+  `1be70172cab56895f66389a99b4a6fa92352c7e2`; exact-head and post-merge CI and
+  Release Pack completed successfully.
+- PERF-1 transport/apply optimization: `READY_FOR_REVIEW` on its separate branch;
+  local 19,763-row x64/x86 evidence and the complete pipeline are recorded in
+  `docs/reports/2026-07-19_PERF1_BOUNDED_STREAMING_CATALOG_CONTEXT.md`. It becomes
+  `DONE_MERGED` only after exact-head PR CI, performance workflow, Release Pack
+  and normal merge.
 - Production certification remains `OPEN`. The authoritative 25-row status and
   evidence live only in `docs/QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md`.
 - A structural item becomes `DONE_MERGED` only after an explicit later merge.
@@ -39,7 +46,7 @@ here; use `docs/QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md`.
 | B | Persistence foundation | PR-A / GitHub `#5` | `DONE_MERGED` | Fast-forward head `607e1f1`; PR/main CI and Release Pack green on the exact SHA. |
 | C | Versioned migrations | PR-B / GitHub `#6` | `DONE_MERGED` | Normal merge `ea85d91`; seven immutable checksummed migrations, verified legacy bootstrap/backup/rollback and seven sanitized fixtures. |
 | D | Startup coordinator | PR-C | `NOT_STARTED` | PR-B prerequisite is merged; reassess this older structural item after the independent SYNC-2 delivery. |
-| E | Catalog state-machine/performance split | PR-D | `PARTIAL` | SYNC-1 correctness merged as PR #8; independent lane supervision is in SYNC-2 and transport/apply optimization remains PERF-1. |
+| E | Catalog state-machine/performance split | PR-D | `READY_FOR_REVIEW` | SYNC-1 PR #8 and SYNC-2 PR #9 are merged; PERF-1 has separate bounded-streaming, per-run apply-context and actual net48/x86 evidence pending its PR publication/merge gates. |
 | F | ProductRepository split | PR-E | `NOT_STARTED` | Wait for preceding item. |
 | G | SaleRepository split | PR-F | `NOT_STARTED` | Wait for preceding item. |
 | H | Reproducible/signable release chain | PR-G | `PARTIAL` | PR #7 closed fail-closed installer generation, exact clean provenance/manifests, privacy rejection and runtime closure; locks, SBOM, signing/timestamp, attestation and reproducibility comparison remain. |
