@@ -13,6 +13,12 @@
 - PR #7 receipt/recovery/hardware work: `DONE_MERGED` by normal merge commit
   `db623a5bf61c026662fe967b905b62940bec52e9`; exact-head and post-merge CI and
   Release Pack completed successfully.
+- PR #6 versioned migrations: `DONE_MERGED` by normal merge commit
+  `ea85d91b018ae90f81bead531bcca42253dd64ff`; exact-head CI and release evidence
+  are recorded in the worklog and PR body.
+- SYNC-1 correctness: `DONE_MERGED` through PR #8 at
+  `6d9a9e0a863e3cb8310960ca08d395897b23c36c`; SYNC-2 and PERF-1 remain separate
+  dependent deliveries.
 - Production certification remains `OPEN`. The authoritative 25-row status and
   evidence live only in `docs/QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md`.
 - A structural item becomes `DONE_MERGED` only after an explicit later merge.
@@ -31,14 +37,13 @@ here; use `docs/QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md`.
 | Order | Structural item | PR | Status | Evidence / next action |
 | --- | --- | --- | --- | --- |
 | B | Persistence foundation | PR-A / GitHub `#5` | `DONE_MERGED` | Fast-forward head `607e1f1`; PR/main CI and Release Pack green on the exact SHA. |
-| C | Versioned migrations | PR-B | `READY_FOR_REVIEW` | Seven immutable checksummed migrations, including the append-only PR7 receipt snapshot migration; verified legacy bootstrap/backup/rollback and seven sanitized fixtures. |
-| D | Startup coordinator | PR-C | `WAITING` | Wait for PR-B review and explicit merge decision. |
-| E | Catalog state-machine/performance split | PR-D | `NOT_STARTED` | Wait for preceding item. |
+| C | Versioned migrations | PR-B / GitHub `#6` | `DONE_MERGED` | Normal merge `ea85d91`; seven immutable checksummed migrations, verified legacy bootstrap/backup/rollback and seven sanitized fixtures. |
+| D | Startup coordinator | PR-C | `NOT_STARTED` | PR-B prerequisite is merged; reassess this older structural item after the independent SYNC-2 delivery. |
+| E | Catalog state-machine/performance split | PR-D | `PARTIAL` | SYNC-1 correctness merged as PR #8; independent lane supervision is in SYNC-2 and transport/apply optimization remains PERF-1. |
 | F | ProductRepository split | PR-E | `NOT_STARTED` | Wait for preceding item. |
 | G | SaleRepository split | PR-F | `NOT_STARTED` | Wait for preceding item. |
 | H | Reproducible/signable release chain | PR-G | `PARTIAL` | PR #7 closed fail-closed installer generation, exact clean provenance/manifests, privacy rejection and runtime closure; locks, SBOM, signing/timestamp, attestation and reproducibility comparison remain. |
 
-PR-A remains `DONE_MERGED`. PR-B is implemented on its independent branch and is
-left `READY_FOR_REVIEW`; this status does not imply merge. PR-C remains
-`WAITING`. External certification remains `OPEN 10/25`, with physical Windows 7
-still not run.
+PR-A and PR-B remain `DONE_MERGED`. The older PR-C/PR-D structural labels do not
+replace the explicitly separated SYNC-1, SYNC-2 and PERF-1 sequence. External
+certification remains `OPEN 10/25`, with physical Windows 7 still not run.

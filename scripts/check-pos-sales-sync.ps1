@@ -51,7 +51,11 @@ $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.c
 if ($sync -notmatch "MaxOutboxItemsPerRun\s*=\s*25") { Fail "sales sync per-run outbox cap missing or changed" } else { Pass "sales sync per-run outbox cap present" }
 if ($saleRepo -notmatch "GetPendingSalesSyncOutboxAsync\(int take" -or $saleRepo -notmatch "if \(take > 50\) take = 50") { Fail "outbox repository must bound caller-requested take" } else { Pass "outbox repository bounds take" }
 if ($sync -notmatch "Interlocked\.CompareExchange" -or $sync -notmatch "Sales sync skipped: already running") { Fail "sales sync in-flight guard missing" } else { Pass "sales sync in-flight guard present" }
-if ($sync -notmatch "StoreSalesSyncInProgressAsync\(true\)" -or $sync -notmatch "StoreSalesSyncInProgressAsync\(false\)") { Fail "sales sync in-progress status missing" } else { Pass "sales sync in-progress status persisted" }
+if ($sync -notmatch "StoreSalesSyncInProgressAsync\(\s*true,\s*generation\s*\)" -or
+    $sync -notmatch "finally[\s\S]{0,240}StoreSalesSyncInProgressAsync\(\s*false,\s*generation\s*\)" -or
+    $sync -notmatch "StoreSalesSyncInProgressAsync[\s\S]{0,700}SetBoolIfGenerationCurrentAsync\(\s*SalesSyncInProgressSettingKey,\s*inProgress,\s*generation") {
+    Fail "sales sync in-progress status must be fenced to the active generation"
+} else { Pass "sales sync in-progress status is generation-fenced" }
 
 if ($sync -notmatch "MaxAttemptsBeforeBlocked\s*=\s*12") { Fail "max attempts before blocked missing" } else { Pass "max attempts before blocked present" }
 if ($sync -notmatch "OperationCanceledException[\s\S]{0,900}ReleaseSalesSyncAttemptAsync" -or

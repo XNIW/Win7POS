@@ -73,9 +73,10 @@ $required = @(
     "src/Win7POS.Core/Online/PosAdminWebOptions.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs",
     "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs",
     "src/Win7POS.Data/DbInitializer.cs",
-    "src/Win7POS.Data/Repositories/UserRepository.cs"
+    "src/Win7POS.Data/Repositories/UserRepository.cs",
     "src/Win7POS.Core/Security/PosAccessRecoveryPolicy.cs"
 )
 
@@ -99,6 +100,7 @@ $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.LegacyRe
 $options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 $catalogPull = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
+$syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
 $store = Read-Text "src/Win7POS.Wpf/Pos/Online/PosTrustedDeviceStore.cs"
 $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $userRepo = Read-Text "src/Win7POS.Data/Repositories/UserRepository.cs"
@@ -148,7 +150,8 @@ if ($dialog -notmatch "finally[\s\S]*CredentialBox\.Clear\(\)") { Fail "online d
 if ($options -notmatch "SaveBaseUrl") { Fail "Admin Web base URL cannot be saved from bootstrap" } else { Pass "Admin Web base URL save present" }
 if ($bootstrap -notmatch "FirstLoginAsync") { Fail "bootstrap does not call first-login" } else { Pass "bootstrap calls first-login" }
 if ($bootstrap -match "shop code|staff code") { Fail "bootstrap service error copy must be operator-facing Italian" } else { Pass "bootstrap service error copy is operator-facing" }
-if ($bootstrap -notmatch "SaveFirstLogin") { Fail "bootstrap does not save trusted device with DPAPI store" } else { Pass "trusted device save present" }
+if ($bootstrap -notmatch "ActivateAuthenticatedTrustAsync" -or
+    $syncHost -notmatch "_store\.SaveFirstLogin") { Fail "bootstrap host does not save trusted device with DPAPI store" } else { Pass "trusted device save present in fenced bootstrap host" }
 if ($bootstrap -notmatch "UpsertRemoteStaffMirrorAsync") { Fail "bootstrap does not create/sync local staff mirror" } else { Pass "local staff mirror present" }
 $validationIndex = $bootstrap.IndexOf("ValidateFirstLoginResponse(")
 $mirrorIndex = $bootstrap.IndexOf("UpsertRemoteStaffMirrorAsync")
@@ -162,24 +165,50 @@ if ($bootstrap -notmatch $validationPattern) { Fail "bootstrap first-login valid
 if ($bootstrap -notmatch "response\.Ok" -or $bootstrap -notmatch "Device\.Trusted" -or $bootstrap -notmatch "Device\.Status" -or $bootstrap -notmatch "Policy" -or $bootstrap -notmatch "ContractVersion") { Fail "bootstrap first-login validation must require ok, trusted active device and policy contract" } else { Pass "bootstrap validates ok/trusted device/policy contract" }
 $shopSnapshotIndex = $bootstrap.IndexOf("PosOnlineShopSnapshot.SaveAsync")
 $policySnapshotIndex = $bootstrap.IndexOf("PosOnlinePolicySnapshot.SaveAsync")
-$saveTrustIndex = $bootstrap.IndexOf("SaveFirstLogin")
-if ($shopSnapshotIndex -lt 0 -or $policySnapshotIndex -lt 0 -or $saveTrustIndex -lt 0 -or $mirrorIndex -lt 0 -or $shopSnapshotIndex -gt $saveTrustIndex -or $policySnapshotIndex -gt $saveTrustIndex -or $saveTrustIndex -gt $mirrorIndex) {
-    Fail "bootstrap must save shop/policy and trust before creating local staff mirror"
+$activationIndex = $bootstrap.IndexOf("ActivateAuthenticatedTrustAsync")
+$transitionResetIndex = $bootstrap.IndexOf("ApplyAuthorizedTransitionAndHoldAsync")
+$hostActivationStart = $syncHost.IndexOf("internal async Task<OnlineSyncGeneration> ActivateAuthenticatedTrustAsync", [System.StringComparison]::Ordinal)
+$hostAttachStart = $syncHost.IndexOf("private async Task<OnlineSyncGeneration> AttachCurrentTrustCoreAsync", [System.StringComparison]::Ordinal)
+$hostActivationBody = if ($hostActivationStart -ge 0 -and $hostAttachStart -gt $hostActivationStart) {
+    $syncHost.Substring($hostActivationStart, $hostAttachStart - $hostActivationStart)
+} else { "" }
+$hostEpochIndex = $hostActivationBody.IndexOf("TryInvalidateAuthorizationState", [System.StringComparison]::Ordinal)
+$hostAttemptedIndex = $hostActivationBody.IndexOf("authenticatedCommitAttempted = true", [System.StringComparison]::Ordinal)
+$hostCasIndex = $hostActivationBody.IndexOf("ActivateAndRecoverAsync", [System.StringComparison]::Ordinal)
+$hostResetIndex = $hostActivationBody.IndexOf("applyAuthorizedLocalTransitionAsync()", [System.StringComparison]::Ordinal)
+$hostTrustedSaveIndex = $hostActivationBody.IndexOf("_store.SaveFirstLogin", [System.StringComparison]::Ordinal)
+$hostPersistIndex = $hostActivationBody.IndexOf("await persistAuthenticatedLocalStateAsync", [System.StringComparison]::Ordinal)
+if ($shopSnapshotIndex -lt 0 -or $policySnapshotIndex -lt 0 -or $activationIndex -lt 0 -or
+    $transitionResetIndex -lt 0 -or $mirrorIndex -lt 0 -or
+    $activationIndex -gt $transitionResetIndex -or $activationIndex -gt $shopSnapshotIndex -or
+    $activationIndex -gt $policySnapshotIndex -or $shopSnapshotIndex -gt $mirrorIndex -or
+    $policySnapshotIndex -gt $mirrorIndex -or $hostEpochIndex -lt 0 -or
+    $hostAttemptedIndex -le $hostEpochIndex -or $hostCasIndex -le $hostAttemptedIndex -or
+    $hostResetIndex -le $hostCasIndex -or $hostPersistIndex -le $hostResetIndex -or
+    $hostTrustedSaveIndex -le $hostPersistIndex) {
+    Fail "bootstrap must atomically fence trust before reset, snapshots and local staff mirror"
 } else {
-    Pass "bootstrap persists shop/policy/trust before local staff mirror"
+    Pass "bootstrap atomically fences trust before reset, snapshots and local staff mirror"
 }
 $transitionCheckIndex = $bootstrap.IndexOf(".EvaluateAsync(")
 $transitionBlockIndex = $bootstrap.IndexOf("if (!shopTransition.Allowed)")
-$transitionResetIndex = $bootstrap.IndexOf("ApplyAuthorizedTransitionAndHoldAsync")
 if ($transitionCheckIndex -lt 0 -or $transitionBlockIndex -lt 0 -or $transitionResetIndex -lt 0 -or
     $transitionCheckIndex -gt $transitionBlockIndex -or $transitionBlockIndex -gt $shopSnapshotIndex -or
-    $transitionResetIndex -gt $shopSnapshotIndex -or $transitionResetIndex -gt $saveTrustIndex) {
+    $transitionResetIndex -gt $shopSnapshotIndex -or $transitionResetIndex -lt $activationIndex -or
+    $hostActivationBody -notmatch "transition\.AttemptId" -or
+    $hostActivationBody -notmatch "IsAuthorizationEpochCurrent" -or
+    $hostActivationBody -notmatch "transition\.ExpectedCurrentState") {
     Fail "shop transition/outbox guard must fail closed before snapshot and trusted-device persistence"
 } else {
-    Pass "shop transition/outbox guard precedes snapshot and trusted-device persistence"
+    Pass "shop transition is validated and serialized behind the authenticated fence"
 }
-if ($bootstrap -notmatch "_trustedDeviceStore\.Clear\(\)" -or $bootstrap -notmatch "local_persistence_failed") { Fail "bootstrap must clear trust when local trust/mirror persistence fails" } else { Pass "bootstrap clears trust on local persistence failure" }
-if ($bootstrap -notmatch "TryPullInitialCatalogAsync" -or $catalogPull -notmatch "TryPullInitialCatalogAsync") { Fail "bootstrap does not use initial catalog pull path" } else { Pass "initial catalog pull path used" }
+if ($bootstrap -match 'RevokeCurrentTrustAsync' -or
+    $bootstrap -notmatch '_trustedDeviceStore\.TryClear\(activatedGenerationId\)' -or
+    $bootstrap -notmatch 'generation\s*==\s*null[\s\S]{0,500}"authentication_superseded"' -or
+    $hostActivationBody -notmatch 'PosOnlineSyncRevocationLatch\.Revoke\(nextGeneration\)' -or
+    $hostActivationBody -notmatch 'StopIfCurrentAsync\(\s*nextGeneration' -or
+    $hostActivationBody -notmatch '_store\.TryClear\(nextGeneration\.GenerationId\)') { Fail "bootstrap failure cleanup must be stale-safe and generation-scoped" } else { Pass "bootstrap failure cleanup is stale-safe and generation-scoped" }
+if ($bootstrap -notmatch '_syncHost[\s\S]{0,220}TriggerAsync\([\s\S]{0,160}OnlineSyncLane\.CatalogDelta,[\s\S]{0,120}OnlineSyncLaneTrigger\.FirstBootstrap') { Fail "bootstrap does not use the supervised initial catalog lane" } else { Pass "supervised initial catalog lane used" }
 if ($catalogPull -notmatch "pos.catalog.bootstrap_status" -or $catalogPull -notmatch "partial_has_more" -or $catalogPull -notmatch "failed_auth_denied") { Fail "initial catalog pull must persist bootstrap catalog status" } else { Pass "initial catalog pull persists bootstrap catalog status" }
 if ($bootstrap -notmatch "Bootstrap catalog pull incomplete" -or $bootstrap -notmatch "catalogOutcome\.Completed") { Fail "bootstrap must log incomplete catalog pull outcome" } else { Pass "bootstrap logs incomplete catalog outcome" }
 if ($bootstrap -notmatch "CanOpenPos" -or $bootstrap -notmatch "CatalogSaleSafe" -or $bootstrap -notmatch "CatalogCompleted" -or $bootstrap -notmatch "RequiresRetry") { Fail "bootstrap result must expose catalog readiness and POS open decision" } else { Pass "bootstrap result exposes catalog readiness" }

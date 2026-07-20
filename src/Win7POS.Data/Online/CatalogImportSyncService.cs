@@ -33,13 +33,66 @@ namespace Win7POS.Data.Online
             PosTrustedDeviceSession trustedSession,
             CancellationToken cancellationToken)
         {
-            return SyncPendingAsync(options, trustedSession, MaxOutboxItemsPerRun, cancellationToken);
+            return SyncPendingAsync(
+                options,
+                trustedSession,
+                MaxOutboxItemsPerRun,
+                null,
+                null,
+                cancellationToken);
+        }
+
+        public Task<OutboxDrainResult> SyncPendingAsync(
+            PosAdminWebOptions options,
+            PosTrustedDeviceSession trustedSession,
+            OnlineSyncGeneration generation,
+            CancellationToken cancellationToken)
+        {
+            return SyncPendingAsync(
+                options,
+                trustedSession,
+                generation,
+                null,
+                cancellationToken);
+        }
+
+        public Task<OutboxDrainResult> SyncPendingAsync(
+            PosAdminWebOptions options,
+            PosTrustedDeviceSession trustedSession,
+            OnlineSyncGeneration generation,
+            OnlineSyncLaneExecutionContext executionContext,
+            CancellationToken cancellationToken)
+        {
+            return SyncPendingAsync(
+                options,
+                trustedSession,
+                MaxOutboxItemsPerRun,
+                generation,
+                executionContext,
+                cancellationToken);
         }
 
         public async Task<OutboxDrainResult> SyncPendingAsync(
             PosAdminWebOptions options,
             PosTrustedDeviceSession trustedSession,
             int maxItems,
+            CancellationToken cancellationToken)
+        {
+            return await SyncPendingAsync(
+                options,
+                trustedSession,
+                maxItems,
+                null,
+                null,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<OutboxDrainResult> SyncPendingAsync(
+            PosAdminWebOptions options,
+            PosTrustedDeviceSession trustedSession,
+            int maxItems,
+            OnlineSyncGeneration generation,
+            OnlineSyncLaneExecutionContext executionContext,
             CancellationToken cancellationToken)
         {
             if (options == null) throw new ArgumentNullException(nameof(options));
@@ -50,6 +103,11 @@ namespace Win7POS.Data.Online
             if (!HasRequiredTrust(trustedSession))
             {
                 run.SetFailure(SyncFailureKind.Configuration, "missing_trusted_session");
+                return await CompleteAsync(run, nowMs).ConfigureAwait(false);
+            }
+            if (generation != null && !MatchesGeneration(trustedSession, generation))
+            {
+                run.SetFailure(SyncFailureKind.AuthenticationDenied, "trusted_generation_changed");
                 return await CompleteAsync(run, nowMs).ConfigureAwait(false);
             }
 
@@ -71,6 +129,8 @@ namespace Win7POS.Data.Online
                         trustedSession,
                         item,
                         run,
+                        generation,
+                        executionContext,
                         cancellationToken).ConfigureAwait(false);
                     if (stop)
                     {
@@ -89,10 +149,19 @@ namespace Win7POS.Data.Online
             PosTrustedDeviceSession trustedSession,
             CatalogImportOutboxItem item,
             DrainAccumulator run,
+            OnlineSyncGeneration generation,
+            OnlineSyncLaneExecutionContext executionContext,
             CancellationToken cancellationToken)
         {
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-            if (!await _outbox.PrepareAttemptAsync(item, nowMs).ConfigureAwait(false))
+            var claimToken = generation == null
+                ? null
+                : OnlineSyncAttemptFence.CreateClaimToken();
+            if (!await _outbox.PrepareAttemptAsync(
+                item,
+                nowMs,
+                generation,
+                claimToken).ConfigureAwait(false))
             {
                 run.SetFailureIfNone(SyncFailureKind.ConcurrentDrain, "catalog_import_claim_lost");
                 return false;
@@ -100,6 +169,9 @@ namespace Win7POS.Data.Online
 
             run.Attempted++;
             var preparedAttempt = item.AttemptCount + 1;
+            var fence = generation == null
+                ? null
+                : new OnlineSyncAttemptFence(generation, claimToken, preparedAttempt);
             try
             {
                 var bindingError = OutboxShopBinding.GetMismatchCode(
@@ -119,7 +191,8 @@ namespace Win7POS.Data.Online
                         item.Id,
                         bindingError,
                         nowMs,
-                        preparedAttempt).ConfigureAwait(false))
+                        preparedAttempt,
+                        fence).ConfigureAwait(false))
                     {
                         run.Blocked++;
                         run.SetFailure(SyncFailureKind.LocalValidation, bindingError);
@@ -131,7 +204,12 @@ namespace Win7POS.Data.Online
                 var validation = CatalogImportOutboxPayloadValidator.Validate(item);
                 if (!validation.IsValid)
                 {
-                    if (await _outbox.MarkBlockedAsync(item.Id, validation.Code, nowMs, preparedAttempt).ConfigureAwait(false))
+                    if (await _outbox.MarkBlockedAsync(
+                        item.Id,
+                        validation.Code,
+                        nowMs,
+                        preparedAttempt,
+                        fence).ConfigureAwait(false))
                     {
                         run.Blocked++;
                         run.SetFailure(SyncFailureKind.LocalValidation, validation.Code);
@@ -144,9 +222,13 @@ namespace Win7POS.Data.Online
                 AttachTrust(request, trustedSession, item);
                 AttachAttemptMetadata(request, item, preparedAttempt);
 
-                var response = await client
-                    .CatalogImportAsync(request, cancellationToken)
-                    .ConfigureAwait(false);
+                var response = executionContext == null
+                    ? await client.CatalogImportAsync(request, cancellationToken).ConfigureAwait(false)
+                    : await SendWithFreshCredentialsAsync(
+                        client,
+                        request,
+                        executionContext,
+                        cancellationToken).ConfigureAwait(false);
                 if (!response.Success)
                 {
                     return await MarkRemoteFailureAsync(
@@ -154,7 +236,8 @@ namespace Win7POS.Data.Online
                         preparedAttempt,
                         response.Code,
                         response.Denied,
-                        run).ConfigureAwait(false);
+                        run,
+                        fence).ConfigureAwait(false);
                 }
 
                 var remote = response.Value;
@@ -166,7 +249,8 @@ namespace Win7POS.Data.Online
                         preparedAttempt,
                         remoteCode,
                         false,
-                        run).ConfigureAwait(false);
+                        run,
+                        fence).ConfigureAwait(false);
                 }
 
                 var responseShopError = GetResponseShopMismatchCode(item, remote);
@@ -176,7 +260,8 @@ namespace Win7POS.Data.Online
                         item.Id,
                         "response_shop_mismatch",
                         DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                        preparedAttempt).ConfigureAwait(false))
+                        preparedAttempt,
+                        fence).ConfigureAwait(false))
                     {
                         run.Blocked++;
                         run.SetFailure(SyncFailureKind.PermanentRemote, "response_shop_mismatch");
@@ -192,7 +277,8 @@ namespace Win7POS.Data.Online
                         item.Id,
                         SafeDiagnosticCode(FirstNonEmpty(batchStatus, "remote_blocked")),
                         DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                        preparedAttempt).ConfigureAwait(false))
+                        preparedAttempt,
+                        fence).ConfigureAwait(false))
                     {
                         run.Blocked++;
                         run.SetFailure(
@@ -212,7 +298,8 @@ namespace Win7POS.Data.Online
                             item.Id,
                             remoteBatchMismatch,
                             DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                            preparedAttempt).ConfigureAwait(false))
+                            preparedAttempt,
+                            fence).ConfigureAwait(false))
                         {
                             run.Blocked++;
                             run.SetFailure(SyncFailureKind.PermanentRemote, remoteBatchMismatch);
@@ -226,7 +313,8 @@ namespace Win7POS.Data.Online
                         item.Id,
                         ack,
                         DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                        preparedAttempt).ConfigureAwait(false))
+                        preparedAttempt,
+                        fence).ConfigureAwait(false))
                     {
                         run.Acked++;
                     }
@@ -249,7 +337,8 @@ namespace Win7POS.Data.Online
                         "auth_denied",
                         SyncFailureKind.AuthenticationDenied,
                         run,
-                        allowPermanentBlock: false).ConfigureAwait(false);
+                        allowPermanentBlock: false,
+                        fence: fence).ConfigureAwait(false);
                     return true;
                 }
 
@@ -258,7 +347,8 @@ namespace Win7POS.Data.Online
                     preparedAttempt,
                     FirstNonEmpty(batchStatus, "remote_retry"),
                     SyncFailureKind.RetryableRemote,
-                    run).ConfigureAwait(false);
+                    run,
+                    fence: fence).ConfigureAwait(false);
                 return false;
             }
             catch (OperationCanceledException)
@@ -271,7 +361,8 @@ namespace Win7POS.Data.Online
                         "cancelled",
                         releaseAt,
                         releaseAt,
-                        preparedAttempt).ConfigureAwait(false);
+                        preparedAttempt,
+                        fence).ConfigureAwait(false);
                 }
                 catch
                 {
@@ -295,7 +386,8 @@ namespace Win7POS.Data.Online
                             : SyncFailureKind.Unexpected,
                         run,
                         allowPermanentBlock:
-                            run.FailureKind != SyncFailureKind.AuthenticationDenied).ConfigureAwait(false);
+                            run.FailureKind != SyncFailureKind.AuthenticationDenied,
+                        fence: fence).ConfigureAwait(false);
                 }
                 catch
                 {
@@ -312,7 +404,8 @@ namespace Win7POS.Data.Online
             int preparedAttempt,
             string code,
             bool denied,
-            DrainAccumulator run)
+            DrainAccumulator run,
+            OnlineSyncAttemptFence fence)
         {
             var normalizedCode = denied || IsAuthDenied(code)
                 ? "auth_denied"
@@ -323,7 +416,8 @@ namespace Win7POS.Data.Online
                     item.Id,
                     normalizedCode,
                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                    preparedAttempt).ConfigureAwait(false))
+                    preparedAttempt,
+                    fence).ConfigureAwait(false))
                 {
                     run.Blocked++;
                     run.SetFailure(SyncFailureKind.PermanentRemote, normalizedCode);
@@ -346,7 +440,8 @@ namespace Win7POS.Data.Online
                 failureKind,
                 run,
                 allowPermanentBlock:
-                    failureKind != SyncFailureKind.AuthenticationDenied).ConfigureAwait(false);
+                    failureKind != SyncFailureKind.AuthenticationDenied,
+                fence: fence).ConfigureAwait(false);
             return failureKind == SyncFailureKind.AuthenticationDenied;
         }
 
@@ -356,13 +451,19 @@ namespace Win7POS.Data.Online
             string code,
             SyncFailureKind failureKind,
             DrainAccumulator run,
-            bool allowPermanentBlock = true)
+            bool allowPermanentBlock = true,
+            OnlineSyncAttemptFence fence = null)
         {
             var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var normalizedCode = SafeDiagnosticCode(FirstNonEmpty(code, "retry"));
             if (allowPermanentBlock && preparedAttempt >= MaxAttemptsBeforeBlocked)
             {
-                if (await _outbox.MarkBlockedAsync(item.Id, normalizedCode, nowMs, preparedAttempt).ConfigureAwait(false))
+                if (await _outbox.MarkBlockedAsync(
+                    item.Id,
+                    normalizedCode,
+                    nowMs,
+                    preparedAttempt,
+                    fence).ConfigureAwait(false))
                 {
                     run.Blocked++;
                 }
@@ -374,7 +475,8 @@ namespace Win7POS.Data.Online
                     normalizedCode,
                     ComputeNextRetryAt(nowMs, preparedAttempt),
                     nowMs,
-                    preparedAttempt).ConfigureAwait(false))
+                    preparedAttempt,
+                    fence).ConfigureAwait(false))
                 {
                     run.Retried++;
                 }
@@ -666,6 +768,81 @@ namespace Win7POS.Data.Online
             request.SessionToken = TrimOrNull(trustedSession.SessionToken);
             request.ShopCode = TrimOrNull(item.OriginShopCode);
             request.ShopDeviceId = TrimOrNull(trustedSession.ShopDeviceId);
+        }
+
+        private static async Task<PosOnlineResult<PosCatalogImportResponse>>
+            SendWithFreshCredentialsAsync(
+                PosAdminWebClient client,
+                PosCatalogImportRequest request,
+                OnlineSyncLaneExecutionContext executionContext,
+                CancellationToken cancellationToken)
+        {
+            for (var credentialAttempt = 0; credentialAttempt < 2; credentialAttempt++)
+            {
+                try
+                {
+                    return await executionContext.ExecuteCredentialedRequestAsync(
+                        (credentials, token) =>
+                        {
+                            request.DeviceToken = credentials.DeviceToken;
+                            request.PosSessionId = credentials.PosSessionId;
+                            request.SessionToken = credentials.SessionToken;
+                            request.ShopDeviceId = credentials.ShopDeviceId;
+                            return client.CatalogImportAsync(request, token);
+                        },
+                        response =>
+                        {
+                            var remote = response?.Value;
+                            var code = FirstNonEmpty(
+                                remote == null ? response?.Code : remote.Code,
+                                response?.Code);
+                            var batchStatus = remote?.Batch == null
+                                ? string.Empty
+                                : remote.Batch.Status;
+                            return response != null &&
+                                (response.Denied ||
+                                 IsAuthDenied(code) ||
+                                 IsAuthDenied(batchStatus))
+                                    ? FirstNonEmpty(
+                                        FirstNonEmpty(code, batchStatus),
+                                        "auth_denied")
+                                    : string.Empty;
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                }
+                catch (OnlineSyncCredentialsChangedException) when (credentialAttempt == 0)
+                {
+                    // A heartbeat rotated the token while this request was in flight.
+                }
+            }
+
+            throw new OnlineSyncCredentialsChangedException();
+        }
+
+        private static bool MatchesGeneration(
+            PosTrustedDeviceSession session,
+            OnlineSyncGeneration generation)
+        {
+            if (session == null || generation == null)
+                return false;
+            try
+            {
+                return string.Equals(
+                    new OnlineSyncGeneration(
+                        session.GenerationId,
+                        session.PosSessionId,
+                        session.ShopDeviceId,
+                        session.ShopId,
+                        session.ShopCode,
+                        session.StaffId,
+                        session.StaffCredentialVersion).Fingerprint,
+                    generation.Fingerprint,
+                    StringComparison.Ordinal);
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
         }
 
         private static void AttachAttemptMetadata(

@@ -37,6 +37,8 @@ $required = @(
     "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml",
     "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml.cs",
     "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs",
+    "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs",
     "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs",
     "src/Win7POS.Data/Online/CatalogSyncSchedulerPolicy.cs",
@@ -59,6 +61,8 @@ $drainTests = Read-Text "tests/Win7POS.Core.Tests/Online/StartOfDaySalesDrainPol
 $dialogXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml"
 $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml.cs"
 $service = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs"
+$syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
+$supervisor = Read-Text "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.LegacyReachable.cs"
 $schedulerPolicy = Read-Text "src/Win7POS.Data/Online/CatalogSyncSchedulerPolicy.cs"
@@ -111,36 +115,37 @@ if ($service -notmatch "InProgressSales\s*=\s*ToSafeInt\(outbox\.InProgress\)" -
     Pass "sales in_progress is included in start-of-day state"
 }
 
-$trySalesIndex = $service.IndexOf(
-    "await TrySalesSyncAsync(options, result, cancellationToken)",
+$runLanesIndex = $service.IndexOf(
+    "var lanes = await _syncHost.RunStartOfDayAsync(",
     [System.StringComparison]::Ordinal)
-$refreshAfterSalesIndex = if ($trySalesIndex -ge 0) {
+$refreshAfterLanesIndex = if ($runLanesIndex -ge 0) {
     $service.IndexOf(
         "await RefreshOutboxAsync(result, sales, _factory)",
-        $trySalesIndex,
+        $runLanesIndex,
         [System.StringComparison]::Ordinal)
 } else { -1 }
-$drainDecisionIndex = if ($refreshAfterSalesIndex -ge 0) {
+$drainDecisionIndex = if ($refreshAfterLanesIndex -ge 0) {
     $service.IndexOf(
         "StartOfDaySalesDrainPolicy.Evaluate(",
-        $refreshAfterSalesIndex,
+        $refreshAfterLanesIndex,
         [System.StringComparison]::Ordinal)
 } else { -1 }
-if ($trySalesIndex -lt 0 -or
-    $refreshAfterSalesIndex -lt 0 -or
+if ($runLanesIndex -lt 0 -or
+    $refreshAfterLanesIndex -lt 0 -or
     $drainDecisionIndex -lt 0 -or
-    $trySalesIndex -gt $refreshAfterSalesIndex -or
-    $refreshAfterSalesIndex -gt $drainDecisionIndex -or
-    $service -notmatch "salesComplete\s*=\s*salesDrainDecision\s*==\s*StartOfDaySalesDrainDecision\.Complete") {
+    $runLanesIndex -gt $refreshAfterLanesIndex -or
+    $refreshAfterLanesIndex -gt $drainDecisionIndex -or
+    $service -notmatch "var\s+salesComplete\s*=\s*StartOfDaySalesDrainPolicy\.Evaluate\([\s\S]{0,300}==\s*StartOfDaySalesDrainDecision\.Complete") {
     Fail "sales completion must be recalculated from refreshed outbox counters"
 } else {
     Pass "sales completion is recalculated from refreshed outbox counters"
 }
 
 if ($service -notmatch "StartOfDayTotalTimeout\s*=\s*TimeSpan\.FromSeconds\(28\)" -or
-    $service -notmatch "HeartbeatTimeout\s*=\s*TimeSpan\.FromSeconds\(4\)" -or
-    $service -notmatch "SalesSyncTimeout\s*=\s*TimeSpan\.FromSeconds\(8\)" -or
-    $service -notmatch "CatalogDeltaTimeout\s*=\s*TimeSpan\.FromSeconds\(12\)") {
+    $dialog -notmatch "new\s+CancellationTokenSource\(PosStartOfDaySyncService\.StartOfDayTotalTimeout\)" -or
+    $syncHost -notmatch "HeartbeatTimeout\s*=\s*TimeSpan\.FromSeconds\(4\)" -or
+    $syncHost -notmatch "timeout\.CancelAfter\(HeartbeatTimeout\)" -or
+    $syncHost -notmatch "networkConcurrency:\s*2") {
     Fail "start-of-day bounded timeouts missing or changed"
 } else {
     Pass "start-of-day bounded timeouts present"
@@ -164,51 +169,64 @@ if ($service -notmatch "BlockedSales\s*>\s*0" -or $service -notmatch "sales_bloc
     Pass "start-of-day blocks failed_blocked sales"
 }
 
-if ($service -notmatch "response\.Denied" -or $service -notmatch "_store\.Clear\(\)" -or $service -notmatch "auth_denied" -or $service -notmatch "HasStoredAuthDeniedAsync") {
-    Fail "start-of-day must block and clear trust on auth denied"
+$stopAuthStart = $syncHost.IndexOf("private async Task StopAuthenticationAsync", [System.StringComparison]::Ordinal)
+$credentialsStart = $syncHost.IndexOf("private Task<OnlineSyncRequestCredentials> ReadCredentialsAsync", [System.StringComparison]::Ordinal)
+$stopAuthBody = if ($stopAuthStart -ge 0 -and $credentialsStart -gt $stopAuthStart) {
+    $syncHost.Substring($stopAuthStart, $credentialsStart - $stopAuthStart)
+} else { "" }
+$authLatch = $stopAuthBody.IndexOf("PosOnlineSyncRevocationLatch.Revoke(generation)", [System.StringComparison]::Ordinal)
+$authStop = $stopAuthBody.IndexOf("StopIfCurrentAsync(", [System.StringComparison]::Ordinal)
+$authRecheck = $stopAuthBody.IndexOf("IsCurrentAndActiveAsync(generation)", [System.StringComparison]::Ordinal)
+$authClear = $stopAuthBody.IndexOf("_store.TryClear(generation.GenerationId)", [System.StringComparison]::Ordinal)
+if ($service -notmatch 'lanes\.Heartbeat\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,300}lanes\.Sales\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,300}lanes\.CatalogImport\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,300}lanes\.CatalogDelta\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,500}Block\(result,\s*"auth_denied"' -or
+    $syncHost -notmatch "new\s+OnlineSyncSupervisor\([\s\S]{0,700}StopAuthenticationAsync" -or
+    $authLatch -lt 0 -or $authStop -le $authLatch -or
+    $authRecheck -le $authStop -or $authClear -le $authRecheck) {
+    Fail "start-of-day must block and globally revoke the generation on auth denial"
 } else {
-    Pass "start-of-day blocks auth denied and clears trust"
+    Pass "start-of-day blocks auth denial and globally revokes the generation"
 }
 
-if ($service -notmatch "var salesDrain = await TrySalesSyncAsync" -or
-    $service -notmatch "salesDrain\.AuthenticationDenied" -or
-    $service -notmatch "Task<OutboxDrainResult> TrySalesSyncAsync") {
+$startOfDayAuthIndex = $service.IndexOf("if (lanes.Heartbeat?.AuthenticationDenied", [System.StringComparison]::Ordinal)
+$catalogRequiredIndex = $service.IndexOf("var catalogRequired =", [System.StringComparison]::Ordinal)
+if ($service -notmatch "lanes\.Sales\?\.AuthenticationDenied\s*==\s*true" -or
+    $startOfDayAuthIndex -lt 0 -or $catalogRequiredIndex -lt 0 -or
+    $startOfDayAuthIndex -gt $catalogRequiredIndex) {
     Fail "start-of-day must stop the next lane directly from the typed sales auth result"
 } else {
     Pass "start-of-day uses typed sales auth-stop before the next lane"
 }
 
-if ($service -notmatch "var catalogImportDrain = await TryCatalogImportSyncAsync" -or
-    $service -notmatch "catalogImportDrain\.AuthenticationDenied" -or
-    $service -notmatch "Task<OutboxDrainResult> TryCatalogImportSyncAsync") {
+if ($service -notmatch "lanes\.CatalogImport\?\.AuthenticationDenied\s*==\s*true" -or
+    $startOfDayAuthIndex -lt 0 -or $catalogRequiredIndex -lt 0 -or
+    $startOfDayAuthIndex -gt $catalogRequiredIndex) {
     Fail "start-of-day must stop the next lane directly from the typed import auth result"
 } else {
     Pass "start-of-day uses typed import auth-stop before the next lane"
 }
 
-if ($service -notmatch "RecordHeartbeatSkipBestEffortAsync" -or
-    $service -notmatch "CatalogSyncDiagnosticsRepository" -or
-    $service -notmatch "catalogPullAttempted:\s*false") {
-    Fail "start-of-day heartbeat skips must reach shared diagnostics"
+if ($syncHost -notmatch "decision\.ShouldSkipCatalogPull[\s\S]{0,500}TryConfirmCatalogUnchangedAsync\([\s\S]{0,500}clearStaleError:\s*true[\s\S]{0,400}generation:\s*context\.Generation" -or
+    $syncHost -notmatch "var\s+requestCatalog\s*=\s*!terminalCatalogBlock[\s\S]{0,500}requestCatalogNow:\s*requestCatalog") {
+    Fail "start-of-day heartbeat skips must atomically confirm unchanged catalog state"
 } else {
-    Pass "start-of-day heartbeat skips reach shared diagnostics"
+    Pass "start-of-day heartbeat skips atomically confirm unchanged catalog state"
 }
 
-if ($service -notmatch "Task<PosCatalogPullOutcome> TryCatalogDeltaAsync" -or
-    $service -notmatch "catalogOutcome\.AuthDenied" -or
-    $service -notmatch "TryPullIncrementalCatalogAsync") {
+if ($service -notmatch 'catalogLane\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,200}Block\(result,\s*"auth_denied"' -or
+    $syncHost -notmatch "TryPullCatalogForSupervisorAsync[\s\S]{0,600}outcome\.AuthDenied[\s\S]{0,180}OnlineSyncLaneOutcome\.AuthDenied") {
     Fail "start-of-day must preserve typed catalog auth denial before opening POS"
 } else {
     Pass "start-of-day preserves typed catalog auth denial"
 }
 
-if ($service -notmatch "ContinueLocal" -or $service -notmatch "ShouldContinueInBackground\s*=\s*shouldContinueInBackground" -or $service -notmatch "catalog_timeout" -or $service -notmatch "sales_timeout") {
+if ($service -notmatch "ShouldContinueInBackground\s*=\s*!heartbeatHealthy\s*\|\|[\s\S]{0,220}!salesComplete\s*\|\|[\s\S]{0,180}!importComplete\s*\|\|[\s\S]{0,180}!catalogComplete" -or
+    $dialog -notmatch "catch\s*\(OperationCanceledException\)[\s\S]{0,900}!_userCancelling[\s\S]{0,400}CanOpenPos\s*=\s*true[\s\S]{0,220}ShouldContinueInBackground\s*=\s*true") {
     Fail "start-of-day must allow sale-safe startup with retryable timeout/background sync"
 } else {
     Pass "start-of-day continues in background on retryable timeouts when sale-safe"
 }
 
-if ($service -match "OperationCanceledException[\s\S]{0,260}_store\.Clear\(\)") {
+if (($service + "`n" + $syncHost) -match "OperationCanceledException[\s\S]{0,360}_store\.(Clear|TryClear)\(") {
     Fail "retryable timeout must not clear trusted device"
 } else {
     Pass "retryable timeout does not clear trusted device"
@@ -254,11 +272,12 @@ if ($main -match "startOfDayResult\s*==\s*null\s*\|\|\s*startOfDayResult\.Should
     Pass "MainWindow always starts the scheduler after normal POS opening"
 }
 
-if ($main -notmatch "factory\s*==\s*null\s*\|\|\s*App\.IsSafeStart\s*\|\|\s*_recoveryMode" -or
-    $main -notmatch "_onlineSchedulerTask\s*!=\s*null\s*&&\s*!_onlineSchedulerTask\.IsCompleted") {
-    Fail "adaptive scheduler safe-start/recovery/single-flight guards missing"
+if ($main -notmatch "StartAdaptiveOnlineScheduler[\s\S]{0,400}factory\s*==\s*null\s*\|\|\s*App\.IsSafeStart\s*\|\|\s*_recoveryMode" -or
+    $main -notmatch "StartAdaptiveOnlineScheduler[\s\S]{0,700}host\.StartContinuous\(\)" -or
+    $syncHost -notmatch "StartContinuous\(\)[\s\S]{0,300}lock\s*\(_stateGate\)[\s\S]{0,260}_disposed\s*\|\|\s*_supervisor\s*==\s*null\s*\|\|\s*_continuousStarted[\s\S]{0,160}_continuousStarted\s*=\s*true[\s\S]{0,160}supervisor\.Start\(\)") {
+    Fail "shared supervisor safe-start/recovery/single-flight guards missing"
 } else {
-    Pass "adaptive scheduler retains safe-start, recovery and single-flight guards"
+    Pass "shared supervisor retains safe-start, recovery and single-flight guards"
 }
 
 if ($salesSync -notmatch "MaxOutboxItemsPerRun\s*=\s*25" -or

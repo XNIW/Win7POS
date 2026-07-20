@@ -127,8 +127,29 @@ postcondition=current-structural-schema",
                     "Additive nullable column; older readers ignore it, while downgrade requires restoring the verified backup.",
                     true,
                     DbInitializer.EnsureReceiptShopSnapshot,
+                    IsPostPr7SchemaStructurallyValid,
+                    IsRecognizedPostPr7LedgerlessBaseline),
+
+                new SchemaMigration(
+                    "0008-online-sync-generation",
+                    "Fence online sync claims and commits to one trusted-session generation.",
+                    @"0008-online-sync-generation/v1
+table=pos_sync_session_generation:singleton active generation identity and auth-stop state
+outbox-columns=claim_generation_id,claim_token on sales_sync_outbox and catalog_import_outbox
+legacy-in-progress=release to retry without consuming an attempt
+operation=DbInitializer.EnsureOnlineSyncGenerationSchema
+table-sql=" + DbInitializer.OnlineSyncGenerationSchemaSql + @"
+column-definitions=" + DbInitializer.OnlineSyncGenerationColumnMaterial + @"
+alter-sql=" + DbInitializer.OnlineSyncGenerationAlterSql + @"
+ledgerless-baseline=" + DbInitializer.PostSync2LedgerlessKnownSchemaSql + @"
+postcondition=current-structural-schema",
+                    "a951929521bdb7a73d82fcc308bd2e800ccb4888b6c16c829f51c2b93f49a488",
+                    "1.0.0",
+                    "Additive table and nullable columns; downgrade requires restoring the verified backup.",
+                    true,
+                    DbInitializer.EnsureOnlineSyncGenerationSchema,
                     IsCurrentSchemaStructurallyValid,
-                    IsRecognizedPostPr7LedgerlessBaseline)
+                    IsRecognizedPostSync2LedgerlessBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -157,6 +178,19 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+        {
+            if (detector == null)
+                throw new ArgumentNullException(nameof(detector));
+            return
+                HasBaseSchema(detector, DbInitializer.PostSync2LedgerlessKnownSchemaSql) &&
+                HasSupportedLegacyColumns(detector) &&
+                HasDependentSchema(detector, DbInitializer.PostSync2LedgerlessKnownSchemaSql) &&
+                HasCanonicalIndexes(detector) &&
+                detector.ColumnMatchesDefinition(DbInitializer.ReceiptShopSnapshotColumn) &&
+                HasOnlineSyncGenerationSchema(detector);
+        }
+
+        private static bool IsPostPr7SchemaStructurallyValid(LegacySchemaDetector detector)
         {
             if (detector == null)
                 throw new ArgumentNullException(nameof(detector));
@@ -200,7 +234,12 @@ postcondition=current-structural-schema",
         {
             return
                 HasDependentSchema(detector) &&
-                detector.NoRows(@"
+                HasRemotePriceOwnership(detector);
+        }
+
+        private static bool HasRemotePriceOwnership(LegacySchemaDetector detector)
+        {
+            return detector.NoRows(@"
 SELECT 1
 FROM (
   SELECT
@@ -227,15 +266,31 @@ LIMIT 1;");
 
         private static bool HasDependentSchema(LegacySchemaDetector detector)
         {
+            return HasDependentSchema(detector, DbInitializer.PrBKnownSchemaSql);
+        }
+
+        private static bool HasDependentSchema(
+            LegacySchemaDetector detector,
+            string allowedSchemaSql)
+        {
             return
                 detector.HasAllColumnDefinitions(DbInitializer.DependentLegacyColumns) &&
                 detector.HasKnownTableDefinitions(
                     DbInitializer.DependentSchemaSql,
-                    DbInitializer.PrBKnownSchemaSql,
+                    allowedSchemaSql,
                     "local_stock_movements", "sales_sync_outbox", "catalog_import_outbox",
                     "remote_catalog_pending_prices", "remote_catalog_product_references",
                     "remote_catalog_price_ownership", "remote_catalog_price_evidence_quarantine") &&
                 detector.HasForeignKey("sales_sync_outbox", "sale_id", "sales", "id", "CASCADE");
+        }
+
+        private static bool HasOnlineSyncGenerationSchema(LegacySchemaDetector detector)
+        {
+            return
+                detector.HasAllColumnDefinitions(DbInitializer.OnlineSyncGenerationColumns) &&
+                detector.HasCanonicalTableDefinitions(
+                    DbInitializer.OnlineSyncGenerationSchemaSql,
+                    "pos_sync_session_generation");
         }
 
         private static bool HasSafeOutboxBindings(LegacySchemaDetector detector)
@@ -316,11 +371,22 @@ LIMIT 1;");
         private static bool IsRecognizedPostPr7LedgerlessBaseline(LegacySchemaDetector detector)
         {
             return
-                IsCurrentSchemaStructurallyValid(detector) &&
+                IsPostPr7SchemaStructurallyValid(detector) &&
                 HasSupportedLegacyColumns(detector) &&
                 HasDependentSchemaAndOwnership(detector) &&
                 HasSafeOutboxBindings(detector) &&
                 HasCanonicalIndexes(detector) &&
+                DbInitializer.IsSecuritySeedSatisfied(
+                    detector.Connection,
+                    detector.Transaction);
+        }
+
+        private static bool IsRecognizedPostSync2LedgerlessBaseline(LegacySchemaDetector detector)
+        {
+            return
+                IsCurrentSchemaStructurallyValid(detector) &&
+                HasRemotePriceOwnership(detector) &&
+                HasSafeOutboxBindings(detector) &&
                 DbInitializer.IsSecuritySeedSatisfied(
                     detector.Connection,
                     detector.Transaction);

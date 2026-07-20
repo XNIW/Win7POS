@@ -76,6 +76,10 @@ namespace Win7POS.Core.Online
                     return Blocked("catalog_sync_update_required", "catalog_sync_contract_unsupported");
                 case CatalogSyncFailure.DatabaseIntegrityFailed:
                     return Blocked("catalog_sync_maintenance_required", "catalog_sync_database_integrity_failed");
+                case CatalogSyncFailure.TerminalPaginationAmbiguous:
+                    return Blocked(
+                        "catalog_sync_operator_retry_required",
+                        CatalogPaginationSafetyPolicy.AmbiguousEndCode);
                 case CatalogSyncFailure.OperatorCancelled:
                     return new CatalogSyncDecision(
                         CatalogSyncMode.NoOp,

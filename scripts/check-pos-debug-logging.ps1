@@ -31,6 +31,7 @@ $required = @(
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 )
 
@@ -51,10 +52,11 @@ $logger = Read-Text "src/Win7POS.Wpf/Infrastructure/FileLogger.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $catalog = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
+$syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
 $salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $coordinator = Read-Text "src/Win7POS.Data/Online/CatalogSyncCoordinator.cs"
 $uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
-$combined = @($client, $logger, $mainWindow, $catalog, $bootstrap, $salesSync, $coordinator) -join "`n"
+$combined = @($client, $logger, $mainWindow, $catalog, $bootstrap, $syncHost, $salesSync, $coordinator) -join "`n"
 
 Require-Marker "client request id header" $client "X-Client-Request-Id"
 Require-Marker "server request id header" $client "X-Request-Id"
@@ -77,8 +79,8 @@ foreach ($vectorMarker in @('client_secret', 'sk-abcdefghijklmnopqrstuvwxyz', 'P
 Require-Marker "log rotation" $logger "RotateIfNeeded"
 
 Require-Marker "bootstrap category" $bootstrap "category=online\.bootstrap"
-Require-Marker "coordinated heartbeat" $mainWindow "RunCoordinatedOnlineRefreshAsync[\s\S]*HeartbeatAsync"
-Require-Marker "heartbeat response guard" $mainWindow "!heartbeat\.Success[\s\S]{0,160}!heartbeat\.Value\.Ok"
+Require-Marker "supervised heartbeat" $syncHost "RunHeartbeatAsync[\s\S]{0,2200}HeartbeatAsync"
+Require-Marker "heartbeat response guard" $syncHost "heartbeat\s*==\s*null\s*\|\|[\s\S]{0,160}!heartbeat\.Success[\s\S]{0,160}!heartbeat\.Value\.Ok"
 Require-Marker "sync diagnostics prefix" $coordinator 'Prefix\s*=\s*"pos\.catalog\.sync\."'
 Require-Marker "sync trigger diagnostic" $coordinator 'Prefix\s*\+\s*"last_trigger"'
 Require-Marker "catalog category" $catalog "category=catalog\.pull"

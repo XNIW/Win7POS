@@ -37,7 +37,7 @@ namespace Win7POS.Data.Repositories
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 using var conn = _factory.Open();
-                using var tx = conn.BeginTransaction();
+                using var tx = conn.BeginTransaction(deferred: false);
                 try
                 {
                     await RequireCommitFenceAsync(conn, tx, commitFence).ConfigureAwait(false);
@@ -397,7 +397,33 @@ WHERE NOT EXISTS (
         {
             if (commitFence == null)
             {
+                var activeGeneration = await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM pos_sync_session_generation
+WHERE singleton_id = 1 AND active = 1;",
+                    transaction: tx).ConfigureAwait(false);
+                if (activeGeneration != 0)
+                    throw new InvalidOperationException("Online sync generation is required.");
                 return;
+            }
+
+            if (string.IsNullOrWhiteSpace(commitFence.GenerationId))
+            {
+                var activeGeneration = await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM pos_sync_session_generation
+WHERE singleton_id = 1 AND active = 1;",
+                    transaction: tx).ConfigureAwait(false);
+                if (activeGeneration != 0)
+                    throw new InvalidOperationException("Online sync generation is required.");
+            }
+            else if (!await OnlineSyncGenerationRepository.IsCurrentAndActiveAsync(
+                         conn,
+                         tx,
+                         commitFence.GenerationId,
+                         commitFence.GenerationFingerprint).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("Online sync generation mismatch.");
             }
 
             var boundShopId = await ReadSettingAsync(
@@ -693,7 +719,11 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
         public long ExpectedEpoch { get; set; }
         public string ExpectedPreviousCursor { get; set; } = string.Empty;
         public string ExpectedPreviousMode { get; set; } = string.Empty;
+        public string GenerationFingerprint { get; set; } = string.Empty;
+        public string GenerationId { get; set; } = string.Empty;
+        public string PosSessionId { get; set; } = string.Empty;
         public string ShopCode { get; set; } = string.Empty;
+        public string ShopDeviceId { get; set; } = string.Empty;
         public string ShopId { get; set; } = string.Empty;
     }
 

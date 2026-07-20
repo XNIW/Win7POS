@@ -15,27 +15,30 @@ namespace Win7POS.Wpf.Pos.Online
     {
         private readonly SqliteConnectionFactory _factory;
         private readonly FileLogger _logger;
+        private readonly PosOnlineSyncSupervisorHost _syncHost;
         private readonly PosTrustedDeviceStore _trustedDeviceStore;
-
-        public PosOnlineBootstrapService(SqliteConnectionFactory factory)
-            : this(factory, new PosTrustedDeviceStore(), new FileLogger("PosOnlineBootstrapService"))
-        {
-        }
 
         public PosOnlineBootstrapService(
             SqliteConnectionFactory factory,
-            PosTrustedDeviceStore trustedDeviceStore)
-            : this(factory, trustedDeviceStore, new FileLogger("PosOnlineBootstrapService"))
+            PosTrustedDeviceStore trustedDeviceStore,
+            PosOnlineSyncSupervisorHost syncHost)
+            : this(
+                factory,
+                trustedDeviceStore,
+                syncHost,
+                new FileLogger("PosOnlineBootstrapService"))
         {
         }
 
         internal PosOnlineBootstrapService(
             SqliteConnectionFactory factory,
             PosTrustedDeviceStore trustedDeviceStore,
+            PosOnlineSyncSupervisorHost syncHost,
             FileLogger logger)
         {
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
             _trustedDeviceStore = trustedDeviceStore ?? throw new ArgumentNullException(nameof(trustedDeviceStore));
+            _syncHost = syncHost ?? throw new ArgumentNullException(nameof(syncHost));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -64,6 +67,17 @@ namespace Win7POS.Wpf.Pos.Online
 
             try
             {
+                var authenticatedTransition = await _syncHost
+                    .BeginAuthenticatedTrustTransitionAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                if (authenticatedTransition == null)
+                {
+                    return PosOnlineBootstrapResult.Failure(
+                        "sync_maintenance_active",
+                        PosLocalization.T("onlineFirstLogin.localRequestError"),
+                        false);
+                }
+
                 PosOnlineResult<PosFirstLoginResponse> result;
                 using (var client = new PosAdminWebClient(options))
                 {
@@ -72,6 +86,26 @@ namespace Win7POS.Wpf.Pos.Online
 
                 if (!result.Success || result.Value == null)
                 {
+                    if (result.Denied ||
+                        SharedAuthStopPolicy.IsAuthenticationDenied(result.Code))
+                    {
+                        try
+                        {
+                            await _syncHost.RejectAuthenticatedTrustTransitionAsync(
+                                    authenticatedTransition,
+                                    "auth_denied")
+                                .ConfigureAwait(false);
+                        }
+                        catch (Exception revokeException)
+                        {
+                            // The denial remains authoritative, but cleanup is
+                            // scoped to this attempt and must never target a newer
+                            // generation.
+                            _logger.LogWarning(
+                                "POS online bootstrap scoped denial cleanup failed.",
+                                revokeException);
+                        }
+                    }
                     _logger.LogWarning(
                         "POS online bootstrap failed: category=online.bootstrap code=" + SafeAuditValue(result.Code) +
                         ", clientRequestId=" + SafeAuditValue(result.ClientRequestId) +
@@ -118,7 +152,19 @@ namespace Win7POS.Wpf.Pos.Online
                 try
                 {
                     PosTrustedDeviceSession trustedSession = null;
-                    _trustedDeviceStore.TryRead(out trustedSession);
+                    if (_trustedDeviceStore.TryRead(out var storedSession) &&
+                        authenticatedTransition.ExpectedCurrentState.Exists &&
+                        authenticatedTransition.ExpectedCurrentState.Active &&
+                        PosOnlineSyncSupervisorHost.TryCreateGeneration(
+                            storedSession,
+                            out var storedGeneration) &&
+                        string.Equals(
+                            storedGeneration.Fingerprint,
+                            authenticatedTransition.ExpectedCurrentState.Fingerprint,
+                            StringComparison.Ordinal))
+                    {
+                        trustedSession = storedSession;
+                    }
                     shopTransition = await new PosShopTransitionGuard(_factory)
                         .EvaluateAsync(
                             trustedSession?.ShopId,
@@ -155,38 +201,77 @@ namespace Win7POS.Wpf.Pos.Online
                 }
 
                 progress?.Report(PosCatalogPullProgress.ForPhase("access_verified"));
-                IDisposable shopTransitionLease = null;
+                var activatedGenerationId = OnlineSyncGeneration.CreateGenerationId();
                 try
                 {
-                    if (shopTransition.RequiresCatalogReset)
+                    var generation = await _syncHost.ActivateAuthenticatedTrustAsync(
+                            response,
+                            activatedGenerationId,
+                            authenticatedTransition,
+                            async () =>
+                            {
+                                if (!shopTransition.RequiresCatalogReset)
+                                    return null;
+                                return await new PosShopTransitionGuard(_factory)
+                                    .ApplyAuthorizedTransitionAndHoldAsync(shopTransition)
+                                    .ConfigureAwait(false);
+                            },
+                            async activatedGeneration =>
+                            {
+                                await PosOnlineShopSnapshot.SaveAsync(
+                                    _factory,
+                                    response.Shop,
+                                    activatedGeneration).ConfigureAwait(false);
+                                await PosOnlinePolicySnapshot.SaveAsync(
+                                    _factory,
+                                    response.Policy,
+                                    activatedGeneration).ConfigureAwait(false);
+                                progress?.Report(PosCatalogPullProgress.ForPhase("device_linked"));
+
+                                var users = new UserRepository(_factory);
+                                await users.UpsertRemoteStaffMirrorAsync(
+                                    new RemoteStaffMirrorInput
+                                    {
+                                        Credential = localCredential,
+                                        CredentialVersion = response.Staff.CredentialVersion,
+                                        DisplayName = response.Staff.DisplayName,
+                                        RemoteRoleKey = response.Staff.RoleKey,
+                                        RemoteShopId = response.Shop.ShopId,
+                                        RemoteStaffId = response.Staff.StaffId,
+                                        ShopCode = response.Shop.ShopCode,
+                                        StaffCode = response.Staff.StaffCode
+                                    }).ConfigureAwait(false);
+                                progress?.Report(PosCatalogPullProgress.ForPhase("operator_configured"));
+                            },
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (generation == null)
                     {
-                        shopTransitionLease = await new PosShopTransitionGuard(_factory)
-                            .ApplyAuthorizedTransitionAndHoldAsync(shopTransition)
-                            .ConfigureAwait(false);
+                        _logger.LogWarning(
+                            "POS online bootstrap superseded before local activation.");
+                        return PosOnlineBootstrapResult.Failure(
+                            "authentication_superseded",
+                            PosLocalization.T("onlineFirstLogin.localRequestError"),
+                            false,
+                            result.ClientRequestId,
+                            result.ServerRequestId,
+                            result.CfRay);
                     }
-
-                    await PosOnlineShopSnapshot.SaveAsync(_factory, response.Shop).ConfigureAwait(false);
-                    await PosOnlinePolicySnapshot.SaveAsync(_factory, response.Policy).ConfigureAwait(false);
-                    _trustedDeviceStore.SaveFirstLogin(response);
-                    progress?.Report(PosCatalogPullProgress.ForPhase("device_linked"));
-
-                    var users = new UserRepository(_factory);
-                    await users.UpsertRemoteStaffMirrorAsync(new RemoteStaffMirrorInput
+                    if (!string.Equals(
+                        generation.GenerationId,
+                        activatedGenerationId,
+                        StringComparison.Ordinal))
                     {
-                        Credential = localCredential,
-                        CredentialVersion = response.Staff.CredentialVersion,
-                        DisplayName = response.Staff.DisplayName,
-                        RemoteRoleKey = response.Staff.RoleKey,
-                        RemoteShopId = response.Shop.ShopId,
-                        RemoteStaffId = response.Staff.StaffId,
-                        ShopCode = response.Shop.ShopCode,
-                        StaffCode = response.Staff.StaffCode
-                    }).ConfigureAwait(false);
-                    progress?.Report(PosCatalogPullProgress.ForPhase("operator_configured"));
+                        throw new InvalidOperationException(
+                            "The authenticated sync generation identity changed.");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    _trustedDeviceStore.Clear();
+                    // The host already rolls back only this activation. A second
+                    // exact-ID clear is safe and covers transient file failures
+                    // without touching a newer successful login.
+                    _trustedDeviceStore.TryClear(activatedGenerationId);
                     _logger.LogWarning("POS online bootstrap local trust/mirror persistence failed.", ex);
                     return PosOnlineBootstrapResult.Failure(
                         "local_persistence_failed",
@@ -195,10 +280,6 @@ namespace Win7POS.Wpf.Pos.Online
                         result.ClientRequestId,
                         result.ServerRequestId,
                         result.CfRay);
-                }
-                finally
-                {
-                    shopTransitionLease?.Dispose();
                 }
 
                 _logger.LogInfo(
@@ -220,9 +301,11 @@ namespace Win7POS.Wpf.Pos.Online
 
                 try
                 {
-                    var salesSync = new PosSalesSyncService(_factory);
-                    var salesDrain = await salesSync
-                        .TrySyncPendingAsync(options, cancellationToken)
+                    var salesDrain = await _syncHost
+                        .TriggerAsync(
+                            OnlineSyncLane.SalesOutbox,
+                            OnlineSyncLaneTrigger.StartOfDay,
+                            cancellationToken)
                         .ConfigureAwait(false);
                     if (salesDrain.AuthenticationDenied)
                     {
@@ -248,11 +331,27 @@ namespace Win7POS.Wpf.Pos.Online
 
                 try
                 {
-                    var catalogPull = new PosCatalogPullService(_factory);
                     progress?.Report(PosCatalogPullProgress.ForPhase("catalog"));
-                    var catalogOutcome = await catalogPull
-                        .TryPullInitialCatalogAsync(options, cancellationToken, progress)
+                    var catalogLane = await _syncHost
+                        .TriggerAsync(
+                            OnlineSyncLane.CatalogDelta,
+                            OnlineSyncLaneTrigger.FirstBootstrap,
+                            cancellationToken)
                         .ConfigureAwait(false);
+                    var catalogSaleSafe = await PosCatalogPullService
+                        .IsCatalogSaleSafeAsync(_factory).ConfigureAwait(false);
+                    var catalogOutcome = catalogLane.Success &&
+                        !catalogLane.CatalogHasMore &&
+                        catalogSaleSafe
+                        ? PosCatalogPullOutcome.CompletedOk(
+                            catalogLane.CatalogPagesProcessed,
+                            productsApplied: catalogLane.CatalogRowsApplied)
+                        : PosCatalogPullOutcome.Failure(
+                            catalogLane.Code,
+                            catalogLane.AuthenticationDenied,
+                            catalogLane.CatalogHasMore,
+                            catalogLane.CatalogPagesProcessed,
+                            productsApplied: catalogLane.CatalogRowsApplied);
                     if (catalogOutcome.Completed && catalogOutcome.CatalogSaleSafe)
                     {
                         progress?.Report(PosCatalogPullProgress.ForPhase("finalizing"));

@@ -1,7 +1,9 @@
 using System;
 using System.Threading.Tasks;
 using Dapper;
+using Win7POS.Core.Online;
 using Win7POS.Core.Receipt;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
 {
@@ -90,7 +92,9 @@ namespace Win7POS.Data.Repositories
             };
         }
 
-        public async Task SaveAsync(OfficialShopSnapshot snapshot)
+        public async Task SaveAsync(
+            OfficialShopSnapshot snapshot,
+            OnlineSyncGeneration generation = null)
         {
             if (snapshot == null || !snapshot.HasOfficialData)
             {
@@ -102,8 +106,23 @@ namespace Win7POS.Data.Repositories
                 : snapshot.SyncedAtUtc.Trim();
 
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: false))
             {
+                var permitted = generation != null
+                    ? await OnlineSyncGenerationRepository.IsCurrentAndActiveAsync(
+                        conn,
+                        tx,
+                        generation).ConfigureAwait(false)
+                    : await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM pos_sync_session_generation
+WHERE singleton_id = 1 AND active = 1;",
+                        transaction: tx).ConfigureAwait(false) == 0;
+                if (!permitted)
+                {
+                    tx.Rollback();
+                    return;
+                }
                 await SetAsync(conn, tx, "business_address", snapshot.BusinessAddress).ConfigureAwait(false);
                 await SetAsync(conn, tx, "business_city", snapshot.BusinessCity).ConfigureAwait(false);
                 await SetAsync(conn, tx, "business_giro", snapshot.BusinessGiro).ConfigureAwait(false);

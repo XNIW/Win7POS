@@ -6,11 +6,13 @@ using System.Threading.Tasks;
 using Win7POS.Core;
 using Win7POS.Core.Import;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Data;
 using Win7POS.Data.Import;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Pos.Online;
 
 namespace Win7POS.Wpf.Import
 {
@@ -73,7 +75,6 @@ namespace Win7POS.Wpf.Import
             var summary = BuildApplySummary(result, backupPath, dryRun, warningCount, skippedByOperator);
             if (result.Errors > 0)
                 throw new InvalidOperationException(summary);
-
             return new SupplierExcelApplyUiResult
             {
                 BackupPath = backupPath,
@@ -126,6 +127,12 @@ namespace Win7POS.Wpf.Import
             var summary = BuildApplySummary(result, backupPath, dryRun, rebuilt.Summary.WarningCount, rebuilt.Summary.SkippedRows);
             if (result.Errors > 0)
                 throw new InvalidOperationException(summary);
+            if (!dryRun && result.CatalogImportOutboxId > 0)
+            {
+                PosOnlineSyncSignalBus.Signal(
+                    OnlineSyncLane.CatalogImportOutbox,
+                    OnlineSyncLaneTrigger.LocalCommit);
+            }
 
             return new SupplierExcelApplyUiResult
             {

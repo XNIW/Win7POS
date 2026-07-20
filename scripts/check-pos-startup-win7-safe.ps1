@@ -171,6 +171,10 @@ $requiredFiles = @(
     "src/Win7POS.Wpf/App.xaml.cs",
     "src/Win7POS.Wpf/App.xaml",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs",
+    "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs",
+    "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml.cs",
     "src/Win7POS.Wpf/Pos/PosWorkflowService.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/PaymentViewModel.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs",
@@ -199,9 +203,16 @@ if ($fail) {
 $app = Read-Text "src/Win7POS.Wpf/App.xaml.cs"
 $appXaml = Read-Text "src/Win7POS.Wpf/App.xaml"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
+$supervisor = Read-Text "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs"
+$startOfDayService = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs"
+$startOfDayDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml.cs"
+$startOfDayRun = Get-MethodBody $supervisor 'public\s+async\s+Task<OnlineSyncStartOfDayResult>\s+TriggerStartOfDayAsync'
 $posWorkflow = Read-Text "src/Win7POS.Wpf/Pos/PosWorkflowService.cs"
 $paymentViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PaymentViewModel.cs"
 $accessDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs"
+$connectBody = Get-MethodBody $accessDialog 'private\s+async\s+void\s+OnConnectClick'
+$retryBody = Get-MethodBody $accessDialog 'private\s+async\s+Task\s+RunCatalogRetryAsync'
 $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
 $hardwareSafety = Read-Text "src/Win7POS.Wpf/Printing/PrinterHardwareSafety.cs"
 $receiptSpooler = Read-Text "src/Win7POS.Wpf/Printing/WindowsSpoolerReceiptPrinter.cs"
@@ -292,33 +303,62 @@ else {
     Pass "MainWindow startup online path uses bounded cancellation tokens"
 }
 
-if ($mainWindow -notmatch "StartupHeartbeatTimeout\s*=\s*TimeSpan\.FromSeconds\(3\)") {
-    Fail "startup heartbeat timeout must be 3 seconds"
+if ($syncHost -notmatch 'HeartbeatTimeout\s*=\s*TimeSpan\.FromSeconds\(4\)' -or
+    $syncHost -notmatch 'CancellationTokenSource\.CreateLinkedTokenSource\([\s\S]{0,160}cancellationToken[\s\S]{0,160}timeout\.CancelAfter\(HeartbeatTimeout\)') {
+    Fail "supervisor heartbeat timeout must remain bounded"
 }
 else {
-    Pass "startup heartbeat timeout bounded"
+    Pass "supervisor heartbeat timeout bounded"
 }
 
-if ($mainWindow -notmatch "StartupSalesSyncTimeout\s*=\s*TimeSpan\.FromSeconds\(5\)") {
-    Fail "startup sales sync timeout must be 5 seconds"
+if ($startOfDayService -notmatch 'StartOfDayTotalTimeout\s*=\s*TimeSpan\.FromSeconds\(28\)' -or
+    $startOfDayDialog -notmatch 'new\s+CancellationTokenSource\(PosStartOfDaySyncService\.StartOfDayTotalTimeout\)') {
+    Fail "startup preflight total timeout must remain bounded"
 }
 else {
-    Pass "startup sales sync timeout bounded"
+    Pass "startup preflight total timeout bounded"
 }
 
-if ($mainWindow -notmatch "StartupCatalogPullTimeout\s*=\s*TimeSpan\.FromSeconds\(8\)") {
-    Fail "startup catalog pull timeout must be 8 seconds"
+if ([string]::IsNullOrWhiteSpace($startOfDayRun) -or
+    $startOfDayRun -notmatch 'OnlineSyncLane\.Heartbeat,[\s\S]{0,140}OnlineSyncLaneTrigger\.StartOfDay,[\s\S]{0,140}waiterCancellationToken' -or
+    $startOfDayRun -notmatch 'OnlineSyncLane\.SalesOutbox,[\s\S]{0,140}OnlineSyncLaneTrigger\.StartOfDay,[\s\S]{0,140}waiterCancellationToken' -or
+    $startOfDayRun -notmatch 'OnlineSyncLane\.CatalogImportOutbox,[\s\S]{0,140}OnlineSyncLaneTrigger\.StartOfDay,[\s\S]{0,140}waiterCancellationToken' -or
+    $startOfDayRun -notmatch 'OnlineSyncLane\.CatalogDelta,[\s\S]{0,140}OnlineSyncLaneTrigger\.StartOfDay,[\s\S]{0,140}waiterCancellationToken' -or
+    $startOfDayRun -notmatch 'Task\.WhenAll\(heartbeat,\s*sales,\s*catalogImport,\s*catalog\)') {
+    Fail "all startup lane waiters must share the bounded preflight token"
 }
 else {
-    Pass "startup catalog pull timeout bounded"
+    Pass "all startup lane waits share the bounded preflight token"
 }
 
-if ($mainWindow -notmatch "StartAdaptiveOnlineScheduler" -or
-    $mainWindow -notmatch "Task\.Run[\s\S]*RunAdaptiveOnlineSchedulerAsync") {
+$hostStartIndex = $syncHost.IndexOf("public void StartContinuous()", [System.StringComparison]::Ordinal)
+$hostSignalIndex = $syncHost.IndexOf("public void Signal(", [System.StringComparison]::Ordinal)
+$hostStartBody = if ($hostStartIndex -ge 0 -and $hostSignalIndex -gt $hostStartIndex) {
+    $syncHost.Substring($hostStartIndex, $hostSignalIndex - $hostStartIndex)
+} else { "" }
+$supervisorStartIndex = $supervisor.IndexOf("public void Start()", [System.StringComparison]::Ordinal)
+$supervisorSignalIndex = $supervisor.IndexOf("public void Signal(", [System.StringComparison]::Ordinal)
+$supervisorStartBody = if ($supervisorStartIndex -ge 0 -and $supervisorSignalIndex -gt $supervisorStartIndex) {
+    $supervisor.Substring($supervisorStartIndex, $supervisorSignalIndex - $supervisorStartIndex)
+} else { "" }
+$queueIndex = $supervisor.IndexOf("private void Queue(", [System.StringComparison]::Ordinal)
+$drainIndex = $supervisor.IndexOf("private async Task DrainLaneAsync", [System.StringComparison]::Ordinal)
+$queueBody = if ($queueIndex -ge 0 -and $drainIndex -gt $queueIndex) {
+    $supervisor.Substring($queueIndex, $drainIndex - $queueIndex)
+} else { "" }
+if ($mainWindow -notmatch 'QueueBackgroundOnlineRefresh[\s\S]{0,450}_onlineSyncHost\?\.StartContinuous\(\)' -or
+    $hostStartBody -notmatch 'IsAuthorizationMaintenanceActive' -or
+    $hostStartBody -notmatch 'IsMaintenanceActive' -or
+    $hostStartBody -notmatch '_continuousStarted' -or
+    $hostStartBody -notmatch 'supervisor\.Start\(\)' -or
+    $supervisorStartBody -notmatch 'Signal\(OnlineSyncLane\.Heartbeat' -or
+    $supervisorStartBody -notmatch 'Signal\(OnlineSyncLane\.CatalogImportOutbox' -or
+    $queueBody -notmatch 'if\s*\(!slot\.InFlight\)' -or
+    $queueBody -notmatch 'Task\.Run\(\(\)\s*=>\s*DrainLaneAsync\(slot\)\)') {
     Fail "online refresh is not moved to background task"
 }
 else {
-    Pass "adaptive online refresh runs in a background task"
+    Pass "supervised online lanes run in background tasks"
 }
 
 if ($mainWindow -notmatch "Dispatcher\.BeginInvoke[\s\S]*RefreshSyncStatusStripAsync") {
@@ -338,8 +378,8 @@ else {
 
 $refreshBody = Get-MethodBody `
     $mainWindow `
-    "private\s+async\s+Task<CatalogSyncRunResult>\s+RunCoordinatedOnlineRefreshAsync\s*\([^\)]*\)" `
-    "private\s+static\s+bool\s+IsSameTrustedSession"
+    "private\s+async\s+Task<CatalogSyncRunResult>\s+TriggerAdaptiveOnlineRefreshAsync\s*\([^\)]*\)" `
+    "private\s+static\s+OnlineSyncLaneTrigger\s+MapOnlineSyncTrigger"
 if ($refreshBody -match "ModernMessageDialog\.Show") {
     Fail "coordinated background refresh shows a blocking dialog"
 }
@@ -420,7 +460,7 @@ else {
     Pass "safe-start skips automatic startup online refresh"
 }
 
-if ($posWorkflow -notmatch 'TrySyncSalesOutboxNoThrowAsync[\s\S]{0,260}if\s*\(App\.IsSafeStart\)[\s\S]{0,180}return' -or
+if ($posWorkflow -notmatch 'QueueSalesOutboxSyncNoThrow[\s\S]{0,260}if\s*\(App\.IsSafeStart\)\s*return[\s\S]{0,260}PosOnlineSyncSignalBus\.Signal' -or
     $paymentViewModel -notmatch '_autoPrintFiscalBoleta\s*=\s*!App\.IsSafeStart' -or
     $paymentViewModel -notmatch 'effectiveValue\s*=\s*!App\.IsSafeStart\s*&&\s*value' -or
     $paymentViewModel -notmatch 'TriggerAutoPrintFiscalBoletaIfEnabledAsync[\s\S]{0,180}if\s*\(App\.IsSafeStart\)[\s\S]{0,80}return\s+false' -or
@@ -446,11 +486,11 @@ else {
     Pass "safe-start is an executable printer/cash-drawer hardware boundary"
 }
 
-if ($accessDialog -notmatch 'IsAdminWebOptionsAllowedForCurrentLaunch[\s\S]*App\.IsSafeStart[\s\S]*BaseUri\.IsLoopback' -or
-    $accessDialog -notmatch 'OnConnectClick[\s\S]*TryCreateAdminWebOptionsForCurrentLaunch[\s\S]*BootstrapAsync' -or
-    $accessDialog -notmatch 'RunCatalogRetryAsync[\s\S]*IsAdminWebOptionsAllowedForCurrentLaunch[\s\S]*TryCreateAdminWebOptionsForCurrentLaunch[\s\S]*TryPullInitialCatalogAsync' -or
-    $accessDialog -notmatch 'AdvancedExpander\.IsEnabled\s*=\s*enabled\s*&&\s*!App\.IsSafeStart' -or
-    $accessDialog -notmatch 'BaseUrlBox\.IsEnabled\s*=\s*enabled\s*&&\s*!App\.IsSafeStart' -or
+if ($accessDialog -notmatch 'IsAdminWebOptionsAllowedForCurrentLaunch\(PosAdminWebOptions\s+options\)[\s\S]{0,220}!App\.IsSafeStart[\s\S]{0,160}BaseUri\.IsLoopback' -or
+    $connectBody -notmatch 'TryCreateAdminWebOptionsForCurrentLaunch[\s\S]*new\s+PosOnlineBootstrapService[\s\S]*BootstrapAsync' -or
+    $retryBody -notmatch 'IsAdminWebOptionsAllowedForCurrentLaunch[\s\S]*TryCreateAdminWebOptionsForCurrentLaunch[\s\S]*AttachCurrentTrustAsync[\s\S]*TriggerAsync\([\s\S]{0,180}OnlineSyncLane\.CatalogDelta,[\s\S]{0,120}OnlineSyncLaneTrigger\.Manual' -or
+    $accessDialog -notmatch 'AdvancedExpander\.IsEnabled\s*=\s*!App\.IsSafeStart[\s\S]{0,100}BaseUrlBox\.IsEnabled\s*=\s*!App\.IsSafeStart' -or
+    $accessDialog -notmatch 'AdvancedExpander\.IsEnabled\s*=\s*enabled\s*&&\s*!App\.IsSafeStart[\s\S]{0,100}BaseUrlBox\.IsEnabled\s*=\s*enabled\s*&&\s*!App\.IsSafeStart' -or
     $uiSmoke -notmatch 'loopbackAllowed[\s\S]*stagingBlocked') {
     Fail "safe-start must allow only loopback Admin Web and lock external URL editing before bootstrap/catalog calls"
 }
@@ -468,13 +508,15 @@ else {
 }
 
 if ($app -notmatch "App\.OnStartup entered" -or
-    $mainWindow -notmatch "MainWindow constructor entered" -or
+    $mainWindow -notmatch "MainWindow constructor start" -or
+    $mainWindow -notmatch "MainWindow constructor end" -or
     $mainWindow -notmatch "DB init start" -or
-    $mainWindow -notmatch "POS access dialog opening" -or
+    $mainWindow -notmatch "DB init end" -or
+    $mainWindow -notmatch "POS access dialog about to open" -or
     $mainWindow -notmatch "POS access dialog shown" -or
     $mainWindow -notmatch "POS access dialog accepted" -or
-    $mainWindow -notmatch "adaptive online scheduler start") {
-    Fail "startup trace markers missing"
+    $mainWindow -notmatch "online sync supervisor start") {
+    Fail "startup trace phases or supervisor handoff missing"
 }
 else {
     Pass "startup trace markers present"

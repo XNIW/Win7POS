@@ -119,7 +119,7 @@ namespace Win7POS.Core.Online
                 estimatedServerNow);
         }
 
-        internal static PosOfflineAuthorizationLeaseDecision Deny(
+        public static PosOfflineAuthorizationLeaseDecision Deny(
             string code,
             DateTimeOffset? effectiveExpiresAt = null,
             DateTimeOffset? estimatedServerNow = null)

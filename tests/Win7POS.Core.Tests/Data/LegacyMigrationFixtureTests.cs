@@ -156,9 +156,13 @@ FROM schema_migrations
 WHERE app_version IS NOT NULL
 ORDER BY migration_id;").ToArray();
         CollectionAssert.AreEqual(
-            new[] { "0007-receipt-shop-snapshot" },
+            new[]
+            {
+                "0007-receipt-shop-snapshot",
+                "0008-online-sync-generation"
+            },
             appliedIds,
-            "The historical pre-PR7 schema must bootstrap 0001-0006 and apply only 0007.");
+            "The historical pre-PR7 schema must bootstrap 0001-0006 and apply 0007-0008.");
     }
 
     private static void AssertPostPr7MainWasBootstrappedWithoutReapplying(string databasePath)
@@ -168,8 +172,14 @@ ORDER BY migration_id;").ToArray();
 SELECT COUNT(1)
 FROM schema_migrations
 WHERE app_version IS NOT NULL;");
-        Assert.AreEqual(0L, rowsWithApplicationVersion,
-            "The exact post-PR7 schema must be detected as a historical baseline, not replayed.");
+        Assert.AreEqual(1L, rowsWithApplicationVersion,
+            "The exact post-PR7 schema must bootstrap through 0007 and apply only 0008.");
+        Assert.AreEqual(
+            "0008-online-sync-generation",
+            connection.ExecuteScalar<string>(@"
+SELECT migration_id
+FROM schema_migrations
+WHERE app_version IS NOT NULL;"));
         Assert.AreEqual(
             "{\"shopName\":\"Negozio QA Ñ\",\"address\":\"Via Unicode 7\"}",
             connection.ExecuteScalar<string>(@"

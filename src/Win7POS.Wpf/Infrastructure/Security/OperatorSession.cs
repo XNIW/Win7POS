@@ -73,7 +73,11 @@ namespace Win7POS.Wpf.Infrastructure.Security
             PosTrustedDeviceSession trustedSession = null;
             if (requireAuthorizationLease)
             {
-                var authorization = EvaluateAuthorizationLease(out trustedSession);
+                var evaluation = await _authorizationLeaseGuard.EvaluateAsync()
+                    .ConfigureAwait(true);
+                var authorization = evaluation.Decision;
+                trustedSession = evaluation.TrustedSession;
+                SetAuthorizationDecision(authorization);
                 if (!authorization.Allowed)
                 {
                     LogAuthorizationDenied(authorization.Code);
@@ -117,6 +121,24 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 return LoginResult.Failed;
             }
 
+            if (requireAuthorizationLease)
+            {
+                var finalEvaluation = await _authorizationLeaseGuard
+                    .EvaluateAsync().ConfigureAwait(true);
+                SetAuthorizationDecision(finalEvaluation.Decision);
+                if (!finalEvaluation.Decision.Allowed ||
+                    !IsSameTrustedGeneration(
+                        trustedSession,
+                        finalEvaluation.TrustedSession))
+                {
+                    LogAuthorizationDenied(
+                        finalEvaluation.Decision.Allowed
+                            ? "sync_generation_changed"
+                            : finalEvaluation.Decision.Code);
+                    return LoginResult.AuthorizationExpired;
+                }
+            }
+
             _currentUser = result.User;
             _ = _userRepo.SetLastLoginAsync(result.User.Id);
             _ = _securityRepo.LogEventAsync(
@@ -138,10 +160,16 @@ namespace Win7POS.Wpf.Infrastructure.Security
             out PosTrustedDeviceSession trustedSession)
         {
             var decision = _authorizationLeaseGuard.Evaluate(out trustedSession);
+            SetAuthorizationDecision(decision);
+            return decision;
+        }
+
+        private void SetAuthorizationDecision(
+            PosOfflineAuthorizationLeaseDecision decision)
+        {
             LastAuthorizationFailureCode = decision.Allowed
                 ? string.Empty
                 : decision.Code ?? "authorization_lease_denied";
-            return decision;
         }
 
         public bool EnsureAuthorizationValid()
@@ -218,6 +246,26 @@ namespace Win7POS.Wpf.Infrastructure.Security
             }
 
             return normalized;
+        }
+
+        private static bool IsSameTrustedGeneration(
+            PosTrustedDeviceSession expected,
+            PosTrustedDeviceSession current)
+        {
+            if (!PosOnlineSyncSupervisorHost.TryCreateGeneration(
+                    expected,
+                    out var expectedGeneration) ||
+                !PosOnlineSyncSupervisorHost.TryCreateGeneration(
+                    current,
+                    out var currentGeneration))
+            {
+                return false;
+            }
+
+            return string.Equals(
+                expectedGeneration.Fingerprint,
+                currentGeneration.Fingerprint,
+                StringComparison.Ordinal);
         }
 
         private void RaiseSessionChanged()

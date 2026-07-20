@@ -529,7 +529,7 @@ $offlineQaIsFailClosed =
     $offlineQaLauncher -match 'WIN7POS_ADMIN_WEB_BASE_URL\s*=\s*"http://127\.0\.0\.1:9"' -and
     $accessDialog -match 'IsAdminWebOptionsAllowedForCurrentLaunch[\s\S]*App\.IsSafeStart[\s\S]*BaseUri\.IsLoopback' -and
     $accessDialog -match 'OnConnectClick[\s\S]*TryCreateAdminWebOptionsForCurrentLaunch[\s\S]*BootstrapAsync' -and
-    $accessDialog -match 'RunCatalogRetryAsync[\s\S]*IsAdminWebOptionsAllowedForCurrentLaunch[\s\S]*TryPullInitialCatalogAsync' -and
+    $accessDialog -match 'RunCatalogRetryAsync[\s\S]*IsAdminWebOptionsAllowedForCurrentLaunch[\s\S]*AttachCurrentTrustAsync[\s\S]*OnlineSyncLane\.CatalogDelta[\s\S]*OnlineSyncLaneTrigger\.Manual' -and
     $offlineQaLauncher -match 'Get-Process\s+-Name\s+"Win7POS\.Wpf"' -and
     $offlineQaLauncher -match 'Get-CanonicalLocalQaPath' -and
     $offlineQaLauncher -match 'DriveType\]::Fixed' -and

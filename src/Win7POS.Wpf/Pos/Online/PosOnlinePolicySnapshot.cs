@@ -20,20 +20,21 @@ namespace Win7POS.Wpf.Pos.Online
 
         public static async Task SaveAsync(
             SqliteConnectionFactory factory,
-            PosPolicyResponse policy)
+            PosPolicyResponse policy,
+            OnlineSyncGeneration generation = null)
         {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
             if (policy == null) return;
 
             var settings = new SettingsRepository(factory);
-            await settings.SetStringAsync(ContractVersionKey, Safe(policy.ContractVersion)).ConfigureAwait(false);
-            await settings.SetStringAsync(OfflineModeKey, Safe(policy.OfflinePolicy?.Mode)).ConfigureAwait(false);
-            await settings.SetStringAsync(PaymentMethodsKey, Join(policy.PaymentPolicy?.SupportedMethods)).ConfigureAwait(false);
-            await settings.SetStringAsync(RevocationEnforcementKey, Safe(policy.OfflinePolicy?.RevocationEnforcement)).ConfigureAwait(false);
-            await settings.SetStringAsync(StaffOfflineMirrorKey, Safe(policy.StaffPolicy?.OfflineMirror)).ConfigureAwait(false);
-            await settings.SetStringAsync(TaxStatusKey, Safe(policy.TaxPolicy?.Status)).ConfigureAwait(false);
-            await settings.SetStringAsync(LimitationsKey, Join(policy.Limitations)).ConfigureAwait(false);
-            await settings.SetStringAsync(WarningKey, CapabilityWarning(policy)).ConfigureAwait(false);
+            await settings.SetStringIfGenerationCurrentAsync(ContractVersionKey, Safe(policy.ContractVersion), generation).ConfigureAwait(false);
+            await settings.SetStringIfGenerationCurrentAsync(OfflineModeKey, Safe(policy.OfflinePolicy?.Mode), generation).ConfigureAwait(false);
+            await settings.SetStringIfGenerationCurrentAsync(PaymentMethodsKey, Join(policy.PaymentPolicy?.SupportedMethods), generation).ConfigureAwait(false);
+            await settings.SetStringIfGenerationCurrentAsync(RevocationEnforcementKey, Safe(policy.OfflinePolicy?.RevocationEnforcement), generation).ConfigureAwait(false);
+            await settings.SetStringIfGenerationCurrentAsync(StaffOfflineMirrorKey, Safe(policy.StaffPolicy?.OfflineMirror), generation).ConfigureAwait(false);
+            await settings.SetStringIfGenerationCurrentAsync(TaxStatusKey, Safe(policy.TaxPolicy?.Status), generation).ConfigureAwait(false);
+            await settings.SetStringIfGenerationCurrentAsync(LimitationsKey, Join(policy.Limitations), generation).ConfigureAwait(false);
+            await settings.SetStringIfGenerationCurrentAsync(WarningKey, CapabilityWarning(policy), generation).ConfigureAwait(false);
         }
 
         private static string CapabilityWarning(PosPolicyResponse policy)
