@@ -28,7 +28,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private const string SafeStartLoopbackOnlyReason = "safe_start_loopback_only";
 
         private readonly SqliteConnectionFactory _factory;
+        private readonly bool _ownsSyncHost;
         private readonly bool _resumeCatalogOnly;
+        private readonly PosOnlineSyncSupervisorHost _syncHost;
         private readonly PosTrustedDeviceStore _trustedDeviceStore = new PosTrustedDeviceStore();
         private readonly DispatcherTimer _networkStatusTimer;
         private CancellationTokenSource _activeCts;
@@ -52,20 +54,30 @@ namespace Win7POS.Wpf.Pos.Dialogs
         public PosAuthenticatedAccessMode AccessMode { get; private set; } = PosAuthenticatedAccessMode.Normal;
 
         public PosOnlineFirstLoginDialog()
-            : this(new SqliteConnectionFactory(PosDbOptions.Default()))
+            : this(new SqliteConnectionFactory(PosDbOptions.Default()), false, null)
         {
         }
 
         public PosOnlineFirstLoginDialog(SqliteConnectionFactory factory)
-            : this(factory, false)
+            : this(factory, false, null)
         {
         }
 
         public PosOnlineFirstLoginDialog(SqliteConnectionFactory factory, bool resumeCatalogOnly)
+            : this(factory, resumeCatalogOnly, null)
+        {
+        }
+
+        public PosOnlineFirstLoginDialog(
+            SqliteConnectionFactory factory,
+            bool resumeCatalogOnly,
+            PosOnlineSyncSupervisorHost syncHost)
         {
             InitializeComponent();
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
             _resumeCatalogOnly = resumeCatalogOnly;
+            _syncHost = syncHost ?? new PosOnlineSyncSupervisorHost(_factory);
+            _ownsSyncHost = syncHost == null;
             _networkStatusTimer = new DispatcherTimer
             {
                 Interval = TimeSpan.FromSeconds(20)
@@ -76,6 +88,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 _networkStatusTimer.Stop();
                 _activeCts?.Cancel();
+                if (_ownsSyncHost)
+                    _syncHost.Dispose();
             };
         }
 
@@ -356,7 +370,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
                 var bootstrap = new PosOnlineBootstrapService(
                     _factory,
-                    _trustedDeviceStore);
+                    _trustedDeviceStore,
+                    _syncHost);
                 using (_activeCts = new CancellationTokenSource(TimeSpan.FromMinutes(6)))
                 {
                     IProgress<PosCatalogPullProgress> progress = new Progress<PosCatalogPullProgress>(UpdateSetupProgress);
@@ -421,7 +436,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     var recoveryDecision = PosAccessRecoveryPolicy.Evaluate(_bootstrapState, failureKind);
                     if (recoveryDecision.NextStep == PosAccessNextStep.Denied || IsAuthorizationDenied(result))
                     {
-                        _trustedDeviceStore.Clear();
                         LogAccessWarning(
                             attemptId,
                             "online_bootstrap_denied",
@@ -604,7 +618,22 @@ namespace Win7POS.Wpf.Pos.Dialogs
             try
             {
                 PosTrustedDeviceSession trustedSession = null;
-                _trustedDeviceStore.TryRead(out trustedSession);
+                var activeGeneration = await _syncHost
+                    .AttachCurrentTrustAsync(CancellationToken.None)
+                    .ConfigureAwait(true);
+                if (activeGeneration == null ||
+                    !_trustedDeviceStore.TryReadGeneration(
+                        activeGeneration,
+                        out trustedSession,
+                        out _))
+                {
+                    LogAccessWarning(
+                        attemptId,
+                        "offline_login_result",
+                        "result=blocked reason=sync_generation_inactive");
+                    ShowError(PosLocalization.T("access.login.offlineMirrorMissing"));
+                    return false;
+                }
                 var offlineShopAuthorized = await new PosShopTransitionGuard(_factory)
                     .IsOfflineShopAuthorizedAsync(
                         trustedSession?.ShopId,
@@ -1185,10 +1214,29 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 {
                     IProgress<PosCatalogPullProgress> progress = new Progress<PosCatalogPullProgress>(UpdateSetupProgress);
                     progress.Report(PosCatalogPullProgress.ForPhase("catalog"));
-                    var catalogPull = new PosCatalogPullService(_factory);
-                    var outcome = await catalogPull
-                        .TryPullInitialCatalogAsync(options, _activeCts.Token, progress)
+                    var generation = await _syncHost
+                        .AttachCurrentTrustAsync(_activeCts.Token)
                         .ConfigureAwait(true);
+                    var lane = generation == null
+                        ? new OnlineSyncLaneOutcome(false, "trusted_session_missing")
+                        : await _syncHost.TriggerAsync(
+                            OnlineSyncLane.CatalogDelta,
+                            OnlineSyncLaneTrigger.Manual,
+                            _activeCts.Token).ConfigureAwait(true);
+                    var catalogSaleSafe = await PosCatalogPullService
+                        .IsCatalogSaleSafeAsync(_factory).ConfigureAwait(true);
+                    var outcome = lane.Success &&
+                        !lane.CatalogHasMore &&
+                        catalogSaleSafe
+                        ? PosCatalogPullOutcome.CompletedOk(
+                            lane.CatalogPagesProcessed,
+                            productsApplied: lane.CatalogRowsApplied)
+                        : PosCatalogPullOutcome.Failure(
+                            lane.Code,
+                            lane.AuthenticationDenied,
+                            lane.CatalogHasMore,
+                            lane.CatalogPagesProcessed,
+                            productsApplied: lane.CatalogRowsApplied);
                     LogCatalogRetryInfo(
                         catalogRetryId,
                         "pull_result",

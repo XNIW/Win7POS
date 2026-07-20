@@ -1088,6 +1088,35 @@ WHERE id = @outboxId;",
             long expectedNextRetryAt,
             long expectedLeaseObservedAt)
         {
+            return await PrepareSalesSyncAttemptAsync(
+                outboxId,
+                clientBatchId,
+                payloadJson,
+                payloadHash,
+                nowMs,
+                expectedAttemptCount,
+                expectedStatus,
+                expectedNextRetryAt,
+                expectedLeaseObservedAt,
+                null,
+                null).ConfigureAwait(false);
+        }
+
+        public async Task<bool> PrepareSalesSyncAttemptAsync(
+            long outboxId,
+            string clientBatchId,
+            string payloadJson,
+            string payloadHash,
+            long nowMs,
+            int expectedAttemptCount,
+            string expectedStatus,
+            long expectedNextRetryAt,
+            long expectedLeaseObservedAt,
+            OnlineSyncGeneration generation,
+            string claimToken)
+        {
+            if (generation != null && string.IsNullOrWhiteSpace(claimToken))
+                throw new ArgumentException("A claim token is required for generation-scoped sync.", nameof(claimToken));
             using var conn = _factory.Open();
             var staleInProgressBefore = nowMs - SalesSyncInProgressLeaseMilliseconds;
             var rows = await conn.ExecuteAsync(@"
@@ -1095,6 +1124,8 @@ UPDATE sales_sync_outbox
 SET status = 'in_progress',
     attempt_count = attempt_count + 1,
     last_attempt_at = @nowMs,
+    claim_generation_id = @generationId,
+    claim_token = @claimToken,
     updated_at = @nowMs
 WHERE id = @outboxId
   AND attempt_count = @expectedAttemptCount
@@ -1113,6 +1144,24 @@ WHERE id = @outboxId
       status = 'in_progress'
       AND COALESCE(last_attempt_at, updated_at, 0) <= @staleInProgressBefore
     )
+  )
+  AND (
+    (
+      @generationId IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM pos_sync_session_generation current_generation
+        WHERE current_generation.singleton_id = 1
+          AND current_generation.active = 1
+      )
+    )
+    OR EXISTS (
+      SELECT 1
+      FROM pos_sync_session_generation generation
+      WHERE generation.singleton_id = 1
+        AND generation.active = 1
+        AND generation.generation_id = @generationId
+        AND generation.fingerprint = @generationFingerprint
+    )
   );",
                 new
                 {
@@ -1125,7 +1174,10 @@ WHERE id = @outboxId
                     expectedStatus,
                     expectedNextRetryAt,
                     expectedLeaseObservedAt,
-                    staleInProgressBefore
+                    staleInProgressBefore,
+                    generationId = generation?.GenerationId,
+                    generationFingerprint = generation?.Fingerprint,
+                    claimToken
                 }).ConfigureAwait(false);
             return rows == 1;
         }
@@ -1138,6 +1190,26 @@ WHERE id = @outboxId
             long nowMs,
             int expectedAttemptCount)
         {
+            return await MarkSalesSyncAckedAsync(
+                outboxId,
+                saleId,
+                serverBatchId,
+                serverSaleId,
+                nowMs,
+                expectedAttemptCount,
+                null).ConfigureAwait(false);
+        }
+
+        public async Task<bool> MarkSalesSyncAckedAsync(
+            long outboxId,
+            long saleId,
+            string serverBatchId,
+            string serverSaleId,
+            long nowMs,
+            int expectedAttemptCount,
+            OnlineSyncAttemptFence fence)
+        {
+            ValidateFenceAttempt(fence, expectedAttemptCount);
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
             var rows = await conn.ExecuteAsync(@"
@@ -1147,11 +1219,39 @@ SET status = 'acked',
     server_sale_id = @serverSaleId,
     last_error_code = NULL,
     last_error_at = NULL,
+    claim_generation_id = NULL,
+    claim_token = NULL,
     updated_at = @nowMs
 WHERE id = @outboxId
   AND status = 'in_progress'
-  AND attempt_count = @expectedAttemptCount;",
-                new { outboxId, saleId, serverBatchId, serverSaleId, nowMs, expectedAttemptCount }, tx).ConfigureAwait(false);
+  AND attempt_count = @expectedAttemptCount
+  AND (
+    (
+      @generationId IS NULL
+      AND claim_generation_id IS NULL
+      AND claim_token IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM pos_sync_session_generation current_generation
+        WHERE current_generation.singleton_id = 1
+          AND current_generation.active = 1
+      )
+    )
+    OR (
+      claim_generation_id = @generationId
+      AND claim_token = @claimToken
+      AND EXISTS (
+        SELECT 1 FROM pos_sync_session_generation generation
+        WHERE generation.singleton_id = 1
+          AND generation.active = 1
+          AND generation.generation_id = @generationId
+          AND generation.fingerprint = @generationFingerprint
+      )
+    )
+  );",
+                FenceParameters(
+                    new { outboxId, saleId, serverBatchId, serverSaleId, nowMs, expectedAttemptCount },
+                    fence),
+                tx).ConfigureAwait(false);
             if (rows != 1)
             {
                 tx.Rollback();
@@ -1174,6 +1274,26 @@ WHERE id = @outboxId
             long nowMs,
             int expectedAttemptCount)
         {
+            return await MarkSalesSyncRetryAsync(
+                outboxId,
+                saleId,
+                errorCode,
+                nextRetryAt,
+                nowMs,
+                expectedAttemptCount,
+                null).ConfigureAwait(false);
+        }
+
+        public async Task<bool> MarkSalesSyncRetryAsync(
+            long outboxId,
+            long saleId,
+            string errorCode,
+            long nextRetryAt,
+            long nowMs,
+            int expectedAttemptCount,
+            OnlineSyncAttemptFence fence)
+        {
+            ValidateFenceAttempt(fence, expectedAttemptCount);
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
             var rows = await conn.ExecuteAsync(@"
@@ -1182,11 +1302,39 @@ SET status = 'retry',
     next_retry_at = @nextRetryAt,
     last_error_code = @errorCode,
     last_error_at = @nowMs,
+    claim_generation_id = NULL,
+    claim_token = NULL,
     updated_at = @nowMs
 WHERE id = @outboxId
   AND status = 'in_progress'
-  AND attempt_count = @expectedAttemptCount;",
-                new { outboxId, saleId, errorCode, nextRetryAt, nowMs, expectedAttemptCount }, tx).ConfigureAwait(false);
+  AND attempt_count = @expectedAttemptCount
+  AND (
+    (
+      @generationId IS NULL
+      AND claim_generation_id IS NULL
+      AND claim_token IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM pos_sync_session_generation current_generation
+        WHERE current_generation.singleton_id = 1
+          AND current_generation.active = 1
+      )
+    )
+    OR (
+      claim_generation_id = @generationId
+      AND claim_token = @claimToken
+      AND EXISTS (
+        SELECT 1 FROM pos_sync_session_generation generation
+        WHERE generation.singleton_id = 1
+          AND generation.active = 1
+          AND generation.generation_id = @generationId
+          AND generation.fingerprint = @generationFingerprint
+      )
+    )
+  );",
+                FenceParameters(
+                    new { outboxId, saleId, errorCode, nextRetryAt, nowMs, expectedAttemptCount },
+                    fence),
+                tx).ConfigureAwait(false);
             if (rows != 1)
             {
                 tx.Rollback();
@@ -1218,6 +1366,25 @@ WHERE id = @outboxId
                 expectedAttemptCount);
         }
 
+        public Task<bool> DeferSalesSyncDependencyAsync(
+            long outboxId,
+            long saleId,
+            string errorCode,
+            long nextRetryAt,
+            long nowMs,
+            int expectedAttemptCount,
+            OnlineSyncAttemptFence fence)
+        {
+            return ReleaseSalesSyncAttemptAsync(
+                outboxId,
+                saleId,
+                errorCode,
+                nextRetryAt,
+                nowMs,
+                expectedAttemptCount,
+                fence);
+        }
+
         public async Task<bool> ReleaseSalesSyncAttemptAsync(
             long outboxId,
             long saleId,
@@ -1226,6 +1393,26 @@ WHERE id = @outboxId
             long nowMs,
             int expectedAttemptCount)
         {
+            return await ReleaseSalesSyncAttemptAsync(
+                outboxId,
+                saleId,
+                errorCode,
+                nextRetryAt,
+                nowMs,
+                expectedAttemptCount,
+                null).ConfigureAwait(false);
+        }
+
+        public async Task<bool> ReleaseSalesSyncAttemptAsync(
+            long outboxId,
+            long saleId,
+            string errorCode,
+            long nextRetryAt,
+            long nowMs,
+            int expectedAttemptCount,
+            OnlineSyncAttemptFence fence)
+        {
+            ValidateFenceAttempt(fence, expectedAttemptCount);
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
             var rows = await conn.ExecuteAsync(@"
@@ -1236,12 +1423,40 @@ SET status = 'retry',
     last_attempt_at = NULL,
     last_error_code = @errorCode,
     last_error_at = @nowMs,
+    claim_generation_id = NULL,
+    claim_token = NULL,
     updated_at = @nowMs
 WHERE id = @outboxId
   AND status = 'in_progress'
   AND attempt_count = @expectedAttemptCount
-  AND attempt_count > 0;",
-                new { outboxId, saleId, errorCode, nextRetryAt, nowMs, expectedAttemptCount }, tx).ConfigureAwait(false);
+  AND attempt_count > 0
+  AND (
+    (
+      @generationId IS NULL
+      AND claim_generation_id IS NULL
+      AND claim_token IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM pos_sync_session_generation current_generation
+        WHERE current_generation.singleton_id = 1
+          AND current_generation.active = 1
+      )
+    )
+    OR (
+      claim_generation_id = @generationId
+      AND claim_token = @claimToken
+      AND EXISTS (
+        SELECT 1 FROM pos_sync_session_generation generation
+        WHERE generation.singleton_id = 1
+          AND generation.active = 1
+          AND generation.generation_id = @generationId
+          AND generation.fingerprint = @generationFingerprint
+      )
+    )
+  );",
+                FenceParameters(
+                    new { outboxId, saleId, errorCode, nextRetryAt, nowMs, expectedAttemptCount },
+                    fence),
+                tx).ConfigureAwait(false);
             if (rows != 1)
             {
                 tx.Rollback();
@@ -1263,6 +1478,24 @@ WHERE id = @outboxId
             long nowMs,
             int expectedAttemptCount)
         {
+            return await MarkSalesSyncBlockedAsync(
+                outboxId,
+                saleId,
+                errorCode,
+                nowMs,
+                expectedAttemptCount,
+                null).ConfigureAwait(false);
+        }
+
+        public async Task<bool> MarkSalesSyncBlockedAsync(
+            long outboxId,
+            long saleId,
+            string errorCode,
+            long nowMs,
+            int expectedAttemptCount,
+            OnlineSyncAttemptFence fence)
+        {
+            ValidateFenceAttempt(fence, expectedAttemptCount);
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
             var rows = await conn.ExecuteAsync(@"
@@ -1270,11 +1503,39 @@ UPDATE sales_sync_outbox
 SET status = 'failed_blocked',
     last_error_code = @errorCode,
     last_error_at = @nowMs,
+    claim_generation_id = NULL,
+    claim_token = NULL,
     updated_at = @nowMs
 WHERE id = @outboxId
   AND status = 'in_progress'
-  AND attempt_count = @expectedAttemptCount;",
-                new { outboxId, saleId, errorCode, nowMs, expectedAttemptCount }, tx).ConfigureAwait(false);
+  AND attempt_count = @expectedAttemptCount
+  AND (
+    (
+      @generationId IS NULL
+      AND claim_generation_id IS NULL
+      AND claim_token IS NULL
+      AND NOT EXISTS (
+        SELECT 1 FROM pos_sync_session_generation current_generation
+        WHERE current_generation.singleton_id = 1
+          AND current_generation.active = 1
+      )
+    )
+    OR (
+      claim_generation_id = @generationId
+      AND claim_token = @claimToken
+      AND EXISTS (
+        SELECT 1 FROM pos_sync_session_generation generation
+        WHERE generation.singleton_id = 1
+          AND generation.active = 1
+          AND generation.generation_id = @generationId
+          AND generation.fingerprint = @generationFingerprint
+      )
+    )
+  );",
+                FenceParameters(
+                    new { outboxId, saleId, errorCode, nowMs, expectedAttemptCount },
+                    fence),
+                tx).ConfigureAwait(false);
             if (rows != 1)
             {
                 tx.Rollback();
@@ -1287,6 +1548,29 @@ WHERE id = @outboxId
                 tx).ConfigureAwait(false);
             tx.Commit();
             return true;
+        }
+
+        private static DynamicParameters FenceParameters(
+            object values,
+            OnlineSyncAttemptFence fence)
+        {
+            var parameters = new DynamicParameters(values);
+            parameters.Add("generationId", fence?.Generation.GenerationId);
+            parameters.Add("generationFingerprint", fence?.Generation.Fingerprint);
+            parameters.Add("claimToken", fence?.ClaimToken);
+            return parameters;
+        }
+
+        private static void ValidateFenceAttempt(
+            OnlineSyncAttemptFence fence,
+            int expectedAttemptCount)
+        {
+            if (fence != null && fence.ExpectedAttemptCount != expectedAttemptCount)
+            {
+                throw new ArgumentException(
+                    "The sync fence attempt does not match the requested transition.",
+                    nameof(fence));
+            }
         }
 
         public async Task<bool> MarkSalesSyncOriginBlockedAsync(

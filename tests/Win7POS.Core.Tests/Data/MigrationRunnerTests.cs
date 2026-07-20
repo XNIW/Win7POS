@@ -26,11 +26,12 @@ public sealed class MigrationRunnerTests
             ["0004-shop-bound-outbox-backfill"] = "649f49fbe75acf86ecfd354269df305fcece6b81a21e45a5de224f2377992a66",
             ["0005-canonical-query-indexes"] = "44afcce1cee8d87f0d68f1de472c18f0b5fb6ca474ee94c592d43cf71234da1a",
             ["0006-system-role-permissions"] = "ade7405f309f563d6734bf5eaafd36df1f2ef6da8bd42ac9b910d1c51b783b8e",
-            ["0007-receipt-shop-snapshot"] = "a1d12cca8bbfeb57872ee854e18cc32bf98258937d1f7be4be91d925f2ef6462"
+            ["0007-receipt-shop-snapshot"] = "a1d12cca8bbfeb57872ee854e18cc32bf98258937d1f7be4be91d925f2ef6462",
+            ["0008-online-sync-generation"] = "a951929521bdb7a73d82fcc308bd2e800ccb4888b6c16c829f51c2b93f49a488"
         };
 
-        Assert.AreEqual(7, migrations.Count);
-        Assert.AreEqual("0007-receipt-shop-snapshot", SchemaMigrationRegistry.Latest.MigrationId);
+        Assert.AreEqual(8, migrations.Count);
+        Assert.AreEqual("0008-online-sync-generation", SchemaMigrationRegistry.Latest.MigrationId);
         CollectionAssert.AreEqual(
             migrations.Select(item => item.MigrationId).OrderBy(item => item, StringComparer.Ordinal).ToArray(),
             migrations.Select(item => item.MigrationId).ToArray());
@@ -137,7 +138,11 @@ VALUES('PRE-0007', 2, 750, 750, 0, 0);");
         Assert.AreEqual(1, backupCalls);
         Assert.AreEqual(0, result.BootstrappedMigrationIds.Count);
         CollectionAssert.AreEqual(
-            new[] { "0007-receipt-shop-snapshot" },
+            new[]
+            {
+                "0007-receipt-shop-snapshot",
+                "0008-online-sync-generation"
+            },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
         Assert.IsTrue(new LegacySchemaDetector(verify).ColumnMatchesDefinition(
@@ -149,6 +154,88 @@ SELECT code || '|' || total || '|' || COALESCE(receipt_shop_snapshot, '')
 FROM sales
 WHERE code = 'PRE-0007';"));
         AssertLatestLedger(database.Factory);
+    }
+
+    [TestMethod]
+    public void OnlineSyncGenerationMigration_ReleasesLegacyClaimsExactlyOnce()
+    {
+        using var database = MigrationDatabase.Create();
+        new SchemaMigrationRunner(
+            database.Factory,
+            SchemaMigrationRegistry.All.Take(7)).Run();
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+INSERT INTO sales(
+  code, createdAt, total, paidCash, paidCard, change, client_sale_id, sync_status)
+VALUES(
+  'SYNC2-UPGRADE-SALE', 1, 1000, 1000, 0, 0, 'sale-upgrade', 'in_progress');
+INSERT INTO sales_sync_outbox(
+  sale_id, client_sale_id, client_batch_id, idempotency_key,
+  origin_shop_id, origin_shop_code, payload_json, payload_hash,
+  status, attempt_count, next_retry_at, last_attempt_at,
+  created_at, updated_at)
+VALUES(
+  last_insert_rowid(), 'sale-upgrade', 'batch-upgrade', 'sale-idem-upgrade',
+  'shop-upgrade', 'SHOP-UPGRADE', '{}', 'sale-hash-upgrade',
+  'in_progress', 3, 999, 777, 1, 1);
+INSERT INTO catalog_import_outbox(
+  client_import_id, idempotency_key, origin_shop_id, origin_shop_code,
+  payload_json, payload_hash, status, attempt_count,
+  next_retry_at, last_attempt_at, created_at, updated_at)
+VALUES(
+  'import-upgrade', 'import-idem-upgrade', 'shop-upgrade', 'SHOP-UPGRADE',
+  '{}', 'import-hash-upgrade', 'in_progress', 2,
+  999, 888, 1, 1);");
+        }
+
+        var backupCalls = 0;
+        var runner = new SchemaMigrationRunner(
+            database.Factory,
+            SchemaMigrationRegistry.All,
+            OptionsThatCountBackups(() => backupCalls++));
+        var first = runner.Run();
+        var second = runner.Run();
+
+        CollectionAssert.AreEqual(
+            new[] { "0008-online-sync-generation" },
+            first.AppliedMigrationIds.ToArray());
+        Assert.IsTrue(second.WasNoOp);
+        Assert.AreEqual(1, backupCalls);
+        using var verify = database.Factory.Open();
+        var salesOutbox = verify.QuerySingle<GenerationUpgradeOutboxProjection>(@"
+SELECT
+  status AS Status,
+  attempt_count AS AttemptCount,
+  next_retry_at AS NextRetryAt,
+  last_attempt_at AS LastAttemptAt,
+  last_error_code AS LastErrorCode,
+  last_error_at AS LastErrorAt,
+  claim_generation_id AS ClaimGenerationId,
+  claim_token AS ClaimToken
+FROM sales_sync_outbox
+WHERE client_sale_id = 'sale-upgrade';");
+        var catalogOutbox = verify.QuerySingle<GenerationUpgradeOutboxProjection>(@"
+SELECT
+  status AS Status,
+  attempt_count AS AttemptCount,
+  next_retry_at AS NextRetryAt,
+  last_attempt_at AS LastAttemptAt,
+  last_error_code AS LastErrorCode,
+  last_error_at AS LastErrorAt,
+  claim_generation_id AS ClaimGenerationId,
+  claim_token AS ClaimToken
+FROM catalog_import_outbox
+WHERE client_import_id = 'import-upgrade';");
+
+        AssertReleasedGenerationClaim(salesOutbox, expectedAttemptCount: 2);
+        AssertReleasedGenerationClaim(catalogOutbox, expectedAttemptCount: 1);
+        Assert.AreEqual(
+            "retry",
+            verify.ExecuteScalar<string>(@"
+SELECT sync_status
+FROM sales
+WHERE client_sale_id = 'sale-upgrade';"));
     }
 
     [TestMethod]
@@ -215,24 +302,28 @@ DROP TABLE schema_migrations;");
         new SchemaMigrationRunner(
             database.Factory,
             SchemaMigrationRegistry.All.Take(6)).Run();
-        var latest = SchemaMigrationRegistry.Latest;
+        var missingMigrations = SchemaMigrationRegistry.All.Skip(6).ToArray();
         using (var connection = database.Factory.Open())
         {
             connection.Execute(@"
 DELETE FROM role_permissions
 WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
-  AND permission_code = 'pos.sell';
+  AND permission_code = 'pos.sell';");
+            foreach (var migration in missingMigrations)
+            {
+                connection.Execute(@"
 INSERT INTO schema_migrations(
   migration_id, checksum, description, applied_at, app_version)
 VALUES(
   @MigrationId, @Checksum, @Description,
   '2026-07-19T00:00:00.0000000+00:00', '1.0.0');",
-                new
-                {
-                    latest.MigrationId,
-                    latest.Checksum,
-                    latest.Description
-                });
+                    new
+                    {
+                        migration.MigrationId,
+                        migration.Checksum,
+                        migration.Description
+                    });
+            }
         }
 
         var error = Assert.ThrowsExactly<InvalidDataException>(() =>
@@ -275,7 +366,7 @@ WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
 
         Assert.AreEqual(0, result.BootstrappedMigrationIds.Count);
         CollectionAssert.AreEqual(
-            new[] { "0000-custom-predecessor", "0007-receipt-shop-snapshot" },
+            new[] { "0000-custom-predecessor", "0008-online-sync-generation" },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
         Assert.IsTrue(new LegacySchemaDetector(verify).TableExists("custom_predecessor"));
@@ -735,6 +826,20 @@ CREATE TABLE probe(
             .ToArray();
     }
 
+    private static void AssertReleasedGenerationClaim(
+        GenerationUpgradeOutboxProjection row,
+        int expectedAttemptCount)
+    {
+        Assert.AreEqual("retry", row.Status);
+        Assert.AreEqual(expectedAttemptCount, row.AttemptCount);
+        Assert.AreEqual(0L, row.NextRetryAt);
+        Assert.IsNull(row.LastAttemptAt);
+        Assert.AreEqual("session_generation_upgrade", row.LastErrorCode);
+        Assert.IsTrue(row.LastErrorAt.HasValue && row.LastErrorAt.Value > 0);
+        Assert.IsNull(row.ClaimGenerationId);
+        Assert.IsNull(row.ClaimToken);
+    }
+
     private static void AssertLatestLedger(SqliteConnectionFactory factory)
     {
         using var connection = factory.Open();
@@ -755,6 +860,18 @@ ORDER BY migration_id;").ToArray();
         public string MigrationId { get; set; } = string.Empty;
 
         public string Checksum { get; set; } = string.Empty;
+    }
+
+    private sealed class GenerationUpgradeOutboxProjection
+    {
+        public int AttemptCount { get; set; }
+        public string? ClaimGenerationId { get; set; }
+        public string? ClaimToken { get; set; }
+        public long? LastAttemptAt { get; set; }
+        public string LastErrorCode { get; set; } = string.Empty;
+        public long? LastErrorAt { get; set; }
+        public long NextRetryAt { get; set; }
+        public string Status { get; set; } = string.Empty;
     }
 
     private sealed class MigrationDatabase : IDisposable

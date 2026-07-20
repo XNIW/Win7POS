@@ -125,6 +125,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             {
                 var result = await _service.RestoreDbAsync(dlg.FileName).ConfigureAwait(true);
                 OperatorSessionHolder.Current?.LogSecurityEvent(SecurityEventCodes.DbRestore, "backupFile=" + (Path.GetFileName(dlg.FileName) ?? ""));
+                OperatorSessionHolder.Current?.LogoutForced();
                 Append(PosLocalization.F("dbMaintenance.restoreCompletedFrom", Path.GetFileName(dlg.FileName) ?? "backup.db"));
                 Append(PosLocalization.F("dbMaintenance.preRestoreBackup", Path.GetFileName(result.PreRestoreBackupPath) ?? "n/a"));
                 Append(PosLocalization.F("dbMaintenance.integrityCheckResult", result.IntegrityCheck));

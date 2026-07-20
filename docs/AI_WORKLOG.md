@@ -738,3 +738,53 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Clean refresh merge commit `5377778` produced an exact-commit, clean-tree
   Release/x86 pack; completeness, Win7 runtime validation and the Inno Setup
   6.7.3 installer all passed before publication.
+
+## 2026-07-19 - PR #6 merge and SYNC-1 correctness
+
+- PR #6 exact head `a9fa6fa` passed fresh CI and was merged normally as
+  `ea85d91`, without rebase, squash or force push. The seven immutable migration
+  checksums, verified legacy fixtures, PR #7 receipt/recovery behavior and clean
+  exact-head Release Pack remained intact.
+- SYNC-1 was then developed from the resulting main and merged through PR #8 as
+  `6d9a9e0`. It added the fail-closed ambiguous-pagination guard, optional
+  heartbeat revision/change/poll hints, separate observed/committed revisions,
+  typed sales and catalog-import drain results, durable bounded full-chain
+  staging and expanded Sync Center diagnostics.
+- SYNC-1 retained incremental-first behavior and the 24–36 second compatibility
+  fallback, preserved prior sale-safe state on failed deltas and prevented a
+  fresh database from becoming sale-safe after incomplete or contradictory full
+  pagination. Its exact head passed CI, 33/33 gates, 389/389 tests, CLI, WPF
+  net48/x86, Release Pack/runtime validation and installer generation.
+
+## 2026-07-19 - SYNC-2 generation-scoped lane supervisor
+
+- Replaced the catalog-oriented sequential scheduler with one trusted-session
+  supervisor owning four independent lanes: heartbeat, sales outbox,
+  catalog-import outbox and catalog delta. Same-lane work is single-flight, the
+  shared request cap is two, heartbeat has queue priority and transient failures
+  retain lane-local due/backoff state.
+- Added immutable generation/fingerprint fencing and append-only migration
+  `0008-online-sync-generation`. Generation-aware settings, catalog and outbox
+  writes reject stale completions; the one-time legacy upgrade releases old
+  `in_progress` claims without consuming another attempt.
+- Hardened authenticated relink with full-predecessor SQLite CAS,
+  authorization-epoch serialization and the DPAPI file as the final crash-safe
+  commit marker. Legacy file-only trust is normalized before first-login I/O so
+  an authoritative denial always has an exact durable tombstone/clear scope.
+- Integrated the shared supervisor with start of day, foreground/network
+  recovery and immediate local sale, refund and supplier-import signals.
+  Authentication denial from every lane cancels all work once and is persisted
+  even when it races ordinary shutdown.
+- Restore now enters authorization maintenance, drains the supervisor before
+  capture/swap, installs an inactive generation tombstone and never resumes
+  after success. A failed resume keeps traffic blocked behind a distinct retry
+  marker; retry, nesting and subsequent successful-restore suppression have
+  executable fault-injection coverage.
+- Offline authorization high-water state is scoped to both generation and
+  authorization epoch and is revalidated after PIN verification before the
+  operator session can be committed.
+- Final dirty-tree source evidence before publication: required gates `33/33`,
+  focused generation/supervisor/request-gate/maintenance-bus tests `27/27`, full
+  Core/Data suite `417/417` with zero skipped, and WPF net48/x86 build with zero
+  warnings/errors. Independent cumulative review reports no open P0/P1; a clean
+  exact-commit Release Pack and PR CI remain mandatory publication gates.

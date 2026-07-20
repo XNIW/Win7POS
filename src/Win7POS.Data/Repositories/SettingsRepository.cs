@@ -2,6 +2,8 @@ using System;
 using System.Globalization;
 using System.Threading.Tasks;
 using Dapper;
+using Win7POS.Core.Online;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
 {
@@ -35,6 +37,39 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
                 new { key, value = value ?? string.Empty }).ConfigureAwait(false);
         }
 
+        public async Task<bool> SetStringIfGenerationCurrentAsync(
+            string key,
+            string value,
+            OnlineSyncGeneration generation)
+        {
+            if (string.IsNullOrWhiteSpace(key)) throw new ArgumentException("key is empty");
+            using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction(deferred: false);
+            var permitted = generation != null
+                ? await OnlineSyncGenerationRepository.IsCurrentAndActiveAsync(
+                    conn,
+                    tx,
+                    generation).ConfigureAwait(false)
+                : await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM pos_sync_session_generation
+WHERE singleton_id = 1 AND active = 1;",
+                    transaction: tx).ConfigureAwait(false) == 0;
+            if (!permitted)
+            {
+                tx.Rollback();
+                return false;
+            }
+
+            await conn.ExecuteAsync(@"
+INSERT INTO app_settings(key, value) VALUES(@key, @value)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                new { key, value = value ?? string.Empty },
+                tx).ConfigureAwait(false);
+            tx.Commit();
+            return true;
+        }
+
         public async Task<bool?> GetBoolAsync(string key)
         {
             var raw = await GetStringAsync(key).ConfigureAwait(false);
@@ -58,6 +93,14 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
             return SetStringAsync(key, value ? "1" : "0");
         }
 
+        public Task<bool> SetBoolIfGenerationCurrentAsync(
+            string key,
+            bool value,
+            OnlineSyncGeneration generation)
+        {
+            return SetStringIfGenerationCurrentAsync(key, value ? "1" : "0", generation);
+        }
+
         public async Task<int?> GetIntAsync(string key)
         {
             var raw = await GetStringAsync(key).ConfigureAwait(false);
@@ -70,6 +113,17 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
         public Task SetIntAsync(string key, int value)
         {
             return SetStringAsync(key, value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        public Task<bool> SetIntIfGenerationCurrentAsync(
+            string key,
+            int value,
+            OnlineSyncGeneration generation)
+        {
+            return SetStringIfGenerationCurrentAsync(
+                key,
+                value.ToString(CultureInfo.InvariantCulture),
+                generation);
         }
 
         /// <summary>

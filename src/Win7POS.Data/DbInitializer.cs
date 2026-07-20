@@ -459,6 +459,105 @@ CREATE TABLE security_events (
                 ReceiptShopSnapshotColumn.AlterDefinition);
         }
 
+        internal static SchemaColumnDefinition SalesSyncClaimGenerationColumn { get; } =
+            Column("sales_sync_outbox", "claim_generation_id", "TEXT", false, "", "TEXT NULL");
+
+        internal static SchemaColumnDefinition SalesSyncClaimTokenColumn { get; } =
+            Column("sales_sync_outbox", "claim_token", "TEXT", false, "", "TEXT NULL");
+
+        internal static SchemaColumnDefinition CatalogImportClaimGenerationColumn { get; } =
+            Column("catalog_import_outbox", "claim_generation_id", "TEXT", false, "", "TEXT NULL");
+
+        internal static SchemaColumnDefinition CatalogImportClaimTokenColumn { get; } =
+            Column("catalog_import_outbox", "claim_token", "TEXT", false, "", "TEXT NULL");
+
+        internal static SchemaColumnDefinition[] OnlineSyncGenerationColumns { get; } = new[]
+        {
+            SalesSyncClaimGenerationColumn,
+            SalesSyncClaimTokenColumn,
+            CatalogImportClaimGenerationColumn,
+            CatalogImportClaimTokenColumn
+        };
+
+        internal static string OnlineSyncGenerationColumnMaterial => string.Join(
+            "\n",
+            OnlineSyncGenerationColumns.Select(item => item.ToCanonicalMaterial()));
+
+        internal static string OnlineSyncGenerationSchemaSql => @"
+CREATE TABLE IF NOT EXISTS pos_sync_session_generation (
+  singleton_id INTEGER PRIMARY KEY NOT NULL CHECK(singleton_id = 1),
+  generation_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL,
+  pos_session_id TEXT NOT NULL,
+  shop_device_id TEXT NOT NULL,
+  shop_id TEXT NOT NULL,
+  shop_code TEXT NOT NULL,
+  active INTEGER NOT NULL CHECK(active IN (0, 1)),
+  auth_stop_reason TEXT NULL,
+  activated_at INTEGER NOT NULL,
+  stopped_at INTEGER NULL
+);
+";
+
+        internal static string OnlineSyncGenerationAlterSql =>
+            "ALTER TABLE sales_sync_outbox ADD COLUMN claim_generation_id TEXT NULL;\n" +
+            "ALTER TABLE sales_sync_outbox ADD COLUMN claim_token TEXT NULL;\n" +
+            "ALTER TABLE catalog_import_outbox ADD COLUMN claim_generation_id TEXT NULL;\n" +
+            "ALTER TABLE catalog_import_outbox ADD COLUMN claim_token TEXT NULL;";
+
+        internal static void EnsureOnlineSyncGenerationSchema(
+            SqliteConnection conn,
+            SqliteTransaction tx)
+        {
+            conn.Execute(OnlineSyncGenerationSchemaSql, transaction: tx);
+            foreach (var column in OnlineSyncGenerationColumns)
+            {
+                EnsureColumn(
+                    conn,
+                    tx,
+                    column.TableName,
+                    column.ColumnName,
+                    column.AlterDefinition);
+            }
+
+            var nowMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            conn.Execute(@"
+UPDATE sales_sync_outbox
+SET status = 'retry',
+    attempt_count = CASE WHEN attempt_count > 0 THEN attempt_count - 1 ELSE 0 END,
+    next_retry_at = 0,
+    last_attempt_at = NULL,
+    last_error_code = 'session_generation_upgrade',
+    last_error_at = @nowMs,
+    claim_generation_id = NULL,
+    claim_token = NULL,
+    updated_at = @nowMs
+WHERE status = 'in_progress';
+
+UPDATE sales
+SET sync_status = 'retry'
+WHERE id IN (
+  SELECT sale_id
+  FROM sales_sync_outbox
+  WHERE status = 'retry'
+    AND last_error_code = 'session_generation_upgrade'
+);
+
+UPDATE catalog_import_outbox
+SET status = 'retry',
+    attempt_count = CASE WHEN attempt_count > 0 THEN attempt_count - 1 ELSE 0 END,
+    next_retry_at = 0,
+    last_attempt_at = NULL,
+    last_error_code = 'session_generation_upgrade',
+    last_error_at = @nowMs,
+    claim_generation_id = NULL,
+    claim_token = NULL,
+    updated_at = @nowMs
+WHERE status = 'in_progress';",
+                new { nowMs },
+                tx);
+        }
+
         internal static string DependentSchemaSql => @"
 CREATE TABLE IF NOT EXISTS local_stock_movements (
   id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -944,6 +1043,13 @@ ALTER TABLE sales ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending';
         // Keep the PR-B whitelist immutable: migration 0007 owns this column.
         internal static string PostPr7LedgerlessKnownSchemaSql =>
             PrBKnownSchemaSql + "\n" + ReceiptShopSnapshotAlterSql;
+
+        // Frozen whitelist for the schema first published by SYNC2. Earlier
+        // whitelists remain unchanged so their migration fingerprints stay valid.
+        internal static string PostSync2LedgerlessKnownSchemaSql =>
+            PostPr7LedgerlessKnownSchemaSql + "\n" +
+            OnlineSyncGenerationAlterSql + "\n" +
+            OnlineSyncGenerationSchemaSql;
 
         internal static void EnsureIndexes(SqliteConnection conn, SqliteTransaction tx)
         {

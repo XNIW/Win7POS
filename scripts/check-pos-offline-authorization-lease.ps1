@@ -47,6 +47,9 @@ $main = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
 $salesBuilder = Read-Text "src/Win7POS.Data/Online/PosSalesSyncRequestBuilder.cs"
 $salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
+$syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
+$revocationLatch = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncRevocationLatch.cs"
+$bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 
 Require-Pattern "offline lease maximum is the 12-hour POS session contract" $contract 'OfflineAuthorizationMaxAgeSeconds\s*=\s*12\s*\*\s*60\s*\*\s*60'
 Require-Pattern "policy fails closed on missing legacy receipt timestamp" $policy 'local_receipt_time_invalid'
@@ -54,9 +57,53 @@ Require-Pattern "policy rejects rollback and exact expiry" $policy 'clock_rollba
 Require-Pattern "first-login DTO consumes authenticated serverTime" $contracts 'class\s+PosFirstLoginResponse[\s\S]*DataMember\(Name\s*=\s*"serverTime"\)'
 Require-Pattern "heartbeat DTO consumes authenticated serverTime" $contracts 'class\s+PosHeartbeatResponse[\s\S]*DataMember\(Name\s*=\s*"serverTime"\)'
 Require-Pattern "trusted store persists server and local receipt clocks" $store 'LastOkLocalAt\s*=\s*candidate\.LastOkLocalAt[\s\S]*LastOkServerAt\s*=\s*candidate\.LastOkServerAt'
-Require-Pattern "runtime guard keeps a process high-water" $guard '_estimatedServerHighWater[\s\S]*minimumEstimatedServerNow|_estimatedServerHighWater[\s\S]*PosOfflineAuthorizationLeasePolicy\.Evaluate'
 Require-Pattern "runtime guard is internal and cannot be composed ad hoc" $guard 'internal\s+sealed\s+class\s+PosOfflineAuthorizationLeaseGuard'
-Require-Pattern "runtime guard returns only the lease session evaluated under its lock" $guard 'Evaluate\(out\s+PosTrustedDeviceSession\s+trustedSession\)[\s\S]{0,1200}lock\s*\(_sync\)[\s\S]{0,1200}if\s*\(!decision\.Allowed\)[\s\S]{0,300}trustedSession\s*=\s*session'
+$syncEvaluateStart = $guard.IndexOf("public PosOfflineAuthorizationLeaseDecision Evaluate(out", [System.StringComparison]::Ordinal)
+$asyncEvaluateStart = $guard.IndexOf("public async Task<PosOfflineAuthorizationLeaseEvaluation> EvaluateAsync()", [System.StringComparison]::Ordinal)
+$evaluationClassStart = $guard.IndexOf("internal sealed class PosOfflineAuthorizationLeaseEvaluation", [System.StringComparison]::Ordinal)
+if ($syncEvaluateStart -lt 0 -or $asyncEvaluateStart -le $syncEvaluateStart -or
+    $evaluationClassStart -le $asyncEvaluateStart) {
+    Fail "authorization guard method boundaries are missing"
+} else {
+    $syncEvaluateBody = $guard.Substring($syncEvaluateStart, $asyncEvaluateStart - $syncEvaluateStart)
+    $asyncEvaluateBody = $guard.Substring($asyncEvaluateStart, $evaluationClassStart - $asyncEvaluateStart)
+    $syncCapture = $syncEvaluateBody.IndexOf("TryCaptureAuthorizationEpoch", [System.StringComparison]::Ordinal)
+    $syncStore = $syncEvaluateBody.IndexOf("_store.TryRead", [System.StringComparison]::Ordinal)
+    $asyncCapture = $asyncEvaluateBody.IndexOf("TryCaptureAuthorizationEpoch", [System.StringComparison]::Ordinal)
+    $asyncStore = $asyncEvaluateBody.IndexOf("_store.TryRead", [System.StringComparison]::Ordinal)
+    $durableCheck = $asyncEvaluateBody.IndexOf("await _generationIsActive", [System.StringComparison]::Ordinal)
+    $postAwaitLock = $asyncEvaluateBody.IndexOf("lock (_sync)", $durableCheck, [System.StringComparison]::Ordinal)
+    $postAwaitEpoch = $asyncEvaluateBody.IndexOf("IsAuthorizationEpochCurrent", $postAwaitLock, [System.StringComparison]::Ordinal)
+    $exactReread = $asyncEvaluateBody.IndexOf("_store.TryReadGeneration", $postAwaitLock, [System.StringComparison]::Ordinal)
+    $epochAssignment = $asyncEvaluateBody.IndexOf("_validatedAuthorizationEpoch = authorizationEpoch", [System.StringComparison]::Ordinal)
+    $fingerprintAssignment = $asyncEvaluateBody.IndexOf("_validatedGenerationFingerprint = generation.Fingerprint", [System.StringComparison]::Ordinal)
+    $finalEpoch = $asyncEvaluateBody.LastIndexOf("IsAuthorizationEpochCurrent", [System.StringComparison]::Ordinal)
+    if ($syncCapture -lt 0 -or $syncStore -le $syncCapture -or
+        $syncEvaluateBody -notmatch '_validatedAuthorizationEpoch\s*==\s*authorizationEpoch' -or
+        $syncEvaluateBody -notmatch '_validatedGenerationFingerprint[\s\S]{0,180}generation\.Fingerprint' -or
+        $syncEvaluateBody -notmatch 'IsAuthorizationEpochCurrent' -or
+        $asyncCapture -lt 0 -or $asyncStore -le $asyncCapture -or
+        $durableCheck -le $asyncStore -or $postAwaitLock -le $durableCheck -or
+        $postAwaitEpoch -le $postAwaitLock -or $exactReread -le $postAwaitEpoch -or
+        $epochAssignment -le $exactReread -or $fingerprintAssignment -le $exactReread -or
+        $finalEpoch -le $epochAssignment -or
+        $asyncEvaluateBody -notmatch '_validatedAuthorizationEpoch\s*==\s*authorizationEpoch[\s\S]{0,220}_validatedGenerationFingerprint') {
+        Fail "runtime guard must scope high-water and durable revalidation to epoch plus generation"
+    } else {
+        Pass "runtime guard scopes high-water and durable revalidation to epoch plus generation"
+    }
+}
+
+if ($revocationLatch -notmatch 'TryCaptureAuthorizationEpoch[\s\S]{0,260}_authorizationMaintenanceDepth\s*==\s*0' -or
+    $revocationLatch -notmatch 'IsAuthorizationEpochCurrent[\s\S]{0,300}_authorizationMaintenanceDepth\s*==\s*0[\s\S]{0,100}_authorizationEpoch\s*==\s*epoch' -or
+    $revocationLatch -notmatch 'TryInvalidateAuthorizationState\(long expectedEpoch\)[\s\S]{0,420}_authorizationMaintenanceDepth\s*>\s*0[\s\S]{0,120}_authorizationEpoch\s*!=\s*expectedEpoch[\s\S]{0,140}_authorizationEpoch\+\+' -or
+    $revocationLatch -notmatch 'InvalidateAuthorizationState[\s\S]{0,180}_authorizationEpoch\+\+' -or
+    $revocationLatch -notmatch 'Revoke\(OnlineSyncGeneration generation\)[\s\S]{0,120}RevokeFingerprint\(generation\?\.Fingerprint\)' -or
+    $revocationLatch -notmatch 'RevokeFingerprint\(string fingerprint\)[\s\S]{0,220}_authorizationEpoch\+\+[\s\S]{0,220}RevokedFingerprints\.Add') {
+    Fail "authorization epoch latch is not maintenance-aware and monotonic"
+} else {
+    Pass "authorization epoch latch is maintenance-aware and monotonic"
+}
 
 $guardConstructionFiles = @(Get-ChildItem -Path (Join-Path $repoRoot "src/Win7POS.Wpf") -Recurse -File -Filter "*.cs" |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
@@ -70,7 +117,7 @@ else {
     Fail "unexpected runtime guard composition point(s): $($guardConstructionFiles -join ', ')"
 }
 
-$leaseIndex = $session.IndexOf("var authorization = EvaluateAuthorizationLease(out trustedSession);", [System.StringComparison]::Ordinal)
+$leaseIndex = $session.IndexOf("await _authorizationLeaseGuard.EvaluateAsync()", [System.StringComparison]::Ordinal)
 $pinIndex = $session.IndexOf("_userRepo.VerifyPinAsync", [System.StringComparison]::Ordinal)
 if ($leaseIndex -ge 0 -and $pinIndex -gt $leaseIndex) {
     Pass "operator login checks lease before local PIN verification"
@@ -79,9 +126,29 @@ else {
     Fail "operator login must check lease before local PIN verification"
 }
 
+$loginStart = $session.IndexOf("private async Task<LoginResult> LoginInternalAsync", [System.StringComparison]::Ordinal)
+$loginEnd = $session.IndexOf("public PosOfflineAuthorizationLeaseDecision EvaluateAuthorizationLease()", [System.StringComparison]::Ordinal)
+if ($loginStart -lt 0 -or $loginEnd -le $loginStart) {
+    Fail "operator login method boundaries are missing"
+} else {
+    $loginBody = $session.Substring($loginStart, $loginEnd - $loginStart)
+    $initialLease = $loginBody.IndexOf("var evaluation = await _authorizationLeaseGuard.EvaluateAsync()", [System.StringComparison]::Ordinal)
+    $pinVerify = $loginBody.IndexOf("_userRepo.VerifyPinAsync", [System.StringComparison]::Ordinal)
+    $finalLease = $loginBody.IndexOf("var finalEvaluation = await _authorizationLeaseGuard", [System.StringComparison]::Ordinal)
+    $sameGeneration = $loginBody.IndexOf("IsSameTrustedGeneration", [System.StringComparison]::Ordinal)
+    $commitUser = $loginBody.IndexOf("_currentUser = result.User", [System.StringComparison]::Ordinal)
+    if ($initialLease -lt 0 -or $pinVerify -le $initialLease -or
+        $finalLease -le $pinVerify -or $sameGeneration -le $finalLease -or
+        $commitUser -le $sameGeneration) {
+        Fail "operator login must revalidate the exact trusted generation after PIN and before session commit"
+    } else {
+        Pass "operator login revalidates the exact trusted generation after PIN"
+    }
+}
+
 Require-Pattern "normal operator login requires lease and no local-only classification" $session 'LoginAsync[\s\S]{0,500}requireAuthorizationLease:\s*true[\s\S]{0,180}requireLocalRecoveryUser:\s*false'
 Require-Pattern "local recovery login bypasses only lease and requires local identity" $session 'LoginLocalRecoveryAsync[\s\S]{0,500}requireAuthorizationLease:\s*false[\s\S]{0,180}requireLocalRecoveryUser:\s*true'
-Require-Pattern "normal operator login resolves the exact lease-bound remote mirror" $session 'EvaluateAuthorizationLease\(out\s+trustedSession\)[\s\S]{0,900}FindTrustedRemoteStaffUsernameAsync\([\s\S]{0,500}trustedSession\.StaffCredentialVersion'
+Require-Pattern "normal operator login resolves the exact lease-bound remote mirror" $session '_authorizationLeaseGuard\.EvaluateAsync\(\)[\s\S]{0,500}trustedSession\s*=\s*evaluation\.TrustedSession[\s\S]{0,900}FindTrustedRemoteStaffUsernameAsync\([\s\S]{0,500}trustedSession\.StaffCredentialVersion'
 Require-Pattern "normal operator login rejects a different username before PIN verification" $session 'string\.Equals\(username,\s*trustedUsername,\s*StringComparison\.Ordinal\)[\s\S]{0,450}return\s+LoginResult\.Failed[\s\S]{0,900}VerifyPinAsync\(username,\s*pin\)'
 Require-Pattern "local recovery identity is checked before PIN" $session 'IsLocalRecoveryUserAsync\(username\)[\s\S]{0,700}VerifyPinAsync\(username,\s*pin\)'
 
@@ -99,21 +166,37 @@ else {
 }
 Require-Pattern "POS access exposes a distinct lease-expired result" $accessDialog 'LoginResult\.AuthorizationExpired[\s\S]*access\.login\.authorizationExpired'
 $denialIndex = $accessDialog.IndexOf("IsAuthorizationDenied(result)", [System.StringComparison]::Ordinal)
-$denialClearIndex = if ($denialIndex -ge 0) {
-    $accessDialog.IndexOf("_trustedDeviceStore.Clear();", $denialIndex, [System.StringComparison]::Ordinal)
-} else { -1 }
-$denialReturnIndex = if ($denialClearIndex -ge 0) {
-    $accessDialog.IndexOf("return;", $denialClearIndex, [System.StringComparison]::Ordinal)
+$denialReturnIndex = if ($denialIndex -ge 0) {
+    $accessDialog.IndexOf("return;", $denialIndex, [System.StringComparison]::Ordinal)
 } else { -1 }
 $nextFallbackIndex = if ($denialIndex -ge 0) {
     $accessDialog.IndexOf("if (IsOfflineFallbackAllowed(result.Code))", $denialIndex, [System.StringComparison]::Ordinal)
 } else { -1 }
-if ($denialIndex -ge 0 -and $denialClearIndex -gt $denialIndex -and
-    $denialReturnIndex -gt $denialClearIndex -and $nextFallbackIndex -gt $denialReturnIndex) {
-    Pass "explicit online denial clears trust and never enters fallback"
+$rejectStart = $syncHost.IndexOf("internal async Task<bool> RejectAuthenticatedTrustTransitionAsync", [System.StringComparison]::Ordinal)
+$publicRevokeStart = $syncHost.IndexOf("public async Task RevokeCurrentTrustAsync", [System.StringComparison]::Ordinal)
+$rejectBody = if ($rejectStart -ge 0 -and $publicRevokeStart -gt $rejectStart) {
+    $syncHost.Substring($rejectStart, $publicRevokeStart - $rejectStart)
+} else { "" }
+$firstAttemptCheck = $rejectBody.IndexOf("transition.AttemptId", [System.StringComparison]::Ordinal)
+$stateRead = $rejectBody.IndexOf("ReadCurrentPredecessorAsync", [System.StringComparison]::Ordinal)
+$secondAttemptCheck = if ($stateRead -ge 0) {
+    $rejectBody.IndexOf("transition.AttemptId", $stateRead, [System.StringComparison]::Ordinal)
+} else { -1 }
+$predecessorCheck = $rejectBody.IndexOf("PredecessorStatesMatch", [System.StringComparison]::Ordinal)
+$scopedRevoke = $rejectBody.IndexOf("RevokeCurrentTrustCoreAsync", [System.StringComparison]::Ordinal)
+if ($denialIndex -ge 0 -and $denialReturnIndex -gt $denialIndex -and
+    $nextFallbackIndex -gt $denialReturnIndex -and
+    $accessDialog -notmatch '\.RevokeCurrentTrustAsync\(' -and
+    $bootstrap -match 'result\.Denied\s*\|\|[\s\S]{0,180}SharedAuthStopPolicy\.IsAuthenticationDenied\(result\.Code\)[\s\S]{0,500}RejectAuthenticatedTrustTransitionAsync\(\s*authenticatedTransition,\s*"auth_denied"' -and
+    $firstAttemptCheck -ge 0 -and $stateRead -gt $firstAttemptCheck -and
+    $secondAttemptCheck -gt $stateRead -and $predecessorCheck -gt $secondAttemptCheck -and
+    $scopedRevoke -gt $predecessorCheck -and
+    $rejectBody -match 'IsAuthorizationEpochCurrent' -and
+    $rejectBody -match 'PosOnlineSyncSignalBus\.IsMaintenanceActive') {
+    Pass "explicit online denial is transition-scoped and never enters fallback"
 }
 else {
-    Fail "explicit online denial must clear trust and return before fallback"
+    Fail "explicit online denial must be scoped to its attempt and return before fallback"
 }
 Require-Pattern "operator switch cannot bypass an expired lease" $operatorSwitch 'LoginResult\.AuthorizationExpired[\s\S]*authorization_lease_denied'
 Require-Pattern "trusted mirror lookup binds opaque shop and staff ids" $userRepo 'FindTrustedRemoteStaffUsernameAsync[\s\S]{0,1800}remote_shop_id[\s\S]{0,500}remote_staff_id'

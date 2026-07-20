@@ -89,7 +89,8 @@ namespace Win7POS.Data.Online
 
         public async Task<CatalogShopBindingResult> EnsureAndLoadCursorAsync(
             string trustedShopId,
-            string trustedShopCode)
+            string trustedShopCode,
+            OnlineSyncGeneration generation = null)
         {
             var normalizedCode = OutboxShopBinding.NormalizeCode(trustedShopCode);
             var normalizedId = Normalize(trustedShopId);
@@ -99,8 +100,9 @@ namespace Win7POS.Data.Online
             }
 
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: false))
             {
+                await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
                 var boundCode = OutboxShopBinding.NormalizeCode(await GetAsync(conn, tx, BoundShopCodeKey).ConfigureAwait(false));
                 var boundId = Normalize(await GetAsync(conn, tx, BoundShopIdKey).ConfigureAwait(false));
                 var hasExistingState = await conn.ExecuteScalarAsync<long>(@"
@@ -186,7 +188,8 @@ WHERE key IN (
             long expectedEpoch = -1,
             string syncMode = null,
             string expectedPreviousCursor = null,
-            string expectedPreviousMode = null)
+            string expectedPreviousMode = null,
+            OnlineSyncGeneration generation = null)
         {
             var value = string.IsNullOrWhiteSpace(generatedAt)
                 ? DateTimeOffset.UtcNow.ToString("O")
@@ -194,8 +197,9 @@ WHERE key IN (
             var cursor = string.IsNullOrWhiteSpace(syncCursor) ? value : syncCursor.Trim();
 
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: false))
             {
+                await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
                 await RequireCommitStateAsync(
                     conn,
                     tx,
@@ -224,7 +228,8 @@ WHERE key IN (
             bool authoritativeSnapshotCommitted,
             CatalogDeltaChainCheckpoint deltaCheckpoint = null,
             string expectedPreviousCursor = null,
-            string expectedPreviousMode = null)
+            string expectedPreviousMode = null,
+            OnlineSyncGeneration generation = null)
         {
             var normalizedSyncMode = (syncMode ?? string.Empty).Trim().ToLowerInvariant();
             if (normalizedSyncMode != "delta" && normalizedSyncMode != "full_refresh")
@@ -245,8 +250,9 @@ WHERE key IN (
                     : generatedAt.Trim();
                 var cursor = string.IsNullOrWhiteSpace(syncCursor) ? value : syncCursor.Trim();
                 using (var conn = _factory.Open())
-                using (var tx = conn.BeginTransaction())
+                using (var tx = conn.BeginTransaction(deferred: generation == null))
                 {
+                    await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
                     await RequireCommitStateAsync(
                         conn,
                         tx,
@@ -275,8 +281,9 @@ WHERE key IN (
                 : generatedAt.Trim();
             var deltaCursor = string.IsNullOrWhiteSpace(syncCursor) ? deltaValue : syncCursor.Trim();
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: generation == null))
             {
+                await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
                 await RequireCommitStateAsync(
                     conn,
                     tx,
@@ -315,11 +322,13 @@ WHERE key IN (
             string trustedShopCode,
             long expectedEpoch,
             string expectedPreviousCursor,
-            string expectedPreviousMode)
+            string expectedPreviousMode,
+            OnlineSyncGeneration generation = null)
         {
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: generation == null))
             {
+                await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
                 await RequireCommitStateAsync(
                     conn,
                     tx,
@@ -335,11 +344,13 @@ WHERE key IN (
         public async Task ValidateBindingEpochAsync(
             string trustedShopId,
             string trustedShopCode,
-            long expectedEpoch)
+            long expectedEpoch,
+            OnlineSyncGeneration generation = null)
         {
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: false))
             {
+                await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
                 await RequireBindingAsync(
                     conn,
                     tx,
@@ -518,7 +529,8 @@ WHERE key IN (
             string trustedShopCode,
             string revision,
             DateTimeOffset observedAt,
-            long expectedEpoch)
+            long expectedEpoch,
+            OnlineSyncGeneration generation = null)
         {
             var normalizedRevision = CatalogHeartbeatPolicy.NormalizeRevision(revision);
             if (normalizedRevision.Length == 0)
@@ -527,8 +539,9 @@ WHERE key IN (
             }
 
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: generation == null))
             {
+                await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
                 await RequireBindingAsync(
                     conn,
                     tx,
@@ -552,7 +565,8 @@ WHERE key IN (
             string expectedObservedRevision,
             string expectedCommittedRevision,
             long expectedAckGeneration,
-            bool clearStaleError)
+            bool clearStaleError,
+            OnlineSyncGeneration generation = null)
         {
             var expectedObserved = CatalogHeartbeatPolicy.NormalizeRevision(expectedObservedRevision);
             var expectedCommitted = CatalogHeartbeatPolicy.NormalizeRevision(expectedCommittedRevision);
@@ -564,8 +578,9 @@ WHERE key IN (
             }
 
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: generation == null))
             {
+                await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
                 await RequireBindingAsync(
                     conn,
                     tx,
@@ -721,14 +736,16 @@ WHERE key IN (
         public async Task RequestFullRepairAsync(
             string trustedShopId,
             string trustedShopCode,
-            long expectedEpoch)
+            long expectedEpoch,
+            OnlineSyncGeneration generation = null)
         {
             using (await new CatalogShopTransitionBarrier(_factory).EnterAsync().ConfigureAwait(false))
             {
                 await RequestFullRepairWhileBarrierHeldAsync(
                     trustedShopId,
                     trustedShopCode,
-                    expectedEpoch).ConfigureAwait(false);
+                    expectedEpoch,
+                    generation).ConfigureAwait(false);
             }
         }
 
@@ -737,13 +754,15 @@ WHERE key IN (
         public async Task RequestFullRepairWhileBarrierHeldAsync(
             string trustedShopId,
             string trustedShopCode,
-            long expectedEpoch)
+            long expectedEpoch,
+            OnlineSyncGeneration generation = null)
         {
             var normalizedShopId = Normalize(trustedShopId);
             var normalizedShopCode = OutboxShopBinding.NormalizeCode(trustedShopCode);
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: false))
             {
+                await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
                 await RequireBindingAsync(
                     conn,
                     tx,
@@ -797,7 +816,8 @@ WHERE key IN (
             CatalogExactnessResult exactness,
             long expectedEpoch = -1,
             string expectedPreviousCursor = null,
-            string expectedPreviousMode = null)
+            string expectedPreviousMode = null,
+            OnlineSyncGeneration generation = null)
         {
             if (exactness == null) throw new ArgumentNullException(nameof(exactness));
 
@@ -814,8 +834,9 @@ WHERE key IN (
             var normalizedShopCode = OutboxShopBinding.NormalizeCode(trustedShopCode);
 
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: generation == null))
             {
+                await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
                 await RequireCommitStateAsync(
                     conn,
                     tx,
@@ -995,15 +1016,17 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
             string expectedPreviousCursor = null,
             string expectedPreviousMode = null,
             string committedRevision = null,
-            long? reconciledImportAckGeneration = null)
+            long? reconciledImportAckGeneration = null,
+            OnlineSyncGeneration generation = null)
         {
             var value = string.IsNullOrWhiteSpace(generatedAt)
                 ? DateTimeOffset.UtcNow.ToString("O")
                 : generatedAt.Trim();
 
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: generation == null))
             {
+                await RequireOnlineGenerationAsync(conn, tx, generation).ConfigureAwait(false);
                 await RequireCommitStateAsync(
                     conn,
                     tx,
@@ -1597,6 +1620,31 @@ WHERE key IN (
                 {
                     throw new InvalidOperationException("Catalog state previous mode mismatch.");
                 }
+            }
+        }
+
+        private static async Task RequireOnlineGenerationAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            Microsoft.Data.Sqlite.SqliteTransaction tx,
+            OnlineSyncGeneration generation)
+        {
+            if (generation == null)
+            {
+                var activeGeneration = await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM pos_sync_session_generation
+WHERE singleton_id = 1 AND active = 1;",
+                    transaction: tx).ConfigureAwait(false);
+                if (activeGeneration != 0)
+                    throw new InvalidOperationException("Online sync generation is required.");
+                return;
+            }
+            if (!await OnlineSyncGenerationRepository.IsCurrentAndActiveAsync(
+                conn,
+                tx,
+                generation).ConfigureAwait(false))
+            {
+                throw new InvalidOperationException("Online sync generation mismatch.");
             }
         }
 

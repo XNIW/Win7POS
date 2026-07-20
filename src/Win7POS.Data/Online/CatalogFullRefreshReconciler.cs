@@ -22,13 +22,15 @@ namespace Win7POS.Data.Online
             IEnumerable<string> supplierIds,
             string generatedAt,
             PosCatalogSummaryResponse summary,
-            CatalogExactnessRunContext context)
+            CatalogExactnessRunContext context,
+            OnlineSyncGeneration generation = null)
         {
             var audit = await ReconcileAsync(
                 productIds,
                 categoryIds,
                 supplierIds,
-                generatedAt).ConfigureAwait(false);
+                generatedAt,
+                generation).ConfigureAwait(false);
             return CatalogExactnessVerifier.Evaluate(summary, audit, context);
         }
 
@@ -36,7 +38,8 @@ namespace Win7POS.Data.Online
             IEnumerable<string> productIds,
             IEnumerable<string> categoryIds,
             IEnumerable<string> supplierIds,
-            string generatedAt)
+            string generatedAt,
+            OnlineSyncGeneration generation = null)
         {
             var products = CatalogIdSet.Create(productIds);
             var categories = CatalogIdSet.Create(categoryIds);
@@ -46,8 +49,21 @@ namespace Win7POS.Data.Online
                 : generatedAt.Trim();
 
             using (var conn = _factory.Open())
-            using (var tx = conn.BeginTransaction())
+            using (var tx = conn.BeginTransaction(deferred: false))
             {
+                var permitted = generation != null
+                    ? await OnlineSyncGenerationRepository.IsCurrentAndActiveAsync(
+                        conn,
+                        tx,
+                        generation).ConfigureAwait(false)
+                    : await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM pos_sync_session_generation
+WHERE singleton_id = 1 AND active = 1;",
+                        transaction: tx).ConfigureAwait(false) == 0;
+                if (!permitted)
+                    throw new InvalidOperationException("Online sync generation mismatch.");
+
                 await CreateAndFillAsync(conn, tx, "temp_full_product_ids", products.Values).ConfigureAwait(false);
                 await CreateAndFillAsync(conn, tx, "temp_full_category_ids", categories.Values).ConfigureAwait(false);
                 await CreateAndFillAsync(conn, tx, "temp_full_supplier_ids", suppliers.Values).ConfigureAwait(false);

@@ -179,21 +179,24 @@ VALUES('LIVE-SNAPSHOT', 3, 1200, 1200, 0, 0, '{""shop"":""live""}');");
         new SchemaMigrationRunner(
             candidateFactory,
             SchemaMigrationRegistry.All.Take(6)).Run();
-        var latest = SchemaMigrationRegistry.Latest;
+        var missingMigrations = SchemaMigrationRegistry.All.Skip(6).ToArray();
         using (var candidate = candidateFactory.Open())
         {
-            candidate.Execute(@"
+            foreach (var migration in missingMigrations)
+            {
+                candidate.Execute(@"
 INSERT INTO schema_migrations(
   migration_id, checksum, description, applied_at, app_version)
 VALUES(
   @MigrationId, @Checksum, @Description,
   '2026-07-19T00:00:00.0000000+00:00', '1.0.0');",
-                new
-                {
-                    latest.MigrationId,
-                    latest.Checksum,
-                    latest.Description
-                });
+                    new
+                    {
+                        migration.MigrationId,
+                        migration.Checksum,
+                        migration.Description
+                    });
+            }
         }
         SqliteConnectionFactory.ClearAllPools();
 

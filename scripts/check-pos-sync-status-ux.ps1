@@ -80,7 +80,9 @@ if ($catalogOutbox -notmatch "InProgress" -or $catalogOutbox -notmatch "PendingO
 if ($uxCopy -notmatch "Sync in corso" -or $reader -notmatch "IsSyncing" -or $salesSync -notmatch "pos\.sales_sync\.in_progress") { Fail "syncing status must be visible while background sync runs" } else { Pass "syncing status visible" }
 if ($salesSync -notmatch "Interlocked\.CompareExchange" -or $salesSync -notmatch "Sales sync skipped: already running") { Fail "sales sync service must guard concurrent runs" } else { Pass "sales sync concurrency guard present" }
 if ($salesSync -notmatch "pos\.sales_sync\.last_success_at" -or $salesSync -notmatch "pos\.sales_sync\.last_error") { Fail "sales sync diagnostics settings missing" } else { Pass "sales sync diagnostics settings present" }
-if ($posViewModel -notmatch "QueueSalesSyncAfterPayment" -or $posViewModel -match "await _service\.TrySyncPendingSalesAsync\(\)\.ConfigureAwait\(true\)") { Fail "payment path must queue sales sync without awaiting remote sync" } else { Pass "payment path queues sales sync without awaiting remote sync" }
+if ($workflow -notmatch 'InsertSaleAsync\([\s\S]{0,220}QueueSalesOutboxSyncNoThrow\(\)' -or
+    $workflow -notmatch 'QueueSalesOutboxSyncNoThrow[\s\S]{0,260}PosOnlineSyncSignalBus\.Signal\([\s\S]{0,120}OnlineSyncLane\.SalesOutbox,[\s\S]{0,100}OnlineSyncLaneTrigger\.LocalCommit' -or
+    $posViewModel -match "await _service\.TrySyncPendingSalesAsync\(\)\.ConfigureAwait\(true\)") { Fail "payment path must signal sales sync without awaiting remote sync" } else { Pass "payment path signals sales sync without awaiting remote sync" }
 if ($sales -notmatch "HasUnresolvedSalesSyncOutboxAsync" -or $workflow -notmatch "HasUnresolvedSalesSyncOutboxAsync" -or $workflow -notmatch "restore blocked") { Fail "restore must block when unresolved outbox rows exist" } else { Pass "restore blocks unresolved outbox rows" }
 if ($shopDialog -notmatch "SyncStatusText" -or $shopDialog -notmatch "PendingSalesText") { Fail "shop dialog must surface sync status details" } else { Pass "shop dialog sync details present" }
 if ($reader -notmatch "LoadExactnessAsync" -or $reader -notmatch "CatalogCompletenessText" -or $reader -notmatch "CatalogCountsText" -or $reader -notmatch "CatalogSyncModeText") { Fail "sync status must expose catalog exactness, local counts and sync mode" } else { Pass "catalog exactness diagnostics exposed" }
@@ -100,7 +102,7 @@ if ($reader -notmatch "EvaluateSaleSafetyForOfficialShopAsync" -or
     Pass "sync readiness uses the same reasoned sale-safety evaluation as ordinary-sale persistence"
 }
 if ($shopDialog -notmatch "CatalogCompletenessText" -or $shopDialog -notmatch "CatalogCountsText" -or $shopDialog -notmatch "CatalogRepairText" -or $shopDialog -notmatch "CatalogSyncModeText") { Fail "shop dialog must display catalog exactness diagnostics" } else { Pass "shop dialog displays catalog exactness diagnostics" }
-if ($workflow -notmatch "RepairCatalogAsync" -or $workflow -notmatch "TryRepairCatalogAsync") { Fail "workflow must expose authoritative full catalog repair" } else { Pass "workflow exposes authoritative full catalog repair" }
+if ($workflow -notmatch 'RepairCatalogAsync[\s\S]{0,700}PosOnlineSyncSignalBus\.TriggerAsync\([\s\S]{0,140}OnlineSyncLane\.CatalogDelta,[\s\S]{0,120}OnlineSyncLaneTrigger\.AdministratorRepair') { Fail "workflow must expose supervised authoritative full catalog repair" } else { Pass "workflow exposes supervised authoritative full catalog repair" }
 if ($syncCenter -notmatch 'x:Class="Win7POS\.Wpf\.Pos\.Dialogs\.SyncCenterDialog"' -or
     $syncCenter -notmatch 'WindowStartupLocation="CenterOwner"' -or
     $syncCenter -notmatch 'DialogFooterMargin' -or

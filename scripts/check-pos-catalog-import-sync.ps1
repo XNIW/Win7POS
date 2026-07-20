@@ -27,6 +27,7 @@ $reconciliation = Read-Text "src/Win7POS.Data/Online/CatalogImportReconciliation
 $service = Read-Text "src/Win7POS.Data/Online/CatalogImportSyncService.cs"
 $cli = Read-Text "src/Win7POS.Cli/Program.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
 
 Require "catalog import endpoint path present" $client "/api/pos/catalog/import-sync"
 Require "catalog import client method present" $client "CatalogImportAsync"
@@ -83,7 +84,7 @@ Require "CLI catalog import sync HTTP harness flag present" $cli "--catalog-impo
 Require "CLI fake HTTP server present" $cli "CatalogImportFakeServer"
 Require "CLI fake server emits idempotency key" $cli "IdempotencyKeyFromBody"
 Require "CLI harness asserts remote ids saved" $cli "ReadProductRemoteProductIdAsync[\s\S]*ReadLatestRemotePriceIdAsync"
-Require "WPF background catalog import sync wired" $mainWindow "TrySyncCatalogImportOutboxAsync"
+Require "WPF background catalog import lane wired" $syncHost "RunCatalogImportAsync[\s\S]{0,900}CatalogImportSyncService[\s\S]{0,300}SyncPendingAsync[\s\S]{0,500}context\.Generation[\s\S]{0,300}requestCatalogNow:\s*result\.Acked\s*>\s*0"
 
 if ($fail) {
     Write-Host "`n=== RESULT: FAIL ===" -ForegroundColor Red

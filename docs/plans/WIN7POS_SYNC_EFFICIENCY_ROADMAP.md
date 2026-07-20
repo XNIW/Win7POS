@@ -27,6 +27,21 @@ supply-chain item) are explicitly deferred to follow-up PRs; none requires
 widening PR-B. PR #7 closed former `P1-REL-02`: an explicitly requested local
 installer build now fails closed when the compiler or exact output is missing.
 
+## Delivery update — 2026-07-19
+
+- PR #6 (migration foundation) merged normally as `ea85d91`.
+- SYNC-1 merged through PR #8 as `6d9a9e0`, closing the pagination,
+  revision-compatibility and typed-drain prerequisites described in sections A
+  and B.
+- `P1-SYNC-01` and `P1-SYNC-02` are implemented on the separate SYNC-2 branch
+  with a generation-scoped four-lane supervisor, shared auth-stop, stale-write
+  fences and start-of-day reuse. They become `DONE_MERGED` only after exact-head
+  CI, release validation and the normal PR merge complete.
+- `P1-PERF-01` and `P1-PERF-02` remain assigned to the separate PERF-1 branch;
+  no transport or catalog-apply optimization is folded into SYNC-2.
+- Composite supply-chain item `P1-REL-01` remains an independent repository-wide
+  release-hardening follow-up and is not silently reclassified by sync delivery.
+
 ## A — Additive Admin heartbeat contract
 
 Add optional fields to `PosHeartbeatResponse`:

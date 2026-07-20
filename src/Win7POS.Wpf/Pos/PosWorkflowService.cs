@@ -92,7 +92,6 @@ namespace Win7POS.Wpf.Pos
         private readonly PosDbOptions _options;
         private readonly SqliteConnectionFactory _factory;
         private readonly IReceiptPrinter _receiptPrinter = new WindowsSpoolerReceiptPrinter();
-        private int _backgroundSalesSyncQueued;
 
         private SaleCompleted _lastCompletedSale;
 
@@ -332,9 +331,25 @@ namespace Win7POS.Wpf.Pos
                 throw new FileNotFoundException("Backup file not found.", backupDbPath);
 
             await _gate.WaitAsync().ConfigureAwait(false);
+            IDisposable authorizationMaintenanceLease = null;
             IDisposable catalogTransitionLease = null;
+            var syncSupervisorStopAttempted = false;
+            var restoreInstalled = false;
+            PosTrustedDeviceStore trustedDeviceStore = null;
+            OnlineSyncGeneration invalidatedGeneration = null;
             try
             {
+                authorizationMaintenanceLease =
+                    PosOnlineSyncRevocationLatch.EnterAuthorizationMaintenance();
+                syncSupervisorStopAttempted = true;
+                await PosOnlineSyncSignalBus.StopAsync().ConfigureAwait(false);
+                trustedDeviceStore = new PosTrustedDeviceStore();
+                if (trustedDeviceStore.TryRead(out var trustedSession))
+                {
+                    PosOnlineSyncSupervisorHost.TryCreateGeneration(
+                        trustedSession,
+                        out invalidatedGeneration);
+                }
                 catalogTransitionLease = await new CatalogShopTransitionBarrier(_factory)
                     .EnterAsync()
                     .ConfigureAwait(false);
@@ -451,6 +466,13 @@ namespace Win7POS.Wpf.Pos
                                         integrity + " / FK: " + foreignKeys));
                                 }
 
+                                await new OnlineSyncGenerationRepository(_factory)
+                                    .ResetForRestoreAsync(
+                                        invalidatedGeneration,
+                                        currentShop.ShopId,
+                                        currentShop.ShopCode,
+                                        restoredAt.ToUnixTimeMilliseconds())
+                                    .ConfigureAwait(false);
                                 await catalogState
                                     .ResetForRestoreReviewWhileBarrierHeldAsync(
                                         currentShop.ShopId,
@@ -474,8 +496,25 @@ namespace Win7POS.Wpf.Pos
                                     DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                                     AuditActions.DbRestore,
                                     details).ConfigureAwait(false);
+
+                                // This is deliberately the final non-throwing
+                                // post-swap action. Every pre-restore synchronous
+                                // authorization cache is invalid from this point.
+                                PosOnlineSyncRevocationLatch
+                                    .InvalidateAuthorizationState();
                             }).ConfigureAwait(false);
                     }).ConfigureAwait(false);
+                    restoreInstalled = true;
+
+                    PosOnlineSyncRevocationLatch.Revoke(invalidatedGeneration);
+                    trustedDeviceStore.Clear();
+                    if (trustedDeviceStore.HasStoredState())
+                    {
+                        _logger.LogWarning(
+                            "POS DB restore left a stale trusted-session file; " +
+                            "the authorization epoch and inactive generation " +
+                            "tombstone keep it denied.");
+                    }
 
                     _logger.LogWarning("POS DB restored; sync review required. backupFile=" + Path.GetFileName(backupDbPath) + " preBackupFile=" + Path.GetFileName(preBackupPath));
                     return new DbRestoreResult
@@ -503,6 +542,32 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 catalogTransitionLease?.Dispose();
+                if (syncSupervisorStopAttempted)
+                {
+                    try
+                    {
+                        if (restoreInstalled)
+                        {
+                            await PosOnlineSyncSignalBus
+                                .ExitMaintenanceWithoutResumeAsync()
+                                .ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            authorizationMaintenanceLease?.Dispose();
+                            authorizationMaintenanceLease = null;
+                            await PosOnlineSyncSignalBus.ResumeAsync()
+                                .ConfigureAwait(false);
+                        }
+                    }
+                    catch (Exception resumeEx)
+                    {
+                        _logger.LogWarning(
+                            "POS sync supervisor maintenance exit was deferred.",
+                            resumeEx);
+                    }
+                }
+                authorizationMaintenanceLease?.Dispose();
                 _gate.Release();
             }
         }
@@ -619,7 +684,10 @@ namespace Win7POS.Wpf.Pos
 
         public Task TrySyncPendingSalesAsync()
         {
-            return TrySyncSalesOutboxNoThrowAsync();
+            return PosOnlineSyncSignalBus.TriggerAsync(
+                OnlineSyncLane.SalesOutbox,
+                OnlineSyncLaneTrigger.LocalCommit,
+                CancellationToken.None);
         }
 
         public async Task<string> ExportDailyCsvAsync(DateTime date)
@@ -1074,6 +1142,7 @@ namespace Win7POS.Wpf.Pos
                 sale.ReceiptShopSnapshotJson = SerializeReceiptShopSnapshot(shop);
                 var saleId = await _sales.InsertSaleAsync(sale, saleLines).ConfigureAwait(false);
                 sale.Id = saleId;
+                QueueSalesOutboxSyncNoThrow();
 
                 var completed = new SaleCompleted(sale, saleLines);
                 _lastCompletedSale = completed;
@@ -1796,18 +1865,23 @@ namespace Win7POS.Wpf.Pos
             await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                if (!PosAdminWebOptions.TryLoad(out var options, out _))
-                {
-                    return PosCatalogPullOutcome.Failure(
-                        "pos_admin_web_configuration_missing",
-                        authDenied: false,
-                        hasMore: false,
-                        pagesProcessed: 0);
-                }
-
-                return await new PosCatalogPullService(_factory)
-                    .TryRepairCatalogAsync(options, cancellationToken, progress)
-                    .ConfigureAwait(false);
+                progress?.Report(PosCatalogPullProgress.ForPhase("catalog"));
+                var lane = await PosOnlineSyncSignalBus.TriggerAsync(
+                    OnlineSyncLane.CatalogDelta,
+                    OnlineSyncLaneTrigger.AdministratorRepair,
+                    cancellationToken).ConfigureAwait(false);
+                var saleSafe = await PosCatalogPullService
+                    .IsCatalogSaleSafeAsync(_factory).ConfigureAwait(false);
+                return lane.Success && !lane.CatalogHasMore && saleSafe
+                    ? PosCatalogPullOutcome.CompletedOk(
+                        lane.CatalogPagesProcessed,
+                        productsApplied: lane.CatalogRowsApplied)
+                    : PosCatalogPullOutcome.Failure(
+                        lane.Code,
+                        lane.AuthenticationDenied,
+                        lane.CatalogHasMore,
+                        lane.CatalogPagesProcessed,
+                        productsApplied: lane.CatalogRowsApplied);
             }
             finally
             {
@@ -2111,55 +2185,12 @@ namespace Win7POS.Wpf.Pos
             return BuildReceiptPreview(completed, use42, shop);
         }
 
-        private async Task TrySyncSalesOutboxNoThrowAsync()
-        {
-            if (App.IsSafeStart)
-            {
-                _logger.LogInfo("POS sales sync skipped: safe-start");
-                return;
-            }
-
-            try
-            {
-                if (!PosAdminWebOptions.TryLoad(out var options, out _))
-                {
-                    return;
-                }
-
-                var syncService = new PosSalesSyncService(_factory);
-                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)))
-                {
-                    await syncService.TrySyncPendingAsync(options, cts.Token).ConfigureAwait(false);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning("POS sales sync skipped: timeout.");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning("POS sales sync skipped.", ex);
-            }
-        }
-
         private void QueueSalesOutboxSyncNoThrow()
         {
-            if (Interlocked.CompareExchange(ref _backgroundSalesSyncQueued, 1, 0) != 0)
-            {
-                return;
-            }
-
-            Task.Run(async () =>
-            {
-                try
-                {
-                    await TrySyncSalesOutboxNoThrowAsync().ConfigureAwait(false);
-                }
-                finally
-                {
-                    Interlocked.Exchange(ref _backgroundSalesSyncQueued, 0);
-                }
-            });
+            if (App.IsSafeStart) return;
+            PosOnlineSyncSignalBus.Signal(
+                OnlineSyncLane.SalesOutbox,
+                OnlineSyncLaneTrigger.LocalCommit);
         }
 
         private async Task<PosPrinterSettings> ReadPrinterSettingsNoLockAsync()

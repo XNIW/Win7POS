@@ -19,4 +19,9 @@
     <ProjectReference Include="..\..\src\Win7POS.Data\Win7POS.Data.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\src\Win7POS.Wpf\Pos\Online\PosOnlineSyncSignalBus.cs"
+             Link="WpfSource\PosOnlineSyncSignalBus.cs" />
+  </ItemGroup>
+
 </Project>

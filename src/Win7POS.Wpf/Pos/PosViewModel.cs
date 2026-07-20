@@ -908,7 +908,6 @@ namespace Win7POS.Wpf.Pos
                 if (!fiscalBoletaPrinted && vm.AutoPrintFiscalBoleta && vm.CardAmountMinor > 0 && vm.CashAmountMinor == 0)
                     SetStatus(PosLocalization.Current.Format("pos.status.paymentOkCardOnly", result.SaleCode), PosNoticeSeverity.Warning);
 
-                QueueSalesSyncAfterPayment();
                 await LoadRecentSalesAsync().ConfigureAwait(true);
             }
             catch (PosException ex)
@@ -928,21 +927,6 @@ namespace Win7POS.Wpf.Pos
                 IsBusy = false;
                 RequestFocusBarcode();
             }
-        }
-
-        private void QueueSalesSyncAfterPayment()
-        {
-            Task.Run(async () =>
-            {
-                try
-                {
-                    await _service.TrySyncPendingSalesAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning("POS sales sync after payment skipped.", ex);
-                }
-            });
         }
 
         private async Task TryAutoOpenDrawerAfterPaymentAsync(PaymentViewModel vm)

@@ -8,7 +8,10 @@ namespace Win7POS.Wpf.Pos.Online
 {
     internal static class PosOnlineShopSnapshot
     {
-        public static Task SaveAsync(SqliteConnectionFactory factory, PosShopResponse shop)
+        public static Task SaveAsync(
+            SqliteConnectionFactory factory,
+            PosShopResponse shop,
+            OnlineSyncGeneration generation = null)
         {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
             if (shop == null)
@@ -33,7 +36,7 @@ namespace Win7POS.Wpf.Pos.Online
                 UpdatedAt = shop.UpdatedAt
             };
 
-            return new ShopOfficialSnapshotRepository(factory).SaveAsync(snapshot);
+            return new ShopOfficialSnapshotRepository(factory).SaveAsync(snapshot, generation);
         }
     }
 }

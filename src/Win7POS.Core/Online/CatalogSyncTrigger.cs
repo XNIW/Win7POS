@@ -27,6 +27,7 @@ namespace Win7POS.Core.Online
         AuthenticationDenied = 4,
         UnsupportedContract = 5,
         DatabaseIntegrityFailed = 6,
-        OperatorCancelled = 7
+        OperatorCancelled = 7,
+        TerminalPaginationAmbiguous = 8
     }
 }

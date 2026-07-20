@@ -28,9 +28,13 @@ $required = @(
     "src/Win7POS.Wpf/Pos/PosWorkflowService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSignalBus.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncRevocationLatch.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs",
     "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceViewModel.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
     "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs",
     "src/Win7POS.Data/Online/AtomicRestoreInstaller.cs",
@@ -38,7 +42,9 @@ $required = @(
     "src/Win7POS.Data/Repositories/DbMaintenanceRepository.cs",
     "src/Win7POS.Data/SqliteConnectionFactory.cs",
     "tests/Win7POS.Core.Tests/Data/PersistenceFoundationTests.cs",
-    "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs"
+    "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs",
+    "tests/Win7POS.Core.Tests/Online/PosOnlineSyncSignalBusTests.cs",
+    "tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj"
 )
 
 foreach ($path in $required) {
@@ -65,8 +71,14 @@ $onlineBackup = Read-Text "src/Win7POS.Data/Backup/SqliteOnlineBackup.cs"
 $connectionFactory = Read-Text "src/Win7POS.Data/SqliteConnectionFactory.cs"
 $persistenceTests = Read-Text "tests/Win7POS.Core.Tests/Data/PersistenceFoundationTests.cs"
 $connectionPolicyTests = Read-Text "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs"
+$syncSignalBusTests = Read-Text "tests/Win7POS.Core.Tests/Online/PosOnlineSyncSignalBusTests.cs"
+$testProject = Read-Text "tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $maintenanceDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml.cs"
+$maintenanceViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceViewModel.cs"
+$syncSignalBus = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSignalBus.cs"
+$revocationLatch = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncRevocationLatch.cs"
+$syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
 $combined = Get-ChildItem -Path (Join-Path $repoRoot "src") -Recurse -File -Include *.cs,*.xaml |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) } |
@@ -107,6 +119,155 @@ if ($outboxCheck -gt $candidateValidation -or
     Fail "restore guard order must be preliminary validation -> connection fence -> authoritative live/candidate validation -> verified pre-backup -> atomic install -> migrations -> validation -> sync-review flag"
 } else {
     Pass "restore guard order is safe"
+}
+
+$authorizationMaintenance = Index-OrFail $restoreBody "EnterAuthorizationMaintenance" "restore must enter authorization maintenance"
+$syncStop = Index-OrFail $restoreBody "PosOnlineSyncSignalBus.StopAsync" "restore must stop the sync host"
+$trustedCapture = Index-OrFail $restoreBody "trustedDeviceStore.TryRead" "restore must capture the invalidated trust only after stop"
+$catalogBarrier = Index-OrFail $restoreBody "new CatalogShopTransitionBarrier" "restore must acquire the catalog transition barrier"
+$generationTombstone = Index-OrFail $restoreBody ".ResetForRestoreAsync(" "restore must install an inactive generation tombstone"
+$catalogReviewReset = Index-OrFail $restoreBody ".ResetForRestoreReviewWhileBarrierHeldAsync(" "restore must reset catalog review state"
+$restoreAudit = Index-OrFail $restoreBody "_audit.AppendAsync(" "restore must persist its audit record"
+$authorizationInvalidate = Index-OrFail $restoreBody ".InvalidateAuthorizationState();" "restore must invalidate process authorization state"
+$installedMarker = Index-OrFail $restoreBody "restoreInstalled = true" "restore success marker missing"
+$generationRevoke = Index-OrFail $restoreBody "PosOnlineSyncRevocationLatch.Revoke(invalidatedGeneration)" "restore must latch the invalidated generation"
+$trustedClear = Index-OrFail $restoreBody "trustedDeviceStore.Clear()" "restore must clear all persisted trust"
+if ($authorizationMaintenance -gt $syncStop -or $syncStop -gt $trustedCapture -or
+    $trustedCapture -gt $catalogBarrier -or $catalogBarrier -gt $generationTombstone -or
+    $generationTombstone -gt $catalogReviewReset -or $catalogReviewReset -gt $restoreAudit -or
+    $restoreAudit -gt $authorizationInvalidate -or $authorizationInvalidate -gt $installedMarker -or
+    $installedMarker -gt $generationRevoke -or $generationRevoke -gt $trustedClear) {
+    Fail "restore auth boundary must be maintenance -> stop -> capture -> barrier -> tombstone/review/audit -> epoch -> revoke/clear"
+} else {
+    Pass "restore authorization boundary is ordered and fail-closed"
+}
+
+$successBranch = $restoreBody.IndexOf("if (restoreInstalled)", [System.StringComparison]::Ordinal)
+$noResumeExit = $restoreBody.IndexOf("ExitMaintenanceWithoutResumeAsync", [System.StringComparison]::Ordinal)
+$failedLeaseDispose = if ($noResumeExit -ge 0) {
+    $restoreBody.IndexOf("authorizationMaintenanceLease?.Dispose()", $noResumeExit, [System.StringComparison]::Ordinal)
+} else { -1 }
+$failedResume = $restoreBody.IndexOf("PosOnlineSyncSignalBus.ResumeAsync", [System.StringComparison]::Ordinal)
+$finalLeaseDispose = $restoreBody.LastIndexOf("authorizationMaintenanceLease?.Dispose()", [System.StringComparison]::Ordinal)
+$restoreGateRelease = $restoreBody.LastIndexOf("_gate.Release()", [System.StringComparison]::Ordinal)
+if ($successBranch -lt 0 -or $noResumeExit -le $successBranch -or
+    $failedLeaseDispose -le $noResumeExit -or $failedResume -le $failedLeaseDispose -or
+    $finalLeaseDispose -le $failedResume -or $restoreGateRelease -le $finalLeaseDispose) {
+    Fail "successful restore must suppress resume and failed restore must release auth maintenance before resume"
+} else {
+    Pass "restore success suppresses resume while failure can safely resume"
+}
+
+$signalStart = $syncSignalBus.IndexOf("public static void Signal(", [System.StringComparison]::Ordinal)
+$triggerStart = $syncSignalBus.IndexOf("public static Task<OnlineSyncLaneOutcome> TriggerAsync", [System.StringComparison]::Ordinal)
+$stopStart = $syncSignalBus.IndexOf("public static async Task StopAsync()", [System.StringComparison]::Ordinal)
+$resumeStart = $syncSignalBus.IndexOf("public static async Task ResumeAsync", [System.StringComparison]::Ordinal)
+$exitStart = $syncSignalBus.IndexOf("public static async Task ExitMaintenanceWithoutResumeAsync", [System.StringComparison]::Ordinal)
+$endStart = $syncSignalBus.IndexOf("private static async Task EndMaintenanceAsync", [System.StringComparison]::Ordinal)
+$pauseStart = $syncSignalBus.IndexOf("private static async Task PauseRegistrationDuringMaintenanceAsync", [System.StringComparison]::Ordinal)
+if ($signalStart -lt 0 -or $triggerStart -le $signalStart -or $stopStart -le $triggerStart -or
+    $resumeStart -le $stopStart -or $exitStart -le $resumeStart -or
+    $endStart -le $exitStart -or $pauseStart -le $endStart) {
+    Fail "sync maintenance bus method boundaries are missing"
+} else {
+    $signalBody = $syncSignalBus.Substring($signalStart, $triggerStart - $signalStart)
+    $triggerBody = $syncSignalBus.Substring($triggerStart, $stopStart - $triggerStart)
+    $stopBody = $syncSignalBus.Substring($stopStart, $resumeStart - $stopStart)
+    $exitBody = $syncSignalBus.Substring($exitStart, $endStart - $exitStart)
+    $endBody = $syncSignalBus.Substring($endStart, $pauseStart - $endStart)
+    $pauseEnd = $syncSignalBus.IndexOf("private sealed class Registration", [System.StringComparison]::Ordinal)
+    $pauseBody = if ($pauseEnd -gt $pauseStart) {
+        $syncSignalBus.Substring($pauseStart, $pauseEnd - $pauseStart)
+    } else { "" }
+    $captureStopHandler = $stopBody.IndexOf("stopHandler = _registration?.StopHandler", [System.StringComparison]::Ordinal)
+    $invokeOutsideGate = $stopBody.IndexOf("stopHandler()", [System.StringComparison]::Ordinal)
+    $publishSharedStop = $stopBody.IndexOf("_maintenanceStopTask = stopTask", [System.StringComparison]::Ordinal)
+    $awaitSharedStop = $stopBody.IndexOf("await stopTask", [System.StringComparison]::Ordinal)
+    $nestedDepth = $endBody.IndexOf("if (_maintenanceDepth > 0)", [System.StringComparison]::Ordinal)
+    $decrementDepth = if ($nestedDepth -ge 0) {
+        $endBody.IndexOf("_maintenanceDepth--", $nestedDepth, [System.StringComparison]::Ordinal)
+    } else { -1 }
+    $nestedReturn = if ($decrementDepth -ge 0) {
+        $endBody.IndexOf("return", $decrementDepth, [System.StringComparison]::Ordinal)
+    } else { -1 }
+    $awaitResume = $endBody.IndexOf("await handler(cancellationToken)", [System.StringComparison]::Ordinal)
+    $successfulPendingReset = if ($awaitResume -ge 0) {
+        $endBody.IndexOf("_resumePending = false", $awaitResume, [System.StringComparison]::Ordinal)
+    } else { -1 }
+    if ($signalBody -notmatch '_maintenanceDepth\s*>\s*0\s*\|\|\s*_resumePending[\s\S]{0,100}\?\s*null' -or
+        $triggerBody -notmatch '_maintenanceDepth\s*>\s*0\s*\|\|\s*_resumePending[\s\S]{0,220}"sync_maintenance_active"[\s\S]{0,100}terminal:\s*true' -or
+        $stopBody -notmatch '_maintenanceDepth\+\+' -or
+        $stopBody -notmatch '_maintenanceDepth\s*>\s*1[\s\S]{0,120}stopTask\s*=\s*_maintenanceStopTask' -or
+        $stopBody -notmatch '_resumePending\s*=\s*false[\s\S]{0,180}stopHandler\s*=\s*_registration\?\.StopHandler' -or
+        $stopBody -notmatch 'MaintenanceTransitionGate\.WaitAsync[\s\S]*MaintenanceTransitionGate\.Release' -or
+        $captureStopHandler -lt 0 -or $invokeOutsideGate -le $captureStopHandler -or
+        $publishSharedStop -le $invokeOutsideGate -or $awaitSharedStop -le $publishSharedStop -or
+        $exitBody -notmatch 'resume:\s*false' -or
+        $nestedDepth -lt 0 -or $decrementDepth -le $nestedDepth -or
+        $nestedReturn -le $decrementDepth -or
+        $endBody -notmatch 'MaintenanceTransitionGate\.WaitAsync[\s\S]*MaintenanceTransitionGate\.Release' -or
+        $endBody -notmatch '_maintenanceDepth\s*<=\s*0\s*&&\s*!_resumePending' -or
+        $endBody -notmatch 'if\s*\(!resume\)[\s\S]{0,100}_resumeSuppressed\s*=\s*true' -or
+        $endBody -notmatch 'resume\s*&&\s*!_resumeSuppressed' -or
+        $endBody -notmatch 'if\s*\(handler\s*==\s*null\)[\s\S]{0,220}_resumePending\s*=\s*false[\s\S]{0,220}return' -or
+        $endBody -notmatch '_resumePending\s*=\s*true[\s\S]{0,400}await\s+handler\(cancellationToken\)' -or
+        $awaitResume -lt 0 -or $successfulPendingReset -le $awaitResume -or
+        $endBody -notmatch 'retry marker without corrupting nested-scope depth' -or
+        $syncSignalBusTests -notmatch 'FailedResume_RemainsInMaintenanceAndSecondResumeRetries' -or
+        $syncSignalBusTests -notmatch 'NestedNoResume_SuppressesTheFinalResumeHandler' -or
+        $syncSignalBusTests -notmatch 'FailedResume_ThenSuccessfulRestoreClearsPendingWithoutRestart' -or
+        $syncSignalBusTests -notmatch 'FailedResume_DirectNoResumeExitCancelsPendingRetry' -or
+        $testProject -notmatch 'PosOnlineSyncSignalBus\.cs' -or
+        $syncSignalBus -notmatch 'pauseForMaintenance\s*=\s*_maintenanceDepth\s*>\s*0\s*\|\|\s*_resumePending[\s\S]{0,180}PauseRegistrationDuringMaintenanceAsync' -or
+        $pauseBody -notmatch 'MaintenanceTransitionGate\.WaitAsync[\s\S]*MaintenanceTransitionGate\.Release' -or
+        $pauseBody -notmatch 'lock\s*\(Gate\)[\s\S]{0,180}_maintenanceDepth\s*<=\s*0\s*&&\s*!_resumePending[\s\S]{0,180}!ReferenceEquals\(_registration,\s*registration\)' -or
+        $pauseBody -notmatch 'await\s+registration\.StopHandler\(\)') {
+        Fail "sync maintenance bus must suppress traffic, nest stops and honor no-resume"
+    } else {
+        Pass "sync maintenance bus suppresses traffic and nests stop/resume safely"
+    }
+}
+
+$vmRestoreStart = $maintenanceViewModel.IndexOf("private async Task RestoreBackupAsync()", [System.StringComparison]::Ordinal)
+$vmRestoreEnd = $maintenanceViewModel.IndexOf("private async Task IntegrityCheckAsync()", [System.StringComparison]::Ordinal)
+$vmRestoreBody = if ($vmRestoreStart -ge 0 -and $vmRestoreEnd -gt $vmRestoreStart) {
+    $maintenanceViewModel.Substring($vmRestoreStart, $vmRestoreEnd - $vmRestoreStart)
+} else { "" }
+$vmRestoreCall = $vmRestoreBody.IndexOf("RestoreDbAsync", [System.StringComparison]::Ordinal)
+$vmAudit = $vmRestoreBody.IndexOf("LogSecurityEvent", [System.StringComparison]::Ordinal)
+$vmLogout = $vmRestoreBody.IndexOf("LogoutForced", [System.StringComparison]::Ordinal)
+$vmCatch = $vmRestoreBody.IndexOf("catch (Exception ex)", [System.StringComparison]::Ordinal)
+if ($vmRestoreCall -lt 0 -or $vmAudit -le $vmRestoreCall -or
+    $vmLogout -le $vmAudit -or $vmCatch -le $vmLogout) {
+    Fail "successful restore must audit then force logout before returning control"
+} else {
+    Pass "successful restore audits and forces logout"
+}
+
+$registrationStart = $mainWindow.IndexOf("PosOnlineSyncSignalBus.Register(", [System.StringComparison]::Ordinal)
+$registrationEnd = $mainWindow.IndexOf("await LoadLanguagePreferenceAsync", [System.StringComparison]::Ordinal)
+$registrationBody = if ($registrationStart -ge 0 -and $registrationEnd -gt $registrationStart) {
+    $mainWindow.Substring($registrationStart, $registrationEnd - $registrationStart)
+} else { "" }
+$hostStop = $registrationBody.IndexOf(".StopAsync()", [System.StringComparison]::Ordinal)
+$hadGeneration = $registrationBody.IndexOf("stoppedState.HadGeneration", [System.StringComparison]::Ordinal)
+$wasContinuous = $registrationBody.IndexOf("stoppedState.WasContinuous", [System.StringComparison]::Ordinal)
+$resumeRead = $registrationBody.IndexOf("Interlocked.CompareExchange", [System.StringComparison]::Ordinal)
+$attachTrust = $registrationBody.IndexOf("AttachCurrentTrustAsync(token)", [System.StringComparison]::Ordinal)
+$continuousStart = $registrationBody.IndexOf("StartContinuous()", [System.StringComparison]::Ordinal)
+$resumeCatch = $registrationBody.IndexOf("catch", $continuousStart, [System.StringComparison]::Ordinal)
+$resumeRearm = if ($resumeCatch -ge 0) {
+    $registrationBody.IndexOf("_onlineSyncMaintenanceResumeRequested", $resumeCatch, [System.StringComparison]::Ordinal)
+} else { -1 }
+if ($hostStop -lt 0 -or $hadGeneration -le $hostStop -or
+    $wasContinuous -le $hadGeneration -or $resumeRead -le $wasContinuous -or
+    $attachTrust -le $resumeRead -or $continuousStart -le $attachTrust -or
+    $resumeCatch -le $continuousStart -or $resumeRearm -le $resumeCatch -or
+    $registrationBody -notmatch 'shouldResume\s*\?\s*1\s*:\s*0' -or
+    $registrationBody.Substring($resumeCatch) -notmatch '_onlineSyncMaintenanceResumeRequested,[\s\S]{0,80}1') {
+    Fail "MainWindow maintenance resume must use actual stop state and re-arm after failure"
+} else {
+    Pass "MainWindow maintenance resume is stateful and retry-safe"
 }
 
 if ($connectionFactory -notmatch "RunExclusiveMaintenanceAsync" -or
@@ -250,8 +411,9 @@ if ($backupBody -notmatch "_onlineBackup\.CreateVerifiedAsync\(outputPath\)" -or
 
 if ($startOfDay -notmatch "RestoreNeedsReviewSettingKey" -or
     $startOfDay -notmatch "restore_needs_review" -or
-    $startOfDay -notmatch "RunRestoreReconciliationAsync" -or
-    $startOfDay -notmatch "CompleteReviewAsync" -or
+    $startOfDay -notmatch "RunStartOfDayAsync\(\s*result\.RestoreNeedsReview" -or
+    $startOfDay -notmatch "catalogComplete\s*=\s*!catalogRequired\s*\|\|[\s\S]{0,240}catalogLane\?\.Success\s*==\s*true\s*&&\s*catalogLane\.CatalogHasMore\s*==\s*false" -or
+    $startOfDay -notmatch "if\s*\(result\.RestoreNeedsReview\)[\s\S]{0,700}!catalogComplete\s*\|\|\s*!result\.CatalogSaleSafe[\s\S]{0,600}CompleteReviewAsync" -or
     $mainWindow -notmatch "ShowRestoreReviewRecoveryAsync" -or
     $maintenanceDialog -notmatch "restoreReviewOnly") {
     Fail "start-of-day must expose a restricted restore reconciliation/review path before MainWindow closes"

@@ -16,20 +16,36 @@ namespace Win7POS.Wpf.Pos.Dialogs
     public partial class PosStartOfDaySyncDialog : DialogShellWindow
     {
         private readonly SqliteConnectionFactory _factory;
+        private readonly bool _ownsSyncHost;
+        private readonly PosOnlineSyncSupervisorHost _syncHost;
         private CancellationTokenSource _activeCts;
         private bool _running;
         private bool _userCancelling;
 
         public PosStartOfDaySyncDialog()
-            : this(new SqliteConnectionFactory(PosDbOptions.Default()))
+            : this(new SqliteConnectionFactory(PosDbOptions.Default()), null)
         {
         }
 
         public PosStartOfDaySyncDialog(SqliteConnectionFactory factory)
+            : this(factory, null)
+        {
+        }
+
+        public PosStartOfDaySyncDialog(
+            SqliteConnectionFactory factory,
+            PosOnlineSyncSupervisorHost syncHost)
         {
             InitializeComponent();
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
+            _syncHost = syncHost ?? new PosOnlineSyncSupervisorHost(_factory);
+            _ownsSyncHost = syncHost == null;
             ContentRendered += OnContentRendered;
+            Closed += (_, __) =>
+            {
+                if (_ownsSyncHost)
+                    _syncHost.Dispose();
+            };
             ApplyAuthenticatedAccessStatus();
             ResetSteps();
         }
@@ -63,7 +79,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 using (_activeCts = new CancellationTokenSource(PosStartOfDaySyncService.StartOfDayTotalTimeout))
                 {
                     var progress = new Progress<PosStartOfDaySyncProgress>(UpdateProgress);
-                    Result = await new PosStartOfDaySyncService(_factory)
+                    Result = await new PosStartOfDaySyncService(_factory, _syncHost)
                         .RunAsync(progress, _activeCts.Token)
                         .ConfigureAwait(true);
                 }
