@@ -39,7 +39,7 @@ namespace Win7POS.Wpf.Import
             ISupplierExcelFileDialogService fileDialogService = null,
             ISupplierExcelCompletionDialogService completionDialogService = null)
         {
-            _service = service ?? new SupplierExcelImportWorkflowService();
+            _service = service ?? new SupplierExcelImportWorkflowService(() => false);
             _fileDialogService = fileDialogService ?? new SupplierExcelFileDialogService();
             _completionDialogService = completionDialogService ?? new SupplierExcelCompletionDialogService();
             InitializeSyncViews();

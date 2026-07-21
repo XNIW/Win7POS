@@ -31,6 +31,8 @@ public sealed class CatalogHeartbeatPolicyTests
         Assert.IsFalse(Evaluate(null, null, "revision-7").ShouldSkipCatalogPull);
         Assert.IsFalse(Evaluate("revision-7", true, "revision-7").ShouldSkipCatalogPull);
         Assert.IsFalse(Evaluate("bad\u0001revision", false, "bad\u0001revision").ShouldSkipCatalogPull);
+        Assert.IsFalse(Evaluate("bad\uD800revision", false, "bad\uD800revision").ShouldSkipCatalogPull);
+        Assert.IsFalse(Evaluate("bad\uDC00revision", false, "bad\uDC00revision").ShouldSkipCatalogPull);
         Assert.IsFalse(Evaluate(new string('a', 129), false, new string('a', 129)).ShouldSkipCatalogPull);
     }
 

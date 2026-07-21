@@ -4,6 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core.Models;
 using Win7POS.Core.Online;
+using Win7POS.Core.Receipt;
 using Win7POS.Data;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
@@ -546,6 +547,26 @@ namespace Win7POS.Wpf.Pos.Online
                     run,
                     SyncFailureKind.PermanentRemote,
                     fence).ConfigureAwait(false);
+                return false;
+            }
+
+            try
+            {
+                ReceiptShopMetadataPolicy.EnsureValidRemoteShop(result.Value.Shop);
+            }
+            catch (ReceiptContentValidationException ex)
+            {
+                await MarkBlockedAsync(
+                    item,
+                    "response_shop_metadata_invalid",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    preparedAttempt,
+                    run,
+                    SyncFailureKind.PermanentRemote,
+                    fence).ConfigureAwait(false);
+                _logger.LogWarning(
+                    "Sales sync shop metadata rejected: category=sales.sync code=" +
+                    SafeCode(ex.Code) + " field=" + SafeCode(ex.Field));
                 return false;
             }
 

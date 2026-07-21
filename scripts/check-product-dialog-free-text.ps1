@@ -4,6 +4,7 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $xamlPath = Join-Path $repoRoot "src/Win7POS.Wpf/Products/ProductEditDialog.xaml"
 $viewModelPath = Join-Path $repoRoot "src/Win7POS.Wpf/Products/ProductEditViewModel.cs"
 $repositoryPath = Join-Path $repoRoot "src/Win7POS.Data/Repositories/ProductRepository.cs"
+$contentPolicyPath = Join-Path $repoRoot "src/Win7POS.Core/Receipt/ReceiptContentPolicy.cs"
 
 $fail = $false
 
@@ -28,6 +29,7 @@ function Read-Text([string]$path) {
 $xaml = Read-Text $xamlPath
 $viewModel = Read-Text $viewModelPath
 $repository = Read-Text $repositoryPath
+$contentPolicy = Read-Text $contentPolicyPath
 
 Write-Host "Checking ProductEdit free-text supplier/category support..."
 
@@ -41,6 +43,30 @@ if ($xaml -match 'ItemsSource="\{Binding Categories\}"[\s\S]*?IsEditable="True"[
     Pass "Category ComboBox is editable and binds CategoryText"
 } else {
     Fail "Category ComboBox must be editable and bind Text to CategoryText"
+}
+
+if ($xaml -match 'Text="\{Binding Barcode, UpdateSourceTrigger=PropertyChanged\}"[\s\S]{0,180}MaxLength="256"' -and
+    $xaml -match 'Text="\{Binding ProductName, UpdateSourceTrigger=PropertyChanged\}"[\s\S]{0,180}MaxLength="512"') {
+    Pass "Barcode and product name inputs use shared receipt-safe limits"
+} else {
+    Fail "Barcode and product name TextBoxes must be bounded to 256/512 characters"
+}
+
+if ($viewModel -match 'SalesReceiptContentPolicy\.IsValidBarcode\(Barcode\)' -and
+    $viewModel -match 'SalesReceiptContentPolicy\.IsValidProductName\(ProductName\)' -and
+    $contentPolicy -match 'MaxSaleLineBarcodeCharacters\s*=\s*256' -and
+    $contentPolicy -match 'MaxSaleLineNameCharacters\s*=\s*512') {
+    Pass "ViewModel validates barcode and name against shared content policy"
+} else {
+    Fail "ViewModel must reject unsafe barcode/name values without truncation"
+}
+
+if ($repository -match 'UpsertAsync[\s\S]{0,350}EnsureValidProductIdentity' -and
+    $repository -match 'UpsertProductAndMetaInTransactionAsync[\s\S]{0,500}EnsureValidProductIdentity' -and
+    $repository -match 'UpdateProductAndMetaWithPriceHistoryAsync[\s\S]{0,500}EnsureValidProductIdentity') {
+    Pass "Product repository enforces receipt-safe identity at write sinks"
+} else {
+    Fail "Product repository write sinks must enforce receipt-safe identity"
 }
 
 foreach ($snippet in @(

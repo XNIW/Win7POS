@@ -206,12 +206,10 @@ namespace Win7POS.Core.Online
                 return new CatalogPaginationSafetyDecision(true, string.Empty);
             }
 
-            if (page.HasSaturatedLane(requestLimit) && !completeSummary)
-            {
-                return new CatalogPaginationSafetyDecision(false, AmbiguousEndCode);
-            }
-
-            return new CatalogPaginationSafetyDecision(true, string.Empty);
+            // A terminal authoritative full snapshot is promotable only with a
+            // complete summary.  Without it there is no evidence that an
+            // unsaturated final page is actually the end of the snapshot.
+            return new CatalogPaginationSafetyDecision(false, AmbiguousEndCode);
         }
 
         public static CatalogPageBudgetDecision CalculatePageBudget(

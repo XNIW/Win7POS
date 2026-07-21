@@ -32,6 +32,9 @@ namespace Win7POS.Core.Receipt
             ReceiptShopInfo shop = null)
         {
             if (sale == null) throw new ArgumentNullException(nameof(sale));
+            SalesReceiptContentPolicy.EnsureValid(sale, lines);
+            var effectiveShop = shop ?? new ReceiptShopInfo();
+            ReceiptShopMetadataPolicy.EnsureValidReceiptShop(effectiveShop);
 
             var frozenLines = new List<LineSnapshot>();
             if (lines != null)
@@ -43,7 +46,7 @@ namespace Win7POS.Core.Receipt
             return new SalesReceiptRenderModel(
                 new SaleSnapshot(sale),
                 new ReadOnlyCollection<LineSnapshot>(frozenLines),
-                new ShopSnapshot(shop ?? new ReceiptShopInfo()));
+                new ShopSnapshot(effectiveShop));
         }
 
         public sealed class SaleSnapshot

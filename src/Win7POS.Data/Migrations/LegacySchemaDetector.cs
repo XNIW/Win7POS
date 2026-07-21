@@ -427,6 +427,7 @@ ORDER BY name;",
             SqliteTransaction transaction,
             string tableName)
         {
+            const string invalidDefinition = "\u0000invalid-unique-key-definition";
             var indexes = new List<UniqueIndexShape>();
             using (var command = connection.CreateCommand())
             {
@@ -452,7 +453,15 @@ ORDER BY name;",
             var signatures = new HashSet<string>(StringComparer.Ordinal);
             foreach (var index in indexes)
             {
-                ValidateIdentifier(index.Name, nameof(index.Name));
+                try
+                {
+                    ValidateIdentifier(index.Name, nameof(index.Name));
+                }
+                catch (ArgumentException)
+                {
+                    signatures.Add(invalidDefinition);
+                    continue;
+                }
                 if (string.Equals(index.Origin, "c", StringComparison.OrdinalIgnoreCase))
                 {
                     var sql = connection.ExecuteScalar<string>(@"
@@ -463,7 +472,10 @@ WHERE type = 'index'
                         new { indexName = index.Name },
                         transaction);
                     if (string.IsNullOrWhiteSpace(sql))
-                        return new HashSet<string>(StringComparer.Ordinal);
+                    {
+                        signatures.Add(invalidDefinition);
+                        continue;
+                    }
                     signatures.Add("create|" + NormalizeIndexSql(sql));
                     continue;
                 }
@@ -493,7 +505,10 @@ WHERE type = 'index'
                     }
                 }
                 if (columns.Count == 0 || columns.Any(column => column[0] == ':'))
-                    return new HashSet<string>(StringComparer.Ordinal);
+                {
+                    signatures.Add(invalidDefinition);
+                    continue;
+                }
                 signatures.Add("constraint|" + string.Join("\u001f", columns));
             }
             return signatures;
@@ -533,22 +548,52 @@ WHERE type = 'index'
             SqliteTransaction transaction,
             string tableName)
         {
+            const string invalidDefinition = "\u0000invalid-index-definition";
             var definitions = new HashSet<string>(StringComparer.Ordinal);
-            var rows = connection.Query<SqlDefinitionRow>(@"
-SELECT name AS Name, sql AS Sql
+            var names = new List<string>();
+            using (var command = connection.CreateCommand())
+            {
+                command.Transaction = transaction;
+                command.CommandText = "PRAGMA index_list(" + QuoteIdentifier(tableName) + ");";
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var origin = Convert.ToString(reader.GetValue(3)) ?? string.Empty;
+                        if (string.Equals(origin, "c", StringComparison.OrdinalIgnoreCase))
+                        {
+                            names.Add(Convert.ToString(reader.GetValue(1)) ?? string.Empty);
+                        }
+                    }
+                }
+            }
+
+            foreach (var name in names)
+            {
+                try
+                {
+                    ValidateIdentifier(name, nameof(name));
+                }
+                catch (ArgumentException)
+                {
+                    definitions.Add(invalidDefinition);
+                    continue;
+                }
+
+                var sql = connection.ExecuteScalar<string>(@"
+SELECT sql
 FROM sqlite_master
 WHERE type = 'index'
-  AND tbl_name = @tableName
-  AND sql IS NOT NULL;",
-                    new { tableName },
-                    transaction)
-                .ToList();
-            foreach (var row in rows)
-            {
-                if (string.IsNullOrWhiteSpace(row.Name) || string.IsNullOrWhiteSpace(row.Sql))
-                    return new HashSet<string>(StringComparer.Ordinal);
-                ValidateIdentifier(row.Name, nameof(row.Name));
-                definitions.Add(NormalizeIndexSql(row.Sql));
+  AND name = @name;",
+                    new { name },
+                    transaction);
+                if (string.IsNullOrWhiteSpace(sql))
+                {
+                    definitions.Add(invalidDefinition);
+                    continue;
+                }
+
+                definitions.Add(NormalizeIndexSql(sql));
             }
             return definitions;
         }
@@ -558,6 +603,7 @@ WHERE type = 'index'
             SqliteTransaction transaction,
             string tableName)
         {
+            const string invalidDefinition = "\u0000invalid-trigger-definition";
             var definitions = new HashSet<string>(StringComparer.Ordinal);
             var rows = connection.Query<SqlDefinitionRow>(@"
 SELECT name AS Name, sql AS Sql
@@ -570,8 +616,19 @@ WHERE type = 'trigger'
             foreach (var row in rows)
             {
                 if (string.IsNullOrWhiteSpace(row.Name) || string.IsNullOrWhiteSpace(row.Sql))
-                    return new HashSet<string>(StringComparer.Ordinal);
-                ValidateIdentifier(row.Name, nameof(row.Name));
+                {
+                    definitions.Add(invalidDefinition);
+                    continue;
+                }
+                try
+                {
+                    ValidateIdentifier(row.Name, nameof(row.Name));
+                }
+                catch (ArgumentException)
+                {
+                    definitions.Add(invalidDefinition);
+                    continue;
+                }
                 definitions.Add(NormalizeSql(row.Sql));
             }
             return definitions;

@@ -184,6 +184,7 @@ WHERE status = 'failed_blocked'
         var initial = await state.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
         Assert.IsTrue(initial.IsValid);
         await state.StoreLastSyncAsync("shop-a", "SHOP-A", "cursor-a", "2026-07-14T00:00:00Z");
+        await CatalogExactnessTestFixture.SeedVerifiedAsync(db.Factory, "shop-a", "SHOP-A");
         await state.StoreSaleSafeAsync("shop-a", "SHOP-A", "2026-07-14T00:00:00Z");
         Assert.IsTrue(await state.IsSaleSafeForOfficialShopAsync());
 

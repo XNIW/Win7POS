@@ -153,9 +153,9 @@ public sealed class ReceiptSurfaceRenderingTests
             .ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         var shop = Shop();
         shop.Name = "Negozio fiscale estremamente lungo 中文 pingüino città qualità";
-        shop.Rut = "RUT 76.123.456-7 con testo di verifica molto lungo";
+        shop.Rut = "RUT 76.123.456-7 verifica";
         shop.BusinessGiro = "Commercio internazionale e servizi de alimentación 中文";
-        shop.LegalRepresentativeRut = "12.345.678-9 rappresentante verificato";
+        shop.LegalRepresentativeRut = "12.345.678-9 rappresentante";
         shop.Address = "Avenida internacional de validación extremadamente larga 12345";
         shop.City = "Santiago metropolitana 中文";
 

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
 {
@@ -60,6 +61,9 @@ ORDER BY name ASC;").ConfigureAwait(false);
             string name,
             string remoteUpdatedAt)
         {
+            RemoteCatalogContentPolicy.EnsureOptionalTimestamp(
+                remoteUpdatedAt,
+                "category.updated_at");
             var remoteId = Normalize(remoteCategoryId);
             var normalizedName = Normalize(name);
             var updatedAt = Normalize(remoteUpdatedAt);
@@ -158,6 +162,12 @@ VALUES(@name, @remoteId, NULLIF(@updatedAt, ''), NULL, 1);",
             string remoteDeletedAt,
             string remoteUpdatedAt)
         {
+            RemoteCatalogContentPolicy.EnsureOptionalTimestamp(
+                remoteDeletedAt,
+                "category_tombstone.deleted_at");
+            RemoteCatalogContentPolicy.EnsureOptionalTimestamp(
+                remoteUpdatedAt,
+                "category_tombstone.updated_at");
             var remoteId = Normalize(remoteCategoryId);
             if (remoteId.Length == 0)
             {
@@ -215,13 +225,25 @@ WHERE id = @id;",
             var normalizedIncoming = Normalize(incoming);
             if (normalizedIncoming.Length == 0) return true;
 
-            if (DateTimeOffset.TryParse(normalizedIncoming, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var incomingTime) &&
-                DateTimeOffset.TryParse(normalizedCurrent, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var currentTime))
+            if (!DateTimeOffset.TryParse(
+                normalizedIncoming,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out var incomingTime))
             {
-                return incomingTime < currentTime;
+                return true;
             }
 
-            return string.CompareOrdinal(normalizedIncoming, normalizedCurrent) < 0;
+            if (!DateTimeOffset.TryParse(
+                normalizedCurrent,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out var currentTime))
+            {
+                return false;
+            }
+
+            return incomingTime < currentTime;
         }
 
         private static bool IsNotNewerThanTombstone(string incoming, string tombstone)
@@ -231,13 +253,25 @@ WHERE id = @id;",
             if (normalizedTombstone.Length == 0) return false;
             if (normalizedIncoming.Length == 0) return true;
 
-            if (DateTimeOffset.TryParse(normalizedIncoming, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var incomingTime) &&
-                DateTimeOffset.TryParse(normalizedTombstone, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var tombstoneTime))
+            if (!DateTimeOffset.TryParse(
+                normalizedIncoming,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out var incomingTime))
             {
-                return incomingTime <= tombstoneTime;
+                return true;
             }
 
-            return string.CompareOrdinal(normalizedIncoming, normalizedTombstone) <= 0;
+            if (!DateTimeOffset.TryParse(
+                normalizedTombstone,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.RoundtripKind,
+                out var tombstoneTime))
+            {
+                return false;
+            }
+
+            return incomingTime <= tombstoneTime;
         }
 
         private static string Normalize(string value)

@@ -48,15 +48,66 @@ $printerVm = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsViewModel
 $printerXaml = Read-Required "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsDialog.xaml"
 $printOptions = Read-Required "src/Win7POS.Wpf/Printing/ReceiptPrintOptions.cs"
 $spooler = Read-Required "src/Win7POS.Wpf/Printing/WindowsSpoolerReceiptPrinter.cs"
+$contentPolicy = Read-Required "src/Win7POS.Core/Receipt/ReceiptContentPolicy.cs"
+$saleRepository = Read-Required "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$receiptPolicyTests = Read-Required "tests/Win7POS.Core.Tests/Pos/ReceiptContentPolicyTests.cs"
 $settingKeys = Read-Required "src/Win7POS.Wpf/Infrastructure/AppSettingKeys.cs"
 $uiSmoke = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $coreTests = Read-Required "tests/Win7POS.Core.Tests/Pos/ReceiptSurfaceRenderingTests.cs"
 
 Require-Pattern "shared layout exposes normalized visible-width primitives" $layout 'NormalizeColumns[\s\S]*VisibleWidth[\s\S]*WrapText[\s\S]*TwoColumnLine[\s\S]*Separator'
 Require-Pattern "sales receipt input is immutable and freezes entities" $input 'sealed\s+class\s+SalesReceiptRenderModel[\s\S]*public\s+SaleSnapshot\s+Sale\s*\{\s*get;\s*\}[\s\S]*ReadOnlyCollection<LineSnapshot>'
+$linePreflightIndex = $input.IndexOf(
+    "SalesReceiptContentPolicy.EnsureValid(sale, lines)",
+    [System.StringComparison]::Ordinal)
+$lineSnapshotIndex = $input.IndexOf(
+    "var frozenLines = new List<LineSnapshot>()",
+    [System.StringComparison]::Ordinal)
+if ($linePreflightIndex -lt 0 -or $lineSnapshotIndex -le $linePreflightIndex) {
+    Fail "sales receipt line preflight must precede snapshot allocation"
+} else {
+    Pass "sales receipt line preflight precedes snapshot allocation"
+}
+$saleInsertStart = $saleRepository.IndexOf("public async Task<long> InsertSaleAsync", [System.StringComparison]::Ordinal)
+$saleInsertGuard = $saleRepository.IndexOf("SalesReceiptContentPolicy.EnsureValid(sale, lines)", $saleInsertStart, [System.StringComparison]::Ordinal)
+$saleInsertOpen = $saleRepository.IndexOf("_factory.OpenAsync()", $saleInsertStart, [System.StringComparison]::Ordinal)
+$refundInsertStart = $saleRepository.IndexOf("public async Task<long> InsertRefundOrVoidAsync", [System.StringComparison]::Ordinal)
+$refundInsertGuard = $saleRepository.IndexOf("SalesReceiptContentPolicy.EnsureValid(refundSale, refundLines)", $refundInsertStart, [System.StringComparison]::Ordinal)
+$refundInsertOpen = $saleRepository.IndexOf("_factory.Open()", $refundInsertStart, [System.StringComparison]::Ordinal)
+if ($saleInsertStart -lt 0 -or $saleInsertGuard -le $saleInsertStart -or $saleInsertOpen -le $saleInsertGuard -or
+    $refundInsertStart -lt 0 -or $refundInsertGuard -le $refundInsertStart -or $refundInsertOpen -le $refundInsertGuard) {
+    Fail "sale and refund persistence must validate receipt lines before opening SQLite"
+} else {
+    Pass "sale and refund persistence validates receipt lines before opening SQLite"
+}
+$lineInsertStart = $saleRepository.IndexOf("public async Task InsertSaleLinesAsync", [System.StringComparison]::Ordinal)
+$lineInsertTransactionGuard = $saleRepository.IndexOf("ReferenceEquals(tx.Connection, conn)", $lineInsertStart, [System.StringComparison]::Ordinal)
+$lineInsertGuard = $saleRepository.IndexOf("SalesReceiptContentPolicy.EnsureValidLines(lines)", $lineInsertStart, [System.StringComparison]::Ordinal)
+$lineInsertBudget = $saleRepository.IndexOf("EnsureCumulativeLineBudget(", $lineInsertStart, [System.StringComparison]::Ordinal)
+$lineInsertWrite = $saleRepository.IndexOf("InsertSaleLineAsync(conn, tx, line)", $lineInsertStart, [System.StringComparison]::Ordinal)
+if ($lineInsertStart -lt 0 -or $lineInsertTransactionGuard -le $lineInsertStart -or
+    $lineInsertGuard -le $lineInsertTransactionGuard -or
+    $lineInsertBudget -le $lineInsertGuard -or $lineInsertWrite -le $lineInsertBudget) {
+    Fail "direct sale-line persistence must require its owning transaction and enforce budgets before writes"
+} else {
+    Pass "direct sale-line persistence requires its owning transaction and enforces budgets before writes"
+}
+$lineReadStart = $saleRepository.IndexOf("GetLinesBySaleIdAsync", [System.StringComparison]::Ordinal)
+$lineReadDeferredTransaction = $saleRepository.IndexOf("conn.BeginTransaction(deferred: true)", $lineReadStart, [System.StringComparison]::Ordinal)
+$lineReadBudget = $saleRepository.IndexOf("ReadSaleLineBudgetAsync(conn, tx, saleId)", $lineReadStart, [System.StringComparison]::Ordinal)
+$lineReadMaterialize = $saleRepository.IndexOf("QueryAsync<SaleLine>", $lineReadStart, [System.StringComparison]::Ordinal)
+if ($lineReadStart -lt 0 -or $lineReadDeferredTransaction -le $lineReadStart -or
+    $lineReadBudget -le $lineReadDeferredTransaction -or $lineReadMaterialize -le $lineReadBudget) {
+    Fail "historical sale-line reads must use a deferred snapshot and preflight SQL budgets before row materialization"
+} else {
+    Pass "historical sale-line reads use a deferred snapshot and preflight SQL budgets before materialization"
+}
+Require-Pattern "sale-line policy bounds individual, aggregate and count amplification" $contentPolicy 'class\s+SalesReceiptContentPolicy[\s\S]*MaxSaleLines\s*=\s*512[\s\S]*MaxSaleLineNameCharacters\s*=\s*512[\s\S]*MaxAggregateLineNameCharacters[\s\S]*MaxAggregateLineNameUtf8Bytes'
+Require-Pattern "sale-line amplification regressions execute across render, write and historical boundaries" $receiptPolicyTests 'SaleLinePreflight_AcceptsBoundariesAndRejectsAmplificationOrUnsafeText[\s\S]*SalesReceiptRenderModel_RejectsUnsafeLinesBeforeFormatting[\s\S]*UnsafeSaleAndRefundLines_AreRejectedBeforeDatabaseMutation[\s\S]*LegacyRefundIngress_RejectsUnsafeReasonBeforeMutation[\s\S]*RepeatedSaleLineBatches_CannotExceedCumulativeBudget[\s\S]*DirectSaleLineInsert_RequiresTheOwningTransaction[\s\S]*HistoricalCorruptSaleLines_AreRejectedBeforeRowMaterialization'
 Require-Pattern "sales formatter consumes immutable input and shared layout" $formatter 'Format\s*\(\s*SalesReceiptRenderModel\s+input[\s\S]*ReceiptTextLayout\.NormalizeColumns[\s\S]*ReceiptTextLayout\.TwoColumnLine'
 Require-Pattern "WPF sales renderer constructs one immutable snapshot" $salesRenderer 'SalesReceiptRenderModel\.Create[\s\S]*BuildReceipt\s*\(SalesReceiptRenderModel\s+input[\s\S]*ReceiptFormatter\.Format'
 Require-Pattern "refund and void metadata stays in the authoritative sales renderer" $salesRenderer 'SaleKind\.Refund[\s\S]*SaleKind\.Void[\s\S]*refund\.receiptHeader'
+Require-Pattern "sales renderer validates shop metadata before formatting and final document after formatting" ($input + $salesRenderer) 'ReceiptShopMetadataPolicy\.EnsureValidReceiptShop[\s\S]*ReceiptFormatter\.Format[\s\S]*ReceiptDocumentPolicy\.EnsureValidDocument'
 
 Require-Pattern "payment preview uses authoritative sales renderer" $payment 'PosReceiptTextRenderer\.BuildReceipt'
 Require-Pattern "fiscal boleta prints its preview text directly" $payment 'PrintFiscalBoletaAsync[\s\S]*_printFiscalToThermal\(FiscalPreviewText,\s*SaleCode\)'
@@ -83,6 +134,7 @@ Require-Pattern "historical selection uses cancellation and version fencing" $hi
 Require-Pattern "historical view keeps virtualization and selectable monospaced preview" $historyXaml 'VirtualizingPanel\.IsVirtualizing="True"[\s\S]*VirtualizationMode="Recycling"[\s\S]*DetailReceiptPreview[\s\S]*IsReadOnly="True"[\s\S]*FontFamily="Consolas"'
 
 Require-Pattern "daily close has a dedicated renderer using shared primitives" ($dailyCore + $dailyRenderer) 'class\s+DailyCloseReceiptTextRenderer[\s\S]*ReceiptTextLayout\.NormalizeColumns[\s\S]*ReceiptTextLayout\.TwoColumnLine'
+Require-Pattern "daily receipt metadata and final document are bounded" ($dailyCore + $dailyRenderer + $contentPolicy) 'ReceiptShopMetadataPolicy\.EnsureValid[\s\S]*ReceiptDocumentPolicy\.EnsureValidDocument[\s\S]*MaxDocumentCharacters'
 Require-Pattern "daily close preview is the exact print payload" $dailyVm 'SummaryReceiptPreview[\s\S]*PrintReceiptTextAsync\(SummaryReceiptPreview'
 Require-Pattern "daily history clears stale preview and blocks print while loading" $dailyVm 'SelectedHistoryRow[\s\S]*SummaryReceiptPreview\s*=\s*string\.Empty[\s\S]*CanPrintStampaRiepilogo[\s\S]*!IsHistoryPreviewLoading'
 Require-Pattern "daily date edits immediately clear stale preview" $dailyVm 'DateText[\s\S]*InvalidateDailyPreview'

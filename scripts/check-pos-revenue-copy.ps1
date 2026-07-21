@@ -51,6 +51,9 @@ if ($workflow -notmatch "document_status" -or
     Fail "CSV export must retain the compatibility column and use thermal-print document status"
 } else { Pass "CSV document status is thermal while the legacy column remains compatible" }
 if (($registerXaml + $dailyDialog + $dailyView) -match "Aggiorna vista completa") { Fail "fake/ambiguous complete-view lock copy remains" } else { Pass "ambiguous complete-view lock copy absent" }
+if ($registerVm -notmatch 'PrintAsync[\s\S]{0,500}_permissionService\.Demand\([\s\S]{0,260}PermissionCodes\.PosReprintReceipt[\s\S]{0,500}PrintReceiptTextAsync') {
+    Fail "Sales Register must recheck receipt-reprint permission immediately before printing"
+} else { Pass "Sales Register rechecks receipt-reprint permission at action time" }
 
 $blockedCopy = "(?i)\bfatturato\b|\butile\b|ricavi dichiarati|fiscale ok|SII accettato"
 if ($combined -match $blockedCopy) { Fail "ambiguous revenue/fiscal copy detected" } else { Pass "ambiguous revenue/fiscal copy absent" }

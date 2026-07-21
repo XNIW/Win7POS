@@ -132,6 +132,71 @@ WHERE m.barcode = 'BATCH-001'
     }
 
     [TestMethod]
+    public async Task ApplyAsync_RejectsOversizedProductTextBeforeAnyMutation()
+    {
+        using var db = TestDb.Create();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        var existing = Product("product-bounded", "BOUNDED-001", 2);
+        existing.Name = new string('n', 512);
+        await repository.ApplyAsync(new RemoteCatalogBatch
+        {
+            Products = new[] { existing }
+        });
+
+        var oversized = Product("product-oversized", "OVERSIZED-001", 3);
+        oversized.Name = new string('x', 500_000);
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => repository.ApplyAsync(
+            new RemoteCatalogBatch
+            {
+                Categories = new[]
+                {
+                    new RemoteCatalogCategoryWrite
+                    {
+                        RemoteCategoryId = "category-must-not-write",
+                        Name = "Must not write"
+                    }
+                },
+                Products = new[] { oversized }
+            }));
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, await ScalarAsync(verify,
+            "SELECT COUNT(1) FROM products WHERE remote_product_id = 'product-bounded' AND length(name) = 512;"));
+        Assert.AreEqual(0L, await ScalarAsync(verify,
+            "SELECT COUNT(1) FROM products WHERE remote_product_id = 'product-oversized';"));
+        Assert.AreEqual(0L, await ScalarAsync(verify,
+            "SELECT COUNT(1) FROM categories WHERE remote_category_id = 'category-must-not-write';"));
+    }
+
+    [TestMethod]
+    public async Task ApplyAsync_RejectsMalformedTimestampBeforeAnyMutation()
+    {
+        using var db = TestDb.Create();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => repository.ApplyAsync(
+            new RemoteCatalogBatch
+            {
+                Categories = new[]
+                {
+                    new RemoteCatalogCategoryWrite
+                    {
+                        RemoteCategoryId = "category-must-not-write",
+                        Name = "Must not write",
+                        RemoteUpdatedAt = "zzzz"
+                    }
+                },
+                Products = new[] { Product("product-must-not-write", "TIMESTAMP-001", 1) }
+            }));
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(0L, await ScalarAsync(verify,
+            "SELECT COUNT(1) FROM categories WHERE remote_category_id = 'category-must-not-write';"));
+        Assert.AreEqual(0L, await ScalarAsync(verify,
+            "SELECT COUNT(1) FROM products WHERE remote_product_id = 'product-must-not-write';"));
+    }
+
+    [TestMethod]
     public async Task ApplyAsync_PreservesPendingLocalStockAcrossRemoteBarcodeChange()
     {
         using var db = TestDb.Create();

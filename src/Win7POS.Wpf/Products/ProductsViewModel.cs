@@ -806,7 +806,11 @@ namespace Win7POS.Wpf.Products
             if (!DemandProductPermission(PermissionCodes.CatalogImport, "products.operationImportCatalog")) return;
             try
             {
-                var applied = SupplierExcelImportDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner());
+                var applied = SupplierExcelImportDialog.ShowDialog(
+                    DialogOwnerHelper.GetSafeOwner(),
+                    () => DemandProductPermission(
+                        PermissionCodes.CatalogImport,
+                        "products.operationImportCatalog"));
                 if (applied)
                 {
                     CatalogEvents.RaiseCatalogChanged(null);

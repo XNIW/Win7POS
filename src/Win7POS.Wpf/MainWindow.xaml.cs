@@ -597,7 +597,12 @@ namespace Win7POS.Wpf
                 return;
             }
 
-            var vm = new DbMaintenanceViewModel(new PosWorkflowService());
+            var vm = new DbMaintenanceViewModel(
+                new PosWorkflowService(),
+                () => Task.FromResult(false),
+                () => false,
+                () => false,
+                () => HasCurrentPermission(PermissionCodes.DbMaintenance));
             var dialog = new DbMaintenanceDialog(vm, restoreReviewOnly: true)
             {
                 Owner = this
@@ -1583,7 +1588,7 @@ namespace Win7POS.Wpf
             return OperatorSessionHolder.Current;
         }
 
-        private static async Task<bool> IsSessionBoundToCurrentTrustedIdentityAsync(
+        internal static async Task<bool> IsSessionBoundToCurrentTrustedIdentityAsync(
             SqliteConnectionFactory factory,
             IOperatorSession session)
         {
@@ -1600,7 +1605,8 @@ namespace Win7POS.Wpf
                     return false;
                 }
 
-                var trustedUsername = await new UserRepository(factory)
+                var users = new UserRepository(factory);
+                var trustedUsername = await users
                     .FindTrustedRemoteStaffUsernameAsync(
                         trustedSession.ShopId,
                         trustedSession.ShopCode,
@@ -1608,10 +1614,17 @@ namespace Win7POS.Wpf
                         trustedSession.StaffCode,
                         trustedSession.StaffCredentialVersion)
                     .ConfigureAwait(true);
-                return string.Equals(
-                    session.CurrentUser.Username,
-                    trustedUsername,
-                    StringComparison.Ordinal);
+                if (!string.Equals(
+                        session.CurrentUser.Username,
+                        trustedUsername,
+                        StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                var durableAccount = await users.GetByUsernameAsync(trustedUsername)
+                    .ConfigureAwait(true);
+                return HasSameDurableAuthority(session.CurrentUser, durableAccount);
             }
             catch (Exception ex)
             {
@@ -1620,6 +1633,35 @@ namespace Win7POS.Wpf
                     ex);
                 return false;
             }
+        }
+
+        private static bool HasSameDurableAuthority(
+            UserAccount cached,
+            UserAccount durable)
+        {
+            if (cached == null || durable == null)
+            {
+                return false;
+            }
+
+            var cachedPermissions = (cached.PermissionCodes ?? Array.Empty<string>())
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(code => code, StringComparer.Ordinal);
+            var durablePermissions = (durable.PermissionCodes ?? Array.Empty<string>())
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(code => code, StringComparer.Ordinal);
+
+            return cached.Id == durable.Id &&
+                string.Equals(cached.Username, durable.Username, StringComparison.Ordinal) &&
+                string.Equals(cached.DisplayName, durable.DisplayName, StringComparison.Ordinal) &&
+                cached.RoleId == durable.RoleId &&
+                string.Equals(cached.RoleCode, durable.RoleCode, StringComparison.Ordinal) &&
+                string.Equals(cached.RoleName, durable.RoleName, StringComparison.Ordinal) &&
+                cached.IsActive == durable.IsActive &&
+                cached.RequirePinChange == durable.RequirePinChange &&
+                cached.MaxDiscountPercent == durable.MaxDiscountPercent &&
+                cached.CanOverride == durable.CanOverride &&
+                cachedPermissions.SequenceEqual(durablePermissions, StringComparer.Ordinal);
         }
 
         private async Task<bool> TrySwitchForPermissionAsync(
@@ -2540,7 +2582,8 @@ namespace Win7POS.Wpf
                 _recoveryWorkflowService,
                 () => Task.FromResult(HasCurrentPermission(PermissionCodes.DbRestore)),
                 () => HasCurrentPermission(PermissionCodes.DbBackup),
-                () => HasCurrentPermission(PermissionCodes.CatalogImport));
+                () => HasCurrentPermission(PermissionCodes.CatalogImport),
+                () => HasCurrentPermission(PermissionCodes.DbMaintenance));
             var dialog = new DbMaintenanceDialog(vm)
             {
                 Owner = DialogOwnerHelper.GetSafeOwner(this)

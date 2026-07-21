@@ -235,9 +235,9 @@ WHERE singleton_id = 1;").ConfigureAwait(false);
         }
 
         /// <summary>
-        /// Resumes only the exact active generation. A missing singleton is the
-        /// one-time upgrade case from schemas predating generation fencing; an
-        /// inactive or mismatched row (including a restore tombstone) is denied.
+        /// Resumes only the exact active generation. Missing, inactive, or
+        /// mismatched durable state (including a restore tombstone) is denied.
+        /// Creation is reserved for authenticated ActivateAndRecoverAsync.
         /// </summary>
         public async Task<bool> AttachOrInitializeCurrentAsync(
             OnlineSyncGeneration generation,
@@ -276,49 +276,8 @@ WHERE singleton_id = 1;",
                         return matches;
                     }
 
-                    await connection.ExecuteAsync(@"
-INSERT INTO pos_sync_session_generation(
-  singleton_id,
-  generation_id,
-  fingerprint,
-  pos_session_id,
-  shop_device_id,
-  shop_id,
-  shop_code,
-  active,
-  auth_stop_reason,
-  activated_at,
-  stopped_at)
-VALUES(
-  1,
-  @GenerationId,
-  @Fingerprint,
-  @PosSessionId,
-  @ShopDeviceId,
-  @ShopId,
-  @ShopCode,
-  1,
-  NULL,
-  @initializedAt,
-  NULL);",
-                        new
-                        {
-                            generation.GenerationId,
-                            generation.Fingerprint,
-                            generation.PosSessionId,
-                            generation.ShopDeviceId,
-                            generation.ShopId,
-                            generation.ShopCode,
-                            initializedAt
-                        },
-                        transaction).ConfigureAwait(false);
-                    await ReleaseAllClaimsAsync(
-                        connection,
-                        transaction,
-                        initializedAt,
-                        "session_generation_initialized").ConfigureAwait(false);
-                    transaction.Commit();
-                    return true;
+                    transaction.Rollback();
+                    return false;
                 }
             }
             finally

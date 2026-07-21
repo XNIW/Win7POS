@@ -73,6 +73,7 @@ $required = @(
     "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncRevocationLatch.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs",
     "src/Win7POS.Data/Online/OnlineSyncGenerationRepository.cs",
     "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs",
     "tests/Win7POS.Core.Tests/Online/OnlineSyncSupervisorTests.cs",
@@ -98,6 +99,7 @@ $options = Read-Text "src/Win7POS.Core/Online/PosAdminWebOptions.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 $syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
 $revocationLatch = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncRevocationLatch.cs"
+$salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $generationRepo = Read-Text "src/Win7POS.Data/Online/OnlineSyncGenerationRepository.cs"
 $generationTests = Read-Text "tests/Win7POS.Core.Tests/Data/OnlineSyncGenerationRepositoryTests.cs"
 $supervisor = Read-Text "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs"
@@ -199,23 +201,11 @@ if ($beginStart -lt 0 -or $activateStart -le $beginStart -or $attachStart -le $a
     $rejectBody = $syncHost.Substring($rejectStart, $publicRevokeStart - $rejectStart)
     $beginCapture = $beginBody.IndexOf("TryCaptureAuthorizationEpoch", [System.StringComparison]::Ordinal)
     $beginRead = $beginBody.IndexOf("ReadCurrentPredecessorAsync", [System.StringComparison]::Ordinal)
-    $legacyStoreRead = if ($beginRead -ge 0) {
-        $beginBody.IndexOf("_store.TryRead", $beginRead, [System.StringComparison]::Ordinal)
+    $beginEpochRecheck = if ($beginRead -ge 0) {
+        $beginBody.IndexOf("IsAuthorizationEpochCurrent", $beginRead, [System.StringComparison]::Ordinal)
     } else { -1 }
-    $legacyGeneration = if ($legacyStoreRead -ge 0) {
-        $beginBody.IndexOf("TryCreateGeneration", $legacyStoreRead, [System.StringComparison]::Ordinal)
-    } else { -1 }
-    $legacyInitialize = if ($legacyGeneration -ge 0) {
-        $beginBody.IndexOf("AttachOrInitializeCurrentAsync", $legacyGeneration, [System.StringComparison]::Ordinal)
-    } else { -1 }
-    $normalizedRead = if ($legacyInitialize -ge 0) {
-        $beginBody.IndexOf("ReadCurrentPredecessorAsync", $legacyInitialize, [System.StringComparison]::Ordinal)
-    } else { -1 }
-    $beginEpochRecheck = if ($normalizedRead -ge 0) {
-        $beginBody.IndexOf("IsAuthorizationEpochCurrent", $normalizedRead, [System.StringComparison]::Ordinal)
-    } else { -1 }
-    $beginMaintenanceRecheck = if ($normalizedRead -ge 0) {
-        $beginBody.IndexOf("PosOnlineSyncSignalBus.IsMaintenanceActive", $normalizedRead, [System.StringComparison]::Ordinal)
+    $beginMaintenanceRecheck = if ($beginRead -ge 0) {
+        $beginBody.IndexOf("PosOnlineSyncSignalBus.IsMaintenanceActive", $beginRead, [System.StringComparison]::Ordinal)
     } else { -1 }
     $attemptCheck = $activateBody.IndexOf("transition.AttemptId", [System.StringComparison]::Ordinal)
     $epochCheck = $activateBody.IndexOf("IsAuthorizationEpochCurrent", [System.StringComparison]::Ordinal)
@@ -225,9 +215,8 @@ if ($beginStart -lt 0 -or $activateStart -le $beginStart -or $attachStart -le $a
     $trustedSave = $activateBody.IndexOf("_store.SaveFirstLogin", [System.StringComparison]::Ordinal)
     $localPersistence = $activateBody.IndexOf("await persistAuthenticatedLocalStateAsync", [System.StringComparison]::Ordinal)
     if ($beginCapture -lt 0 -or $beginRead -le $beginCapture -or
-        $legacyStoreRead -le $beginRead -or $legacyGeneration -le $legacyStoreRead -or
-        $legacyInitialize -le $legacyGeneration -or $normalizedRead -le $legacyInitialize -or
-        $beginEpochRecheck -le $normalizedRead -or $beginMaintenanceRecheck -le $normalizedRead -or
+        $beginBody -match '_store\.TryRead|AttachOrInitializeCurrentAsync' -or
+        $beginEpochRecheck -le $beginRead -or $beginMaintenanceRecheck -le $beginRead -or
         $activateBody -notmatch 'ActivateAndRecoverAsync\(\s*nextGeneration,\s*NextActivationTimestamp\(\),\s*transition\.ExpectedCurrentState\)' -or
         $attemptCheck -lt 0 -or $epochCheck -lt 0 -or $epochInvalidate -lt 0 -or
         $generationCas -lt 0 -or $catalogMutation -lt 0 -or $trustedSave -lt 0 -or
@@ -302,13 +291,28 @@ if ($repoActivateStart -lt 0 -or $repoReadStart -le $repoActivateStart) {
     }
 }
 
+$repoAttachStart = $generationRepo.IndexOf("AttachOrInitializeCurrentAsync", [System.StringComparison]::Ordinal)
+$repoStopStart = $generationRepo.IndexOf("public async Task<bool> StopIfCurrentAsync", [System.StringComparison]::Ordinal)
+if ($repoAttachStart -lt 0 -or $repoStopStart -le $repoAttachStart) {
+    Fail "generation attach method boundaries are missing"
+} else {
+    $repoAttachBody = $generationRepo.Substring($repoAttachStart, $repoStopStart - $repoAttachStart)
+    if ($repoAttachBody -match 'INSERT\s+INTO\s+pos_sync_session_generation' -or
+        $repoAttachBody -notmatch 'current\s*!=\s*null[\s\S]{0,1200}return\s+matches' -or
+        $repoAttachBody -notmatch 'transaction\.Rollback\(\);\s*return\s+false') {
+        Fail "retained trust must never create a missing generation singleton"
+    } else {
+        Pass "missing generation singleton requires authenticated activation"
+    }
+}
+
 if ($syncHost -notmatch "AuthorizationEpoch" -or
     $revocationLatch -notmatch "TryCaptureAuthorizationEpoch" -or
     $generationTests -notmatch "generation-expected-empty" -or
     $generationTests -notmatch "generation-missing-predecessor" -or
     $generationTests -notmatch "generation-after-inactive-predecessor" -or
     $generationTests -notmatch "ConcurrentAuthenticatedRelinks_FromSamePredecessor_CommitExactlyOne" -or
-    $generationTests -notmatch "LegacyStoredTrust_NormalizedThenDeniedCannotReinitializeAfterRestart" -or
+    $generationTests -notmatch "DeletedSingleton_CannotBeRecreatedFromRetainedTrustAfterRestart" -or
     $generationTests -notmatch "PredecessorScopedStop_TombstonesWithoutTrustedFileState" -or
     $generationTests -notmatch "preRestoreState" -or
     $generationTests -notmatch "postRestoreState") {
@@ -350,6 +354,13 @@ if ($rollbackRevoke -lt 0 -or $rollbackStop -le $rollbackRevoke -or
 }
 
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }
+$salesShopPolicyIndex = $salesSync.IndexOf("ReceiptShopMetadataPolicy.EnsureValidRemoteShop(result.Value.Shop)", [System.StringComparison]::Ordinal)
+$salesShopBindingIndex = if ($salesShopPolicyIndex -ge 0) {
+    $salesSync.IndexOf("OutboxShopBinding.GetMismatchCode(", $salesShopPolicyIndex, [System.StringComparison]::Ordinal)
+} else { -1 }
+if ($salesShopPolicyIndex -lt 0 -or $salesShopBindingIndex -lt 0 -or $salesShopPolicyIndex -gt $salesShopBindingIndex) {
+    Fail "sales response shop metadata must be bounded before normalization/binding and ACK mutation"
+} else { Pass "sales response shop metadata is bounded before normalization/binding and ACK mutation" }
 if ($combined -match "mcpos_(device|session)_[A-Za-z0-9_-]+") { Fail "literal POS token found" }
 if ($forbiddenRuntimeUrlScope -match "https?://(?!(localhost|127\.0\.0\.1|::1|\.\.\.|schemas\.microsoft\.com))") { Fail "Admin Web URL hardcoded outside centralized config/sample/docs" } else { Pass "no Admin Web URL hardcoded in UI/bootstrap/client runtime" }
 if ($baseUrlScope -match "https?://(?!(localhost|127\.0\.0\.1|::1|\.\.\.))") { Fail "production-like Admin Web URL hardcoded in resolver/runtime code" } else { Pass "no production Admin Web URL hardcoded in resolver/runtime code" }

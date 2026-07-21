@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Win7POS.Core.Online;
+using Win7POS.Core.Receipt;
 using Win7POS.Data;
 using Win7POS.Data.Repositories;
 
@@ -18,6 +19,7 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 return Task.CompletedTask;
             }
+            ReceiptShopMetadataPolicy.EnsureValidRemoteShop(shop);
 
             var snapshot = new OfficialShopSnapshot
             {

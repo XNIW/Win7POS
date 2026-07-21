@@ -136,7 +136,7 @@ namespace Win7POS.Wpf.Pos.Online
                 CatalogLastSuccessText = FormatIso(FirstNonEmpty(catalogLastSuccess, lastCatalog)),
                 CatalogLastTriggerCode = SafeCode(catalogLastTrigger),
                 CatalogPages = ParseNonNegativeLong(catalogPages),
-                CatalogRepairRequired = catalogExactness.RepairRequired || catalogExactness.Status == CatalogCompletenessStatus.Mismatch,
+                CatalogRepairRequired = catalogExactness.RepairRequired || catalogExactness.Status != CatalogCompletenessStatus.Verified,
                 CatalogRepairText = CatalogRepairText(catalogExactness, catalogSaleSafety),
                 CatalogReadinessText = CatalogReadinessText(
                     catalogSaleSafeAt,
@@ -627,7 +627,7 @@ namespace Win7POS.Wpf.Pos.Online
             CatalogSaleSafetyEvaluation catalogSaleSafety)
         {
             if (exactness != null &&
-                (exactness.RepairRequired || exactness.Status == CatalogCompletenessStatus.Mismatch))
+                (exactness.RepairRequired || exactness.Status != CatalogCompletenessStatus.Verified))
             {
                 return T("sync.catalogRepairRequired") +
                     " | " + T("sync.reason") + ": " + SafeCode(exactness.Code);
