@@ -7,8 +7,10 @@ using System.Threading.Tasks;
 using System.Windows.Threading;
 using ClosedXML.Excel;
 using Win7POS.Core;
+using Win7POS.Core.Import;
 using Win7POS.Data;
 using Win7POS.Data.Import;
+using Win7POS.Data.Repositories;
 
 namespace Win7POS.Wpf.Import
 {
@@ -71,6 +73,13 @@ namespace Win7POS.Wpf.Import
             Directory.CreateDirectory(dataDir);
             AppPaths.EnsureCreated();
 
+            var denialBoundaryPass = await VerifyDeniedApplyHasNoSideEffectsAsync().ConfigureAwait(true);
+            if (!denialBoundaryPass)
+            {
+                throw new InvalidOperationException(
+                    "Supplier Excel denial boundary created database or backup side effects.");
+            }
+
             var filePath = ValueAfter(args, "--file");
             if (string.IsNullOrWhiteSpace(filePath))
             {
@@ -79,9 +88,25 @@ namespace Win7POS.Wpf.Import
             }
 
             DbInitializer.EnsureCreated(PosDbOptions.Default());
+            var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+            await new ShopOfficialSnapshotRepository(factory).SaveAsync(new OfficialShopSnapshot
+            {
+                ShopCode = "QA-SUPPLIER-SMOKE",
+                ShopId = "qa-supplier-smoke",
+                ShopName = "QA Supplier Smoke",
+                Source = "qa_harness",
+                SyncedAtUtc = DateTimeOffset.UtcNow.ToString("O")
+            }).ConfigureAwait(true);
+
+            var authorizationLeasePass = await VerifyApplyAuthorizationLeaseAsync().ConfigureAwait(true);
+            if (!authorizationLeasePass)
+            {
+                throw new InvalidOperationException(
+                    "Supplier Excel apply authorization lease did not fail closed at every mutation boundary.");
+            }
 
             var viewModel = new SupplierExcelImportViewModel(
-                new SupplierExcelImportWorkflowService(),
+                new SupplierExcelImportWorkflowService(() => true),
                 new SmokeFileDialogService(filePath),
                 new SmokeCompletionDialogService());
             var result = await viewModel.RunSmokeAsync().ConfigureAwait(true);
@@ -100,6 +125,8 @@ namespace Win7POS.Wpf.Import
             report.AppendLine("file=" + Path.GetFileName(filePath));
             report.AppendLine("dataDir=" + dataDir);
             report.AppendLine("backupCreated=" + File.Exists(result.BackupPath).ToString(CultureInfo.InvariantCulture));
+            report.AppendLine("denialBoundaryPass=" + denialBoundaryPass.ToString(CultureInfo.InvariantCulture));
+            report.AppendLine("authorizationLeasePass=" + authorizationLeasePass.ToString(CultureInfo.InvariantCulture));
             report.AppendLine("outboxId=" + result.CatalogImportOutboxId.ToString(CultureInfo.InvariantCulture));
             report.AppendLine("outboxStatus=" + result.CatalogImportOutboxStatus);
             report.AppendLine("productRows=" + proof.ProductRows.ToString(CultureInfo.InvariantCulture));
@@ -110,6 +137,133 @@ namespace Win7POS.Wpf.Import
             WriteReport(ValueAfter(args, "--report"), ok ? "PASS" : "FAIL", report.ToString());
 
             return ok ? 0 : 1;
+        }
+
+        private static async Task<bool> VerifyDeniedApplyHasNoSideEffectsAsync()
+        {
+            var denied = new SupplierExcelImportWorkflowService(() => false);
+            var rawDenied = await IsPermissionDeniedAsync(() => denied.ApplyAsync(
+                new[]
+                {
+                    new SupplierImportEditableRow
+                    {
+                        Barcode = "QA-DENIED-RAW",
+                        ProductName = "Denied raw apply",
+                        PurchasePrice = "100",
+                        RetailPrice = "180"
+                    }
+                },
+                dryRun: false)).ConfigureAwait(true);
+            var previewDenied = await IsPermissionDeniedAsync(() => denied.ApplyAsync(
+                (SupplierImportSyncPreview)null,
+                dryRun: false,
+                sourceFileName: "denied.xlsx")).ConfigureAwait(true);
+
+            var backupFiles = Directory.Exists(AppPaths.BackupsDirectory)
+                ? Directory.EnumerateFiles(AppPaths.BackupsDirectory).Any()
+                : false;
+            return rawDenied && previewDenied &&
+                !File.Exists(AppPaths.DbPath) &&
+                !backupFiles;
+        }
+
+        private static async Task<bool> VerifyApplyAuthorizationLeaseAsync()
+        {
+            var rawSecondGate = CreateEditableRow("QA-DENIED-RAW-SECOND");
+            var rawPostBackup = CreateEditableRow("QA-DENIED-RAW-POST-BACKUP");
+            var previewSecondGate = CreateEditableRow("QA-DENIED-PREVIEW-SECOND");
+            var previewPostBackup = CreateEditableRow("QA-DENIED-PREVIEW-POST-BACKUP");
+            var previewBuilder = new SupplierExcelImportWorkflowService(() => true);
+            var secondPreview = await previewBuilder.BuildSyncPreviewAsync(
+                new[] { previewSecondGate }).ConfigureAwait(true);
+            var postBackupPreview = await previewBuilder.BuildSyncPreviewAsync(
+                new[] { previewPostBackup }).ConfigureAwait(true);
+
+            var dispatcher = Dispatcher.CurrentDispatcher;
+            return await VerifyAuthorizationScenarioAsync(
+                       rawSecondGate,
+                       null,
+                       denyAfterBackup: false,
+                       dispatcher).ConfigureAwait(true) &&
+                await VerifyAuthorizationScenarioAsync(
+                       rawPostBackup,
+                       null,
+                       denyAfterBackup: true,
+                       dispatcher).ConfigureAwait(true) &&
+                await VerifyAuthorizationScenarioAsync(
+                       previewSecondGate,
+                       secondPreview,
+                       denyAfterBackup: false,
+                       dispatcher).ConfigureAwait(true) &&
+                await VerifyAuthorizationScenarioAsync(
+                       previewPostBackup,
+                       postBackupPreview,
+                       denyAfterBackup: true,
+                       dispatcher).ConfigureAwait(true);
+        }
+
+        private static async Task<bool> VerifyAuthorizationScenarioAsync(
+            SupplierImportEditableRow row,
+            SupplierImportSyncPreview preview,
+            bool denyAfterBackup,
+            Dispatcher dispatcher)
+        {
+            var authorizer = denyAfterBackup
+                ? new SequencedAuthorizer(dispatcher, true, true, false)
+                : new SequencedAuthorizer(dispatcher, true, false);
+            var backupsBefore = CountSupplierBackups();
+            var workflow = new SupplierExcelImportWorkflowService(authorizer.Authorize);
+            var denied = preview == null
+                ? await IsPermissionDeniedAsync(() => workflow.ApplyAsync(
+                    new[] { row },
+                    dryRun: false)).ConfigureAwait(true)
+                : await IsPermissionDeniedAsync(() => workflow.ApplyAsync(
+                    preview,
+                    dryRun: false,
+                    sourceFileName: "denied-lease.xlsx")).ConfigureAwait(true);
+            var backupDelta = CountSupplierBackups() - backupsBefore;
+            var proof = ReadProof(row.Barcode);
+
+            return denied &&
+                authorizer.CallCount == (denyAfterBackup ? 3 : 2) &&
+                authorizer.AllCallsOnDispatcher &&
+                backupDelta == (denyAfterBackup ? 1 : 0) &&
+                proof.ProductRows == 0 &&
+                proof.ImportPriceHistoryRows == 0 &&
+                proof.OutboxRows == 0;
+        }
+
+        private static int CountSupplierBackups()
+        {
+            return Directory.Exists(AppPaths.BackupsDirectory)
+                ? Directory.EnumerateFiles(
+                    AppPaths.BackupsDirectory,
+                    "supplier_import_preapply_*.db").Count()
+                : 0;
+        }
+
+        private static SupplierImportEditableRow CreateEditableRow(string barcode)
+        {
+            return new SupplierImportEditableRow
+            {
+                Barcode = barcode,
+                ProductName = "Denied authorization lease",
+                PurchasePrice = "100",
+                RetailPrice = "180"
+            };
+        }
+
+        private static async Task<bool> IsPermissionDeniedAsync(Func<Task> action)
+        {
+            try
+            {
+                await action().ConfigureAwait(true);
+                return false;
+            }
+            catch (InvalidOperationException)
+            {
+                return true;
+            }
         }
 
         private static SupplierSmokeDbProof ReadProof(string barcode)
@@ -222,6 +376,28 @@ namespace Win7POS.Wpf.Import
         {
             public void ShowCompletion(string title, string message)
             {
+            }
+        }
+
+        private sealed class SequencedAuthorizer
+        {
+            private readonly bool[] _decisions;
+            private readonly Dispatcher _dispatcher;
+
+            public SequencedAuthorizer(Dispatcher dispatcher, params bool[] decisions)
+            {
+                _dispatcher = dispatcher ?? throw new ArgumentNullException(nameof(dispatcher));
+                _decisions = decisions ?? Array.Empty<bool>();
+            }
+
+            public bool AllCallsOnDispatcher { get; private set; } = true;
+            public int CallCount { get; private set; }
+
+            public bool Authorize()
+            {
+                AllCallsOnDispatcher = AllCallsOnDispatcher && _dispatcher.CheckAccess();
+                var index = CallCount++;
+                return index < _decisions.Length && _decisions[index];
             }
         }
 

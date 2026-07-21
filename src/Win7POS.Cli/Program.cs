@@ -2313,13 +2313,15 @@ CREATE TABLE users (
 
         AssertText(productsView, "supplierExcelImport.title", "Products screen must expose localized supplier Excel import.");
         AssertText(productsView, "SupplierExcelImportCommand", "Products import button must bind supplier command.");
-        AssertText(productsViewModel, "SupplierExcelImportDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner())", "Products command must open the supplier dialog modally.");
+        AssertText(productsViewModel, "SupplierExcelImportDialog.ShowDialog(", "Products command must open the supplier dialog modally.");
+        AssertText(productsViewModel, "PermissionCodes.CatalogImport", "Products supplier import must re-authorize catalog import at apply time.");
         AssertText(dbMaintenanceView, "supplierExcelImport.title", "DB maintenance screen must expose localized supplier Excel import.");
         AssertText(dbMaintenanceView, "SupplierExcelImportCommand", "DB maintenance import button must bind supplier command.");
         AssertText(localization, "Import Excel fornitore", "Supplier Excel import Italian title translation missing.");
         AssertText(dbMaintenanceViewModel, "internal Window OwnerWindow { get; set; }", "DB maintenance view model must keep the current dialog owner.");
         AssertText(dbMaintenanceDialogCode, "vm.OwnerWindow = this", "DB maintenance dialog must pass itself as current owner.");
-        AssertText(dbMaintenanceViewModel, "SupplierExcelImportDialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner())", "DB maintenance command must open the supplier dialog from the current owner chain.");
+        AssertText(dbMaintenanceViewModel, "OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),", "DB maintenance command must open the supplier dialog from the current owner chain.");
+        AssertText(dbMaintenanceViewModel, "_hasCatalogImportPermission", "DB maintenance supplier import must re-authorize catalog import at apply time.");
 
         AssertText(dialogXaml, "chrome:DialogShellWindow", "Supplier import must use the WPF dialog shell.");
         AssertText(dialogXaml, "UseModalOverlay=\"True\"", "Supplier import dialog must be modal.");
@@ -2331,6 +2333,8 @@ CREATE TABLE users (
         AssertText(dialogShellWindow, "ApplyOverlayPosition(outerBorder)", "Overlay positioning must account for the actual dialog card size.");
         AssertText(dialogShellWindow, "CanHostOverlayCard", "Nested overlays must fall back to monitor work area when the owner cannot host the card.");
         AssertText(dialogCode, "ShowDialog", "Supplier import dialog must be shown with ShowDialog.");
+        AssertText(dialogCode, "ShowDialog(Window owner, Func<bool> authorizeApply)", "Supplier import dialog must require an apply-time authorizer.");
+        AssertText(dialogCode, "new SupplierExcelImportWorkflowService(authorizeApply)", "Supplier import dialog must forward the apply-time authorizer.");
         AssertText(dialogCode, "Owner = DialogOwnerHelper.GetSafeOwner(owner)", "Supplier import dialog owner must be normalized through DialogOwnerHelper.");
         AssertText(dialogCode, "new SupplierExcelFileDialogService(() => this)", "Supplier import dialog must provide itself as file picker owner.");
         AssertText(viewModel, "ISupplierExcelFileDialogService", "Supplier import file picker must be owner-aware behind an interface.");
@@ -2409,6 +2413,8 @@ CREATE TABLE users (
         AssertText(viewModel, "StepIndex == 3 && SyncCanApply", "Apply must be enabled only from valid Step 4.");
         AssertText(viewModel, "string.IsNullOrWhiteSpace(row.SecondProductName)", "Missing new identity count must accept secondProductName like the analyzer.");
         AssertText(workflow, "ListDetailsByBarcodesAsync", "Supplier import must not load the full catalog for barcode-only matching.");
+        AssertText(workflow, "_authorizeApply = authorizeApply ?? (() => false)", "Supplier import workflow must fail closed without an authorizer.");
+        AssertText(workflow, "DemandApplyAuthorization();", "Supplier import workflow must re-authorize immediately before mutation.");
         AssertText(workflow, "CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry", "Supplier import workflow must prepare catalog import outbox payload.");
         AssertText(workflow, "rebuilt.Fingerprint", "Apply must recompute and verify Step 4 before writing.");
         AssertText(applier, "CatalogImportOutboxRepository", "Supplier import apply must enqueue catalog import outbox.");
@@ -5511,6 +5517,7 @@ SELECT last_insert_rowid();";
 
                 Assert(result.Success && result.Value != null && result.Value.Ok, "Catalog pull request was not accepted.");
                 var response = result.Value ?? throw new InvalidOperationException("Catalog response missing.");
+                EnsureCompatibleCatalogResponse(response);
                 LastTask081CatalogDiagnostics =
                     "products=" + (response.Catalog?.Products?.Length ?? 0).ToString(CultureInfo.InvariantCulture) +
                     ",categories=" + (response.Catalog?.Categories?.Length ?? 0).ToString(CultureInfo.InvariantCulture) +
@@ -5543,6 +5550,7 @@ SELECT last_insert_rowid();";
         SqliteConnectionFactory factory,
         PosCatalogPullResponse response)
     {
+        EnsureCompatibleCatalogResponse(response);
         var catalog = response.Catalog ?? throw new InvalidOperationException("Catalog payload missing.");
         var categories = BuildCatalogNameMap(catalog.Categories, row => row.CategoryId, row => row.Name);
         var suppliers = BuildCatalogNameMap(catalog.Suppliers, row => row.SupplierId, row => row.Name);
@@ -5593,6 +5601,17 @@ SELECT last_insert_rowid();";
                 ToInt(price.Price),
                 Normalize(price.EffectiveAt),
                 Normalize(price.Source)).ConfigureAwait(false);
+        }
+    }
+
+    private static void EnsureCompatibleCatalogResponse(PosCatalogPullResponse response)
+    {
+        var compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull(response);
+        if (!string.IsNullOrWhiteSpace(compatibilityError))
+        {
+            throw new InvalidDataException(
+                "Catalog response rejected before CLI harness normalization or persistence: " +
+                compatibilityError + ".");
         }
     }
 

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
@@ -191,6 +192,17 @@ WHERE key IN (
             string expectedPreviousMode = null,
             OnlineSyncGeneration generation = null)
         {
+            RemoteCatalogContentPolicy.EnsureOptionalTimestamp(
+                generatedAt,
+                "catalog.generated_at");
+            RemoteCatalogContentPolicy.EnsureOptionalCanonicalText(
+                syncCursor,
+                RemoteCatalogContentPolicy.SyncCursorMaximumLength,
+                "catalog.sync_cursor");
+            RemoteCatalogContentPolicy.EnsureOptionalCanonicalText(
+                syncMode,
+                RemoteCatalogContentPolicy.TypeMaximumLength,
+                "catalog.sync_mode");
             var value = string.IsNullOrWhiteSpace(generatedAt)
                 ? DateTimeOffset.UtcNow.ToString("O")
                 : generatedAt.Trim();
@@ -231,6 +243,17 @@ WHERE key IN (
             string expectedPreviousMode = null,
             OnlineSyncGeneration generation = null)
         {
+            RemoteCatalogContentPolicy.EnsureOptionalTimestamp(
+                generatedAt,
+                "catalog.generated_at");
+            RemoteCatalogContentPolicy.EnsureOptionalCanonicalText(
+                syncCursor,
+                RemoteCatalogContentPolicy.SyncCursorMaximumLength,
+                "catalog.sync_cursor");
+            RemoteCatalogContentPolicy.EnsureOptionalCanonicalText(
+                syncMode,
+                RemoteCatalogContentPolicy.TypeMaximumLength,
+                "catalog.sync_mode");
             var normalizedSyncMode = (syncMode ?? string.Empty).Trim().ToLowerInvariant();
             if (normalizedSyncMode != "delta" && normalizedSyncMode != "full_refresh")
             {
@@ -821,6 +844,23 @@ WHERE key IN (
         {
             if (exactness == null) throw new ArgumentNullException(nameof(exactness));
 
+            var suppliedContext = exactness.Context;
+            if (suppliedContext != null)
+            {
+                RemoteCatalogContentPolicy.EnsureOptionalCanonicalText(
+                    suppliedContext.CatalogVersion,
+                    RemoteCatalogContentPolicy.CatalogVersionMaximumLength,
+                    "catalog.exactness.catalog_version");
+                RemoteCatalogContentPolicy.EnsureOptionalCanonicalText(
+                    suppliedContext.SyncCursor,
+                    RemoteCatalogContentPolicy.SyncCursorMaximumLength,
+                    "catalog.exactness.sync_cursor");
+                RemoteCatalogContentPolicy.EnsureOptionalCanonicalText(
+                    suppliedContext.SyncMode,
+                    RemoteCatalogContentPolicy.TypeMaximumLength,
+                    "catalog.exactness.sync_mode");
+            }
+
             // Re-evaluate instead of trusting a mutable DTO supplied by a caller. This keeps
             // the persisted Verified state tied to the fail-closed verifier invariants.
             var canonical = CatalogExactnessVerifier.Evaluate(
@@ -945,7 +985,7 @@ WHERE key IN (
                 await SetLongAsync(conn, tx, ExactnessPrefix + "non_authoritative_active_suppliers", audit.NonAuthoritativeActiveSuppliers).ConfigureAwait(false);
                 await SetLongAsync(conn, tx, ExactnessPrefix + "remote_price_history_rows", audit.RemotePriceHistoryRows).ConfigureAwait(false);
 
-                if (canonical.RepairRequired || canonical.Status == CatalogCompletenessStatus.Mismatch)
+                if (canonical.RepairRequired || canonical.Status != CatalogCompletenessStatus.Verified)
                 {
                     await conn.ExecuteAsync(@"
 DELETE FROM app_settings
@@ -1019,6 +1059,14 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
             long? reconciledImportAckGeneration = null,
             OnlineSyncGeneration generation = null)
         {
+            RemoteCatalogContentPolicy.EnsureOptionalTimestamp(
+                generatedAt,
+                "catalog.generated_at");
+            var normalizedRevision = CatalogHeartbeatPolicy.NormalizeRevision(committedRevision);
+            if (!string.IsNullOrWhiteSpace(committedRevision) && normalizedRevision.Length == 0)
+            {
+                throw new InvalidDataException("Catalog committed revision is invalid.");
+            }
             var value = string.IsNullOrWhiteSpace(generatedAt)
                 ? DateTimeOffset.UtcNow.ToString("O")
                 : generatedAt.Trim();
@@ -1047,7 +1095,6 @@ WHERE key IN (@SaleSafeKey, @InitialCompletedKey);",
                     await SetAsync(conn, tx, InitialCompletedAtKey, value).ConfigureAwait(false);
                 }
 
-                var normalizedRevision = CatalogHeartbeatPolicy.NormalizeRevision(committedRevision);
                 if (normalizedRevision.Length > 0)
                 {
                     await SetAsync(conn, tx, CommittedRevisionKey, normalizedRevision).ConfigureAwait(false);
@@ -1231,19 +1278,17 @@ WHERE key IN (
             var rawExactnessStatus = Read(CompletenessStatusKey);
             if (string.IsNullOrWhiteSpace(rawExactnessStatus))
             {
-                // Compatibility for already sale-safe bound databases created before
-                // exactness evidence was introduced.
-                return CatalogSaleSafetyEvaluation.Safe(
+                return CatalogSaleSafetyEvaluation.Blocked(
                     isCatalogBound: true,
-                    "catalog_sale_safe_legacy_exactness");
+                    "catalog_sale_blocked_exactness_missing");
             }
 
             if (!Enum.TryParse(rawExactnessStatus, true, out CatalogCompletenessStatus exactnessStatus) ||
-                exactnessStatus == CatalogCompletenessStatus.Mismatch)
+                exactnessStatus != CatalogCompletenessStatus.Verified)
             {
                 return CatalogSaleSafetyEvaluation.Blocked(
                     isCatalogBound: true,
-                    "catalog_sale_blocked_exactness_mismatch");
+                    "catalog_sale_blocked_exactness_not_verified");
             }
 
             var exactnessShopId = Normalize(Read(ExactnessShopIdKey));
@@ -1460,21 +1505,14 @@ WHERE key IN (
             var exactnessStatus = await GetAsync(conn, tx, CompletenessStatusKey).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(exactnessStatus))
             {
-                if (repairRequired)
-                {
-                    throw new InvalidOperationException("Catalog exactness requires repair before sale-safe can be stored.");
-                }
-
-                if (requireEvidence)
-                {
-                    throw new InvalidOperationException("Catalog exactness evidence is required before authoritative cursor commit.");
-                }
-
-                return;
+                throw new InvalidOperationException(
+                    requireEvidence
+                        ? "Catalog exactness evidence is required before authoritative cursor commit."
+                        : "Catalog exactness evidence is required before sale-safe can be stored.");
             }
 
             if (!Enum.TryParse(exactnessStatus, true, out CatalogCompletenessStatus status) ||
-                status == CatalogCompletenessStatus.Mismatch ||
+                status != CatalogCompletenessStatus.Verified ||
                 repairRequired)
             {
                 throw new InvalidOperationException("Catalog exactness requires repair before sale-safe can be stored.");

@@ -55,6 +55,7 @@ $required = @(
     "src/Win7POS.Wpf/Printing/WindowsSpoolerReceiptPrinter.cs",
     "src/Win7POS.Wpf/Printing/PrinterHardwareSafety.cs",
     "src/Win7POS.Wpf/Printing/ReceiptPrintOptions.cs",
+    "src/Win7POS.Core/Receipt/ReceiptContentPolicy.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsDialog.xaml",
     "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsViewModel.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/PosOnlineFirstLoginDialog.xaml.cs",
@@ -80,6 +81,7 @@ if ($fail) {
 
 $discovery = Read-Text "src/Win7POS.Wpf/Printing/WindowsPrinterDiscovery.cs"
 $spooler = Read-Text "src/Win7POS.Wpf/Printing/WindowsSpoolerReceiptPrinter.cs"
+$receiptContentPolicy = Read-Text "src/Win7POS.Core/Receipt/ReceiptContentPolicy.cs"
 $hardwareSafety = Read-Text "src/Win7POS.Wpf/Printing/PrinterHardwareSafety.cs"
 $printOptions = Read-Text "src/Win7POS.Wpf/Printing/ReceiptPrintOptions.cs"
 $dialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PrinterSettingsDialog.xaml"
@@ -354,6 +356,20 @@ if ($safeStartGuardPass) {
 }
 else {
     Fail "Safe Start must be an executable fail-closed printer/cash-drawer boundary"
+}
+
+$entryDocumentGuardIndex = $spoolerPrintBody.IndexOf("ReceiptDocumentPolicy.EnsureValidDocument", [StringComparison]::Ordinal)
+$entryHardwareGuardIndex = $spoolerPrintBody.IndexOf("PrinterHardwareSafety.DemandHardwareOutputAllowed", [StringComparison]::Ordinal)
+$printOnceBody = Get-MethodBody $spooler 'private\s+static\s+void\s+PrintOnce\s*\('
+if ($receiptContentPolicy -notmatch 'MaxDocumentCharacters\s*=\s*131072' -or
+    $entryDocumentGuardIndex -lt 0 -or
+    $entryHardwareGuardIndex -lt 0 -or
+    $entryDocumentGuardIndex -gt $entryHardwareGuardIndex -or
+    $printOnceBody -notmatch 'ReceiptDocumentPolicy\.EnsureValidDocument\(receiptText\)' -or
+    $uiSmoke -notmatch 'invalidDocumentRejectedBeforeEffect') {
+    Fail "invalid receipt documents must fail before hardware/effect-tail creation and be rechecked at the print worker"
+} else {
+    Pass "receipt document limits are enforced before hardware and again at the print worker"
 }
 
 if ($printOptions -match 'MinimumCopies\s*=\s*1' -and

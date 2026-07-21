@@ -83,6 +83,14 @@ $accessRecovery = Read-Many @(
     "src/Win7POS.Wpf/Pos/Dialogs/FirstRunSetupDialog.xaml.cs",
     "src/Win7POS.Data/Repositories/UserRepository.cs"
 )
+$shippingApp = Read-Text "src/Win7POS.Wpf/App.xaml.cs"
+$supplierSmokeHarness = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/SupplierExcelWpfViewModelSmoke.cs"
+$supplierWorkflow = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs"
+$posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
+$denyAllPermissions = Read-Text "src/Win7POS.Wpf/Infrastructure/Security/DenyAllPermissionService.cs"
+$dbMaintenance = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceViewModel.cs"
+$migrationDetector = Read-Text "src/Win7POS.Data/Migrations/LegacySchemaDetector.cs"
+$migrationTests = Read-Text "tests/Win7POS.Core.Tests/Data/MigrationRunnerTests.cs"
 
 foreach ($redactor in @(
     @{ Label = "session/device token aliases"; Pattern = 'session\[_-\]\?token[\s\S]*device\[_-\]\?token[\s\S]*trusted\[_-\]\?device\[_-\]\?token' },
@@ -126,8 +134,25 @@ Forbid "direct Supabase/service-role absent" (Read-Many @("src", "samples", "ins
 
 Require "online denial is classified before recovery" $recoveryPolicy "IsDenied\(failureKind\)[\s\S]*PosAccessNextStep\.Denied"
 Require "first-run admin rechecks zero users in immediate transaction" $userRepository "BeginTransaction\(deferred:\s*false\)[\s\S]*SELECT COUNT\(\*\)[\s\S]*FirstRunAdminCreated"
+Require "system-role grants are compared as an exact canonical permission set" $dbInitializer 'IsSecuritySeedSatisfied[\s\S]*actualPermissions[\s\S]*SequenceEqual[\s\S]*expectedPermissions'
+Require "no-op startup fails closed when canonical system-role grants are unsafe" $dbInitializer 'SeedSecurity\(connection, transaction\);[\s\S]{0,260}!IsSecuritySeedSatisfied[\s\S]{0,260}canonical security seed'
 Require "first-run credential is cleared in finally" $accessRecovery "finally[\s\S]*CredentialBox\.Clear\(\)"
 Forbid "access/recovery logs contain no raw operator identifiers or credentials" $accessRecovery "(?i)Log(?:Info|Warning|Error)\s*\([^\r\n;]{0,260}\+\s*(username|shopCode|staffCode|credential|pin)\b"
+
+Forbid "shipping app exposes no supplier mutation smoke hook" $shippingApp 'SupplierExcelWpfViewModelSmoke|--supplier-excel-wpf-viewmodel-smoke'
+Require "supplier mutation smoke is isolated in the non-shipping UI harness" $supplierSmokeHarness '--supplier-excel-wpf-viewmodel-smoke[\s\S]*RunSmokeAsync'
+Require "supplier apply authorizes before initialization and again immediately before backup" $supplierWorkflow 'ApplyAsync\([\s\S]{0,300}DemandApplyAuthorization\(\);[\s\S]{0,100}DbInitializer\.EnsureCreated[\s\S]{0,900}DemandApplyAuthorization\(\);[\s\S]{0,100}CreateBackupBeforeApplyAsync'
+Require "raw supplier apply reauthorizes after backup immediately before mutation" $supplierWorkflow 'CreateBackupBeforeApplyAsync\(_options\.DbPath\)\.ConfigureAwait\(true\);\s*DemandApplyAuthorization\(\);\s*\}\s*var\s+applier'
+Require "preview supplier apply builds payload off-dispatcher then reauthorizes immediately before mutation" $supplierWorkflow 'BuildSupplierExcelEntry[\s\S]{0,260}ConfigureAwait\(true\);[\s\S]{0,140}DemandApplyAuthorization\(\);\s*\}\s*var\s+applier'
+Require "supplier authorization smoke attributes every gate, backup and dispatcher boundary" $supplierSmokeHarness 'SequencedAuthorizer[\s\S]*AllCallsOnDispatcher[\s\S]*backupDelta\s*==\s*\(denyAfterBackup\s*\?\s*1\s*:\s*0\)'
+Require "supplier authorization lease result is required by the executable smoke" $supplierSmokeHarness 'authorizationLeasePass[\s\S]{0,220}throw\s+new\s+InvalidOperationException'
+Require "nullable POS permission composition becomes deny-all" $posViewModel '_permissionService\s*=\s*permissionService\s*\?\?\s*DenyAllPermissionService\.Instance'
+Require "deny-all permission service cannot grant or override" $denyAllPermissions 'bool\s+Has[\s\S]{0,100}return\s+false[\s\S]*void\s+Demand[\s\S]*throw\s+new\s+InvalidOperationException[\s\S]*bool\s+CanOverride[\s\S]{0,100}return\s+false'
+Require "restore permission is checked after native selection and before restore" $dbMaintenance 'dlg\.ShowDialog\(owner\)[\s\S]{0,300}_demandRestorePermission[\s\S]{0,300}RestoreDbAsync'
+Require "maintenance mutations have action-time authorization" $dbMaintenance 'CompleteRestoreReviewAsync[\s\S]{0,250}_hasMaintenancePermission[\s\S]{0,500}CompleteRestoreSyncReviewAsync[\s\S]*VacuumAsync[\s\S]{0,250}_hasMaintenancePermission[\s\S]{0,500}_service\.VacuumAsync'
+Require "malformed SQLite index and trigger metadata is fail-closed" $migrationDetector 'invalid-unique-key-definition[\s\S]*invalid-index-definition[\s\S]*invalid-trigger-definition'
+Require "ledger metadata bypass regressions are executable" $migrationTests 'WhitespaceNamedLedgerTrigger_IsRejectedBeforePendingMigrationOrLedgerInsert[\s\S]*LedgerUniqueIndexWithMissingSql_IsRejectedBeforePendingMigrationOrLedgerInsert[\s\S]*LedgerExplicitIndexWithMissingSql_IsRejectedBeforePendingMigration'
+Require "fully-ledgered schema and system-grant drift regressions are executable" $migrationTests 'MissingRequiredSystemGrant_IsReconciledOnNoOpStartup[\s\S]*UnexpectedSystemGrant_IsRejectedOnNoOpStartup[\s\S]*FullyAppliedLedgerWithGenerationTrigger_FailsBeforeSecurityReconciliation'
 
 if ($runtime -match "(?i)FileSystemAccessRule|SetAccessControl|DirectorySecurity|FileSecurity") {
     Info "custom file ACL code present; review manually"

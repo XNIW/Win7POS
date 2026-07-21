@@ -34,6 +34,17 @@ function Assert-NotContains {
     }
 }
 
+function Assert-Matches {
+    param(
+        [string]$Source,
+        [string]$Pattern,
+        [string]$Message
+    )
+    if ($Source -notmatch $Pattern) {
+        throw $Message
+    }
+}
+
 $productsView = Read-RepoFile "src/Win7POS.Wpf/Products/ProductsView.xaml"
 $productsViewModel = Read-RepoFile "src/Win7POS.Wpf/Products/ProductsViewModel.cs"
 $dbMaintenanceView = Read-RepoFile "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml"
@@ -58,13 +69,13 @@ $productDbImportViewModel = Read-RepoFile "src/Win7POS.Wpf/Import/ProductDbImpor
 
 Assert-Contains $productsView "supplierExcelImport.title" "Products localized entry point missing."
 Assert-Contains $productsView "SupplierExcelImportCommand" "Products entry point is not wired."
-Assert-Contains $productsViewModel "SupplierExcelImportDialog.ShowDialog(DialogOwnerHelper.GetSafeOwner())" "Products entry point does not open supplier dialog."
+Assert-Matches $productsViewModel 'SupplierExcelImportDialog\.ShowDialog\(\s*DialogOwnerHelper\.GetSafeOwner\(\),\s*\(\)\s*=>\s*DemandProductPermission\([\s\S]{0,180}PermissionCodes\.CatalogImport' "Products entry point must open the supplier dialog with an apply-time catalog.import authorizer."
 Assert-Contains $dbMaintenanceView "supplierExcelImport.title" "DB maintenance localized entry point missing."
 Assert-Contains $dbMaintenanceView "SupplierExcelImportCommand" "DB maintenance entry point is not wired."
 Assert-Contains $localization "Import Excel fornitore" "Supplier Excel Italian title translation missing."
 Assert-Contains $dbMaintenanceViewModel "internal Window OwnerWindow { get; set; }" "DB maintenance must keep the current dialog owner."
 Assert-Contains $dbMaintenanceDialogCode "vm.OwnerWindow = this" "DB maintenance dialog must pass itself as current owner."
-Assert-Contains $dbMaintenanceViewModel "SupplierExcelImportDialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner())" "DB maintenance entry point must open supplier dialog from the current owner chain."
+Assert-Matches $dbMaintenanceViewModel 'SupplierExcelImportDialog\.ShowDialog\(\s*OwnerWindow\s*\?\?\s*DialogOwnerHelper\.GetSafeOwner\(\),\s*_hasCatalogImportPermission\)' "DB maintenance entry point must pass its current owner and catalog.import authorizer."
 
 Assert-Contains $dialogXaml "chrome:DialogShellWindow" "Supplier import must use WPF dialog shell."
 Assert-Contains $dialogXaml "UseModalOverlay=`"True`"" "Supplier import dialog must be modal."
@@ -78,6 +89,8 @@ Assert-Contains $dialogShellWindow "CanHostOverlayCard" "Nested overlays must fa
 Assert-Contains $dialogCode "ShowDialog" "Supplier import must be shown with ShowDialog."
 Assert-Contains $dialogCode "Owner = DialogOwnerHelper.GetSafeOwner(owner)" "Supplier import dialog owner must be normalized through DialogOwnerHelper."
 Assert-Contains $dialogCode "new SupplierExcelFileDialogService(() => this)" "Supplier import dialog must provide itself as file picker owner."
+Assert-Matches $dialogCode 'ShowDialog\(Window owner, Func<bool> authorizeApply\)' "Supplier import dialog must require an apply-time authorizer."
+Assert-Contains $dialogCode "new SupplierExcelImportWorkflowService(authorizeApply)" "Supplier import dialog must forward the apply-time authorizer."
 Assert-Contains $viewModel "ISupplierExcelFileDialogService" "Supplier import file picker must be owner-aware behind an interface."
 Assert-Contains $viewModel "ISupplierExcelCompletionDialogService" "Supplier import completion dialog must be injectable for WPF smoke."
 Assert-Contains $viewModel "RunSmokeAsync" "Supplier import ViewModel smoke path missing."
@@ -87,6 +100,8 @@ Assert-Contains $viewModel "dlg.ShowDialog(owner)" "Supplier import file picker 
 Assert-NotContains $viewModel "dlg.ShowDialog() == true" "Supplier import file picker must not use ownerless ShowDialog()."
 Assert-NotContains $viewModel "ModernMessageDialog.Show(Application.Current?.MainWindow" "Supplier import flow must not hardcode MainWindow for nested dialog messages."
 Assert-NotContains $dbMaintenanceViewModel "SupplierExcelImportDialog.ShowDialog(System.Windows.Application.Current?.MainWindow)" "DB maintenance supplier import must not hardcode MainWindow."
+Assert-Matches $workflow 'SupplierExcelImportWorkflowService\(Func<bool> authorizeApply\)[\s\S]{0,220}_authorizeApply\s*=\s*authorizeApply\s*\?\?\s*\(\(\)\s*=>\s*false\)' "Supplier import workflow must fail closed when its authorizer is absent."
+Assert-Matches $workflow 'if\s*\(!dryRun\)[\s\S]{0,120}DemandApplyAuthorization\(\)[\s\S]{0,180}CreateBackupBeforeApplyAsync' "Supplier import must reauthorize immediately before backup and mutation."
 Assert-Contains $dialogOwnerHelper "window.IsVisible && window.IsEnabled" "DialogOwnerHelper must skip invisible or disabled owners."
 Assert-Contains $dialogOwnerHelper "window.IsActive" "DialogOwnerHelper must prefer the active safe owner."
 Assert-Contains $dialogOwnerHelper "LastOrDefault(IsSafeOwner)" "DialogOwnerHelper must fall back only to visible/enabled owners."
@@ -230,12 +245,16 @@ Assert-Contains $dbMaintenanceViewModel "CatalogEvents.RaiseCatalogChanged(null)
 Assert-Contains $dbMaintenanceViewModel "dlg.ShowDialog(owner)" "DB maintenance restore picker must be shown with an explicit owner."
 Assert-Contains $dbMaintenanceViewModel "DialogOwnerHelper.GetSafeOwner(OwnerWindow)" "DB maintenance restore picker must resolve the current safe owner."
 $app = Read-RepoFile "src/Win7POS.Wpf/App.xaml.cs"
-$wpfSmoke = Read-RepoFile "src/Win7POS.Wpf/Import/SupplierExcelWpfViewModelSmoke.cs"
+$wpfSmoke = Read-RepoFile "tests/Win7POS.Wpf.UiSmokeHarness/SupplierExcelWpfViewModelSmoke.cs"
+$uiHarness = Read-RepoFile "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $proofReader = Read-RepoFile "src/Win7POS.Data/Import/SupplierExcelImportProofReader.cs"
-Assert-Contains $app "SupplierExcelWpfViewModelSmoke.TryRun" "WPF app must expose the test-only supplier Excel ViewModel smoke flag."
+Assert-NotContains $app "SupplierExcelWpfViewModelSmoke" "Shipping WPF app must not expose the supplier Excel mutation smoke hook."
+Assert-NotContains $app "--supplier-excel-wpf-viewmodel-smoke" "Shipping WPF app must not recognize the supplier Excel mutation smoke flag."
+Assert-Contains $uiHarness "SupplierExcelWpfViewModelSmoke.TryRun" "UI test harness must expose the supplier Excel ViewModel smoke flag."
 Assert-Contains $wpfSmoke "--supplier-excel-wpf-viewmodel-smoke" "WPF supplier smoke flag missing."
 Assert-Contains $wpfSmoke "new SmokeFileDialogService" "WPF supplier smoke must bypass native file picker through the same ViewModel service seam."
 Assert-Contains $wpfSmoke "RunSmokeAsync" "WPF supplier smoke must drive the ViewModel through Analyze, Step 4 and Apply."
+Assert-Contains $wpfSmoke "VerifyDeniedApplyHasNoSideEffectsAsync" "WPF supplier smoke must prove denied overloads create no database or backup side effects."
 Assert-Contains $wpfSmoke "backupCreated" "WPF supplier smoke must report backup proof."
 Assert-Contains $wpfSmoke "SupplierExcelImportProofReader" "WPF supplier smoke must verify DB proof through Data."
 Assert-Contains $proofReader "catalog_import_outbox" "Data supplier proof reader must verify outbox proof."

@@ -49,7 +49,9 @@ namespace Win7POS.Wpf.Pos
                     columns));
             }
 
-            return string.Join(Environment.NewLine, renderedLines);
+            var receipt = string.Join(Environment.NewLine, renderedLines);
+            ReceiptDocumentPolicy.EnsureValidDocument(receipt);
+            return receipt;
         }
 
         internal static void SplitPreview(

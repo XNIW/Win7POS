@@ -20,6 +20,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         private readonly PosWorkflowService _service;
         private readonly bool _useReceipt42;
+        private readonly IPermissionService _permissionService;
         private readonly IOverrideAuthService _overrideAuthService;
 
         private SalesRegisterFilter _filter = SalesRegisterFilter.Oggi;
@@ -42,10 +43,11 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private int _listLoadVersion;
         private bool _disposed;
 
-        public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, Action<long, SalesRegisterViewModel> onRequestRefund = null, bool isRefundScanMode = false, System.Collections.Generic.IReadOnlyList<(int id, string displayName)> operators = null, bool canViewAll = true, int? forceOperatorId = null, IOverrideAuthService overrideAuthService = null)
+        public SalesRegisterViewModel(PosWorkflowService service, bool useReceipt42, IPermissionService permissionService, Action<long, SalesRegisterViewModel> onRequestRefund = null, bool isRefundScanMode = false, System.Collections.Generic.IReadOnlyList<(int id, string displayName)> operators = null, bool canViewAll = true, int? forceOperatorId = null, IOverrideAuthService overrideAuthService = null)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
             _useReceipt42 = useReceipt42;
+            _permissionService = permissionService ?? throw new ArgumentNullException(nameof(permissionService));
             _overrideAuthService = overrideAuthService;
             _isRefundScanMode = isRefundScanMode;
             _canViewAll = canViewAll;
@@ -515,6 +517,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             IsBusy = true;
             try
             {
+                _permissionService.Demand(
+                    Win7POS.Core.Security.PermissionCodes.PosReprintReceipt,
+                    PosLocalization.T("printer.reprintReceipt"));
                 await _service.PrintReceiptTextAsync(
                     preview,
                     _useReceipt42,

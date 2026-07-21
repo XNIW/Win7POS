@@ -50,6 +50,9 @@ $salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
 $revocationLatch = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncRevocationLatch.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
+$wpfProject = Read-Text "src/Win7POS.Wpf/Win7POS.Wpf.csproj"
+$uiHarness = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
+$authorizationSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/AuthorizationLeaseWpfSmoke.cs"
 
 Require-Pattern "offline lease maximum is the 12-hour POS session contract" $contract 'OfflineAuthorizationMaxAgeSeconds\s*=\s*12\s*\*\s*60\s*\*\s*60'
 Require-Pattern "policy fails closed on missing legacy receipt timestamp" $policy 'local_receipt_time_invalid'
@@ -57,40 +60,60 @@ Require-Pattern "policy rejects rollback and exact expiry" $policy 'clock_rollba
 Require-Pattern "first-login DTO consumes authenticated serverTime" $contracts 'class\s+PosFirstLoginResponse[\s\S]*DataMember\(Name\s*=\s*"serverTime"\)'
 Require-Pattern "heartbeat DTO consumes authenticated serverTime" $contracts 'class\s+PosHeartbeatResponse[\s\S]*DataMember\(Name\s*=\s*"serverTime"\)'
 Require-Pattern "trusted store persists server and local receipt clocks" $store 'LastOkLocalAt\s*=\s*candidate\.LastOkLocalAt[\s\S]*LastOkServerAt\s*=\s*candidate\.LastOkServerAt'
+Require-Pattern "only the non-shipping UI harness receives WPF internal test access" $wpfProject 'InternalsVisibleToAttribute[\s\S]{0,180}Win7POS\.Wpf\.UiSmokeHarness'
+Require-Pattern "authorization lease dynamic smoke is wired into the UI harness" $uiHarness '--authorization-lease-smoke[\s\S]*AuthorizationLeaseWpfSmoke\.RunAsync'
+Require-Pattern "authorization lease dynamic smoke is restricted to an empty QA data root" $uiHarness 'restrictedSeed\s*=\s*physicalPrinterQa[\s\S]{0,300}--authorization-lease-smoke[\s\S]{0,700}EnsureSyntheticTrustedSessionSeedPath'
+Require-Pattern "wrong PIN dynamic regression leaves the generation uncommitted" $authorizationSmoke 'LoginAsync\(username,\s*WrongPin\)[\s\S]{0,900}sync_generation_inactive'
+Require-Pattern "epoch and generation changes are denied dynamically" $authorizationSmoke 'InvalidateAuthorizationState\(\)[\s\S]{0,900}sync_generation_changed[\s\S]{0,1500}qa-auth-generation-2[\s\S]{0,900}sync_generation_changed'
+Require-Pattern "successful PIN primes a monotonic authorization high-water" $authorizationSmoke 'LoginAsync\(username,\s*CorrectPin\)[\s\S]{0,1400}successful PIN did not prime[\s\S]{0,3200}clock_rollback'
+Require-Pattern "cancelled operator switch rejects durable authority changes dynamically" $authorizationSmoke 'IsSessionBoundToCurrentTrustedIdentityAsync[\s\S]{0,1400}users\.UpdateAsync[\s\S]{0,900}durable authority change left the cached operator session bound[\s\S]{0,900}durableAuthorityChangeDenied=True'
+Require-Pattern "authorization lease smoke has an explicit zero-hardware boundary" $authorizationSmoke 'hardwareEffects=0'
+Require-Pattern "cancelled operator switch reloads and compares durable authority" $main 'IsSessionBoundToCurrentTrustedIdentityAsync[\s\S]{0,1400}GetByUsernameAsync[\s\S]{0,500}HasSameDurableAuthority'
+Require-Pattern "durable authority comparison covers role, status, limits and permissions" $main 'HasSameDurableAuthority[\s\S]{0,1700}RoleId[\s\S]{0,500}RoleCode[\s\S]{0,500}IsActive[\s\S]{0,500}RequirePinChange[\s\S]{0,500}MaxDiscountPercent[\s\S]{0,500}CanOverride[\s\S]{0,500}SequenceEqual'
 Require-Pattern "runtime guard is internal and cannot be composed ad hoc" $guard 'internal\s+sealed\s+class\s+PosOfflineAuthorizationLeaseGuard'
 $syncEvaluateStart = $guard.IndexOf("public PosOfflineAuthorizationLeaseDecision Evaluate(out", [System.StringComparison]::Ordinal)
-$asyncEvaluateStart = $guard.IndexOf("public async Task<PosOfflineAuthorizationLeaseEvaluation> EvaluateAsync()", [System.StringComparison]::Ordinal)
+$preflightStart = $guard.IndexOf("public async Task<PosOfflineAuthorizationLeaseEvaluation> PreflightAsync()", [System.StringComparison]::Ordinal)
+$commitStart = $guard.IndexOf("public async Task<PosOfflineAuthorizationLeaseEvaluation> CommitAuthenticationAsync", [System.StringComparison]::Ordinal)
 $evaluationClassStart = $guard.IndexOf("internal sealed class PosOfflineAuthorizationLeaseEvaluation", [System.StringComparison]::Ordinal)
-if ($syncEvaluateStart -lt 0 -or $asyncEvaluateStart -le $syncEvaluateStart -or
-    $evaluationClassStart -le $asyncEvaluateStart) {
+if ($syncEvaluateStart -lt 0 -or $preflightStart -le $syncEvaluateStart -or
+    $commitStart -le $preflightStart -or $evaluationClassStart -le $commitStart) {
     Fail "authorization guard method boundaries are missing"
 } else {
-    $syncEvaluateBody = $guard.Substring($syncEvaluateStart, $asyncEvaluateStart - $syncEvaluateStart)
-    $asyncEvaluateBody = $guard.Substring($asyncEvaluateStart, $evaluationClassStart - $asyncEvaluateStart)
+    $syncEvaluateBody = $guard.Substring($syncEvaluateStart, $preflightStart - $syncEvaluateStart)
+    $preflightBody = $guard.Substring($preflightStart, $commitStart - $preflightStart)
+    $commitBody = $guard.Substring($commitStart, $evaluationClassStart - $commitStart)
     $syncCapture = $syncEvaluateBody.IndexOf("TryCaptureAuthorizationEpoch", [System.StringComparison]::Ordinal)
     $syncStore = $syncEvaluateBody.IndexOf("_store.TryRead", [System.StringComparison]::Ordinal)
-    $asyncCapture = $asyncEvaluateBody.IndexOf("TryCaptureAuthorizationEpoch", [System.StringComparison]::Ordinal)
-    $asyncStore = $asyncEvaluateBody.IndexOf("_store.TryRead", [System.StringComparison]::Ordinal)
-    $durableCheck = $asyncEvaluateBody.IndexOf("await _generationIsActive", [System.StringComparison]::Ordinal)
-    $postAwaitLock = $asyncEvaluateBody.IndexOf("lock (_sync)", $durableCheck, [System.StringComparison]::Ordinal)
-    $postAwaitEpoch = $asyncEvaluateBody.IndexOf("IsAuthorizationEpochCurrent", $postAwaitLock, [System.StringComparison]::Ordinal)
-    $exactReread = $asyncEvaluateBody.IndexOf("_store.TryReadGeneration", $postAwaitLock, [System.StringComparison]::Ordinal)
-    $epochAssignment = $asyncEvaluateBody.IndexOf("_validatedAuthorizationEpoch = authorizationEpoch", [System.StringComparison]::Ordinal)
-    $fingerprintAssignment = $asyncEvaluateBody.IndexOf("_validatedGenerationFingerprint = generation.Fingerprint", [System.StringComparison]::Ordinal)
-    $finalEpoch = $asyncEvaluateBody.LastIndexOf("IsAuthorizationEpochCurrent", [System.StringComparison]::Ordinal)
+    $preflightCapture = $preflightBody.IndexOf("TryCaptureAuthorizationEpoch", [System.StringComparison]::Ordinal)
+    $preflightStore = $preflightBody.IndexOf("_store.TryRead", [System.StringComparison]::Ordinal)
+    $preflightDurable = $preflightBody.IndexOf("await _generationIsActive", [System.StringComparison]::Ordinal)
+    $preflightLock = $preflightBody.IndexOf("lock (_sync)", $preflightDurable, [System.StringComparison]::Ordinal)
+    $preflightEpoch = $preflightBody.IndexOf("IsAuthorizationEpochCurrent", $preflightLock, [System.StringComparison]::Ordinal)
+    $preflightReread = $preflightBody.IndexOf("_store.TryReadGeneration", $preflightLock, [System.StringComparison]::Ordinal)
+    $commitDurable = $commitBody.IndexOf("await _generationIsActive", [System.StringComparison]::Ordinal)
+    $commitLock = $commitBody.IndexOf("lock (_sync)", $commitDurable, [System.StringComparison]::Ordinal)
+    $commitReread = $commitBody.IndexOf("_store.TryReadGeneration", $commitLock, [System.StringComparison]::Ordinal)
+    $epochAssignment = $commitBody.IndexOf("_validatedAuthorizationEpoch = first.Token.AuthorizationEpoch", [System.StringComparison]::Ordinal)
+    $fingerprintAssignment = $commitBody.IndexOf("_validatedGenerationFingerprint = generation.Fingerprint", [System.StringComparison]::Ordinal)
+    $finalEpoch = $commitBody.LastIndexOf("IsAuthorizationEpochCurrent", [System.StringComparison]::Ordinal)
     if ($syncCapture -lt 0 -or $syncStore -le $syncCapture -or
         $syncEvaluateBody -notmatch '_validatedAuthorizationEpoch\s*==\s*authorizationEpoch' -or
         $syncEvaluateBody -notmatch '_validatedGenerationFingerprint[\s\S]{0,180}generation\.Fingerprint' -or
         $syncEvaluateBody -notmatch 'IsAuthorizationEpochCurrent' -or
-        $asyncCapture -lt 0 -or $asyncStore -le $asyncCapture -or
-        $durableCheck -le $asyncStore -or $postAwaitLock -le $durableCheck -or
-        $postAwaitEpoch -le $postAwaitLock -or $exactReread -le $postAwaitEpoch -or
-        $epochAssignment -le $exactReread -or $fingerprintAssignment -le $exactReread -or
+        $preflightCapture -lt 0 -or $preflightStore -le $preflightCapture -or
+        $preflightDurable -le $preflightStore -or $preflightLock -le $preflightDurable -or
+        $preflightEpoch -le $preflightLock -or $preflightReread -le $preflightEpoch -or
+        $preflightBody -match '_validatedAuthorizationEpoch\s*=\s*authorizationEpoch' -or
+        $preflightBody -match '_validatedGenerationFingerprint\s*=\s*generation\.Fingerprint' -or
+        $commitDurable -lt 0 -or $commitLock -le $commitDurable -or
+        $commitReread -le $commitLock -or $epochAssignment -le $commitReread -or
+        $fingerprintAssignment -le $commitReread -or
         $finalEpoch -le $epochAssignment -or
-        $asyncEvaluateBody -notmatch '_validatedAuthorizationEpoch\s*==\s*authorizationEpoch[\s\S]{0,220}_validatedGenerationFingerprint') {
-        Fail "runtime guard must scope high-water and durable revalidation to epoch plus generation"
+        $commitBody -notmatch 'first\.Token\.AuthorizationEpoch\s*==\s*second\.Token\.AuthorizationEpoch' -or
+        $commitBody -notmatch 'first\.Token\.GenerationFingerprint[\s\S]{0,180}second\.Token\.GenerationFingerprint') {
+        Fail "runtime guard must keep preflight non-mutating and commit only a token-matched epoch plus generation"
     } else {
-        Pass "runtime guard scopes high-water and durable revalidation to epoch plus generation"
+        Pass "runtime guard uses non-mutating preflight and atomic token-matched commit"
     }
 }
 
@@ -117,7 +140,7 @@ else {
     Fail "unexpected runtime guard composition point(s): $($guardConstructionFiles -join ', ')"
 }
 
-$leaseIndex = $session.IndexOf("await _authorizationLeaseGuard.EvaluateAsync()", [System.StringComparison]::Ordinal)
+$leaseIndex = $session.IndexOf("await _authorizationLeaseGuard.PreflightAsync()", [System.StringComparison]::Ordinal)
 $pinIndex = $session.IndexOf("_userRepo.VerifyPinAsync", [System.StringComparison]::Ordinal)
 if ($leaseIndex -ge 0 -and $pinIndex -gt $leaseIndex) {
     Pass "operator login checks lease before local PIN verification"
@@ -132,23 +155,25 @@ if ($loginStart -lt 0 -or $loginEnd -le $loginStart) {
     Fail "operator login method boundaries are missing"
 } else {
     $loginBody = $session.Substring($loginStart, $loginEnd - $loginStart)
-    $initialLease = $loginBody.IndexOf("var evaluation = await _authorizationLeaseGuard.EvaluateAsync()", [System.StringComparison]::Ordinal)
+    $initialLease = $loginBody.IndexOf("initialEvaluation = await _authorizationLeaseGuard.PreflightAsync()", [System.StringComparison]::Ordinal)
     $pinVerify = $loginBody.IndexOf("_userRepo.VerifyPinAsync", [System.StringComparison]::Ordinal)
     $finalLease = $loginBody.IndexOf("var finalEvaluation = await _authorizationLeaseGuard", [System.StringComparison]::Ordinal)
+    $leaseCommit = $loginBody.IndexOf(".CommitAuthenticationAsync(initialEvaluation, finalEvaluation)", [System.StringComparison]::Ordinal)
     $sameGeneration = $loginBody.IndexOf("IsSameTrustedGeneration", [System.StringComparison]::Ordinal)
     $commitUser = $loginBody.IndexOf("_currentUser = result.User", [System.StringComparison]::Ordinal)
     if ($initialLease -lt 0 -or $pinVerify -le $initialLease -or
-        $finalLease -le $pinVerify -or $sameGeneration -le $finalLease -or
+        $finalLease -le $pinVerify -or $leaseCommit -le $finalLease -or
+        $sameGeneration -le $leaseCommit -or
         $commitUser -le $sameGeneration) {
-        Fail "operator login must revalidate the exact trusted generation after PIN and before session commit"
+        Fail "operator login must revalidate and atomically commit the exact trusted generation after PIN"
     } else {
-        Pass "operator login revalidates the exact trusted generation after PIN"
+        Pass "operator login revalidates and atomically commits the exact trusted generation after PIN"
     }
 }
 
 Require-Pattern "normal operator login requires lease and no local-only classification" $session 'LoginAsync[\s\S]{0,500}requireAuthorizationLease:\s*true[\s\S]{0,180}requireLocalRecoveryUser:\s*false'
 Require-Pattern "local recovery login bypasses only lease and requires local identity" $session 'LoginLocalRecoveryAsync[\s\S]{0,500}requireAuthorizationLease:\s*false[\s\S]{0,180}requireLocalRecoveryUser:\s*true'
-Require-Pattern "normal operator login resolves the exact lease-bound remote mirror" $session '_authorizationLeaseGuard\.EvaluateAsync\(\)[\s\S]{0,500}trustedSession\s*=\s*evaluation\.TrustedSession[\s\S]{0,900}FindTrustedRemoteStaffUsernameAsync\([\s\S]{0,500}trustedSession\.StaffCredentialVersion'
+Require-Pattern "normal operator login resolves the exact lease-bound remote mirror" $session '_authorizationLeaseGuard\.PreflightAsync\(\)[\s\S]{0,500}trustedSession\s*=\s*initialEvaluation\.TrustedSession[\s\S]{0,900}FindTrustedRemoteStaffUsernameAsync\([\s\S]{0,500}trustedSession\.StaffCredentialVersion'
 Require-Pattern "normal operator login rejects a different username before PIN verification" $session 'string\.Equals\(username,\s*trustedUsername,\s*StringComparison\.Ordinal\)[\s\S]{0,450}return\s+LoginResult\.Failed[\s\S]{0,900}VerifyPinAsync\(username,\s*pin\)'
 Require-Pattern "local recovery identity is checked before PIN" $session 'IsLocalRecoveryUserAsync\(username\)[\s\S]{0,700}VerifyPinAsync\(username,\s*pin\)'
 
@@ -240,7 +265,7 @@ else {
 Require-Pattern "active window schedules exact lease expiry" $main 'RefreshAuthorizationLeaseSchedule[\s\S]*_authorizationLeaseTimer\.Interval\s*=\s*remaining'
 
 $paymentReturnIndex = $posViewModel.IndexOf("if (!ok)", [System.StringComparison]::Ordinal)
-$commitDemandIndex = $posViewModel.IndexOf("_permissionService?.Demand(PermissionCodes.PosPay", $paymentReturnIndex, [System.StringComparison]::Ordinal)
+$commitDemandIndex = $posViewModel.IndexOf("_permissionService.Demand(PermissionCodes.PosPay", $paymentReturnIndex, [System.StringComparison]::Ordinal)
 $completeSaleIndex = $posViewModel.IndexOf("_service.CompleteSaleAsync", [System.StringComparison]::Ordinal)
 if ($paymentReturnIndex -ge 0 -and $commitDemandIndex -gt $paymentReturnIndex -and $completeSaleIndex -gt $commitDemandIndex) {
     Pass "payment revalidates authorization immediately before sale commit"

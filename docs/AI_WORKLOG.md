@@ -788,3 +788,26 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   Core/Data suite `417/417` with zero skipped, and WPF net48/x86 build with zero
   warnings/errors. Independent cumulative review reports no open P0/P1; a clean
   exact-commit Release Pack and PR CI remain mandatory publication gates.
+
+## 2026-07-21 - Security follow-up and cumulative-diff closure
+
+- Remediated all eight findings from security scan
+  `0207326e-0be9-4257-9319-6dc8102ffa70`: catalog validation/exactness,
+  two-phase offline authorization, trusted-generation fencing, canonical
+  migration ledger validation, receipt amplification, supplier-import
+  authorization, database-maintenance permissions and action-time reprint
+  authorization.
+- The final cumulative review additionally closed semantic timestamp/cursor
+  validation, historical receipt reader contention, transaction ownership for
+  direct sale-line inserts, durable-authority drift after a cancelled operator
+  switch and unexpected grants on UI-read-only system roles.
+- Definitive local evidence: required gates `33/33`, Core/Data `465/465`, focused
+  migration/restore `40/40`, receipt `32/32`, Release solution plus WPF/harness
+  `net48/x86` builds with zero warnings/errors, CLI selftest PASS, authorization
+  smoke PASS, supplier `.xlsx`/`.xls` smokes PASS and lifecycle PASS with zero
+  residual windows/ViewModels/handlers.
+- Release Pack completeness, Win7 runtime validation and Inno Setup compilation
+  passed. No physical job was sent in this follow-up; the prior Epson 6/6 result
+  remains confirmed and Windows 7 physical remains `NOT_RUN_WIN7_PHYSICAL`.
+- Full report:
+  `docs/reports/2026-07-21_SECURITY_FOLLOWUP_REMEDIATION.md`.

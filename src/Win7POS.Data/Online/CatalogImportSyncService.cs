@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core.Online;
+using Win7POS.Core.Receipt;
 
 namespace Win7POS.Data.Online
 {
@@ -251,6 +252,27 @@ namespace Win7POS.Data.Online
                         false,
                         run,
                         fence).ConfigureAwait(false);
+                }
+
+                try
+                {
+                    ReceiptShopMetadataPolicy.EnsureValidRemoteShop(remote.Shop);
+                }
+                catch (ReceiptContentValidationException)
+                {
+                    if (await _outbox.MarkBlockedAsync(
+                        item.Id,
+                        "response_shop_metadata_invalid",
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        preparedAttempt,
+                        fence).ConfigureAwait(false))
+                    {
+                        run.Blocked++;
+                        run.SetFailure(
+                            SyncFailureKind.PermanentRemote,
+                            "response_shop_metadata_invalid");
+                    }
+                    return false;
                 }
 
                 var responseShopError = GetResponseShopMismatchCode(item, remote);

@@ -25,6 +25,14 @@ namespace Win7POS.Data.Online
             CatalogExactnessRunContext context,
             OnlineSyncGeneration generation = null)
         {
+            if (!CatalogPaginationSafetyPolicy.HasCompleteValidSummary(summary))
+            {
+                // Rejection must happen before the destructive reconciliation
+                // boundary so the last known-good live catalog remains intact.
+                var currentAudit = await AuditCurrentAsync().ConfigureAwait(false);
+                return CatalogExactnessVerifier.Evaluate(summary, currentAudit, context);
+            }
+
             var audit = await ReconcileAsync(
                 productIds,
                 categoryIds,
@@ -41,6 +49,9 @@ namespace Win7POS.Data.Online
             string generatedAt,
             OnlineSyncGeneration generation = null)
         {
+            RemoteCatalogContentPolicy.EnsureOptionalTimestamp(
+                generatedAt,
+                "catalog.generated_at");
             var products = CatalogIdSet.Create(productIds);
             var categories = CatalogIdSet.Create(categoryIds);
             var suppliers = CatalogIdSet.Create(supplierIds);
@@ -171,6 +182,16 @@ WHERE TRIM(COALESCE(remote_supplier_id, '')) <> ''
   AND COALESCE(is_active, 1) = 1;",
                     transaction: tx).ConfigureAwait(false);
                 var result = await LoadAuditAsync(conn, tx).ConfigureAwait(false);
+                // The non-mutating audit treats the current active identity sets
+                // as its comparison baseline.  Without this evidence a healthy
+                // nonempty catalog would look like an unapplied authoritative set
+                // before the verifier can classify a missing summary as Unverified.
+                result.ReceivedProductIds = result.DistinctActiveRemoteProductIds;
+                result.DistinctAuthoritativeProductIds = result.DistinctActiveRemoteProductIds;
+                result.ReceivedCategoryIds = result.DistinctActiveRemoteCategoryIds;
+                result.DistinctAuthoritativeCategoryIds = result.DistinctActiveRemoteCategoryIds;
+                result.ReceivedSupplierIds = result.DistinctActiveRemoteSupplierIds;
+                result.DistinctAuthoritativeSupplierIds = result.DistinctActiveRemoteSupplierIds;
                 tx.Commit();
                 return result;
             }
@@ -559,24 +580,6 @@ SELECT
                 return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_duplicate_price_rows", true);
             }
 
-            if (run.ProductRowsReceived.HasValue &&
-                run.ProductRowsReceived.Value != audit.ReceivedProductIds)
-            {
-                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_product_row_evidence_mismatch", true);
-            }
-
-            if (run.CategoryRowsReceived.HasValue &&
-                run.CategoryRowsReceived.Value != audit.ReceivedCategoryIds)
-            {
-                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_category_row_evidence_mismatch", true);
-            }
-
-            if (run.SupplierRowsReceived.HasValue &&
-                run.SupplierRowsReceived.Value != audit.ReceivedSupplierIds)
-            {
-                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_supplier_row_evidence_mismatch", true);
-            }
-
             var invariantError = FindInvariantError(audit);
             if (invariantError.Length > 0)
             {
@@ -609,6 +612,24 @@ SELECT
             if (!HasAllCounts(summary))
             {
                 return Set(result, CatalogCompletenessStatus.Unverified, "catalog_summary_incomplete", false);
+            }
+
+            if (run.ProductRowsReceived.HasValue &&
+                run.ProductRowsReceived.Value != audit.ReceivedProductIds)
+            {
+                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_product_row_evidence_mismatch", true);
+            }
+
+            if (run.CategoryRowsReceived.HasValue &&
+                run.CategoryRowsReceived.Value != audit.ReceivedCategoryIds)
+            {
+                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_category_row_evidence_mismatch", true);
+            }
+
+            if (run.SupplierRowsReceived.HasValue &&
+                run.SupplierRowsReceived.Value != audit.ReceivedSupplierIds)
+            {
+                return Set(result, CatalogCompletenessStatus.Mismatch, "catalog_supplier_row_evidence_mismatch", true);
             }
 
             if (string.IsNullOrWhiteSpace(run.CatalogVersion))

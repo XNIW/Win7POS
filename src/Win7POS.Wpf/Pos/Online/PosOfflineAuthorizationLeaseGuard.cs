@@ -128,7 +128,12 @@ namespace Win7POS.Wpf.Pos.Online
             }
         }
 
-        public async Task<PosOfflineAuthorizationLeaseEvaluation> EvaluateAsync()
+        /// <summary>
+        /// Performs the asynchronous lease checks without changing the reusable
+        /// authorization cache. Authentication failures must never prime a new
+        /// generation for later permission checks.
+        /// </summary>
+        public async Task<PosOfflineAuthorizationLeaseEvaluation> PreflightAsync()
         {
             PosTrustedDeviceSession session;
             PosOfflineAuthorizationLeaseDecision decision;
@@ -142,12 +147,14 @@ namespace Win7POS.Wpf.Pos.Online
                     return new PosOfflineAuthorizationLeaseEvaluation(
                         PosOfflineAuthorizationLeaseDecision.Deny(
                             "sync_maintenance_active"),
+                        null,
                         null);
                 }
                 if (!_store.TryRead(out session))
                 {
                     return new PosOfflineAuthorizationLeaseEvaluation(
                         PosOfflineAuthorizationLeasePolicy.Evaluate(null, _utcNow()),
+                        null,
                         null);
                 }
 
@@ -175,6 +182,7 @@ namespace Win7POS.Wpf.Pos.Online
                             ? PosOfflineAuthorizationLeaseDecision.Deny(
                                 "sync_generation_inactive")
                             : decision,
+                        null,
                         null);
                 }
             }
@@ -186,6 +194,7 @@ namespace Win7POS.Wpf.Pos.Online
                     return new PosOfflineAuthorizationLeaseEvaluation(
                         PosOfflineAuthorizationLeaseDecision.Deny(
                             "sync_generation_inactive"),
+                        null,
                         null);
                 }
             }
@@ -194,6 +203,7 @@ namespace Win7POS.Wpf.Pos.Online
                 return new PosOfflineAuthorizationLeaseEvaluation(
                     PosOfflineAuthorizationLeaseDecision.Deny(
                         "sync_generation_check_failed"),
+                    null,
                     null);
             }
 
@@ -207,6 +217,7 @@ namespace Win7POS.Wpf.Pos.Online
                     return new PosOfflineAuthorizationLeaseEvaluation(
                         PosOfflineAuthorizationLeaseDecision.Deny(
                             "sync_generation_inactive"),
+                        null,
                         null);
                 }
 
@@ -224,33 +235,151 @@ namespace Win7POS.Wpf.Pos.Online
                     scopedHighWater);
                 if (!decision.Allowed)
                 {
-                    return new PosOfflineAuthorizationLeaseEvaluation(decision, null);
+                    return new PosOfflineAuthorizationLeaseEvaluation(decision, null, null);
                 }
 
-                var sameValidatedGeneration =
-                    _validatedAuthorizationEpoch == authorizationEpoch &&
-                    string.Equals(
-                        _validatedGenerationFingerprint,
-                        generation.Fingerprint,
-                        StringComparison.Ordinal);
-                _validatedAuthorizationEpoch = authorizationEpoch;
-                _validatedGenerationFingerprint = generation.Fingerprint;
-                if (!sameValidatedGeneration ||
-                    !_estimatedServerHighWater.HasValue ||
-                    decision.EstimatedServerNow > _estimatedServerHighWater)
-                {
-                    _estimatedServerHighWater = decision.EstimatedServerNow;
-                }
                 if (!PosOnlineSyncRevocationLatch.IsAuthorizationEpochCurrent(
                         authorizationEpoch))
                 {
                     return new PosOfflineAuthorizationLeaseEvaluation(
                         PosOfflineAuthorizationLeaseDecision.Deny(
                             "sync_generation_inactive"),
+                        null,
                         null);
                 }
-                return new PosOfflineAuthorizationLeaseEvaluation(decision, session);
+                return new PosOfflineAuthorizationLeaseEvaluation(
+                    decision,
+                    session,
+                    new PosOfflineAuthorizationLeaseToken(
+                        authorizationEpoch,
+                        generation.Fingerprint));
             }
+        }
+
+        /// <summary>
+        /// Atomically commits a successful authentication only when both
+        /// preflights still describe the same active lease generation.
+        /// </summary>
+        public async Task<PosOfflineAuthorizationLeaseEvaluation> CommitAuthenticationAsync(
+            PosOfflineAuthorizationLeaseEvaluation first,
+            PosOfflineAuthorizationLeaseEvaluation second)
+        {
+            if (!CanCommit(first, second, out var candidateSession))
+            {
+                return Denied("sync_generation_changed");
+            }
+
+            try
+            {
+                if (!await _generationIsActive(candidateSession).ConfigureAwait(false))
+                {
+                    return Denied("sync_generation_inactive");
+                }
+            }
+            catch
+            {
+                return Denied("sync_generation_check_failed");
+            }
+
+            lock (_sync)
+            {
+                if (!CanCommit(first, second, out candidateSession) ||
+                    !PosOnlineSyncSupervisorHost.TryCreateGeneration(
+                        candidateSession,
+                        out var generation) ||
+                    PosOnlineSyncRevocationLatch.IsRevoked(generation) ||
+                    !PosOnlineSyncRevocationLatch.IsAuthorizationEpochCurrent(
+                        first.Token.AuthorizationEpoch) ||
+                    !_store.TryReadGeneration(generation, out var currentSession, out _))
+                {
+                    return Denied("sync_generation_inactive");
+                }
+
+                var scopedHighWater =
+                    _validatedAuthorizationEpoch == first.Token.AuthorizationEpoch &&
+                    string.Equals(
+                        _validatedGenerationFingerprint,
+                        generation.Fingerprint,
+                        StringComparison.Ordinal)
+                        ? _estimatedServerHighWater
+                        : null;
+                scopedHighWater = Later(
+                    scopedHighWater,
+                    first.Decision.EstimatedServerNow,
+                    second.Decision.EstimatedServerNow);
+                var decision = PosOfflineAuthorizationLeasePolicy.Evaluate(
+                    currentSession,
+                    _utcNow(),
+                    scopedHighWater);
+                if (!decision.Allowed)
+                {
+                    return new PosOfflineAuthorizationLeaseEvaluation(decision, null, null);
+                }
+
+                var previousEpoch = _validatedAuthorizationEpoch;
+                var previousFingerprint = _validatedGenerationFingerprint;
+                var previousHighWater = _estimatedServerHighWater;
+                _validatedAuthorizationEpoch = first.Token.AuthorizationEpoch;
+                _validatedGenerationFingerprint = generation.Fingerprint;
+                _estimatedServerHighWater = Later(scopedHighWater, decision.EstimatedServerNow);
+
+                if (!PosOnlineSyncRevocationLatch.IsAuthorizationEpochCurrent(
+                        first.Token.AuthorizationEpoch) ||
+                    PosOnlineSyncRevocationLatch.IsRevoked(generation))
+                {
+                    _validatedAuthorizationEpoch = previousEpoch;
+                    _validatedGenerationFingerprint = previousFingerprint;
+                    _estimatedServerHighWater = previousHighWater;
+                    return Denied("sync_generation_inactive");
+                }
+
+                return new PosOfflineAuthorizationLeaseEvaluation(
+                    decision,
+                    currentSession,
+                    first.Token);
+            }
+        }
+
+        private static bool CanCommit(
+            PosOfflineAuthorizationLeaseEvaluation first,
+            PosOfflineAuthorizationLeaseEvaluation second,
+            out PosTrustedDeviceSession candidateSession)
+        {
+            candidateSession = second?.TrustedSession;
+            return first?.Decision?.Allowed == true &&
+                second?.Decision?.Allowed == true &&
+                first.Token != null &&
+                second.Token != null &&
+                candidateSession != null &&
+                first.Token.AuthorizationEpoch == second.Token.AuthorizationEpoch &&
+                string.Equals(
+                    first.Token.GenerationFingerprint,
+                    second.Token.GenerationFingerprint,
+                    StringComparison.Ordinal);
+        }
+
+        private static DateTimeOffset? Later(
+            DateTimeOffset? current,
+            params DateTimeOffset?[] candidates)
+        {
+            var result = current;
+            foreach (var candidate in candidates)
+            {
+                if (candidate.HasValue &&
+                    (!result.HasValue || candidate.Value > result.Value))
+                {
+                    result = candidate.Value;
+                }
+            }
+            return result;
+        }
+
+        private static PosOfflineAuthorizationLeaseEvaluation Denied(string code)
+        {
+            return new PosOfflineAuthorizationLeaseEvaluation(
+                PosOfflineAuthorizationLeaseDecision.Deny(code),
+                null,
+                null);
         }
     }
 
@@ -258,13 +387,30 @@ namespace Win7POS.Wpf.Pos.Online
     {
         public PosOfflineAuthorizationLeaseEvaluation(
             PosOfflineAuthorizationLeaseDecision decision,
-            PosTrustedDeviceSession trustedSession)
+            PosTrustedDeviceSession trustedSession,
+            PosOfflineAuthorizationLeaseToken token)
         {
             Decision = decision ?? throw new ArgumentNullException(nameof(decision));
             TrustedSession = trustedSession;
+            Token = token;
         }
 
         public PosOfflineAuthorizationLeaseDecision Decision { get; }
         public PosTrustedDeviceSession TrustedSession { get; }
+        internal PosOfflineAuthorizationLeaseToken Token { get; }
+    }
+
+    internal sealed class PosOfflineAuthorizationLeaseToken
+    {
+        public PosOfflineAuthorizationLeaseToken(
+            long authorizationEpoch,
+            string generationFingerprint)
+        {
+            AuthorizationEpoch = authorizationEpoch;
+            GenerationFingerprint = generationFingerprint ?? string.Empty;
+        }
+
+        public long AuthorizationEpoch { get; }
+        public string GenerationFingerprint { get; }
     }
 }

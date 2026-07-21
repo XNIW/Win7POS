@@ -129,20 +129,38 @@ namespace Win7POS.Core.Online
 
         public static string NormalizeRevision(string value)
         {
-            var normalized = (value ?? string.Empty).Trim();
-            if (normalized.Length == 0 || normalized.Length > MaximumRevisionLength)
+            var raw = value ?? string.Empty;
+            if (raw.Length == 0 || raw.Length > MaximumRevisionLength)
             {
                 return string.Empty;
             }
 
-            for (var index = 0; index < normalized.Length; index++)
+            for (var index = 0; index < raw.Length; index++)
             {
-                if (char.IsControl(normalized[index]))
+                var character = raw[index];
+                if (char.IsControl(character))
+                {
+                    return string.Empty;
+                }
+                if (char.IsHighSurrogate(character))
+                {
+                    if (index + 1 >= raw.Length || !char.IsLowSurrogate(raw[index + 1]))
+                    {
+                        return string.Empty;
+                    }
+                    index++;
+                }
+                else if (char.IsLowSurrogate(character))
                 {
                     return string.Empty;
                 }
             }
 
+            var normalized = raw.Trim();
+            if (normalized.Length == 0)
+            {
+                return string.Empty;
+            }
             return normalized;
         }
     }

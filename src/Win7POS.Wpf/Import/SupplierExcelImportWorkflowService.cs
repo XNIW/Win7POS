@@ -22,9 +22,11 @@ namespace Win7POS.Wpf.Import
         private readonly DbMaintenanceRepository _maintenance;
         private readonly PosDbOptions _options;
         private readonly ProductRepository _products;
+        private readonly Func<bool> _authorizeApply;
 
-        public SupplierExcelImportWorkflowService()
+        public SupplierExcelImportWorkflowService(Func<bool> authorizeApply)
         {
+            _authorizeApply = authorizeApply ?? (() => false);
             _options = PosDbOptions.Default();
             var factory = new SqliteConnectionFactory(_options);
             _maintenance = new DbMaintenanceRepository(factory);
@@ -55,6 +57,7 @@ namespace Win7POS.Wpf.Import
             int warningCount = 0,
             int skippedByOperator = 0)
         {
+            DemandApplyAuthorization();
             DbInitializer.EnsureCreated(_options);
             var activeRows = (rows ?? Array.Empty<SupplierImportEditableRow>())
                 .Where(row => row != null && !row.IsSkipped)
@@ -64,7 +67,9 @@ namespace Win7POS.Wpf.Import
             var backupPath = string.Empty;
             if (!dryRun)
             {
-                backupPath = await CreateBackupBeforeApplyAsync(_options.DbPath).ConfigureAwait(false);
+                DemandApplyAuthorization();
+                backupPath = await CreateBackupBeforeApplyAsync(_options.DbPath).ConfigureAwait(true);
+                DemandApplyAuthorization();
             }
 
             var applier = new SupplierExcelImportApplier(new SqliteConnectionFactory(_options));
@@ -94,11 +99,14 @@ namespace Win7POS.Wpf.Import
             bool dryRun,
             string sourceFileName = null)
         {
+            DemandApplyAuthorization();
             DbInitializer.EnsureCreated(_options);
             if (preview == null)
                 throw new InvalidOperationException("Sync DB preview richiesto prima di applicare.");
 
-            var rebuilt = await BuildSyncPreviewAsync(preview.FinalRows).ConfigureAwait(false);
+            // The apply-time authorizer can surface WPF permission UI, so retain
+            // the caller context until authorization has completed.
+            var rebuilt = await BuildSyncPreviewAsync(preview.FinalRows).ConfigureAwait(true);
             if (!rebuilt.CanApply)
                 throw new InvalidOperationException(BuildPreviewErrorSummary(rebuilt));
             if (!string.Equals(rebuilt.Fingerprint, preview.Fingerprint, StringComparison.Ordinal))
@@ -106,14 +114,23 @@ namespace Win7POS.Wpf.Import
 
             var backupPath = string.Empty;
             if (!dryRun)
-                backupPath = await CreateBackupBeforeApplyAsync(_options.DbPath).ConfigureAwait(false);
+            {
+                DemandApplyAuthorization();
+                backupPath = await CreateBackupBeforeApplyAsync(_options.DbPath).ConfigureAwait(true);
+            }
 
             var outboxEntry = dryRun
                 ? null
-                : CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(
-                    rebuilt,
-                    sourceFileName,
-                    typeof(SupplierExcelImportWorkflowService).Assembly.GetName().Version?.ToString());
+                : await Task.Run(() =>
+                    CatalogImportOutboxPayloadBuilder.BuildSupplierExcelEntry(
+                        rebuilt,
+                        sourceFileName,
+                        typeof(SupplierExcelImportWorkflowService).Assembly.GetName().Version?.ToString()))
+                    .ConfigureAwait(true);
+            if (!dryRun)
+            {
+                DemandApplyAuthorization();
+            }
             var applier = new SupplierExcelImportApplier(new SqliteConnectionFactory(_options));
             var result = await applier.ApplyAsync(
                 rebuilt,
@@ -150,6 +167,18 @@ namespace Win7POS.Wpf.Import
             };
         }
 
+        private void DemandApplyAuthorization()
+        {
+            if (!_authorizeApply())
+            {
+                throw new InvalidOperationException(
+                    Win7POS.Wpf.Localization.PosLocalization.F(
+                        "common.permissionDeniedOperation",
+                        Win7POS.Wpf.Localization.PosLocalization.T(
+                            "products.operationImportCatalog")));
+            }
+        }
+
         private async Task<IReadOnlyList<ProductDetailsRow>> LoadExistingProductsForTableAsync(
             SupplierExcelRawTable table,
             IDictionary<int, string> columnOverrides)
@@ -178,7 +207,9 @@ namespace Win7POS.Wpf.Import
                 return string.Empty;
 
             AppPaths.EnsureCreated();
-            var fileName = "supplier_import_preapply_" + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".db";
+            var fileName = "supplier_import_preapply_" +
+                DateTime.Now.ToString("yyyyMMdd_HHmmss_fff") + "_" +
+                Guid.NewGuid().ToString("N").Substring(0, 8) + ".db";
             var backupPath = Path.Combine(AppPaths.BackupsDirectory, fileName);
             var dir = Path.GetDirectoryName(backupPath);
             if (!string.IsNullOrWhiteSpace(dir))

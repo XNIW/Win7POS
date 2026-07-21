@@ -221,6 +221,51 @@ VALUES('P-1', @supplierId, 'Supplier One', @categoryId, 'Category One', 1);",
             "SELECT COUNT(1) FROM products WHERE barcode = 'P-LOCAL';"));
     }
 
+    [TestMethod]
+    public async Task RemoteReferenceTimestamps_RejectMalformedInputAndRepairMalformedLegacyState()
+    {
+        using var db = TestDb.Create();
+        var categories = new CategoryRepository(db.Factory);
+        var suppliers = new SupplierRepository(db.Factory);
+        await categories.UpsertRemoteAsync(
+            "category-poisoned", "Original Category", "2026-07-14T10:00:00Z");
+        await suppliers.UpsertRemoteAsync(
+            "supplier-poisoned", "Original Supplier", "2026-07-14T10:00:00Z");
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            categories.UpsertRemoteAsync(
+                "category-poisoned", "Rejected Category", "zzzz"));
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            suppliers.UpsertRemoteAsync(
+                "supplier-poisoned", "Rejected Supplier", "zzzz"));
+
+        using (var poison = db.Factory.Open())
+        {
+            await poison.ExecuteAsync(@"
+UPDATE categories
+SET remote_updated_at = 'zzzz', remote_deleted_at = 'zzzz', is_active = 0
+WHERE remote_category_id = 'category-poisoned';
+UPDATE suppliers
+SET remote_updated_at = 'zzzz', remote_deleted_at = 'zzzz', is_active = 0
+WHERE remote_supplier_id = 'supplier-poisoned';");
+        }
+
+        Assert.IsTrue(await categories.UpsertRemoteAsync(
+            "category-poisoned", "Repaired Category", "2027-01-01T00:00:00Z"));
+        Assert.IsTrue(await suppliers.UpsertRemoteAsync(
+            "supplier-poisoned", "Repaired Supplier", "2027-01-01T00:00:00Z"));
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual("Repaired Category", await verify.ExecuteScalarAsync<string>(
+            "SELECT name FROM categories WHERE remote_category_id = 'category-poisoned' AND is_active = 1;"));
+        Assert.AreEqual("2027-01-01T00:00:00Z", await verify.ExecuteScalarAsync<string>(
+            "SELECT remote_updated_at FROM categories WHERE remote_category_id = 'category-poisoned';"));
+        Assert.AreEqual("Repaired Supplier", await verify.ExecuteScalarAsync<string>(
+            "SELECT name FROM suppliers WHERE remote_supplier_id = 'supplier-poisoned' AND is_active = 1;"));
+        Assert.AreEqual("2027-01-01T00:00:00Z", await verify.ExecuteScalarAsync<string>(
+            "SELECT remote_updated_at FROM suppliers WHERE remote_supplier_id = 'supplier-poisoned';"));
+    }
+
     private static string CreateTempRoot()
     {
         var root = Path.Combine(Path.GetTempPath(), "win7pos-tests-" + Guid.NewGuid().ToString("N"));

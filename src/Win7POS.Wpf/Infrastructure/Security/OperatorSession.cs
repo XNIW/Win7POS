@@ -71,12 +71,13 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 return LoginResult.Failed;
 
             PosTrustedDeviceSession trustedSession = null;
+            PosOfflineAuthorizationLeaseEvaluation initialEvaluation = null;
             if (requireAuthorizationLease)
             {
-                var evaluation = await _authorizationLeaseGuard.EvaluateAsync()
+                initialEvaluation = await _authorizationLeaseGuard.PreflightAsync()
                     .ConfigureAwait(true);
-                var authorization = evaluation.Decision;
-                trustedSession = evaluation.TrustedSession;
+                var authorization = initialEvaluation.Decision;
+                trustedSession = initialEvaluation.TrustedSession;
                 SetAuthorizationDecision(authorization);
                 if (!authorization.Allowed)
                 {
@@ -124,17 +125,20 @@ namespace Win7POS.Wpf.Infrastructure.Security
             if (requireAuthorizationLease)
             {
                 var finalEvaluation = await _authorizationLeaseGuard
-                    .EvaluateAsync().ConfigureAwait(true);
-                SetAuthorizationDecision(finalEvaluation.Decision);
-                if (!finalEvaluation.Decision.Allowed ||
+                    .PreflightAsync().ConfigureAwait(true);
+                var committedEvaluation = await _authorizationLeaseGuard
+                    .CommitAuthenticationAsync(initialEvaluation, finalEvaluation)
+                    .ConfigureAwait(true);
+                SetAuthorizationDecision(committedEvaluation.Decision);
+                if (!committedEvaluation.Decision.Allowed ||
                     !IsSameTrustedGeneration(
                         trustedSession,
-                        finalEvaluation.TrustedSession))
+                        committedEvaluation.TrustedSession))
                 {
                     LogAuthorizationDenied(
-                        finalEvaluation.Decision.Allowed
+                        committedEvaluation.Decision.Allowed
                             ? "sync_generation_changed"
-                            : finalEvaluation.Decision.Code);
+                            : committedEvaluation.Decision.Code);
                     return LoginResult.AuthorizationExpired;
                 }
             }

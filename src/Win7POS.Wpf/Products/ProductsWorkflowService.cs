@@ -7,6 +7,7 @@ using Win7POS.Core;
 using Win7POS.Core.Audit;
 using Win7POS.Core.ImportDb;
 using Win7POS.Core.Models;
+using Win7POS.Core.Receipt;
 using Win7POS.Data;
 using Win7POS.Data.ImportDb;
 using Win7POS.Data.Repositories;
@@ -82,6 +83,7 @@ namespace Win7POS.Wpf.Products
             if (productId <= 0) throw new ArgumentException(PosLocalization.T("products.invalidProductId"));
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException(PosLocalization.T("products.nameRequired"));
             if (priceMinor < 0) throw new ArgumentException(PosLocalization.T("products.priceInvalid"));
+            SalesReceiptContentPolicy.EnsureValidProductIdentity(null, name);
 
             var before = await _products.GetByIdAsync(productId).ConfigureAwait(false);
             var ok = await _products.UpdateAsync(productId, name.Trim(), priceMinor).ConfigureAwait(false);
@@ -282,6 +284,7 @@ namespace Win7POS.Wpf.Products
         public async Task CreateProductAsync(string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
         {
             if (string.IsNullOrWhiteSpace(barcode)) throw new ArgumentException(PosLocalization.T("products.barcodeRequired"));
+            SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
             var p = new Product { Barcode = barcode.Trim(), Name = name?.Trim() ?? string.Empty, UnitPrice = unitPriceMinor };
             await _products.UpsertProductAndMetaInTransactionAsync(p, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty).ConfigureAwait(false);
             await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductCreate, AuditDetails.Kv(("barcode", p.Barcode), ("name", p.Name))).ConfigureAwait(false);
@@ -299,6 +302,7 @@ namespace Win7POS.Wpf.Products
         public async Task UpdateProductFullAsync(long productId, string barcode, string name, long unitPriceMinor, int purchasePriceMinor, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string articleCode = null, string name2 = null)
         {
             if (productId <= 0) throw new ArgumentException(PosLocalization.T("products.invalidProductId"));
+            SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
             var before = await _products.GetByIdAsync(productId).ConfigureAwait(false);
             if (before == null) throw new InvalidOperationException(PosLocalization.T("products.notFound"));
             var b = before.Barcode ?? barcode ?? "";

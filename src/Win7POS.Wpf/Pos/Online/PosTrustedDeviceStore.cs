@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Win7POS.Core;
 using Win7POS.Core.Online;
+using Win7POS.Core.Receipt;
 
 namespace Win7POS.Wpf.Pos.Online
 {
@@ -107,6 +108,7 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 throw new ArgumentNullException(nameof(response));
             }
+            ReceiptShopMetadataPolicy.EnsureValidRemoteShop(response.Shop);
 
             var localReceiptAt = DateTimeOffset.UtcNow;
             generationId = (generationId ?? string.Empty).Trim();

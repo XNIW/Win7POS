@@ -22,20 +22,23 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private readonly Func<Task<bool>> _demandRestorePermission;
         private readonly Func<bool> _hasBackupPermission;
         private readonly Func<bool> _hasCatalogImportPermission;
+        private readonly Func<bool> _hasMaintenancePermission;
 
         private string _outputLog = string.Empty;
         private bool _isBusy;
 
         public DbMaintenanceViewModel(
             Pos.PosWorkflowService service,
-            Func<Task<bool>> demandRestorePermission = null,
-            Func<bool> hasBackupPermission = null,
-            Func<bool> hasCatalogImportPermission = null)
+            Func<Task<bool>> demandRestorePermission,
+            Func<bool> hasBackupPermission,
+            Func<bool> hasCatalogImportPermission,
+            Func<bool> hasMaintenancePermission)
         {
             _service = service ?? throw new ArgumentNullException(nameof(service));
-            _demandRestorePermission = demandRestorePermission;
-            _hasBackupPermission = hasBackupPermission;
-            _hasCatalogImportPermission = hasCatalogImportPermission;
+            _demandRestorePermission = demandRestorePermission ?? (() => Task.FromResult(false));
+            _hasBackupPermission = hasBackupPermission ?? (() => false);
+            _hasCatalogImportPermission = hasCatalogImportPermission ?? (() => false);
+            _hasMaintenancePermission = hasMaintenancePermission ?? (() => false);
             BackupNowCommand = new AsyncRelayCommand(BackupNowAsync, _ => !IsBusy);
             RestoreBackupCommand = new AsyncRelayCommand(RestoreBackupAsync, _ => !IsBusy);
             IntegrityCheckCommand = new AsyncRelayCommand(IntegrityCheckAsync, _ => !IsBusy);
@@ -74,7 +77,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task BackupNowAsync()
         {
-            if (_hasBackupPermission != null && !_hasBackupPermission())
+            if (!_hasBackupPermission())
             {
                 Append(PosLocalization.F(
                     "common.permissionDeniedOperation",
@@ -100,11 +103,6 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task RestoreBackupAsync()
         {
-            if (_demandRestorePermission != null && !(await _demandRestorePermission().ConfigureAwait(true)))
-            {
-                Append(PosLocalization.T("dbMaintenance.restorePermissionDenied"));
-                return;
-            }
             var dlg = new OpenFileDialog
             {
                 Title = PosLocalization.T("dbMaintenance.selectBackupTitle"),
@@ -119,6 +117,12 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             owner.Activate();
             if (dlg.ShowDialog(owner) != true) return;
+
+            if (!(await _demandRestorePermission().ConfigureAwait(true)))
+            {
+                Append(PosLocalization.T("dbMaintenance.restorePermissionDenied"));
+                return;
+            }
 
             IsBusy = true;
             try
@@ -165,6 +169,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task CompleteRestoreReviewAsync()
         {
+            if (!_hasMaintenancePermission())
+            {
+                Append(PosLocalization.F(
+                    "common.permissionDeniedOperation",
+                    PosLocalization.T("operations.dbMaintenance")));
+                return;
+            }
+
             IsBusy = true;
             try
             {
@@ -183,6 +195,14 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private async Task VacuumAsync()
         {
+            if (!_hasMaintenancePermission())
+            {
+                Append(PosLocalization.F(
+                    "common.permissionDeniedOperation",
+                    PosLocalization.T("operations.dbMaintenance")));
+                return;
+            }
+
             IsBusy = true;
             try
             {
@@ -226,7 +246,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private void OpenSupplierExcelImport()
         {
-            if (_hasCatalogImportPermission != null && !_hasCatalogImportPermission())
+            if (!_hasCatalogImportPermission())
             {
                 Append(PosLocalization.F(
                     "common.permissionDeniedOperation",
@@ -236,7 +256,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             try
             {
-                var applied = SupplierExcelImportDialog.ShowDialog(OwnerWindow ?? DialogOwnerHelper.GetSafeOwner());
+                var applied = SupplierExcelImportDialog.ShowDialog(
+                    OwnerWindow ?? DialogOwnerHelper.GetSafeOwner(),
+                    _hasCatalogImportPermission);
                 if (applied)
                 {
                     Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(null);
@@ -263,6 +285,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
             (BackupNowCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (RestoreBackupCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (IntegrityCheckCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
+            (CompleteRestoreReviewCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (VacuumCommand as AsyncRelayCommand)?.RaiseCanExecuteChanged();
             (SupplierExcelImportCommand as RelayCommand)?.RaiseCanExecuteChanged();
             (OpenFolderCommand as RelayCommand)?.RaiseCanExecuteChanged();

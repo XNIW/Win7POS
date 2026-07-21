@@ -65,6 +65,11 @@ namespace Win7POS.Data
                 {
                     BackfillLegacyOutboxBindings(connection, transaction);
                     SeedSecurity(connection, transaction);
+                    if (!IsSecuritySeedSatisfied(connection, transaction))
+                    {
+                        throw new InvalidDataException(
+                            "SQLite system-role permissions do not match the canonical security seed.");
+                    }
                     transaction.Commit();
                 }
                 catch
@@ -1107,17 +1112,23 @@ INSERT OR IGNORE INTO roles(code, name, is_system) VALUES('cashier','Cassiere',1
                 if (role == null || role.IsSystem != 1)
                     return false;
 
-                foreach (var permission in seed.Value)
-                {
-                    var count = conn.ExecuteScalar<long>(@"
-SELECT COUNT(1)
+                var expectedPermissions = seed.Value
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(value => value, StringComparer.Ordinal)
+                    .ToArray();
+                var actualPermissions = conn.Query<string>(@"
+SELECT permission_code
 FROM role_permissions
 WHERE role_id = @roleId
-  AND permission_code = @permission;",
-                        new { roleId = role.Id, permission },
-                        tx);
-                    if (count != 1)
-                        return false;
+ORDER BY permission_code;",
+                        new { roleId = role.Id },
+                        tx)
+                    .ToArray();
+                if (!actualPermissions.SequenceEqual(
+                        expectedPermissions,
+                        StringComparer.Ordinal))
+                {
+                    return false;
                 }
             }
 

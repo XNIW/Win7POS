@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Windows.Input;
 using Win7POS.Core.Models;
+using Win7POS.Core.Receipt;
 using Win7POS.Core.Util;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Localization;
@@ -131,7 +132,15 @@ namespace Win7POS.Wpf.Products
         public string Barcode
         {
             get => _barcode;
-            set { _barcode = (value ?? string.Empty).Trim(); OnPropertyChanged(); OnPropertyChanged(nameof(IsValid)); }
+            set
+            {
+                var candidate = value ?? string.Empty;
+                _barcode = candidate.Length <= SalesReceiptContentPolicy.MaxSaleLineBarcodeCharacters
+                    ? candidate.Trim()
+                    : candidate;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(IsValid));
+            }
         }
 
         public string ProductName
@@ -222,7 +231,11 @@ namespace Win7POS.Wpf.Products
             get => int.TryParse(StockText?.Trim() ?? "0", out var n) && n >= 0 ? n : 0;
         }
 
-        public bool IsValid => (Mode == ProductEditMode.Edit || Barcode.Length > 0) && UnitPriceMinor >= 0;
+        public bool IsValid =>
+            (Mode == ProductEditMode.Edit || Barcode.Length > 0) &&
+            UnitPriceMinor >= 0 &&
+            SalesReceiptContentPolicy.IsValidBarcode(Barcode) &&
+            SalesReceiptContentPolicy.IsValidProductName(ProductName);
 
         public ICommand ConfirmCommand { get; }
         public ICommand CancelCommand { get; }
