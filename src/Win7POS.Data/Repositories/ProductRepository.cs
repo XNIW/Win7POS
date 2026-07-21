@@ -1913,6 +1913,15 @@ VALUES(
                     "@stockQty");
             }
 
+            internal void SetTransaction(SqliteTransaction tx)
+            {
+                _getProductId.Transaction = tx;
+                _insertProduct.Transaction = tx;
+                _lastInsertId.Transaction = tx;
+                _updateProduct.Transaction = tx;
+                _upsertMeta.Transaction = tx;
+            }
+
             internal async Task<int> UpdateProductAsync(
                 string barcode,
                 string name,
@@ -2017,7 +2026,8 @@ VALUES(
             private CatalogProductBatchContext(
                 IEnumerable<ProductMetaReference> categories,
                 IEnumerable<ProductMetaReference> suppliers,
-                IEnumerable<PendingStockIdentity> pendingStockIdentities)
+                IEnumerable<string> pendingStockBarcodes,
+                IEnumerable<string> pendingStockRemoteProductIds)
             {
                 _categoriesById = new Dictionary<int, ProductMetaReference>();
                 _categoriesByName = new Dictionary<string, ProductMetaReference>(StringComparer.OrdinalIgnoreCase);
@@ -2027,11 +2037,14 @@ VALUES(
                 _pendingStockRemoteProductIds = new HashSet<string>(StringComparer.Ordinal);
                 AddReferences(categories, _categoriesById, _categoriesByName);
                 AddReferences(suppliers, _suppliersById, _suppliersByName);
-                foreach (var identity in pendingStockIdentities ?? Array.Empty<PendingStockIdentity>())
+                foreach (var barcodeValue in pendingStockBarcodes ?? Array.Empty<string>())
                 {
-                    var barcode = (identity?.Barcode ?? string.Empty).Trim();
-                    var remoteProductId = (identity?.RemoteProductId ?? string.Empty).Trim();
+                    var barcode = (barcodeValue ?? string.Empty).Trim();
                     if (barcode.Length > 0) _pendingStockBarcodes.Add(barcode);
+                }
+                foreach (var remoteProductIdValue in pendingStockRemoteProductIds ?? Array.Empty<string>())
+                {
+                    var remoteProductId = (remoteProductIdValue ?? string.Empty).Trim();
                     if (remoteProductId.Length > 0) _pendingStockRemoteProductIds.Add(remoteProductId);
                 }
             }
@@ -2045,33 +2058,65 @@ VALUES(
                      _pendingStockRemoteProductIds.Contains(normalizedRemoteProductId));
             }
 
-            internal static async Task<CatalogProductBatchContext> LoadAsync(
-                SqliteConnection conn,
-                SqliteTransaction tx)
+            internal static CatalogProductBatchContext FromReferences(
+                IEnumerable<ProductMetaReference> categories,
+                IEnumerable<ProductMetaReference> suppliers)
             {
-                var categories = await conn.QueryAsync<ProductMetaReference>(@"
-SELECT id AS Id, name AS Name
-FROM categories
-WHERE COALESCE(is_active, 1) = 1
-ORDER BY id ASC", transaction: tx).ConfigureAwait(false);
-                var suppliers = await conn.QueryAsync<ProductMetaReference>(@"
-SELECT id AS Id, name AS Name
-FROM suppliers
-WHERE COALESCE(is_active, 1) = 1
-ORDER BY id ASC", transaction: tx).ConfigureAwait(false);
-                var pendingStockIdentities = await conn.QueryAsync<PendingStockIdentity>(@"
-SELECT DISTINCT
-       m.barcode AS Barcode,
-       COALESCE(p.remote_product_id, '') AS RemoteProductId
-FROM sales_sync_outbox o
-JOIN local_stock_movements m ON m.sale_id = o.sale_id
-LEFT JOIN products p ON p.barcode = m.barcode
-WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked')",
-                    transaction: tx).ConfigureAwait(false);
                 return new CatalogProductBatchContext(
                     categories,
                     suppliers,
-                    pendingStockIdentities);
+                    Array.Empty<string>(),
+                    Array.Empty<string>());
+            }
+
+            internal CatalogProductBatchContext CloneWithPendingStock(
+                IEnumerable<string> pendingStockBarcodes,
+                IEnumerable<string> pendingStockRemoteProductIds)
+            {
+                return new CatalogProductBatchContext(
+                    _categoriesById.Values,
+                    _suppliersById.Values,
+                    pendingStockBarcodes,
+                    pendingStockRemoteProductIds);
+            }
+
+            internal CatalogProductBatchContext WithoutPendingStock()
+            {
+                return CloneWithPendingStock(Array.Empty<string>(), Array.Empty<string>());
+            }
+
+            internal void RemoveCategory(int id)
+            {
+                if (!_categoriesById.TryGetValue(id, out var existing))
+                {
+                    return;
+                }
+
+                _categoriesById.Remove(id);
+                var name = NormalizeCatalogName(existing.Name);
+                if (name.Length > 0 &&
+                    _categoriesByName.TryGetValue(name, out var byName) &&
+                    byName.Id == id)
+                {
+                    _categoriesByName.Remove(name);
+                }
+            }
+
+            internal void RemoveSupplier(int id)
+            {
+                if (!_suppliersById.TryGetValue(id, out var existing))
+                {
+                    return;
+                }
+
+                _suppliersById.Remove(id);
+                var name = NormalizeCatalogName(existing.Name);
+                if (name.Length > 0 &&
+                    _suppliersByName.TryGetValue(name, out var byName) &&
+                    byName.Id == id)
+                {
+                    _suppliersByName.Remove(name);
+                }
             }
 
             internal async Task<ProductMetaReference> ResolveCategoryAsync(
@@ -2159,11 +2204,6 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked')",
                 return inserted;
             }
 
-            private sealed class PendingStockIdentity
-            {
-                public string Barcode { get; set; }
-                public string RemoteProductId { get; set; }
-            }
         }
 
         private static async Task CanonicalizeRemoteProductBeforeUpsertAsync(

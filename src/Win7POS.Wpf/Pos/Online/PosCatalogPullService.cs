@@ -337,6 +337,8 @@ namespace Win7POS.Wpf.Pos.Online
 
                 using (var client = new PosAdminWebClient(options))
                 {
+                    using var catalogApplyRun = new RemoteCatalogBatchRepository(_factory)
+                        .CreateRunContext();
                     var syncTimer = Stopwatch.StartNew();
                     var effectiveMaxPages = maxPages;
                     var totalStats = new CatalogApplyStats();
@@ -960,6 +962,7 @@ namespace Win7POS.Wpf.Pos.Online
                         }
 
                         var applyStats = await ApplyCatalogAsync(
+                            catalogApplyRun,
                             result.Value,
                             fullRefresh,
                             trustedSession,
@@ -1158,6 +1161,7 @@ namespace Win7POS.Wpf.Pos.Online
                                 fullStageGeneration,
                                 stagedPageNumber).ConfigureAwait(false);
                             var stagedStats = await ApplyCatalogAsync(
+                                catalogApplyRun,
                                 stagedResponse,
                                 true,
                                 trustedSession,
@@ -1517,6 +1521,7 @@ namespace Win7POS.Wpf.Pos.Online
         }
 
         private async Task<CatalogApplyStats> ApplyCatalogAsync(
+            RemoteCatalogApplyRunContext applyRun,
             PosCatalogPullResponse response,
             bool authoritativeFullRefresh,
             PosTrustedDeviceSession trustedSession,
@@ -1609,7 +1614,7 @@ namespace Win7POS.Wpf.Pos.Online
                     .ToArray()
             };
 
-            var applied = await new RemoteCatalogBatchRepository(_factory)
+            var applied = await applyRun
                 .ApplyAsync(
                     batch,
                     cancellationToken,

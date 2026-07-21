@@ -246,6 +246,9 @@ public sealed class CatalogExactnessTests
         response.Catalog.Products = new[] { product };
         Assert.AreEqual(string.Empty, PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
 
+        product.ProductName = "valid \uD83D\uDE03 name";
+        Assert.AreEqual(string.Empty, PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
         product.ProductName = new string('n', 513);
         Assert.AreEqual(
             "catalog_product_row_invalid",
@@ -262,6 +265,16 @@ public sealed class CatalogExactnessTests
             PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
 
         product.ProductName = "invalid\nname";
+        Assert.AreEqual(
+            "catalog_product_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        product.ProductName = "invalid\u0085name";
+        Assert.AreEqual(
+            "catalog_product_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        product.ProductName = "invalid\uDC00name";
         Assert.AreEqual(
             "catalog_product_row_invalid",
             PosOnlineCompatibilityValidator.ValidateCatalogPull(response));

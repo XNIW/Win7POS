@@ -25,11 +25,32 @@ namespace Win7POS.Data.Repositories
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         }
 
+        public RemoteCatalogApplyRunContext CreateRunContext()
+        {
+            return new RemoteCatalogApplyRunContext(this, _factory);
+        }
+
         public async Task<RemoteCatalogBatchApplyResult> ApplyAsync(
             RemoteCatalogBatch batch,
             CancellationToken cancellationToken = default,
             RemoteCatalogCommitFence commitFence = null)
         {
+            using (var runContext = CreateRunContext())
+            {
+                return await runContext.ApplyAsync(
+                    batch,
+                    cancellationToken,
+                    commitFence).ConfigureAwait(false);
+            }
+        }
+
+        internal async Task<RemoteCatalogBatchApplyResult> ApplyWithinRunAsync(
+            RemoteCatalogApplyRunContext runContext,
+            RemoteCatalogBatch batch,
+            CancellationToken cancellationToken,
+            RemoteCatalogCommitFence commitFence)
+        {
+            if (runContext == null) throw new ArgumentNullException(nameof(runContext));
             if (batch == null) throw new ArgumentNullException(nameof(batch));
             ValidateBatchContent(batch);
 
@@ -38,12 +59,15 @@ namespace Win7POS.Data.Repositories
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                using var conn = _factory.Open();
+                var conn = runContext.Connection;
                 using var tx = conn.BeginTransaction(deferred: false);
+                runContext.BindTransaction(tx);
                 try
                 {
                     await RequireCommitFenceAsync(conn, tx, commitFence).ConfigureAwait(false);
                     var result = new RemoteCatalogBatchApplyResult();
+                    var appliedCategoryTombstoneIds = new HashSet<string>(StringComparer.Ordinal);
+                    var appliedSupplierTombstoneIds = new HashSet<string>(StringComparer.Ordinal);
                     var pendingPriceCollisionIds = new HashSet<long>();
                     var relinkProductRemoteIds = new HashSet<string>(StringComparer.Ordinal);
                     var relinkCategoryRemoteIds = new HashSet<string>(
@@ -105,36 +129,26 @@ namespace Win7POS.Data.Repositories
                         }
                     }
 
-                    var categoryIdsByRemoteId = (await conn.QueryAsync<RemoteCatalogReferenceRow>(@"
-SELECT id AS Id, remote_category_id AS RemoteId
-FROM categories
-WHERE COALESCE(is_active, 1) = 1
-  AND TRIM(COALESCE(remote_category_id, '')) <> '';", transaction: tx).ConfigureAwait(false))
-                        .GroupBy(row => (row.RemoteId ?? string.Empty).Trim(), StringComparer.Ordinal)
-                        .Where(group => group.Key.Length > 0)
-                        .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.Ordinal);
-                    var supplierIdsByRemoteId = (await conn.QueryAsync<RemoteCatalogReferenceRow>(@"
-SELECT id AS Id, remote_supplier_id AS RemoteId
-FROM suppliers
-WHERE COALESCE(is_active, 1) = 1
-  AND TRIM(COALESCE(remote_supplier_id, '')) <> '';", transaction: tx).ConfigureAwait(false))
-                        .GroupBy(row => (row.RemoteId ?? string.Empty).Trim(), StringComparer.Ordinal)
-                        .Where(group => group.Key.Length > 0)
-                        .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.Ordinal);
-
-                    var productBatchContext = await ProductRepository.CatalogProductBatchContext
-                        .LoadAsync(conn, tx)
+                    var pageState = await runContext
+                        .CreatePageStateAsync(batch, tx)
                         .ConfigureAwait(false);
+                    var categoryIdsByRemoteId = pageState.CategoryIdsByRemoteId;
+                    var supplierIdsByRemoteId = pageState.SupplierIdsByRemoteId;
+                    await runContext.StagePageProductsAsync(batch, tx).ConfigureAwait(false);
+                    var pendingStockIdentities = await runContext
+                        .LoadPagePendingStockAsync(tx)
+                        .ConfigureAwait(false);
+                    var productBatchContext = pageState.ProductContext.CloneWithPendingStock(
+                        pendingStockIdentities.Select(row => row.Barcode),
+                        pendingStockIdentities.Select(row => row.RemoteProductId));
                     var tombstonedRemoteProductIds = new HashSet<string>(
                         (batch.ProductTombstones ?? Array.Empty<RemoteCatalogProductTombstoneWrite>())
                             .Where(row => row != null && !string.IsNullOrWhiteSpace(row.RemoteProductId))
                             .Select(row => row.RemoteProductId.Trim()),
                         StringComparer.Ordinal);
-                    var activeProductIdentities = (await conn.QueryAsync<RemoteCatalogProductIdentityRow>(@"
-SELECT barcode AS Barcode, TRIM(remote_product_id) AS RemoteProductId
-FROM products
-WHERE COALESCE(is_active, 1) = 1
-  AND TRIM(COALESCE(remote_product_id, '')) <> '';", transaction: tx).ConfigureAwait(false))
+                    var activeProductIdentities = (await runContext
+                        .LoadPageProductIdentitiesAsync(tx)
+                        .ConfigureAwait(false))
                         .Where(row => !string.IsNullOrWhiteSpace(row.Barcode) &&
                             !string.IsNullOrWhiteSpace(row.RemoteProductId))
                         .ToArray();
@@ -154,10 +168,8 @@ WHERE COALESCE(is_active, 1) = 1
                             group => group.Key,
                             group => NormalizeBarcode(group.First().Barcode),
                             StringComparer.Ordinal);
-                    using var preparedProductCommands =
-                        new ProductRepository.CatalogProductPreparedCommands(conn, tx);
-                    using var preparedReferenceCommand =
-                        new RemoteProductReferencePreparedCommand(conn, tx);
+                    var preparedProductCommands = runContext.ProductCommands;
+                    var preparedReferenceCommand = runContext.ReferenceCommand;
                     foreach (var product in batch.Products ?? Array.Empty<RemoteCatalogProductWrite>())
                     {
                         var normalizedBarcode = NormalizeBarcode(product?.Barcode);
@@ -208,9 +220,9 @@ WHERE COALESCE(is_active, 1) = 1
                         await ProductRepository.UpsertProductAndMetaInTransactionCoreAsync(
                             conn,
                             tx,
-                             new Product
-                             {
-                                 Barcode = product.Barcode.Trim(),
+                            new Product
+                            {
+                                Barcode = product.Barcode.Trim(),
                                 Name = product.Name,
                                 UnitPrice = product.UnitPrice
                             },
@@ -222,13 +234,13 @@ WHERE COALESCE(is_active, 1) = 1
                             categoryId,
                             product.CategoryName,
                             product.StockQuantity,
-                             normalizedRemoteProductId,
+                            normalizedRemoteProductId,
                             preparedProductCommands,
                             productBatchContext).ConfigureAwait(false);
-                         await preparedReferenceCommand.UpsertAsync(
-                             normalizedRemoteProductId,
-                             product.RemoteCategoryId,
-                             product.RemoteSupplierId).ConfigureAwait(false);
+                        await preparedReferenceCommand.UpsertAsync(
+                            normalizedRemoteProductId,
+                            product.RemoteCategoryId,
+                            product.RemoteSupplierId).ConfigureAwait(false);
                         if (activeBarcodeByRemoteId.TryGetValue(
                                 normalizedRemoteProductId,
                                 out var previousBarcode) &&
@@ -250,8 +262,8 @@ WHERE COALESCE(is_active, 1) = 1
                         currentRemoteProductIds.Add(normalizedRemoteProductId);
                         activeBarcodeByRemoteId[normalizedRemoteProductId] = normalizedBarcode;
                         relinkProductRemoteIds.Add(normalizedRemoteProductId);
-                         result.ProductsApplied += 1;
-                     }
+                        result.ProductsApplied += 1;
+                    }
 
                     var pendingReplay = await ProductRepository
                         .ApplyPendingRemotePricesInTransactionAsync(conn, tx)
@@ -279,7 +291,12 @@ WHERE COALESCE(is_active, 1) = 1
 
                     await conn.ExecuteAsync(@"
 DELETE FROM remote_catalog_product_references
-WHERE NOT EXISTS (
+WHERE remote_product_id IN (
+  SELECT remote_product_id
+  FROM temp_catalog_page_product_identities
+  WHERE remote_product_id <> ''
+)
+AND NOT EXISTS (
   SELECT 1
   FROM products p
   WHERE p.remote_product_id = remote_catalog_product_references.remote_product_id
@@ -301,6 +318,7 @@ WHERE NOT EXISTS (
                             tombstone.RemoteUpdatedAt).ConfigureAwait(false))
                         {
                             result.CategoryTombstonesApplied += 1;
+                            appliedCategoryTombstoneIds.Add(tombstone.RemoteCategoryId.Trim());
                         }
                     }
 
@@ -320,6 +338,7 @@ WHERE NOT EXISTS (
                             tombstone.RemoteUpdatedAt).ConfigureAwait(false))
                         {
                             result.SupplierTombstonesApplied += 1;
+                            appliedSupplierTombstoneIds.Add(tombstone.RemoteSupplierId.Trim());
                         }
                     }
 
@@ -377,13 +396,23 @@ WHERE NOT EXISTS (
                     pendingPriceCollisionIds.UnionWith(pendingReplay.CollisionIds);
                     result.PricesSkipped += pendingPriceCollisionIds.Count;
 
+                    pageState.ProductContext = productBatchContext.WithoutPendingStock();
+                    pageState.RemoveTombstonedReferences(
+                        appliedCategoryTombstoneIds,
+                        appliedSupplierTombstoneIds);
                     tx.Commit();
+                    runContext.CommitPageState(pageState);
+                    runContext.RecordPageApplied();
                     return result;
                 }
                 catch
                 {
                     try { tx.Rollback(); } catch { }
                     throw;
+                }
+                finally
+                {
+                    runContext.BindTransaction(null);
                 }
             }
             finally
@@ -743,7 +772,7 @@ WHERE barcode IN (
             return (value ?? string.Empty).Trim();
         }
 
-        private sealed class RemoteProductReferencePreparedCommand : IDisposable
+        internal sealed class RemoteProductReferencePreparedCommand : IDisposable
         {
             private readonly SqliteCommand _command;
 
@@ -769,6 +798,11 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
                 _command.Prepare();
             }
 
+            internal void SetTransaction(SqliteTransaction tx)
+            {
+                _command.Transaction = tx;
+            }
+
             public void Dispose()
             {
                 _command.Dispose();
@@ -786,6 +820,373 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
                 _command.Parameters["@RemoteSupplierId"].Value =
                     (remoteSupplierId ?? string.Empty).Trim();
                 await _command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Holds the SQLite connection, prepared statements and small reference maps for one
+    /// catalog sync run. Each page still owns an independent transaction and commit fence.
+    /// </summary>
+    public sealed class RemoteCatalogApplyRunContext : IDisposable
+    {
+        private readonly RemoteCatalogBatchRepository _repository;
+        private readonly SemaphoreSlim _singleFlight = new SemaphoreSlim(1, 1);
+        private readonly SqliteCommand _clearPageProducts;
+        private readonly SqliteCommand _stagePageProduct;
+        private Dictionary<string, int> _categoryIdsByRemoteId =
+            new Dictionary<string, int>(StringComparer.Ordinal);
+        private Dictionary<string, int> _supplierIdsByRemoteId =
+            new Dictionary<string, int>(StringComparer.Ordinal);
+        private ProductRepository.CatalogProductBatchContext _productContext =
+            ProductRepository.CatalogProductBatchContext.FromReferences(
+                Array.Empty<ProductRepository.ProductMetaReference>(),
+                Array.Empty<ProductRepository.ProductMetaReference>());
+        private bool _disposed;
+        private bool _referencesLoaded;
+
+        internal RemoteCatalogApplyRunContext(
+            RemoteCatalogBatchRepository repository,
+            SqliteConnectionFactory factory)
+        {
+            _repository = repository ?? throw new ArgumentNullException(nameof(repository));
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
+
+            Connection = factory.Open();
+            try
+            {
+                using (var create = Connection.CreateCommand())
+                {
+                    create.CommandText = @"
+CREATE TEMP TABLE IF NOT EXISTS temp_catalog_page_product_identities (
+  barcode TEXT NOT NULL COLLATE NOCASE,
+  remote_product_id TEXT NOT NULL,
+  PRIMARY KEY(barcode, remote_product_id)
+);
+CREATE INDEX IF NOT EXISTS temp_catalog_page_product_remote_id_idx
+  ON temp_catalog_page_product_identities(remote_product_id);";
+                    create.ExecuteNonQuery();
+                }
+
+                ProductCommands = new ProductRepository.CatalogProductPreparedCommands(
+                    Connection,
+                    null);
+                ReferenceCommand = new RemoteCatalogBatchRepository.RemoteProductReferencePreparedCommand(
+                    Connection,
+                    null);
+                _clearPageProducts = Connection.CreateCommand();
+                _clearPageProducts.CommandText =
+                    "DELETE FROM temp_catalog_page_product_identities;";
+                _clearPageProducts.Prepare();
+                _stagePageProduct = Connection.CreateCommand();
+                _stagePageProduct.CommandText = @"
+INSERT OR IGNORE INTO temp_catalog_page_product_identities(barcode, remote_product_id)
+VALUES(@barcode, @remoteProductId);";
+                _stagePageProduct.Parameters.Add(new SqliteParameter("@barcode", string.Empty));
+                _stagePageProduct.Parameters.Add(new SqliteParameter("@remoteProductId", string.Empty));
+                _stagePageProduct.Prepare();
+                Diagnostics.PreparedCommandCount = 8;
+                Diagnostics.ContextSqlCommandCount = 1;
+            }
+            catch
+            {
+                Connection.Dispose();
+                throw;
+            }
+        }
+
+        public CatalogApplyRunDiagnostics Diagnostics { get; } =
+            new CatalogApplyRunDiagnostics();
+
+        internal SqliteConnection Connection { get; }
+        internal ProductRepository.CatalogProductPreparedCommands ProductCommands { get; }
+        internal RemoteCatalogBatchRepository.RemoteProductReferencePreparedCommand ReferenceCommand { get; }
+
+        public async Task<RemoteCatalogBatchApplyResult> ApplyAsync(
+            RemoteCatalogBatch batch,
+            CancellationToken cancellationToken = default,
+            RemoteCatalogCommitFence commitFence = null)
+        {
+            EnsureNotDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+            await _singleFlight.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                EnsureNotDisposed();
+                return await _repository.ApplyWithinRunAsync(
+                    this,
+                    batch,
+                    cancellationToken,
+                    commitFence).ConfigureAwait(false);
+            }
+            finally
+            {
+                _singleFlight.Release();
+            }
+        }
+
+        internal void BindTransaction(SqliteTransaction transaction)
+        {
+            ProductCommands.SetTransaction(transaction);
+            ReferenceCommand.SetTransaction(transaction);
+            _clearPageProducts.Transaction = transaction;
+            _stagePageProduct.Transaction = transaction;
+        }
+
+        internal async Task<RemoteCatalogPageState> CreatePageStateAsync(
+            RemoteCatalogBatch batch,
+            SqliteTransaction transaction)
+        {
+            var refresh = !_referencesLoaded ||
+                (batch.Categories?.Count ?? 0) > 0 ||
+                (batch.Suppliers?.Count ?? 0) > 0 ||
+                (batch.CategoryTombstones?.Count ?? 0) > 0 ||
+                (batch.SupplierTombstones?.Count ?? 0) > 0;
+            if (!refresh)
+            {
+                return new RemoteCatalogPageState(
+                    new Dictionary<string, int>(_categoryIdsByRemoteId, StringComparer.Ordinal),
+                    new Dictionary<string, int>(_supplierIdsByRemoteId, StringComparer.Ordinal),
+                    _productContext.WithoutPendingStock());
+            }
+
+            var categories = (await Connection.QueryAsync<RemoteCatalogReferenceRow>(@"
+SELECT id AS Id,
+       name AS Name,
+       COALESCE(remote_category_id, '') AS RemoteId
+FROM categories
+WHERE COALESCE(is_active, 1) = 1
+ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
+            var suppliers = (await Connection.QueryAsync<RemoteCatalogReferenceRow>(@"
+SELECT id AS Id,
+       name AS Name,
+       COALESCE(remote_supplier_id, '') AS RemoteId
+FROM suppliers
+WHERE COALESCE(is_active, 1) = 1
+ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
+            Diagnostics.ReferenceMapRefreshQueryCount += 2;
+            Diagnostics.ScopeSqlQueryCount += 2;
+            Diagnostics.ContextSqlCommandCount += 2;
+
+            return new RemoteCatalogPageState(
+                ToRemoteIdMap(categories),
+                ToRemoteIdMap(suppliers),
+                ProductRepository.CatalogProductBatchContext.FromReferences(
+                    categories.Select(row => new ProductRepository.ProductMetaReference
+                    {
+                        Id = row.Id,
+                        Name = row.Name
+                    }),
+                    suppliers.Select(row => new ProductRepository.ProductMetaReference
+                    {
+                        Id = row.Id,
+                        Name = row.Name
+                    })));
+        }
+
+        internal async Task StagePageProductsAsync(
+            RemoteCatalogBatch batch,
+            SqliteTransaction transaction)
+        {
+            await _clearPageProducts.ExecuteNonQueryAsync().ConfigureAwait(false);
+            Diagnostics.ContextSqlCommandCount += 1;
+
+            foreach (var product in batch.Products ?? Array.Empty<RemoteCatalogProductWrite>())
+            {
+                if (product == null)
+                {
+                    continue;
+                }
+
+                await StageIdentityAsync(product.Barcode, product.RemoteProductId).ConfigureAwait(false);
+            }
+
+            foreach (var tombstone in batch.ProductTombstones ?? Array.Empty<RemoteCatalogProductTombstoneWrite>())
+            {
+                if (tombstone == null)
+                {
+                    continue;
+                }
+
+                await StageIdentityAsync(string.Empty, tombstone.RemoteProductId).ConfigureAwait(false);
+            }
+        }
+
+        internal async Task<IReadOnlyList<RemoteCatalogProductIdentityRow>> LoadPageProductIdentitiesAsync(
+            SqliteTransaction transaction)
+        {
+            var rows = (await Connection.QueryAsync<RemoteCatalogProductIdentityRow>(@"
+SELECT p.barcode AS Barcode, TRIM(p.remote_product_id) AS RemoteProductId
+FROM products p
+JOIN temp_catalog_page_product_identities incoming
+  ON incoming.barcode <> '' AND incoming.barcode = p.barcode
+WHERE COALESCE(p.is_active, 1) = 1
+  AND TRIM(COALESCE(p.remote_product_id, '')) <> ''
+UNION
+SELECT p.barcode AS Barcode, TRIM(p.remote_product_id) AS RemoteProductId
+FROM products p
+JOIN temp_catalog_page_product_identities incoming
+  ON incoming.remote_product_id <> ''
+ AND incoming.remote_product_id = p.remote_product_id
+WHERE COALESCE(p.is_active, 1) = 1
+  AND TRIM(COALESCE(p.remote_product_id, '')) <> '';",
+                transaction: transaction).ConfigureAwait(false)).ToArray();
+            Diagnostics.ProductIdentityQueryCount += 1;
+            Diagnostics.ProductIdentityRowsLoaded += rows.Length;
+            Diagnostics.ScopeSqlQueryCount += 1;
+            Diagnostics.ContextSqlCommandCount += 1;
+            return rows;
+        }
+
+        internal async Task<IReadOnlyList<RemoteCatalogPendingStockIdentityRow>> LoadPagePendingStockAsync(
+            SqliteTransaction transaction)
+        {
+            var rows = (await Connection.QueryAsync<RemoteCatalogPendingStockIdentityRow>(@"
+SELECT DISTINCT
+       m.barcode AS Barcode,
+       COALESCE(p.remote_product_id, '') AS RemoteProductId
+FROM sales_sync_outbox o
+JOIN local_stock_movements m ON m.sale_id = o.sale_id
+JOIN temp_catalog_page_product_identities incoming
+  ON incoming.barcode <> '' AND incoming.barcode = m.barcode
+LEFT JOIN products p ON p.barcode = m.barcode
+WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked')
+UNION
+SELECT DISTINCT
+       m.barcode AS Barcode,
+       COALESCE(p.remote_product_id, '') AS RemoteProductId
+FROM sales_sync_outbox o
+JOIN local_stock_movements m ON m.sale_id = o.sale_id
+JOIN products p ON p.barcode = m.barcode
+JOIN temp_catalog_page_product_identities incoming
+  ON incoming.remote_product_id <> ''
+ AND incoming.remote_product_id = p.remote_product_id
+WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
+                transaction: transaction).ConfigureAwait(false)).ToArray();
+            Diagnostics.PendingStockQueryCount += 1;
+            Diagnostics.PendingStockRowsLoaded += rows.Length;
+            Diagnostics.ScopeSqlQueryCount += 1;
+            Diagnostics.ContextSqlCommandCount += 1;
+            return rows;
+        }
+
+        internal void CommitPageState(RemoteCatalogPageState pageState)
+        {
+            _categoryIdsByRemoteId = pageState.CategoryIdsByRemoteId;
+            _supplierIdsByRemoteId = pageState.SupplierIdsByRemoteId;
+            _productContext = pageState.ProductContext;
+            _referencesLoaded = true;
+        }
+
+        internal void RecordPageApplied()
+        {
+            Diagnostics.PagesApplied += 1;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            BindTransaction(null);
+            _stagePageProduct.Dispose();
+            _clearPageProducts.Dispose();
+            ReferenceCommand.Dispose();
+            ProductCommands.Dispose();
+            Connection.Dispose();
+            _singleFlight.Dispose();
+        }
+
+        private async Task StageIdentityAsync(string barcode, string remoteProductId)
+        {
+            var normalizedBarcode = (barcode ?? string.Empty).Trim();
+            var normalizedRemoteProductId = (remoteProductId ?? string.Empty).Trim();
+            if (normalizedBarcode.Length == 0 && normalizedRemoteProductId.Length == 0)
+            {
+                return;
+            }
+
+            _stagePageProduct.Parameters["@barcode"].Value = normalizedBarcode;
+            _stagePageProduct.Parameters["@remoteProductId"].Value = normalizedRemoteProductId;
+            await _stagePageProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
+            Diagnostics.StagedProductIdentityCount += 1;
+            Diagnostics.ContextSqlCommandCount += 1;
+        }
+
+        private static Dictionary<string, int> ToRemoteIdMap(
+            IEnumerable<RemoteCatalogReferenceRow> rows)
+        {
+            return (rows ?? Array.Empty<RemoteCatalogReferenceRow>())
+                .Where(row => row != null && !string.IsNullOrWhiteSpace(row.RemoteId))
+                .GroupBy(row => row.RemoteId.Trim(), StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.Ordinal);
+        }
+
+        private void EnsureNotDisposed()
+        {
+            if (_disposed)
+            {
+                throw new ObjectDisposedException(nameof(RemoteCatalogApplyRunContext));
+            }
+        }
+    }
+
+    public sealed class CatalogApplyRunDiagnostics
+    {
+        public long ContextSqlCommandCount { get; internal set; }
+        public int LegacyScopeSqlQueryEstimate => PagesApplied * 6;
+        public int PagesApplied { get; internal set; }
+        public int PendingStockQueryCount { get; internal set; }
+        public long PendingStockRowsLoaded { get; internal set; }
+        public int PreparedCommandCount { get; internal set; }
+        public int ProductIdentityQueryCount { get; internal set; }
+        public long ProductIdentityRowsLoaded { get; internal set; }
+        public int ReferenceMapRefreshQueryCount { get; internal set; }
+        public int ScopeSqlQueryCount { get; internal set; }
+        public long StagedProductIdentityCount { get; internal set; }
+    }
+
+    internal sealed class RemoteCatalogPageState
+    {
+        internal RemoteCatalogPageState(
+            Dictionary<string, int> categoryIdsByRemoteId,
+            Dictionary<string, int> supplierIdsByRemoteId,
+            ProductRepository.CatalogProductBatchContext productContext)
+        {
+            CategoryIdsByRemoteId = categoryIdsByRemoteId;
+            SupplierIdsByRemoteId = supplierIdsByRemoteId;
+            ProductContext = productContext;
+        }
+
+        internal Dictionary<string, int> CategoryIdsByRemoteId { get; }
+        internal Dictionary<string, int> SupplierIdsByRemoteId { get; }
+        internal ProductRepository.CatalogProductBatchContext ProductContext { get; set; }
+
+        internal void RemoveTombstonedReferences(
+            IEnumerable<string> categoryRemoteIds,
+            IEnumerable<string> supplierRemoteIds)
+        {
+            foreach (var categoryRemoteId in categoryRemoteIds ?? Array.Empty<string>())
+            {
+                var remoteId = (categoryRemoteId ?? string.Empty).Trim();
+                if (remoteId.Length > 0 && CategoryIdsByRemoteId.TryGetValue(remoteId, out var id))
+                {
+                    CategoryIdsByRemoteId.Remove(remoteId);
+                    ProductContext.RemoveCategory(id);
+                }
+            }
+
+            foreach (var supplierRemoteId in supplierRemoteIds ?? Array.Empty<string>())
+            {
+                var remoteId = (supplierRemoteId ?? string.Empty).Trim();
+                if (remoteId.Length > 0 && SupplierIdsByRemoteId.TryGetValue(remoteId, out var id))
+                {
+                    SupplierIdsByRemoteId.Remove(remoteId);
+                    ProductContext.RemoveSupplier(id);
+                }
             }
         }
     }
@@ -857,10 +1258,17 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
     internal sealed class RemoteCatalogReferenceRow
     {
         public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
         public string RemoteId { get; set; } = string.Empty;
     }
 
     internal sealed class RemoteCatalogProductIdentityRow
+    {
+        public string Barcode { get; set; } = string.Empty;
+        public string RemoteProductId { get; set; } = string.Empty;
+    }
+
+    internal sealed class RemoteCatalogPendingStockIdentityRow
     {
         public string Barcode { get; set; } = string.Empty;
         public string RemoteProductId { get; set; } = string.Empty;

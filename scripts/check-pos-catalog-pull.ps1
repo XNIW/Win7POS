@@ -109,11 +109,14 @@ if ($syncHost -notmatch "new\s+OnlineSyncSupervisor\([\s\S]{0,700}StopAuthentica
 if ($service -notmatch "RemoteCatalogBatchRepository" -or
     $service -notmatch "ApplyAsync\(\s*batch,\s*cancellationToken,\s*new\s+RemoteCatalogCommitFence") { Fail "catalog pages are not delegated to the fenced batch repository with cancellation" } else { Pass "catalog pages use the cancellation-aware fenced batch repository" }
 if ($batchRepository -notmatch "class RemoteCatalogBatchRepository" -or $batchRepository -notmatch "Task<RemoteCatalogBatchApplyResult>\s+ApplyAsync") { Fail "remote catalog batch repository contract missing" } else { Pass "remote catalog batch repository contract present" }
-$batchCancellationIndex = $batchRepository.LastIndexOf("cancellationToken.ThrowIfCancellationRequested")
-$batchTransactionIndex = $batchRepository.IndexOf("conn.BeginTransaction")
-$batchCommitIndex = $batchRepository.IndexOf("tx.Commit()")
-$batchRollbackIndex = $batchRepository.IndexOf("tx.Rollback()")
-if ($batchRepository -notmatch "WaitAsync\(cancellationToken\)" -or
+$batchWriteBody = [regex]::Match(
+    $batchRepository,
+    "internal\s+async\s+Task<RemoteCatalogBatchApplyResult>\s+ApplyWithinRunAsync[\s\S]*?(?=\r?\n\s*private\s+static\s+async\s+Task\s+RequireCommitFenceAsync)").Value
+$batchCancellationIndex = $batchWriteBody.LastIndexOf("cancellationToken.ThrowIfCancellationRequested")
+$batchTransactionIndex = $batchWriteBody.IndexOf("conn.BeginTransaction")
+$batchCommitIndex = $batchWriteBody.IndexOf("tx.Commit()")
+$batchRollbackIndex = $batchWriteBody.IndexOf("tx.Rollback()")
+if ($batchWriteBody -notmatch "WaitAsync\(cancellationToken\)" -or
     $batchCancellationIndex -lt 0 -or
     $batchTransactionIndex -lt 0 -or
     $batchCancellationIndex -gt $batchTransactionIndex) {
@@ -129,10 +132,25 @@ if ($batchTransactionIndex -lt 0 -or
     Pass "catalog batch transaction has commit/rollback boundaries"
 }
 if ($batchTransactionIndex -ge 0 -and
-    $batchRepository.Substring($batchTransactionIndex) -match "ThrowIfCancellationRequested|WaitAsync\(cancellationToken\)") {
+    $batchWriteBody.Substring($batchTransactionIndex) -match "ThrowIfCancellationRequested|WaitAsync\(cancellationToken\)") {
     Fail "catalog batch must not abandon a partially written page on mid-transaction cancellation"
 } else {
     Pass "catalog batch cancellation cannot split a page transaction"
+}
+if ($service -notmatch "using\s+var\s+catalogApplyRun[\s\S]{0,180}CreateRunContext" -or
+    $service -notmatch "ApplyCatalogAsync\(\s*catalogApplyRun" -or
+    $batchRepository -notmatch "class\s+RemoteCatalogApplyRunContext") {
+    Fail "catalog sync must reuse one apply context across its pages"
+} else {
+    Pass "catalog sync reuses one apply context across pages"
+}
+if ($batchRepository -notmatch "temp_catalog_page_product_identities" -or
+    $batchRepository -notmatch "LoadPageProductIdentitiesAsync" -or
+    $batchRepository -notmatch "LoadPagePendingStockAsync" -or
+    $batchRepository -notmatch "PreparedCommandCount") {
+    Fail "catalog run context must use page-scoped identity/pending-stock queries and prepared commands"
+} else {
+    Pass "catalog run context uses page-scoped queries and prepared commands"
 }
 if ($batchRepository -notmatch "UpsertRemoteInTransactionAsync" -or
     $batchRepository -notmatch "UpsertProductAndMetaInTransactionCoreAsync" -or
