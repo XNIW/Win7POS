@@ -26,6 +26,7 @@ namespace Win7POS.Core.Receipt
 
             var width = ReceiptTextLayout.NormalizeColumns(columns);
             var safeShop = shop ?? new ReceiptShopInfo();
+            ReceiptShopMetadataPolicy.EnsureValidReceiptShop(safeShop);
             var lines = new List<string> { string.Empty };
 
             AddWrapped(lines, safeShop.Name, width);
@@ -51,7 +52,9 @@ namespace Win7POS.Core.Receipt
             AddWrapped(lines, "Res. 99 de 2014", width);
             AddWrapped(lines, "Verifique documento en sii.cl", width);
 
-            return string.Join(Environment.NewLine, lines);
+            var receipt = string.Join(Environment.NewLine, lines);
+            ReceiptDocumentPolicy.EnsureValidDocument(receipt);
+            return receipt;
         }
 
         private static string PrefixOrFallback(

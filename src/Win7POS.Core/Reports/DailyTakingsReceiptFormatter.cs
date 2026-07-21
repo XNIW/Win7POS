@@ -17,6 +17,7 @@ namespace Win7POS.Core.Reports
         {
             if (model == null) throw new ArgumentNullException(nameof(model));
             shop = shop ?? new ReceiptShopInfo();
+            ReceiptShopMetadataPolicy.EnsureValidReceiptShop(shop);
             options = options ?? ReceiptOptions.Default42Clp();
             closeLabels = closeLabels ?? DailyCloseReceiptLabels.English;
             var labels = options.Labels ?? ReceiptLabels.English;
@@ -78,7 +79,9 @@ namespace Win7POS.Core.Reports
             AddCenteredWrapped(lines,
                 string.IsNullOrWhiteSpace(shop.Footer) ? labels.Thanks : shop.Footer,
                 width);
-            return string.Join(Environment.NewLine, lines);
+            var receipt = string.Join(Environment.NewLine, lines);
+            ReceiptDocumentPolicy.EnsureValidDocument(receipt);
+            return receipt;
         }
 
         private static void AddOptionalMoney(List<string> lines, string label, long? value, ReceiptOptions options, CultureInfo culture, int width)

@@ -70,6 +70,42 @@ WHERE c.remote_category_id = 'category-run'
     }
 
     [TestMethod]
+    public async Task InvalidBatchDoesNotPublishRunDiagnosticsOrDurableRows()
+    {
+        using var db = TestDb.Create();
+        using var run = new RemoteCatalogBatchRepository(db.Factory).CreateRunContext();
+        var oversized = Product("product-must-not-write", "INVALID-RUN-001", 1);
+        oversized.Name = new string('x', 500_000);
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => run.ApplyAsync(
+            new RemoteCatalogBatch
+            {
+                Categories = new[]
+                {
+                    new RemoteCatalogCategoryWrite
+                    {
+                        RemoteCategoryId = "category-must-not-write",
+                        Name = "Must not write"
+                    }
+                },
+                Products = new[] { oversized }
+            }));
+
+        Assert.AreEqual(0, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(0, run.Diagnostics.ReferenceMapRefreshQueryCount);
+        Assert.AreEqual(0, run.Diagnostics.ProductIdentityQueryCount);
+        Assert.AreEqual(0, run.Diagnostics.PendingStockQueryCount);
+        Assert.AreEqual(0, run.Diagnostics.ScopeSqlQueryCount);
+        Assert.AreEqual(0L, run.Diagnostics.StagedProductIdentityCount);
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM categories WHERE remote_category_id = 'category-must-not-write';"));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM products WHERE remote_product_id = 'product-must-not-write';"));
+    }
+
+    [TestMethod]
     public async Task FailedPageDoesNotPublishRolledBackReferenceCache()
     {
         using var db = TestDb.Create();

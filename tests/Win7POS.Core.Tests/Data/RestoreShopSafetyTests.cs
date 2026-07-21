@@ -166,6 +166,7 @@ VALUES(last_insert_rowid(), 'late-restore-sale', 'late-restore-sale:pos-sales-le
             RestoreShopSafetyRepository.RestoreCompletedAtKey,
             "2026-07-14T01:00:00Z");
         await state.StoreLastSyncAsync("shop-a", "SHOP-A", "cursor", "2026-07-14T00:00:00Z", syncMode: "delta");
+        await CatalogExactnessTestFixture.SeedVerifiedAsync(db.Factory, "shop-a", "SHOP-A");
         await state.StoreSaleSafeAsync("shop-a", "SHOP-A", "2026-07-14T00:00:00Z");
 
         var early = await new RestoreShopSafetyRepository(db.Factory).CompleteReviewAsync();
@@ -204,6 +205,7 @@ VALUES(last_insert_rowid(), 'late-restore-sale', 'late-restore-sale:pos-sales-le
                 HasMore = true,
                 SyncMode = "delta"
             }));
+        await CatalogExactnessTestFixture.SeedVerifiedAsync(db.Factory, "shop-a", "SHOP-A");
         await state.StoreSaleSafeAsync("shop-a", "SHOP-A", "2026-07-14T00:00:00Z");
         Assert.IsTrue((await state.LoadDeltaChainAsync(
             "shop-a",

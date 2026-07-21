@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -1785,7 +1786,8 @@ namespace Win7POS.Wpf.Pos
         private static ReceiptShopInfo FreezeReceiptShopInfo(ReceiptShopInfo source)
         {
             source = source ?? new ReceiptShopInfo();
-            return new ReceiptShopInfo
+            ReceiptShopMetadataPolicy.EnsureValidReceiptShop(source);
+            var frozen = new ReceiptShopInfo
             {
                 Name = source.Name,
                 Address = source.Address,
@@ -1800,14 +1802,19 @@ namespace Win7POS.Wpf.Pos
                 Source = source.Source,
                 SyncedAtUtc = source.SyncedAtUtc
             };
+            ReceiptShopMetadataPolicy.EnsureValidReceiptShop(frozen);
+            return frozen;
         }
 
         private static string SerializeReceiptShopSnapshot(ReceiptShopInfo shop)
         {
+            ReceiptShopMetadataPolicy.EnsureValidReceiptShop(shop);
             using (var stream = new MemoryStream())
             {
                 new DataContractJsonSerializer(typeof(ReceiptShopInfo)).WriteObject(stream, shop);
-                return Encoding.UTF8.GetString(stream.ToArray());
+                var serialized = Encoding.UTF8.GetString(stream.ToArray());
+                ReceiptDocumentPolicy.EnsureValidSnapshotJson(serialized);
+                return serialized;
             }
         }
 
@@ -1816,19 +1823,15 @@ namespace Win7POS.Wpf.Pos
             if (string.IsNullOrWhiteSpace(serialized))
                 return null;
 
-            try
+            ReceiptDocumentPolicy.EnsureValidSnapshotJson(serialized);
+            using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(serialized)))
             {
-                using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(serialized)))
-                {
-                    return new DataContractJsonSerializer(typeof(ReceiptShopInfo))
-                        .ReadObject(stream) as ReceiptShopInfo;
-                }
-            }
-            catch
-            {
-                // Historic records created before the snapshot column retain the
-                // documented current-shop fallback; new receipts always persist it.
-                return null;
+                var shop = new DataContractJsonSerializer(typeof(ReceiptShopInfo))
+                    .ReadObject(stream) as ReceiptShopInfo;
+                if (shop == null)
+                    throw new SerializationException("Receipt shop snapshot is invalid.");
+                ReceiptShopMetadataPolicy.EnsureValidReceiptShop(shop);
+                return shop;
             }
         }
 

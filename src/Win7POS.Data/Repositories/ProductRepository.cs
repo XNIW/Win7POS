@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
+using Win7POS.Core.Receipt;
 
 namespace Win7POS.Data.Repositories
 {
@@ -130,6 +131,7 @@ WHERE id = @id
         public async Task<long> UpsertAsync(Product p)
         {
             if (p == null) throw new ArgumentNullException(nameof(p));
+            SalesReceiptContentPolicy.EnsureValidProductIdentity(p.Barcode, p.Name);
             if (IsReservedBarcode(p.Barcode))
                 throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
 
@@ -1641,6 +1643,8 @@ WHERE barcode = @barcode
         /// <summary>Upsert prodotto + meta in una transazione (robustezza negozio).</summary>
         public async Task<long> UpsertProductAndMetaInTransactionAsync(Product p, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string remoteProductId = null)
         {
+            if (p == null) throw new ArgumentNullException(nameof(p));
+            SalesReceiptContentPolicy.EnsureValidProductIdentity(p.Barcode, p.Name);
             await CatalogMetaWriteGate.WaitAsync().ConfigureAwait(false);
             try
             {
@@ -1693,6 +1697,7 @@ WHERE barcode = @barcode
             CatalogProductBatchContext batchContext = null)
         {
             if (p == null) throw new ArgumentNullException(nameof(p));
+            SalesReceiptContentPolicy.EnsureValidProductIdentity(p.Barcode, p.Name);
             if (IsReservedBarcode(p.Barcode))
                 throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
 
@@ -2299,6 +2304,7 @@ WHERE remote_product_id = @remoteProductId
         public async Task UpdateProductAndMetaInTransactionAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty)
         {
             if (productId <= 0) throw new ArgumentException("invalid product id");
+            SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
             await CatalogMetaWriteGate.WaitAsync().ConfigureAwait(false);
             try
             {
@@ -2345,6 +2351,7 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
         public async Task UpdateProductAndMetaWithPriceHistoryAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string source)
         {
             if (productId <= 0) throw new ArgumentException("invalid product id");
+            SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
             await CatalogMetaWriteGate.WaitAsync().ConfigureAwait(false);
             try
             {
@@ -2678,6 +2685,7 @@ VALUES(@barcode, @changedAt, 'retail', @oldPrice, @newPrice, @source)",
 
         public async Task<bool> UpdateAsync(long productId, string name, long unitPriceMinor)
         {
+            SalesReceiptContentPolicy.EnsureValidProductIdentity(null, name);
             using var conn = _factory.Open();
             var rows = await conn.ExecuteAsync(
                 "UPDATE products SET name = @name, unitPrice = @unitPriceMinor WHERE id = @productId",

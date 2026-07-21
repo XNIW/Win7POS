@@ -14,6 +14,14 @@ namespace Win7POS.Data.Migrations
     public sealed class SchemaMigrationRunner
     {
         private const string LedgerTable = "schema_migrations";
+        private const string LedgerSchemaSql = @"
+CREATE TABLE schema_migrations (
+  migration_id TEXT PRIMARY KEY,
+  checksum TEXT NOT NULL,
+  description TEXT NOT NULL,
+  applied_at TEXT NOT NULL,
+  app_version TEXT NULL
+);";
 
         private readonly SqliteConnectionFactory _factory;
         private readonly IReadOnlyList<SchemaMigration> _migrations;
@@ -197,18 +205,14 @@ FROM schema_migrations;").ToList();
             {
                 try
                 {
-                    connection.Execute(@"
-CREATE TABLE schema_migrations (
-  migration_id TEXT PRIMARY KEY,
-  checksum TEXT NOT NULL,
-  description TEXT NOT NULL,
-  applied_at TEXT NOT NULL,
-  app_version TEXT NULL
-);", transaction: transaction);
+                    connection.Execute(LedgerSchemaSql, transaction: transaction);
+                    var detector = new LegacySchemaDetector(connection, transaction);
+                    ValidateLedgerShape(detector);
 
                     var appliedAt = UtcNow().ToString("o");
                     for (var index = 0; index < satisfiedPrefixLength; index++)
                     {
+                        ValidateLedgerShape(detector);
                         InsertLedgerRow(
                             connection,
                             transaction,
@@ -218,7 +222,7 @@ CREATE TABLE schema_migrations (
                         bootstrapped.Add(_migrations[index].MigrationId);
                     }
 
-                    ValidateLedgerShape(new LegacySchemaDetector(connection, transaction));
+                    ValidateLedgerShape(detector);
                     transaction.Commit();
                 }
                 catch
@@ -240,8 +244,10 @@ CREATE TABLE schema_migrations (
             {
                 try
                 {
-                    migration.Apply(connection, transaction);
                     var detector = new LegacySchemaDetector(connection, transaction);
+                    ValidateLedgerShape(detector);
+                    migration.Apply(connection, transaction);
+                    ValidateLedgerShape(detector);
                     if (!migration.IsSatisfied(detector))
                     {
                         throw new InvalidDataException(
@@ -250,12 +256,15 @@ CREATE TABLE schema_migrations (
                     }
 
                     ValidateDatabase(connection, transaction);
+                    ValidateLedgerShape(detector);
                     InsertLedgerRow(
                         connection,
                         transaction,
                         migration,
                         UtcNow().ToString("o"),
                         ApplicationVersion());
+                    ValidateLedgerShape(detector);
+                    ValidateDatabase(connection, transaction);
                     transaction.Commit();
                 }
                 catch
@@ -381,13 +390,7 @@ VALUES(
 
         private static void ValidateLedgerShape(LegacySchemaDetector detector)
         {
-            if (!detector.HasAllColumns(
-                    LedgerTable,
-                    "migration_id", "checksum", "description", "applied_at", "app_version") ||
-                !detector.ColumnIsPrimaryKey(LedgerTable, "migration_id") ||
-                !detector.ColumnIsNotNull(LedgerTable, "checksum") ||
-                !detector.ColumnIsNotNull(LedgerTable, "description") ||
-                !detector.ColumnIsNotNull(LedgerTable, "applied_at"))
+            if (!detector.HasCanonicalTableDefinitions(LedgerSchemaSql, LedgerTable))
             {
                 throw new InvalidDataException(
                     "SQLite migration ledger has an unsupported or unsafe shape.");

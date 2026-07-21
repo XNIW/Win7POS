@@ -28,6 +28,8 @@ using Win7POS.Wpf.Pos.CustomerDisplay;
 using Win7POS.Wpf.Pos.Online;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Infrastructure.Displays;
+using Win7POS.Wpf.Infrastructure.Security;
+using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Localization;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Receipt;
@@ -48,6 +50,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private const int OfflineSalesSafetyVerifiedExitCode = 73;
         private static string _receiptAlignmentFailure = string.Empty;
 
+        private sealed class HarnessPermissionService : IPermissionService
+        {
+            public bool Has(string permissionCode) => false;
+            public void Demand(string permissionCode, string operationText)
+                => throw new InvalidOperationException("Harness permission denied.");
+            public bool CanOverride(string permissionCode) => false;
+        }
+
         [STAThread]
         private static void Main(string[] args)
         {
@@ -60,6 +70,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             var physicalPrinterQa = HasArg(args, "--physical-printer-qa");
             var restrictedSeed = physicalPrinterQa ||
+                                 HasArg(args, "--authorization-lease-smoke") ||
                                  HasArg(args, "--offline-sales-sandbox") ||
                                  (HasArg(args, "--seed") && HasArg(args, "--seed-trusted-session"));
             var verifyOfflineSalesSandboxSafety =
@@ -75,6 +86,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 dataDir = EnsureSyntheticTrustedSessionSeedPath(dataDir);
             }
             var automatedRun = HasArg(args, "--seed") ||
+                               HasArg(args, "--authorization-lease-smoke") ||
+                               HasArg(args, "--supplier-excel-wpf-viewmodel-smoke") ||
                                HasArg(args, "--offline-sales-sandbox") ||
                                HasArg(args, "--shell-window-state") ||
                                HasArg(args, "--printer-selection-binding") ||
@@ -107,6 +120,24 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 try
                 {
+                    if (HasArg(args, "--authorization-lease-smoke"))
+                    {
+                        var result = await AuthorizationLeaseWpfSmoke.RunAsync()
+                            .ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(dataDir, "authorization-lease-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
+                    if (SupplierExcelWpfViewModelSmoke.TryRun(args, out var supplierSmokeExitCode))
+                    {
+                        app.Shutdown(supplierSmokeExitCode);
+                        return;
+                    }
+
                     if (verifyOfflineSalesSandboxSafety)
                     {
                         await QaFixture.VerifyOfflineSalesSandboxSafetyAsync().ConfigureAwait(true);
@@ -972,7 +1003,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 foreach (var compact in new[] { false, true })
                 {
-                    var salesVm = new SalesRegisterViewModel(new PosWorkflowService(), useReceipt42: true);
+                    var salesVm = new SalesRegisterViewModel(
+                        new PosWorkflowService(),
+                        useReceipt42: true,
+                        permissionService: new HarnessPermissionService());
                     var salesDialog = new SalesRegisterDialog(salesVm)
                     {
                         Owner = this,
@@ -1082,7 +1116,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     CreateSyncCenterDialog(),
                     Path.Combine(outputDirectory, "sync-center.png")).ConfigureAwait(true);
                 await CaptureDialogAsync(
-                    new DbMaintenanceDialog(new DbMaintenanceViewModel(new PosWorkflowService())),
+                    new DbMaintenanceDialog(new DbMaintenanceViewModel(
+                        new PosWorkflowService(),
+                         () => Task.FromResult(false),
+                         () => false,
+                         () => false,
+                         () => false)),
                     Path.Combine(outputDirectory, "database-maintenance.png")).ConfigureAwait(true);
                 await CaptureDialogAsync(
                     new AboutSupportDialog(new AboutSupportViewModel(new PosWorkflowService())),
@@ -1319,7 +1358,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 return new SalesRegisterDialog(new SalesRegisterViewModel(
                     new PosWorkflowService(),
-                    useReceipt42: true));
+                    useReceipt42: true,
+                    permissionService: new HarnessPermissionService()));
             }
 
             private static UserManagementDialog CreateUserManagementDialog()
@@ -2065,6 +2105,22 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (corruptRead.Copies != ReceiptPrintOptions.MinimumCopies) return false;
 
                     var spooler = new WindowsSpoolerReceiptPrinter();
+                    var invalidDocumentRejectedBeforeEffect = false;
+                    try
+                    {
+                        await spooler.PrintAsync(
+                            new string('x', ReceiptDocumentPolicy.MaxDocumentCharacters + 1),
+                            new ReceiptPrintOptions
+                            {
+                                PrinterName = "QA INVALID DOCUMENT MUST NOT PRINT",
+                                Copies = 1
+                            }).ConfigureAwait(true);
+                    }
+                    catch (ReceiptContentValidationException)
+                    {
+                        invalidDocumentRejectedBeforeEffect = true;
+                    }
+
                     foreach (var invalidCopies in new[] { 0, 4, int.MaxValue })
                     {
                         if (!await ExpectInvalidOperationAsync(() => spooler.PrintAsync(
@@ -2080,7 +2136,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
 
                     var tailsAfter = tailsField.GetValue(null) as System.Collections.IDictionary;
-                    return (tailsAfter?.Count ?? 0) == tailCountBefore;
+                    return invalidDocumentRejectedBeforeEffect &&
+                           (tailsAfter?.Count ?? 0) == tailCountBefore;
                 }
                 finally
                 {
@@ -2743,7 +2800,10 @@ VALUES(@saleId, NULL, @barcode, @name, 1, @total, @total);",
                 }
 
                 var service = new PosWorkflowService();
-                var vm = new SalesRegisterViewModel(service, useReceipt42: true);
+                var vm = new SalesRegisterViewModel(
+                    service,
+                    useReceipt42: true,
+                    permissionService: new HarnessPermissionService());
                 try
                 {
                     vm.LoadCommand.Execute(null);
@@ -3561,7 +3621,7 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                 };
                 var daily32 = PrefixPhysicalQaWarnings(
                     "QA CASE: DAILY CLOSE 32",
-                    DailyCloseReceiptTextRenderer.Render(
+                    Win7POS.Core.Reports.DailyCloseReceiptTextRenderer.Render(
                         dailyModel,
                         shop,
                         new ReceiptOptions
@@ -3574,7 +3634,7 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                         DailyCloseReceiptLabels.English));
                 var daily42 = PrefixPhysicalQaWarnings(
                     "QA CASE: DAILY CLOSE 42",
-                    DailyCloseReceiptTextRenderer.Render(
+                    Win7POS.Core.Reports.DailyCloseReceiptTextRenderer.Render(
                         dailyModel,
                         shop,
                         new ReceiptOptions
@@ -4430,6 +4490,19 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                 }).ConfigureAwait(false);
                 var state = new CatalogShopStateRepository(factory);
                 var binding = await state.EnsureAndLoadCursorAsync(QaShopId, QaShopCode).ConfigureAwait(false);
+                using (var conn = factory.Open())
+                using (var tx = conn.BeginTransaction())
+                {
+                    var now = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+                    await UpsertSettingAsync(conn, tx, CatalogShopStateRepository.CompletenessStatusKey, "Verified").ConfigureAwait(false);
+                    await UpsertSettingAsync(conn, tx, CatalogShopStateRepository.CompletenessCodeKey, "qa_verified").ConfigureAwait(false);
+                    await UpsertSettingAsync(conn, tx, CatalogShopStateRepository.RepairRequiredKey, "0").ConfigureAwait(false);
+                    await UpsertSettingAsync(conn, tx, CatalogShopStateRepository.ExactnessShopIdKey, QaShopId).ConfigureAwait(false);
+                    await UpsertSettingAsync(conn, tx, CatalogShopStateRepository.ExactnessShopCodeKey, QaShopCode).ConfigureAwait(false);
+                    await UpsertSettingAsync(conn, tx, CatalogShopStateRepository.ExactnessEvaluatedAtKey, now).ConfigureAwait(false);
+                    await UpsertSettingAsync(conn, tx, CatalogShopStateRepository.ExactnessVerifiedAtKey, now).ConfigureAwait(false);
+                    tx.Commit();
+                }
                 await state.StoreSaleSafeAsync(
                     QaShopId,
                     QaShopCode,

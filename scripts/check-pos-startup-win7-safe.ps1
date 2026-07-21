@@ -474,7 +474,7 @@ else {
 }
 
 if ($hardwareSafety -notmatch 'if\s*\(App\.IsSafeStart\)[\s\S]*throw\s+new\s+InvalidOperationException' -or
-    $receiptSpooler -notmatch 'PrintAsync[\s\S]{0,260}PrinterHardwareSafety\.DemandHardwareOutputAllowed' -or
+    $receiptSpooler -notmatch 'PrintAsync[\s\S]{0,600}ReceiptDocumentPolicy\.EnsureValidDocument\(receiptText\)[\s\S]{0,260}PrinterHardwareSafety\.DemandHardwareOutputAllowed' -or
     $receiptSpooler -notmatch 'OpenCashDrawerAsync[\s\S]{0,260}PrinterHardwareSafety\.DemandHardwareOutputAllowed' -or
     $posWorkflow -notmatch 'GetInstalledPrintersAsync[\s\S]{0,260}if\s*\(App\.IsSafeStart\)[\s\S]{0,120}Array\.Empty<InstalledPrinterInfo>' -or
     $posWorkflow -notmatch 'effectiveAutoPrint\s*=\s*autoPrint\s*&&\s*!App\.IsSafeStart' -or

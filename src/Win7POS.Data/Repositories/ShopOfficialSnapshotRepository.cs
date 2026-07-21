@@ -34,7 +34,7 @@ namespace Win7POS.Data.Repositories
 
         public ReceiptShopInfo ToReceiptShopInfo()
         {
-            return new ReceiptShopInfo
+            var shop = new ReceiptShopInfo
             {
                 Address = Normalize(BusinessAddress),
                 BusinessGiro = Normalize(BusinessGiro),
@@ -49,6 +49,8 @@ namespace Win7POS.Data.Repositories
                 Source = Normalize(Source),
                 SyncedAtUtc = Normalize(SyncedAtUtc)
             };
+            ReceiptShopMetadataPolicy.EnsureValidReceiptShop(shop);
+            return shop;
         }
 
         private static string Normalize(string value)
@@ -72,7 +74,7 @@ namespace Win7POS.Data.Repositories
 
         public async Task<OfficialShopSnapshot> GetAsync()
         {
-            return new OfficialShopSnapshot
+            var snapshot = new OfficialShopSnapshot
             {
                 BusinessAddress = await GetAsync("business_address").ConfigureAwait(false),
                 BusinessCity = await GetAsync("business_city").ConfigureAwait(false),
@@ -90,6 +92,8 @@ namespace Win7POS.Data.Repositories
                 SyncedAtUtc = await GetAsync("synced_at_utc").ConfigureAwait(false),
                 UpdatedAt = await GetAsync("updated_at").ConfigureAwait(false)
             };
+            EnsureValid(snapshot);
+            return snapshot;
         }
 
         public async Task SaveAsync(
@@ -100,6 +104,7 @@ namespace Win7POS.Data.Repositories
             {
                 return;
             }
+            EnsureValid(snapshot);
 
             var syncedAt = string.IsNullOrWhiteSpace(snapshot.SyncedAtUtc)
                 ? DateTimeOffset.UtcNow.ToString("O")
@@ -145,6 +150,27 @@ WHERE singleton_id = 1 AND active = 1;",
         private Task<string> GetAsync(string suffix)
         {
             return _settings.GetStringAsync(Key(suffix));
+        }
+
+        private static void EnsureValid(OfficialShopSnapshot snapshot)
+        {
+            ReceiptShopMetadataPolicy.EnsureValidSnapshot(new ReceiptShopMetadata
+            {
+                BusinessAddress = snapshot.BusinessAddress,
+                BusinessCity = snapshot.BusinessCity,
+                BusinessGiro = snapshot.BusinessGiro,
+                BusinessPhone = snapshot.BusinessPhone,
+                CompanyRut = snapshot.CompanyRut,
+                Footer = snapshot.Footer,
+                LegalRepresentativeRut = snapshot.LegalRepresentativeRut,
+                ShopCode = snapshot.ShopCode,
+                ShopId = snapshot.ShopId,
+                ShopName = snapshot.ShopName,
+                ShopStatus = snapshot.ShopStatus,
+                Source = snapshot.Source,
+                SyncedAtUtc = snapshot.SyncedAtUtc,
+                UpdatedAt = snapshot.UpdatedAt
+            });
         }
 
         private static Task<int> SetAsync(

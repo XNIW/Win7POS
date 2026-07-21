@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core.Online;
+using Win7POS.Core.Receipt;
 using Win7POS.Data;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
@@ -127,24 +128,6 @@ namespace Win7POS.Wpf.Pos.Online
                     new OnlineSyncGenerationRepository(_factory);
                 var expectedCurrentState = await generationRepository
                     .ReadCurrentPredecessorAsync().ConfigureAwait(false);
-                if (!expectedCurrentState.Exists &&
-                    _store.TryRead(out var legacyStoredSession) &&
-                    TryCreateGeneration(
-                        legacyStoredSession,
-                        out var legacyStoredGeneration))
-                {
-                    // Migration 0008 intentionally cannot read the DPAPI file.
-                    // Normalize that one-time legacy state before issuing the
-                    // request so an authoritative denial can tombstone and clear
-                    // the exact stored generation instead of reviving it later.
-                    cancellationToken.ThrowIfCancellationRequested();
-                    await generationRepository.AttachOrInitializeCurrentAsync(
-                            legacyStoredGeneration,
-                            NextActivationTimestamp())
-                        .ConfigureAwait(false);
-                    expectedCurrentState = await generationRepository
-                        .ReadCurrentPredecessorAsync().ConfigureAwait(false);
-                }
                 if (attemptId != Interlocked.Read(ref _latestAuthenticationAttempt) ||
                     !PosOnlineSyncRevocationLatch.IsAuthorizationEpochCurrent(
                         authorizationEpoch) ||
@@ -173,6 +156,7 @@ namespace Win7POS.Wpf.Pos.Online
             CancellationToken cancellationToken = default)
         {
             if (response == null) throw new ArgumentNullException(nameof(response));
+            ReceiptShopMetadataPolicy.EnsureValidRemoteShop(response.Shop);
             if (persistAuthenticatedLocalStateAsync == null)
             {
                 throw new ArgumentNullException(
@@ -1279,7 +1263,7 @@ namespace Win7POS.Wpf.Pos.Online
                 trustedSession.ShopCode,
                 binding.Epoch).ConfigureAwait(false);
             var exactnessRepair = exactness.RepairRequired ||
-                exactness.Status == CatalogCompletenessStatus.Mismatch;
+                exactness.Status != CatalogCompletenessStatus.Verified;
 
             var trigger = requestedTrigger;
             if (requestedTrigger == CatalogSyncTrigger.AdministratorRepair)

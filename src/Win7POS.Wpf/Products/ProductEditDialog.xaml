@@ -43,6 +43,7 @@
                     <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="{loc:Loc products.barcode}"/>
                     <TextBox Grid.Row="0" Grid.Column="1" Margin="8,0,0,0"
                              Text="{Binding Barcode, UpdateSourceTrigger=PropertyChanged}"
+                             MaxLength="256"
                              Style="{StaticResource ModernTextBoxStyle}"
                              IsReadOnly="{Binding IsBarcodeReadOnly}"/>
 
@@ -50,6 +51,7 @@
                     <TextBlock Grid.Row="1" Grid.Column="0" Margin="0,10,0,0" VerticalAlignment="Center" Text="{loc:Loc products.name}"/>
                     <TextBox Grid.Row="1" Grid.Column="1" Margin="8,10,0,0"
                              Text="{Binding ProductName, UpdateSourceTrigger=PropertyChanged}"
+                             MaxLength="512"
                              Style="{StaticResource ModernTextBoxStyle}"/>
 
                     <!-- Prezzo vendita -->

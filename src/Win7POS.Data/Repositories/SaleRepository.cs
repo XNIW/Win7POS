@@ -8,6 +8,7 @@ using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
 using Win7POS.Core.Online;
 using Win7POS.Core.Pos;
+using Win7POS.Core.Receipt;
 using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
@@ -37,10 +38,23 @@ namespace Win7POS.Data.Repositories
 
         private readonly SqliteConnectionFactory _factory;
 
+        private sealed class SaleLineBudgetRow
+        {
+            public long AggregateNameCharacters { get; set; }
+            public long AggregateNameUtf8Bytes { get; set; }
+            public long LineCount { get; set; }
+            public long MaximumBarcodeCharacters { get; set; }
+            public long MaximumNameCharacters { get; set; }
+        }
+
         public SaleRepository(SqliteConnectionFactory factory) => _factory = factory;
 
         public async Task<long> InsertSaleAsync(Sale sale, IReadOnlyList<SaleLine> lines)
         {
+            if (sale == null) throw new ArgumentNullException(nameof(sale));
+            if (lines == null) throw new ArgumentNullException(nameof(lines));
+            SalesReceiptContentPolicy.EnsureValid(sale, lines);
+            ReceiptDocumentPolicy.EnsureValidSnapshotJson(sale.ReceiptShopSnapshotJson);
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
 
@@ -89,7 +103,7 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         {
             using var conn = _factory.Open();
             var rows = await conn.QueryAsync<Sale>(
-                @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus, receipt_shop_snapshot AS ReceiptShopSnapshotJson
+                @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus
                   FROM sales
                   ORDER BY id DESC LIMIT @take",
                 new { take }
@@ -100,7 +114,7 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         public async Task<IReadOnlyList<Sale>> GetSalesBetweenAsync(long fromMs, long toMs, int? operatorId = null, bool includeFiscalPrinted = true)
         {
             using var conn = _factory.Open();
-            var sql = @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus, receipt_shop_snapshot AS ReceiptShopSnapshotJson
+            var sql = @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus
                   FROM sales
                   WHERE createdAt >= @fromMs AND createdAt < @toMs";
             if (operatorId.HasValue)
@@ -232,10 +246,23 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         public async Task<Sale> GetByIdAsync(long saleId)
         {
             using var conn = _factory.Open();
-            return await conn.QuerySingleOrDefaultAsync<Sale>(
+            var snapshotLength = await conn.ExecuteScalarAsync<long?>(
+                "SELECT length(receipt_shop_snapshot) FROM sales WHERE id = @saleId;",
+                new { saleId }).ConfigureAwait(false);
+            if (snapshotLength > ReceiptDocumentPolicy.MaxSnapshotJsonCharacters)
+            {
+                throw new ReceiptContentValidationException(
+                    "receipt_shop_snapshot_too_large",
+                    "receiptShopSnapshotJson",
+                    checked((int)Math.Min(snapshotLength.Value, int.MaxValue)),
+                    -1);
+            }
+            var sale = await conn.QuerySingleOrDefaultAsync<Sale>(
                 @"SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus, receipt_shop_snapshot AS ReceiptShopSnapshotJson
                   FROM sales WHERE id = @saleId",
                 new { saleId }).ConfigureAwait(false);
+            ReceiptDocumentPolicy.EnsureValidSnapshotJson(sale?.ReceiptShopSnapshotJson);
+            return sale;
         }
 
         /// <summary>Imposta pdf_printed=1 come stato documentale locale senza rimuovere la vendita da report o sync.</summary>
@@ -254,7 +281,7 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
             using var conn = _factory.Open();
             var pattern = "%" + codeFilter.Trim() + "%";
             var rows = await conn.QueryAsync<Sale>($@"
-	SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus, receipt_shop_snapshot AS ReceiptShopSnapshotJson
+	SELECT id, client_sale_id AS ClientSaleId, code, createdAt, kind, related_sale_id AS RelatedSaleId, voided_by_sale_id AS VoidedBySaleId, voided_at AS VoidedAt, reason, total, paidCash, paidCard, change, operator_id AS OperatorId, COALESCE(pdf_printed, 0) AS PdfPrinted, sync_status AS SyncStatus
 	FROM sales
 	WHERE code LIKE @pattern
 	ORDER BY createdAt DESC, id DESC
@@ -266,13 +293,25 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         public async Task<IReadOnlyList<SaleLine>> GetLinesBySaleIdAsync(long saleId)
         {
             using var conn = _factory.Open();
+            using var tx = conn.BeginTransaction(deferred: true);
+            var budget = await ReadSaleLineBudgetAsync(conn, tx, saleId).ConfigureAwait(false);
+            SalesReceiptContentPolicy.EnsureStoredLineBudget(
+                budget.LineCount,
+                budget.MaximumNameCharacters,
+                budget.MaximumBarcodeCharacters,
+                budget.AggregateNameCharacters,
+                budget.AggregateNameUtf8Bytes);
             var rows = await conn.QueryAsync<SaleLine>(
                 @"SELECT id, saleId, productId, barcode, name, quantity, unitPrice, lineTotal, related_original_line_id AS RelatedOriginalLineId
                   FROM sale_lines
                   WHERE saleId = @saleId
                   ORDER BY id ASC",
-                new { saleId }).ConfigureAwait(false);
-            return rows.ToList();
+                new { saleId },
+                tx).ConfigureAwait(false);
+            var result = rows.ToList();
+            SalesReceiptContentPolicy.EnsureValidLines(result);
+            tx.Commit();
+            return result;
         }
 
         public async Task<bool> IsVoidedAsync(long saleId)
@@ -417,6 +456,9 @@ WHERE id = @saleId;",
             long paidCardMinor,
             long changeMinor)
         {
+            if (req == null || req.OriginalSaleId <= 0)
+                throw new InvalidOperationException("Refund requires an existing original sale.");
+            SalesReceiptContentPolicy.EnsureValidSaleReason(req.Reason);
             using var conn = _factory.Open();
             using var tx = conn.BeginTransaction();
             try
@@ -443,6 +485,7 @@ WHERE id = @saleId;",
         {
             if (req == null || req.OriginalSaleId <= 0)
                 throw new InvalidOperationException("Refund requires an existing original sale.");
+            SalesReceiptContentPolicy.EnsureValidSaleReason(req.Reason);
             var originalKind = await conn.ExecuteScalarAsync<int?>(
                 "SELECT kind FROM sales WHERE id = @originalSaleId;",
                 new { originalSaleId = req.OriginalSaleId },
@@ -462,6 +505,7 @@ WHERE id = @saleId;",
                 PaidCard = paidCardMinor,
                 Change = changeMinor
             };
+            SalesReceiptContentPolicy.EnsureValid(sale, Array.Empty<SaleLine>());
 
             var saleId = await conn.ExecuteScalarAsync<long>(@"
 INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change, receipt_shop_snapshot)
@@ -480,6 +524,8 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         {
             if (refundSale == null) throw new ArgumentNullException(nameof(refundSale));
             if (refundLines == null) throw new ArgumentNullException(nameof(refundLines));
+            SalesReceiptContentPolicy.EnsureValid(refundSale, refundLines);
+            ReceiptDocumentPolicy.EnsureValidSnapshotJson(refundSale.ReceiptShopSnapshotJson);
 
             using var conn = _factory.Open();
             using var tx = conn.BeginTransaction();
@@ -537,11 +583,53 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
 
         public async Task InsertSaleLinesAsync(SqliteConnection conn, SqliteTransaction tx, IReadOnlyList<SaleLine> lines)
         {
+            if (conn == null) throw new ArgumentNullException(nameof(conn));
+            if (tx == null) throw new ArgumentNullException(nameof(tx));
+            if (!ReferenceEquals(tx.Connection, conn))
+            {
+                throw new ArgumentException(
+                    "The sale-line transaction must belong to the supplied connection.",
+                    nameof(tx));
+            }
+            SalesReceiptContentPolicy.EnsureValidLines(lines);
             if (lines == null || lines.Count == 0) return;
+            foreach (var group in lines.GroupBy(line => line.SaleId))
+            {
+                var appended = group.ToList();
+                var budget = await ReadSaleLineBudgetAsync(conn, tx, group.Key).ConfigureAwait(false);
+                SalesReceiptContentPolicy.EnsureStoredLineBudget(
+                    budget.LineCount,
+                    budget.MaximumNameCharacters,
+                    budget.MaximumBarcodeCharacters,
+                    budget.AggregateNameCharacters,
+                    budget.AggregateNameUtf8Bytes);
+                SalesReceiptContentPolicy.EnsureCumulativeLineBudget(
+                    budget.LineCount,
+                    budget.AggregateNameCharacters,
+                    budget.AggregateNameUtf8Bytes,
+                    appended);
+            }
             foreach (var line in lines)
             {
                 line.Id = await InsertSaleLineAsync(conn, tx, line).ConfigureAwait(false);
             }
+        }
+
+        private static async Task<SaleLineBudgetRow> ReadSaleLineBudgetAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            long saleId)
+        {
+            return await conn.QuerySingleAsync<SaleLineBudgetRow>(@"
+SELECT COUNT(1) AS LineCount,
+       COALESCE(MAX(LENGTH(COALESCE(name, ''))), 0) AS MaximumNameCharacters,
+       COALESCE(MAX(LENGTH(COALESCE(barcode, ''))), 0) AS MaximumBarcodeCharacters,
+       COALESCE(SUM(LENGTH(COALESCE(name, ''))), 0) AS AggregateNameCharacters,
+       COALESCE(SUM(LENGTH(CAST(COALESCE(name, '') AS BLOB))), 0) AS AggregateNameUtf8Bytes
+FROM sale_lines
+WHERE saleId = @saleId;",
+                new { saleId },
+                tx).ConfigureAwait(false);
         }
 
         public async Task<string> EnsureClientSaleIdAsync(SqliteConnection conn, SqliteTransaction tx, long saleId)

@@ -517,6 +517,19 @@ namespace Win7POS.Wpf.Pos.Online
                                 pagesProcessed);
                         }
 
+                        var compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull(result.Value);
+                        if (!string.IsNullOrWhiteSpace(compatibilityError))
+                        {
+                            await StoreCatalogFailureAsync(compatibilityError).ConfigureAwait(false);
+                            await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
+                                .ConfigureAwait(false);
+                            return PosCatalogPullOutcome.Failure(
+                                compatibilityError,
+                                false,
+                                false,
+                                pagesProcessed);
+                        }
+
                         var pageIsFullRefresh = string.Equals(
                             result.Value.SyncMode,
                             "full_refresh",
@@ -570,19 +583,6 @@ namespace Win7POS.Wpf.Pos.Online
                                     false,
                                     pagesProcessed);
                             }
-                        }
-
-                        var compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull(result.Value);
-                        if (!string.IsNullOrWhiteSpace(compatibilityError))
-                        {
-                            await StoreCatalogFailureAsync(compatibilityError).ConfigureAwait(false);
-                            await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
-                                .ConfigureAwait(false);
-                            return PosCatalogPullOutcome.Failure(
-                                compatibilityError,
-                                false,
-                                false,
-                                pagesProcessed);
                         }
 
                         if (fullSnapshotExpected && fullLaneEvidence.ConflictCode.Length > 0)
@@ -867,7 +867,7 @@ namespace Win7POS.Wpf.Pos.Online
                                 var exactnessState = await catalogState.LoadExactnessAsync()
                                     .ConfigureAwait(false);
                                 if (exactnessState.RepairRequired ||
-                                    exactnessState.Status == CatalogCompletenessStatus.Mismatch)
+                                    exactnessState.Status != CatalogCompletenessStatus.Verified)
                                 {
                                     const string repairRequiredCode = "catalog_full_repair_required";
                                     await StoreCatalogFailureAsync(repairRequiredCode).ConfigureAwait(false);
@@ -1238,7 +1238,7 @@ namespace Win7POS.Wpf.Pos.Online
                             committedMode,
                             generation).ConfigureAwait(false);
 
-                        if (exactness.Status == CatalogCompletenessStatus.Mismatch ||
+                        if (exactness.Status != CatalogCompletenessStatus.Verified ||
                             exactness.RepairRequired)
                         {
                             var exactnessCode = SafeCode(exactness.Code);

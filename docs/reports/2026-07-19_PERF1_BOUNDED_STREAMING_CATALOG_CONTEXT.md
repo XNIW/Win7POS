@@ -91,7 +91,7 @@ The net10/x64 page path completed 100 pages with exactly 100,000 products,
 155,566,080 bytes and peak private bytes 120,471,552. This is a scale/boundedness
 probe, not authenticated staging exactness and not physical Windows 7 evidence.
 
-## Local validation
+## Original PERF-1 validation
 
 - canonical required gates: `33/33` PASS;
 - Release solution build: PASS, zero warnings/errors;
@@ -101,6 +101,53 @@ probe, not authenticated staging exactness and not physical Windows 7 evidence.
 - CLI selftest: PASS; receipt text was previewed only and no printer API was
   called;
 - physical Epson TM-T60: no new print was submitted by PERF-1.
+
+## 2026-07-21 security-main integration revalidation
+
+PERF-1 was merged normally with security main `908bb2216852bdc0eed8f773e326b8ae878a2e58`.
+The only textual conflict was this worklog chronology; the catalog, transport
+and checker overlaps merged automatically. The combined source retains catalog
+content validation before write-gate acquisition, pagination/evidence validation
+before staging or apply, generation/cursor fencing and one transaction per page.
+
+The reusable apply-context path now has a direct regression proving that an
+oversized remote batch publishes no page/query/staging diagnostics and no
+durable category or product row. Expanded text-policy regressions cover C1
+controls, a valid surrogate pair and isolated high/low surrogates.
+
+### Combined measurements
+
+| Scenario | Final measurement | Original PERF-1 | Change | Acceptance |
+| --- | ---: | ---: | ---: | --- |
+| net10/x64 full 19,763, 3-run median | 5,103.924 ms | 4,733.787 ms | +7.82% | PASS, below 15% |
+| net10/x64 historical 19,762 comparison | 5,103.924 ms | 4,747.793 ms | +7.50% | PASS, below 15% |
+| net48/x86 full 19,763, 3-run median | 7,328.418 ms | 6,427.448 ms | +14.02% | PASS, below 15% |
+| net48/x86 peak working set | 78,475,264 B | 78,008,320 B | +0.60% | PASS, below 20% |
+| net48/x86 peak private bytes | 63,160,320 B | 62,595,072 B | +0.90% | PASS, below 20% |
+| net48/x86 maximum dispatcher delay | 21.344 ms | 24.528 ms | -12.98% | PASS, below 150 ms |
+| 100,000 rows, 3-run median | 34,306.050 ms | 29,456.767 ms | +16.46% | EXPLAINED SCALE COST |
+| 100,000 fresh-process peak working set | 164,769,792 B | 155,566,080 B | +5.92% | PASS, below 20% |
+| 100,000 fresh-process peak private bytes | 130,420,736 B | 120,471,552 B | +8.26% | PASS, below 20% |
+
+Every full sample ended with exact products/prices, zero pending prices and
+`Verified`; the 19,763 path used 20 logical requests and scope SQL remained
+`120 -> 42`. The 100,000 path used 100 requests and scope SQL was `600 -> 202`.
+Its elapsed regression exceeds 15% because the security follow-up deliberately
+adds an O(n) Unicode/length validation pass at the direct repository sink; this
+is the explicit acceptance explanation. Exactness is unchanged and both fresh-
+process memory deltas remain well below 20%.
+
+The workflow-equivalent incremental samples were 40.369 / 53.857 / 233.346 ms
+for 10 / 100 / 1,000 changed rows. Each used one logical request, retained exactly
+19,763 products, added the expected immutable prices, left pending prices at
+zero and did not run full reconciliation. Changes versus the original samples
+were +13.25%, -6.90% and +8.14%, all within the 15% threshold.
+
+Combined validation before publication: canonical gates `33/33`, focused
+catalog/security `75/75`, full Core/Data `477/477` with zero skipped, Release
+solution plus WPF and UI harness net48/x86 builds with zero warnings/errors,
+CLI selftest PASS, and no vulnerable or deprecated NuGet package reported by
+the configured source. No printer API was called.
 
 ## Boundaries and follow-up
 

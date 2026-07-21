@@ -344,6 +344,84 @@ WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
     }
 
     [TestMethod]
+    public void MissingRequiredSystemGrant_IsReconciledOnNoOpStartup()
+    {
+        using var database = MigrationDatabase.Create();
+        DbInitializer.EnsureCreated(database.Options);
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+DELETE FROM role_permissions
+WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
+  AND permission_code = 'pos.sell';");
+        }
+
+        DbInitializer.EnsureCreated(database.Options);
+
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(1L, verify.ExecuteScalar<long>(@"
+SELECT COUNT(1)
+FROM role_permissions
+WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
+  AND permission_code = 'pos.sell';"));
+    }
+
+    [TestMethod]
+    public void UnexpectedSystemGrant_IsRejectedOnNoOpStartup()
+    {
+        using var database = MigrationDatabase.Create();
+        DbInitializer.EnsureCreated(database.Options);
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+INSERT INTO role_permissions(role_id, permission_code)
+SELECT id, 'security.override'
+FROM roles
+WHERE code = 'cashier';");
+        }
+
+        var error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            DbInitializer.EnsureCreated(database.Options));
+
+        StringAssert.Contains(error.Message, "canonical security seed");
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(1L, verify.ExecuteScalar<long>(@"
+SELECT COUNT(1)
+FROM role_permissions
+WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
+  AND permission_code = 'security.override';"),
+            "Unsafe grant must fail closed instead of being silently accepted or committed.");
+    }
+
+    [TestMethod]
+    public void FullyAppliedLedgerWithGenerationTrigger_FailsBeforeSecurityReconciliation()
+    {
+        using var database = MigrationDatabase.Create();
+        DbInitializer.EnsureCreated(database.Options);
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+CREATE TRIGGER malicious_generation_update
+AFTER UPDATE ON pos_sync_session_generation
+BEGIN
+  INSERT OR IGNORE INTO role_permissions(role_id, permission_code)
+  SELECT id, 'security.override' FROM roles WHERE code = 'cashier';
+END;");
+        }
+
+        var error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            DbInitializer.EnsureCreated(database.Options));
+
+        StringAssert.Contains(error.Message, "latest published migration state");
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(0L, verify.ExecuteScalar<long>(@"
+SELECT COUNT(1)
+FROM role_permissions
+WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
+  AND permission_code = 'security.override';"));
+    }
+
+    [TestMethod]
     public void CanonicalBaselineRecognizer_CannotBootstrapUnsatisfiedCustomPredecessor()
     {
         using var database = MigrationDatabase.Create();
@@ -769,6 +847,233 @@ CREATE TABLE probe(
                 canonical,
                 "probe"));
         }
+    }
+
+    [TestMethod]
+    public void RestoredLedgerTrigger_IsRejectedBeforePendingMigrationOrLedgerInsert()
+    {
+        using var database = MigrationDatabase.Create();
+        var first = ProbeMigration(
+            "ledger-trigger-first-v1",
+            (connection, transaction) => connection.Execute(
+                "CREATE TABLE probe_one(id INTEGER PRIMARY KEY);",
+                transaction: transaction),
+            id: "0001-probe",
+            tableName: "probe_one");
+        new SchemaMigrationRunner(database.Factory, new[] { first }).Run();
+
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+CREATE TABLE ledger_trigger_probe(value INTEGER NOT NULL);
+CREATE TRIGGER malicious_ledger_insert
+AFTER INSERT ON schema_migrations
+BEGIN
+  INSERT INTO ledger_trigger_probe(value) VALUES(1);
+END;");
+        }
+
+        var second = ProbeMigration(
+            "ledger-trigger-second-v1",
+            (connection, transaction) => connection.Execute(
+                "CREATE TABLE probe_two(id INTEGER PRIMARY KEY);",
+                transaction: transaction),
+            id: "0002-probe",
+            tableName: "probe_two");
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            new SchemaMigrationRunner(
+                database.Factory,
+                new[] { first, second },
+                OptionsThatCountBackups(() => { })).Run());
+
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(0L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM ledger_trigger_probe;"));
+        Assert.AreEqual(0L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='probe_two';"));
+        Assert.AreEqual(1L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM schema_migrations;"));
+    }
+
+    [TestMethod]
+    public void WhitespaceNamedLedgerTrigger_IsRejectedBeforePendingMigrationOrLedgerInsert()
+    {
+        using var database = MigrationDatabase.Create();
+        var first = ProbeMigration(
+            "whitespace-trigger-first-v1",
+            (connection, transaction) => connection.Execute(
+                "CREATE TABLE probe_one(id INTEGER PRIMARY KEY);",
+                transaction: transaction),
+            id: "0001-probe",
+            tableName: "probe_one");
+        new SchemaMigrationRunner(database.Factory, new[] { first }).Run();
+
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+CREATE TABLE ledger_trigger_probe(value INTEGER NOT NULL);
+CREATE TRIGGER "" ""
+AFTER INSERT ON schema_migrations
+BEGIN
+  INSERT INTO ledger_trigger_probe(value) VALUES(1);
+END;");
+        }
+
+        var second = ProbeMigration(
+            "whitespace-trigger-second-v1",
+            (connection, transaction) => connection.Execute(
+                "CREATE TABLE probe_two(id INTEGER PRIMARY KEY);",
+                transaction: transaction),
+            id: "0002-probe",
+            tableName: "probe_two");
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            new SchemaMigrationRunner(
+                database.Factory,
+                new[] { first, second },
+                OptionsThatCountBackups(() => { })).Run());
+
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(0L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM ledger_trigger_probe;"));
+        Assert.AreEqual(0L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='probe_two';"));
+        Assert.AreEqual(1L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM schema_migrations;"));
+    }
+
+    [TestMethod]
+    public void LedgerUniqueIndexWithMissingSql_IsRejectedBeforePendingMigrationOrLedgerInsert()
+    {
+        using var database = MigrationDatabase.Create();
+        var first = ProbeMigration(
+            "invalid-unique-index-first-v1",
+            (connection, transaction) => connection.Execute(
+                "CREATE TABLE probe_one(id INTEGER PRIMARY KEY);",
+                transaction: transaction),
+            id: "0001-probe",
+            tableName: "probe_one");
+        new SchemaMigrationRunner(database.Factory, new[] { first }).Run();
+
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+CREATE UNIQUE INDEX ux_schema_migrations_block ON schema_migrations((1));
+PRAGMA writable_schema=ON;
+UPDATE sqlite_master
+SET sql=NULL
+WHERE type='index' AND name='ux_schema_migrations_block';
+PRAGMA writable_schema=OFF;");
+        }
+
+        var second = ProbeMigration(
+            "invalid-unique-index-second-v1",
+            (connection, transaction) => connection.Execute(
+                "CREATE TABLE probe_two(id INTEGER PRIMARY KEY);",
+                transaction: transaction),
+            id: "0002-probe",
+            tableName: "probe_two");
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            new SchemaMigrationRunner(
+                database.Factory,
+                new[] { first, second },
+                OptionsThatCountBackups(() => { })).Run());
+
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(0L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='probe_two';"));
+        Assert.AreEqual(1L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM schema_migrations;"));
+    }
+
+    [TestMethod]
+    public void LedgerExplicitIndexWithMissingSql_IsRejectedBeforePendingMigration()
+    {
+        using var database = MigrationDatabase.Create();
+        var first = ProbeMigration(
+            "invalid-explicit-index-first-v1",
+            (connection, transaction) => connection.Execute(
+                "CREATE TABLE probe_one(id INTEGER PRIMARY KEY);",
+                transaction: transaction),
+            id: "0001-probe",
+            tableName: "probe_one");
+        new SchemaMigrationRunner(database.Factory, new[] { first }).Run();
+
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+CREATE INDEX ix_schema_migrations_description ON schema_migrations(description);
+PRAGMA writable_schema=ON;
+UPDATE sqlite_master SET sql=NULL WHERE type='index' AND name='ix_schema_migrations_description';
+PRAGMA writable_schema=OFF;");
+        }
+
+        var second = ProbeMigration(
+            "invalid-explicit-index-second-v1",
+            (connection, transaction) => connection.Execute(
+                "CREATE TABLE probe_two(id INTEGER PRIMARY KEY);",
+                transaction: transaction),
+            id: "0002-probe",
+            tableName: "probe_two");
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            new SchemaMigrationRunner(
+                database.Factory,
+                new[] { first, second },
+                OptionsThatCountBackups(() => { })).Run());
+
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(0L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM sqlite_master WHERE type='table' AND name='probe_two';"));
+        Assert.AreEqual(1L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM schema_migrations;"));
+    }
+
+    [TestMethod]
+    public void MigrationCreatedLedgerTrigger_RollsBackBeforeLedgerInsert()
+    {
+        using var database = MigrationDatabase.Create();
+        var first = ProbeMigration(
+            "created-trigger-first-v1",
+            (connection, transaction) => connection.Execute(
+                "CREATE TABLE probe_one(id INTEGER PRIMARY KEY);",
+                transaction: transaction),
+            id: "0001-probe",
+            tableName: "probe_one");
+        new SchemaMigrationRunner(database.Factory, new[] { first }).Run();
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute("CREATE TABLE ledger_trigger_probe(value INTEGER NOT NULL);");
+        }
+
+        var second = ProbeMigration(
+            "created-trigger-second-v1",
+            (connection, transaction) => connection.Execute(@"
+CREATE TABLE probe_two(id INTEGER PRIMARY KEY);
+CREATE TRIGGER malicious_ledger_insert
+AFTER INSERT ON schema_migrations
+BEGIN
+  INSERT INTO ledger_trigger_probe(value) VALUES(1);
+END;",
+                transaction: transaction),
+            id: "0002-probe",
+            tableName: "probe_two");
+
+        Assert.ThrowsExactly<InvalidDataException>(() =>
+            new SchemaMigrationRunner(
+                database.Factory,
+                new[] { first, second },
+                OptionsThatCountBackups(() => { })).Run());
+
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(0L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM ledger_trigger_probe;"));
+        Assert.AreEqual(0L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM sqlite_master WHERE name IN ('probe_two', 'malicious_ledger_insert');"));
+        Assert.AreEqual(1L, verify.ExecuteScalar<long>(
+            "SELECT COUNT(1) FROM schema_migrations;"));
     }
 
     private static void AssertInjectedFailureRollsBack(Action<SqliteConnection, SqliteTransaction> apply)

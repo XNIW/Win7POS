@@ -23,6 +23,8 @@ $required = @(
     "src/Win7POS.Data/Online/CatalogShopStateRepository.cs",
     "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs",
     "src/Win7POS.Data/Online/CatalogFullResponseStageRepository.cs",
+    "src/Win7POS.Data/Online/RemoteCatalogContentPolicy.cs",
+    "src/Win7POS.Core/Online/CatalogHeartbeatPolicy.cs",
     "src/Win7POS.Core/Online/CatalogFullLaneEvidenceTracker.cs",
     "src/Win7POS.Core/Online/CatalogPaginationSafetyPolicy.cs",
     "src/Win7POS.Data/Repositories/RemoteCatalogBatchRepository.cs",
@@ -31,11 +33,14 @@ $required = @(
     "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs",
     "src/Win7POS.Core/Online/OnlineSyncSupervisorContracts.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
+    "src/Win7POS.Cli/Program.cs",
     "tests/Win7POS.Core.Tests/Data/CatalogExactnessTests.cs",
     "tests/Win7POS.Core.Tests/Data/CatalogFullResponseStageRepositoryTests.cs",
     "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs",
+    "tests/Win7POS.Core.Tests/Data/RemoteCatalogReferenceTombstoneTests.cs",
     "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs",
-    "tests/Win7POS.Core.Tests/Online/CatalogPaginationSafetyPolicyTests.cs"
+    "tests/Win7POS.Core.Tests/Online/CatalogPaginationSafetyPolicyTests.cs",
+    "tests/Win7POS.Core.Tests/Online/CatalogHeartbeatPolicyTests.cs"
 )
 
 foreach ($path in $required) {
@@ -60,6 +65,9 @@ $shopState = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.cs"
 $catalogImportOutbox = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
 $fullRefresh = Read-Text "src/Win7POS.Data/Online/CatalogFullRefreshReconciler.cs"
 $compatibility = Read-Text "src/Win7POS.Data/Online/PosOnlineCompatibilityValidator.cs"
+$catalogContentPolicy = Read-Text "src/Win7POS.Data/Online/RemoteCatalogContentPolicy.cs"
+$heartbeatPolicy = Read-Text "src/Win7POS.Core/Online/CatalogHeartbeatPolicy.cs"
+$cli = Read-Text "src/Win7POS.Cli/Program.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $repository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
 $categoryRepository = Read-Text "src/Win7POS.Data/Repositories/CategoryRepository.cs"
@@ -72,8 +80,10 @@ $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $catalogExactnessTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogExactnessTests.cs"
 $batchRepositoryTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs"
+$referenceTombstoneTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogReferenceTombstoneTests.cs"
 $restoreTests = Read-Text "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs"
 $paginationTests = Read-Text "tests/Win7POS.Core.Tests/Online/CatalogPaginationSafetyPolicyTests.cs"
+$heartbeatTests = Read-Text "tests/Win7POS.Core.Tests/Online/CatalogHeartbeatPolicyTests.cs"
 $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.csproj |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) } |
@@ -270,8 +280,9 @@ $promotionResetIndex = if ($promotionMarkerIndex -ge 0) {
 $stagedApplyIndex = $service.IndexOf("var stagedStats = await ApplyCatalogAsync(")
 if ($catalogApplyIndex -lt 0 -or
     $ambiguityGuardIndex -lt 0 -or
-    $compatibilityIndex -lt $ambiguityGuardIndex -or
-    $responseShopIndex -lt $compatibilityIndex -or
+    $compatibilityIndex -lt 0 -or
+    $ambiguityGuardIndex -le $compatibilityIndex -or
+    $responseShopIndex -le $ambiguityGuardIndex -or
     $stageAppendIndex -lt $responseShopIndex -or
     $promotionMarkerIndex -lt $stageAppendIndex -or
     $promotionResetIndex -lt $promotionMarkerIndex -or
@@ -358,13 +369,13 @@ if ($service -notmatch "AuditCurrentAsync" -or
 } else {
     Pass "completed delta audits structural invariants before sale-safe completion"
 }
-if ($service -notmatch "exactness\.Status\s*==\s*CatalogCompletenessStatus\.Mismatch" -or
+if ($service -notmatch "exactness\.Status\s*!=\s*CatalogCompletenessStatus\.Verified" -or
     $service -notmatch "exactness\.RepairRequired" -or
     $service.IndexOf("exactness.RepairRequired") -lt $storeExactnessIndex -or
     $service.IndexOf("exactness.RepairRequired") -gt $authoritativeCursorIndex) {
-    Fail "mismatch/repair-required exactness must fail closed before authoritative cursor commit"
+    Fail "every non-verified/repair-required exactness result must fail closed before authoritative cursor commit"
 } else {
-    Pass "exactness mismatch fails closed before cursor commit"
+    Pass "non-verified exactness fails closed before cursor commit"
 }
 if ($service -notmatch "snapshotCatalogVersion" -or
     $service -notmatch "catalog_version_changed_mid_pull" -or
@@ -440,9 +451,12 @@ if ($service -notmatch "LoadDeltaChainAsync" -or
 }
 if ($service -notmatch "ValidateCatalogPull" -or $compatibility -notmatch "catalog_schema_not_supported" -or $compatibility -notmatch "catalog_capability_not_supported" -or $compatibility -notmatch "policy_contract_not_supported") { Fail "catalog schema/policy/capability fail-closed validation missing" } else { Pass "catalog schema, policy and capabilities fail closed" }
 if ($compatibility -notmatch "ValidateCatalogVersion\(response\.CatalogVersion\)" -or
-    $compatibility -notmatch "value\.Length\s*>\s*128" -or
-    $compatibility -notmatch "value\.Any\(char\.IsControl\)" -or
-    $compatibility -notmatch "string\.Equals\(value, value\.Trim\(\), StringComparison\.Ordinal\)" -or
+    $compatibility -notmatch "IsRequiredCanonicalText" -or
+    $compatibility -notmatch "CatalogVersionMaximumLength" -or
+    $catalogContentPolicy -notmatch "CatalogVersionMaximumLength\s*=\s*128" -or
+    $catalogContentPolicy -notmatch "IsRequiredCanonicalText" -or
+    $catalogContentPolicy -notmatch "char\.IsHighSurrogate" -or
+    $catalogContentPolicy -notmatch "char\.IsLowSurrogate" -or
     $compatibility -notmatch "catalog_version_invalid" -or
     $shopState -match "SafeOpaque\(checkpoint\.CatalogVersion" -or
     $shopState -notmatch "ValidateCatalogVersion\(checkpoint\.CatalogVersion\)") {
@@ -468,6 +482,67 @@ if ($compatibility -notmatch "ValidateCatalogRows" -or
 } else {
     Pass "catalog products, references, prices and tombstones are validated before apply"
 }
+$compatibilityIndex = $service.IndexOf(
+    "ValidateCatalogPull(result.Value)",
+    [System.StringComparison]::Ordinal)
+$evidenceIndex = $service.IndexOf(
+    "fullLaneEvidence.Add(result.Value.Catalog)",
+    [System.StringComparison]::Ordinal)
+$terminalIndex = $service.IndexOf(
+    "CatalogPaginationSafetyPolicy.EvaluateTerminalPage(",
+    [System.StringComparison]::Ordinal)
+$budgetIndex = $service.IndexOf(
+    "CatalogPaginationSafetyPolicy.CalculatePageBudget(",
+    [System.StringComparison]::Ordinal)
+$stageAppendIndex = $service.IndexOf(
+    "fullStage.AppendAsync(",
+    [System.StringComparison]::Ordinal)
+$applyIndex = $service.IndexOf(
+    "var applyStats = await ApplyCatalogAsync(",
+    [System.StringComparison]::Ordinal)
+if ($compatibilityIndex -lt 0 -or
+    $evidenceIndex -le $compatibilityIndex -or
+    $terminalIndex -le $compatibilityIndex -or
+    $budgetIndex -le $compatibilityIndex -or
+    $stageAppendIndex -le $compatibilityIndex -or
+    $applyIndex -le $compatibilityIndex) {
+    Fail "catalog compatibility validation must precede evidence accumulation, pagination, staging and apply"
+} else {
+    Pass "catalog compatibility validation is the first response normalization boundary"
+}
+$cliHarnessStart = $cli.IndexOf(
+    "private static async Task PullAndApplyCatalogAsync",
+    [System.StringComparison]::Ordinal)
+$cliHarnessEnd = if ($cliHarnessStart -ge 0) {
+    $cli.IndexOf(
+        "private static async Task ApplyTask081CatalogResponseAsync",
+        $cliHarnessStart,
+        [System.StringComparison]::Ordinal)
+} else { -1 }
+$cliHarness = if ($cliHarnessStart -ge 0 -and $cliHarnessEnd -gt $cliHarnessStart) {
+    $cli.Substring($cliHarnessStart, $cliHarnessEnd - $cliHarnessStart)
+} else { "" }
+$cliValidationIndex = $cliHarness.IndexOf(
+    "EnsureCompatibleCatalogResponse(response);",
+    [System.StringComparison]::Ordinal)
+$cliDiagnosticsIndex = $cliHarness.IndexOf(
+    "LastTask081CatalogDiagnostics =",
+    [System.StringComparison]::Ordinal)
+$cliApplyIndex = $cliHarness.IndexOf(
+    "await ApplyTask081CatalogResponseAsync(factory, response)",
+    [System.StringComparison]::Ordinal)
+$cliCheckpointIndex = $cliHarness.IndexOf(
+    'SetStringAsync("pos.catalog.last_sync_at"',
+    [System.StringComparison]::Ordinal)
+if ($cliValidationIndex -lt 0 -or
+    $cliDiagnosticsIndex -le $cliValidationIndex -or
+    $cliApplyIndex -le $cliValidationIndex -or
+    $cliCheckpointIndex -le $cliValidationIndex -or
+    $cli -notmatch "EnsureCompatibleCatalogResponse[\s\S]{0,300}PosOnlineCompatibilityValidator\.ValidateCatalogPull") {
+    Fail "CLI catalog harness must validate before diagnostics, normalization, apply and checkpoint persistence"
+} else {
+    Pass "CLI catalog harness shares the fail-closed compatibility ingress"
+}
 if ($compatibility -notmatch "HasDuplicateCatalogIds" -or
     $compatibility -notmatch "catalog_duplicate_product_ids" -or
     $compatibility -notmatch "catalog_duplicate_category_ids" -or
@@ -477,7 +552,70 @@ if ($compatibility -notmatch "HasDuplicateCatalogIds" -or
 } else {
     Pass "duplicate product/category/supplier remote IDs fail before page apply"
 }
-if ($compatibility -match '"incremental"' -or $compatibility -notmatch '"delta"' -or $compatibility -notmatch '"full_refresh"') { Fail "catalog compatibility must accept only actual Admin sync modes delta/full_refresh" } else { Pass "catalog compatibility accepts only Admin delta/full_refresh modes" }
+if ($compatibility -notmatch "row\.ProductName" -or
+    $compatibility -notmatch "row\.SecondProductName" -or
+    $compatibility -notmatch "row\.ItemNumber" -or
+    $compatibility -notmatch "response\.GeneratedAt" -or
+    $catalogContentPolicy -notmatch "NameMaximumLength\s*=\s*512" -or
+    $catalogContentPolicy -notmatch "ItemNumberMaximumLength\s*=\s*128" -or
+    $catalogContentPolicy -notmatch "CatalogVersionMaximumLength\s*=\s*128" -or
+    $catalogContentPolicy -notmatch "SyncCursorMaximumLength\s*=\s*512" -or
+    $catalogContentPolicy -notmatch "IsRequiredCanonicalText" -or
+    $catalogContentPolicy -notmatch "IsOptionalTimestamp" -or
+    $catalogContentPolicy -notmatch "DateTimeOffset\.TryParse" -or
+    $catalogContentPolicy -notmatch "char\.IsHighSurrogate" -or
+    $catalogContentPolicy -notmatch "char\.IsLowSurrogate" -or
+    $catalogExactnessTests -notmatch "CatalogRowValidator_BoundsProductReceiptTextAndRejectsMalformedUnicode" -or
+    $catalogExactnessTests -notmatch "CatalogGeneratedAt_MustBeABoundedSemanticTimestamp" -or
+    $catalogExactnessTests -notmatch "CatalogCursorValidator_RejectsMalformedUnicodeBeforeFingerprintingOrPersistence" -or
+    $catalogExactnessTests -notmatch "CatalogRowValidator_RejectsMalformedSemanticTimestamps") {
+    Fail "remote catalog persisted text must be bounded and Unicode-valid before normalization or rendering"
+} else {
+    Pass "remote catalog persisted text is bounded and Unicode-valid at ingress"
+}
+if ($batchRepository -notmatch "ValidateBatchContent\(batch\)" -or
+    $batchRepository.IndexOf("ValidateBatchContent(batch)") -gt $batchRepository.IndexOf("CatalogMetaWriteGate.WaitAsync") -or
+    $batchRepositoryTests -notmatch "ApplyAsync_RejectsOversizedProductTextBeforeAnyMutation" -or
+    $batchRepositoryTests -notmatch "ApplyAsync_RejectsMalformedTimestampBeforeAnyMutation" -or
+    $fullRefresh -notmatch "EnsureOptionalTimestamp\([\s\S]{0,160}generatedAt" -or
+    $catalogExactnessTests -notmatch "ReconcilerRejectsOversizedGeneratedAtBeforeCatalogMutation") {
+    Fail "remote catalog persistence must reject unsafe text before acquiring the write gate or mutating SQLite"
+} else {
+    Pass "remote catalog persistence rejects unsafe text before any mutation"
+}
+if ($categoryRepository -match "string\.CompareOrdinal\(normalizedIncoming" -or
+    $supplierRepository -match "string\.CompareOrdinal\(normalizedIncoming" -or
+    $referenceTombstoneTests -notmatch "RemoteReferenceTimestamps_RejectMalformedInputAndRepairMalformedLegacyState") {
+    Fail "reference timestamp ordering must reject malformed input and repair poisoned legacy state without lexical fallback"
+} else {
+    Pass "reference timestamp ordering has no lexical poisoning fallback"
+}
+if ($heartbeatPolicy.IndexOf("raw.Length > MaximumRevisionLength") -lt 0 -or
+    $heartbeatPolicy.IndexOf("raw.Trim()") -lt 0 -or
+    $heartbeatPolicy.IndexOf("raw.Length > MaximumRevisionLength") -gt $heartbeatPolicy.IndexOf("raw.Trim()") -or
+    $heartbeatPolicy -notmatch "char\.IsHighSurrogate" -or
+    $heartbeatPolicy -notmatch "char\.IsLowSurrogate" -or
+    $heartbeatTests -notmatch "bad\\uD800revision" -or
+    $heartbeatTests -notmatch "bad\\uDC00revision") {
+    Fail "catalog heartbeat revisions must be bounded and Unicode-valid before trim"
+} else {
+    Pass "catalog heartbeat revisions are bounded before normalization"
+}
+if ($shopState -notmatch "EnsureOptionalCanonicalText\([\s\S]{0,160}syncCursor" -or
+    $shopState -notmatch "suppliedContext\.CatalogVersion" -or
+    $catalogExactnessTests -notmatch "InvalidNewCursor_IsRejectedBeforeCatalogCheckpointMutation" -or
+    $catalogExactnessTests -notmatch "LegacyUnsafeCursorAndMode_CanBeAtomicallyReplacedByValidState") {
+    Fail "catalog state sinks must reject new unsafe cursors while allowing atomic legacy-state repair"
+} else {
+    Pass "catalog state sinks reject unsafe new state without blocking legacy repair"
+}
+if ($compatibility -match '"incremental"' -or
+    $compatibility -notmatch '"delta"' -or
+    $compatibility -notmatch '"full_refresh"' -or
+    $compatibility -notmatch 'rawSyncMode[\s\S]{0,180}StringComparison\.Ordinal' -or
+    $catalogExactnessTests -notmatch 'CatalogSyncMode_RejectsWhitespaceThatWouldChangeFullRefreshClassification') {
+    Fail "catalog compatibility must accept only canonical Admin sync modes delta/full_refresh"
+} else { Pass "catalog compatibility accepts only canonical Admin delta/full_refresh modes" }
 if ($compatibility -notmatch "SalesSync \?\? string\.Empty" -or $compatibility -notmatch "sales_sync_contract_not_supported") { Fail "SalesSync capability must be mandatory and exact" } else { Pass "SalesSync capability is mandatory and exact" }
 if ($shopState -notmatch "StoreLastSyncAsync" -or $shopState -notmatch "StoreSaleSafeAsync" -or $shopState -notmatch "BeginTransaction") { Fail "catalog cursor/sale-safe writes are not transactionally shop-bound" } else { Pass "catalog cursor/sale-safe writes are transactionally shop-bound" }
 if ($shopState -notmatch "requireEvidence:\s*true" -or

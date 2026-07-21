@@ -186,50 +186,44 @@ WHERE singleton_id = 1;"));
     }
 
     [TestMethod]
-    public async Task MissingGenerationInitializesOnce_ButNeverReplacesDurableState()
+    public async Task MissingGeneration_CannotAttachUntilAuthenticatedActivationCreatesIt()
     {
         using var db = TestDb.Create();
         var generations = new OnlineSyncGenerationRepository(db.Factory);
         var first = Generation("generation-upgrade");
         var different = Generation("generation-stale-file");
 
-        Assert.IsTrue(await generations.AttachOrInitializeCurrentAsync(first, 100));
-        Assert.IsTrue(await generations.AttachOrInitializeCurrentAsync(first, 101));
+        Assert.IsFalse(await generations.AttachOrInitializeCurrentAsync(first, 100));
+        var missing = await generations.ReadCurrentPredecessorAsync();
+        Assert.IsFalse(missing.Exists);
+        await generations.ActivateAndRecoverAsync(first, 101, missing);
+        Assert.IsTrue(await generations.AttachOrInitializeCurrentAsync(first, 102));
         Assert.IsFalse(await generations.AttachOrInitializeCurrentAsync(different, 102));
         Assert.IsTrue(await generations.StopIfCurrentAsync(first, "session_revoked", 103));
         Assert.IsFalse(await generations.AttachOrInitializeCurrentAsync(first, 104));
     }
 
     [TestMethod]
-    public async Task LegacyStoredTrust_NormalizedThenDeniedCannotReinitializeAfterRestart()
+    public async Task DeletedSingleton_CannotBeRecreatedFromRetainedTrustAfterRestart()
     {
         using var db = TestDb.Create();
         var generations = new OnlineSyncGenerationRepository(db.Factory);
-        var legacyStoredGeneration = Generation("generation-legacy-file");
+        var retainedGeneration = Generation("generation-retained-file");
 
         var emptyState = await generations.ReadCurrentPredecessorAsync();
         Assert.IsFalse(emptyState.Exists);
-        Assert.IsTrue(await generations.AttachOrInitializeCurrentAsync(
-            legacyStoredGeneration,
-            100));
-
-        var denialScope = await generations.ReadCurrentPredecessorAsync();
-        Assert.IsTrue(denialScope.Exists);
-        Assert.IsTrue(denialScope.Active);
-        Assert.AreEqual(legacyStoredGeneration.Fingerprint, denialScope.Fingerprint);
-        Assert.IsTrue(await generations.StopIfCurrentPredecessorAsync(
-            denialScope,
-            "auth_denied",
-            101));
+        await generations.ActivateAndRecoverAsync(retainedGeneration, 100, emptyState);
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync("DELETE FROM pos_sync_session_generation;");
+        }
 
         var afterRestart = new OnlineSyncGenerationRepository(db.Factory);
         Assert.IsFalse(await afterRestart.AttachOrInitializeCurrentAsync(
-            legacyStoredGeneration,
+            retainedGeneration,
             102));
-        var tombstone = await afterRestart.ReadCurrentPredecessorAsync();
-        Assert.IsTrue(tombstone.Exists);
-        Assert.IsFalse(tombstone.Active);
-        Assert.AreEqual(legacyStoredGeneration.Fingerprint, tombstone.Fingerprint);
+        var stillMissing = await afterRestart.ReadCurrentPredecessorAsync();
+        Assert.IsFalse(stillMissing.Exists);
     }
 
     [TestMethod]

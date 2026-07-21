@@ -14,6 +14,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>Win7POS.Wpf.UiSmokeHarness</_Parameter1>
+    </AssemblyAttribute>
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>AdminWebEnvironment</_Parameter1>
       <_Parameter2>$(AdminWebEnvironment)</_Parameter2>

@@ -292,9 +292,6 @@ function Test-NoRuntimeBlockingWaits {
     $roots = @("src/Win7POS.Wpf", "src/Win7POS.Data/Online")
     foreach ($relativeRoot in $roots) {
         foreach ($file in Get-SourceFiles $relativeRoot @("*.cs")) {
-            if ($file.Name -eq "SupplierExcelWpfViewModelSmoke.cs") {
-                continue
-            }
             $found = Select-String -Path $file.FullName `
                 -Pattern "\.Wait\s*\(|GetAwaiter\s*\(\s*\)\s*\.GetResult\s*\(" `
                 -AllMatches
@@ -308,7 +305,7 @@ function Test-NoRuntimeBlockingWaits {
         Fail "Runtime WPF/sync paths contain blocking waits: $($matches -join ', ')"
     }
     else {
-        Pass "Runtime WPF/sync paths contain no Wait()/GetAwaiter().GetResult() (QA dispatcher-pump smoke excluded)"
+        Pass "Runtime WPF/sync paths contain no Wait()/GetAwaiter().GetResult()"
     }
 }
 

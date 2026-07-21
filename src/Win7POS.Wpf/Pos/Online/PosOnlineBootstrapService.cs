@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core.Online;
+using Win7POS.Core.Receipt;
 using Win7POS.Core.Security;
 using Win7POS.Data;
 using Win7POS.Data.Online;
@@ -121,6 +122,23 @@ namespace Win7POS.Wpf.Pos.Online
                 }
 
                 var response = result.Value;
+                try
+                {
+                    ReceiptShopMetadataPolicy.EnsureValidRemoteShop(response?.Shop);
+                }
+                catch (ReceiptContentValidationException ex)
+                {
+                    _logger.LogWarning(
+                        "POS online bootstrap rejected shop metadata: code=" +
+                        SafeAuditValue(ex.Code) + " field=" + SafeAuditValue(ex.Field));
+                    return PosOnlineBootstrapResult.Failure(
+                        "shop_metadata_invalid",
+                        PosLocalization.T("onlineFirstLogin.invalidResponse"),
+                        false,
+                        result.ClientRequestId,
+                        result.ServerRequestId,
+                        result.CfRay);
+                }
                 if (!ValidateFirstLoginResponse(response))
                 {
                     _logger.LogWarning("POS online bootstrap invalid first-login response.");

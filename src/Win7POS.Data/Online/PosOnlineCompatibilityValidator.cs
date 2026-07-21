@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using Win7POS.Core.Online;
+using Win7POS.Core.Receipt;
 
 namespace Win7POS.Data.Online
 {
@@ -18,7 +19,26 @@ namespace Win7POS.Data.Online
                 return "catalog_response_not_ok";
             }
 
-            var syncMode = (response.SyncMode ?? string.Empty).Trim();
+            try
+            {
+                ReceiptShopMetadataPolicy.EnsureValidRemoteShop(response.Shop);
+            }
+            catch (ReceiptContentValidationException)
+            {
+                return "catalog_shop_metadata_invalid";
+            }
+
+            if (!RemoteCatalogContentPolicy.IsOptionalTimestamp(response.GeneratedAt))
+            {
+                return "catalog_generated_at_invalid";
+            }
+
+            var rawSyncMode = response.SyncMode ?? string.Empty;
+            var syncMode = rawSyncMode.Trim();
+            if (!string.Equals(rawSyncMode, syncMode, StringComparison.Ordinal))
+            {
+                return "catalog_sync_mode_not_supported";
+            }
             if (!string.Equals(syncMode, "delta", StringComparison.OrdinalIgnoreCase) &&
                 !string.Equals(syncMode, "full_refresh", StringComparison.OrdinalIgnoreCase))
             {
@@ -26,10 +46,9 @@ namespace Win7POS.Data.Online
             }
 
             var syncCursor = response.SyncCursor ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(syncCursor) ||
-                syncCursor.Length > 512 ||
-                syncCursor.Any(char.IsControl) ||
-                !string.Equals(syncCursor, syncCursor.Trim(), StringComparison.Ordinal))
+            if (!RemoteCatalogContentPolicy.IsRequiredCanonicalText(
+                syncCursor,
+                RemoteCatalogContentPolicy.SyncCursorMaximumLength))
             {
                 return "catalog_sync_cursor_invalid";
             }
@@ -58,10 +77,9 @@ namespace Win7POS.Data.Online
         public static string ValidateCatalogVersion(string catalogVersion)
         {
             var value = catalogVersion ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(value) ||
-                value.Length > 128 ||
-                value.Any(char.IsControl) ||
-                !string.Equals(value, value.Trim(), StringComparison.Ordinal))
+            if (!RemoteCatalogContentPolicy.IsRequiredCanonicalText(
+                value,
+                RemoteCatalogContentPolicy.CatalogVersionMaximumLength))
             {
                 return "catalog_version_invalid";
             }
@@ -79,8 +97,9 @@ namespace Win7POS.Data.Online
             foreach (var row in catalog.Categories ?? Array.Empty<PosCatalogCategoryResponse>())
             {
                 if (row == null ||
-                    !IsRequiredCatalogText(row.CategoryId, 256) ||
-                    !IsRequiredCatalogText(row.Name, 512))
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.CategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.Name, RemoteCatalogContentPolicy.NameMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.UpdatedAt))
                 {
                     return "catalog_category_row_invalid";
                 }
@@ -96,8 +115,9 @@ namespace Win7POS.Data.Online
             foreach (var row in catalog.Suppliers ?? Array.Empty<PosCatalogSupplierResponse>())
             {
                 if (row == null ||
-                    !IsRequiredCatalogText(row.SupplierId, 256) ||
-                    !IsRequiredCatalogText(row.Name, 512))
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.SupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.Name, RemoteCatalogContentPolicy.NameMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.UpdatedAt))
                 {
                     return "catalog_supplier_row_invalid";
                 }
@@ -113,13 +133,17 @@ namespace Win7POS.Data.Online
             foreach (var row in catalog.Products ?? Array.Empty<PosCatalogProductResponse>())
             {
                 if (row == null ||
-                    !IsRequiredCatalogText(row.ProductId, 256) ||
-                    !IsRequiredCatalogText(row.Barcode, 128) ||
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.ProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.Barcode, RemoteCatalogContentPolicy.BarcodeMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalText(row.ProductName, RemoteCatalogContentPolicy.NameMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalText(row.SecondProductName, RemoteCatalogContentPolicy.NameMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalText(row.ItemNumber, RemoteCatalogContentPolicy.ItemNumberMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.UpdatedAt) ||
                     !IsPositiveFinite(row.RetailPrice, long.MaxValue) ||
                     !IsOptionalNonNegativeFinite(row.PurchasePrice, int.MaxValue) ||
                     !IsOptionalNonNegativeFinite(row.StockQuantity, int.MaxValue) ||
-                    !IsOptionalCatalogText(row.CategoryId, 256) ||
-                    !IsOptionalCatalogText(row.SupplierId, 256))
+                    !RemoteCatalogContentPolicy.IsOptionalText(row.CategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalText(row.SupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength))
                 {
                     return "catalog_product_row_invalid";
                 }
@@ -135,9 +159,11 @@ namespace Win7POS.Data.Online
             foreach (var row in catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>())
             {
                 if (row == null ||
-                    !IsRequiredCatalogText(row.PriceId, 256) ||
-                    !IsRequiredCatalogText(row.ProductId, 256) ||
-                    !IsRequiredCatalogText(row.Type, 64) ||
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.PriceId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.ProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.Type, RemoteCatalogContentPolicy.TypeMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.EffectiveAt) ||
+                    !RemoteCatalogContentPolicy.IsOptionalText(row.Source, RemoteCatalogContentPolicy.SourceMaximumLength) ||
                     double.IsNaN(row.Price) ||
                     double.IsInfinity(row.Price) ||
                     row.Price < 0 ||
@@ -149,7 +175,10 @@ namespace Win7POS.Data.Online
 
             foreach (var row in catalog.Tombstones?.Products ?? Array.Empty<PosCatalogProductTombstoneResponse>())
             {
-                if (row == null || !IsRequiredCatalogText(row.ProductId, 256))
+                if (row == null ||
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.ProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.DeletedAt) ||
+                    !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.UpdatedAt))
                 {
                     return "catalog_product_tombstone_invalid";
                 }
@@ -157,7 +186,10 @@ namespace Win7POS.Data.Online
 
             foreach (var row in catalog.Tombstones?.Categories ?? Array.Empty<PosCatalogCategoryTombstoneResponse>())
             {
-                if (row == null || !IsRequiredCatalogText(row.CategoryId, 256))
+                if (row == null ||
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.CategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.DeletedAt) ||
+                    !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.UpdatedAt))
                 {
                     return "catalog_category_tombstone_invalid";
                 }
@@ -165,7 +197,10 @@ namespace Win7POS.Data.Online
 
             foreach (var row in catalog.Tombstones?.Suppliers ?? Array.Empty<PosCatalogSupplierTombstoneResponse>())
             {
-                if (row == null || !IsRequiredCatalogText(row.SupplierId, 256))
+                if (row == null ||
+                    !RemoteCatalogContentPolicy.IsRequiredText(row.SupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.DeletedAt) ||
+                    !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.UpdatedAt))
                 {
                     return "catalog_supplier_tombstone_invalid";
                 }
@@ -284,12 +319,6 @@ namespace Win7POS.Data.Online
             return value.HasValue && value.Value < 0;
         }
 
-        private static bool IsOptionalCatalogText(string value, int maximumLength)
-        {
-            return string.IsNullOrEmpty(value) ||
-                (value.Length <= maximumLength && !value.Any(char.IsControl));
-        }
-
         private static bool IsOptionalNonNegativeFinite(double? value, double maximum)
         {
             return !value.HasValue ||
@@ -308,21 +337,9 @@ namespace Win7POS.Data.Online
                 value.Value <= maximum;
         }
 
-        private static bool IsRequiredCatalogText(string value, int maximumLength)
-        {
-            return !string.IsNullOrWhiteSpace(value) &&
-                value.Length <= maximumLength &&
-                !value.Any(char.IsControl);
-        }
-
         private static bool IsSafeSummaryText(string value, int maximumLength)
         {
-            if (string.IsNullOrEmpty(value))
-            {
-                return true;
-            }
-
-            return value.Length <= maximumLength && !value.Any(char.IsControl);
+            return RemoteCatalogContentPolicy.IsOptionalText(value, maximumLength);
         }
     }
 }

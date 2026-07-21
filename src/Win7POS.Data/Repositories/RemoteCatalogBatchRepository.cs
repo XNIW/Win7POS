@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -51,6 +52,7 @@ namespace Win7POS.Data.Repositories
         {
             if (runContext == null) throw new ArgumentNullException(nameof(runContext));
             if (batch == null) throw new ArgumentNullException(nameof(batch));
+            ValidateBatchContent(batch);
 
             cancellationToken.ThrowIfCancellationRequested();
             await ProductRepository.CatalogMetaWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -416,6 +418,80 @@ AND NOT EXISTS (
             finally
             {
                 ProductRepository.CatalogMetaWriteGate.Release();
+            }
+        }
+
+        private static void ValidateBatchContent(RemoteCatalogBatch batch)
+        {
+            foreach (var row in batch.Categories ?? Array.Empty<RemoteCatalogCategoryWrite>())
+            {
+                if (row == null) continue;
+                EnsureSafe(row.RemoteCategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "category.remote_id");
+                EnsureSafe(row.Name, RemoteCatalogContentPolicy.NameMaximumLength, "category.name");
+                RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.RemoteUpdatedAt, "category.updated_at");
+            }
+
+            foreach (var row in batch.Suppliers ?? Array.Empty<RemoteCatalogSupplierWrite>())
+            {
+                if (row == null) continue;
+                EnsureSafe(row.RemoteSupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "supplier.remote_id");
+                EnsureSafe(row.Name, RemoteCatalogContentPolicy.NameMaximumLength, "supplier.name");
+                RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.RemoteUpdatedAt, "supplier.updated_at");
+            }
+
+            foreach (var row in batch.Products ?? Array.Empty<RemoteCatalogProductWrite>())
+            {
+                if (row == null) continue;
+                EnsureSafe(row.ArticleCode, RemoteCatalogContentPolicy.ItemNumberMaximumLength, "product.article_code");
+                EnsureSafe(row.Barcode, RemoteCatalogContentPolicy.BarcodeMaximumLength, "product.barcode");
+                EnsureSafe(row.CategoryName, RemoteCatalogContentPolicy.NameMaximumLength, "product.category_name");
+                EnsureSafe(row.Name, RemoteCatalogContentPolicy.NameMaximumLength, "product.name");
+                EnsureSafe(row.RemoteCategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "product.remote_category_id");
+                EnsureSafe(row.RemoteProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "product.remote_id");
+                EnsureSafe(row.RemoteSupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "product.remote_supplier_id");
+                EnsureSafe(row.SecondName, RemoteCatalogContentPolicy.NameMaximumLength, "product.second_name");
+                EnsureSafe(row.SupplierName, RemoteCatalogContentPolicy.NameMaximumLength, "product.supplier_name");
+            }
+
+            foreach (var row in batch.Prices ?? Array.Empty<RemoteCatalogPriceWrite>())
+            {
+                if (row == null) continue;
+                RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.EffectiveAt, "price.effective_at");
+                EnsureSafe(row.RemotePriceId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "price.remote_id");
+                EnsureSafe(row.RemoteProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "price.remote_product_id");
+                EnsureSafe(row.Source, RemoteCatalogContentPolicy.SourceMaximumLength, "price.source");
+                EnsureSafe(row.Type, RemoteCatalogContentPolicy.TypeMaximumLength, "price.type");
+            }
+
+            foreach (var row in batch.ProductTombstones ?? Array.Empty<RemoteCatalogProductTombstoneWrite>())
+            {
+                if (row == null) continue;
+                RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.RemoteDeletedAt, "product_tombstone.deleted_at");
+                EnsureSafe(row.RemoteProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "product_tombstone.remote_id");
+            }
+
+            foreach (var row in batch.CategoryTombstones ?? Array.Empty<RemoteCatalogCategoryTombstoneWrite>())
+            {
+                if (row == null) continue;
+                EnsureSafe(row.RemoteCategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "category_tombstone.remote_id");
+                RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.RemoteDeletedAt, "category_tombstone.deleted_at");
+                RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.RemoteUpdatedAt, "category_tombstone.updated_at");
+            }
+
+            foreach (var row in batch.SupplierTombstones ?? Array.Empty<RemoteCatalogSupplierTombstoneWrite>())
+            {
+                if (row == null) continue;
+                RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.RemoteDeletedAt, "supplier_tombstone.deleted_at");
+                EnsureSafe(row.RemoteSupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "supplier_tombstone.remote_id");
+                RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.RemoteUpdatedAt, "supplier_tombstone.updated_at");
+            }
+        }
+
+        private static void EnsureSafe(string value, int maximumLength, string field)
+        {
+            if (!RemoteCatalogContentPolicy.IsOptionalText(value, maximumLength))
+            {
+                throw new InvalidDataException("Remote catalog field rejected before persistence: " + field + ".");
             }
         }
 

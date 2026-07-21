@@ -296,7 +296,7 @@ namespace Win7POS.Wpf.Pos
         {
             _service = service ?? new PosWorkflowService();
             _logger = logger ?? new FileLogger("PosViewModel");
-            _permissionService = permissionService;
+            _permissionService = permissionService ?? DenyAllPermissionService.Instance;
             _operatorSession = operatorSession;
             _overrideAuthService = overrideAuthService;
             _userRepo = userRepo;
@@ -339,7 +339,7 @@ namespace Win7POS.Wpf.Pos
             OpenChangeQuantityForLineCommand = new RelayCommand(p => OpenChangeQuantityForLine(p as PosCartLineRow), p => !IsBusy && p is PosCartLineRow row && !row.IsDiscountLine);
             SuspendCartCommand = new AsyncRelayCommand(SuspendCartAsync, _ => !IsBusy && CartItems.Count > 0, _logger);
             RecoverCartCommand = new AsyncRelayCommand(RecoverCartAsync, _ => !IsBusy, _logger);
-            OpenUserManagementCommand = new AsyncRelayCommand(OpenUserManagementAsync, _ => !IsBusy && (_permissionService == null || _permissionService.Has(PermissionCodes.UsersManage)), _logger);
+            OpenUserManagementCommand = new AsyncRelayCommand(OpenUserManagementAsync, _ => !IsBusy && _permissionService.Has(PermissionCodes.UsersManage), _logger);
             CatalogEvents.CatalogChanged += OnCatalogChanged;
             _languageChangedHandler = (_, __) =>
             {
@@ -458,7 +458,7 @@ namespace Win7POS.Wpf.Pos
 
         private async Task AddBarcodeAsync()
         {
-            try { _permissionService?.Demand(PermissionCodes.PosSell, PosLocalization.Current.Text("sales.kind.sale")); }
+            try { _permissionService.Demand(PermissionCodes.PosSell, PosLocalization.Current.Text("sales.kind.sale")); }
             catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             var input = (BarcodeInput ?? string.Empty).Trim();
             if (input.Length == 0)
@@ -702,7 +702,7 @@ namespace Win7POS.Wpf.Pos
 
         private async Task PayAsync()
         {
-            try { _permissionService?.Demand(PermissionCodes.PosPay, PosLocalization.Current.Text("operations.pay")); }
+            try { _permissionService.Demand(PermissionCodes.PosPay, PosLocalization.Current.Text("operations.pay")); }
             catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             if (CartItems.Count == 0)
             {
@@ -776,7 +776,7 @@ namespace Win7POS.Wpf.Pos
 
             try
             {
-                _permissionService?.Demand(PermissionCodes.PosPay, PosLocalization.Current.Text("operations.pay"));
+                _permissionService.Demand(PermissionCodes.PosPay, PosLocalization.Current.Text("operations.pay"));
             }
             catch (PosAuthorizationLeaseException ex)
             {
@@ -1015,7 +1015,7 @@ namespace Win7POS.Wpf.Pos
 
         private async Task ReprintPreviewAsync()
         {
-            try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, PosLocalization.Current.Text("printer.reprintReceipt")); }
+            try { _permissionService.Demand(PermissionCodes.PosReprintReceipt, PosLocalization.Current.Text("printer.reprintReceipt")); }
             catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             if (SelectedRecentSale == null) return;
 
@@ -1045,7 +1045,7 @@ namespace Win7POS.Wpf.Pos
 
         private async Task PrintSelectedReceiptAsync()
         {
-            try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, PosLocalization.Current.Text("printer.printReceipt")); }
+            try { _permissionService.Demand(PermissionCodes.PosReprintReceipt, PosLocalization.Current.Text("printer.printReceipt")); }
             catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             if (SelectedRecentSale == null)
             {
@@ -1238,7 +1238,7 @@ namespace Win7POS.Wpf.Pos
 
         private async Task BackupDbAsync()
         {
-            try { _permissionService?.Demand(PermissionCodes.DbBackup, PosLocalization.Current.Text("operations.dbBackup")); }
+            try { _permissionService.Demand(PermissionCodes.DbBackup, PosLocalization.Current.Text("operations.dbBackup")); }
             catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             IsBusy = true;
             try
@@ -1388,7 +1388,7 @@ namespace Win7POS.Wpf.Pos
 
         private async Task PrintLastReceiptAsync()
         {
-            try { _permissionService?.Demand(PermissionCodes.PosReprintReceipt, PosLocalization.Current.Text("pos.cart.printLast")); }
+            try { _permissionService.Demand(PermissionCodes.PosReprintReceipt, PosLocalization.Current.Text("pos.cart.printLast")); }
             catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); return; }
             IsBusy = true;
             try
@@ -1487,7 +1487,7 @@ namespace Win7POS.Wpf.Pos
         {
             try
             {
-                _permissionService?.Demand(PermissionCodes.DailyCloseView, PosLocalization.Current.Text("operations.dailyClose"));
+                _permissionService.Demand(PermissionCodes.DailyCloseView, PosLocalization.Current.Text("operations.dailyClose"));
                 var vm = new DailyReportViewModel(_service, _overrideAuthService);
                 var dlg = new DailyReportDialog(vm)
                 {
@@ -1513,9 +1513,16 @@ namespace Win7POS.Wpf.Pos
 
         private Task OpenDbMaintenanceAsync()
         {
-            try { _permissionService?.Demand(PermissionCodes.DbMaintenance, PosLocalization.Current.Text("operations.dbMaintenance")); }
+            try { _permissionService.Demand(PermissionCodes.DbMaintenance, PosLocalization.Current.Text("operations.dbMaintenance")); }
             catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); RequestFocusBarcode(); return Task.CompletedTask; }
-            var vm = new DbMaintenanceViewModel(_service, async () => await TryDemandOrOverrideAsync(PermissionCodes.DbRestore, PosLocalization.Current.Text("operations.dbRestore")).ConfigureAwait(true));
+            var vm = new DbMaintenanceViewModel(
+                _service,
+                async () => await TryDemandOrOverrideAsync(
+                    PermissionCodes.DbRestore,
+                    PosLocalization.Current.Text("operations.dbRestore")).ConfigureAwait(true),
+                () => _permissionService.Has(PermissionCodes.DbBackup),
+                () => _permissionService.Has(PermissionCodes.CatalogImport),
+                () => _permissionService.Has(PermissionCodes.DbMaintenance));
             var dlg = new DbMaintenanceDialog(vm)
             {
                 Owner = DialogOwnerHelper.GetSafeOwner()
@@ -1552,7 +1559,7 @@ namespace Win7POS.Wpf.Pos
         {
             try
             {
-                _permissionService?.Demand(permissionCode, operationText);
+                _permissionService.Demand(permissionCode, operationText);
                 return true;
             }
             catch (PosAuthorizationLeaseException ex)
@@ -1671,8 +1678,11 @@ namespace Win7POS.Wpf.Pos
         {
             try
             {
-                _permissionService?.Demand(PermissionCodes.RegisterView, PosLocalization.Current.Text("sales.register.title"));
-                var canViewAll = _permissionService?.Has(PermissionCodes.RegisterViewAll) == true;
+                var permissionService = _permissionService ??
+                    throw new InvalidOperationException(
+                        PosLocalization.Current.Text("common.userPermissionDenied"));
+                permissionService.Demand(PermissionCodes.RegisterView, PosLocalization.Current.Text("sales.register.title"));
+                var canViewAll = permissionService.Has(PermissionCodes.RegisterViewAll);
                 var currentUserId = _operatorSession?.CurrentUser?.Id;
                 System.Collections.Generic.IReadOnlyList<(int id, string displayName)> operators = null;
                 if (_userRepo != null)
@@ -1680,7 +1690,7 @@ namespace Win7POS.Wpf.Pos
                     var users = await _userRepo.ListAsync().ConfigureAwait(true);
                     operators = users.Select(u => (u.Id, u.DisplayName)).ToList();
                 }
-                var registerVm = new Dialogs.SalesRegisterViewModel(_service, UseReceipt42, (saleId, regVm) =>
+                var registerVm = new Dialogs.SalesRegisterViewModel(_service, UseReceipt42, permissionService, (saleId, regVm) =>
                 {
                     _ = OpenRefundForSaleIdThenRefreshAsync(saleId, regVm);
                 }, isRefundScanMode, operators, canViewAll: canViewAll, forceOperatorId: canViewAll ? null : currentUserId, overrideAuthService: _overrideAuthService);
@@ -1715,9 +1725,9 @@ namespace Win7POS.Wpf.Pos
         /// <summary>Crea il ViewModel per la pagina Utenti e ruoli (navigazione full-page). Richiede permesso UsersManage.</summary>
         public Dialogs.UserManagementViewModel CreateUserManagementViewModel()
         {
-            _permissionService?.Demand(PermissionCodes.UsersManage, PosLocalization.Current.Text("operations.usersRoles"));
+            _permissionService.Demand(PermissionCodes.UsersManage, PosLocalization.Current.Text("operations.usersRoles"));
             var vm = new Dialogs.UserManagementViewModel();
-            vm.CanManageRoles = _permissionService?.Has(PermissionCodes.RolesManage) == true;
+            vm.CanManageRoles = _permissionService.Has(PermissionCodes.RolesManage);
             if (_operatorSession != null && _operatorSession.IsLoggedIn)
             {
                 vm.CurrentOperatorDisplay = PosLocalization.Current.Format(
@@ -1790,7 +1800,7 @@ namespace Win7POS.Wpf.Pos
 
         private async Task SuspendCartAsync()
         {
-            try { _permissionService?.Demand(PermissionCodes.PosSuspendCart, PosLocalization.Current.Text("operations.suspendCart")); }
+            try { _permissionService.Demand(PermissionCodes.PosSuspendCart, PosLocalization.Current.Text("operations.suspendCart")); }
             catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); RequestFocusBarcode(); return; }
             IsBusy = true;
             try
@@ -1820,7 +1830,7 @@ namespace Win7POS.Wpf.Pos
 
         private async Task RecoverCartAsync()
         {
-            try { _permissionService?.Demand(PermissionCodes.PosRecoverCart, PosLocalization.Current.Text("operations.recoverCart")); }
+            try { _permissionService.Demand(PermissionCodes.PosRecoverCart, PosLocalization.Current.Text("operations.recoverCart")); }
             catch (InvalidOperationException ex) { SetStatus(ex.Message, PosNoticeSeverity.Error); ModernMessageDialog.Show(DialogOwnerHelper.GetSafeOwner(), PosLocalization.Current.Text("common.userPermissionDenied"), ex.Message); RequestFocusBarcode(); return; }
             var vm = new Dialogs.HeldCartsViewModel(_service, snapshot =>
             {

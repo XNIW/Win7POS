@@ -820,3 +820,48 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   zero warnings/errors, full suite 428/428 with zero skipped and CLI selftest
   PASS. The final exact-head suite, clean Release Pack, PR CI and performance
   workflow remain mandatory. PERF-1 submitted no printer jobs.
+
+## 2026-07-21 - Security follow-up and cumulative-diff closure
+
+- Remediated all eight findings from security scan
+  `0207326e-0be9-4257-9319-6dc8102ffa70`: catalog validation/exactness,
+  two-phase offline authorization, trusted-generation fencing, canonical
+  migration ledger validation, receipt amplification, supplier-import
+  authorization, database-maintenance permissions and action-time reprint
+  authorization.
+- The final cumulative review additionally closed semantic timestamp/cursor
+  validation, historical receipt reader contention, transaction ownership for
+  direct sale-line inserts, durable-authority drift after a cancelled operator
+  switch and unexpected grants on UI-read-only system roles.
+- Definitive local evidence: required gates `33/33`, Core/Data `465/465`, focused
+  migration/restore `40/40`, receipt `32/32`, Release solution plus WPF/harness
+  `net48/x86` builds with zero warnings/errors, CLI selftest PASS, authorization
+  smoke PASS, supplier `.xlsx`/`.xls` smokes PASS and lifecycle PASS with zero
+  residual windows/ViewModels/handlers.
+- Release Pack completeness, Win7 runtime validation and Inno Setup compilation
+  passed. No physical job was sent in this follow-up; the prior Epson 6/6 result
+  remains confirmed and Windows 7 physical remains `NOT_RUN_WIN7_PHYSICAL`.
+- Full report:
+  `docs/reports/2026-07-21_SECURITY_FOLLOWUP_REMEDIATION.md`.
+
+## 2026-07-21 - PERF-1 integration after security main
+
+- Security PR #11 merged normally as `908bb22`; its exact-main CI and Release
+  Pack passed before PERF-1 was refreshed. PERF-1 then merged `origin/main`
+  without rebase or force push. The only conflict was this worklog chronology;
+  all source overlaps retained both validation and run-context behavior.
+- Added an explicit reusable-context regression proving invalid remote catalog
+  content cannot publish page/query/staging diagnostics or durable rows. Text-
+  policy coverage now includes valid pairs plus malformed high/low surrogate and
+  C1 cases while retaining universal sink validation.
+- Combined evidence before publication: required gates `33/33`, focused
+  catalog/security `75/75`, full Core/Data `477/477`, Release solution and WPF/
+  harness net48/x86 builds with zero warnings/errors, and CLI selftest PASS.
+- Post-security 19,763-row medians were 5,103.924 ms net10/x64 and 7,328.418 ms
+  net48/x86, exact and `Verified` 3/3. X86 peak working/private memory was
+  78,475,264 / 63,160,320 bytes and maximum dispatcher delay was 21.344 ms.
+  The 100,000-row median was 34,306.050 ms (+16.46%); the explicit cause is the
+  new O(n) direct-sink safety validation, while fresh-process memory remained
+  +5.92%/+8.26%, below the 20% ceiling.
+- No printer call was made. A clean exact-commit Release Pack, fresh PR CI and
+  manual performance workflow remain mandatory before normal merge.

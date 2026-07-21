@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core;
+using Win7POS.Core.Receipt;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Localization;
 
@@ -44,9 +45,10 @@ namespace Win7POS.Wpf.Printing
 
         public async Task PrintAsync(string receiptText, ReceiptPrintOptions opt)
         {
-            PrinterHardwareSafety.DemandHardwareOutputAllowed();
             if (receiptText == null) throw new ArgumentNullException(nameof(receiptText));
             if (opt == null) throw new ArgumentNullException(nameof(opt));
+            ReceiptDocumentPolicy.EnsureValidDocument(receiptText);
+            PrinterHardwareSafety.DemandHardwareOutputAllowed();
             if (!ReceiptPrintOptions.IsValidCopyCount(opt.Copies))
                 throw new InvalidOperationException(PosLocalization.T("printer.invalidCopies"));
 
@@ -256,6 +258,7 @@ namespace Win7POS.Wpf.Printing
 
         private static void PrintOnce(string receiptText, ReceiptPrintOptions opt)
         {
+            ReceiptDocumentPolicy.EnsureValidDocument(receiptText);
             if (string.IsNullOrWhiteSpace(opt.PrinterName))
                 throw new InvalidOperationException(PosLocalization.T("printer.receiptPrinterNotConfigured"));
             if (!ReceiptPrintOptions.IsValidCopyCount(opt.Copies))

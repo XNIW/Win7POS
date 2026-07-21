@@ -138,11 +138,35 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
 
         var evaluation = await fixture.State.EvaluateSaleSafetyForOfficialShopAsync();
         Assert.IsFalse(evaluation.IsSaleSafe);
-        Assert.AreEqual("catalog_sale_blocked_exactness_mismatch", evaluation.ReasonCode);
+        Assert.AreEqual("catalog_sale_blocked_exactness_not_verified", evaluation.ReasonCode);
 
         var exception = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
             () => InsertOrdinarySaleAsync(db.Factory, fixture.ProductId, "SALE-BLOCKED-MISMATCH"));
-        StringAssert.Contains(exception.Message, "catalog_sale_blocked_exactness_mismatch");
+        StringAssert.Contains(exception.Message, "catalog_sale_blocked_exactness_not_verified");
+        await AssertNoSaleArtifactsAsync(db.Factory);
+    }
+
+    [TestMethod]
+    public async Task OrdinarySale_WithUnverifiedExactnessRollsBackAllWrites()
+    {
+        using var db = TestDb.Create();
+        var fixture = await SeedSaleSafeFixtureAsync(db);
+        using (var conn = db.Factory.Open())
+        {
+            await conn.ExecuteAsync(@"
+INSERT INTO app_settings(key, value) VALUES(@statusKey, 'Unverified')
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                new { statusKey = CatalogShopStateRepository.CompletenessStatusKey });
+        }
+
+        var evaluation = await fixture.State.EvaluateSaleSafetyForOfficialShopAsync();
+        Assert.IsFalse(evaluation.IsSaleSafe);
+        Assert.AreEqual("catalog_sale_blocked_exactness_not_verified", evaluation.ReasonCode);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            InsertOrdinarySaleAsync(
+                db.Factory,
+                fixture.ProductId,
+                "SALE-BLOCKED-UNVERIFIED"));
         await AssertNoSaleArtifactsAsync(db.Factory);
     }
 
@@ -221,6 +245,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
         var state = new CatalogShopStateRepository(db.Factory);
         var binding = await state.EnsureAndLoadCursorAsync(ShopId, ShopCode);
         Assert.IsTrue(binding.IsValid);
+        await CatalogExactnessTestFixture.SeedVerifiedAsync(db.Factory, ShopId, ShopCode);
         await state.StoreSaleSafeAsync(
             ShopId,
             ShopCode,

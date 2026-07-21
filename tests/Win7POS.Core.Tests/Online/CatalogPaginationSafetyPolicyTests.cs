@@ -69,9 +69,11 @@ public sealed class CatalogPaginationSafetyPolicyTests
     }
 
     [TestMethod]
-    public void UnsaturatedMoreAndOrdinaryDelta_AreNotIntercepted()
+    public void TerminalFullWithoutCompleteSummary_IsRejectedBeforePromotion()
     {
-        Assert.IsTrue(Evaluate(Full(999, 0, false, summaryProducts: null)).Allowed);
+        var terminal = Evaluate(Full(999, 0, false, summaryProducts: null));
+        Assert.IsFalse(terminal.Allowed);
+        Assert.AreEqual(CatalogPaginationSafetyPolicy.AmbiguousEndCode, terminal.Code);
         Assert.IsTrue(Evaluate(Full(Limit, 0, true, summaryProducts: null)).Allowed);
 
         var delta = Full(Limit, 0, false, summaryProducts: null);

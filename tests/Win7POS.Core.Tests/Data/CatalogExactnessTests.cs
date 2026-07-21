@@ -103,6 +103,98 @@ public sealed class CatalogExactnessTests
         Assert.AreEqual(
             "catalog_version_invalid",
             PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response.CatalogVersion = "catalog-v1\uD800";
+        Assert.AreEqual(
+            "catalog_version_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+    }
+
+    [TestMethod]
+    public void CatalogCursorValidator_RejectsMalformedUnicodeBeforeFingerprintingOrPersistence()
+    {
+        var response = ValidCatalogResponse();
+        response.SyncCursor = new string('c', 512);
+        Assert.AreEqual(string.Empty, PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response.SyncCursor = new string('c', 513);
+        Assert.AreEqual(
+            "catalog_sync_cursor_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response.SyncCursor = "cursor-v1\uD800";
+        Assert.AreEqual(
+            "catalog_sync_cursor_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response = Deserialize<PosCatalogPullResponse>(@"{
+  ""ok"": true,
+  ""schemaVersion"": 2,
+  ""syncMode"": ""full_refresh"",
+  ""syncCursor"": ""cursor-\uD800"",
+  ""catalogVersion"": ""catalog-v1"",
+  ""catalog"": {}
+}");
+        response.Policy = ValidPolicy();
+        Assert.AreEqual(
+            "catalog_sync_cursor_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+    }
+
+    [TestMethod]
+    public void CatalogGeneratedAt_MustBeABoundedSemanticTimestamp()
+    {
+        var response = ValidCatalogResponse();
+        response.GeneratedAt = "2026-07-21T12:34:56.1234567-04:00";
+        Assert.AreEqual(string.Empty, PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response.GeneratedAt = "zzzz";
+        Assert.AreEqual(
+            "catalog_generated_at_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response.GeneratedAt = new string('g', 65);
+        Assert.AreEqual(
+            "catalog_generated_at_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response.GeneratedAt = "invalid\uD800";
+        Assert.AreEqual(
+            "catalog_generated_at_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+    }
+
+    [TestMethod]
+    public void CatalogSyncMode_RejectsWhitespaceThatWouldChangeFullRefreshClassification()
+    {
+        var response = ValidCatalogResponse();
+        response.SyncMode = " full_refresh ";
+
+        Assert.AreEqual(
+            "catalog_sync_mode_not_supported",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+    }
+
+    [TestMethod]
+    public async Task ReconcilerRejectsOversizedGeneratedAtBeforeCatalogMutation()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            new CatalogFullRefreshReconciler(db.Factory).ReconcileAsync(
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                new string('g', 500_000)));
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(2L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM products WHERE is_active = 1;"));
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM categories WHERE is_active = 1;"));
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM suppliers WHERE is_active = 1;"));
     }
 
     [TestMethod]
@@ -139,6 +231,124 @@ public sealed class CatalogExactnessTests
         };
         Assert.AreEqual(
             "catalog_duplicate_supplier_ids",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+    }
+
+    [TestMethod]
+    public void CatalogRowValidator_BoundsProductReceiptTextAndRejectsMalformedUnicode()
+    {
+        var response = ValidCatalogResponse();
+        var product = ValidProductRow("product-text", "BARCODE-TEXT");
+        product.ProductName = new string('n', 512);
+        product.SecondProductName = new string('s', 512);
+        product.ItemNumber = new string('i', 128);
+        product.UpdatedAt = "2026-07-21T12:34:56Z";
+        response.Catalog.Products = new[] { product };
+        Assert.AreEqual(string.Empty, PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        product.ProductName = "valid \uD83D\uDE03 name";
+        Assert.AreEqual(string.Empty, PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        product.ProductName = new string('n', 513);
+        Assert.AreEqual(
+            "catalog_product_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        product.ProductName = new string('n', 500_000);
+        Assert.AreEqual(
+            "catalog_product_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        product.ProductName = "invalid\uD800";
+        Assert.AreEqual(
+            "catalog_product_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        product.ProductName = "invalid\nname";
+        Assert.AreEqual(
+            "catalog_product_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        product.ProductName = "invalid\u0085name";
+        Assert.AreEqual(
+            "catalog_product_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        product.ProductName = "invalid\uDC00name";
+        Assert.AreEqual(
+            "catalog_product_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+    }
+
+    [TestMethod]
+    public void CatalogRowValidator_RejectsMalformedSemanticTimestamps()
+    {
+        var response = ValidCatalogResponse();
+        response.Catalog.Categories = new[]
+        {
+            new PosCatalogCategoryResponse
+            {
+                CategoryId = "category-invalid-time",
+                Name = "Invalid time",
+                UpdatedAt = "zzzz"
+            }
+        };
+        Assert.AreEqual(
+            "catalog_category_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response = ValidCatalogResponse();
+        response.Catalog.Suppliers = new[]
+        {
+            new PosCatalogSupplierResponse
+            {
+                SupplierId = "supplier-invalid-time",
+                Name = "Invalid time",
+                UpdatedAt = "2026-07-21T12:00:00Z trailing"
+            }
+        };
+        Assert.AreEqual(
+            "catalog_supplier_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response = ValidCatalogResponse();
+        var product = ValidProductRow("product-invalid-time", "INVALID-TIME");
+        product.UpdatedAt = "not-a-timestamp";
+        response.Catalog.Products = new[] { product };
+        Assert.AreEqual(
+            "catalog_product_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response = ValidCatalogResponse();
+        response.Catalog.Prices = new[]
+        {
+            new PosCatalogPriceResponse
+            {
+                EffectiveAt = "not-a-timestamp",
+                Price = 100,
+                PriceId = "price-invalid-time",
+                ProductId = "product-invalid-time",
+                Type = "retail"
+            }
+        };
+        Assert.AreEqual(
+            "catalog_price_row_invalid",
+            PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
+
+        response = ValidCatalogResponse();
+        response.Catalog.Tombstones = new PosCatalogTombstonesResponse
+        {
+            Categories = new[]
+            {
+                new PosCatalogCategoryTombstoneResponse
+                {
+                    CategoryId = "category-invalid-time",
+                    DeletedAt = "zzzz"
+                }
+            }
+        };
+        Assert.AreEqual(
+            "catalog_category_tombstone_invalid",
             PosOnlineCompatibilityValidator.ValidateCatalogPull(response));
     }
 
@@ -234,6 +444,38 @@ public sealed class CatalogExactnessTests
         Assert.AreEqual(CatalogCompletenessStatus.Unverified, result.Status);
         Assert.AreEqual("catalog_summary_missing", result.Code);
         Assert.IsFalse(result.RepairRequired);
+    }
+
+    [TestMethod]
+    public async Task MissingSummary_ReconcileAndVerifyPreservesHealthyCatalogWithoutFalseMismatch()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+
+        var result = await new CatalogFullRefreshReconciler(db.Factory)
+            .ReconcileAndVerifyAsync(
+                new[] { "product-1" },
+                Array.Empty<string>(),
+                Array.Empty<string>(),
+                "2026-07-14T01:00:00Z",
+                summary: null,
+                CompleteContext(products: 1, categories: 0, suppliers: 0, prices: 0));
+
+        Assert.AreEqual(CatalogCompletenessStatus.Unverified, result.Status);
+        Assert.AreEqual("catalog_summary_missing", result.Code);
+        Assert.IsFalse(result.RepairRequired);
+        Assert.AreEqual(2L, result.Audit.DistinctAuthoritativeProductIds);
+        Assert.AreEqual(2L, result.Audit.DistinctActiveRemoteProductIds);
+
+        using var conn = db.Factory.Open();
+        Assert.AreEqual(2L, await conn.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM products WHERE COALESCE(is_active, 1) = 1;"));
+        Assert.AreEqual(1L, await conn.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM categories WHERE COALESCE(is_active, 1) = 1;"));
+        Assert.AreEqual(1L, await conn.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM suppliers WHERE COALESCE(is_active, 1) = 1;"));
+        Assert.AreEqual(2L, await conn.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM remote_catalog_product_references;"));
     }
 
     [TestMethod]
@@ -755,7 +997,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
     }
 
     [TestMethod]
-    public async Task LegacyUnverifiedEvidence_IsShopBoundButBackwardCompatibleForSaleSafety()
+    public async Task UnverifiedEvidence_IsShopBoundAndCannotBecomeSaleSafe()
     {
         using var db = TestDb.Create();
         await SaveShopAsync(db, "shop-a", "SHOP-A");
@@ -768,10 +1010,15 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
             CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2));
 
         await state.StoreExactnessAsync("shop-a", "SHOP-A", legacy, binding.Epoch);
-        await state.StoreSaleSafeAsync("shop-a", "SHOP-A", "2026-07-14T03:00:00Z", binding.Epoch);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            state.StoreSaleSafeAsync(
+                "shop-a",
+                "SHOP-A",
+                "2026-07-14T03:00:00Z",
+                binding.Epoch));
 
         Assert.AreEqual(CatalogCompletenessStatus.Unverified, (await state.LoadExactnessAsync()).Status);
-        Assert.IsTrue(await state.IsSaleSafeForOfficialShopAsync());
+        Assert.IsFalse(await state.IsSaleSafeForOfficialShopAsync());
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
             state.StoreExactnessAsync("shop-b", "SHOP-B", legacy, binding.Epoch));
     }
@@ -790,6 +1037,10 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
             "2026-07-14T03:00:00Z",
             binding.Epoch,
             "delta");
+        await CatalogExactnessTestFixture.SeedVerifiedAsync(
+            db.Factory,
+            "shop-a",
+            "SHOP-A");
         await state.StoreSaleSafeAsync("shop-a", "SHOP-A", "2026-07-14T03:00:00Z", binding.Epoch);
 
         var lease = await new CatalogShopTransitionBarrier(db.Factory).EnterAsync();
@@ -1067,6 +1318,78 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
         var checkpoint = await repository.LoadDeltaChainAsync("shop-a", "SHOP-A", binding.Epoch);
         Assert.IsTrue(checkpoint.IsValid);
         Assert.IsFalse(checkpoint.HasState);
+    }
+
+    [TestMethod]
+    public async Task LegacyUnsafeCursorAndMode_CanBeAtomicallyReplacedByValidState()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db, "shop-a", "SHOP-A");
+        var repository = new CatalogShopStateRepository(db.Factory);
+        var binding = await repository.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        var legacyCursor = " " + new string('c', 600) + " ";
+        var legacyMode = " " + new string('m', 80) + " ";
+        using (var seed = db.Factory.Open())
+        {
+            await seed.ExecuteAsync(@"
+INSERT INTO app_settings(key, value)
+VALUES(@cursorKey, @legacyCursor), (@modeKey, @legacyMode)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
+                new
+                {
+                    cursorKey = CatalogShopStateRepository.LastSyncCursorKey,
+                    legacyCursor,
+                    legacyMode,
+                    modeKey = CatalogShopStateRepository.LastSyncModeKey
+                });
+        }
+
+        var legacy = await repository.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        await repository.StoreLastSyncAsync(
+            "shop-a",
+            "SHOP-A",
+            "cursor-repaired",
+            "2026-07-21T12:00:00Z",
+            binding.Epoch,
+            "full_refresh",
+            expectedPreviousCursor: legacy.Cursor,
+            expectedPreviousMode: legacy.Mode);
+
+        var repaired = await repository.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        Assert.AreEqual("cursor-repaired", repaired.Cursor);
+        Assert.AreEqual("full_refresh", repaired.Mode);
+    }
+
+    [TestMethod]
+    public async Task InvalidNewCursor_IsRejectedBeforeCatalogCheckpointMutation()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db, "shop-a", "SHOP-A");
+        var repository = new CatalogShopStateRepository(db.Factory);
+        var binding = await repository.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        await repository.StoreLastSyncAsync(
+            "shop-a",
+            "SHOP-A",
+            "cursor-before-invalid",
+            "2026-07-21T12:00:00Z",
+            binding.Epoch,
+            "delta");
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() =>
+            repository.StorePullCursorAsync(
+                "shop-a",
+                "SHOP-A",
+                "cursor-invalid\uD800",
+                "2026-07-21T12:01:00Z",
+                binding.Epoch,
+                "delta",
+                authoritativeSnapshotCommitted: false,
+                expectedPreviousCursor: "cursor-before-invalid",
+                expectedPreviousMode: "delta"));
+
+        var retained = await repository.EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        Assert.AreEqual("cursor-before-invalid", retained.Cursor);
+        Assert.AreEqual("delta", retained.Mode);
     }
 
     [TestMethod]
