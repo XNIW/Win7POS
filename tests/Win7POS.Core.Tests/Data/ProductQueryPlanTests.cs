@@ -110,15 +110,15 @@ ANALYZE;");
                     lastPage.Plan.Any(detail => detail.IndexOf("TEMP B-TREE", StringComparison.OrdinalIgnoreCase) >= 0),
                     "Ordinary keyset navigation must not materialize a temporary order tree.");
                 Assert.IsTrue(
-                    lastPage.KeysetP95Milliseconds <= 100d,
-                    $"100,000-row last-page keyset p95 exceeded 100 ms: {lastPage.KeysetP95Milliseconds:F3} ms.");
+                    lastPage.ForwardP95Milliseconds <= 100d,
+                    $"100,000-row last-page keyset p95 exceeded 100 ms: {lastPage.ForwardP95Milliseconds:F3} ms.");
                 Assert.IsTrue(
-                    lastPage.OffsetP95Milliseconds / Math.Max(lastPage.KeysetP95Milliseconds, 0.001d) >= 2d,
+                    lastPage.OffsetP95Milliseconds / Math.Max(lastPage.ForwardP95Milliseconds, 0.001d) >= 2d,
                     "The same-host keyset last page must be at least 2x faster than the deliberate OFFSET fallback.");
                 TestContext.WriteLine(
-                    $"PRODUCT_KEYSET_100K p95_ms={lastPage.KeysetP95Milliseconds:F3} " +
+                    $"PRODUCT_KEYSET_100K p95_ms={lastPage.ForwardP95Milliseconds:F3} " +
                     $"offset_p95_ms={lastPage.OffsetP95Milliseconds:F3} " +
-                    $"ratio={lastPage.OffsetP95Milliseconds / Math.Max(lastPage.KeysetP95Milliseconds, 0.001d):F2}x " +
+                    $"ratio={lastPage.OffsetP95Milliseconds / Math.Max(lastPage.ForwardP95Milliseconds, 0.001d):F2}x " +
                     $"plan=[{string.Join(" | ", lastPage.Plan)}]");
             }
         }
@@ -366,14 +366,14 @@ VALUES($barcode, $supplier_id, $category_id, 1);";
             int resultCount,
             long firstId,
             long lastId,
-            double keysetP95Milliseconds,
+            double forwardP95Milliseconds,
             double offsetP95Milliseconds)
         {
             Plan = plan;
             ResultCount = resultCount;
             FirstId = firstId;
             LastId = lastId;
-            KeysetP95Milliseconds = keysetP95Milliseconds;
+            ForwardP95Milliseconds = forwardP95Milliseconds;
             OffsetP95Milliseconds = offsetP95Milliseconds;
         }
 
@@ -381,7 +381,7 @@ VALUES($barcode, $supplier_id, $category_id, 1);";
         internal int ResultCount { get; }
         internal long FirstId { get; }
         internal long LastId { get; }
-        internal double KeysetP95Milliseconds { get; }
+        internal double ForwardP95Milliseconds { get; }
         internal double OffsetP95Milliseconds { get; }
     }
 
