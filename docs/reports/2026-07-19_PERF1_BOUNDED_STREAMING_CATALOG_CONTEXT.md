@@ -1,8 +1,12 @@
 # PERF-1 — bounded HTTP streaming and catalog run context
 
 - Date: 2026-07-19
+- Status: `DONE_MERGED`
 - Base main: `1be70172cab56895f66389a99b4a6fa92352c7e2`
 - Branch: `codex/perf1-bounded-catalog-20260719-214700`
+- PR: `#10`
+- Exact PR head: `92e1c323d55ea7b00f3f8bfa35f32fe2fb28e391`
+- Final main merge: `0ad16bd2c40454c07d0ffb6e4908e23b89b4a5a1`
 - Host: Windows `10.0.26200`, .NET SDK `10.0.301`
 
 ## Outcome
@@ -95,8 +99,8 @@ probe, not authenticated staging exactness and not physical Windows 7 evidence.
 
 - canonical required gates: `33/33` PASS;
 - Release solution build: PASS, zero warnings/errors;
-- Core/Data tests: `428/428` PASS, zero skipped; the exact-head suite is rerun
-  after commit before publication;
+- Core/Data tests: `428/428` PASS, zero skipped at the original checkpoint; final
+  exact-head publication evidence is recorded below;
 - WPF net48/x86 Release: PASS, zero warnings/errors;
 - CLI selftest: PASS; receipt text was previewed only and no printer API was
   called;
@@ -104,11 +108,12 @@ probe, not authenticated staging exactness and not physical Windows 7 evidence.
 
 ## 2026-07-21 security-main integration revalidation
 
-PERF-1 was merged normally with security main `908bb2216852bdc0eed8f773e326b8ae878a2e58`.
-The only textual conflict was this worklog chronology; the catalog, transport
-and checker overlaps merged automatically. The combined source retains catalog
-content validation before write-gate acquisition, pagination/evidence validation
-before staging or apply, generation/cursor fencing and one transaction per page.
+The PERF-1 branch was brought current by a normal merge of security main
+`908bb2216852bdc0eed8f773e326b8ae878a2e58`. The only textual conflict was this
+worklog chronology; the catalog, transport and checker overlaps merged
+automatically. The combined source retains catalog content validation before
+write-gate acquisition, pagination/evidence validation before staging or apply,
+generation/cursor fencing and one transaction per page.
 
 The reusable apply-context path now has a direct regression proving that an
 oversized remote batch publishes no page/query/staging diagnostics and no
@@ -143,11 +148,32 @@ for 10 / 100 / 1,000 changed rows. Each used one logical request, retained exact
 zero and did not run full reconciliation. Changes versus the original samples
 were +13.25%, -6.90% and +8.14%, all within the 15% threshold.
 
-Combined validation before publication: canonical gates `33/33`, focused
+Combined pre-publication validation: canonical gates `33/33`, focused
 catalog/security `75/75`, full Core/Data `477/477` with zero skipped, Release
 solution plus WPF and UI harness net48/x86 builds with zero warnings/errors,
 CLI selftest PASS, and no vulnerable or deprecated NuGet package reported by
 the configured source. No printer API was called.
+
+## Publication and merge closeout — 2026-07-21
+
+GitHub verification closed every PERF-1 publication gate:
+
+- PR #10 merged normally as
+  `0ad16bd2c40454c07d0ffb6e4908e23b89b4a5a1`. The commit has main parent
+  `908bb2216852bdc0eed8f773e326b8ae878a2e58` and exact-head parent
+  `92e1c323d55ea7b00f3f8bfa35f32fe2fb28e391`.
+- No force push was used or recorded; the PR timeline contains the normal merge
+  event and no `head_ref_force_pushed` event.
+- Exact-head CI run `29874926694` completed successfully on `92e1c323`.
+- Exact-head Catalog Performance run `29874958148` completed successfully on
+  `92e1c323`.
+- Post-merge CI run `29875846523` completed successfully on `0ad16bd2`.
+- Post-merge Release Pack run `29875846496` completed successfully on
+  `0ad16bd2`.
+
+PERF-1 is therefore `DONE_MERGED`. These results are hosted Windows build and
+performance evidence; they do not promote authenticated staging, physical
+Windows 7, production or hardware certification.
 
 ## Boundaries and follow-up
 
@@ -156,6 +182,8 @@ the configured source. No printer API was called.
   staging/server observation.
 - Physical Windows 7 SP1 install/startup/runtime remains `NOT_RUN`.
 - Generation-keyed authoritative-ID staging, keyset UI paging and bounded
-  asynchronous logging remain PERF-2 items after profiling.
+  asynchronous logging remain PERF-2 items after profiling. The staging work
+  must append the next immutable migration after
+  `0008-online-sync-generation`; it must not modify `0007` or `0008`.
 - Repository-wide supply-chain item `P1-REL-01` remains an independent release
   hardening PR; it is not hidden inside PERF-1.

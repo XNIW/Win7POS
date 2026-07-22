@@ -818,8 +818,9 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   with exact product/price counts and zero pending rows.
 - Pre-publication validation: gates 33/33, solution and WPF net48/x86 builds
   zero warnings/errors, full suite 428/428 with zero skipped and CLI selftest
-  PASS. The final exact-head suite, clean Release Pack, PR CI and performance
-  workflow remain mandatory. PERF-1 submitted no printer jobs.
+  PASS. At this original checkpoint the final exact-head and publication gates
+  were still required; PR #10 subsequently satisfied them as recorded below.
+  PERF-1 submitted no printer jobs.
 
 ## 2026-07-21 - Security follow-up and cumulative-diff closure
 
@@ -863,5 +864,22 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   The 100,000-row median was 34,306.050 ms (+16.46%); the explicit cause is the
   new O(n) direct-sink safety validation, while fresh-process memory remained
   +5.92%/+8.26%, below the 20% ceiling.
-- No printer call was made. A clean exact-commit Release Pack, fresh PR CI and
-  manual performance workflow remain mandatory before normal merge.
+- No printer call was made. At this integration checkpoint a clean exact-commit
+  Release Pack, fresh PR CI and manual performance workflow were still required;
+  PR #10 subsequently satisfied them as recorded below.
+
+## 2026-07-21 - PERF-1 publication and merge closeout
+
+- GitHub PR #10 merged normally, without force push, as
+  `0ad16bd2c40454c07d0ffb6e4908e23b89b4a5a1` from exact head
+  `92e1c323d55ea7b00f3f8bfa35f32fe2fb28e391`.
+- Exact-head CI run `29874926694` and Catalog Performance run `29874958148`
+  completed successfully on `92e1c323`. Post-merge CI run `29875846523` and
+  Release Pack run `29875846496` completed successfully on `0ad16bd2`.
+- PERF-1 is `DONE_MERGED`. Admin backend/authenticated staging, physical Windows
+  7, PERF-2, `P1-REL-01` and production/hardware certification remain open; no
+  external backlog row was promoted.
+- Current main already contains immutable migration
+  `0008-online-sync-generation`. PERF-2 authoritative-ID staging must append the
+  next immutable migration, expected `0009-catalog-authoritative-id-stage`, and
+  must not modify `0007` or `0008`.
