@@ -12,6 +12,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$NuGetAuditSource = "https://api.nuget.org/v3/index.json"
 
 function Read-JsonFile([string]$path) {
     try {
@@ -67,10 +68,11 @@ function Get-Findings($report, [string]$kind) {
     if ($null -ne $sourcesProperty) {
         $sources = @($sourcesProperty.Value | Where-Object { $null -ne $_ })
     }
-    if ($sources.Count -eq 0) {
-        throw "$kind report contains no NuGet sources."
+    if ($sources.Count -ne 1 -or
+        $sources[0] -isnot [string] -or
+        [string]$sources[0] -cne $NuGetAuditSource) {
+        throw "$kind report must contain only the approved NuGet source '$NuGetAuditSource'."
     }
-    $hasNuGetOrg = $false
     foreach ($sourceValue in $sources) {
         if ($sourceValue -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$sourceValue)) {
             throw "$kind report contains an invalid NuGet source."
@@ -80,12 +82,6 @@ function Get-Findings($report, [string]$kind) {
             $sourceUri.Scheme -cne [Uri]::UriSchemeHttps) {
             throw "$kind report contains a non-HTTPS NuGet source."
         }
-        if ($sourceUri.Host -ieq "api.nuget.org") {
-            $hasNuGetOrg = $true
-        }
-    }
-    if (-not $hasNuGetOrg) {
-        throw "$kind report does not include the expected api.nuget.org source."
     }
     $findings = [Collections.Generic.List[object]]::new()
     foreach ($project in @($report.projects)) {
@@ -116,12 +112,12 @@ $vulnerabilityOut = Join-Path $out "nuget-vulnerable.json"
 $deprecationOut = Join-Path $out "nuget-deprecated.json"
 
 if ([string]::IsNullOrWhiteSpace($VulnerabilityReportPath)) {
-    Invoke-DotNetReport @("list", (Resolve-Path -LiteralPath $SolutionPath).Path, "package", "--vulnerable", "--include-transitive", "--format", "json", "--no-restore") $vulnerabilityOut
+    Invoke-DotNetReport @("list", (Resolve-Path -LiteralPath $SolutionPath).Path, "package", "--vulnerable", "--include-transitive", "--format", "json", "--no-restore", "--source", $NuGetAuditSource) $vulnerabilityOut
 } else {
     Copy-Report $VulnerabilityReportPath $vulnerabilityOut
 }
 if ([string]::IsNullOrWhiteSpace($DeprecationReportPath)) {
-    Invoke-DotNetReport @("list", (Resolve-Path -LiteralPath $SolutionPath).Path, "package", "--deprecated", "--include-transitive", "--format", "json", "--no-restore") $deprecationOut
+    Invoke-DotNetReport @("list", (Resolve-Path -LiteralPath $SolutionPath).Path, "package", "--deprecated", "--include-transitive", "--format", "json", "--no-restore", "--source", $NuGetAuditSource) $deprecationOut
 } else {
     Copy-Report $DeprecationReportPath $deprecationOut
 }

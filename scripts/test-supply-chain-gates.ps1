@@ -27,10 +27,12 @@ function Invoke-ExpectedFailure([string]$label, [string]$script, [string[]]$argu
 
 $nugetGateScript = Join-Path $PSScriptRoot "invoke-nuget-supply-chain-gates.ps1"
 $nugetReportCommands = @(Get-Content -LiteralPath $nugetGateScript | Where-Object { $_ -match 'Invoke-DotNetReport @\(' })
-if ($nugetReportCommands.Count -ne 2 -or @($nugetReportCommands | Where-Object { $_ -notmatch '"--no-restore"' }).Count -ne 0) {
-    throw "Both NuGet list package report commands must use --no-restore."
+if ($nugetReportCommands.Count -ne 2 -or
+    @($nugetReportCommands | Where-Object { $_ -notmatch '"--no-restore"' }).Count -ne 0 -or
+    @($nugetReportCommands | Where-Object { $_ -notmatch '"--source", \$NuGetAuditSource' }).Count -ne 0) {
+    throw "Both NuGet list package report commands must use --no-restore and the approved explicit source."
 }
-Write-Host "PASS: both NuGet list package report commands use --no-restore"
+Write-Host "PASS: both NuGet list package report commands use --no-restore and the approved explicit source"
 
 $toolsConfig = Join-Path $repoRoot "eng\supply-chain\tools.json"
 $badTools = Get-Content -Raw -LiteralPath $toolsConfig | ConvertFrom-Json
@@ -106,6 +108,17 @@ Write-Json $missingNuGetOrgPath $missingNuGetOrg
 Invoke-ExpectedFailure "missing api.nuget.org source" (Join-Path $PSScriptRoot "invoke-nuget-supply-chain-gates.ps1") @(
     "-OutputDirectory", (Join-Path $testRoot "out-missing-nuget-org"), "-DotNetExe", $DotNetExe,
     "-VulnerabilityReportPath", $missingNuGetOrgPath, "-DeprecationReportPath", $cleanDeprecatedPath)
+
+$extraSource = New-Report "vulnerable"
+$extraSource["sources"] = @(
+    "https://api.nuget.org/v3/index.json",
+    "https://packages.invalid.example/v3/index.json"
+)
+$extraSourcePath = Join-Path $testRoot "extra-source.json"
+Write-Json $extraSourcePath $extraSource
+Invoke-ExpectedFailure "extra unapproved NuGet source" (Join-Path $PSScriptRoot "invoke-nuget-supply-chain-gates.ps1") @(
+    "-OutputDirectory", (Join-Path $testRoot "out-extra-source"), "-DotNetExe", $DotNetExe,
+    "-VulnerabilityReportPath", $extraSourcePath, "-DeprecationReportPath", $cleanDeprecatedPath)
 
 $badVulnerable = New-Report "vulnerable"
 $badVulnerable.projects[0] | Add-Member -NotePropertyName frameworks -NotePropertyValue @([ordered]@{

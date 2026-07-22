@@ -117,8 +117,11 @@ $securityWorkflow = Read-RequiredText ".github\workflows\security-supply-chain.y
 $releaseWorkflow = Read-RequiredText ".github\workflows\release-pack.yml"
 $protectedWorkflow = Read-RequiredText ".github\workflows\protected-release.yml"
 $runbook = Read-RequiredText "docs\RELEASE_SUPPLY_CHAIN.md"
+$nugetGate = Read-RequiredText "scripts\invoke-nuget-supply-chain-gates.ps1"
 $signerScript = Read-RequiredText "scripts\win7pos\windows\invoke-protected-release-signing.ps1"
 $signingFixture = Read-RequiredText "scripts\win7pos\windows\test-release-signing-negative.ps1"
+
+Require-Pattern "NuGet audits ignore runner-global sources and use only the approved HTTPS feed" $nugetGate '(?s)\$NuGetAuditSource\s*=\s*"https://api\.nuget\.org/v3/index\.json".*Invoke-DotNetReport.*"--source",\s*\$NuGetAuditSource.*Invoke-DotNetReport.*"--source",\s*\$NuGetAuditSource'
 
 foreach ($required in @(
         @{ Label = "Security workflow performs vulnerable/deprecated/license gates"; Pattern = 'invoke-nuget-supply-chain-gates\.ps1' },
