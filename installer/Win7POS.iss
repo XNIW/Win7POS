@@ -4,21 +4,37 @@
 ; Data folder in %ProgramData%\Win7POS is intentionally NOT touched.
 
 #define MyAppName "Win7POS"
-#define MyAppVersion "1.0.0"
 #define MyAppPublisher "Win7POS"
 #define MyAppExeName "Win7POS.Wpf.exe"
 #define MyAppSourceDir "..\dist\Win7POS"
+
+; RELEASE1-A pins the exact compiler. A different compiler must fail closed.
+#if VER != EncodeVer(6,7,3)
+  #error Win7POS requires exactly Inno Setup 6.7.3
+#endif
+#ifndef MyAppVersion
+  #error MyAppVersion must be supplied by the authoritative release-version resolver
+#endif
+#ifndef MyAppNumericVersion
+  #error MyAppNumericVersion must be supplied by the authoritative release-version resolver
+#endif
+#ifndef MyAppOutputBaseFilename
+  #error MyAppOutputBaseFilename must be supplied by the authoritative release-version resolver
+#endif
 
 [Setup]
 AppId={{2C3D8A34-5312-4A1C-90C5-6A6F2D4A9873}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+VersionInfoVersion={#MyAppNumericVersion}
+VersionInfoProductVersion={#MyAppNumericVersion}
+VersionInfoProductTextVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=output
-OutputBaseFilename=Win7POS-Setup
+OutputBaseFilename={#MyAppOutputBaseFilename}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern

@@ -13,23 +13,35 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   build-and-check:
     runs-on: windows-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Resolve exact-SHA build version
+        shell: pwsh
+        env:
+          WIN7POS_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: pwsh -NoProfile -File scripts/win7pos/windows/resolve-release-version.ps1 -CommitSha $env:WIN7POS_EXACT_SHA -Ref $env:GITHUB_REF -GitHubEnvironmentFile $env:GITHUB_ENV
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: 10.0.301
+          global-json-file: global.json
 
       - name: Print .NET info
         run: dotnet --info
 
       - name: Restore solution
-        run: dotnet restore Win7POS.slnx
+        run: dotnet restore Win7POS.slnx --locked-mode
 
       - name: Canonical required gates
         shell: pwsh
@@ -43,7 +55,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: Win7POS-Core-TestResults-${{ github.run_id }}
           path: tests/Win7POS.Core.Tests/TestResults/*.trx

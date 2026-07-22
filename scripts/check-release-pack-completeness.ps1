@@ -1,7 +1,8 @@
 param(
     [string]$ReleasePackSource = "",
     [switch]$WriteManifests,
-    [string]$ExpectedCommitSha = ""
+    [string]$ExpectedCommitSha = "",
+    [switch]$AllowDirtyTreeState
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,6 +17,17 @@ function Fail([string]$message) {
 
 function Pass([string]$message) {
     Write-Host "PASS: $message" -ForegroundColor Green
+}
+
+function Test-TreeStateValue([string]$value, [bool]$allowDirty) {
+    if ([string]::Equals($value, "TreeState=clean", [StringComparison]::Ordinal)) { return $true }
+    return $allowDirty -and [string]::Equals($value, "TreeState=dirty", [StringComparison]::Ordinal)
+}
+
+if (-not (Test-TreeStateValue "TreeState=clean" $false) -or
+    (Test-TreeStateValue "TreeState=dirty" $false) -or
+    -not (Test-TreeStateValue "TreeState=dirty" $true)) {
+    throw "Internal clean-tree provenance policy self-test failed."
 }
 
 function Resolve-Source([string]$source) {
@@ -78,15 +90,38 @@ function Test-VersionMetadata([string]$root, [string]$expectedCommitSha) {
     $commitLines = @($lines | Where-Object { $_ -match '^CommitSHA=([0-9a-fA-F]{40})$' })
     $configurationLines = @($lines | Where-Object { $_ -ceq 'Configuration=Release' })
     $platformLines = @($lines | Where-Object { $_ -ceq 'Platform=x86' })
-    $sdkLines = @($lines | Where-Object { $_ -match '^SdkVersion=10\.0\.3\d{2}$' })
-    $treeLines = @($lines | Where-Object { $_ -match '^TreeState=(clean|dirty)$' })
+    $sdkLines = @($lines | Where-Object { $_ -ceq 'SdkVersion=10.0.301' })
+    $treeLines = @($lines | Where-Object { Test-TreeStateValue $_ ([bool]$AllowDirtyTreeState) })
     if ($commitLines.Count -ne 1 -or
         $configurationLines.Count -ne 1 -or
         $platformLines.Count -ne 1 -or
         $sdkLines.Count -ne 1 -or
         $treeLines.Count -ne 1) {
-        Fail "VERSION.txt must contain one valid CommitSHA, Configuration=Release, Platform=x86, 10.0.3xx SDK and clean/dirty TreeState"
+        $treeRequirement = if ($AllowDirtyTreeState) { "an explicit clean/diagnostic-dirty TreeState" } else { "TreeState=clean" }
+        Fail "VERSION.txt must contain one valid CommitSHA, Configuration=Release, Platform=x86, exact SDK 10.0.301 and $treeRequirement"
         return
+    }
+
+    $metadata = @{}
+    foreach ($key in @(
+        "ProductVersion",
+        "BuildVersion",
+        "AssemblyVersion",
+        "FileVersion",
+        "InformationalVersion",
+        "InstallerBaseFilename",
+        "CommitSHA",
+        "Ref",
+        "InnoSetupVersion",
+        "InnoSetupInstallerSHA256",
+        "InnoSetupInstallerSize"
+    )) {
+        $matches = @($lines | Where-Object { $_ -like "$key=*" })
+        if ($matches.Count -ne 1) {
+            Fail "VERSION.txt must contain exactly one $key entry"
+            return
+        }
+        $metadata[$key] = $matches[0].Substring($key.Length + 1)
     }
 
     if (-not [string]::IsNullOrWhiteSpace($expectedCommitSha)) {
@@ -94,13 +129,73 @@ function Test-VersionMetadata([string]$root, [string]$expectedCommitSha) {
             Fail "ExpectedCommitSha must be a full 40-character commit SHA"
             return
         }
-        $actualCommit = $commitLines[0].Substring('CommitSHA='.Length)
+        $actualCommit = $metadata.CommitSHA
         if (-not [string]::Equals($actualCommit, $expectedCommitSha, [StringComparison]::OrdinalIgnoreCase)) {
             Fail "VERSION.txt CommitSHA does not match the expected build commit"
             return
         }
     }
-    Pass "VERSION.txt contains valid x86 Release provenance"
+
+    $resolver = Join-Path $repoRoot "scripts\win7pos\windows\resolve-release-version.ps1"
+    try {
+        $resolvedVersion = (& $resolver `
+            -RepoRoot $repoRoot `
+            -CommitSha $metadata.CommitSHA `
+            -Ref $metadata.Ref `
+            -AsJson) | ConvertFrom-Json
+    }
+    catch {
+        Fail "VERSION.txt version/ref evidence is invalid: $($_.Exception.Message)"
+        return
+    }
+    foreach ($expectedValue in @(
+        @{ Name = "ProductVersion"; Value = $resolvedVersion.ProductVersion },
+        @{ Name = "BuildVersion"; Value = $resolvedVersion.BuildVersion },
+        @{ Name = "AssemblyVersion"; Value = $resolvedVersion.AssemblyVersion },
+        @{ Name = "FileVersion"; Value = $resolvedVersion.FileVersion },
+        @{ Name = "InformationalVersion"; Value = $resolvedVersion.InformationalVersion },
+        @{ Name = "InstallerBaseFilename"; Value = $resolvedVersion.InstallerBaseFilename }
+    )) {
+        if (-not [string]::Equals($metadata[$expectedValue.Name], $expectedValue.Value, [StringComparison]::Ordinal)) {
+            Fail "VERSION.txt $($expectedValue.Name) does not match the authoritative exact-SHA version"
+            return
+        }
+    }
+
+    $innoConfigPath = Join-Path $repoRoot "scripts\win7pos\windows\inno-setup-toolchain.json"
+    try {
+        $innoConfig = [System.IO.File]::ReadAllText($innoConfigPath) | ConvertFrom-Json
+    }
+    catch {
+        Fail "Pinned Inno Setup toolchain config is invalid: $($_.Exception.Message)"
+        return
+    }
+    if (-not [string]::Equals($metadata.InnoSetupVersion, $innoConfig.version, [StringComparison]::Ordinal) -or
+        -not [string]::Equals($metadata.InnoSetupInstallerSHA256, $innoConfig.installerSha256, [StringComparison]::Ordinal) -or
+        -not [string]::Equals($metadata.InnoSetupInstallerSize, $innoConfig.installerSize.ToString(), [StringComparison]::Ordinal)) {
+        Fail "VERSION.txt Inno Setup version/hash/size does not match the pinned toolchain"
+        return
+    }
+
+    $applicationPath = Join-Path $root "Win7POS.Wpf.exe"
+    if (Test-Path -LiteralPath $applicationPath -PathType Leaf) {
+        try {
+            $actualAssemblyVersion = [System.Reflection.AssemblyName]::GetAssemblyName($applicationPath).Version.ToString()
+            $fileVersionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($applicationPath)
+            if (-not [string]::Equals($actualAssemblyVersion, $metadata.AssemblyVersion, [StringComparison]::Ordinal) -or
+                -not [string]::Equals($fileVersionInfo.FileVersion, $metadata.FileVersion, [StringComparison]::Ordinal) -or
+                -not [string]::Equals($fileVersionInfo.ProductVersion, $metadata.InformationalVersion, [StringComparison]::Ordinal)) {
+                Fail "Win7POS.Wpf.exe assembly/file/product versions do not match VERSION.txt"
+                return
+            }
+        }
+        catch {
+            Fail "Win7POS.Wpf.exe version metadata could not be read: $($_.Exception.Message)"
+            return
+        }
+    }
+
+    Pass "VERSION.txt and application binaries contain consistent authoritative exact-SHA version provenance"
 }
 
 function Write-ReleaseManifests([string]$root) {

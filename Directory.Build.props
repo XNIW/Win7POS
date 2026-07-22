@@ -1,0 +1,23 @@
+<Project>
+  <PropertyGroup>
+    <!-- Authoritative Win7POS product version. Release tags must be exactly vMAJOR.MINOR.PATCH. -->
+    <Win7PosVersion>1.0.0</Win7PosVersion>
+
+    <!-- Release tooling supplies the exact-SHA development/release value. -->
+    <Win7PosBuildVersion Condition="'$(Win7PosBuildVersion)' == ''">$(Win7PosVersion)-dev.local</Win7PosBuildVersion>
+    <Win7PosInformationalVersion Condition="'$(Win7PosInformationalVersion)' == ''">$(Win7PosBuildVersion)</Win7PosInformationalVersion>
+
+    <VersionPrefix>$(Win7PosVersion)</VersionPrefix>
+    <Version>$(Win7PosBuildVersion)</Version>
+    <PackageVersion>$(Win7PosBuildVersion)</PackageVersion>
+    <AssemblyVersion>$(Win7PosVersion).0</AssemblyVersion>
+    <FileVersion>$(Win7PosVersion).0</FileVersion>
+    <InformationalVersion>$(Win7PosInformationalVersion)</InformationalVersion>
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    <RepositoryCommit Condition="'$(Win7PosCommitSha)' != ''">$(Win7PosCommitSha)</RepositoryCommit>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+  </PropertyGroup>
+</Project>
