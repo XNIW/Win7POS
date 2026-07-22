@@ -11,6 +11,7 @@ if (-not $pwsh) { $pwsh = (Get-Command powershell -ErrorAction Stop).Source }
 $sourceGates = @(
     "check-dialog-standards.ps1",
     "check-architecture-boundaries.ps1",
+    "check-release-foundation.ps1",
     "check-pos-startup-win7-safe.ps1",
     "check-win7pos-startup-no-eager-db.ps1",
     "check-win7pos-legacy-db-migrations.ps1",

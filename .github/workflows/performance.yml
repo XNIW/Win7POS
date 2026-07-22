@@ -16,15 +16,24 @@ jobs:
       DOTNET_CLI_TELEMETRY_OPTOUT: "true"
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Resolve exact-SHA build version
+        shell: pwsh
+        env:
+          WIN7POS_EXACT_SHA: ${{ github.sha }}
+        run: pwsh -NoProfile -File scripts/win7pos/windows/resolve-release-version.ps1 -CommitSha $env:WIN7POS_EXACT_SHA -Ref $env:GITHUB_REF -GitHubEnvironmentFile $env:GITHUB_ENV
 
       - name: Setup deterministic .NET SDK
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
-          dotnet-version: "10.0.301"
+          global-json-file: global.json
 
       - name: Restore solution
-        run: dotnet restore Win7POS.slnx
+        run: dotnet restore Win7POS.slnx --locked-mode
 
       - name: Build benchmark and tests
         run: dotnet build Win7POS.slnx -c Release --no-restore
@@ -78,7 +87,7 @@ jobs:
           foreach ($rows in @(10, 100, 1000)) {
             $output = @(& dotnet run `
               --project tests/Win7POS.CatalogPerformance/Win7POS.CatalogPerformance.csproj `
-              -f net10.0 -c Release --no-build -- `
+              -f net10.0 -c Release --no-build --no-restore -- `
               batch-delta $rows 1 1000)
             if ($LASTEXITCODE -ne 0) { throw "$rows-row catalog delta benchmark failed." }
             if (($output -join "`n") -notmatch "products=19763") {
@@ -136,7 +145,7 @@ jobs:
 
       - name: Upload benchmark evidence
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: Win7POS-Catalog-Performance-${{ github.run_id }}
           path: artifacts/performance/*

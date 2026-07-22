@@ -26,7 +26,8 @@ $DistRoot = Join-Path $RepoRoot "dist"
 $DistDir = Join-Path $DistRoot "Win7POS"
 $ReportPath = Join-Path $DistRoot "Win7POS-build-report.md"
 $InstallerScript = Join-Path $RepoRoot "installer\Win7POS.iss"
-$InstallerOutput = Join-Path $RepoRoot "installer\output\Win7POS-Setup.exe"
+$InstallerOutput = $null
+$VersionInfo = $null
 
 function Add-WarningMessage {
     param([string]$Message)
@@ -105,7 +106,7 @@ function Find-Dotnet {
 
     foreach ($candidate in ($candidates | Select-Object -Unique)) {
         $sdk = Get-DotnetSdkVersion $candidate
-        if ($sdk -match '^10\.0\.3\d{2}$') {
+        if ([string]::Equals($sdk, "10.0.301", [StringComparison]::Ordinal)) {
             return $candidate
         }
         Write-Warning "Skipping incompatible dotnet candidate: $candidate (SDK '$sdk')"
@@ -165,6 +166,17 @@ function Find-ISCC {
     }
 
     return $null
+}
+
+function Resolve-ReleaseVersion {
+    param(
+        [string]$CommitSha,
+        [string]$Ref
+    )
+
+    $resolver = Join-Path $RepoRoot "scripts\win7pos\windows\resolve-release-version.ps1"
+    $json = & $resolver -RepoRoot $RepoRoot -CommitSha $CommitSha -Ref $Ref -AsJson
+    return ($json | ConvertFrom-Json)
 }
 
 function Invoke-LoggedCommand {
@@ -271,6 +283,12 @@ function Write-BuildReport {
     $lines.Add("- Build tool: $(if ($UseDotnetCli) { "dotnet CLI" } else { "MSBuild" })") | Out-Null
     $lines.Add("- Configuration: $Configuration") | Out-Null
     $lines.Add("- Platform: $Platform") | Out-Null
+    if ($VersionInfo) {
+        $lines.Add("- Product version: $($VersionInfo.ProductVersion)") | Out-Null
+        $lines.Add("- Build version: $($VersionInfo.BuildVersion)") | Out-Null
+        $lines.Add("- Informational version: $($VersionInfo.InformationalVersion)") | Out-Null
+        $lines.Add("- Installer base filename: $($VersionInfo.InstallerBaseFilename)") | Out-Null
+    }
     $lines.Add("- Output path: $OutputDir") | Out-Null
     $lines.Add("- Dist path: $DistDir") | Out-Null
     $lines.Add("- Exe present: $exePresent") | Out-Null
@@ -341,7 +359,21 @@ function Write-ReleaseSupportFiles {
         "-Platform",
         $Platform,
         "-SdkVersion",
-        $DotnetVersion
+        $DotnetVersion,
+        "-CommitSha",
+        $VersionInfo.CommitSha,
+        "-Ref",
+        $VersionInfo.Ref,
+        "-BuildVersion",
+        $VersionInfo.BuildVersion,
+        "-AssemblyVersion",
+        $VersionInfo.AssemblyVersion,
+        "-FileVersion",
+        $VersionInfo.FileVersion,
+        "-InformationalVersion",
+        $VersionInfo.InformationalVersion,
+        "-InstallerBaseFilename",
+        $VersionInfo.InstallerBaseFilename
     )
 }
 
@@ -424,6 +456,14 @@ try {
         }
     }
 
+    $currentCommit = Get-GitValue @("rev-parse", "HEAD")
+    if ($currentCommit -notmatch '^[0-9a-fA-F]{40}$') {
+        throw "A full exact HEAD commit is required to create the release pack."
+    }
+    $currentRef = if ($env:GITHUB_REF) { $env:GITHUB_REF } else { Get-GitValue @("rev-parse", "--abbrev-ref", "HEAD") }
+    $VersionInfo = Resolve-ReleaseVersion -CommitSha $currentCommit -Ref $currentRef
+    $InstallerOutput = Join-Path $RepoRoot ("installer\output\{0}.exe" -f $VersionInfo.InstallerBaseFilename)
+
     if (-not (Test-Path $ProjectPath)) {
         throw "Project file not found: $ProjectPath"
     }
@@ -445,8 +485,8 @@ try {
     if (-not $DotnetPath) {
         throw "Compatible .NET SDK not found. Set WIN7POS_DOTNET_EXE, DOTNET_ROOT, PATH, or install 10.0.301 under C:\Dev\dotnet10."
     }
-    if ($DotnetVersion -notmatch '^10\.0\.3\d{2}$') {
-        throw "Selected dotnet SDK '$DotnetVersion' is incompatible. Win7POS requires the .NET 10.0.3xx feature band from global.json."
+    if (-not [string]::Equals($DotnetVersion, "10.0.301", [StringComparison]::Ordinal)) {
+        throw "Selected dotnet SDK '$DotnetVersion' is incompatible. Win7POS requires exactly SDK 10.0.301 from global.json."
     }
     $UseDotnetCli = Test-NeedsDotnetCli
     if ($UseDotnetCli) {
@@ -463,12 +503,15 @@ try {
     Write-Host "Selected dotnet SDK: $DotnetVersion"
     Write-Host "Configuration: $Configuration"
     Write-Host "Platform: $Platform"
+    Write-Host "Build version: $($VersionInfo.BuildVersion)"
+    Write-Host "Exact commit: $($VersionInfo.CommitSha)"
 
     if (-not $SkipRestore) {
         if ($UseDotnetCli) {
             Invoke-LoggedCommand $DotnetPath @(
                 "restore",
                 $ProjectPath,
+                "--locked-mode",
                 "-p:Configuration=$Configuration",
                 "-p:Platform=$Platform"
             )
@@ -477,6 +520,7 @@ try {
             Invoke-LoggedCommand $MsBuildPath @(
                 $ProjectPath,
                 "/t:Restore",
+                "/p:RestoreLockedMode=true",
                 "/p:Configuration=$Configuration",
                 "/p:Platform=$Platform"
             )
@@ -498,6 +542,9 @@ try {
                 $Configuration,
                 "-p:Platform=$Platform",
                 "-p:PlatformTarget=$Platform",
+                "-p:Win7PosCommitSha=$($VersionInfo.CommitSha)",
+                "-p:Win7PosBuildVersion=$($VersionInfo.BuildVersion)",
+                "-p:Win7PosInformationalVersion=$($VersionInfo.InformationalVersion)",
                 "--no-restore"
             )
             Invoke-LoggedCommand $DotnetPath $buildArgs
@@ -508,7 +555,10 @@ try {
                 "/t:Build",
                 "/p:Configuration=$Configuration",
                 "/p:Platform=$Platform",
-                "/p:PlatformTarget=$Platform"
+                "/p:PlatformTarget=$Platform",
+                "/p:Win7PosCommitSha=$($VersionInfo.CommitSha)",
+                "/p:Win7PosBuildVersion=$($VersionInfo.BuildVersion)",
+                "/p:Win7PosInformationalVersion=$($VersionInfo.InformationalVersion)"
             )
         }
     }
@@ -541,7 +591,6 @@ try {
             throw "Expected executable not found after copy: $exe"
         }
 
-        $currentCommit = Get-GitValue @("rev-parse", "HEAD")
         $versionText = [System.IO.File]::ReadAllText((Join-Path $DistDir "VERSION.txt"))
         if (-not $currentCommit -or $versionText -notmatch ("(?m)^CommitSHA=" + [regex]::Escape($currentCommit) + "\s*$")) {
             throw "VERSION.txt does not match the build repository HEAD."
@@ -569,7 +618,14 @@ try {
     if (-not $DryRun) {
         Show-DropSummary
         $releaseCompletenessChecker = Join-Path $RepoRoot "scripts\check-release-pack-completeness.ps1"
-        & pwsh -NoProfile -File $releaseCompletenessChecker -ReleasePackSource $DistDir -WriteManifests -ExpectedCommitSha $currentCommit
+        $releaseCompletenessArguments = @(
+            "-NoProfile", "-File", $releaseCompletenessChecker,
+            "-ReleasePackSource", $DistDir,
+            "-WriteManifests",
+            "-ExpectedCommitSha", $currentCommit
+        )
+        if ($AllowDirty) { $releaseCompletenessArguments += "-AllowDirtyTreeState" }
+        & pwsh @releaseCompletenessArguments
         if ($LASTEXITCODE -ne 0) {
             throw "Release completeness validation failed before installer generation."
         }
@@ -586,13 +642,20 @@ try {
             throw "Inno Setup iscc.exe not found; -BuildInstaller cannot be satisfied."
         }
         if ($DryRun) {
-            Write-Host "[DRY-RUN] Would run installer compiler: $iscc $InstallerScript"
+            Write-Host "[DRY-RUN] Would validate pinned Inno Setup and compile: $($VersionInfo.InstallerBaseFilename).exe"
         }
         else {
+            $innoValidator = Join-Path $RepoRoot "scripts\win7pos\windows\test-inno-setup-toolchain.ps1"
+            & $innoValidator -IsccPath $iscc | Out-Null
             if (Test-Path -LiteralPath $InstallerOutput -PathType Leaf) {
                 Remove-Item -LiteralPath $InstallerOutput -Force
             }
-            Invoke-LoggedCommand $iscc @($InstallerScript)
+            Invoke-LoggedCommand $iscc @(
+                "/DMyAppVersion=$($VersionInfo.BuildVersion)",
+                "/DMyAppNumericVersion=$($VersionInfo.FileVersion)",
+                "/DMyAppOutputBaseFilename=$($VersionInfo.InstallerBaseFilename)",
+                $InstallerScript
+            )
             $InstallerGenerated = Test-Path -LiteralPath $InstallerOutput -PathType Leaf
             if (-not $InstallerGenerated) {
                 throw "Installer command finished but the expected fresh output was not found: $InstallerOutput"

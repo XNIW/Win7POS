@@ -232,12 +232,17 @@ function Test-ReleasePackSource([string]$source) {
 }
 
 $requiredRepoFiles = @(
+    "Directory.Build.props",
     "src/Win7POS.Wpf/Win7POS.Wpf.csproj",
     "src/Win7POS.Core/AppPaths.cs",
     "src/Win7POS.Core/PosPaths.cs",
     ".github/workflows/release-pack.yml",
     "installer/Win7POS.iss",
     "scripts/check-release-pack-completeness.ps1",
+    "scripts/win7pos/windows/resolve-release-version.ps1",
+    "scripts/win7pos/windows/inno-setup-toolchain.json",
+    "scripts/win7pos/windows/install-pinned-inno-setup.ps1",
+    "scripts/win7pos/windows/test-inno-setup-toolchain.ps1",
     "scripts/check-required-gates.ps1",
     "scripts/win7-smoke/check-win7-prereqs.ps1",
     "docs/WIN7_PRODUCTION_SMOKE_CHECKLIST.md"
@@ -255,6 +260,11 @@ if (-not $fail) {
     $appPaths = Read-Text "src/Win7POS.Core/AppPaths.cs"
     $workflow = Read-Text ".github/workflows/release-pack.yml"
     $installer = Read-Text "installer/Win7POS.iss"
+    $versionProps = Read-Text "Directory.Build.props"
+    $versionResolver = Read-Text "scripts/win7pos/windows/resolve-release-version.ps1"
+    $releaseBuilder = Read-Text "scripts/win7pos/windows/build-release-x86.ps1"
+    $innoInstaller = Read-Text "scripts/win7pos/windows/install-pinned-inno-setup.ps1"
+    $innoValidator = Read-Text "scripts/win7pos/windows/test-inno-setup-toolchain.ps1"
     $packCheck = Read-Text "scripts/check-release-pack-completeness.ps1"
     $requiredGates = Read-Text "scripts/check-required-gates.ps1"
     $smoke = Read-Text "docs/WIN7_PRODUCTION_SMOKE_CHECKLIST.md"
@@ -268,24 +278,31 @@ if (-not $fail) {
     Require-Text "Data root supports WIN7POS_DATA_DIR override" $paths "WIN7POS_DATA_DIR"
     Require-Text "AppPaths creates logs/backups/exports" $appPaths "LogsDirectory[\s\S]*BackupsDirectory[\s\S]*ExportsDirectory"
 
-    Require-Text "Release workflow uses deterministic .NET 10 SDK" $workflow 'dotnet-version:\s*"10\.0\.301"'
+    Require-Text "Release workflow uses the repository SDK pin" $workflow 'global-json-file:\s*global\.json'
+    Require-Text "Authoritative semantic version is defined once in root MSBuild props" $versionProps '<Win7PosVersion>\d+\.\d+\.\d+</Win7PosVersion>'
+    Require-Text "Assembly, file and informational versions derive from the authoritative version" $versionProps '<AssemblyVersion>\$\(Win7PosVersion\)\.0</AssemblyVersion>[\s\S]*<FileVersion>\$\(Win7PosVersion\)\.0</FileVersion>[\s\S]*<InformationalVersion>\$\(Win7PosInformationalVersion\)</InformationalVersion>'
+    Require-Text "Version resolver enforces exact protected vMAJOR.MINOR.PATCH tag match" $versionResolver "refs/tags/[\s\S]*vMAJOR\.MINOR\.PATCH[\s\S]*does not match authoritative version"
+    Require-Text "Release workflow resolves exact-SHA semantic version" $workflow 'resolve-release-version\.ps1[\s\S]*-CommitSha\s+\$env:WIN7POS_EXACT_SHA[\s\S]*-Ref\s+\$env:GITHUB_REF'
     Require-Text "Release workflow builds WPF Release x86" $workflow 'dotnet build src/Win7POS\.Wpf/Win7POS\.Wpf\.csproj[\s\S]*-c Release[\s\S]*-p:Platform=x86[\s\S]*-p:PlatformTarget=x86'
-    Require-Text "Release workflow copies WPF net48 x86 output" $workflow 'src/Win7POS\.Wpf/bin/x86/Release/net48'
-    Require-Text "Release workflow validates pack folder" $workflow 'check-release-pack-completeness\.ps1[\s\S]{0,500}"-ReleasePackSource",\s*"dist/Win7POS"'
-    Require-Text "Release workflow validates Win7 runtime folder through canonical gates" ($workflow + $requiredGates) 'check-required-gates\.ps1[\s\S]*check-win7-runtime-release-validation\.ps1'
-    Require-Text "Release workflow validates Win7 runtime zip" $workflow 'check-win7-runtime-release-validation\.ps1[\s\S]{0,500}"-ReleasePackSource",\s*\$zip'
-    Require-Text "Release workflow fails on every child-process exit" $workflow 'function\s+Invoke-CheckedProcess[\s\S]*LASTEXITCODE\s+-ne\s+0[\s\S]*throw'
-    Require-Text "Release workflow installs Inno Setup through Chocolatey" $workflow 'choco install innosetup --yes --no-progress'
-    Require-Text "Release workflow resolves and exports ISCC" $workflow 'ISCC_EXE=\$iscc[\s\S]*GITHUB_ENV[\s\S]*\$env:ISCC_EXE'
-    Require-Text "Release workflow validates ISCC without a nonzero help command" $workflow 'VersionInfo\.FileVersion[\s\S]*ISCC ready'
-    Require-Text "Release workflow requires a fresh exact installer artifact" $workflow 'installer/output/Win7POS-Setup\.exe[\s\S]*Remove-Item[\s\S]*ISCC failed[\s\S]*Fresh installer output missing'
+    Require-Text "Release workflow delegates the fresh x86 pack to the canonical builder" $workflow 'build-release-x86\.ps1[\s\S]*-Configuration\s+Release[\s\S]*-Platform\s+x86[\s\S]*-BuildInstaller'
+    Require-Text "Canonical builder copies WPF net48 x86 output" $releaseBuilder 'Win7POS\.Wpf\\bin\\\{0\}\\\{1\}\\net48[\s\S]*Copy-Item[\s\S]*\$resolvedOutputDir'
+    Require-Text "Canonical builder validates the pack folder" $releaseBuilder 'check-release-pack-completeness\.ps1[\s\S]*-ReleasePackSource\s+\$DistDir'
+    Require-Text "Release workflow runs canonical repository gates" $workflow 'check-required-gates\.ps1'
+    Require-Text "Canonical builder validates the Win7 runtime folder" $releaseBuilder 'check-win7-runtime-release-validation\.ps1[\s\S]*-ReleasePackSource\s+\$DistDir'
+    Require-Text "Release workflow validates Win7 runtime zip" $workflow 'check-win7-runtime-release-validation\.ps1[\s\S]{0,500}-ReleasePackSource\s+\$zip'
+    Require-Text "Canonical builder fails on every child-process exit" $releaseBuilder 'function\s+Invoke-LoggedCommand[\s\S]*LASTEXITCODE\s+-ne\s+0[\s\S]*throw'
+    Require-Text "Release workflow installs only the pinned Inno Setup toolchain" $workflow 'install-pinned-inno-setup\.ps1[\s\S]*GITHUB_ENV[\s\S]*ISCC_EXE'
+    Require-Text "Pinned Inno Setup download is hash-verified before execution" $innoValidator 'Get-FileHash[\s\S]*installer SHA-256 mismatch'
+    Require-Text "Pinned Inno Setup installer is validated before execution" $innoInstaller 'validator[\s\S]*-InstallerPath[\s\S]*Start-Process'
+    Require-Text "Installed Inno compiler version is verified exactly" $innoValidator 'VER != EncodeVer[\s\S]*Installed Inno Setup compiler is not exact version'
+    Require-Text "Release workflow uses versioned installer artifact name" $workflow 'WIN7POS_INSTALLER_BASE_FILENAME'
     Require-Text "Release workflow fails when expected artifacts are absent" $workflow 'if-no-files-found:\s*error'
 
-    if ($workflow -match 'jrsoftware\.org/download\.php|Invoke-WebRequest[\s\S]{0,200}innosetup') {
-        Fail "Release workflow must not execute an unverified dynamic Inno Setup download"
+    if ($workflow -match '(?i)choco(?:latey)?\s+install\s+innosetup|jrsoftware\.org/download\.php') {
+        Fail "Release workflow must not use floating or unverified Inno Setup installation"
     }
     else {
-        Pass "Release workflow avoids unverified dynamic Inno Setup downloads"
+        Pass "Release workflow avoids floating or unverified Inno Setup installation"
     }
 
     if ($workflow -match 'Copy-Item[\s\S]{0,160}Win7POS\.Cli') {
@@ -301,6 +318,9 @@ if (-not $fail) {
     Require-Text "Pack check forbids CLI deps/runtimeconfig/pdb" $packCheck "Win7POS\.Cli\.deps\.json[\s\S]*Win7POS\.Cli\.runtimeconfig\.json[\s\S]*Win7POS\.Cli\.pdb"
 
     Require-Text "Installer requires Windows 7 SP1" $installer "(?m)^MinVersion=6\.1sp1\r?$"
+    Require-Text "Installer requires exact pinned Inno Setup compiler version" $installer '#if VER != EncodeVer\(6,7,3\)'
+    Require-Text "Installer version must be supplied by authoritative resolver" $installer '#ifndef MyAppVersion[\s\S]*#ifndef MyAppNumericVersion[\s\S]*#ifndef MyAppOutputBaseFilename'
+    Require-Text "Installer app and output versions use supplied values" $installer 'AppVersion=\{#MyAppVersion\}[\s\S]*VersionInfoVersion=\{#MyAppNumericVersion\}[\s\S]*OutputBaseFilename=\{#MyAppOutputBaseFilename\}'
     Require-Text "Installer checks .NET 4.8 release key" $installer "IsDotNet48OrLaterInstalled[\s\S]*ReleaseValue\s*>=\s*528040"
     Require-Text "Installer checks VC++ x86 runtime" $installer "VisualStudio\\14\.0\\VC\\Runtimes\\x86"
     Require-Text "Installer requires admin" $installer "(?m)^PrivilegesRequired=admin\r?$"

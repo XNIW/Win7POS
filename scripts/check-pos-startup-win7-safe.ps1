@@ -221,6 +221,7 @@ $startupTrace = Read-Text "src/Win7POS.Wpf/Infrastructure/StartupTrace.cs"
 $catalogPull = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosLocalization.cs"
 $workflow = Read-Text ".github/workflows/release-pack.yml"
+$releaseBuilder = Read-Text "scripts/win7pos/windows/build-release-x86.ps1"
 $installer = Read-Text "installer/Win7POS.iss"
 
 if ($translations -match 'private\s+static\s+readonly\s+Dictionary<[^;]+>\s+Translations\s*=\s*CreateTranslations\(\)\s*;') {
@@ -546,9 +547,10 @@ else {
 }
 
 if ($workflow -notmatch "check-required-gates\.ps1" -or
-    $workflow -notmatch 'check-release-pack-completeness\.ps1[\s\S]{0,500}"-ReleasePackSource",\s*"dist/Win7POS"' -or
-    $workflow -notmatch 'check-required-gates\.ps1[\s\S]{0,500}"-ReleasePackSource",\s*"dist/Win7POS"' -or
-    $workflow -notmatch 'Invoke-CheckedProcess[\s\S]*LASTEXITCODE\s+-ne\s+0') {
+    $workflow -notmatch 'build-release-x86\.ps1[\s\S]*-BuildInstaller' -or
+    $releaseBuilder -notmatch 'check-release-pack-completeness\.ps1[\s\S]*-ReleasePackSource\s+\$DistDir' -or
+    $releaseBuilder -notmatch 'check-win7-runtime-release-validation\.ps1[\s\S]*-ReleasePackSource\s+\$DistDir' -or
+    $releaseBuilder -notmatch 'Invoke-LoggedCommand[\s\S]*LASTEXITCODE\s+-ne\s+0[\s\S]*throw') {
     Fail "ReleasePack workflow does not run startup and package validators"
 }
 else {

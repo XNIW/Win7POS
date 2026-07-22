@@ -6,7 +6,12 @@ param(
     [string]$SdkVersion = "unknown",
     [string]$CommitSha = "",
     [string]$Ref = "",
-    [string]$GitHubRunNumber = ""
+    [string]$GitHubRunNumber = "",
+    [string]$BuildVersion = "",
+    [string]$AssemblyVersion = "",
+    [string]$FileVersion = "",
+    [string]$InformationalVersion = "",
+    [string]$InstallerBaseFilename = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -34,9 +39,38 @@ if ($CommitSha -notmatch '^[0-9a-fA-F]{40}$') {
 }
 
 if ([string]::IsNullOrWhiteSpace($Ref)) {
-    $Ref = Get-GitText @("rev-parse", "--abbrev-ref", "HEAD")
+    $Ref = if ($env:GITHUB_REF) { $env:GITHUB_REF } else { Get-GitText @("rev-parse", "--abbrev-ref", "HEAD") }
 }
 if ([string]::IsNullOrWhiteSpace($Ref)) { $Ref = "unknown" }
+
+$versionResolver = Join-Path $PSScriptRoot "resolve-release-version.ps1"
+$resolvedVersionJson = & $versionResolver `
+    -RepoRoot $repoRoot `
+    -CommitSha $CommitSha `
+    -Ref $Ref `
+    -AsJson
+$resolvedVersion = $resolvedVersionJson | ConvertFrom-Json
+
+foreach ($suppliedVersion in @(
+    @{ Name = "BuildVersion"; Supplied = $BuildVersion; Expected = $resolvedVersion.BuildVersion },
+    @{ Name = "AssemblyVersion"; Supplied = $AssemblyVersion; Expected = $resolvedVersion.AssemblyVersion },
+    @{ Name = "FileVersion"; Supplied = $FileVersion; Expected = $resolvedVersion.FileVersion },
+    @{ Name = "InformationalVersion"; Supplied = $InformationalVersion; Expected = $resolvedVersion.InformationalVersion },
+    @{ Name = "InstallerBaseFilename"; Supplied = $InstallerBaseFilename; Expected = $resolvedVersion.InstallerBaseFilename }
+)) {
+    if (-not [string]::IsNullOrWhiteSpace($suppliedVersion.Supplied) -and
+        -not [string]::Equals($suppliedVersion.Supplied, $suppliedVersion.Expected, [StringComparison]::Ordinal)) {
+        throw "$($suppliedVersion.Name) '$($suppliedVersion.Supplied)' does not match authoritative value '$($suppliedVersion.Expected)'."
+    }
+}
+$BuildVersion = $resolvedVersion.BuildVersion
+$AssemblyVersion = $resolvedVersion.AssemblyVersion
+$FileVersion = $resolvedVersion.FileVersion
+$InformationalVersion = $resolvedVersion.InformationalVersion
+$InstallerBaseFilename = $resolvedVersion.InstallerBaseFilename
+
+$innoToolchainPath = Join-Path $PSScriptRoot "inno-setup-toolchain.json"
+$innoToolchain = [System.IO.File]::ReadAllText($innoToolchainPath) | ConvertFrom-Json
 
 $shortSha = $CommitSha.Substring(0, 12)
 $treeState = "unknown"
@@ -50,6 +84,12 @@ catch { }
 
 $version = @(
     "Win7POS Windows x86 release pack",
+    "ProductVersion=$($resolvedVersion.ProductVersion)",
+    "BuildVersion=$BuildVersion",
+    "AssemblyVersion=$AssemblyVersion",
+    "FileVersion=$FileVersion",
+    "InformationalVersion=$InformationalVersion",
+    "InstallerBaseFilename=$InstallerBaseFilename",
     "CommitSHA=$CommitSha",
     "ShortSHA=$shortSha",
     "Ref=$Ref",
@@ -57,6 +97,9 @@ $version = @(
     "Configuration=$Configuration",
     "Platform=$Platform",
     "SdkVersion=$SdkVersion",
+    "InnoSetupVersion=$($innoToolchain.version)",
+    "InnoSetupInstallerSHA256=$($innoToolchain.installerSha256)",
+    "InnoSetupInstallerSize=$($innoToolchain.installerSize)",
     "TreeState=$treeState"
 )
 if (-not [string]::IsNullOrWhiteSpace($GitHubRunNumber)) {

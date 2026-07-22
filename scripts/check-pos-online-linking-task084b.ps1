@@ -296,7 +296,7 @@ if (($workflow + $supportWriter) -notmatch "set-admin-web-staging-url\.bat" -or
     Pass "ReleasePack staging helper present and safe"
 }
 
-if ($workflow -notmatch "write-release-support-files\.ps1" -or
+if ($workflow -notmatch "build-release-x86\.ps1" -or
     $localReleaseBuilder -notmatch "write-release-support-files\.ps1" -or
     $supportWriter -notmatch "README_RUN\.txt" -or
     $supportWriter -notmatch "RELEASE_CHECKLIST\.txt" -or
