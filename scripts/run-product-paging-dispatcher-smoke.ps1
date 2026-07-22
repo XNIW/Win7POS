@@ -25,13 +25,17 @@ if (-not $dataDir.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase)) 
 }
 New-Item -ItemType Directory -Path $dataDir | Out-Null
 
+$quotedDataDir = '"' + $dataDir.Replace('"', '\"') + '"'
 $process = Start-Process `
     -FilePath $harnessExe `
-    -ArgumentList @("--data-dir", $dataDir, "--product-paging-dispatcher-smoke") `
-    -Wait `
+    -ArgumentList @("--data-dir", $quotedDataDir, "--product-paging-dispatcher-smoke") `
     -PassThru `
     -WindowStyle Hidden
 $artifact = Join-Path $dataDir "product-paging-dispatcher-smoke.txt"
+if (-not $process.WaitForExit(180000)) {
+    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    throw "Product paging dispatcher smoke exceeded its 180-second timeout. Artifact: $artifact"
+}
 if ($process.ExitCode -ne 0) {
     throw "Product paging dispatcher smoke failed with exit code $($process.ExitCode). Artifact: $artifact"
 }
