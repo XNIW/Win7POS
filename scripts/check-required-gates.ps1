@@ -19,6 +19,7 @@ $sourceGates = @(
     "check-pos-unified-login-ux.ps1",
     "check-pos-login-logging.ps1",
     "check-pos-debug-logging.ps1",
+    "check-bounded-async-logging.ps1",
     "check-pos-first-login-sale-safe-ui.ps1",
     "check-pos-online-bootstrap.ps1",
     "check-pos-online-client.ps1",

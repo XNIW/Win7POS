@@ -1,8 +1,6 @@
 using System;
-using System.IO;
 using System.Text;
-using System.Text.RegularExpressions;
-using Win7POS.Core;
+using Win7POS.Core.Logging;
 
 namespace Win7POS.Wpf.Infrastructure
 {
@@ -14,9 +12,12 @@ namespace Win7POS.Wpf.Infrastructure
     /// </summary>
     public sealed class FileLogger
     {
-        private const long MaxLogBytes = 5L * 1024L * 1024L;
-        private const int RetainedLogFiles = 5;
-        private static readonly object _writeLock = new object();
+        private const int MaxExceptionDepth = 10;
+        private const int MaxExceptions = 16;
+        private const int MaxExceptionFieldChars = 4096;
+        private const int MaxFormattedExceptionChars = 32 * 1024;
+        private const int MaxExceptionOperationChars = 1024;
+        private const int MaxExceptionLogChars = 3072;
         private readonly string _source;
 
         public FileLogger(string source = null)
@@ -26,74 +27,216 @@ namespace Win7POS.Wpf.Infrastructure
 
         public void LogInfo(string message)
         {
-            WriteLine("INFO", _source, message ?? string.Empty, null);
+            WriteLine(LogLevel.Info, _source, message ?? string.Empty);
         }
 
         public void LogWarning(string message, Exception ex = null)
         {
-            var detail = message ?? string.Empty;
-            if (ex != null)
-                detail += " | " + FormatExceptionFull(ex);
-            WriteLine("WARN", _source, detail, null);
+            try
+            {
+                WriteLine(
+                    LogLevel.Warning,
+                    _source,
+                    ComposeExceptionDetail(message, ex));
+            }
+            catch
+            {
+                // Exception formatting and logging must never break POS flow.
+            }
         }
 
         /// <summary>Log con contesto operazione. Per debug: cerca [Source.Method] o operazione nel log.</summary>
         public void LogError(Exception ex, string operation)
         {
-            var detail = (operation ?? string.Empty);
-            if (ex != null)
-                detail += " | " + FormatExceptionFull(ex);
-            WriteLine("ERROR", _source, detail, ex);
+            try
+            {
+                WriteLine(
+                    LogLevel.Error,
+                    _source,
+                    ComposeExceptionDetail(operation, ex));
+            }
+            catch
+            {
+                // Exception formatting and logging must never break POS flow.
+            }
         }
 
         /// <summary>Formato eccezione completo: tipo, messaggio, stack, inner/aggregate exceptions.</summary>
         public static string FormatExceptionFull(Exception ex)
         {
             if (ex == null) return "";
-            var sb = new StringBuilder();
-            AppendException(sb, ex, 0, 10);
-            return sb.ToString();
+            try
+            {
+                var sb = new StringBuilder();
+                var exceptionCount = 0;
+                AppendException(
+                    sb,
+                    ex,
+                    depth: 0,
+                    maxDepth: MaxExceptionDepth,
+                    ref exceptionCount,
+                    maxExceptions: MaxExceptions);
+                return sb.ToString();
+            }
+            catch
+            {
+                return "[exception-formatting-unavailable]";
+            }
         }
 
-        private static void AppendException(StringBuilder sb, Exception ex, int depth, int maxDepth)
+        internal static bool Shutdown(TimeSpan timeout)
         {
-            if (ex == null || depth >= maxDepth) return;
-            if (depth > 0) sb.Append(" ---INNER--- ");
-            sb.Append(ex.GetType().FullName ?? "Exception");
-            sb.Append(": ");
-            sb.Append(ex.Message ?? "");
-            sb.Append(" | StackTrace: ");
-            sb.Append(ex.StackTrace ?? "(nessuno)");
-
-            if (ex is AggregateException agg && agg.InnerExceptions?.Count > 0)
-            {
-                foreach (var inner in agg.InnerExceptions)
-                {
-                    if (depth + 1 >= maxDepth) break;
-                    sb.Append(" ---AGGREGATE--- ");
-                    AppendException(sb, inner, depth + 1, maxDepth);
-                }
-            }
-            else if (ex.InnerException != null)
-            {
-                AppendException(sb, ex.InnerException, depth + 1, maxDepth);
-            }
+            return ProcessFileLog.Shutdown(timeout);
         }
 
-        private static void WriteLine(string level, string source, string message, Exception ex)
+        public static LogWriterMetrics GetMetrics()
+        {
+            return ProcessFileLog.GetMetrics();
+        }
+
+        private static string ComposeExceptionDetail(string operation, Exception ex)
+        {
+            if (ex == null)
+            {
+                return operation ?? string.Empty;
+            }
+
+            var safeOperation = LogSanitizer.Sanitize(
+                operation,
+                MaxExceptionOperationChars);
+            var safeException = LogSanitizer.Sanitize(
+                FormatExceptionFull(ex),
+                MaxExceptionLogChars);
+            return safeOperation + " | " + safeException;
+        }
+
+        private static void AppendException(
+            StringBuilder sb,
+            Exception ex,
+            int depth,
+            int maxDepth,
+            ref int exceptionCount,
+            int maxExceptions)
+        {
+            if (ex == null || depth >= maxDepth || exceptionCount >= maxExceptions ||
+                sb.Length >= MaxFormattedExceptionChars)
+            {
+                return;
+            }
+
+            exceptionCount++;
+            if (depth > 0)
+            {
+                AppendBounded(sb, " ---INNER--- ", MaxFormattedExceptionChars);
+            }
+
+            AppendBounded(
+                sb,
+                SafeExceptionType(ex),
+                MaxExceptionFieldChars);
+            AppendBounded(sb, ": ", MaxFormattedExceptionChars);
+            AppendBounded(sb, SafeExceptionMessage(ex), MaxExceptionFieldChars);
+            AppendBounded(sb, " | StackTrace: ", MaxFormattedExceptionChars);
+            AppendBounded(sb, SafeExceptionStackTrace(ex), MaxExceptionFieldChars);
+
+            var aggregate = ex as AggregateException;
+            if (aggregate != null && aggregate.InnerExceptions != null &&
+                aggregate.InnerExceptions.Count > 0)
+            {
+                for (var index = 0;
+                     index < aggregate.InnerExceptions.Count &&
+                     depth + 1 < maxDepth &&
+                     exceptionCount < maxExceptions &&
+                     sb.Length < MaxFormattedExceptionChars;
+                     index++)
+                {
+                    AppendBounded(sb, " ---AGGREGATE--- ", MaxFormattedExceptionChars);
+                    AppendException(
+                        sb,
+                        aggregate.InnerExceptions[index],
+                        depth + 1,
+                        maxDepth,
+                        ref exceptionCount,
+                        maxExceptions);
+                }
+
+                return;
+            }
+
+            AppendException(
+                sb,
+                SafeInnerException(ex),
+                depth + 1,
+                maxDepth,
+                ref exceptionCount,
+                maxExceptions);
+        }
+
+        private static string SafeExceptionType(Exception ex)
         {
             try
             {
-                AppPaths.EnsureDataDirectories();
-                var prefix = string.IsNullOrEmpty(source)
-                    ? $"[{level}]"
-                    : $"[{level}][{source}]";
-                var line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") + " " + prefix + " " + Sanitize(message) + Environment.NewLine;
-                lock (_writeLock)
-                {
-                    RotateIfNeeded();
-                    File.AppendAllText(AppPaths.LogPath, line, Encoding.UTF8);
-                }
+                return ex.GetType().FullName ?? "Exception";
+            }
+            catch
+            {
+                return "[exception-type-unavailable]";
+            }
+        }
+
+        private static string SafeExceptionMessage(Exception ex)
+        {
+            try
+            {
+                return ex.Message ?? string.Empty;
+            }
+            catch
+            {
+                return "[exception-message-unavailable]";
+            }
+        }
+
+        private static string SafeExceptionStackTrace(Exception ex)
+        {
+            try
+            {
+                return ex.StackTrace ?? "(nessuno)";
+            }
+            catch
+            {
+                return "[exception-stack-unavailable]";
+            }
+        }
+
+        private static Exception SafeInnerException(Exception ex)
+        {
+            try
+            {
+                return ex.InnerException;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void AppendBounded(StringBuilder sb, string value, int fieldLimit)
+        {
+            if (string.IsNullOrEmpty(value) || sb.Length >= MaxFormattedExceptionChars)
+            {
+                return;
+            }
+
+            var remaining = MaxFormattedExceptionChars - sb.Length;
+            var take = Math.Min(Math.Min(value.Length, fieldLimit), remaining);
+            sb.Append(value, 0, take);
+        }
+
+        private static void WriteLine(LogLevel level, string source, string message)
+        {
+            try
+            {
+                ProcessFileLog.TryWrite(level, source, message);
             }
             catch
             {
@@ -103,88 +246,7 @@ namespace Win7POS.Wpf.Infrastructure
 
         private static string Sanitize(string value)
         {
-            var sanitized = value ?? string.Empty;
-            sanitized = Regex.Replace(
-                sanitized,
-                @"(?i)(session[_-]?token|device[_-]?token|trusted[_-]?device[_-]?token|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|apikey|token|pin|password|credential|pwd|db_password|database password)\s*[:=]\s*\S+",
-                "$1=[redacted]");
-            sanitized = Regex.Replace(
-                sanitized,
-                @"(?i)(""?(session[_-]?token|device[_-]?token|trusted[_-]?device[_-]?token|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|apikey|token|pin|password|credential|pwd|db_password|database password)""?\s*:\s*"")[^""]+("")",
-                "$1[redacted]$3");
-            sanitized = Regex.Replace(
-                sanitized,
-                @"(?i)(;?\s*(?:Pwd|Password|DB Password|Database Password)\s*=\s*)[^;|\s]+",
-                "$1[redacted]");
-            sanitized = Regex.Replace(
-                sanitized,
-                @"(?i)(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+/-]+=*",
-                "$1[redacted]");
-            sanitized = Regex.Replace(
-                sanitized,
-                @"(?i)mcpos_(device|session)_[A-Za-z0-9_-]+",
-                "mcpos_$1_[redacted]");
-            sanitized = Regex.Replace(
-                sanitized,
-                @"(?i)\b(?:sk[-_]|sb_secret_)[A-Za-z0-9_-]{12,}\b",
-                "[secret-redacted]");
-            sanitized = Regex.Replace(
-                sanitized,
-                @"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b",
-                "[jwt-redacted]");
-            sanitized = Regex.Replace(
-                sanitized,
-                @"(?is)-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----.*?(?:-----END (?:RSA |OPENSSH |EC )?PRIVATE KEY-----|\z)",
-                "[private-key-redacted]");
-            sanitized = Regex.Replace(sanitized, @"[A-Za-z]:\\[^\s|]+", "[path]");
-            sanitized = Regex.Replace(sanitized, @"/(?:Users|private|tmp|var)/[^\s|]+", "[path]");
-            return sanitized;
-        }
-
-        private static void RotateIfNeeded()
-        {
-            var logPath = AppPaths.LogPath;
-            if (!File.Exists(logPath))
-            {
-                return;
-            }
-
-            var info = new FileInfo(logPath);
-            if (info.Length < MaxLogBytes)
-            {
-                return;
-            }
-
-            for (var i = RetainedLogFiles - 1; i >= 1; i--)
-            {
-                var source = RotatedPath(i);
-                var target = RotatedPath(i + 1);
-
-                if (!File.Exists(source))
-                {
-                    continue;
-                }
-
-                if (File.Exists(target))
-                {
-                    File.Delete(target);
-                }
-
-                File.Move(source, target);
-            }
-
-            var firstArchive = RotatedPath(1);
-            if (File.Exists(firstArchive))
-            {
-                File.Delete(firstArchive);
-            }
-
-            File.Move(logPath, firstArchive);
-        }
-
-        private static string RotatedPath(int index)
-        {
-            return AppPaths.LogPath + "." + index.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            return LogSanitizer.Sanitize(value);
         }
     }
 }

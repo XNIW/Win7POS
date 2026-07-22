@@ -116,7 +116,15 @@ namespace Win7POS.Wpf
                 _logger.LogWarning("Single-instance guard release skipped.", ex);
             }
 
-            base.OnExit(e);
+            try
+            {
+                base.OnExit(e);
+            }
+            finally
+            {
+                _logger.LogInfo("App.OnExit completed; bounded log flush requested.");
+                FileLogger.Shutdown(TimeSpan.FromMilliseconds(750));
+            }
         }
 
         protected override void OnSessionEnding(SessionEndingCancelEventArgs e)

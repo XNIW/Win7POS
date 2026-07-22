@@ -3,10 +3,10 @@ using System.IO;
 using System.Linq;
 using System.Runtime.Serialization.Json;
 using System.Text;
-using System.Text.RegularExpressions;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core;
+using Win7POS.Core.Logging;
 using Win7POS.Core.Online;
 using Win7POS.Core.Security;
 using Win7POS.Data.Migrations;
@@ -16,8 +16,6 @@ namespace Win7POS.Data
 {
     public static class DbInitializer
     {
-        private static readonly object MigrationLogLock = new object();
-
         public static void EnsureCreated(PosDbOptions opt)
         {
             SQLitePCL.Batteries_V2.Init();
@@ -1307,25 +1305,42 @@ ORDER BY permission_code;",
 
         private static void LogMigrationFailure(Exception ex)
         {
-            var detail = ex == null
-                ? "migration failed"
-                : "migration failed: " + ex.GetType().FullName + ": " + ex.Message;
-            WriteMigrationLog("ERROR", detail);
+            if (ex == null)
+            {
+                WriteMigrationLog("ERROR", "migration failed");
+                return;
+            }
+
+            try
+            {
+                var safeType = LogSanitizer.SanitizeSource(
+                    ex.GetType().FullName ?? "Exception");
+                var safeMessage = SanitizeLogMessage(ex.Message);
+                WriteMigrationLog(
+                    "ERROR",
+                    "migration failed: " + safeType + ": " + safeMessage);
+            }
+            catch
+            {
+                WriteMigrationLog(
+                    "ERROR",
+                    "migration failed: exception detail unavailable");
+            }
         }
 
         private static void WriteMigrationLog(string level, string message)
         {
             try
             {
-                AppPaths.EnsureDataDirectories();
-                var line = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss.fff") +
-                    " [" + level + "][DbInitializer] " +
-                    SanitizeLogMessage(message ?? string.Empty) +
-                    Environment.NewLine;
-                lock (MigrationLogLock)
-                {
-                    File.AppendAllText(AppPaths.LogPath, line, Encoding.UTF8);
-                }
+                var logLevel = string.Equals(level, "ERROR", StringComparison.Ordinal)
+                    ? LogLevel.Error
+                    : string.Equals(level, "WARN", StringComparison.Ordinal)
+                        ? LogLevel.Warning
+                        : LogLevel.Info;
+                ProcessFileLog.TryWrite(
+                    logLevel,
+                    "DbInitializer",
+                    SanitizeLogMessage(message));
             }
             catch
             {
@@ -1335,23 +1350,7 @@ ORDER BY permission_code;",
 
         private static string SanitizeLogMessage(string value)
         {
-            var sanitized = (value ?? string.Empty).Replace("\r", " ").Replace("\n", " ");
-            sanitized = Regex.Replace(
-                sanitized,
-                @"(?i)(session[_-]?token|device[_-]?token|trusted[_-]?device[_-]?token|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|apikey|token|pin|password|credential|pwd|db_password|database password)\s*[:=]\s*\S+",
-                "$1=[redacted]");
-            sanitized = Regex.Replace(
-                sanitized,
-                @"(?i)(""?(session[_-]?token|device[_-]?token|trusted[_-]?device[_-]?token|access[_-]?token|refresh[_-]?token|client[_-]?secret|api[_-]?key|apikey|token|pin|password|credential|pwd|db_password|database password)""?\s*:\s*"")[^""]+("")",
-                "$1[redacted]$3");
-            sanitized = Regex.Replace(sanitized, @"(?i)(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+/-]+=*", "$1[redacted]");
-            sanitized = Regex.Replace(sanitized, @"(?i)mcpos_(device|session)_[A-Za-z0-9_-]+", "mcpos_$1_[redacted]");
-            sanitized = Regex.Replace(sanitized, @"(?i)\b(?:sk[-_]|sb_secret_)[A-Za-z0-9_-]{12,}\b", "[secret-redacted]");
-            sanitized = Regex.Replace(sanitized, @"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b", "[jwt-redacted]");
-            sanitized = Regex.Replace(sanitized, @"(?is)-----BEGIN (?:RSA |OPENSSH |EC )?PRIVATE KEY-----.*?(?:-----END (?:RSA |OPENSSH |EC )?PRIVATE KEY-----|\z)", "[private-key-redacted]");
-            sanitized = Regex.Replace(sanitized, @"[A-Za-z]:\\[^\r\n|]+", "[path]");
-            sanitized = Regex.Replace(sanitized, @"/(?:Users|private|tmp|var)/[^\r\n|]+", "[path]");
-            return sanitized;
+            return LogSanitizer.Sanitize(value);
         }
 
         private sealed class TableInfoRow

@@ -16,7 +16,9 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Dapper;
+using Win7POS.Core;
 using Win7POS.Core.Models;
+using Win7POS.Core.Logging;
 using Win7POS.Core.Online;
 using Win7POS.Core.Security;
 using Win7POS.Data;
@@ -88,6 +90,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var automatedRun = HasArg(args, "--seed") ||
                                HasArg(args, "--authorization-lease-smoke") ||
                                HasArg(args, "--product-paging-dispatcher-smoke") ||
+                               HasArg(args, "--bounded-logging-smoke") ||
                                HasArg(args, "--supplier-excel-wpf-viewmodel-smoke") ||
                                HasArg(args, "--offline-sales-sandbox") ||
                                HasArg(args, "--shell-window-state") ||
@@ -138,6 +141,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         var result = await ProductPagingWpfSmoke.RunAsync().ConfigureAwait(true);
                         File.WriteAllText(
                             Path.Combine(dataDir, "product-paging-dispatcher-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
+                    if (HasArg(args, "--bounded-logging-smoke"))
+                    {
+                        var result = BoundedLoggingWpfSmoke.Run(dataDir);
+                        File.WriteAllText(
+                            Path.Combine(dataDir, "bounded-logging-smoke.txt"),
                             result,
                             Encoding.UTF8);
                         app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
@@ -4747,6 +4761,446 @@ INSERT INTO app_settings(key,value) VALUES(@key,@value)
 ON CONFLICT(key) DO UPDATE SET value=excluded.value;",
                     new { key, value }, tx);
             }
+        }
+    }
+
+    internal static class BoundedLoggingWpfSmoke
+    {
+        private const int FloodCount = 100000;
+        private const int FloodCapacity = 256;
+        private const int FloodInfoLimit = 128;
+        private const int FloodWarningLimit = 224;
+        private const int MaxLengthFloodSampleCount = 2048;
+        private const long MaxFloodPrivateBytesGrowth = 32L * 1024L * 1024L;
+        private const double MaxProducerP95Microseconds = 5000d;
+        private const double MaxProducerCallMicroseconds = 250000d;
+        private static readonly TimeSpan FacadeFlushTimeout = TimeSpan.FromSeconds(3);
+
+        internal static string Run(string dataDir)
+        {
+            try
+            {
+                if (IntPtr.Size != 4)
+                    throw new InvalidOperationException("Bounded logging smoke must run as x86.");
+
+                var facadeEvidence = VerifySharedFacadeAndRedaction();
+                var rotationFiles = VerifyRotation(dataDir);
+                var flood = VerifyBoundedFlood();
+
+                return "PASS bounded async logging x86; " +
+                       "facade_written=" + facadeEvidence.Written.ToString(CultureInfo.InvariantCulture) +
+                       " rotation_files=" + rotationFiles.ToString(CultureInfo.InvariantCulture) +
+                       " accepted=" + flood.Accepted.ToString(CultureInfo.InvariantCulture) +
+                       " dropped=" + flood.Dropped.ToString(CultureInfo.InvariantCulture) +
+                       " highWater=" + flood.HighWater.ToString(CultureInfo.InvariantCulture) +
+                       " max_length_samples=" + MaxLengthFloodSampleCount.ToString(CultureInfo.InvariantCulture) +
+                       " producer_ms=" + flood.ProducerMilliseconds.ToString(CultureInfo.InvariantCulture) +
+                       " producer_p95_us=" + flood.ProducerP95Microseconds.ToString("F2", CultureInfo.InvariantCulture) +
+                       " producer_max_us=" + flood.ProducerMaxMicroseconds.ToString("F2", CultureInfo.InvariantCulture) +
+                       " private_delta_bytes=" + flood.PrivateBytesGrowth.ToString(CultureInfo.InvariantCulture) +
+                       " private_bytes_after=" + flood.PrivateBytesAfter.ToString(CultureInfo.InvariantCulture) +
+                       " private_high_water_observed_bytes=" + flood.PrivateHighWaterObservedBytes.ToString(CultureInfo.InvariantCulture) +
+                       " private_high_water_delta_bytes=" + flood.PrivateHighWaterGrowth.ToString(CultureInfo.InvariantCulture) +
+                       " peak_paged_bytes=" + flood.PeakPagedBytes.ToString(CultureInfo.InvariantCulture) +
+                       " peak_working_set_bytes=" + flood.PeakWorkingSetBytes.ToString(CultureInfo.InvariantCulture) +
+                       " worker_alive_after_shutdown=false.";
+            }
+            catch (Exception ex)
+            {
+                return "FAIL bounded async logging x86: " +
+                       ex.GetType().Name + ": " + ex.Message;
+            }
+        }
+
+        private static FacadeEvidence VerifySharedFacadeAndRedaction()
+        {
+            const string passwordSecret = "FacadePasswordSecret123456"; // gitleaks:allow -- synthetic redaction-test value
+            const string tokenSecret = "FacadeTokenSecret123456"; // gitleaks:allow -- synthetic redaction-test value
+            var first = new FileLogger("BoundedSmoke-A");
+            var second = new FileLogger("BoundedSmoke-B");
+
+            first.LogInfo(
+                "facade-one password=" + passwordSecret +
+                "\r\nforged-line");
+            second.LogWarning("facade-two access_token=" + tokenSecret);
+
+            var hostileException = new HostileLogException();
+            var hostileFormatted = FileLogger.FormatExceptionFull(hostileException);
+            if (hostileFormatted.IndexOf(
+                    "[exception-message-unavailable]",
+                    StringComparison.Ordinal) < 0 ||
+                hostileFormatted.IndexOf(
+                    "[exception-stack-unavailable]",
+                    StringComparison.Ordinal) < 0)
+            {
+                throw new InvalidOperationException(
+                    "Hostile exception getters were not formatted with safe fallbacks.");
+            }
+            second.LogError(hostileException, "hostile-exception-getter-smoke");
+
+            var aggregateChildren = Enumerable.Range(0, 64)
+                .Select(index => (Exception)new InvalidOperationException(
+                    "aggregate-child-" + index.ToString(CultureInfo.InvariantCulture)))
+                .ToArray();
+            var formatted = FileLogger.FormatExceptionFull(
+                new AggregateException("bounded aggregate", aggregateChildren));
+            if (formatted.Length > 32 * 1024 ||
+                formatted.IndexOf("aggregate-child-40", StringComparison.Ordinal) >= 0)
+            {
+                throw new InvalidOperationException("Aggregate exception expansion was not bounded.");
+            }
+
+            if (!FileLogger.Shutdown(FacadeFlushTimeout))
+                throw new InvalidOperationException("Process logger did not flush within its bounded timeout.");
+
+            var metrics = FileLogger.GetMetrics();
+            if (metrics.AcceptedTotal != 3 ||
+                metrics.WrittenTotal != metrics.AcceptedTotal ||
+                metrics.CurrentPending != 0 ||
+                metrics.IsAccepting ||
+                metrics.IsWriterAlive)
+            {
+                throw new InvalidOperationException("Process logger lifecycle metrics were inconsistent.");
+            }
+
+            var logText = File.ReadAllText(AppPaths.LogPath);
+            if (logText.IndexOf(passwordSecret, StringComparison.Ordinal) >= 0 ||
+                logText.IndexOf(tokenSecret, StringComparison.Ordinal) >= 0 ||
+                logText.IndexOf("[redacted]", StringComparison.Ordinal) < 0 ||
+                logText.IndexOf("[BoundedSmoke-A]", StringComparison.Ordinal) < 0 ||
+                logText.IndexOf("[BoundedSmoke-B]", StringComparison.Ordinal) < 0 ||
+                logText.IndexOf("[exception-message-unavailable]", StringComparison.Ordinal) < 0 ||
+                logText.IndexOf("[exception-stack-unavailable]", StringComparison.Ordinal) < 0)
+            {
+                throw new InvalidOperationException("Facade output failed redaction or source checks.");
+            }
+
+            var nonEmptyLines = logText.Split(new[] { Environment.NewLine }, StringSplitOptions.RemoveEmptyEntries);
+            if (nonEmptyLines.Length != 3 ||
+                nonEmptyLines.Any(line => line.StartsWith("forged-line", StringComparison.Ordinal)))
+            {
+                throw new InvalidOperationException("A producer message injected an extra log line.");
+            }
+
+            return new FacadeEvidence(metrics.WrittenTotal);
+        }
+
+        private static int VerifyRotation(string dataDir)
+        {
+            var rotationRoot = Path.Combine(dataDir, "rotation-smoke");
+            var logPath = Path.Combine(rotationRoot, "rotation.log");
+            var sink = new RotatingFileLogSink(
+                logPath,
+                maxLogBytes: 512,
+                retainedLogFiles: 2);
+
+            sink.WriteBatch(RotationBatch('A'));
+            sink.WriteBatch(RotationBatch('B'));
+            sink.WriteBatch(RotationBatch('C'));
+            sink.WriteBatch(RotationBatch('D'));
+
+            var current = File.ReadAllText(logPath);
+            var firstArchive = File.ReadAllText(logPath + ".1");
+            var secondArchive = File.ReadAllText(logPath + ".2");
+            if (current.IndexOf("ROTATE-D", StringComparison.Ordinal) < 0 ||
+                firstArchive.IndexOf("ROTATE-C", StringComparison.Ordinal) < 0 ||
+                secondArchive.IndexOf("ROTATE-B", StringComparison.Ordinal) < 0 ||
+                File.Exists(logPath + ".3"))
+            {
+                throw new InvalidOperationException("Rotating sink retention order was incorrect.");
+            }
+
+            return Directory.GetFiles(rotationRoot, "rotation.log*").Length;
+        }
+
+        private static IReadOnlyList<string> RotationBatch(char marker)
+        {
+            return new[]
+            {
+                "ROTATE-" + marker + "-1-" + new string(marker, 130) + Environment.NewLine,
+                "ROTATE-" + marker + "-2-" + new string(marker, 130) + Environment.NewLine
+            };
+        }
+
+        private static FloodEvidence VerifyBoundedFlood()
+        {
+            var maxLengthMessage = new string('M', LogSanitizer.MaxStoredChars);
+            LogSanitizer.Sanitize(maxLengthMessage);
+            var sink = new BlockingBatchSink();
+            var writer = new BoundedAsyncLogWriter(
+                sink,
+                capacity: FloodCapacity,
+                infoAdmissionLimit: FloodInfoLimit,
+                warningAdmissionLimit: FloodWarningLimit,
+                batchSize: 32,
+                maxMessageLength: LogSanitizer.MaxStoredChars,
+                maxSourceLength: 64);
+
+            try
+            {
+                var primeStarted = Stopwatch.GetTimestamp();
+                var primeAccepted = writer.TryWrite(
+                    LogLevel.Info,
+                    "Flood",
+                    "prime slow sink");
+                var primeLatencyTicks = Stopwatch.GetTimestamp() - primeStarted;
+                if (!primeAccepted || !sink.WaitUntilEntered(TimeSpan.FromSeconds(3)))
+                {
+                    throw new InvalidOperationException("Slow sink did not enter its blocked state.");
+                }
+
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+                using (var process = Process.GetCurrentProcess())
+                {
+                    process.Refresh();
+                    var privateBytesBefore = process.PrivateMemorySize64;
+                    var privateHighWaterObserved = privateBytesBefore;
+                    var producerLatencyTicks = new List<long>(
+                        MaxLengthFloodSampleCount + (FloodCount / 25) + 1024);
+                    producerLatencyTicks.Add(primeLatencyTicks);
+                    var producerMaxTicks = primeLatencyTicks;
+                    var stopwatch = Stopwatch.StartNew();
+                    for (var index = 0; index < MaxLengthFloodSampleCount; index++)
+                    {
+                        var started = Stopwatch.GetTimestamp();
+                        writer.TryWrite(LogLevel.Info, "FloodMax", maxLengthMessage);
+                        var elapsedTicks = Stopwatch.GetTimestamp() - started;
+                        producerLatencyTicks.Add(elapsedTicks);
+                        producerMaxTicks = Math.Max(producerMaxTicks, elapsedTicks);
+                    }
+
+                    process.Refresh();
+                    privateHighWaterObserved = Math.Max(
+                        privateHighWaterObserved,
+                        process.PrivateMemorySize64);
+
+                    for (var index = 0; index < FloodCount; index++)
+                    {
+                        var started = Stopwatch.GetTimestamp();
+                        writer.TryWrite(LogLevel.Info, "Flood", "bounded-info-message");
+                        var elapsedTicks = Stopwatch.GetTimestamp() - started;
+                        producerMaxTicks = Math.Max(producerMaxTicks, elapsedTicks);
+                        if (index % 25 == 0)
+                        {
+                            producerLatencyTicks.Add(elapsedTicks);
+                        }
+
+                        if (index % 4096 == 0)
+                        {
+                            process.Refresh();
+                            privateHighWaterObserved = Math.Max(
+                                privateHighWaterObserved,
+                                process.PrivateMemorySize64);
+                        }
+                    }
+
+                    for (var index = 0; index < 512; index++)
+                    {
+                        var started = Stopwatch.GetTimestamp();
+                        writer.TryWrite(LogLevel.Warning, "Flood", "bounded-warning-message");
+                        var elapsedTicks = Stopwatch.GetTimestamp() - started;
+                        producerLatencyTicks.Add(elapsedTicks);
+                        producerMaxTicks = Math.Max(producerMaxTicks, elapsedTicks);
+                    }
+
+                    for (var index = 0; index < 512; index++)
+                    {
+                        var started = Stopwatch.GetTimestamp();
+                        writer.TryWrite(LogLevel.Error, "Flood", "bounded-error-message");
+                        var elapsedTicks = Stopwatch.GetTimestamp() - started;
+                        producerLatencyTicks.Add(elapsedTicks);
+                        producerMaxTicks = Math.Max(producerMaxTicks, elapsedTicks);
+                    }
+                    stopwatch.Stop();
+
+                    process.Refresh();
+                    privateHighWaterObserved = Math.Max(
+                        privateHighWaterObserved,
+                        process.PrivateMemorySize64);
+                    var privateHighWaterGrowth = Math.Max(
+                        0L,
+                        privateHighWaterObserved - privateBytesBefore);
+                    if (privateHighWaterGrowth > MaxFloodPrivateBytesGrowth)
+                    {
+                        throw new InvalidOperationException(
+                            "100k producer flood exceeded the x86 private-memory high-water budget.");
+                    }
+
+                    var saturated = writer.GetMetrics();
+                    if (saturated.DroppedInfo <= 0 ||
+                        saturated.AcceptedWarning <= 0 ||
+                        saturated.AcceptedError <= 0 ||
+                        saturated.HighWaterMark != FloodCapacity ||
+                        saturated.CurrentPending > FloodCapacity)
+                    {
+                        throw new InvalidOperationException(
+                            "Saturation did not preserve WARN/ERROR reserve or queue bounds.");
+                    }
+
+                    if (stopwatch.Elapsed > TimeSpan.FromSeconds(20))
+                    {
+                        throw new InvalidOperationException(
+                            "100k producer flood exceeded the bounded latency budget.");
+                    }
+
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    GC.Collect();
+                    process.Refresh();
+                    var privateBytesAfter = process.PrivateMemorySize64;
+                    privateHighWaterObserved = Math.Max(
+                        privateHighWaterObserved,
+                        privateBytesAfter);
+                    var privateBytesGrowth = Math.Max(
+                        0L,
+                        privateBytesAfter - privateBytesBefore);
+                    if (privateBytesGrowth > MaxFloodPrivateBytesGrowth)
+                    {
+                        throw new InvalidOperationException(
+                            "100k producer flood exceeded the x86 private-memory budget.");
+                    }
+
+                    sink.Release();
+                    if (!writer.Shutdown(TimeSpan.FromSeconds(5)))
+                    {
+                        throw new InvalidOperationException("Flood writer did not stop after sink release.");
+                    }
+
+                    var final = writer.GetMetrics();
+                    if (final.IsWriterAlive || final.IsAccepting || final.CurrentPending != 0 ||
+                        final.WrittenTotal != final.AcceptedTotal)
+                    {
+                        throw new InvalidOperationException("Flood writer leaked work or its worker thread.");
+                    }
+
+                    process.Refresh();
+                    producerLatencyTicks.Sort();
+                    var p95Index = Math.Max(
+                        0,
+                        (int)Math.Ceiling(producerLatencyTicks.Count * 0.95d) - 1);
+                    var producerP95Microseconds = TicksToMicroseconds(
+                        producerLatencyTicks[p95Index]);
+                    var producerMaxMicroseconds = TicksToMicroseconds(
+                        producerMaxTicks);
+                    if (producerP95Microseconds >= MaxProducerP95Microseconds ||
+                        producerMaxMicroseconds >= MaxProducerCallMicroseconds)
+                    {
+                        throw new InvalidOperationException(
+                            "Producer latency exceeded p95/max nonblocking budgets.");
+                    }
+                    return new FloodEvidence(
+                        final.AcceptedTotal,
+                        final.DroppedTotal,
+                        final.HighWaterMark,
+                        stopwatch.ElapsedMilliseconds,
+                        producerP95Microseconds,
+                        producerMaxMicroseconds,
+                        privateBytesGrowth,
+                        privateBytesAfter,
+                        privateHighWaterObserved,
+                        privateHighWaterGrowth,
+                        process.PeakPagedMemorySize64,
+                        process.PeakWorkingSet64);
+                }
+            }
+            finally
+            {
+                sink.Release();
+                writer.Shutdown(TimeSpan.FromSeconds(1));
+                writer.Dispose();
+            }
+        }
+
+        private static double TicksToMicroseconds(long ticks)
+        {
+            return ticks * 1000000d / Stopwatch.Frequency;
+        }
+
+        private sealed class BlockingBatchSink : ILogBatchSink
+        {
+            private readonly ManualResetEvent _entered = new ManualResetEvent(false);
+            private readonly ManualResetEvent _release = new ManualResetEvent(false);
+
+            public void WriteBatch(IReadOnlyList<string> lines)
+            {
+                _entered.Set();
+                _release.WaitOne();
+            }
+
+            internal bool WaitUntilEntered(TimeSpan timeout)
+            {
+                return _entered.WaitOne(timeout);
+            }
+
+            internal void Release()
+            {
+                _release.Set();
+            }
+        }
+
+        private sealed class HostileLogException : Exception
+        {
+            public override string Message =>
+                throw new InvalidOperationException("synthetic hostile Message getter");
+
+            public override string StackTrace =>
+                throw new InvalidOperationException("synthetic hostile StackTrace getter");
+        }
+
+        private sealed class FacadeEvidence
+        {
+            internal FacadeEvidence(long written)
+            {
+                Written = written;
+            }
+
+            internal long Written { get; }
+        }
+
+        private sealed class FloodEvidence
+        {
+            internal FloodEvidence(
+                long accepted,
+                long dropped,
+                int highWater,
+                long producerMilliseconds,
+                double producerP95Microseconds,
+                double producerMaxMicroseconds,
+                long privateBytesGrowth,
+                long privateBytesAfter,
+                long privateHighWaterObservedBytes,
+                long privateHighWaterGrowth,
+                long peakPagedBytes,
+                long peakWorkingSetBytes)
+            {
+                Accepted = accepted;
+                Dropped = dropped;
+                HighWater = highWater;
+                ProducerMilliseconds = producerMilliseconds;
+                ProducerP95Microseconds = producerP95Microseconds;
+                ProducerMaxMicroseconds = producerMaxMicroseconds;
+                PrivateBytesGrowth = privateBytesGrowth;
+                PrivateBytesAfter = privateBytesAfter;
+                PrivateHighWaterObservedBytes = privateHighWaterObservedBytes;
+                PrivateHighWaterGrowth = privateHighWaterGrowth;
+                PeakPagedBytes = peakPagedBytes;
+                PeakWorkingSetBytes = peakWorkingSetBytes;
+            }
+
+            internal long Accepted { get; }
+            internal long Dropped { get; }
+            internal int HighWater { get; }
+            internal long ProducerMilliseconds { get; }
+            internal double ProducerP95Microseconds { get; }
+            internal double ProducerMaxMicroseconds { get; }
+            internal long PrivateBytesGrowth { get; }
+            internal long PrivateBytesAfter { get; }
+            internal long PrivateHighWaterObservedBytes { get; }
+            internal long PrivateHighWaterGrowth { get; }
+            internal long PeakPagedBytes { get; }
+            internal long PeakWorkingSetBytes { get; }
         }
     }
 }
