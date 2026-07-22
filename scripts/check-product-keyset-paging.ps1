@@ -120,7 +120,7 @@ Check ($coreTests -match 'duplicate' -and
        $repositoryPerformanceTests -match '1\.15d' -and
        $repositoryPerformanceTests -match 'SearchDetailsPageAsync' -and
        $planTests -match 'PRODUCT_KEYSET_100K' -and
-       $planTests -match 'KeysetP95Milliseconds') `
+       $planTests -match 'ForwardP95Milliseconds') `
     "duplicate, mutation, mismatch, backward, fallback and 100k p95 tests are present" `
     "required keyset correctness/performance test coverage is incomplete"
 
