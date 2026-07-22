@@ -25,16 +25,50 @@ function Get-SarifFindingCount {
             [string]$driver.version
         }
         if ($null -eq $driver -or
-            [string]$driver.name -cne "CodeQL command-line toolchain" -or
+            [string]$driver.name -cne "CodeQL" -or
             [string]$driver.organization -cne "GitHub" -or
             [string]::IsNullOrWhiteSpace($driverVersion)) {
-            throw "SARIF run is not attributed to the expected GitHub CodeQL command-line toolchain."
+            throw "SARIF run is not attributed to the expected GitHub CodeQL toolchain."
         }
         $rulesProperty = $driver.PSObject.Properties["rules"]
         if ($null -eq $rulesProperty -or
-            $rulesProperty.Value -isnot [System.Array] -or
-            @($rulesProperty.Value).Count -eq 0) {
-            throw "CodeQL SARIF driver must contain an explicit non-empty rules array."
+            $rulesProperty.Value -isnot [System.Array]) {
+            throw "CodeQL SARIF driver must contain an explicit rules array."
+        }
+
+        $ruleCount = @($rulesProperty.Value).Count
+        $hasCSharpQueryPack = $false
+        $extensionsProperty = $run.tool.PSObject.Properties["extensions"]
+        if ($null -ne $extensionsProperty) {
+            if ($extensionsProperty.Value -isnot [System.Array]) {
+                throw "CodeQL SARIF tool extensions must be an array when present."
+            }
+            foreach ($extension in @($extensionsProperty.Value)) {
+                if ($null -eq $extension) { continue }
+                $extensionRules = $extension.PSObject.Properties["rules"]
+                if ($null -ne $extensionRules) {
+                    if ($extensionRules.Value -isnot [System.Array]) {
+                        throw "CodeQL SARIF extension rules must be arrays."
+                    }
+                    $ruleCount += @($extensionRules.Value).Count
+                }
+                $extensionVersion = if (-not [string]::IsNullOrWhiteSpace([string]$extension.semanticVersion)) {
+                    [string]$extension.semanticVersion
+                }
+                else {
+                    [string]$extension.version
+                }
+                if ([string]$extension.name -ceq "codeql/csharp-queries" -and
+                    -not [string]::IsNullOrWhiteSpace($extensionVersion) -and
+                    $null -ne $extensionRules -and
+                    @($extensionRules.Value).Count -gt 0) {
+                    $hasCSharpQueryPack = $true
+                }
+            }
+        }
+        if ($ruleCount -eq 0 -or
+            (@($rulesProperty.Value).Count -eq 0 -and -not $hasCSharpQueryPack)) {
+            throw "CodeQL SARIF must contain a non-empty driver or official C# query-pack rule inventory."
         }
 
         $resultsProperty = $run.PSObject.Properties["results"]
@@ -80,11 +114,15 @@ $emptyVector = [pscustomobject]@{
     version = "2.1.0"
     runs = @([pscustomobject]@{
         tool = [pscustomobject]@{ driver = [pscustomobject]@{
-            name = "CodeQL command-line toolchain"
+            name = "CodeQL"
             organization = "GitHub"
             semanticVersion = "2.0.0"
+            rules = @()
+        }; extensions = @([pscustomobject]@{
+            name = "codeql/csharp-queries"
+            semanticVersion = "1.0.0"
             rules = @([pscustomobject]@{ id = "cs/win7pos-negative-vector" })
-        } }
+        }) }
         results = @()
     })
 }
@@ -92,11 +130,15 @@ $findingVector = [pscustomobject]@{
     version = "2.1.0"
     runs = @([pscustomobject]@{
         tool = [pscustomobject]@{ driver = [pscustomobject]@{
-            name = "CodeQL command-line toolchain"
+            name = "CodeQL"
             organization = "GitHub"
             semanticVersion = "2.0.0"
+            rules = @()
+        }; extensions = @([pscustomobject]@{
+            name = "codeql/csharp-queries"
+            semanticVersion = "1.0.0"
             rules = @([pscustomobject]@{ id = "cs/win7pos-negative-vector" })
-        } }
+        }) }
         results = @([pscustomobject]@{
             ruleId = "win7pos/negative-vector"
             level = "error"
@@ -162,7 +204,7 @@ $missingRulesVector = [pscustomobject]@{
     version = "2.1.0"
     runs = @([pscustomobject]@{
         tool = [pscustomobject]@{ driver = [pscustomobject]@{
-            name = "CodeQL command-line toolchain"
+            name = "CodeQL"
             organization = "GitHub"
             semanticVersion = "2.0.0"
         } }
@@ -171,12 +213,19 @@ $missingRulesVector = [pscustomobject]@{
 }
 $emptyRulesVector = $missingRulesVector | ConvertTo-Json -Depth 10 | ConvertFrom-Json
 $emptyRulesVector.runs[0].tool.driver | Add-Member -NotePropertyName rules -NotePropertyValue @()
+$unrelatedExtensionVector = $emptyRulesVector | ConvertTo-Json -Depth 10 | ConvertFrom-Json
+$unrelatedExtensionVector.runs[0].tool | Add-Member -NotePropertyName extensions -NotePropertyValue @([pscustomobject]@{
+    name = "example/csharp-queries"
+    semanticVersion = "1.0.0"
+    rules = @([pscustomobject]@{ id = "example/rule" })
+})
 Assert-RejectedSarifVector -Document ([pscustomobject]@{ version = "2.1.0"; runs = @() }) -Label "an empty run set"
 Assert-RejectedSarifVector -Document $unrelatedToolVector -Label "an unrelated analyzer"
 Assert-RejectedSarifVector -Document $failedInvocationVector -Label "an unsuccessful invocation"
 Assert-RejectedSarifVector -Document $errorNotificationVector -Label "an invocation error notification"
 Assert-RejectedSarifVector -Document $missingRulesVector -Label "a missing CodeQL rules inventory"
 Assert-RejectedSarifVector -Document $emptyRulesVector -Label "an empty CodeQL rules inventory"
+Assert-RejectedSarifVector -Document $unrelatedExtensionVector -Label "an unrelated extension posing as a C# query pack"
 
 if ([string]::IsNullOrWhiteSpace($SarifDirectory)) {
     throw "-SarifDirectory is required."
