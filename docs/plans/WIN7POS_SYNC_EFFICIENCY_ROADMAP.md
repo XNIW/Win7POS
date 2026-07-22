@@ -14,21 +14,18 @@ and fail-closed exactness semantics.
 
 ## Current-main findings
 
-| ID | Priority | Finding | Evidence / impact |
-| --- | --- | --- | --- |
-| P1-SYNC-01 | P1 | Auth denial clears trust, but the outer sequential run can continue with the previously captured session. | `PosSalesSyncService.cs:279-290`; `MainWindow.xaml.cs:829-949` |
-| P1-SYNC-02 | P1 | Heartbeat, sales, catalog import and catalog are serialized under catalog-oriented scheduling; a sales backlog over 25 rows can wait a full idle interval. | `MainWindow.xaml.cs:829-921`; `CatalogSyncSchedulerPolicy.cs:50-76` |
-| P1-PERF-01 | P1 | Per-lane clients and fully buffered/copy/re-encode JSON amplify allocations on x86. | `PosAdminWebClient.cs:109-160,268-330` |
-| P1-PERF-02 | P1 | Each catalog page reloads broad local ID maps and full refresh retains/duplicates authoritative CLR sets, approaching pages × catalog work. | `RemoteCatalogBatchRepository.cs:106-154`; `ProductRepository.cs:2003-2069`; `PosCatalogPullService.cs:810-828,978-1004` |
-| P1-REL-01 | P1 | Dependency/actions remain incompletely locked; SBOM, signing/timestamp, attestation, reproducibility comparison and automated vulnerability/license gates remain open. | `.github/workflows/*.yml`; repository package inventory |
+| ID | Priority | Original finding | Evidence / impact | Current status |
+| --- | --- | --- | --- | --- |
+| P1-SYNC-01 | P1 | Auth denial could clear trust while the outer run continued with a captured session. | Generation/trust fences and denial tests delivered in PRs #8, #9 and #11. | `DONE_MERGED` |
+| P1-SYNC-02 | P1 | Heartbeat, sales, catalog import and catalog were serialized under catalog-oriented scheduling. | Four generation-scoped lanes and shared auth stop delivered in PR #9. | `DONE_MERGED` |
+| P1-PERF-01 | P1 | Per-lane clients and fully buffered/copy/re-encode JSON amplified x86 allocations. | Reused transport and bounded direct streaming delivered in PR #10. | `DONE_MERGED` |
+| P1-PERF-02 | P1 | Broad page lookups and retained full-refresh authoritative CLR sets approached pages × catalog work. | PR #10 scoped page work and PR #21 delivered durable ID staging; PERF2-B/C separately closed the planned paging/logging follow-ups. | `DONE_MERGED` |
+| P1-REL-01 | P1 | Release inputs, supply-chain evidence, reproducibility and signing were incomplete. | PRs #13 and #20 close the repository-local chain; real production signing/timestamp remains external. | `PARTIAL_EXTERNAL_SIGNING` |
 
-P0 is `0`. The table records the original P1 findings: `P1-SYNC-01`,
-`P1-SYNC-02` and `P1-PERF-01` are `DONE_MERGED`; `P1-PERF-02` is `PARTIAL`
-because PERF-1 closed its page-scoped lookup/apply work while durable
-authoritative-ID staging remains in PERF-2. PERF-2 also retains keyset paging
-and bounded asynchronous logging. Composite supply-chain item `P1-REL-01`
-remains `OPEN`. PR #7 closed former `P1-REL-02`: an explicitly requested local
-installer build now fails closed when the compiler or exact output is missing.
+P0 is `0`. `P1-SYNC-01`, `P1-SYNC-02`, `P1-PERF-01` and `P1-PERF-02` are
+`DONE_MERGED`. Composite `P1-REL-01` is `PARTIAL_EXTERNAL_SIGNING`: every
+repository-local acceptance criterion is merged and green, while a real
+protected-tag certificate and RFC3161 timestamp have not been exercised.
 
 ## Delivery update — 2026-07-21
 
@@ -46,6 +43,18 @@ installer build now fails closed when the compiler or exact output is missing.
   and Release Pack run `29875846496` passed on the final main SHA.
 - Composite supply-chain item `P1-REL-01` remains an independent repository-wide
   release-hardening follow-up and is not silently reclassified by sync delivery.
+- CLOSEOUT-DOCS PR #12 merged normally as `939ca843`; RELEASE1-A PR #13 merged
+  normally as `1832dcca`; RELEASE1-B PR #20 merged normally as `5313ff36`.
+  The release chain now has full-SHA Actions, disabled checkout credential
+  persistence, SDK `10.0.301`, seven NuGet lock files, one semantic version,
+  verified Inno Setup `6.7.3`, CycloneDX, security gates, reproducibility,
+  checksums, provenance and unsigned attestations.
+- PERF2-A PR #21 merged normally as `81acd479` with immutable migration
+  `0009-catalog-authoritative-id-stage`; PERF2-B PR #22 merged normally as
+  `63152222`; PERF2-C PR #23 merged normally as `0c5052f3`.
+- Final PERF-2 post-merge runs on `0c5052f3` are CI `29908121321`, Security
+  Supply Chain `29908121286`, Release Pack `29908121289` and Catalog Performance
+  `29908134313`, all `completed/success`.
 
 ## A — Additive Admin heartbeat contract
 
@@ -211,40 +220,80 @@ iterations on each runtime; the x86 median is 6,427.448 ms, peak working set
 24.528 ms. This is a Windows-host x86 harness, not physical Windows 7
 certification.
 
+PERF-2 is also `DONE_MERGED`. PR #21 replaced cross-page CLR authority with a
+generation/full-run/shop-keyed durable SQLite stage and bounded cleanup. PR #22
+uses filter/revision-bound `{barcode,id}` cursors for ordinary next/previous
+navigation and keeps an explicit OFFSET fallback only for unanchored arbitrary
+jumps. Its 100,000-row repository measurement recorded p95 `40.587 ms` for
+keyset versus `86.186 ms` for OFFSET (`2.12x`), while the raw SQL measurement
+was `0.302 ms` versus `17.638 ms` (`58.42x`). PR #23 uses one bounded process
+queue/background writer; its x86 saturation smoke observed producer p95
+`708.60 us`, maximum call `6.243 ms`, queue high-water `256/256`, `102,817`
+deliberately dropped INFO records, private-byte high-water delta `6,287,360`,
+peak private bytes `28,389,376` and peak working set `37,584,896`. WARN/ERROR
+reserved-capacity, redaction, rotation, writer failure and bounded shutdown
+tests passed. These are controlled Windows x86 measurements, not physical
+Windows 7 certification.
+
 ## Release and supply-chain follow-up
 
 - PR #7 already closed fail-closed installer generation, exact clean-tree
   provenance/manifests, privacy/secret rejection and Win7 runtime inventory.
-- Add least-privilege permissions to the remaining CI workflow and set
-  `persist-credentials: false` on every checkout.
-- Pin Actions to full commit SHAs with controlled dependency updates.
-- Generate NuGet lock files and restore in locked mode.
-- Pin the Inno Setup version and verify the compiler/package hash.
-- Derive one protected-tag semantic version across assembly, `VERSION`,
-  installer metadata and filenames.
-- SHA-256 Authenticode-sign binary/installer with RFC3161 timestamp compatible
-  with Win7 and verify after signing.
-- Produce SPDX/CycloneDX SBOM, vulnerability/deprecated-package/license checks,
-  secret/history scanning and CodeQL-equivalent analysis.
-- Attest provenance/checksums; keep signing secrets restricted to protected tag
-  environments. PR builds stay unsigned but reproducible.
-- Two clean builds at one SHA compare normalized manifests and payload hashes.
+- RELEASE1-A PR #13 delivered explicit least-privilege permissions across its
+  four workflows, 12/12 full-SHA Action pins, `persist-credentials: false` on
+  all three checkout uses, SDK `10.0.301`, seven lock files with locked restore,
+  semantic version `1.0.0`, and official Inno Setup `6.7.3` installer SHA-256
+  `9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732`.
+- RELEASE1-B PR #20 extended that invariant to the final six workflows, 32/32
+  full-SHA Action pins and 8/8 credential-safe checkouts. It also delivered
+  CycloneDX 1.6 (99 components), zero-known-vulnerable/deprecated package gates,
+  an approved 99-package license inventory, Gitleaks worktree/history scans,
+  CodeQL, two-clean-build payload comparison, SHA-256 manifests, exact-commit
+  provenance and unsigned attestations. PR/branch builds remain unsigned and
+  require no signing secret.
+- The protected-tag workflow and self-signed fixture prove fail-closed wiring,
+  but they do not prove production identity. Real Authenticode certificate use,
+  RFC3161 timestamping and verification on a protected `vMAJOR.MINOR.PATCH` tag
+  remain `BLOCKED_EXTERNAL`; `P1-REL-01` therefore remains
+  `PARTIAL_EXTERNAL_SIGNING`.
 
 `windows-latest` validates tooling, not Windows 7 runtime compatibility.
 Physical Win7 SP1 install/startup/uninstall remains an external certification
 item.
 
-## Remaining PR sequence
+## Closure state and next work
 
-`SYNC-1`, `SYNC-2` and `PERF-1` are `DONE_MERGED`. Keep the remaining work in
-independent PRs:
+`SYNC-1`, `SYNC-2`, `PERF-1`, RELEASE1-A, the repository-local RELEASE1-B work
+and PERF2-A/B/C are `DONE_MERGED` through independent normal merges. The Admin
+backend repository exists and catalog-v2 PR #4 is merged there, but the current
+backend SHA is not deployed to the configured staging environment and no
+authenticated deterministic fixture run exists. The next evidence-bearing step
+is an authorized staging deployment/migration followed by full, incremental and
+recovery E2E runs; production signing and physical Windows 7/hardware validation
+remain separate external gates.
 
-1. `RELEASE-1`: locked dependency/actions/toolchain and unified version first;
-   SBOM, security gates, signing/timestamp and attestation in a separate PR.
-2. `PERF-2`: authoritative-ID staging migration, keyset paging and bounded
-   logging as independently reviewable changes after profiling.
-3. Admin backend `catalog-v2`: stable snapshot/revision/summary and deterministic
-   continuation in its own server repository PR, only when that repository,
-   branch, authenticated staging access and a safe fixture are available.
+The older Startup coordinator, ProductRepository split and SaleRepository split
+remain `PARTIAL`, `OPEN` and `OPEN`. They should be divided into small façade-
+preserving PRs only when the measurable maintenance benefit justifies their
+regression surface; the merged correctness/performance prerequisites do not make
+an unperformed decomposition `DONE_MERGED` or `SUPERSEDED`.
 
-Every step retains a tested current-server fallback.
+## Historical P2 reassessment
+
+The nine P2 findings from the 2026-07-16 optimization audit were rechecked on
+`0c5052f3`; none was promoted merely because adjacent code changed.
+
+| ID | Status | Current evidence / action |
+| --- | --- | --- |
+| ARCH-003 | `OPEN` | Product query/local write/remote identity/price-history responsibilities remain in `ProductRepository`; extract only through façade-preserving PRs when justified. |
+| ARCH-005 | `OPEN` | `CatalogShopStateRepository` still combines persistence and sale-safety evaluation; a pure immutable policy extraction remains repo-local debt. |
+| ARCH-006 | `DONE_MERGED` | Commit `1d53bea2` makes the canonical architecture gate compare all classified projects with `Win7POS.slnx` and fail unknown/missing entries. |
+| SQLITE-DURABILITY-001 | `PARTIAL` | Tests observe rollback, integrity, busy timeout and `synchronous=FULL(2)`, but the factory does not explicitly select a journal mode/synchronous policy; a WAL change also needs Win7 backup/restore evidence. |
+| SYNC-03 | `DONE_MERGED` | Commit `ecb41239` and cancellation tests distinguish caller cancellation from internal timeout. |
+| SYNC-05 | `DONE_MERGED` | Commit `bb4178b5` requires a nonblank canonical catalog version before response/checkpoint persistence and proves invalid versions cannot advance the cursor. |
+| PERF-02 | `DONE_MERGED` | PERF2-B normal merge `63152222` uses keyset paging for ordinary navigation with explicit arbitrary-jump fallback and 100,000-row guards. |
+| PERF-05 | `OPEN` | Price apply still performs per-price owner/product/history/pending resolution; add statement/allocation counters before considering a set-based rewrite. |
+| E-CI-003 | `DONE_MERGED` | Commit `252fad20` cancels superseded PR CI, while main/protected release runs remain non-cancellable. |
+
+Result: five `DONE_MERGED`, three `OPEN`, one `PARTIAL`, zero `SUPERSEDED`.
+Four repo-local P2 slices therefore remain unresolved.
