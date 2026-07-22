@@ -883,3 +883,53 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   `0008-online-sync-generation`. PERF-2 authoritative-ID staging must append the
   next immutable migration, expected `0009-catalog-authoritative-id-stage`, and
   must not modify `0007` or `0008`.
+
+## 2026-07-22 - RELEASE1 and PERF2 residual completion
+
+- CLOSEOUT-DOCS PR #12 was promoted from draft only after its exact head,
+  four-file scope, CI `29879271908`, mergeability and zero unresolved review
+  threads were reverified. It merged normally as `939ca843`; post-merge CI and
+  Release Pack runs `29882440608` / `29882440561` passed.
+- RELEASE1-A PR #13 merged normally as `1832dcca`. Its four workflows contained
+  12/12 full-SHA Action pins and all three checkout uses disabled credential
+  persistence. SDK `10.0.301`, seven NuGet locks, semantic version `1.0.0` and
+  official Inno Setup `6.7.3` hash verification are fail-closed.
+- RELEASE1-B PR #20 merged normally as `5313ff36` and extended the invariant to
+  the final six workflows, 32/32 Action pins and 8/8 credential-safe checkouts.
+  CycloneDX 1.6 (99 components), vulnerability/deprecation/license gates,
+  Gitleaks history scan, CodeQL, two-clean-build comparison, checksums,
+  provenance and unsigned attestation passed exact-head and post-merge
+  workflows. Protected signing is wired and negatively tested, but real
+  certificate/RFC3161 evidence is absent; `P1-REL-01` remains
+  `PARTIAL_EXTERNAL_SIGNING`.
+- PERF2-A PR #21 merged normally as `81acd479` and appended only
+  `0009-catalog-authoritative-id-stage`, checksum
+  `68d57cd65b2d56456d5b2ab5eee83237477aefc85f93aa2d81e5f64699fae659`.
+  Durable shop/generation/full-run authoritative staging, transactional page
+  fences, bounded cleanup and migration/rollback/restore coverage passed.
+- PERF2-B PR #22 merged normally as `63152222`. Ordinary product navigation is
+  keyset-based with bounded anchors and explicit arbitrary-jump OFFSET fallback.
+  At 100,000 rows repository p95 was 40.587 ms keyset versus 86.186 ms OFFSET;
+  raw SQL p95 was 0.302 versus 17.638 ms.
+- PERF2-C PR #23 merged normally as `0c5052f3`. One process-wide bounded Core
+  writer owns append/rotation; redaction precedes enqueue and INFO drops before
+  reserved WARN/ERROR capacity. The x86 smoke recorded 708.60 us producer p95,
+  6.243 ms maximum, high-water 256/256, 102,817 deliberate INFO drops and peak
+  working/private memory 37,584,896 / 28,389,376 bytes.
+- PERF2-C exact-head runs CI/Security/Release Pack/Catalog
+  `29906780759` / `29906780732` / `29906806859` / `29906804341` and post-merge
+  runs `29908121321` / `29908121286` / `29908121289` / `29908134313` all passed
+  on their exact SHAs. Final local evidence was gates 37/37, Core/Data 534/534,
+  CLI PASS, solution and WPF net48/x86 zero warnings/errors.
+- `P1-PERF-02` is `DONE_MERGED`. Structural reassessment leaves Startup/PR-C
+  `PARTIAL`, ProductRepository/PR-E `OPEN` and SaleRepository/PR-F `OPEN`; none
+  is mislabeled `SUPERSEDED`. The nine historical P2 items are five
+  `DONE_MERGED`, three `OPEN`, one `PARTIAL`.
+- The Admin backend repository is accessible at
+  `XNIW/merchandise-control-admin-web` main `9406da33`, but that SHA/catalog-v2
+  migration is not deployed to the configured staging environment and no safe
+  authenticated 19,763-row fixture/session run exists. Current host is Windows
+  11, not physical Win7. External backlog remains exactly 10/25 PASS.
+- No force push, squash/rebase merge, production data or physical effect was
+  used. Full closeout evidence is in
+  `docs/reports/2026-07-22_WIN7POS_ALL_RESIDUALS_CLOSEOUT.md`.
