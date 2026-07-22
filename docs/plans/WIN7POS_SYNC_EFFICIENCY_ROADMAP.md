@@ -22,12 +22,15 @@ and fail-closed exactness semantics.
 | P1-PERF-02 | P1 | Each catalog page reloads broad local ID maps and full refresh retains/duplicates authoritative CLR sets, approaching pages × catalog work. | `RemoteCatalogBatchRepository.cs:106-154`; `ProductRepository.cs:2003-2069`; `PosCatalogPullService.cs:810-828,978-1004` |
 | P1-REL-01 | P1 | Dependency/actions remain incompletely locked; SBOM, signing/timestamp, attestation, reproducibility comparison and automated vulnerability/license gates remain open. | `.github/workflows/*.yml`; repository package inventory |
 
-P0 is `0`. These five open P1 items (four sync/performance plus one composite
-supply-chain item) are explicitly deferred to follow-up PRs; none requires
-widening PR-B. PR #7 closed former `P1-REL-02`: an explicitly requested local
+P0 is `0`. The table records the original P1 findings: `P1-SYNC-01`,
+`P1-SYNC-02` and `P1-PERF-01` are `DONE_MERGED`; `P1-PERF-02` is `PARTIAL`
+because PERF-1 closed its page-scoped lookup/apply work while durable
+authoritative-ID staging remains in PERF-2. PERF-2 also retains keyset paging
+and bounded asynchronous logging. Composite supply-chain item `P1-REL-01`
+remains `OPEN`. PR #7 closed former `P1-REL-02`: an explicitly requested local
 installer build now fails closed when the compiler or exact output is missing.
 
-## Delivery update — 2026-07-19
+## Delivery update — 2026-07-21
 
 - PR #6 (migration foundation) merged normally as `ea85d91`.
 - SYNC-1 merged through PR #8 as `6d9a9e0`, closing the pagination,
@@ -36,11 +39,11 @@ installer build now fails closed when the compiler or exact output is missing.
 - `P1-SYNC-01` and `P1-SYNC-02` are `DONE_MERGED` through PR #9 at normal merge
   commit `1be70172cab56895f66389a99b4a6fa92352c7e2`; exact-head and post-merge CI
   and Release Pack were green.
-- `P1-PERF-01` and `P1-PERF-02` are implemented on the separate PERF-1 branch:
-  endpoint/config-scoped transport, direct bounded streaming, one catalog apply
-  context per run, prepared-command/map reuse, page-scoped identity/pending-stock
-  queries and a real net48/x86 benchmark. They become `DONE_MERGED` only after
-  the independent PR's exact-head checks and normal merge.
+- PERF-1 is `DONE_MERGED` through PR #10 at normal merge commit
+  `0ad16bd2c40454c07d0ffb6e4908e23b89b4a5a1`, without force push. Exact-head CI
+  run `29874926694` and Catalog Performance run `29874958148` passed on
+  `92e1c323d55ea7b00f3f8bfa35f32fe2fb28e391`; post-merge CI run `29875846523`
+  and Release Pack run `29875846496` passed on the final main SHA.
 - Composite supply-chain item `P1-REL-01` remains an independent repository-wide
   release-hardening follow-up and is not silently reclassified by sync delivery.
 
@@ -154,9 +157,10 @@ logging canaries.
 - Preserve transaction-per-page, cursor CAS, identity conflict, tombstone,
   exactness, no-hard-delete and immutable ownership behavior.
 - For full exactness, stream authoritative IDs into a generation-keyed durable
-  SQLite staging table introduced by a later append-only migration after 0007;
-  never overload or mutate 0007. Do not use a connection-local temp table across
-  page connections.
+  SQLite staging table introduced by the next append-only migration after
+  `0008-online-sync-generation`, expected
+  `0009-catalog-authoritative-id-stage`. Never overload or mutate `0007` or
+  `0008`. Do not use a connection-local temp table across page connections.
 
 ### Keyset product pagination
 
@@ -200,11 +204,12 @@ memory.
 - Retain rollback, pending-stock, tombstone, late-reference, ownership,
   identity-conflict and concurrency-fence tests.
 
-PERF-1 now includes net10/x64 and actual net48/x86 process sampling throughout
-the run. The 19,763-row full path is `Verified` in 3/3 iterations on each runtime;
-the x86 median is 6,427.448 ms, peak working set 78,008,320 bytes, peak private
-bytes 62,595,072 and maximum dispatcher delay 24.528 ms. This is a Windows-host
-x86 harness, not physical Windows 7 certification.
+PERF-1 is `DONE_MERGED` and includes net10/x64 and actual net48/x86 process
+sampling throughout the run. The 19,763-row full path is `Verified` in 3/3
+iterations on each runtime; the x86 median is 6,427.448 ms, peak working set
+78,008,320 bytes, peak private bytes 62,595,072 and maximum dispatcher delay
+24.528 ms. This is a Windows-host x86 harness, not physical Windows 7
+certification.
 
 ## Release and supply-chain follow-up
 
@@ -229,19 +234,17 @@ x86 harness, not physical Windows 7 certification.
 Physical Win7 SP1 install/startup/uninstall remains an external certification
 item.
 
-## Recommended PR sequence
+## Remaining PR sequence
 
-1. Admin backend `catalog-v2`: stable snapshot/revision/summary and deterministic
-   continuation, in its own server repository PR.
-2. `SYNC-1`: ambiguous-end guard, optional Admin fields, observed/committed
-   revision, typed outbox result and compatibility tests.
-3. `SYNC-2`: generation-scoped supervisor, shared auth-stop, independent lanes
-   and start-of-day integration.
-4. `PERF-1`: reused transport, bounded direct-stream deserialization, per-run
-   apply context, page-scoped lookups and real x86 benchmark evidence.
-5. `PERF-2`: authoritative-ID staging migration, keyset paging and bounded
-   logging after profiling.
-6. `RELEASE-1`: locked dependency/actions/toolchain, unified version, SBOM,
-   signing/timestamp, attestation and reproducibility comparison.
+`SYNC-1`, `SYNC-2` and `PERF-1` are `DONE_MERGED`. Keep the remaining work in
+independent PRs:
+
+1. `RELEASE-1`: locked dependency/actions/toolchain and unified version first;
+   SBOM, security gates, signing/timestamp and attestation in a separate PR.
+2. `PERF-2`: authoritative-ID staging migration, keyset paging and bounded
+   logging as independently reviewable changes after profiling.
+3. Admin backend `catalog-v2`: stable snapshot/revision/summary and deterministic
+   continuation in its own server repository PR, only when that repository,
+   branch, authenticated staging access and a safe fixture are available.
 
 Every step retains a tested current-server fallback.
