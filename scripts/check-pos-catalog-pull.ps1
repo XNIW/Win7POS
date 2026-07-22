@@ -107,11 +107,11 @@ if ($syncHost -notmatch "new\s+OnlineSyncSupervisor\([\s\S]{0,700}StopAuthentica
     Fail "catalog auth denial must latch the generation, stop its durable fence and clear trust globally"
 } else { Pass "catalog auth denial latches the generation and stops all supervisor lanes" }
 if ($service -notmatch "RemoteCatalogBatchRepository" -or
-    $service -notmatch "ApplyAsync\(\s*batch,\s*cancellationToken,\s*new\s+RemoteCatalogCommitFence") { Fail "catalog pages are not delegated to the fenced batch repository with cancellation" } else { Pass "catalog pages use the cancellation-aware fenced batch repository" }
+    $service -notmatch "\.ApplyAsync\(\s*batch,\s*cancellationToken,\s*CreateCommitFence") { Fail "catalog pages are not delegated to the fenced batch repository with cancellation" } else { Pass "catalog pages use the cancellation-aware fenced batch repository" }
 if ($batchRepository -notmatch "class RemoteCatalogBatchRepository" -or $batchRepository -notmatch "Task<RemoteCatalogBatchApplyResult>\s+ApplyAsync") { Fail "remote catalog batch repository contract missing" } else { Pass "remote catalog batch repository contract present" }
 $batchWriteBody = [regex]::Match(
     $batchRepository,
-    "internal\s+async\s+Task<RemoteCatalogBatchApplyResult>\s+ApplyWithinRunAsync[\s\S]*?(?=\r?\n\s*private\s+static\s+async\s+Task\s+RequireCommitFenceAsync)").Value
+    "internal\s+async\s+Task<RemoteCatalogBatchApplyResult>\s+ApplyWithinRunAsync[\s\S]*?(?=\r?\n\s*private\s+static\s+void\s+ValidateBatchContent)").Value
 $batchCancellationIndex = $batchWriteBody.LastIndexOf("cancellationToken.ThrowIfCancellationRequested")
 $batchTransactionIndex = $batchWriteBody.IndexOf("conn.BeginTransaction")
 $batchCommitIndex = $batchWriteBody.IndexOf("tx.Commit()")
@@ -232,21 +232,21 @@ $networkIndex = $service.IndexOf("new PosAdminWebClient")
 if ($capturedSessionCheckIndex -lt 0 -or $bindingIndex -lt 0 -or $networkIndex -lt 0 -or $capturedSessionCheckIndex -gt $bindingIndex -or $capturedSessionCheckIndex -gt $networkIndex -or $shopState -notmatch "catalog_session_shop_changed") { Fail "captured catalog session must be revalidated inside the transition barrier before bind/network" } else { Pass "captured catalog session is revalidated before bind/network" }
 if ($shopState -notmatch "pos\.catalog\.bound_shop_id" -or $shopState -notmatch "pos\.catalog\.bound_shop_code" -or $shopState -notmatch "Catalog state shop binding mismatch") { Fail "persistent catalog shop binding missing" } else { Pass "persistent catalog shop binding present" }
 if ($service -notmatch "stagedResponseShopError[\s\S]*response_shop_mismatch[\s\S]*ApplyCatalogAsync") { Fail "catalog response shop must be validated before local apply" } else { Pass "catalog response shop validated before local apply" }
-if ($service -notmatch "var\s+authoritativeProductIds\s*=\s*new List<string>" -or
-    $service -notmatch "var\s+authoritativeCategoryIds\s*=\s*new HashSet<string>" -or
-    $service -notmatch "var\s+authoritativeSupplierIds\s*=\s*new HashSet<string>" -or
-    $service -notmatch "CatalogFullLaneEvidenceTracker") {
-    Fail "full refresh must retain raw product rows and distinct validated reference identities"
+if ($service -notmatch "StageAuthoritativePageAsync" -or
+    $batchRepository -notmatch "catalog_authoritative_id_stage" -or
+    $batchRepository -notmatch "category_remote_id" -or
+    $batchRepository -notmatch "supplier_remote_id" -or
+    $batchRepository -notmatch "product_remote_id") {
+    Fail "full refresh must durably retain authoritative rows and validated reference identities"
 } else {
-    Pass "full refresh retains raw product evidence and distinct reference identities"
+    Pass "full refresh durably retains authoritative rows and reference identities"
 }
-$rawIdCollector = [regex]::Match($service, "private static void AddRemoteIds[\s\S]*?(?=\r?\n\s*private static)").Value
-if ($rawIdCollector -notmatch "ICollection<string>" -or
-    $rawIdCollector -notmatch "target\.Add\(Normalize\(selector\(value\)\)\)" -or
-    $rawIdCollector -match "IsNullOrWhiteSpace|Distinct\(|HashSet") {
-    Fail "authoritative ID collector must preserve empty and duplicate raw rows for exactness audit"
+if ($batchRepository -notmatch "AddStageOccurrences" -or
+    $batchRepository -notmatch "occurrences\[key\]\s*=\s*checked\(count\s*\+\s*1\)" -or
+    $batchRepository -notmatch "occurrence_count") {
+    Fail "authoritative staging must preserve invalid and duplicate row evidence"
 } else {
-    Pass "authoritative ID collector preserves invalid/duplicate evidence"
+    Pass "authoritative staging preserves invalid/duplicate evidence"
 }
 if ($service -notmatch "CatalogFullRefreshReconciler" -or $fullRefresh -notmatch "NOT EXISTS" -or $fullRefresh -notmatch "remote_product_id" -or $fullRefresh -notmatch "remote_category_id" -or $fullRefresh -notmatch "remote_supplier_id") { Fail "full_refresh reconciliation missing" } else { Pass "full_refresh reconciles remote rows absent from authoritative snapshot" }
 if ($service -notmatch "RequestFullRepairWhileBarrierHeldAsync" -or
@@ -342,7 +342,7 @@ if ($service -notmatch "if\s*\(applyStats\.RowsSkipped\s*>\s*0\)[\s\S]{0,600}Req
 } else {
     Pass "catalog apply conflicts/skips force a full-repair boundary"
 }
-$reconcileIndex = $service.IndexOf(".ReconcileAndVerifyAsync(")
+$reconcileIndex = $service.IndexOf(".ReconcileAndVerifyStagedAsync(")
 $storeExactnessIndex = $service.IndexOf(".StoreExactnessAsync(")
 $authoritativeCursorIndex = $service.IndexOf("authoritativeSnapshotCommitted: true")
 $saleSafeIndex = $service.IndexOf("StoreCatalogSaleSafeAsync(")
@@ -486,7 +486,7 @@ $compatibilityIndex = $service.IndexOf(
     "ValidateCatalogPull(result.Value)",
     [System.StringComparison]::Ordinal)
 $evidenceIndex = $service.IndexOf(
-    "fullLaneEvidence.Add(result.Value.Catalog)",
+    ".StageAuthoritativePageAsync(",
     [System.StringComparison]::Ordinal)
 $terminalIndex = $service.IndexOf(
     "CatalogPaginationSafetyPolicy.EvaluateTerminalPage(",
@@ -647,7 +647,7 @@ if ($batchRepository -notmatch "PricesSkipped" -or
     $service -notmatch "PriceRowsSkipped\s*=\s*applied\.PricesSkipped" -or
     $service -notmatch "PriceRowsAccepted\s*=\s*totalStats\.PriceRowsApplied\s*\+\s*totalStats\.PriceRowsQueued" -or
     $service -notmatch "InvalidPriceRows\s*=\s*totalStats\.PriceRowsSkipped" -or
-    $service -notmatch "DuplicatePriceRows\s*=\s*duplicatePriceRows" -or
+    $fullRefresh -notmatch "runContext\.DuplicatePriceRows\s*=\s*evidence\.DuplicatePrices" -or
     $fullRefresh -notmatch "catalog_invalid_price_rows" -or
     $fullRefresh -notmatch "catalog_duplicate_price_rows" -or
     $fullRefresh -notmatch "catalog_prices_not_fully_applied") {

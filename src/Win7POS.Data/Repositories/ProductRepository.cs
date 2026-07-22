@@ -121,7 +121,7 @@ WHERE id = @id
                 new { id }).ConfigureAwait(false);
         }
 
-        private static bool IsReservedBarcode(string barcode)
+        internal static bool IsReservedBarcode(string barcode)
         {
             if (string.IsNullOrEmpty(barcode)) return false;
             return barcode.StartsWith("DISC:", StringComparison.Ordinal)

@@ -54,8 +54,13 @@ public static class CatalogBatchPerformanceScenario
                 var catalogRows = normalizedMode == "batch-delta"
                     ? Math.Max(19763, rows)
                     : rows;
-                var productWrites = BuildProducts(catalogRows);
-                var priceWrites = BuildPrices(catalogRows);
+                var streamFullPages = normalizedMode == "batch-paged-full";
+                var productWrites = streamFullPages
+                    ? Array.Empty<RemoteCatalogProductWrite>()
+                    : BuildProducts(catalogRows);
+                var priceWrites = streamFullPages
+                    ? Array.Empty<RemoteCatalogPriceWrite>()
+                    : BuildPrices(catalogRows);
                 var expectedProductCount = catalogRows;
                 var expectedPriceCount = catalogRows;
                 if (normalizedMode == "batch-delta")
@@ -70,6 +75,20 @@ public static class CatalogBatchPerformanceScenario
                     productWrites = BuildDeltaProducts(rows);
                     priceWrites = BuildDeltaPrices(rows);
                     expectedPriceCount += rows;
+                }
+
+                CatalogShopBindingResult? fullBinding = null;
+                CatalogShopStateRepository? fullState = null;
+                var fullRunId = string.Empty;
+                if (streamFullPages)
+                {
+                    fullState = new CatalogShopStateRepository(factory);
+                    fullBinding = await fullState
+                        .EnsureAndLoadCursorAsync("benchmark-shop", "BENCHMARK-SHOP")
+                        .ConfigureAwait(false);
+                    if (!fullBinding.IsValid)
+                        throw new InvalidOperationException("Benchmark catalog binding failed: " + fullBinding.Code);
+                    fullRunId = Guid.NewGuid().ToString("N");
                 }
 
                 GC.Collect();
@@ -91,6 +110,11 @@ public static class CatalogBatchPerformanceScenario
                 var stopwatch = Stopwatch.StartNew();
                 CatalogApplyRunDiagnostics? runDiagnostics = null;
                 var logicalRequestCount = 0;
+                var authoritativeStageRowsAfter = 0L;
+                var applyElapsedMilliseconds = 0d;
+                var applyStartedAtMilliseconds = 0d;
+                var preflightStageElapsedMilliseconds = 0d;
+                var reconcileElapsedMilliseconds = 0d;
 
                 if (normalizedMode == "legacy")
                 {
@@ -128,6 +152,100 @@ public static class CatalogBatchPerformanceScenario
                     }
                     runDiagnostics = run.Diagnostics;
                 }
+                else if (normalizedMode == "batch-paged-full")
+                {
+                    var repository = new RemoteCatalogBatchRepository(factory);
+                    var preflightStartedAt = stopwatch.Elapsed.TotalMilliseconds;
+                    for (var offset = 0; offset < rows; offset += pageSize)
+                    {
+                        var count = Math.Min(pageSize, rows - offset);
+                        var pageNumber = (offset / pageSize) + 1;
+                        var stagedEvidence = await repository.StageAuthoritativePageAsync(
+                            new RemoteCatalogBatch
+                            {
+                                AuthoritativeFullRefresh = true,
+                                AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+                                {
+                                    FullRunId = fullRunId,
+                                    HasMore = offset + count < rows,
+                                    PageNumber = pageNumber
+                                },
+                                Categories = offset == 0
+                                    ? categoryWrites
+                                    : Array.Empty<RemoteCatalogCategoryWrite>(),
+                                Suppliers = offset == 0
+                                    ? supplierWrites
+                                    : Array.Empty<RemoteCatalogSupplierWrite>(),
+                                Products = BuildProductsRange(offset, count),
+                                Prices = BuildPricesRange(offset, count)
+                            },
+                            commitFence: CreateBenchmarkFence(fullBinding!)).ConfigureAwait(false);
+                        if (stagedEvidence.ConflictCode.Length > 0)
+                        {
+                            throw new InvalidOperationException(
+                                "Synthetic authoritative preflight staging failed: " +
+                                stagedEvidence.ConflictCode);
+                        }
+                    }
+                    var reconciler = new CatalogFullRefreshReconciler(factory);
+                    var preflightCode = await reconciler.ValidateStagedPreflightAsync(
+                        fullRunId,
+                        BuildBenchmarkSummary(rows, categoryWrites.Count, supplierWrites.Count),
+                        BuildBenchmarkRunContext(
+                            rows,
+                            pageSize,
+                            categoryWrites.Count,
+                            supplierWrites.Count,
+                            Math.Max(1L, stopwatch.ElapsedMilliseconds),
+                            requireAppliedEvidence: false),
+                        CreateBenchmarkFence(fullBinding!)).ConfigureAwait(false);
+                    if (preflightCode.Length > 0)
+                    {
+                        throw new InvalidOperationException(
+                            "Synthetic authoritative preflight failed: " + preflightCode);
+                    }
+                    preflightStageElapsedMilliseconds =
+                        stopwatch.Elapsed.TotalMilliseconds - preflightStartedAt;
+                    await fullState!.RequestFullRepairAsync(
+                        "benchmark-shop",
+                        "BENCHMARK-SHOP",
+                        fullBinding!.Epoch).ConfigureAwait(false);
+                    fullBinding = await fullState.EnsureAndLoadCursorAsync(
+                        "benchmark-shop",
+                        "BENCHMARK-SHOP").ConfigureAwait(false);
+                    if (!fullBinding.IsValid)
+                    {
+                        throw new InvalidOperationException(
+                            "Benchmark repair binding failed: " + fullBinding.Code);
+                    }
+                    applyStartedAtMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
+                    using var run = repository.CreateRunContext();
+                    for (var offset = 0; offset < rows; offset += pageSize)
+                    {
+                        var count = Math.Min(pageSize, rows - offset);
+                        var pageNumber = (offset / pageSize) + 1;
+                        await run.ApplyAsync(new RemoteCatalogBatch
+                        {
+                            AuthoritativeFullRefresh = true,
+                            AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+                            {
+                                FullRunId = fullRunId,
+                                HasMore = offset + count < rows,
+                                PageNumber = pageNumber
+                            },
+                            Categories = offset == 0
+                                ? categoryWrites
+                                : Array.Empty<RemoteCatalogCategoryWrite>(),
+                            Suppliers = offset == 0
+                                ? supplierWrites
+                                : Array.Empty<RemoteCatalogSupplierWrite>(),
+                            Products = BuildProductsRange(offset, count),
+                            Prices = BuildPricesRange(offset, count)
+                        }, commitFence: CreateBenchmarkFence(fullBinding!));
+                        logicalRequestCount++;
+                    }
+                    runDiagnostics = run.Diagnostics;
+                }
                 else
                 {
                     var repository = new RemoteCatalogBatchRepository(factory);
@@ -136,7 +254,6 @@ public static class CatalogBatchPerformanceScenario
                     {
                         await run.ApplyAsync(new RemoteCatalogBatch
                         {
-                            AuthoritativeFullRefresh = normalizedMode == "batch-paged-full",
                             Categories = offset == 0
                                 ? categoryWrites
                                 : Array.Empty<RemoteCatalogCategoryWrite>(),
@@ -151,43 +268,40 @@ public static class CatalogBatchPerformanceScenario
                     runDiagnostics = run.Diagnostics;
                 }
 
+                applyElapsedMilliseconds =
+                    stopwatch.Elapsed.TotalMilliseconds - applyStartedAtMilliseconds;
                 var completeness = "not_evaluated";
                 if (normalizedMode == "batch-paged-full")
                 {
+                    var reconcileStartedAt = stopwatch.Elapsed.TotalMilliseconds;
                     var exactness = await new CatalogFullRefreshReconciler(factory)
-                        .ReconcileAndVerifyAsync(
-                            productWrites.Select(product => product.RemoteProductId),
-                            categoryWrites.Select(category => category.RemoteCategoryId),
-                            supplierWrites.Select(supplier => supplier.RemoteSupplierId),
+                        .ReconcileAndVerifyStagedAsync(
+                            fullRunId,
                             "2026-07-14T10:00:00Z",
-                            new PosCatalogSummaryResponse
-                            {
-                                Products = rows,
-                                ActiveProducts = rows,
-                                Categories = categoryWrites.Count,
-                                Suppliers = supplierWrites.Count,
-                                Prices = priceWrites.Count
-                            },
-                            new CatalogExactnessRunContext
-                            {
-                                CatalogVersion = "benchmark-catalog-v1",
-                                CategoryRowsReceived = categoryWrites.Count,
-                                DurationMilliseconds = Math.Max(1L, stopwatch.ElapsedMilliseconds),
-                                HasMore = false,
-                                Pages = (rows + pageSize - 1) / pageSize,
-                                PriceRowsAccepted = priceWrites.Count,
-                                PriceRowsReceived = priceWrites.Count,
-                                ProductRowsReceived = productWrites.Count,
-                                SupplierRowsReceived = supplierWrites.Count,
-                                SyncCursor = "benchmark-final-cursor",
-                                SyncMode = "full_refresh"
-                            }).ConfigureAwait(false);
+                            BuildBenchmarkSummary(rows, categoryWrites.Count, supplierWrites.Count),
+                            BuildBenchmarkRunContext(
+                                rows,
+                                pageSize,
+                                categoryWrites.Count,
+                                supplierWrites.Count,
+                                Math.Max(1L, stopwatch.ElapsedMilliseconds),
+                                requireAppliedEvidence: true),
+                            CreateBenchmarkFence(fullBinding!)).ConfigureAwait(false);
                     completeness = exactness.Status.ToString();
                     if (exactness.Status != CatalogCompletenessStatus.Verified)
                     {
                         throw new InvalidOperationException(
                             "Synthetic full reconciliation failed: " + exactness.Code);
                     }
+
+                    await new CatalogFullRefreshReconciler(factory)
+                        .ClearAuthoritativeStageAsync(
+                            fullRunId,
+                            "benchmark-shop",
+                            "BENCHMARK-SHOP")
+                        .ConfigureAwait(false);
+                    reconcileElapsedMilliseconds =
+                        stopwatch.Elapsed.TotalMilliseconds - reconcileStartedAt;
                 }
 
                 stopwatch.Stop();
@@ -200,9 +314,13 @@ public static class CatalogBatchPerformanceScenario
                 var allocatedBytes = GC.GetTotalAllocatedBytes(false) - allocatedBefore;
 #endif
                 using var verify = factory.Open();
+                authoritativeStageRowsAfter = await verify.ExecuteScalarAsync<long>(
+                    "SELECT COUNT(1) FROM catalog_authoritative_id_stage;");
                 samples.Add(new CatalogBatchPerformanceSample
                 {
                     AllocatedBytes = allocatedBytes,
+                    ApplyElapsedMilliseconds = applyElapsedMilliseconds,
+                    AuthoritativeStageRowsAfter = authoritativeStageRowsAfter,
                     CpuMilliseconds = (process.TotalProcessorTime - cpuBefore).TotalMilliseconds,
                     DatabaseBytes = new FileInfo(dbPath).Length,
                     DispatcherMaxDelayMilliseconds = dispatcherMaxDelay,
@@ -225,6 +343,8 @@ public static class CatalogBatchPerformanceScenario
                         "SELECT COUNT(1) FROM product_price_history;"),
                     ProductCount = await verify.ExecuteScalarAsync<long>(
                         "SELECT COUNT(1) FROM products WHERE COALESCE(is_active, 1) = 1 AND remote_product_id IS NOT NULL;"),
+                    PreflightStageElapsedMilliseconds = preflightStageElapsedMilliseconds,
+                    ReconcileElapsedMilliseconds = reconcileElapsedMilliseconds,
                     Rows = rows,
                     ScopeSqlQueryCount = runDiagnostics?.ScopeSqlQueryCount ?? 0,
                     ContextSqlCommandCount = runDiagnostics?.ContextSqlCommandCount ?? 0,
@@ -328,7 +448,12 @@ public static class CatalogBatchPerformanceScenario
 
     private static IReadOnlyList<RemoteCatalogProductWrite> BuildProducts(int rows)
     {
-        return Enumerable.Range(0, rows)
+        return BuildProductsRange(0, rows);
+    }
+
+    private static IReadOnlyList<RemoteCatalogProductWrite> BuildProductsRange(int start, int count)
+    {
+        return Enumerable.Range(start, count)
             .Select(i =>
             {
                 var reference = i % 40;
@@ -352,7 +477,12 @@ public static class CatalogBatchPerformanceScenario
 
     private static IReadOnlyList<RemoteCatalogPriceWrite> BuildPrices(int rows)
     {
-        return Enumerable.Range(0, rows)
+        return BuildPricesRange(0, rows);
+    }
+
+    private static IReadOnlyList<RemoteCatalogPriceWrite> BuildPricesRange(int start, int count)
+    {
+        return Enumerable.Range(start, count)
             .Select(i => new RemoteCatalogPriceWrite
             {
                 RemotePriceId = $"remote-price-{i:D8}",
@@ -363,6 +493,62 @@ public static class CatalogBatchPerformanceScenario
                 Source = "catalog_pull"
             })
             .ToArray();
+    }
+
+    private static RemoteCatalogCommitFence CreateBenchmarkFence(CatalogShopBindingResult binding)
+    {
+        if (binding == null) throw new ArgumentNullException(nameof(binding));
+        return new RemoteCatalogCommitFence
+        {
+            ExpectedEpoch = binding.Epoch,
+            ExpectedPreviousCursor = binding.Cursor,
+            ExpectedPreviousMode = binding.Mode,
+            ShopCode = "BENCHMARK-SHOP",
+            ShopId = "benchmark-shop"
+        };
+    }
+
+    private static PosCatalogSummaryResponse BuildBenchmarkSummary(
+        int rows,
+        int categories,
+        int suppliers)
+    {
+        return new PosCatalogSummaryResponse
+        {
+            Products = rows,
+            ActiveProducts = rows,
+            Categories = categories,
+            Suppliers = suppliers,
+            Prices = rows
+        };
+    }
+
+    private static CatalogExactnessRunContext BuildBenchmarkRunContext(
+        int rows,
+        int pageSize,
+        int categories,
+        int suppliers,
+        long durationMilliseconds,
+        bool requireAppliedEvidence)
+    {
+        var context = new CatalogExactnessRunContext
+        {
+            CatalogVersion = "benchmark-catalog-v1",
+            DurationMilliseconds = durationMilliseconds,
+            HasMore = false,
+            Pages = (rows + pageSize - 1) / pageSize,
+            SyncCursor = "benchmark-final-cursor",
+            SyncMode = "full_refresh"
+        };
+        if (requireAppliedEvidence)
+        {
+            context.CategoryRowsReceived = categories;
+            context.PriceRowsAccepted = rows;
+            context.PriceRowsReceived = rows;
+            context.ProductRowsReceived = rows;
+            context.SupplierRowsReceived = suppliers;
+        }
+        return context;
     }
 
     private static IReadOnlyList<RemoteCatalogProductWrite> BuildDeltaProducts(int rows)
@@ -579,6 +765,8 @@ public static class CatalogBatchPerformanceScenario
 public sealed class CatalogBatchPerformanceSample
 {
     public long AllocatedBytes { get; set; }
+    public double ApplyElapsedMilliseconds { get; set; }
+    public long AuthoritativeStageRowsAfter { get; set; }
     public long ContextSqlCommandCount { get; set; }
     public double CpuMilliseconds { get; set; }
     public long DatabaseBytes { get; set; }
@@ -598,7 +786,9 @@ public sealed class CatalogBatchPerformanceSample
     public long PeakPrivateBytes { get; set; }
     public long PeakWorkingSetBytes { get; set; }
     public long PriceCount { get; set; }
+    public double PreflightStageElapsedMilliseconds { get; set; }
     public long ProductCount { get; set; }
+    public double ReconcileElapsedMilliseconds { get; set; }
     public int Rows { get; set; }
     public int ScopeSqlQueryCount { get; set; }
     public long WorkingSetBytes { get; set; }
@@ -607,8 +797,10 @@ public sealed class CatalogBatchPerformanceSample
     {
         return
             $"iteration={Iteration} products={ProductCount} prices={PriceCount} pending={PendingPriceCount} " +
-            $"completeness={ExactnessStatus} " +
+            $"completeness={ExactnessStatus} authoritative_stage_rows_after={AuthoritativeStageRowsAfter} " +
             $"elapsed_ms={ElapsedMilliseconds:F3} rows_per_sec={Rows / (ElapsedMilliseconds / 1000d):F2} " +
+            $"apply_ms={ApplyElapsedMilliseconds:F3} reconcile_ms={ReconcileElapsedMilliseconds:F3} " +
+            $"preflight_stage_ms={PreflightStageElapsedMilliseconds:F3} " +
             $"cpu_ms={CpuMilliseconds:F3} requests={LogicalRequestCount} " +
             $"scope_sql_before={LegacyScopeSqlQueryEstimate} scope_sql_after={ScopeSqlQueryCount} " +
             $"context_sql_commands={ContextSqlCommandCount} " +

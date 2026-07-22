@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Win7POS.Core.Online;
+using Win7POS.Data.Repositories;
 
 namespace Win7POS.Data.Online
 {
@@ -42,6 +44,301 @@ namespace Win7POS.Data.Online
             return CatalogExactnessVerifier.Evaluate(summary, audit, context);
         }
 
+        public async Task<CatalogExactnessResult> ReconcileAndVerifyStagedAsync(
+            string fullRunId,
+            string generatedAt,
+            PosCatalogSummaryResponse summary,
+            CatalogExactnessRunContext context,
+            RemoteCatalogCommitFence commitFence,
+            CancellationToken cancellationToken = default)
+        {
+            if (!CatalogPaginationSafetyPolicy.HasCompleteValidSummary(summary))
+            {
+                var currentAudit = await AuditCurrentAsync().ConfigureAwait(false);
+                return CatalogExactnessVerifier.Evaluate(summary, currentAudit, context);
+            }
+
+            RemoteCatalogContentPolicy.EnsureOptionalTimestamp(
+                generatedAt,
+                "catalog.generated_at");
+            var normalizedRunId = (fullRunId ?? string.Empty).Trim();
+            if (normalizedRunId.Length == 0 ||
+                normalizedRunId.Length > 64 ||
+                !string.Equals(normalizedRunId, fullRunId, StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    "Authoritative catalog full run identity is invalid.",
+                    nameof(fullRunId));
+            }
+            if (commitFence == null)
+                throw new ArgumentNullException(nameof(commitFence));
+
+            var runContext = context ?? new CatalogExactnessRunContext();
+            var removedAt = string.IsNullOrWhiteSpace(generatedAt)
+                ? DateTimeOffset.UtcNow.ToString("O")
+                : generatedAt.Trim();
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await ProductRepository.CatalogMetaWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using var conn = _factory.Open();
+                using var tx = conn.BeginTransaction(deferred: false);
+                try
+                {
+                    await RemoteCatalogBatchRepository.RequireCommitFenceAsync(
+                        conn,
+                        tx,
+                        commitFence).ConfigureAwait(false);
+                    await PrepareStagedAuthoritativeTablesAsync(
+                        conn,
+                        tx,
+                        normalizedRunId,
+                        commitFence).ConfigureAwait(false);
+                    var evidence = await LoadStagedEvidenceAsync(
+                        conn,
+                        tx,
+                        normalizedRunId,
+                        commitFence).ConfigureAwait(false);
+                    var rejectionCode = FindStagedPreflightError(
+                        evidence,
+                        summary,
+                        runContext);
+                    if (rejectionCode.Length > 0)
+                    {
+                        var currentAudit = await LoadAuditAsync(conn, tx).ConfigureAwait(false);
+                        ApplyStageEvidence(currentAudit, evidence);
+                        tx.Commit();
+                        return CreateStageRejection(
+                            rejectionCode,
+                            summary,
+                            currentAudit,
+                            runContext);
+                    }
+
+                    runContext.DuplicatePriceRows = evidence.DuplicatePrices;
+                    var audit = await ReconcilePreparedAsync(
+                        conn,
+                        tx,
+                        removedAt,
+                        evidence.ToAuthoritativeCounts()).ConfigureAwait(false);
+                    tx.Commit();
+                    return CatalogExactnessVerifier.Evaluate(summary, audit, runContext);
+                }
+                catch
+                {
+                    try { tx.Rollback(); } catch { }
+                    throw;
+                }
+            }
+            finally
+            {
+                ProductRepository.CatalogMetaWriteGate.Release();
+            }
+        }
+
+        public async Task<string> ValidateStagedPreflightAsync(
+            string fullRunId,
+            PosCatalogSummaryResponse summary,
+            CatalogExactnessRunContext context,
+            RemoteCatalogCommitFence commitFence,
+            CancellationToken cancellationToken = default)
+        {
+            var summaryError = PosOnlineCompatibilityValidator.ValidateCatalogSummary(summary);
+            if (!string.IsNullOrWhiteSpace(summaryError))
+                return summaryError;
+            if (!CatalogPaginationSafetyPolicy.HasCompleteValidSummary(summary))
+                return "catalog_summary_incomplete";
+
+            var normalizedRunId = (fullRunId ?? string.Empty).Trim();
+            if (normalizedRunId.Length == 0 ||
+                normalizedRunId.Length > 64 ||
+                !string.Equals(normalizedRunId, fullRunId, StringComparison.Ordinal))
+            {
+                throw new ArgumentException(
+                    "Authoritative catalog full run identity is invalid.",
+                    nameof(fullRunId));
+            }
+            if (commitFence == null)
+                throw new ArgumentNullException(nameof(commitFence));
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await ProductRepository.CatalogMetaWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using var conn = _factory.Open();
+                using var tx = conn.BeginTransaction(deferred: false);
+                try
+                {
+                    await RemoteCatalogBatchRepository.RequireCommitFenceAsync(
+                        conn,
+                        tx,
+                        commitFence).ConfigureAwait(false);
+                    await PrepareStagedAuthoritativeTablesAsync(
+                        conn,
+                        tx,
+                        normalizedRunId,
+                        commitFence).ConfigureAwait(false);
+                    var evidence = await LoadStagedEvidenceAsync(
+                        conn,
+                        tx,
+                        normalizedRunId,
+                        commitFence).ConfigureAwait(false);
+                    var code = FindStagedPreflightError(
+                        evidence,
+                        summary,
+                        context ?? new CatalogExactnessRunContext(),
+                        requireAppliedEvidence: false);
+                    tx.Commit();
+                    return code;
+                }
+                catch
+                {
+                    try { tx.Rollback(); } catch { }
+                    throw;
+                }
+            }
+            finally
+            {
+                ProductRepository.CatalogMetaWriteGate.Release();
+            }
+        }
+
+        public async Task<int> ClearStaleAuthoritativeStagesAsync(
+            string shopId,
+            string shopCode,
+            string keepFullRunId,
+            int maximumRows = 4096)
+        {
+            var normalizedShopId = RequireStageScopeValue(shopId, nameof(shopId));
+            var normalizedShopCode = RequireStageScopeValue(shopCode, nameof(shopCode));
+            var normalizedKeepRunId = (keepFullRunId ?? string.Empty).Trim();
+            if (maximumRows <= 0 || maximumRows > 16384)
+                throw new ArgumentOutOfRangeException(nameof(maximumRows));
+
+            await ProductRepository.CatalogMetaWriteGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                using var conn = _factory.Open();
+                using var tx = conn.BeginTransaction(deferred: false);
+                var removed = await conn.ExecuteAsync(@"
+DELETE FROM catalog_authoritative_id_stage
+WHERE stage_id IN (
+  SELECT item.stage_id
+  FROM catalog_authoritative_id_stage item
+  JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+  WHERE scope.shop_id = @normalizedShopId
+    AND scope.shop_code = @normalizedShopCode
+    AND (@normalizedKeepRunId = '' OR scope.full_run_id <> @normalizedKeepRunId)
+  ORDER BY item.stage_id
+  LIMIT @maximumRows
+);",
+                    new
+                    {
+                        normalizedShopId,
+                        normalizedShopCode,
+                        normalizedKeepRunId,
+                        maximumRows
+                    },
+                    tx).ConfigureAwait(false);
+                await conn.ExecuteAsync(@"
+DELETE FROM catalog_authoritative_stage_scope
+WHERE scope_id IN (
+  SELECT scope.scope_id
+  FROM catalog_authoritative_stage_scope scope
+  WHERE scope.shop_id = @normalizedShopId
+    AND scope.shop_code = @normalizedShopCode
+    AND (@normalizedKeepRunId = '' OR scope.full_run_id <> @normalizedKeepRunId)
+    AND NOT EXISTS (
+      SELECT 1 FROM catalog_authoritative_id_stage item
+      WHERE item.scope_id = scope.scope_id)
+  ORDER BY scope.scope_id
+  LIMIT @maximumRows
+);",
+                    new { normalizedShopId, normalizedShopCode, normalizedKeepRunId, maximumRows },
+                    tx).ConfigureAwait(false);
+                tx.Commit();
+                return removed;
+            }
+            finally
+            {
+                ProductRepository.CatalogMetaWriteGate.Release();
+            }
+        }
+
+        public async Task<int> ClearAuthoritativeStageAsync(
+            string fullRunId,
+            string shopId,
+            string shopCode)
+        {
+            var normalizedRunId = RequireStageScopeValue(fullRunId, nameof(fullRunId));
+            var normalizedShopId = RequireStageScopeValue(shopId, nameof(shopId));
+            var normalizedShopCode = RequireStageScopeValue(shopCode, nameof(shopCode));
+
+            await ProductRepository.CatalogMetaWriteGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var totalRemoved = 0;
+                const int maximumRowsPerTransaction = 16384;
+                while (true)
+                {
+                    using var conn = _factory.Open();
+                    using var tx = conn.BeginTransaction(deferred: false);
+                    var removed = await conn.ExecuteAsync(@"
+DELETE FROM catalog_authoritative_id_stage
+WHERE stage_id IN (
+  SELECT item.stage_id
+  FROM catalog_authoritative_id_stage item
+  JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+  WHERE scope.shop_id = @normalizedShopId
+    AND scope.shop_code = @normalizedShopCode
+    AND scope.full_run_id = @normalizedRunId
+  ORDER BY item.stage_id
+  LIMIT @maximumRowsPerTransaction
+);",
+                        new
+                        {
+                            normalizedShopId,
+                            normalizedShopCode,
+                            normalizedRunId,
+                            maximumRowsPerTransaction
+                        },
+                        tx).ConfigureAwait(false);
+                    if (removed < maximumRowsPerTransaction)
+                    {
+                        await conn.ExecuteAsync(@"
+DELETE FROM catalog_authoritative_stage_scope
+WHERE shop_id = @normalizedShopId
+  AND shop_code = @normalizedShopCode
+  AND full_run_id = @normalizedRunId
+  AND NOT EXISTS (
+    SELECT 1 FROM catalog_authoritative_id_stage item
+    WHERE item.scope_id = catalog_authoritative_stage_scope.scope_id);",
+                            new { normalizedShopId, normalizedShopCode, normalizedRunId },
+                            tx).ConfigureAwait(false);
+                    }
+                    tx.Commit();
+                    totalRemoved = checked(totalRemoved + removed);
+                    if (removed < maximumRowsPerTransaction) return totalRemoved;
+                    await Task.Yield();
+                }
+            }
+            finally
+            {
+                ProductRepository.CatalogMetaWriteGate.Release();
+            }
+        }
+
+        private static string RequireStageScopeValue(string value, string parameterName)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            if (normalized.Length == 0 || normalized.Length > 128)
+                throw new ArgumentException("Catalog authoritative stage scope is invalid.", parameterName);
+            return normalized;
+        }
+
         public async Task<CatalogFullRefreshResult> ReconcileAsync(
             IEnumerable<string> productIds,
             IEnumerable<string> categoryIds,
@@ -78,76 +375,25 @@ WHERE singleton_id = 1 AND active = 1;",
                 await CreateAndFillAsync(conn, tx, "temp_full_product_ids", products.Values).ConfigureAwait(false);
                 await CreateAndFillAsync(conn, tx, "temp_full_category_ids", categories.Values).ConfigureAwait(false);
                 await CreateAndFillAsync(conn, tx, "temp_full_supplier_ids", suppliers.Values).ConfigureAwait(false);
-
-                var deactivatedProducts = await conn.ExecuteAsync(@"
-UPDATE products
-SET is_active = 0,
-    remote_deleted_at = @removedAt
-WHERE TRIM(COALESCE(remote_product_id, '')) <> ''
-  AND COALESCE(is_active, 1) = 1
-  AND NOT EXISTS (
-    SELECT 1 FROM temp_full_product_ids incoming
-    WHERE incoming.id = TRIM(products.remote_product_id)
-  );",
-                    new { removedAt },
-                    tx).ConfigureAwait(false);
-                var deactivatedCategories = await conn.ExecuteAsync(@"
-UPDATE categories
-SET is_active = 0,
-    remote_deleted_at = @removedAt,
-    remote_updated_at = @removedAt
-WHERE TRIM(COALESCE(remote_category_id, '')) <> ''
-  AND COALESCE(is_active, 1) = 1
-  AND NOT EXISTS (
-    SELECT 1 FROM temp_full_category_ids incoming
-    WHERE incoming.id = TRIM(categories.remote_category_id)
-  );",
-                    new { removedAt },
-                    tx).ConfigureAwait(false);
-                var deactivatedSuppliers = await conn.ExecuteAsync(@"
-UPDATE suppliers
-SET is_active = 0,
-    remote_deleted_at = @removedAt,
-    remote_updated_at = @removedAt
-WHERE TRIM(COALESCE(remote_supplier_id, '')) <> ''
-  AND COALESCE(is_active, 1) = 1
-  AND NOT EXISTS (
-    SELECT 1 FROM temp_full_supplier_ids incoming
-    WHERE incoming.id = TRIM(suppliers.remote_supplier_id)
-  );",
-                    new { removedAt },
-                    tx).ConfigureAwait(false);
-                await conn.ExecuteAsync(@"
-DELETE FROM remote_catalog_pending_prices
-WHERE NOT EXISTS (
-  SELECT 1 FROM temp_full_product_ids incoming
-  WHERE incoming.id = TRIM(remote_catalog_pending_prices.remote_product_id)
-);",
-                    transaction: tx).ConfigureAwait(false);
-                await conn.ExecuteAsync(@"
-DELETE FROM remote_catalog_product_references
-WHERE NOT EXISTS (
-  SELECT 1 FROM temp_full_product_ids incoming
-  WHERE incoming.id = TRIM(remote_catalog_product_references.remote_product_id)
-);",
-                    transaction: tx).ConfigureAwait(false);
-
-                var result = await LoadAuditAsync(conn, tx).ConfigureAwait(false);
-                result.DeactivatedCategories = deactivatedCategories;
-                result.DeactivatedProducts = deactivatedProducts;
-                result.DeactivatedSuppliers = deactivatedSuppliers;
-                result.ReceivedProductIds = products.ReceivedCount;
-                result.DistinctAuthoritativeProductIds = products.Values.Count;
-                result.DuplicateAuthoritativeProductIds = products.DuplicateCount;
-                result.InvalidAuthoritativeProductIds = products.InvalidCount;
-                result.ReceivedCategoryIds = categories.ReceivedCount;
-                result.DistinctAuthoritativeCategoryIds = categories.Values.Count;
-                result.DuplicateAuthoritativeCategoryIds = categories.DuplicateCount;
-                result.InvalidAuthoritativeCategoryIds = categories.InvalidCount;
-                result.ReceivedSupplierIds = suppliers.ReceivedCount;
-                result.DistinctAuthoritativeSupplierIds = suppliers.Values.Count;
-                result.DuplicateAuthoritativeSupplierIds = suppliers.DuplicateCount;
-                result.InvalidAuthoritativeSupplierIds = suppliers.InvalidCount;
+                var result = await ReconcilePreparedAsync(
+                    conn,
+                    tx,
+                    removedAt,
+                    new CatalogAuthoritativeCounts
+                    {
+                        ReceivedProducts = products.ReceivedCount,
+                        DistinctProducts = products.Values.Count,
+                        DuplicateProducts = products.DuplicateCount,
+                        InvalidProducts = products.InvalidCount,
+                        ReceivedCategories = categories.ReceivedCount,
+                        DistinctCategories = categories.Values.Count,
+                        DuplicateCategories = categories.DuplicateCount,
+                        InvalidCategories = categories.InvalidCount,
+                        ReceivedSuppliers = suppliers.ReceivedCount,
+                        DistinctSuppliers = suppliers.Values.Count,
+                        DuplicateSuppliers = suppliers.DuplicateCount,
+                        InvalidSuppliers = suppliers.InvalidCount
+                    }).ConfigureAwait(false);
                 tx.Commit();
                 return result;
             }
@@ -195,6 +441,442 @@ WHERE TRIM(COALESCE(remote_supplier_id, '')) <> ''
                 tx.Commit();
                 return result;
             }
+        }
+
+        private static async Task PrepareStagedAuthoritativeTablesAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            Microsoft.Data.Sqlite.SqliteTransaction tx,
+            string fullRunId,
+            RemoteCatalogCommitFence commitFence)
+        {
+            await conn.ExecuteAsync(@"
+CREATE TEMP TABLE IF NOT EXISTS temp_full_product_ids (id TEXT PRIMARY KEY);
+CREATE TEMP TABLE IF NOT EXISTS temp_full_category_ids (id TEXT PRIMARY KEY);
+CREATE TEMP TABLE IF NOT EXISTS temp_full_supplier_ids (id TEXT PRIMARY KEY);
+DELETE FROM temp_full_product_ids;
+DELETE FROM temp_full_category_ids;
+DELETE FROM temp_full_supplier_ids;
+INSERT OR IGNORE INTO temp_full_product_ids(id)
+SELECT item.remote_id
+FROM catalog_authoritative_id_stage item
+JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+WHERE scope.shop_id = @ShopId
+  AND scope.shop_code = @ShopCode
+  AND scope.transition_epoch = @TransitionEpoch
+  AND scope.generation_id = @GenerationId
+  AND scope.generation_fingerprint = @GenerationFingerprint
+  AND scope.full_run_id = @FullRunId
+  AND item.entity_kind = 'product'
+  AND TRIM(item.remote_id) <> '';
+INSERT OR IGNORE INTO temp_full_category_ids(id)
+SELECT item.remote_id
+FROM catalog_authoritative_id_stage item
+JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+WHERE scope.shop_id = @ShopId
+  AND scope.shop_code = @ShopCode
+  AND scope.transition_epoch = @TransitionEpoch
+  AND scope.generation_id = @GenerationId
+  AND scope.generation_fingerprint = @GenerationFingerprint
+  AND scope.full_run_id = @FullRunId
+  AND item.entity_kind = 'category'
+  AND TRIM(item.remote_id) <> '';
+INSERT OR IGNORE INTO temp_full_supplier_ids(id)
+SELECT item.remote_id
+FROM catalog_authoritative_id_stage item
+JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+WHERE scope.shop_id = @ShopId
+  AND scope.shop_code = @ShopCode
+  AND scope.transition_epoch = @TransitionEpoch
+  AND scope.generation_id = @GenerationId
+  AND scope.generation_fingerprint = @GenerationFingerprint
+  AND scope.full_run_id = @FullRunId
+  AND item.entity_kind = 'supplier'
+  AND TRIM(item.remote_id) <> '';",
+                StageScope.Create(fullRunId, commitFence),
+                tx).ConfigureAwait(false);
+        }
+
+        private static Task<CatalogStagedEvidence> LoadStagedEvidenceAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            Microsoft.Data.Sqlite.SqliteTransaction tx,
+            string fullRunId,
+            RemoteCatalogCommitFence commitFence)
+        {
+            return conn.QuerySingleAsync<CatalogStagedEvidence>(@"
+WITH scoped AS (
+  SELECT page_number, entity_kind, remote_id, content_fingerprint,
+         category_remote_id, supplier_remote_id, product_remote_id,
+         occurrence_count, has_more
+  FROM catalog_authoritative_id_stage item
+  JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+  WHERE scope.shop_id = @ShopId
+    AND scope.shop_code = @ShopCode
+    AND scope.transition_epoch = @TransitionEpoch
+    AND scope.generation_id = @GenerationId
+    AND scope.generation_fingerprint = @GenerationFingerprint
+    AND scope.full_run_id = @FullRunId
+)
+SELECT
+  SUM(CASE WHEN entity_kind = 'page' THEN 1 ELSE 0 END) AS PageMarkers,
+  COALESCE(MIN(CASE WHEN entity_kind = 'page' THEN page_number END), 0) AS FirstPage,
+  COALESCE(MAX(CASE WHEN entity_kind = 'page' THEN page_number END), 0) AS LastPage,
+  SUM(CASE WHEN entity_kind = 'page' AND has_more = 1 THEN 1 ELSE 0 END) AS ContinuationPages,
+  SUM(CASE WHEN entity_kind = 'page' AND has_more = 0 THEN 1 ELSE 0 END) AS TerminalPages,
+  COALESCE(MAX(CASE WHEN entity_kind = 'page' AND has_more = 0 THEN page_number END), 0)
+    AS TerminalPageNumber,
+  (SELECT COUNT(DISTINCT rows.page_number)
+   FROM scoped rows
+   WHERE rows.entity_kind <> 'page'
+     AND NOT EXISTS (
+       SELECT 1 FROM scoped marker
+       WHERE marker.entity_kind = 'page'
+         AND marker.page_number = rows.page_number)) AS OrphanPageRows,
+  COALESCE(SUM(CASE WHEN entity_kind = 'product' THEN occurrence_count ELSE 0 END), 0)
+    AS ReceivedProducts,
+  COUNT(DISTINCT CASE
+    WHEN entity_kind = 'product' AND TRIM(remote_id) <> '' THEN remote_id END)
+    AS DistinctProducts,
+  COALESCE(SUM(CASE
+    WHEN entity_kind = 'product' AND TRIM(remote_id) = '' THEN occurrence_count ELSE 0 END), 0)
+    AS InvalidProducts,
+  COALESCE(SUM(CASE
+    WHEN entity_kind = 'product' AND TRIM(remote_id) <> '' THEN occurrence_count ELSE 0 END), 0)
+    - COUNT(DISTINCT CASE
+        WHEN entity_kind = 'product' AND TRIM(remote_id) <> '' THEN remote_id END)
+    AS DuplicateProducts,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'category' THEN remote_id END)
+    AS ReceivedCategories,
+  COUNT(DISTINCT CASE
+    WHEN entity_kind = 'category' AND TRIM(remote_id) <> '' THEN remote_id END)
+    AS DistinctCategories,
+  COUNT(DISTINCT CASE
+    WHEN entity_kind = 'category' AND TRIM(remote_id) = '' THEN remote_id END)
+    AS InvalidCategories,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'supplier' THEN remote_id END)
+    AS ReceivedSuppliers,
+  COUNT(DISTINCT CASE
+    WHEN entity_kind = 'supplier' AND TRIM(remote_id) <> '' THEN remote_id END)
+    AS DistinctSuppliers,
+  COUNT(DISTINCT CASE
+    WHEN entity_kind = 'supplier' AND TRIM(remote_id) = '' THEN remote_id END)
+    AS InvalidSuppliers,
+  COALESCE(SUM(CASE WHEN entity_kind = 'price' THEN occurrence_count ELSE 0 END), 0)
+    AS ReceivedPrices,
+  COALESCE(SUM(CASE
+    WHEN entity_kind = 'price' AND TRIM(remote_id) <> '' THEN occurrence_count ELSE 0 END), 0)
+    - COUNT(DISTINCT CASE
+        WHEN entity_kind = 'price' AND TRIM(remote_id) <> '' THEN remote_id END)
+    AS DuplicatePrices,
+  COALESCE(SUM(CASE WHEN entity_kind IN (
+    'product_tombstone', 'category_tombstone', 'supplier_tombstone')
+    THEN occurrence_count ELSE 0 END), 0) AS ReceivedTombstones,
+  COALESCE(SUM(CASE WHEN entity_kind = 'product' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidProductRows,
+  COALESCE(SUM(CASE WHEN entity_kind = 'category' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidCategoryRows,
+  COALESCE(SUM(CASE WHEN entity_kind = 'supplier' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidSupplierRows,
+  COALESCE(SUM(CASE WHEN entity_kind = 'price' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidPriceRows,
+  COALESCE(SUM(CASE WHEN entity_kind = 'product_tombstone' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidProductTombstoneRows,
+  COALESCE(SUM(CASE WHEN entity_kind = 'category_tombstone' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidCategoryTombstoneRows,
+  COALESCE(SUM(CASE WHEN entity_kind = 'supplier_tombstone' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidSupplierTombstoneRows,
+  (SELECT COUNT(1) FROM (
+     SELECT content_fingerprint FROM scoped
+     WHERE entity_kind = 'product' AND content_fingerprint LIKE 'barcode:%'
+     GROUP BY content_fingerprint HAVING COUNT(DISTINCT remote_id) > 1
+   )) AS ProductIdentityConflicts,
+  (SELECT COUNT(1) FROM scoped product
+   WHERE product.entity_kind = 'product'
+     AND TRIM(product.category_remote_id) <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM temp_full_category_ids category
+       WHERE category.id = product.category_remote_id)) AS OrphanCategoryReferences,
+  (SELECT COUNT(1) FROM scoped product
+   WHERE product.entity_kind = 'product'
+     AND TRIM(product.supplier_remote_id) <> ''
+     AND NOT EXISTS (
+       SELECT 1 FROM temp_full_supplier_ids supplier
+       WHERE supplier.id = product.supplier_remote_id)) AS OrphanSupplierReferences,
+  (SELECT COUNT(1) FROM scoped price
+   WHERE price.entity_kind = 'price'
+     AND (TRIM(price.product_remote_id) = '' OR NOT EXISTS (
+       SELECT 1 FROM temp_full_product_ids product
+       WHERE product.id = price.product_remote_id))) AS OrphanPriceProductReferences,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'category'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS CategoryConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'supplier'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS SupplierConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'product_tombstone'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS ProductTombstoneConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'category_tombstone'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS CategoryTombstoneConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'supplier_tombstone'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS SupplierTombstoneConflicts,
+  EXISTS(
+    SELECT 1 FROM scoped active JOIN scoped tombstone
+      ON tombstone.remote_id = active.remote_id
+    WHERE active.entity_kind = 'product'
+      AND tombstone.entity_kind = 'product_tombstone') AS ProductActiveTombstoneConflicts,
+  EXISTS(
+    SELECT 1 FROM scoped active JOIN scoped tombstone
+      ON tombstone.remote_id = active.remote_id
+    WHERE active.entity_kind = 'category'
+      AND tombstone.entity_kind = 'category_tombstone') AS CategoryActiveTombstoneConflicts,
+  EXISTS(
+    SELECT 1 FROM scoped active JOIN scoped tombstone
+      ON tombstone.remote_id = active.remote_id
+    WHERE active.entity_kind = 'supplier'
+      AND tombstone.entity_kind = 'supplier_tombstone') AS SupplierActiveTombstoneConflicts
+FROM scoped;",
+                StageScope.Create(fullRunId, commitFence),
+                tx);
+        }
+
+        private static string FindStagedPreflightError(
+            CatalogStagedEvidence evidence,
+            PosCatalogSummaryResponse summary,
+            CatalogExactnessRunContext context,
+            bool requireAppliedEvidence = true)
+        {
+            if (context.Pages <= 0 ||
+                evidence.PageMarkers != context.Pages ||
+                evidence.FirstPage != 1 ||
+                evidence.LastPage != context.Pages ||
+                evidence.ContinuationPages != context.Pages - 1 ||
+                evidence.TerminalPages != 1 ||
+                evidence.TerminalPageNumber != context.Pages ||
+                evidence.OrphanPageRows != 0)
+            {
+                return "catalog_authoritative_stage_incomplete";
+            }
+
+            if (context.HasMore)
+                return "catalog_pagination_not_complete";
+            if (!string.Equals(context.SyncMode, "full_refresh", StringComparison.OrdinalIgnoreCase))
+                return "catalog_exactness_requires_full_refresh";
+            if (string.IsNullOrWhiteSpace(context.CatalogVersion))
+                return "catalog_version_missing";
+            if (string.IsNullOrWhiteSpace(context.SyncCursor))
+                return "catalog_cursor_missing";
+            var expectedChecksum = (summary.Checksum ?? string.Empty).Trim();
+            if (expectedChecksum.Length > 0)
+            {
+                if (!string.Equals(
+                        (summary.ChecksumAlgorithm ?? string.Empty).Trim(),
+                        "sha256",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    return "catalog_checksum_algorithm_unsupported";
+                }
+                if (!IsSha256HexValue(expectedChecksum))
+                    return "catalog_summary_checksum_invalid";
+
+                var actualChecksum = (context.ActualChecksum ?? string.Empty).Trim();
+                if (actualChecksum.Length == 0)
+                    return "catalog_checksum_unverifiable";
+                if (!string.Equals(
+                        (context.ActualChecksumAlgorithm ?? string.Empty).Trim(),
+                        "sha256",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    !IsSha256HexValue(actualChecksum))
+                {
+                    return "catalog_checksum_algorithm_unsupported";
+                }
+                if (!string.Equals(expectedChecksum, actualChecksum, StringComparison.OrdinalIgnoreCase))
+                    return "catalog_checksum_mismatch";
+            }
+            if (context.DurationMilliseconds < 0 ||
+                context.InvalidPriceRows < 0 ||
+                context.PriceRowsAccepted < 0 ||
+                context.PriceRowsReceived < 0 ||
+                context.ProductRowsReceived < 0 ||
+                context.CategoryRowsReceived < 0 ||
+                context.SupplierRowsReceived < 0 ||
+                context.TombstonesReceived < 0)
+            {
+                return "catalog_run_evidence_invalid";
+            }
+
+            if (evidence.InvalidProductRows > 0) return "catalog_product_row_invalid";
+            if (evidence.InvalidCategoryRows > 0) return "catalog_category_row_invalid";
+            if (evidence.InvalidSupplierRows > 0) return "catalog_supplier_row_invalid";
+            if (evidence.InvalidPriceRows > 0) return "catalog_price_row_invalid";
+            if (evidence.InvalidProductTombstoneRows > 0) return "catalog_product_tombstone_invalid";
+            if (evidence.InvalidCategoryTombstoneRows > 0) return "catalog_category_tombstone_invalid";
+            if (evidence.InvalidSupplierTombstoneRows > 0) return "catalog_supplier_tombstone_invalid";
+            if (evidence.InvalidProducts > 0) return "catalog_invalid_product_ids";
+            if (evidence.InvalidCategories > 0) return "catalog_invalid_category_ids";
+            if (evidence.InvalidSuppliers > 0) return "catalog_invalid_supplier_ids";
+            var conflictCode = evidence.GetConflictCode();
+            if (conflictCode.Length > 0) return conflictCode;
+            if (evidence.DuplicateProducts > 0) return "catalog_duplicate_product_ids";
+            if (evidence.DuplicatePrices > 0) return "catalog_duplicate_price_rows";
+            if (context.InvalidPriceRows > 0) return "catalog_invalid_price_rows";
+
+            if (requireAppliedEvidence)
+            {
+                if (context.ProductRowsReceived != evidence.ReceivedProducts)
+                    return "catalog_product_row_evidence_mismatch";
+                if (context.CategoryRowsReceived != evidence.ReceivedCategories)
+                    return "catalog_category_row_evidence_mismatch";
+                if (context.SupplierRowsReceived != evidence.ReceivedSuppliers)
+                    return "catalog_supplier_row_evidence_mismatch";
+                if (context.PriceRowsReceived != evidence.ReceivedPrices)
+                    return "catalog_price_row_evidence_mismatch";
+                if (context.PriceRowsAccepted != evidence.ReceivedPrices)
+                    return "catalog_prices_not_fully_applied";
+                if (context.TombstonesReceived != evidence.ReceivedTombstones)
+                    return "catalog_tombstone_row_evidence_mismatch";
+            }
+
+            if (summary.Products != evidence.DistinctProducts)
+                return "catalog_products_count_mismatch";
+            if (summary.ActiveProducts.GetValueOrDefault() <= 0)
+                return "full_refresh_no_active_products";
+            if (summary.ActiveProducts != evidence.DistinctProducts)
+                return "catalog_active_products_count_mismatch";
+            if (summary.Categories != evidence.DistinctCategories)
+                return "catalog_categories_count_mismatch";
+            if (summary.Suppliers != evidence.DistinctSuppliers)
+                return "catalog_suppliers_count_mismatch";
+            if (summary.Prices != evidence.ReceivedPrices)
+                return "catalog_prices_count_mismatch";
+            return string.Empty;
+        }
+
+        private static bool IsSha256HexValue(string value)
+        {
+            var normalized = (value ?? string.Empty).Trim();
+            return normalized.Length == 64 && normalized.All(Uri.IsHexDigit);
+        }
+
+        private static CatalogExactnessResult CreateStageRejection(
+            string code,
+            PosCatalogSummaryResponse summary,
+            CatalogFullRefreshResult audit,
+            CatalogExactnessRunContext context)
+        {
+            return new CatalogExactnessResult
+            {
+                Audit = audit,
+                Code = code ?? string.Empty,
+                Context = context,
+                EvaluatedAt = DateTimeOffset.UtcNow.ToString("O"),
+                Expected = summary,
+                RepairRequired = true,
+                Status = CatalogCompletenessStatus.Mismatch
+            };
+        }
+
+        private static async Task<CatalogFullRefreshResult> ReconcilePreparedAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            Microsoft.Data.Sqlite.SqliteTransaction tx,
+            string removedAt,
+            CatalogAuthoritativeCounts counts)
+        {
+            var deactivatedProducts = await conn.ExecuteAsync(@"
+UPDATE products
+SET is_active = 0,
+    remote_deleted_at = @removedAt
+WHERE TRIM(COALESCE(remote_product_id, '')) <> ''
+  AND COALESCE(is_active, 1) = 1
+  AND NOT EXISTS (
+    SELECT 1 FROM temp_full_product_ids incoming
+    WHERE incoming.id = TRIM(products.remote_product_id)
+  );",
+                new { removedAt },
+                tx).ConfigureAwait(false);
+            var deactivatedCategories = await conn.ExecuteAsync(@"
+UPDATE categories
+SET is_active = 0,
+    remote_deleted_at = @removedAt,
+    remote_updated_at = @removedAt
+WHERE TRIM(COALESCE(remote_category_id, '')) <> ''
+  AND COALESCE(is_active, 1) = 1
+  AND NOT EXISTS (
+    SELECT 1 FROM temp_full_category_ids incoming
+    WHERE incoming.id = TRIM(categories.remote_category_id)
+  );",
+                new { removedAt },
+                tx).ConfigureAwait(false);
+            var deactivatedSuppliers = await conn.ExecuteAsync(@"
+UPDATE suppliers
+SET is_active = 0,
+    remote_deleted_at = @removedAt,
+    remote_updated_at = @removedAt
+WHERE TRIM(COALESCE(remote_supplier_id, '')) <> ''
+  AND COALESCE(is_active, 1) = 1
+  AND NOT EXISTS (
+    SELECT 1 FROM temp_full_supplier_ids incoming
+    WHERE incoming.id = TRIM(suppliers.remote_supplier_id)
+  );",
+                new { removedAt },
+                tx).ConfigureAwait(false);
+            await conn.ExecuteAsync(@"
+DELETE FROM remote_catalog_pending_prices
+WHERE NOT EXISTS (
+  SELECT 1 FROM temp_full_product_ids incoming
+  WHERE incoming.id = TRIM(remote_catalog_pending_prices.remote_product_id)
+);",
+                transaction: tx).ConfigureAwait(false);
+            await conn.ExecuteAsync(@"
+DELETE FROM remote_catalog_product_references
+WHERE NOT EXISTS (
+  SELECT 1 FROM temp_full_product_ids incoming
+  WHERE incoming.id = TRIM(remote_catalog_product_references.remote_product_id)
+);",
+                transaction: tx).ConfigureAwait(false);
+
+            var result = await LoadAuditAsync(conn, tx).ConfigureAwait(false);
+            result.DeactivatedCategories = deactivatedCategories;
+            result.DeactivatedProducts = deactivatedProducts;
+            result.DeactivatedSuppliers = deactivatedSuppliers;
+            result.ReceivedProductIds = counts.ReceivedProducts;
+            result.DistinctAuthoritativeProductIds = counts.DistinctProducts;
+            result.DuplicateAuthoritativeProductIds = counts.DuplicateProducts;
+            result.InvalidAuthoritativeProductIds = counts.InvalidProducts;
+            result.ReceivedCategoryIds = counts.ReceivedCategories;
+            result.DistinctAuthoritativeCategoryIds = counts.DistinctCategories;
+            result.DuplicateAuthoritativeCategoryIds = counts.DuplicateCategories;
+            result.InvalidAuthoritativeCategoryIds = counts.InvalidCategories;
+            result.ReceivedSupplierIds = counts.ReceivedSuppliers;
+            result.DistinctAuthoritativeSupplierIds = counts.DistinctSuppliers;
+            result.DuplicateAuthoritativeSupplierIds = counts.DuplicateSuppliers;
+            result.InvalidAuthoritativeSupplierIds = counts.InvalidSuppliers;
+            return result;
+        }
+
+        private static void ApplyStageEvidence(
+            CatalogFullRefreshResult audit,
+            CatalogStagedEvidence evidence)
+        {
+            var counts = evidence.ToAuthoritativeCounts();
+            audit.ReceivedProductIds = counts.ReceivedProducts;
+            audit.DistinctAuthoritativeProductIds = counts.DistinctProducts;
+            audit.DuplicateAuthoritativeProductIds = counts.DuplicateProducts;
+            audit.InvalidAuthoritativeProductIds = counts.InvalidProducts;
+            audit.ReceivedCategoryIds = counts.ReceivedCategories;
+            audit.DistinctAuthoritativeCategoryIds = counts.DistinctCategories;
+            audit.DuplicateAuthoritativeCategoryIds = counts.DuplicateCategories;
+            audit.InvalidAuthoritativeCategoryIds = counts.InvalidCategories;
+            audit.ReceivedSupplierIds = counts.ReceivedSuppliers;
+            audit.DistinctAuthoritativeSupplierIds = counts.DistinctSuppliers;
+            audit.DuplicateAuthoritativeSupplierIds = counts.DuplicateSuppliers;
+            audit.InvalidAuthoritativeSupplierIds = counts.InvalidSuppliers;
         }
 
         private static Task<CatalogFullRefreshResult> LoadAuditAsync(
@@ -406,6 +1088,136 @@ SELECT
             {
                 parameter.Value = value;
                 await insert.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+        }
+
+        private sealed class StageScope
+        {
+            public string FullRunId { get; private set; } = string.Empty;
+            public string GenerationFingerprint { get; private set; } = string.Empty;
+            public string GenerationId { get; private set; } = string.Empty;
+            public string ShopCode { get; private set; } = string.Empty;
+            public string ShopId { get; private set; } = string.Empty;
+            public long TransitionEpoch { get; private set; }
+
+            public static StageScope Create(
+                string fullRunId,
+                RemoteCatalogCommitFence commitFence)
+            {
+                return new StageScope
+                {
+                    FullRunId = (fullRunId ?? string.Empty).Trim(),
+                    GenerationFingerprint = (commitFence.GenerationFingerprint ?? string.Empty).Trim(),
+                    GenerationId = (commitFence.GenerationId ?? string.Empty).Trim(),
+                    ShopCode = (commitFence.ShopCode ?? string.Empty).Trim(),
+                    ShopId = (commitFence.ShopId ?? string.Empty).Trim(),
+                    TransitionEpoch = commitFence.ExpectedEpoch
+                };
+            }
+        }
+
+        private sealed class CatalogAuthoritativeCounts
+        {
+            public long DistinctCategories { get; set; }
+            public long DistinctProducts { get; set; }
+            public long DistinctSuppliers { get; set; }
+            public long DuplicateCategories { get; set; }
+            public long DuplicateProducts { get; set; }
+            public long DuplicateSuppliers { get; set; }
+            public long InvalidCategories { get; set; }
+            public long InvalidProducts { get; set; }
+            public long InvalidSuppliers { get; set; }
+            public long ReceivedCategories { get; set; }
+            public long ReceivedProducts { get; set; }
+            public long ReceivedSuppliers { get; set; }
+        }
+
+        private sealed class CatalogStagedEvidence
+        {
+            public long CategoryActiveTombstoneConflicts { get; set; }
+            public long CategoryConflicts { get; set; }
+            public long CategoryTombstoneConflicts { get; set; }
+            public long ContinuationPages { get; set; }
+            public long DistinctCategories { get; set; }
+            public long DistinctProducts { get; set; }
+            public long DistinctSuppliers { get; set; }
+            public long DuplicatePrices { get; set; }
+            public long DuplicateProducts { get; set; }
+            public long FirstPage { get; set; }
+            public long InvalidCategories { get; set; }
+            public long InvalidCategoryRows { get; set; }
+            public long InvalidCategoryTombstoneRows { get; set; }
+            public long InvalidPriceRows { get; set; }
+            public long InvalidProducts { get; set; }
+            public long InvalidProductRows { get; set; }
+            public long InvalidProductTombstoneRows { get; set; }
+            public long InvalidSuppliers { get; set; }
+            public long InvalidSupplierRows { get; set; }
+            public long InvalidSupplierTombstoneRows { get; set; }
+            public long LastPage { get; set; }
+            public long OrphanPageRows { get; set; }
+            public long OrphanCategoryReferences { get; set; }
+            public long OrphanPriceProductReferences { get; set; }
+            public long OrphanSupplierReferences { get; set; }
+            public long PageMarkers { get; set; }
+            public long ProductActiveTombstoneConflicts { get; set; }
+            public long ProductIdentityConflicts { get; set; }
+            public long ProductTombstoneConflicts { get; set; }
+            public long ReceivedCategories { get; set; }
+            public long ReceivedPrices { get; set; }
+            public long ReceivedProducts { get; set; }
+            public long ReceivedSuppliers { get; set; }
+            public long ReceivedTombstones { get; set; }
+            public long SupplierActiveTombstoneConflicts { get; set; }
+            public long SupplierConflicts { get; set; }
+            public long SupplierTombstoneConflicts { get; set; }
+            public long TerminalPageNumber { get; set; }
+            public long TerminalPages { get; set; }
+
+            public string GetConflictCode()
+            {
+                if (ProductIdentityConflicts > 0)
+                    return "catalog_duplicate_active_barcodes";
+                if (OrphanCategoryReferences > 0)
+                    return "catalog_category_references_orphaned";
+                if (OrphanSupplierReferences > 0)
+                    return "catalog_supplier_references_orphaned";
+                if (OrphanPriceProductReferences > 0)
+                    return "catalog_price_product_not_authoritative";
+                if (CategoryConflicts > 0)
+                    return CatalogFullLaneEvidenceTracker.CategoryConflictCode;
+                if (SupplierConflicts > 0)
+                    return CatalogFullLaneEvidenceTracker.SupplierConflictCode;
+                if (ProductTombstoneConflicts > 0)
+                    return CatalogFullLaneEvidenceTracker.ProductTombstoneConflictCode;
+                if (CategoryTombstoneConflicts > 0)
+                    return CatalogFullLaneEvidenceTracker.CategoryTombstoneConflictCode;
+                if (SupplierTombstoneConflicts > 0)
+                    return CatalogFullLaneEvidenceTracker.SupplierTombstoneConflictCode;
+                if (ProductActiveTombstoneConflicts > 0)
+                    return CatalogFullLaneEvidenceTracker.ProductActiveTombstoneConflictCode;
+                if (CategoryActiveTombstoneConflicts > 0)
+                    return CatalogFullLaneEvidenceTracker.CategoryActiveTombstoneConflictCode;
+                if (SupplierActiveTombstoneConflicts > 0)
+                    return CatalogFullLaneEvidenceTracker.SupplierActiveTombstoneConflictCode;
+                return string.Empty;
+            }
+
+            public CatalogAuthoritativeCounts ToAuthoritativeCounts()
+            {
+                return new CatalogAuthoritativeCounts
+                {
+                    ReceivedProducts = ReceivedProducts,
+                    DistinctProducts = DistinctProducts,
+                    DuplicateProducts = DuplicateProducts,
+                    InvalidProducts = InvalidProducts,
+                    ReceivedCategories = ReceivedCategories,
+                    DistinctCategories = DistinctCategories,
+                    InvalidCategories = InvalidCategories,
+                    ReceivedSuppliers = ReceivedSuppliers,
+                    DistinctSuppliers = DistinctSuppliers,
+                    InvalidSuppliers = InvalidSuppliers
+                };
             }
         }
 
