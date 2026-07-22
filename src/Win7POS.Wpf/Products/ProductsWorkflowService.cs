@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core;
 using Win7POS.Core.Audit;
 using Win7POS.Core.ImportDb;
 using Win7POS.Core.Models;
+using Win7POS.Core.Products;
 using Win7POS.Core.Receipt;
 using Win7POS.Data;
 using Win7POS.Data.ImportDb;
@@ -25,6 +27,8 @@ namespace Win7POS.Wpf.Products
         private readonly SupplierRepository _suppliers;
         private readonly AuditLogRepository _audit = new AuditLogRepository();
         private readonly PosDbOptions _options;
+        private readonly ProductPagingCoordinator _paging = new ProductPagingCoordinator(maximumAnchors: 32);
+        private readonly SemaphoreSlim _pagingGate = new SemaphoreSlim(1, 1);
 
         public static ProductsWorkflowService CreateDefault()
         {
@@ -60,10 +64,97 @@ namespace Win7POS.Wpf.Products
             return _products.GetCatalogStatsAsync();
         }
 
-        public Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsPageAsync(string query, int limit, int offset, int? categoryId = null, int? supplierId = null)
+        public async Task<ProductPageResult> LoadDetailsPageAsync(
+            string query,
+            int targetPage,
+            int pageSize,
+            int? categoryId = null,
+            int? supplierId = null)
         {
-            return _products.SearchDetailsPageAsync(query, limit, offset, categoryId, supplierId);
+            if (targetPage <= 0) throw new ArgumentOutOfRangeException(nameof(targetPage));
+            if (pageSize <= 0) throw new ArgumentOutOfRangeException(nameof(pageSize));
+
+            await _pagingGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                var requestedPage = targetPage;
+                for (var attempt = 0; attempt < 4; attempt++)
+                {
+                    var revision = CatalogEvents.Revision;
+                    var filter = new ProductPageFilter(query, categoryId, supplierId, pageSize, revision);
+                    var plan = _paging.Plan(filter, requestedPage);
+                    // The provider's async surface can complete database work synchronously.
+                    // Force COUNT/query/materialization off the WPF dispatcher.
+                    var snapshot = await Task.Run(
+                        () => _products.SearchDetailsPageAsync(filter, plan)).ConfigureAwait(false);
+
+                    if (CatalogEvents.Revision != revision || _paging.StateVersion != plan.StateVersion)
+                    {
+                        _paging.Reset();
+                        requestedPage = 1;
+                        continue;
+                    }
+
+                    var totalPages = Math.Max(
+                        1,
+                        (int)(((long)snapshot.TotalCount + pageSize - 1L) / pageSize));
+                    if (plan.TargetPage > totalPages)
+                    {
+                        _paging.Reset();
+                        requestedPage = totalPages;
+                        continue;
+                    }
+
+                    var first = snapshot.Items.Count == 0
+                        ? null
+                        : filter.CreateCursor(snapshot.Items[0].Barcode, snapshot.Items[0].Id);
+                    var last = snapshot.Items.Count == 0
+                        ? null
+                        : filter.CreateCursor(
+                            snapshot.Items[snapshot.Items.Count - 1].Barcode,
+                            snapshot.Items[snapshot.Items.Count - 1].Id);
+
+                    try
+                    {
+                        _paging.Accept(
+                            filter,
+                            plan,
+                            first,
+                            last,
+                            snapshot.Items.Count,
+                            snapshot.TotalCount);
+                    }
+                    catch (InvalidOperationException) when (_paging.StateVersion != plan.StateVersion)
+                    {
+                        requestedPage = 1;
+                        continue;
+                    }
+
+                    if (CatalogEvents.Revision != revision)
+                    {
+                        _paging.Reset();
+                        requestedPage = 1;
+                        continue;
+                    }
+
+                    return new ProductPageResult(
+                        snapshot.Items,
+                        plan.TargetPage,
+                        snapshot.TotalCount,
+                        plan.UsedOffsetFallback,
+                        filter.Fingerprint,
+                        revision);
+                }
+
+                throw new InvalidOperationException("Catalog changed repeatedly while loading the product page.");
+            }
+            finally
+            {
+                _pagingGate.Release();
+            }
         }
+
+        public void ResetProductPaging() => _paging.Reset();
 
         public Task<ProductDetailsRow> GetDetailsByIdAsync(long productId)
         {
@@ -88,6 +179,7 @@ namespace Win7POS.Wpf.Products
             var before = await _products.GetByIdAsync(productId).ConfigureAwait(false);
             var ok = await _products.UpdateAsync(productId, name.Trim(), priceMinor).ConfigureAwait(false);
             if (!ok) throw new InvalidOperationException(PosLocalization.T("products.notFound"));
+            CatalogEvents.RaiseCatalogChanged(before?.Barcode);
 
             var details = AuditDetails.Kv(
                 ("productId", productId.ToString()),
@@ -246,8 +338,17 @@ namespace Win7POS.Wpf.Products
         }
 
         /// <summary>Aggiorna prezzi e scrive storico (stessa transazione). source es. MANUAL_EDIT, IMPORT.</summary>
-        public Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source)
-            => _products.UpdateProductPricesAsync(productId, newPurchasePrice, newRetailPrice, source ?? "MANUAL_EDIT");
+        public async Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source)
+        {
+            await _products.UpdateProductPricesAsync(
+                productId,
+                newPurchasePrice,
+                newRetailPrice,
+                source ?? "MANUAL_EDIT").ConfigureAwait(false);
+            // Invalidate product-page cursors without refreshing live cart prices;
+            // sale-line price ownership remains immutable once added to the cart.
+            CatalogEvents.AdvanceRevision();
+        }
 
         private static string Escape(string s)
         {
@@ -287,8 +388,8 @@ namespace Win7POS.Wpf.Products
             SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
             var p = new Product { Barcode = barcode.Trim(), Name = name?.Trim() ?? string.Empty, UnitPrice = unitPriceMinor };
             await _products.UpsertProductAndMetaInTransactionAsync(p, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty).ConfigureAwait(false);
+            CatalogEvents.RaiseCatalogChanged(p.Barcode);
             await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductCreate, AuditDetails.Kv(("barcode", p.Barcode), ("name", p.Name))).ConfigureAwait(false);
-            Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(p.Barcode);
         }
 
         /// <summary>Alias per creazione prodotto con tutti i dettagli (barcode, nome, prezzi, fornitore, categoria, stock).</summary>
@@ -307,8 +408,8 @@ namespace Win7POS.Wpf.Products
             if (before == null) throw new InvalidOperationException(PosLocalization.T("products.notFound"));
             var b = before.Barcode ?? barcode ?? "";
             await _products.UpdateProductAndMetaWithPriceHistoryAsync(productId, name?.Trim() ?? string.Empty, unitPriceMinor, b, articleCode ?? "", name2 ?? "", purchasePriceMinor, supplierId, supplierName ?? "", categoryId, categoryName ?? "", stockQty, "MANUAL_EDIT").ConfigureAwait(false);
+            CatalogEvents.RaiseCatalogChanged(b);
             await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductUpdate, AuditDetails.Kv(("productId", productId.ToString()), ("barcode", b))).ConfigureAwait(false);
-            Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(b);
         }
 
         public async Task<bool> DeleteProductAsync(string barcode)
@@ -317,8 +418,8 @@ namespace Win7POS.Wpf.Products
             var ok = await _products.DeleteByBarcodeAsync(barcode.Trim()).ConfigureAwait(false);
             if (ok)
             {
+                CatalogEvents.RaiseCatalogChanged(barcode.Trim());
                 await _audit.AppendAsync(_options, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), AuditActions.ProductDelete, AuditDetails.Kv(("barcode", barcode))).ConfigureAwait(false);
-                Win7POS.Wpf.Infrastructure.CatalogEvents.RaiseCatalogChanged(barcode.Trim());
             }
             return ok;
         }

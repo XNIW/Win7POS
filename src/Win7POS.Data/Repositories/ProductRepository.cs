@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
+using Win7POS.Core.Products;
 using Win7POS.Core.Receipt;
 
 namespace Win7POS.Data.Repositories
@@ -63,6 +64,18 @@ namespace Win7POS.Data.Repositories
         {
             public int Applied { get; set; }
             public HashSet<long> CollisionIds { get; } = new HashSet<long>();
+        }
+
+        public sealed class ProductDetailsPageSnapshot
+        {
+            internal ProductDetailsPageSnapshot(int totalCount, IReadOnlyList<ProductDetailsRow> items)
+            {
+                TotalCount = totalCount;
+                Items = items ?? throw new ArgumentNullException(nameof(items));
+            }
+
+            public int TotalCount { get; }
+            public IReadOnlyList<ProductDetailsRow> Items { get; }
         }
 
         public async Task<Product> GetByBarcodeAsync(string barcode)
@@ -311,20 +324,57 @@ FROM (
             return productStats;
         }
 
-        public async Task<IReadOnlyList<ProductDetailsRow>> SearchDetailsPageAsync(string query, int limit, int offset, int? categoryId = null, int? supplierId = null)
+        public async Task<ProductDetailsPageSnapshot> SearchDetailsPageAsync(
+            ProductPageFilter filter,
+            ProductPagePlan plan)
         {
-            if (limit <= 0) limit = 200;
-            if (offset < 0) offset = 0;
+            if (filter == null) throw new ArgumentNullException(nameof(filter));
+            if (plan == null) throw new ArgumentNullException(nameof(plan));
+            if (!plan.Matches(filter))
+                throw new InvalidOperationException("Product page plan/filter mismatch.");
+            if (plan.Cursor != null && !plan.Cursor.Matches(filter))
+                throw new InvalidOperationException("Product page cursor/filter mismatch.");
 
             using var conn = _factory.Open();
-            var q = (query ?? string.Empty).Trim();
+            using var tx = conn.BeginTransaction();
+            var q = filter.Query;
             var like = q.Length == 0 ? "%" : "%" + q.Replace("%", "[%]").Replace("_", "[_]") + "%";
 
-            var where = "WHERE COALESCE(p.is_active, 1) = 1 AND ( @q = '' OR p.barcode = @q OR p.name LIKE @like )";
-            if (categoryId.HasValue && categoryId.Value != 0)
+            var where = "WHERE COALESCE(p.is_active, 1) = 1";
+            if (q.Length > 0)
+                where += " AND (p.barcode = @q OR p.name LIKE @like)";
+            if (filter.CategoryId.HasValue)
                 where += " AND m.category_id = @categoryId";
-            if (supplierId.HasValue && supplierId.Value != 0)
+            if (filter.SupplierId.HasValue)
                 where += " AND m.supplier_id = @supplierId";
+
+            var parameters = new
+            {
+                q,
+                like,
+                categoryId = filter.CategoryId ?? 0,
+                supplierId = filter.SupplierId ?? 0,
+                limit = filter.PageSize,
+                offset = plan.Offset,
+                cursorRank = plan.Cursor?.ExactRank ?? 0,
+                cursorBarcode = plan.Cursor?.Barcode ?? string.Empty,
+                cursorId = plan.Cursor?.Id ?? 0L
+            };
+
+            var totalCount = await conn.ExecuteScalarAsync<int>(@"
+SELECT COUNT(1)
+FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode
+" + where, parameters, tx).ConfigureAwait(false);
+
+            var rankExpression = q.Length == 0
+                ? string.Empty
+                : "CASE WHEN p.barcode = @q THEN 0 ELSE 1 END";
+            var keyset = BuildProductKeysetPredicate(plan, rankExpression);
+            var ordering = BuildProductPageOrdering(plan.Kind, rankExpression);
+            var offset = plan.Kind == ProductPageQueryKind.OffsetFallback
+                ? " OFFSET @offset"
+                : string.Empty;
 
             var sql = @"
 SELECT
@@ -342,12 +392,65 @@ SELECT
   COALESCE(m.category_name, '') AS CategoryName
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
-" + where + @"
-ORDER BY p.barcode ASC
-LIMIT @limit OFFSET @offset";
+" + where + keyset + "\n" + ordering + "\nLIMIT @limit" + offset;
 
-            var rows = await conn.QueryAsync<ProductDetailsRow>(sql, new { q, like, limit, offset, categoryId = categoryId ?? 0, supplierId = supplierId ?? 0 }).ConfigureAwait(false);
-            return rows.ToList();
+            var rows = (await conn.QueryAsync<ProductDetailsRow>(sql, parameters, tx).ConfigureAwait(false)).ToList();
+            if (plan.Kind == ProductPageQueryKind.Reverse)
+                rows.Reverse();
+
+            tx.Commit();
+            return new ProductDetailsPageSnapshot(totalCount, rows);
+        }
+
+        private static string BuildProductKeysetPredicate(
+            ProductPagePlan plan,
+            string rankExpression)
+        {
+            if (plan.Kind != ProductPageQueryKind.Forward &&
+                plan.Kind != ProductPageQueryKind.Reverse)
+            {
+                return string.Empty;
+            }
+
+            if (plan.Cursor == null)
+                throw new InvalidOperationException("Keyset product paging requires a cursor.");
+
+            var barcodeComparison = plan.Kind == ProductPageQueryKind.Forward ? ">" : "<";
+            var idComparison = barcodeComparison;
+            var tuplePredicate = @"
+  p.barcode COLLATE BINARY " + barcodeComparison + @" @cursorBarcode COLLATE BINARY
+  OR (p.barcode COLLATE BINARY = @cursorBarcode COLLATE BINARY AND p.id " + idComparison + @" @cursorId)";
+
+            if (rankExpression.Length == 0)
+            {
+                var inclusiveComparison = plan.Kind == ProductPageQueryKind.Forward ? ">=" : "<=";
+                return @"
+AND p.barcode COLLATE BINARY " + inclusiveComparison + @" @cursorBarcode COLLATE BINARY
+AND (" + tuplePredicate + "\n)";
+            }
+
+            var rankComparison = plan.Kind == ProductPageQueryKind.Forward ? ">" : "<";
+            return @"
+AND (
+  " + rankExpression + " " + rankComparison + @" @cursorRank
+  OR (
+    " + rankExpression + @" = @cursorRank
+    AND (" + tuplePredicate + @")
+  )
+)";
+        }
+
+        private static string BuildProductPageOrdering(
+            ProductPageQueryKind kind,
+            string rankExpression)
+        {
+            var direction = kind == ProductPageQueryKind.Reverse ? "DESC" : "ASC";
+            var rank = rankExpression.Length == 0
+                ? string.Empty
+                : rankExpression + " " + direction + ", ";
+            return "ORDER BY " + rank +
+                   "p.barcode COLLATE BINARY " + direction +
+                   ", p.id " + direction;
         }
 
         public async Task<ProductDetailsRow> GetDetailsByIdAsync(long productId)

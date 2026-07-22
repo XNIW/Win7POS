@@ -108,10 +108,13 @@ $ignoreLines = @($ignoreText -split '\r?\n' | Where-Object {
 $invalidIgnoreLines = @($ignoreLines | Where-Object {
         $_ -notmatch '^[0-9a-f]{40}:[^:*?]+:[a-z0-9-]+:[0-9]+$'
     })
-if ($ignoreLines.Count -ne 8 -or $invalidIgnoreLines.Count -ne 0) {
-    Fail "Gitleaks history exceptions must be eight exact commit/path/rule/line fingerprints"
+$perf2bFalsePositive = "18a6e065d445445b201d5203807a06455311a862:tests/Win7POS.Core.Tests/Data/ProductQueryPlanTests.cs:generic-api-key:376"
+if ($ignoreLines.Count -ne 9 -or
+    $invalidIgnoreLines.Count -ne 0 -or
+    $ignoreLines -cnotcontains $perf2bFalsePositive) {
+    Fail "Gitleaks history exceptions must be nine reviewed exact commit/path/rule/line fingerprints"
 }
-else { Pass "Gitleaks history exceptions are exact and contain no wildcard" }
+else { Pass "Gitleaks history exceptions are nine reviewed exact fingerprints with no wildcard" }
 
 $securityWorkflow = Read-RequiredText ".github\workflows\security-supply-chain.yml"
 $releaseWorkflow = Read-RequiredText ".github\workflows\release-pack.yml"
