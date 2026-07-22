@@ -27,7 +27,9 @@ function Require-Marker([string]$label, [string]$source, [string]$pattern) {
 $required = @(
     "src/Win7POS.Data/Online/PosAdminWebClient.cs",
     "src/Win7POS.Data/Online/CatalogSyncCoordinator.cs",
+    "src/Win7POS.Core/Logging/LogSanitizer.cs",
     "src/Win7POS.Wpf/Infrastructure/FileLogger.cs",
+    "src/Win7POS.Core/Logging/RotatingFileLogSink.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs",
@@ -49,6 +51,8 @@ $client = Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs"
 $clientContracts = Read-Text "src/Win7POS.Core/Online/PosOnlineTransportContracts.cs"
 $client = $client + "`n" + $clientContracts
 $logger = Read-Text "src/Win7POS.Wpf/Infrastructure/FileLogger.cs"
+$logSanitizer = Read-Text "src/Win7POS.Core/Logging/LogSanitizer.cs"
+$logSink = Read-Text "src/Win7POS.Core/Logging/RotatingFileLogSink.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $catalog = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
@@ -65,18 +69,18 @@ Require-Marker "client request id result" $client "ClientRequestId"
 Require-Marker "server request id result" $client "ServerRequestId"
 Require-Marker "POS error response request id" $client "DataMember\(Name\s*=\s*""requestId"""
 
-Require-Marker "camel/snake token redaction" $logger 'session\[_-\]\?token[\s\S]*access\[_-\]\?token[\s\S]*refresh\[_-\]\?token'
-Require-Marker "client secret/API key redaction" $logger 'client\[_-\]\?secret[\s\S]*api\[_-\]\?key[\s\S]*apikey'
-Require-Marker "DB password alias redaction" $logger "db_password\|database password"
-Require-Marker "authorization bearer redaction" $logger "Authorization\\s\*:\\s\*Bearer"
-Require-Marker "POS token prefix redaction" $logger "mcpos_\(device\|session\)"
-Require-Marker "standalone JWT redaction" $logger "eyJ\[A-Za-z0-9_-"
-Require-Marker "standalone secret/private-key redaction" $logger "sb_secret[\s\S]*PRIVATE KEY"
+Require-Marker "camel/snake token redaction" $logSanitizer 'session\[_-\]\?token[\s\S]*access\[_-\]\?token[\s\S]*refresh\[_-\]\?token'
+Require-Marker "client secret/API key redaction" $logSanitizer 'client\[_-\]\?secret[\s\S]*api\[_-\]\?key[\s\S]*apikey'
+Require-Marker "DB password alias redaction" $logSanitizer "db_password\|database password"
+Require-Marker "authorization bearer redaction" $logSanitizer "Authorization\\s\*:\\s\*Bearer"
+Require-Marker "POS token prefix redaction" $logSanitizer "mcpos_\(device\|session\)"
+Require-Marker "standalone JWT redaction" $logSanitizer "eyJ\[A-Za-z0-9_-"
+Require-Marker "standalone secret/private-key redaction" $logSanitizer "sb_secret[\s\S]*PRIVATE KEY"
 Require-Marker "executable log-redaction vector method" $uiSmoke "VerifyLogRedactionTestVectors"
 foreach ($vectorMarker in @('client_secret', 'sk-abcdefghijklmnopqrstuvwxyz', 'PRIVATEKEYBODY123456789', 'TRUNCATEDPRIVATEKEYBODY987654321', 'secrets\.All')) { # gitleaks:allow -- synthetic redaction-test markers
     Require-Marker "executable log-redaction vector marker: $vectorMarker" $uiSmoke $vectorMarker
 }
-Require-Marker "log rotation" $logger "RotateIfNeeded"
+Require-Marker "log rotation" $logSink "RotateIfNeeded"
 
 Require-Marker "bootstrap category" $bootstrap "category=online\.bootstrap"
 Require-Marker "supervised heartbeat" $syncHost "RunHeartbeatAsync[\s\S]{0,2200}HeartbeatAsync"

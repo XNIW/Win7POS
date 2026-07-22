@@ -68,8 +68,12 @@ jobs:
       - name: Build WPF (Release x86)
         run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
 
-      - name: Build WPF product paging smoke harness (Release x86)
+      - name: Build WPF smoke harness (Release x86)
         run: dotnet build tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+
+      - name: WPF bounded asynchronous logging smoke (100k x86)
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/run-bounded-logging-smoke.ps1 -Configuration Release -Platform x86
 
       - name: WPF product paging dispatcher smoke (100k)
         shell: pwsh
