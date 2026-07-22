@@ -143,6 +143,52 @@ jobs:
             throw "net48/x86 dispatcher responsiveness invalid: samples=$($delays.Count), median_ms=$medianDelay, stable_limit_ms=$stableLimitMilliseconds, stable_samples=$stableSampleCount/3, max_ms=$maximumDelay, hard_limit_ms=$hardLimitMilliseconds, values_ms=[$delaySummary]. Evidence: $evidencePath"
           }
 
+      - name: Probe 100,000-row bounded authoritative path
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $net10Evidence = "artifacts/performance/catalog-bounded-full-100000-net10-x64.txt"
+          $net10 = @(& dotnet run `
+            --project tests/Win7POS.CatalogPerformance/Win7POS.CatalogPerformance.csproj `
+            -f net10.0 -c Release --no-build --no-restore -- `
+            batch-paged-full 100000 1 1000)
+          $net10Exit = $LASTEXITCODE
+          $net10 | Set-Content -LiteralPath $net10Evidence -Encoding utf8
+          if ($net10Exit -ne 0) { throw "net10/x64 100,000-row probe failed. Evidence: $net10Evidence" }
+
+          $net48Evidence = "artifacts/performance/catalog-bounded-full-100000-net48-x86.txt"
+          $exe = "tests/Win7POS.CatalogPerformance/bin/Release/net48/Win7POS.CatalogPerformance.exe"
+          $net48 = @(& $exe batch-paged-full 100000 1 1000)
+          $net48Exit = $LASTEXITCODE
+          $net48 | Set-Content -LiteralPath $net48Evidence -Encoding utf8
+          if ($net48Exit -ne 0) { throw "net48/x86 100,000-row probe failed. Evidence: $net48Evidence" }
+
+          foreach ($probe in @(
+            @{ Name = "net10/x64"; Text = ($net10 -join "`n"); Path = $net10Evidence },
+            @{ Name = "net48/x86"; Text = ($net48 -join "`n"); Path = $net48Evidence }
+          )) {
+            if ($probe.Text -notmatch "products=100000" -or
+                $probe.Text -notmatch "prices=100000" -or
+                $probe.Text -notmatch "completeness=Verified" -or
+                $probe.Text -notmatch "authoritative_stage_rows_after=0") {
+              throw "$($probe.Name) 100,000-row exactness/bounded-stage evidence is incomplete. Evidence: $($probe.Path)"
+            }
+          }
+          if (($net48 -join "`n") -notmatch "is_64_bit=False") {
+            throw "100,000-row net48 probe did not execute as x86. Evidence: $net48Evidence"
+          }
+          $x86Text = $net48 -join "`n"
+          $peakWorkingSet = [long]([regex]::Match($x86Text, "peak_working_set_bytes=([0-9]+)").Groups[1].Value)
+          $peakPrivateBytes = [long]([regex]::Match($x86Text, "peak_private_bytes=([0-9]+)").Groups[1].Value)
+          # Same-host pre-PERF2-A baselines were 133,173,248 peak working-set bytes
+          # and 117,084,160 private bytes. These ceilings fail above the allowed 20%.
+          if ($peakWorkingSet -le 0 -or $peakWorkingSet -gt 159807898) {
+            throw "100,000-row x86 peak working set exceeded the 20% regression ceiling: $peakWorkingSet. Evidence: $net48Evidence"
+          }
+          if ($peakPrivateBytes -le 0 -or $peakPrivateBytes -gt 140500992) {
+            throw "100,000-row x86 private bytes exceeded the 20% regression ceiling: $peakPrivateBytes. Evidence: $net48Evidence"
+          }
+
       - name: Upload benchmark evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0

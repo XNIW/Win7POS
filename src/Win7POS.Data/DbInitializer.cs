@@ -563,6 +563,97 @@ WHERE status = 'in_progress';",
                 tx);
         }
 
+        internal static string CatalogAuthoritativeStageScopeTableSql => @"
+CREATE TABLE IF NOT EXISTS catalog_authoritative_stage_scope (
+  scope_id INTEGER PRIMARY KEY NOT NULL,
+  shop_id TEXT NOT NULL,
+  shop_code TEXT NOT NULL,
+  transition_epoch INTEGER NOT NULL CHECK(transition_epoch >= 0),
+  generation_id TEXT NOT NULL,
+  generation_fingerprint TEXT NOT NULL,
+  full_run_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+";
+
+        internal static string CatalogAuthoritativeIdStageTableSql => @"
+CREATE TABLE IF NOT EXISTS catalog_authoritative_id_stage (
+  stage_id INTEGER PRIMARY KEY NOT NULL,
+  scope_id INTEGER NOT NULL REFERENCES catalog_authoritative_stage_scope(scope_id) ON DELETE CASCADE,
+  page_number INTEGER NOT NULL CHECK(page_number > 0),
+  entity_kind TEXT NOT NULL CHECK(entity_kind IN (
+    'page',
+    'product',
+    'category',
+    'supplier',
+    'price',
+    'product_tombstone',
+    'category_tombstone',
+    'supplier_tombstone'
+  )),
+  remote_id TEXT NOT NULL,
+  content_fingerprint TEXT NOT NULL,
+  category_remote_id TEXT NOT NULL,
+  supplier_remote_id TEXT NOT NULL,
+  product_remote_id TEXT NOT NULL,
+  occurrence_count INTEGER NOT NULL CHECK(occurrence_count >= 0),
+  has_more INTEGER NULL CHECK(has_more IS NULL OR has_more IN (0, 1)),
+  staged_at INTEGER NOT NULL,
+  CHECK(
+    (entity_kind = 'page' AND remote_id = '' AND content_fingerprint = ''
+      AND category_remote_id = '' AND supplier_remote_id = '' AND product_remote_id = ''
+      AND occurrence_count = 0 AND has_more IS NOT NULL)
+    OR
+    (entity_kind <> 'page' AND occurrence_count > 0 AND has_more IS NULL)
+  )
+);
+";
+
+        internal static string CatalogAuthoritativeIdStageIndexSql => @"
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_page_identity
+ON catalog_authoritative_id_stage(
+  scope_id,
+  page_number,
+  entity_kind,
+  remote_id,
+  content_fingerprint,
+  category_remote_id,
+  supplier_remote_id,
+  product_remote_id
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_scope_identity
+ON catalog_authoritative_stage_scope(
+  shop_id,
+  shop_code,
+  transition_epoch,
+  generation_id,
+  generation_fingerprint,
+  full_run_id
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_scope_cleanup
+ON catalog_authoritative_stage_scope(shop_id, shop_code, full_run_id, scope_id);
+CREATE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_reconcile
+ON catalog_authoritative_id_stage(
+  scope_id,
+  entity_kind,
+  remote_id
+);
+CREATE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_cleanup
+ON catalog_authoritative_id_stage(scope_id, stage_id);
+";
+
+        internal static string CatalogAuthoritativeIdStageSchemaSql =>
+            CatalogAuthoritativeStageScopeTableSql + "\n" +
+            CatalogAuthoritativeIdStageTableSql + "\n" +
+            CatalogAuthoritativeIdStageIndexSql;
+
+        internal static void EnsureCatalogAuthoritativeIdStageSchema(
+            SqliteConnection conn,
+            SqliteTransaction tx)
+        {
+            conn.Execute(CatalogAuthoritativeIdStageSchemaSql, transaction: tx);
+        }
+
         internal static string DependentSchemaSql => @"
 CREATE TABLE IF NOT EXISTS local_stock_movements (
   id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -1055,6 +1146,12 @@ ALTER TABLE sales ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending';
             PostPr7LedgerlessKnownSchemaSql + "\n" +
             OnlineSyncGenerationAlterSql + "\n" +
             OnlineSyncGenerationSchemaSql;
+
+        // Frozen whitelist for the ledgerless schema first published by PERF2-A.
+        // Keep every older whitelist immutable: migration 0009 owns this table.
+        internal static string PostPerf2ALedgerlessKnownSchemaSql =>
+            PostSync2LedgerlessKnownSchemaSql + "\n" +
+            CatalogAuthoritativeIdStageSchemaSql;
 
         internal static void EnsureIndexes(SqliteConnection conn, SqliteTransaction tx)
         {

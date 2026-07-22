@@ -45,7 +45,10 @@ public sealed class CatalogBatchPerformanceTests
                 Assert.AreEqual(sample.ExpectedPriceCount, sample.PriceCount);
                 Assert.AreEqual(0L, sample.PendingPriceCount);
                 if (mode == "batch-paged-full")
+                {
                     Assert.AreEqual("Verified", sample.ExactnessStatus);
+                    Assert.AreEqual(0L, sample.AuthoritativeStageRowsAfter);
+                }
                 TestContext.WriteLine(sample.ToEvidenceLine());
             }
         }

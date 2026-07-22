@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
@@ -44,6 +48,50 @@ namespace Win7POS.Data.Repositories
             }
         }
 
+        public async Task<CatalogAuthoritativeStageEvidence> StageAuthoritativePageAsync(
+            RemoteCatalogBatch batch,
+            CancellationToken cancellationToken = default,
+            RemoteCatalogCommitFence commitFence = null)
+        {
+            if (batch == null) throw new ArgumentNullException(nameof(batch));
+            ValidateBatchContent(batch);
+            ValidateAuthoritativeStage(batch, commitFence, required: true);
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await ProductRepository.CatalogMetaWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                using var conn = _factory.Open();
+                using var tx = conn.BeginTransaction(deferred: false);
+                try
+                {
+                    await RequireCommitFenceAsync(conn, tx, commitFence).ConfigureAwait(false);
+                    await ReplaceAuthoritativeStagePageAsync(
+                        conn,
+                        tx,
+                        batch,
+                        commitFence).ConfigureAwait(false);
+                    var evidence = await LoadAuthoritativeStageEvidenceAsync(
+                        conn,
+                        tx,
+                        batch.AuthoritativeStagePage,
+                        commitFence).ConfigureAwait(false);
+                    tx.Commit();
+                    return evidence;
+                }
+                catch
+                {
+                    try { tx.Rollback(); } catch { }
+                    throw;
+                }
+            }
+            finally
+            {
+                ProductRepository.CatalogMetaWriteGate.Release();
+            }
+        }
+
         internal async Task<RemoteCatalogBatchApplyResult> ApplyWithinRunAsync(
             RemoteCatalogApplyRunContext runContext,
             RemoteCatalogBatch batch,
@@ -53,6 +101,7 @@ namespace Win7POS.Data.Repositories
             if (runContext == null) throw new ArgumentNullException(nameof(runContext));
             if (batch == null) throw new ArgumentNullException(nameof(batch));
             ValidateBatchContent(batch);
+            ValidateAuthoritativeStage(batch, commitFence, required: false);
 
             cancellationToken.ThrowIfCancellationRequested();
             await ProductRepository.CatalogMetaWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -65,6 +114,14 @@ namespace Win7POS.Data.Repositories
                 try
                 {
                     await RequireCommitFenceAsync(conn, tx, commitFence).ConfigureAwait(false);
+                    if (batch.AuthoritativeStagePage != null)
+                    {
+                        await ReplaceAuthoritativeStagePageAsync(
+                            conn,
+                            tx,
+                            batch,
+                            commitFence).ConfigureAwait(false);
+                    }
                     var result = new RemoteCatalogBatchApplyResult();
                     var appliedCategoryTombstoneIds = new HashSet<string>(StringComparer.Ordinal);
                     var appliedSupplierTombstoneIds = new HashSet<string>(StringComparer.Ordinal);
@@ -106,6 +163,10 @@ namespace Win7POS.Data.Repositories
                         {
                             result.CategoriesApplied += 1;
                         }
+                        else if (batch.AuthoritativeFullRefresh)
+                        {
+                            result.CategoriesSkipped += 1;
+                        }
                     }
 
                     foreach (var supplier in batch.Suppliers ?? Array.Empty<RemoteCatalogSupplierWrite>())
@@ -126,6 +187,10 @@ namespace Win7POS.Data.Repositories
                             supplier.RemoteUpdatedAt).ConfigureAwait(false))
                         {
                             result.SuppliersApplied += 1;
+                        }
+                        else if (batch.AuthoritativeFullRefresh)
+                        {
+                            result.SuppliersSkipped += 1;
                         }
                     }
 
@@ -468,6 +533,7 @@ AND NOT EXISTS (
                 if (row == null) continue;
                 RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.RemoteDeletedAt, "product_tombstone.deleted_at");
                 EnsureSafe(row.RemoteProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength, "product_tombstone.remote_id");
+                RemoteCatalogContentPolicy.EnsureOptionalTimestamp(row.RemoteUpdatedAt, "product_tombstone.updated_at");
             }
 
             foreach (var row in batch.CategoryTombstones ?? Array.Empty<RemoteCatalogCategoryTombstoneWrite>())
@@ -491,11 +557,672 @@ AND NOT EXISTS (
         {
             if (!RemoteCatalogContentPolicy.IsOptionalText(value, maximumLength))
             {
-                throw new InvalidDataException("Remote catalog field rejected before persistence: " + field + ".");
+                    throw new InvalidDataException("Remote catalog field rejected before persistence: " + field + ".");
             }
         }
 
-        private static async Task RequireCommitFenceAsync(
+        private static void ValidateAuthoritativeStage(
+            RemoteCatalogBatch batch,
+            RemoteCatalogCommitFence commitFence,
+            bool required)
+        {
+            var stage = batch?.AuthoritativeStagePage;
+            if (stage == null)
+            {
+                if (required)
+                    throw new InvalidDataException("Authoritative catalog stage page is required.");
+                return;
+            }
+
+            if (!batch.AuthoritativeFullRefresh)
+                throw new InvalidDataException("Authoritative catalog stage requires a full refresh batch.");
+            if (commitFence == null)
+                throw new InvalidDataException("Authoritative catalog stage requires a commit fence.");
+
+            var runId = (stage.FullRunId ?? string.Empty).Trim();
+            if (runId.Length == 0 ||
+                runId.Length > 64 ||
+                !string.Equals(runId, stage.FullRunId, StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("Authoritative catalog full run identity is invalid.");
+            }
+
+            if (stage.PageNumber <= 0 || stage.PageNumber > 1000000)
+                throw new InvalidDataException("Authoritative catalog page number is invalid.");
+            if (commitFence.ExpectedEpoch < 0 ||
+                string.IsNullOrWhiteSpace(commitFence.ShopId) ||
+                string.IsNullOrWhiteSpace(commitFence.ShopCode))
+            {
+                throw new InvalidDataException("Authoritative catalog shop fence is invalid.");
+            }
+
+            var generationId = (commitFence.GenerationId ?? string.Empty).Trim();
+            var generationFingerprint = (commitFence.GenerationFingerprint ?? string.Empty).Trim();
+            if ((generationId.Length == 0) != (generationFingerprint.Length == 0))
+                throw new InvalidDataException("Authoritative catalog generation fence is incomplete.");
+        }
+
+        private static async Task ReplaceAuthoritativeStagePageAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            RemoteCatalogBatch batch,
+            RemoteCatalogCommitFence commitFence)
+        {
+            var stage = batch.AuthoritativeStagePage;
+            var identity = CatalogAuthoritativeStageIdentity.Create(stage, commitFence);
+            var stagedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+            identity.ScopeId = await EnsureAuthoritativeStageScopeAsync(
+                conn,
+                tx,
+                identity,
+                stagedAt).ConfigureAwait(false);
+            await conn.ExecuteAsync(@"
+DELETE FROM catalog_authoritative_id_stage
+WHERE scope_id = @ScopeId
+  AND page_number = @PageNumber;",
+                identity,
+                tx).ConfigureAwait(false);
+
+            var occurrences = new Dictionary<CatalogAuthoritativeStageKey, int>();
+            AddStageOccurrences(
+                occurrences,
+                "product",
+                batch.Products,
+                row => row?.RemoteProductId,
+                ProductStageFingerprint,
+                row => row?.RemoteCategoryId,
+                row => row?.RemoteSupplierId);
+            AddStageOccurrences(
+                occurrences,
+                "category",
+                batch.Categories,
+                row => row?.RemoteCategoryId,
+                CategoryStageFingerprint);
+            AddStageOccurrences(
+                occurrences,
+                "supplier",
+                batch.Suppliers,
+                row => row?.RemoteSupplierId,
+                SupplierStageFingerprint);
+            AddStageOccurrences(
+                occurrences,
+                "price",
+                batch.Prices,
+                row => row?.RemotePriceId,
+                PriceStageFingerprint,
+                selectProductRemoteId: row => row?.RemoteProductId);
+            AddStageOccurrences(
+                occurrences,
+                "product_tombstone",
+                batch.ProductTombstones,
+                row => row?.RemoteProductId,
+                ProductTombstoneStageFingerprint);
+            AddStageOccurrences(
+                occurrences,
+                "category_tombstone",
+                batch.CategoryTombstones,
+                row => row?.RemoteCategoryId,
+                CategoryTombstoneStageFingerprint);
+            AddStageOccurrences(
+                occurrences,
+                "supplier_tombstone",
+                batch.SupplierTombstones,
+                row => row?.RemoteSupplierId,
+                SupplierTombstoneStageFingerprint);
+
+            await conn.ExecuteAsync(@"
+INSERT INTO catalog_authoritative_id_stage(
+  scope_id,
+  page_number,
+  entity_kind,
+  remote_id,
+  content_fingerprint,
+  category_remote_id,
+  supplier_remote_id,
+  product_remote_id,
+  occurrence_count,
+  has_more,
+  staged_at)
+VALUES(
+  @scopeId,
+  @pageNumber,
+  'page',
+  '',
+  '',
+  '',
+  '',
+  '',
+  0,
+  @hasMore,
+  @stagedAt);",
+                new
+                {
+                    scopeId = identity.ScopeId,
+                    pageNumber = identity.PageNumber,
+                    hasMore = stage.HasMore ? 1 : 0,
+                    stagedAt
+                },
+                tx).ConfigureAwait(false);
+            await InsertStageOccurrencesAsync(
+                conn,
+                tx,
+                identity,
+                occurrences,
+                stagedAt).ConfigureAwait(false);
+        }
+
+        private static async Task<long> EnsureAuthoritativeStageScopeAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            CatalogAuthoritativeStageIdentity identity,
+            long createdAt)
+        {
+            await conn.ExecuteAsync(@"
+INSERT OR IGNORE INTO catalog_authoritative_stage_scope(
+  shop_id,
+  shop_code,
+  transition_epoch,
+  generation_id,
+  generation_fingerprint,
+  full_run_id,
+  created_at)
+VALUES(
+  @ShopId,
+  @ShopCode,
+  @TransitionEpoch,
+  @GenerationId,
+  @GenerationFingerprint,
+  @FullRunId,
+  @createdAt);",
+                new
+                {
+                    identity.ShopId,
+                    identity.ShopCode,
+                    identity.TransitionEpoch,
+                    identity.GenerationId,
+                    identity.GenerationFingerprint,
+                    identity.FullRunId,
+                    createdAt
+                },
+                tx).ConfigureAwait(false);
+            return await conn.QuerySingleAsync<long>(@"
+SELECT scope_id
+FROM catalog_authoritative_stage_scope
+WHERE shop_id = @ShopId
+  AND shop_code = @ShopCode
+  AND transition_epoch = @TransitionEpoch
+  AND generation_id = @GenerationId
+  AND generation_fingerprint = @GenerationFingerprint
+  AND full_run_id = @FullRunId;",
+                identity,
+                tx).ConfigureAwait(false);
+        }
+
+        private static async Task InsertStageOccurrencesAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            CatalogAuthoritativeStageIdentity identity,
+            IReadOnlyDictionary<CatalogAuthoritativeStageKey, int> occurrences,
+            long stagedAt)
+        {
+            if (occurrences == null || occurrences.Count == 0) return;
+
+            // One bounded page is encoded as JSON and expanded by SQLite's built-in
+            // JSON table function. This keeps the durable insert at one statement per
+            // page without retaining identities beyond the current page on x86.
+            var rowsJson = new StringBuilder(Math.Max(256, occurrences.Count * 96));
+            rowsJson.Append('[');
+            var first = true;
+            foreach (var occurrence in occurrences)
+            {
+                if (!first) rowsJson.Append(',');
+                first = false;
+                rowsJson.Append('[');
+                AppendJsonString(rowsJson, occurrence.Key.EntityKind);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.RemoteId);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.ContentFingerprint);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.CategoryRemoteId);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.SupplierRemoteId);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.ProductRemoteId);
+                rowsJson.Append(',');
+                rowsJson.Append(occurrence.Value.ToString(CultureInfo.InvariantCulture));
+                rowsJson.Append(']');
+            }
+            rowsJson.Append(']');
+
+            using var command = conn.CreateCommand();
+            command.Transaction = tx;
+            command.CommandText = @"
+WITH incoming AS (
+  SELECT
+    CAST(json_extract(value, '$[0]') AS TEXT) AS entity_kind,
+    CAST(json_extract(value, '$[1]') AS TEXT) AS remote_id,
+    CAST(json_extract(value, '$[2]') AS TEXT) AS content_fingerprint,
+    CAST(json_extract(value, '$[3]') AS TEXT) AS category_remote_id,
+    CAST(json_extract(value, '$[4]') AS TEXT) AS supplier_remote_id,
+    CAST(json_extract(value, '$[5]') AS TEXT) AS product_remote_id,
+    CAST(json_extract(value, '$[6]') AS INTEGER) AS occurrence_count
+  FROM json_each(@rowsJson)
+)
+INSERT INTO catalog_authoritative_id_stage(
+  scope_id,
+  page_number,
+  entity_kind,
+  remote_id,
+  content_fingerprint,
+  category_remote_id,
+  supplier_remote_id,
+  product_remote_id,
+  occurrence_count,
+  has_more,
+  staged_at)
+SELECT
+  @scopeId,
+  @pageNumber,
+  entity_kind,
+  remote_id,
+  content_fingerprint,
+  category_remote_id,
+  supplier_remote_id,
+  product_remote_id,
+  occurrence_count,
+  NULL,
+  @stagedAt
+FROM incoming;";
+            AddParameter(command, "@scopeId", identity.ScopeId);
+            AddParameter(command, "@pageNumber", identity.PageNumber);
+            AddParameter(command, "@stagedAt", stagedAt);
+            AddParameter(command, "@rowsJson", rowsJson.ToString());
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+        }
+
+        private static void AppendJsonString(StringBuilder target, string value)
+        {
+            target.Append('"');
+            foreach (var character in value ?? string.Empty)
+            {
+                switch (character)
+                {
+                    case '"': target.Append("\\\""); break;
+                    case '\\': target.Append("\\\\"); break;
+                    case '\b': target.Append("\\b"); break;
+                    case '\f': target.Append("\\f"); break;
+                    case '\n': target.Append("\\n"); break;
+                    case '\r': target.Append("\\r"); break;
+                    case '\t': target.Append("\\t"); break;
+                    default:
+                        if (char.IsControl(character))
+                        {
+                            target.Append("\\u");
+                            target.Append(((int)character).ToString("x4", CultureInfo.InvariantCulture));
+                        }
+                        else
+                        {
+                            target.Append(character);
+                        }
+                        break;
+                }
+            }
+            target.Append('"');
+        }
+
+        private static SqliteParameter AddParameter(
+            SqliteCommand command,
+            string name,
+            object value)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = name;
+            parameter.Value = value ?? DBNull.Value;
+            command.Parameters.Add(parameter);
+            return parameter;
+        }
+
+        private static void AddStageOccurrences<T>(
+            IDictionary<CatalogAuthoritativeStageKey, int> occurrences,
+            string entityKind,
+            IEnumerable<T> values,
+            Func<T, string> selectRemoteId,
+            Func<T, string> selectFingerprint,
+            Func<T, string> selectCategoryRemoteId = null,
+            Func<T, string> selectSupplierRemoteId = null,
+            Func<T, string> selectProductRemoteId = null)
+        {
+            foreach (var value in values ?? Array.Empty<T>())
+            {
+                var key = new CatalogAuthoritativeStageKey(
+                    entityKind,
+                    (selectRemoteId(value) ?? string.Empty).Trim(),
+                    selectFingerprint(value) ?? string.Empty,
+                    (selectCategoryRemoteId?.Invoke(value) ?? string.Empty).Trim(),
+                    (selectSupplierRemoteId?.Invoke(value) ?? string.Empty).Trim(),
+                    (selectProductRemoteId?.Invoke(value) ?? string.Empty).Trim());
+                occurrences.TryGetValue(key, out var count);
+                occurrences[key] = checked(count + 1);
+            }
+        }
+
+        private const string InvalidStageFingerprint = "invalid";
+
+        private static string ProductStageFingerprint(RemoteCatalogProductWrite row)
+        {
+            if (row == null ||
+                string.IsNullOrWhiteSpace(row.RemoteProductId) ||
+                string.IsNullOrWhiteSpace(row.Barcode) ||
+                string.IsNullOrWhiteSpace(row.Name) ||
+                row.UnitPrice <= 0 ||
+                ProductRepository.IsReservedBarcode(row.Barcode.Trim()))
+            {
+                return InvalidStageFingerprint;
+            }
+            return "barcode:" + NormalizeBarcode(row.Barcode).ToUpperInvariant();
+        }
+
+        private static string CategoryStageFingerprint(RemoteCatalogCategoryWrite row)
+        {
+            return row == null ||
+                string.IsNullOrWhiteSpace(row.RemoteCategoryId) ||
+                string.IsNullOrWhiteSpace(row.Name)
+                ? InvalidStageFingerprint
+                : Fingerprint(row.Name, row.RemoteUpdatedAt);
+        }
+
+        private static string SupplierStageFingerprint(RemoteCatalogSupplierWrite row)
+        {
+            return row == null ||
+                string.IsNullOrWhiteSpace(row.RemoteSupplierId) ||
+                string.IsNullOrWhiteSpace(row.Name)
+                ? InvalidStageFingerprint
+                : Fingerprint(row.Name, row.RemoteUpdatedAt);
+        }
+
+        private static string PriceStageFingerprint(RemoteCatalogPriceWrite row)
+        {
+            return row == null ||
+                string.IsNullOrWhiteSpace(row.RemotePriceId) ||
+                string.IsNullOrWhiteSpace(row.RemoteProductId) ||
+                string.IsNullOrWhiteSpace(row.Type) ||
+                row.Price < 0
+                ? InvalidStageFingerprint
+                : string.Empty;
+        }
+
+        private static string ProductTombstoneStageFingerprint(RemoteCatalogProductTombstoneWrite row)
+        {
+            return row == null || string.IsNullOrWhiteSpace(row.RemoteProductId)
+                ? InvalidStageFingerprint
+                : Fingerprint(row.RemoteDeletedAt, row.RemoteUpdatedAt);
+        }
+
+        private static string CategoryTombstoneStageFingerprint(RemoteCatalogCategoryTombstoneWrite row)
+        {
+            return row == null || string.IsNullOrWhiteSpace(row.RemoteCategoryId)
+                ? InvalidStageFingerprint
+                : Fingerprint(row.RemoteDeletedAt, row.RemoteUpdatedAt);
+        }
+
+        private static string SupplierTombstoneStageFingerprint(RemoteCatalogSupplierTombstoneWrite row)
+        {
+            return row == null || string.IsNullOrWhiteSpace(row.RemoteSupplierId)
+                ? InvalidStageFingerprint
+                : Fingerprint(row.RemoteDeletedAt, row.RemoteUpdatedAt);
+        }
+
+        private static string Fingerprint(params string[] values)
+        {
+            using var sha = SHA256.Create();
+            var builder = new StringBuilder();
+            foreach (var value in values ?? Array.Empty<string>())
+            {
+                var normalized = (value ?? string.Empty).Trim();
+                builder.Append(normalized.Length.ToString(CultureInfo.InvariantCulture));
+                builder.Append(':');
+                builder.Append(normalized);
+                builder.Append(';');
+            }
+
+            var bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(builder.ToString()));
+            var result = new StringBuilder(bytes.Length * 2);
+            foreach (var item in bytes)
+                result.Append(item.ToString("x2", CultureInfo.InvariantCulture));
+            return result.ToString();
+        }
+
+        private static async Task<CatalogAuthoritativeStageEvidence> LoadAuthoritativeStageEvidenceAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            CatalogAuthoritativeStagePage stage,
+            RemoteCatalogCommitFence commitFence)
+        {
+            var identity = CatalogAuthoritativeStageIdentity.Create(stage, commitFence);
+            var row = await conn.QuerySingleAsync<CatalogAuthoritativeStageEvidenceRow>(@"
+WITH scoped AS (
+  SELECT entity_kind, remote_id, content_fingerprint,
+         category_remote_id, supplier_remote_id, product_remote_id,
+         occurrence_count
+  FROM catalog_authoritative_id_stage item
+  JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+  WHERE scope.shop_id = @ShopId
+    AND scope.shop_code = @ShopCode
+    AND scope.transition_epoch = @TransitionEpoch
+    AND scope.generation_id = @GenerationId
+    AND scope.generation_fingerprint = @GenerationFingerprint
+    AND scope.full_run_id = @FullRunId
+)
+SELECT
+  COUNT(DISTINCT CASE WHEN entity_kind = 'product' THEN remote_id END) AS Products,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'category' THEN remote_id END) AS Categories,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'supplier' THEN remote_id END) AS Suppliers,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'price' THEN remote_id END) AS Prices,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'product_tombstone' THEN remote_id END) AS ProductTombstones,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'category_tombstone' THEN remote_id END) AS CategoryTombstones,
+  COUNT(DISTINCT CASE WHEN entity_kind = 'supplier_tombstone' THEN remote_id END) AS SupplierTombstones,
+  COALESCE(SUM(CASE WHEN entity_kind = 'product' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidProducts,
+  COALESCE(SUM(CASE WHEN entity_kind = 'category' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidCategories,
+  COALESCE(SUM(CASE WHEN entity_kind = 'supplier' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidSuppliers,
+  COALESCE(SUM(CASE WHEN entity_kind = 'price' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidPrices,
+  COALESCE(SUM(CASE WHEN entity_kind = 'product_tombstone' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidProductTombstones,
+  COALESCE(SUM(CASE WHEN entity_kind = 'category_tombstone' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidCategoryTombstones,
+  COALESCE(SUM(CASE WHEN entity_kind = 'supplier_tombstone' AND content_fingerprint = 'invalid'
+    THEN occurrence_count ELSE 0 END), 0) AS InvalidSupplierTombstones,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'category'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS CategoryConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'supplier'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS SupplierConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'product_tombstone'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS ProductTombstoneConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'category_tombstone'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS CategoryTombstoneConflicts,
+  (SELECT COUNT(1) FROM (
+     SELECT remote_id FROM scoped WHERE entity_kind = 'supplier_tombstone'
+     GROUP BY remote_id HAVING COUNT(DISTINCT content_fingerprint) > 1
+   )) AS SupplierTombstoneConflicts,
+  (SELECT COUNT(1) FROM scoped active
+   JOIN scoped tombstone ON tombstone.remote_id = active.remote_id
+   WHERE active.entity_kind = 'product' AND tombstone.entity_kind = 'product_tombstone')
+    AS ProductActiveTombstoneConflicts,
+  (SELECT COUNT(1) FROM scoped active
+   JOIN scoped tombstone ON tombstone.remote_id = active.remote_id
+   WHERE active.entity_kind = 'category' AND tombstone.entity_kind = 'category_tombstone')
+    AS CategoryActiveTombstoneConflicts,
+  (SELECT COUNT(1) FROM scoped active
+   JOIN scoped tombstone ON tombstone.remote_id = active.remote_id
+   WHERE active.entity_kind = 'supplier' AND tombstone.entity_kind = 'supplier_tombstone')
+    AS SupplierActiveTombstoneConflicts
+FROM scoped;",
+                identity,
+                tx).ConfigureAwait(false);
+
+            return new CatalogAuthoritativeStageEvidence(
+                new CatalogPaginationLaneCounts(
+                    row.Products,
+                    row.Categories,
+                    row.Suppliers,
+                    row.Prices,
+                    row.ProductTombstones,
+                    row.CategoryTombstones,
+                    row.SupplierTombstones),
+                FirstStageConflictCode(row));
+        }
+
+        private static string FirstStageConflictCode(CatalogAuthoritativeStageEvidenceRow row)
+        {
+            if (row.InvalidProducts > 0) return "catalog_product_row_invalid";
+            if (row.InvalidCategories > 0) return "catalog_category_row_invalid";
+            if (row.InvalidSuppliers > 0) return "catalog_supplier_row_invalid";
+            if (row.InvalidPrices > 0) return "catalog_price_row_invalid";
+            if (row.InvalidProductTombstones > 0) return "catalog_product_tombstone_invalid";
+            if (row.InvalidCategoryTombstones > 0) return "catalog_category_tombstone_invalid";
+            if (row.InvalidSupplierTombstones > 0) return "catalog_supplier_tombstone_invalid";
+            if (row.CategoryConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.CategoryConflictCode;
+            if (row.SupplierConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.SupplierConflictCode;
+            if (row.ProductTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.ProductTombstoneConflictCode;
+            if (row.CategoryTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.CategoryTombstoneConflictCode;
+            if (row.SupplierTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.SupplierTombstoneConflictCode;
+            if (row.ProductActiveTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.ProductActiveTombstoneConflictCode;
+            if (row.CategoryActiveTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.CategoryActiveTombstoneConflictCode;
+            if (row.SupplierActiveTombstoneConflicts > 0)
+                return CatalogFullLaneEvidenceTracker.SupplierActiveTombstoneConflictCode;
+            return string.Empty;
+        }
+
+        private sealed class CatalogAuthoritativeStageIdentity
+        {
+            public string FullRunId { get; private set; } = string.Empty;
+            public string GenerationFingerprint { get; private set; } = string.Empty;
+            public string GenerationId { get; private set; } = string.Empty;
+            public int PageNumber { get; private set; }
+            public long ScopeId { get; set; }
+            public string ShopCode { get; private set; } = string.Empty;
+            public string ShopId { get; private set; } = string.Empty;
+            public long TransitionEpoch { get; private set; }
+
+            public static CatalogAuthoritativeStageIdentity Create(
+                CatalogAuthoritativeStagePage stage,
+                RemoteCatalogCommitFence commitFence)
+            {
+                return new CatalogAuthoritativeStageIdentity
+                {
+                    FullRunId = stage.FullRunId.Trim(),
+                    GenerationFingerprint = (commitFence.GenerationFingerprint ?? string.Empty).Trim(),
+                    GenerationId = (commitFence.GenerationId ?? string.Empty).Trim(),
+                    PageNumber = stage.PageNumber,
+                    ShopCode = commitFence.ShopCode.Trim(),
+                    ShopId = commitFence.ShopId.Trim(),
+                    TransitionEpoch = commitFence.ExpectedEpoch
+                };
+            }
+        }
+
+        private sealed class CatalogAuthoritativeStageKey : IEquatable<CatalogAuthoritativeStageKey>
+        {
+            public CatalogAuthoritativeStageKey(
+                string entityKind,
+                string remoteId,
+                string contentFingerprint,
+                string categoryRemoteId,
+                string supplierRemoteId,
+                string productRemoteId)
+            {
+                EntityKind = entityKind ?? string.Empty;
+                RemoteId = remoteId ?? string.Empty;
+                ContentFingerprint = contentFingerprint ?? string.Empty;
+                CategoryRemoteId = categoryRemoteId ?? string.Empty;
+                SupplierRemoteId = supplierRemoteId ?? string.Empty;
+                ProductRemoteId = productRemoteId ?? string.Empty;
+            }
+
+            public string CategoryRemoteId { get; }
+            public string ContentFingerprint { get; }
+            public string EntityKind { get; }
+            public string ProductRemoteId { get; }
+            public string RemoteId { get; }
+            public string SupplierRemoteId { get; }
+
+            public bool Equals(CatalogAuthoritativeStageKey other)
+            {
+                return other != null &&
+                    string.Equals(EntityKind, other.EntityKind, StringComparison.Ordinal) &&
+                    string.Equals(RemoteId, other.RemoteId, StringComparison.Ordinal) &&
+                    string.Equals(ContentFingerprint, other.ContentFingerprint, StringComparison.Ordinal) &&
+                    string.Equals(CategoryRemoteId, other.CategoryRemoteId, StringComparison.Ordinal) &&
+                    string.Equals(SupplierRemoteId, other.SupplierRemoteId, StringComparison.Ordinal) &&
+                    string.Equals(ProductRemoteId, other.ProductRemoteId, StringComparison.Ordinal);
+            }
+
+            public override bool Equals(object obj)
+            {
+                return Equals(obj as CatalogAuthoritativeStageKey);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    var hash = StringComparer.Ordinal.GetHashCode(EntityKind);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(RemoteId);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(ContentFingerprint);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(CategoryRemoteId);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(SupplierRemoteId);
+                    hash = (hash * 397) ^ StringComparer.Ordinal.GetHashCode(ProductRemoteId);
+                    return hash;
+                }
+            }
+        }
+
+        private sealed class CatalogAuthoritativeStageEvidenceRow
+        {
+            public long Categories { get; set; }
+            public long CategoryActiveTombstoneConflicts { get; set; }
+            public long CategoryConflicts { get; set; }
+            public long CategoryTombstoneConflicts { get; set; }
+            public long CategoryTombstones { get; set; }
+            public long InvalidCategories { get; set; }
+            public long InvalidCategoryTombstones { get; set; }
+            public long InvalidPrices { get; set; }
+            public long InvalidProducts { get; set; }
+            public long InvalidProductTombstones { get; set; }
+            public long InvalidSuppliers { get; set; }
+            public long InvalidSupplierTombstones { get; set; }
+            public long Prices { get; set; }
+            public long ProductActiveTombstoneConflicts { get; set; }
+            public long Products { get; set; }
+            public long ProductTombstoneConflicts { get; set; }
+            public long ProductTombstones { get; set; }
+            public long SupplierActiveTombstoneConflicts { get; set; }
+            public long SupplierConflicts { get; set; }
+            public long Suppliers { get; set; }
+            public long SupplierTombstoneConflicts { get; set; }
+            public long SupplierTombstones { get; set; }
+        }
+
+        internal static async Task RequireCommitFenceAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             RemoteCatalogCommitFence commitFence)
@@ -1204,9 +1931,31 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
         public string ShopId { get; set; } = string.Empty;
     }
 
+    public sealed class CatalogAuthoritativeStagePage
+    {
+        public string FullRunId { get; set; } = string.Empty;
+        public bool HasMore { get; set; }
+        public int PageNumber { get; set; }
+    }
+
+    public sealed class CatalogAuthoritativeStageEvidence
+    {
+        public CatalogAuthoritativeStageEvidence(
+            CatalogPaginationLaneCounts laneCounts,
+            string conflictCode)
+        {
+            LaneCounts = laneCounts ?? throw new ArgumentNullException(nameof(laneCounts));
+            ConflictCode = conflictCode ?? string.Empty;
+        }
+
+        public string ConflictCode { get; }
+        public CatalogPaginationLaneCounts LaneCounts { get; }
+    }
+
     public sealed class RemoteCatalogBatch
     {
         public bool AuthoritativeFullRefresh { get; set; }
+        public CatalogAuthoritativeStagePage AuthoritativeStagePage { get; set; }
         public IReadOnlyList<RemoteCatalogCategoryWrite> Categories { get; set; } =
             Array.Empty<RemoteCatalogCategoryWrite>();
         public IReadOnlyList<RemoteCatalogCategoryTombstoneWrite> CategoryTombstones { get; set; } =
@@ -1288,6 +2037,7 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
     {
         public string RemoteDeletedAt { get; set; } = string.Empty;
         public string RemoteProductId { get; set; } = string.Empty;
+        public string RemoteUpdatedAt { get; set; } = string.Empty;
     }
 
     public sealed class RemoteCatalogCategoryTombstoneWrite

@@ -148,8 +148,26 @@ postcondition=current-structural-schema",
                     "Additive table and nullable columns; downgrade requires restoring the verified backup.",
                     true,
                     DbInitializer.EnsureOnlineSyncGenerationSchema,
+                    IsPostSync2SchemaStructurallyValid,
+                    IsRecognizedPostSync2LedgerlessBaseline),
+
+                new SchemaMigration(
+                    "0009-catalog-authoritative-id-stage",
+                    "Persist generation-keyed authoritative catalog identity evidence across bounded pages.",
+                    @"0009-catalog-authoritative-id-stage/v1
+table=catalog_authoritative_id_stage:shop generation full-run page and remote identity evidence
+page-sentinel=required for every page including empty and tombstone-only pages
+operation=DbInitializer.EnsureCatalogAuthoritativeIdStageSchema
+schema-sql=" + DbInitializer.CatalogAuthoritativeIdStageSchemaSql + @"
+ledgerless-baseline=" + DbInitializer.PostPerf2ALedgerlessKnownSchemaSql + @"
+postcondition=current-structural-schema",
+                    "68d57cd65b2d56456d5b2ab5eee83237477aefc85f93aa2d81e5f64699fae659",
+                    "1.0.0",
+                    "Additive durable scratch table and indexes; downgrade requires restoring the verified backup.",
+                    true,
+                    DbInitializer.EnsureCatalogAuthoritativeIdStageSchema,
                     IsCurrentSchemaStructurallyValid,
-                    IsRecognizedPostSync2LedgerlessBaseline)
+                    IsRecognizedPostPerf2ALedgerlessBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -178,6 +196,15 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+        {
+            if (detector == null)
+                throw new ArgumentNullException(nameof(detector));
+            return
+                IsPostSync2SchemaStructurallyValid(detector) &&
+                HasCatalogAuthoritativeIdStageSchema(detector);
+        }
+
+        private static bool IsPostSync2SchemaStructurallyValid(LegacySchemaDetector detector)
         {
             if (detector == null)
                 throw new ArgumentNullException(nameof(detector));
@@ -293,6 +320,17 @@ LIMIT 1;");
                     "pos_sync_session_generation");
         }
 
+        private static bool HasCatalogAuthoritativeIdStageSchema(LegacySchemaDetector detector)
+        {
+            return
+                detector.HasCanonicalTableDefinitions(
+                    DbInitializer.CatalogAuthoritativeIdStageSchemaSql,
+                    "catalog_authoritative_stage_scope",
+                    "catalog_authoritative_id_stage") &&
+                detector.HasAllIndexDefinitions(
+                    DbInitializer.CatalogAuthoritativeIdStageIndexSql);
+        }
+
         private static bool HasSafeOutboxBindings(LegacySchemaDetector detector)
         {
             return detector.NoRows(@"
@@ -382,6 +420,17 @@ LIMIT 1;");
         }
 
         private static bool IsRecognizedPostSync2LedgerlessBaseline(LegacySchemaDetector detector)
+        {
+            return
+                IsPostSync2SchemaStructurallyValid(detector) &&
+                HasRemotePriceOwnership(detector) &&
+                HasSafeOutboxBindings(detector) &&
+                DbInitializer.IsSecuritySeedSatisfied(
+                    detector.Connection,
+                    detector.Transaction);
+        }
+
+        private static bool IsRecognizedPostPerf2ALedgerlessBaseline(LegacySchemaDetector detector)
         {
             return
                 IsCurrentSchemaStructurallyValid(detector) &&

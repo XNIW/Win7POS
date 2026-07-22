@@ -27,11 +27,12 @@ public sealed class MigrationRunnerTests
             ["0005-canonical-query-indexes"] = "44afcce1cee8d87f0d68f1de472c18f0b5fb6ca474ee94c592d43cf71234da1a",
             ["0006-system-role-permissions"] = "ade7405f309f563d6734bf5eaafd36df1f2ef6da8bd42ac9b910d1c51b783b8e",
             ["0007-receipt-shop-snapshot"] = "a1d12cca8bbfeb57872ee854e18cc32bf98258937d1f7be4be91d925f2ef6462",
-            ["0008-online-sync-generation"] = "a951929521bdb7a73d82fcc308bd2e800ccb4888b6c16c829f51c2b93f49a488"
+            ["0008-online-sync-generation"] = "a951929521bdb7a73d82fcc308bd2e800ccb4888b6c16c829f51c2b93f49a488",
+            ["0009-catalog-authoritative-id-stage"] = "68d57cd65b2d56456d5b2ab5eee83237477aefc85f93aa2d81e5f64699fae659"
         };
 
-        Assert.AreEqual(8, migrations.Count);
-        Assert.AreEqual("0008-online-sync-generation", SchemaMigrationRegistry.Latest.MigrationId);
+        Assert.AreEqual(9, migrations.Count);
+        Assert.AreEqual("0009-catalog-authoritative-id-stage", SchemaMigrationRegistry.Latest.MigrationId);
         CollectionAssert.AreEqual(
             migrations.Select(item => item.MigrationId).OrderBy(item => item, StringComparer.Ordinal).ToArray(),
             migrations.Select(item => item.MigrationId).ToArray());
@@ -141,7 +142,8 @@ VALUES('PRE-0007', 2, 750, 750, 0, 0);");
             new[]
             {
                 "0007-receipt-shop-snapshot",
-                "0008-online-sync-generation"
+                "0008-online-sync-generation",
+                "0009-catalog-authoritative-id-stage"
             },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
@@ -154,6 +156,99 @@ SELECT code || '|' || total || '|' || COALESCE(receipt_shop_snapshot, '')
 FROM sales
 WHERE code = 'PRE-0007';"));
         AssertLatestLedger(database.Factory);
+    }
+
+    [TestMethod]
+    public void LedgerThrough0008_AppliesOnlyAuthoritativeStageMigrationAndBacksUpFirst()
+    {
+        using var database = MigrationDatabase.Create();
+        new SchemaMigrationRunner(
+            database.Factory,
+            SchemaMigrationRegistry.All.Take(8)).Run();
+        using (var connection = database.Factory.Open())
+        {
+            connection.Execute(@"
+INSERT INTO app_settings(key, value)
+VALUES('perf2a.migration-probe', 'preserve-before-0009');");
+        }
+
+        var backupCalls = 0;
+        var runner = new SchemaMigrationRunner(
+            database.Factory,
+            SchemaMigrationRegistry.All,
+            OptionsThatCountBackups(() => backupCalls++));
+
+        var first = runner.Run();
+        var second = runner.Run();
+
+        Assert.AreEqual(1, backupCalls);
+        Assert.AreEqual(0, first.BootstrappedMigrationIds.Count);
+        CollectionAssert.AreEqual(
+            new[] { "0009-catalog-authoritative-id-stage" },
+            first.AppliedMigrationIds.ToArray());
+        Assert.IsTrue(second.WasNoOp);
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(
+            "preserve-before-0009",
+            verify.ExecuteScalar<string>(@"
+SELECT value
+FROM app_settings
+WHERE key = 'perf2a.migration-probe';"));
+        AssertAuthoritativeStageSchema(verify);
+        AssertLatestLedger(database.Factory);
+    }
+
+    [TestMethod]
+    public void LedgerThrough0008_WithWrongAuthoritativeStageIndex_RollsBack0009()
+    {
+        using var database = MigrationDatabase.Create();
+        new SchemaMigrationRunner(
+            database.Factory,
+            SchemaMigrationRegistry.All.Take(8)).Run();
+        using (var connection = database.Factory.Open())
+        {
+            var schemaSql = DbInitializer.CatalogAuthoritativeIdStageSchemaSql;
+            var firstTableDefinitionEnd = schemaSql.IndexOf(';');
+            var tableDefinitionEnd = schemaSql.IndexOf(';', firstTableDefinitionEnd + 1);
+            Assert.IsTrue(tableDefinitionEnd > 0);
+            connection.Execute(schemaSql.Substring(0, tableDefinitionEnd + 1));
+            connection.Execute(@"
+CREATE UNIQUE INDEX idx_catalog_authoritative_stage_page_identity
+ON catalog_authoritative_id_stage(stage_id);");
+        }
+
+        var backupCalls = 0;
+        var error = Assert.ThrowsExactly<InvalidDataException>(() =>
+            new SchemaMigrationRunner(
+                database.Factory,
+                SchemaMigrationRegistry.All,
+                OptionsThatCountBackups(() => backupCalls++)).Run());
+
+        StringAssert.Contains(error.Message, "declared schema and data invariants");
+        Assert.AreEqual(1, backupCalls);
+        using var verify = database.Factory.Open();
+        Assert.AreEqual(
+            8L,
+            verify.ExecuteScalar<long>("SELECT COUNT(1) FROM schema_migrations;"));
+        StringAssert.Contains(
+            verify.ExecuteScalar<string>(@"
+SELECT sql
+FROM sqlite_master
+WHERE type = 'index'
+  AND name = 'idx_catalog_authoritative_stage_page_identity';") ?? string.Empty,
+            "(stage_id)");
+        Assert.AreEqual(
+            0L,
+            verify.ExecuteScalar<long>(@"
+SELECT COUNT(1)
+FROM sqlite_master
+WHERE type = 'index'
+  AND name IN (
+    'idx_catalog_authoritative_stage_reconcile',
+    'idx_catalog_authoritative_stage_cleanup',
+    'idx_catalog_authoritative_stage_scope_identity',
+    'idx_catalog_authoritative_stage_scope_cleanup');"),
+            "Indexes created by the failed 0009 transaction must roll back.");
     }
 
     [TestMethod]
@@ -190,9 +285,10 @@ VALUES(
         }
 
         var backupCalls = 0;
+        var sync2Migrations = SchemaMigrationRegistry.All.Take(8).ToArray();
         var runner = new SchemaMigrationRunner(
             database.Factory,
-            SchemaMigrationRegistry.All,
+            sync2Migrations,
             OptionsThatCountBackups(() => backupCalls++));
         var first = runner.Run();
         var second = runner.Run();
@@ -444,7 +540,7 @@ WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
 
         Assert.AreEqual(0, result.BootstrappedMigrationIds.Count);
         CollectionAssert.AreEqual(
-            new[] { "0000-custom-predecessor", "0008-online-sync-generation" },
+            new[] { "0000-custom-predecessor", "0009-catalog-authoritative-id-stage" },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
         Assert.IsTrue(new LegacySchemaDetector(verify).TableExists("custom_predecessor"));
@@ -1158,6 +1254,50 @@ ORDER BY migration_id;").ToArray();
         CollectionAssert.AreEqual(
             SchemaMigrationRegistry.All.Select(item => item.Checksum).ToArray(),
             rows.Select(item => item.Checksum).ToArray());
+    }
+
+    private static void AssertAuthoritativeStageSchema(SqliteConnection connection)
+    {
+        var detector = new LegacySchemaDetector(connection);
+        Assert.IsTrue(detector.HasCanonicalTableDefinitions(
+            DbInitializer.CatalogAuthoritativeIdStageSchemaSql,
+            "catalog_authoritative_stage_scope",
+            "catalog_authoritative_id_stage"));
+        Assert.IsTrue(detector.IndexMatchesDefinition(@"
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_page_identity
+ON catalog_authoritative_id_stage(
+  scope_id,
+  page_number,
+  entity_kind,
+  remote_id,
+  content_fingerprint,
+  category_remote_id,
+  supplier_remote_id,
+  product_remote_id
+);"));
+        Assert.IsTrue(detector.IndexMatchesDefinition(@"
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_scope_identity
+ON catalog_authoritative_stage_scope(
+  shop_id,
+  shop_code,
+  transition_epoch,
+  generation_id,
+  generation_fingerprint,
+  full_run_id
+);"));
+        Assert.IsTrue(detector.IndexMatchesDefinition(@"
+CREATE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_scope_cleanup
+ON catalog_authoritative_stage_scope(shop_id, shop_code, full_run_id, scope_id);"));
+        Assert.IsTrue(detector.IndexMatchesDefinition(@"
+CREATE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_reconcile
+ON catalog_authoritative_id_stage(
+  scope_id,
+  entity_kind,
+  remote_id
+);"));
+        Assert.IsTrue(detector.IndexMatchesDefinition(@"
+CREATE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_cleanup
+ON catalog_authoritative_id_stage(scope_id, stage_id);"));
     }
 
     private sealed class LedgerProjection

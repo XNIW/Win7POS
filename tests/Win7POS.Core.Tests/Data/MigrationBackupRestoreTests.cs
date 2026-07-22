@@ -155,6 +155,7 @@ public sealed class MigrationBackupRestoreTests
 
         Assert.AreEqual("preserved-before-migration", ReadLegacyProbe(database.LivePath));
         AssertLatestLedger(database.LivePath);
+        AssertAuthoritativeStageSchema(database.LivePath);
         await AssertDatabaseValidAsync(database.LivePath);
         Assert.IsFalse(File.Exists(database.LivePath + ".restore-in-progress"));
     }
@@ -220,6 +221,7 @@ SELECT receipt_shop_snapshot
 FROM sales
 WHERE code = 'LIVE-SNAPSHOT';"));
         AssertLatestLedger(database.LivePath);
+        AssertAuthoritativeStageSchema(database.LivePath);
         Assert.IsFalse(File.Exists(database.LivePath + ".restore-in-progress"));
         await AssertDatabaseValidAsync(database.LivePath);
     }
@@ -250,6 +252,51 @@ WHERE code = 'LIVE-SNAPSHOT';"));
 SELECT migration_id
 FROM schema_migrations
 ORDER BY migration_id;").ToArray());
+    }
+
+    private static void AssertAuthoritativeStageSchema(string databasePath)
+    {
+        using var connection = Open(databasePath);
+        var detector = new LegacySchemaDetector(connection);
+        Assert.IsTrue(detector.HasCanonicalTableDefinitions(
+            DbInitializer.CatalogAuthoritativeIdStageSchemaSql,
+            "catalog_authoritative_stage_scope",
+            "catalog_authoritative_id_stage"));
+        Assert.IsTrue(detector.IndexMatchesDefinition(@"
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_page_identity
+ON catalog_authoritative_id_stage(
+  scope_id,
+  page_number,
+  entity_kind,
+  remote_id,
+  content_fingerprint,
+  category_remote_id,
+  supplier_remote_id,
+  product_remote_id
+);"));
+        Assert.IsTrue(detector.IndexMatchesDefinition(@"
+CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_scope_identity
+ON catalog_authoritative_stage_scope(
+  shop_id,
+  shop_code,
+  transition_epoch,
+  generation_id,
+  generation_fingerprint,
+  full_run_id
+);"));
+        Assert.IsTrue(detector.IndexMatchesDefinition(@"
+CREATE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_scope_cleanup
+ON catalog_authoritative_stage_scope(shop_id, shop_code, full_run_id, scope_id);"));
+        Assert.IsTrue(detector.IndexMatchesDefinition(@"
+CREATE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_reconcile
+ON catalog_authoritative_id_stage(
+  scope_id,
+  entity_kind,
+  remote_id
+);"));
+        Assert.IsTrue(detector.IndexMatchesDefinition(@"
+CREATE INDEX IF NOT EXISTS idx_catalog_authoritative_stage_cleanup
+ON catalog_authoritative_id_stage(scope_id, stage_id);"));
     }
 
     private static async Task AssertDatabaseValidAsync(string databasePath)

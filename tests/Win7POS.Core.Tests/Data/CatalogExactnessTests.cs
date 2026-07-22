@@ -431,6 +431,575 @@ public sealed class CatalogExactnessTests
     }
 
     [TestMethod]
+    public async Task StagedTwoPageFullRefresh_RepeatedReferenceRowsRemainDistinctAndVerified()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        var stage = await CreateAuthoritativeStageAsync(db, "verified");
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+
+        await repository.StageAuthoritativePageAsync(
+            StageBatch(stage.FullRunId, 1, hasMore: true, "product-1", "BARCODE-1", "price-1"),
+            CancellationToken.None,
+            stage.Fence);
+        var evidence = await repository.StageAuthoritativePageAsync(
+            StageBatch(stage.FullRunId, 2, hasMore: false, "product-2", "BARCODE-2", "price-2"),
+            CancellationToken.None,
+            stage.Fence);
+
+        Assert.AreEqual(string.Empty, evidence.ConflictCode);
+        Assert.AreEqual(2L, evidence.LaneCounts.Products);
+        Assert.AreEqual(1L, evidence.LaneCounts.Categories);
+        Assert.AreEqual(1L, evidence.LaneCounts.Suppliers);
+        Assert.AreEqual(2L, evidence.LaneCounts.Prices);
+        var context = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2);
+        context.Pages = 2;
+        var exactness = await new CatalogFullRefreshReconciler(db.Factory)
+            .ReconcileAndVerifyStagedAsync(
+                stage.FullRunId,
+                "2026-07-19T01:00:00Z",
+                Summary(products: 2, categories: 1, suppliers: 1, prices: 2),
+                context,
+                stage.Fence);
+
+        Assert.AreEqual(CatalogCompletenessStatus.Verified, exactness.Status);
+        Assert.AreEqual("catalog_exactness_verified", exactness.Code);
+        Assert.AreEqual(0L, exactness.Audit.DuplicateAuthoritativeProductIds);
+        Assert.AreEqual(0L, exactness.Audit.DuplicateAuthoritativeCategoryIds);
+        Assert.AreEqual(0L, exactness.Audit.DuplicateAuthoritativeSupplierIds);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(2L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage
+JOIN catalog_authoritative_stage_scope scope USING(scope_id)
+WHERE scope.full_run_id = 'full-verified'
+  AND entity_kind = 'page';"));
+        Assert.AreEqual(2L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage
+JOIN catalog_authoritative_stage_scope scope USING(scope_id)
+WHERE scope.full_run_id = 'full-verified'
+  AND entity_kind = 'category';"));
+    }
+
+    [TestMethod]
+    public async Task StagedPreflight_DuplicateProductLeavesOldFenceAndLiveCatalogUnchanged()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        await SeedUnrelatedRemoteProductAsync(db, "product-must-stay", "MUST-STAY");
+        var stage = await CreateAuthoritativeStageAsync(db, "preflight-duplicate");
+        var state = new CatalogShopStateRepository(db.Factory);
+        var before = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Generation);
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        await repository.StageAuthoritativePageAsync(
+            StageBatch(stage.FullRunId, 1, hasMore: true, "product-1", "BARCODE-1", "price-1"),
+            CancellationToken.None,
+            stage.Fence);
+        await repository.StageAuthoritativePageAsync(
+            StageBatch(stage.FullRunId, 2, hasMore: false, "product-1", "BARCODE-1", "price-2"),
+            CancellationToken.None,
+            stage.Fence);
+        var context = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2);
+        context.Pages = 2;
+
+        var code = await new CatalogFullRefreshReconciler(db.Factory)
+            .ValidateStagedPreflightAsync(
+                stage.FullRunId,
+                Summary(products: 1, categories: 1, suppliers: 1, prices: 2),
+                context,
+                stage.Fence);
+
+        Assert.AreEqual("catalog_duplicate_product_ids", code);
+        var after = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Generation);
+        Assert.AreEqual(before.Epoch, after.Epoch);
+        Assert.AreEqual(before.Cursor, after.Cursor);
+        Assert.AreEqual(before.Mode, after.Mode);
+        Assert.AreEqual(stage.Fence.ExpectedEpoch, after.Epoch);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"
+SELECT is_active
+FROM products
+WHERE remote_product_id = 'product-must-stay';"));
+    }
+
+    [TestMethod]
+    public async Task StagedPreflight_ActiveProductsMismatchLeavesOldFenceAndLiveCatalogUnchanged()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        await SeedUnrelatedRemoteProductAsync(db, "product-must-stay", "MUST-STAY");
+        var stage = await CreateAuthoritativeStageAsync(db, "active-mismatch");
+        var state = new CatalogShopStateRepository(db.Factory);
+        var before = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Generation);
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        await repository.StageAuthoritativePageAsync(
+            StageBatch(stage.FullRunId, 1, hasMore: true, "product-1", "BARCODE-1", "price-1"),
+            CancellationToken.None,
+            stage.Fence);
+        await repository.StageAuthoritativePageAsync(
+            StageBatch(stage.FullRunId, 2, hasMore: false, "product-2", "BARCODE-2", "price-2"),
+            CancellationToken.None,
+            stage.Fence);
+        var context = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2);
+        context.Pages = 2;
+        var summary = Summary(products: 2, categories: 1, suppliers: 1, prices: 2);
+        summary.ActiveProducts = 1;
+
+        var code = await new CatalogFullRefreshReconciler(db.Factory)
+            .ValidateStagedPreflightAsync(
+                stage.FullRunId,
+                summary,
+                context,
+                stage.Fence);
+
+        Assert.AreEqual("catalog_active_products_count_mismatch", code);
+        await AssertPreflightPreservedStateAsync(db, stage, before, "product-must-stay");
+    }
+
+    [TestMethod]
+    public async Task StagedPreflight_EmptyAuthoritativeCatalogLeavesOldFenceAndLiveCatalogUnchanged()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        await SeedUnrelatedRemoteProductAsync(db, "product-must-stay", "MUST-STAY");
+        var stage = await CreateAuthoritativeStageAsync(db, "empty-catalog");
+        var state = new CatalogShopStateRepository(db.Factory);
+        var before = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Generation);
+        await new RemoteCatalogBatchRepository(db.Factory).StageAuthoritativePageAsync(
+            new RemoteCatalogBatch
+            {
+                AuthoritativeFullRefresh = true,
+                AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+                {
+                    FullRunId = stage.FullRunId,
+                    HasMore = false,
+                    PageNumber = 1
+                }
+            },
+            CancellationToken.None,
+            stage.Fence);
+
+        var code = await new CatalogFullRefreshReconciler(db.Factory)
+            .ValidateStagedPreflightAsync(
+                stage.FullRunId,
+                Summary(products: 0, categories: 0, suppliers: 0, prices: 0),
+                CompleteContext(products: 0, categories: 0, suppliers: 0, prices: 0),
+                stage.Fence);
+
+        Assert.AreEqual("full_refresh_no_active_products", code);
+        await AssertPreflightPreservedStateAsync(db, stage, before, "product-must-stay");
+    }
+
+    [TestMethod]
+    public async Task StagedPreflight_DuplicateNormalizedBarcodeLeavesOldFenceAndLiveCatalogUnchanged()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        await SeedUnrelatedRemoteProductAsync(db, "product-must-stay", "MUST-STAY");
+        var stage = await CreateAuthoritativeStageAsync(db, "duplicate-barcode");
+        var state = new CatalogShopStateRepository(db.Factory);
+        var before = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Generation);
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        await repository.StageAuthoritativePageAsync(
+            StageBatch(stage.FullRunId, 1, hasMore: true, "product-1", "DUPLICATE-BARCODE", "price-1"),
+            CancellationToken.None,
+            stage.Fence);
+        await repository.StageAuthoritativePageAsync(
+            StageBatch(stage.FullRunId, 2, hasMore: false, "product-2", "  DUPLICATE-BARCODE  ", "price-2"),
+            CancellationToken.None,
+            stage.Fence);
+        var context = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2);
+        context.Pages = 2;
+
+        var code = await new CatalogFullRefreshReconciler(db.Factory)
+            .ValidateStagedPreflightAsync(
+                stage.FullRunId,
+                Summary(products: 2, categories: 1, suppliers: 1, prices: 2),
+                context,
+                stage.Fence);
+
+        Assert.AreEqual("catalog_duplicate_active_barcodes", code);
+        await AssertPreflightPreservedStateAsync(db, stage, before, "product-must-stay");
+    }
+
+    [TestMethod]
+    [DataRow("DISC:REMOTE-1")]
+    [DataRow("MANUAL:REMOTE-1")]
+    public async Task StagedPreflight_ReservedBarcodeLeavesOldFenceAndLiveCatalogUnchanged(
+        string reservedBarcode)
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        await SeedUnrelatedRemoteProductAsync(db, "product-must-stay", "MUST-STAY");
+        var stage = await CreateAuthoritativeStageAsync(db, "reserved-barcode");
+        var state = new CatalogShopStateRepository(db.Factory);
+        var before = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Generation);
+
+        await new RemoteCatalogBatchRepository(db.Factory).StageAuthoritativePageAsync(
+            StageBatch(
+                stage.FullRunId,
+                1,
+                hasMore: false,
+                "product-reserved",
+                reservedBarcode,
+                "price-reserved"),
+            CancellationToken.None,
+            stage.Fence);
+
+        var code = await new CatalogFullRefreshReconciler(db.Factory)
+            .ValidateStagedPreflightAsync(
+                stage.FullRunId,
+                Summary(products: 1, categories: 1, suppliers: 1, prices: 1),
+                CompleteContext(products: 1, categories: 1, suppliers: 1, prices: 1),
+                stage.Fence);
+
+        Assert.AreEqual("catalog_product_row_invalid", code);
+        await AssertPreflightPreservedStateAsync(db, stage, before, "product-must-stay");
+    }
+
+    [TestMethod]
+    public async Task StagedPreflight_PriceForNonAuthoritativeProductLeavesLiveCatalogUnchanged()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        await SeedUnrelatedRemoteProductAsync(db, "product-must-stay", "MUST-STAY");
+        var stage = await CreateAuthoritativeStageAsync(db, "orphan-price");
+        var state = new CatalogShopStateRepository(db.Factory);
+        var before = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Generation);
+        var batch = StageBatch(
+            stage.FullRunId,
+            1,
+            hasMore: false,
+            "product-1",
+            "BARCODE-1",
+            "price-orphan");
+        batch.Prices.Single().RemoteProductId = "product-not-authoritative";
+        await new RemoteCatalogBatchRepository(db.Factory).StageAuthoritativePageAsync(
+            batch,
+            CancellationToken.None,
+            stage.Fence);
+
+        var code = await new CatalogFullRefreshReconciler(db.Factory)
+            .ValidateStagedPreflightAsync(
+                stage.FullRunId,
+                Summary(products: 1, categories: 1, suppliers: 1, prices: 1),
+                CompleteContext(products: 1, categories: 1, suppliers: 1, prices: 1),
+                stage.Fence);
+
+        Assert.AreEqual("catalog_price_product_not_authoritative", code);
+        await AssertPreflightPreservedStateAsync(db, stage, before, "product-must-stay");
+    }
+
+    [TestMethod]
+    public async Task StagedPreflight_ProductWithMissingCategoryLaneLeavesLiveCatalogUnchanged()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        await SeedUnrelatedRemoteProductAsync(db, "product-must-stay", "MUST-STAY");
+        var stage = await CreateAuthoritativeStageAsync(db, "orphan-category");
+        var state = new CatalogShopStateRepository(db.Factory);
+        var before = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Generation);
+        var batch = StageBatch(
+            stage.FullRunId,
+            1,
+            hasMore: false,
+            "product-1",
+            "BARCODE-1",
+            "price-1");
+        batch.Categories = Array.Empty<RemoteCatalogCategoryWrite>();
+        batch.Products.Single().RemoteCategoryId = "category-not-authoritative";
+        await new RemoteCatalogBatchRepository(db.Factory).StageAuthoritativePageAsync(
+            batch,
+            CancellationToken.None,
+            stage.Fence);
+
+        var code = await new CatalogFullRefreshReconciler(db.Factory)
+            .ValidateStagedPreflightAsync(
+                stage.FullRunId,
+                Summary(products: 1, categories: 0, suppliers: 1, prices: 1),
+                CompleteContext(products: 1, categories: 0, suppliers: 1, prices: 1),
+                stage.Fence);
+
+        Assert.AreEqual("catalog_category_references_orphaned", code);
+        await AssertPreflightPreservedStateAsync(db, stage, before, "product-must-stay");
+    }
+
+    [TestMethod]
+    public async Task StagedPreflight_ProductWithMissingSupplierLaneLeavesLiveCatalogUnchanged()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        await SeedUnrelatedRemoteProductAsync(db, "product-must-stay", "MUST-STAY");
+        var stage = await CreateAuthoritativeStageAsync(db, "orphan-supplier");
+        var state = new CatalogShopStateRepository(db.Factory);
+        var before = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Generation);
+        var batch = StageBatch(
+            stage.FullRunId,
+            1,
+            hasMore: false,
+            "product-1",
+            "BARCODE-1",
+            "price-1");
+        batch.Suppliers = Array.Empty<RemoteCatalogSupplierWrite>();
+        batch.Products.Single().RemoteSupplierId = "supplier-not-authoritative";
+        await new RemoteCatalogBatchRepository(db.Factory).StageAuthoritativePageAsync(
+            batch,
+            CancellationToken.None,
+            stage.Fence);
+
+        var code = await new CatalogFullRefreshReconciler(db.Factory)
+            .ValidateStagedPreflightAsync(
+                stage.FullRunId,
+                Summary(products: 1, categories: 1, suppliers: 0, prices: 1),
+                CompleteContext(products: 1, categories: 1, suppliers: 0, prices: 1),
+                stage.Fence);
+
+        Assert.AreEqual("catalog_supplier_references_orphaned", code);
+        await AssertPreflightPreservedStateAsync(db, stage, before, "product-must-stay");
+    }
+
+    [TestMethod]
+    public async Task StagedCrossPageDuplicateProductOrPrice_RejectsBeforeDeactivation()
+    {
+        using (var productDb = TestDb.Create())
+        {
+            await SeedCleanCatalogAsync(productDb);
+            await SeedUnrelatedRemoteProductAsync(productDb, "product-must-stay", "MUST-STAY");
+            var stage = await CreateAuthoritativeStageAsync(productDb, "duplicate-product");
+            var repository = new RemoteCatalogBatchRepository(productDb.Factory);
+            await repository.StageAuthoritativePageAsync(
+                StageBatch(stage.FullRunId, 1, hasMore: true, "product-1", "BARCODE-1", "price-1"),
+                CancellationToken.None,
+                stage.Fence);
+            await repository.StageAuthoritativePageAsync(
+                StageBatch(stage.FullRunId, 2, hasMore: false, "product-1", "BARCODE-1", "price-2"),
+                CancellationToken.None,
+                stage.Fence);
+            var context = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2);
+            context.Pages = 2;
+
+            var result = await new CatalogFullRefreshReconciler(productDb.Factory)
+                .ReconcileAndVerifyStagedAsync(
+                    stage.FullRunId,
+                    "2026-07-19T01:00:00Z",
+                    Summary(products: 1, categories: 1, suppliers: 1, prices: 2),
+                    context,
+                    stage.Fence);
+
+            Assert.AreEqual(CatalogCompletenessStatus.Mismatch, result.Status);
+            Assert.AreEqual("catalog_duplicate_product_ids", result.Code);
+            using var verify = productDb.Factory.Open();
+            Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"
+SELECT is_active
+FROM products
+WHERE remote_product_id = 'product-must-stay';"));
+        }
+
+        using (var priceDb = TestDb.Create())
+        {
+            await SeedCleanCatalogAsync(priceDb);
+            await SeedUnrelatedRemoteProductAsync(priceDb, "product-must-stay", "MUST-STAY");
+            var stage = await CreateAuthoritativeStageAsync(priceDb, "duplicate-price");
+            var repository = new RemoteCatalogBatchRepository(priceDb.Factory);
+            await repository.StageAuthoritativePageAsync(
+                StageBatch(stage.FullRunId, 1, hasMore: true, "product-1", "BARCODE-1", "price-1"),
+                CancellationToken.None,
+                stage.Fence);
+            await repository.StageAuthoritativePageAsync(
+                StageBatch(stage.FullRunId, 2, hasMore: false, "product-2", "BARCODE-2", "price-1"),
+                CancellationToken.None,
+                stage.Fence);
+            var context = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2);
+            context.Pages = 2;
+
+            var result = await new CatalogFullRefreshReconciler(priceDb.Factory)
+                .ReconcileAndVerifyStagedAsync(
+                    stage.FullRunId,
+                    "2026-07-19T01:00:00Z",
+                    Summary(products: 2, categories: 1, suppliers: 1, prices: 2),
+                    context,
+                    stage.Fence);
+
+            Assert.AreEqual(CatalogCompletenessStatus.Mismatch, result.Status);
+            Assert.AreEqual("catalog_duplicate_price_rows", result.Code);
+            using var verify = priceDb.Factory.Open();
+            Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"
+SELECT is_active
+FROM products
+WHERE remote_product_id = 'product-must-stay';"));
+        }
+    }
+
+    [TestMethod]
+    public async Task StagedFullRefresh_MissingPageMarkerRejectsBeforeDeactivation()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        await SeedUnrelatedRemoteProductAsync(db, "product-must-stay", "MUST-STAY");
+        var stage = await CreateAuthoritativeStageAsync(db, "missing-page");
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        await repository.StageAuthoritativePageAsync(
+            StageBatch(stage.FullRunId, 1, hasMore: true, "product-1", "BARCODE-1", "price-1"),
+            CancellationToken.None,
+            stage.Fence);
+        await repository.StageAuthoritativePageAsync(
+            StageBatch(stage.FullRunId, 3, hasMore: false, "product-2", "BARCODE-2", "price-2"),
+            CancellationToken.None,
+            stage.Fence);
+        var context = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 2);
+        context.Pages = 3;
+
+        var result = await new CatalogFullRefreshReconciler(db.Factory)
+            .ReconcileAndVerifyStagedAsync(
+                stage.FullRunId,
+                "2026-07-19T01:00:00Z",
+                Summary(products: 2, categories: 1, suppliers: 1, prices: 2),
+                context,
+                stage.Fence);
+
+        Assert.AreEqual(CatalogCompletenessStatus.Mismatch, result.Status);
+        Assert.AreEqual("catalog_authoritative_stage_incomplete", result.Code);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"
+SELECT is_active
+FROM products
+WHERE remote_product_id = 'product-must-stay';"));
+    }
+
+    [TestMethod]
+    public async Task StagedFullRefresh_StaleGenerationBeforeReconcileCannotDeactivate()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        await SeedUnrelatedRemoteProductAsync(db, "product-must-stay", "MUST-STAY");
+        var stage = await CreateAuthoritativeStageAsync(db, "stale-reconcile");
+        await new RemoteCatalogBatchRepository(db.Factory).StageAuthoritativePageAsync(
+            StageBatch(stage.FullRunId, 1, hasMore: false, "product-1", "BARCODE-1", "price-1"),
+            CancellationToken.None,
+            stage.Fence);
+        var replacement = new OnlineSyncGeneration(
+            "generation-reconcile-replacement",
+            "session-reconcile-replacement",
+            "device-reconcile-replacement",
+            stage.ShopId,
+            stage.ShopCode);
+        await new OnlineSyncGenerationRepository(db.Factory)
+            .ActivateAndRecoverAsync(replacement, 2);
+        var context = CompleteContext(products: 1, categories: 1, suppliers: 1, prices: 1);
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            new CatalogFullRefreshReconciler(db.Factory).ReconcileAndVerifyStagedAsync(
+                stage.FullRunId,
+                "2026-07-19T01:00:00Z",
+                Summary(products: 1, categories: 1, suppliers: 1, prices: 1),
+                context,
+                stage.Fence));
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"
+SELECT is_active
+FROM products
+WHERE remote_product_id = 'product-must-stay';"));
+    }
+
+    [TestMethod]
+    public async Task AuthoritativeStageCleanup_IsBoundedAndShopRunScoped()
+    {
+        using var db = TestDb.Create();
+        using (var seed = db.Factory.Open())
+        {
+            await seed.ExecuteAsync(@"
+INSERT INTO catalog_authoritative_stage_scope(
+  scope_id, shop_id, shop_code, transition_epoch, generation_id,
+  generation_fingerprint, full_run_id, created_at)
+VALUES
+  (101, 'shop-a', 'SHOP-A', 1, 'generation-a', 'fingerprint-a', 'run-stale', 1),
+  (102, 'shop-a', 'SHOP-A', 1, 'generation-a', 'fingerprint-a', 'run-keep', 1),
+  (103, 'shop-b', 'SHOP-B', 1, 'generation-b', 'fingerprint-b', 'run-stale', 1);
+
+INSERT INTO catalog_authoritative_id_stage(
+  scope_id, page_number, entity_kind, remote_id, content_fingerprint,
+  category_remote_id, supplier_remote_id, product_remote_id,
+  occurrence_count, has_more, staged_at)
+VALUES
+  (101, 1, 'page', '', '', '', '', '', 0, 1, 1),
+  (101, 2, 'page', '', '', '', '', '', 0, 1, 1),
+  (101, 3, 'page', '', '', '', '', '', 0, 0, 1),
+  (102, 1, 'page', '', '', '', '', '', 0, 0, 1),
+  (103, 1, 'page', '', '', '', '', '', 0, 0, 1);");
+        }
+        var reconciler = new CatalogFullRefreshReconciler(db.Factory);
+
+        Assert.AreEqual(2, await reconciler.ClearStaleAuthoritativeStagesAsync(
+            "shop-a", "SHOP-A", "run-keep", maximumRows: 2));
+        using (var afterBoundedCleanup = db.Factory.Open())
+        {
+            Assert.AreEqual(1L, await afterBoundedCleanup.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage item
+JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+WHERE scope.shop_id = 'shop-a' AND scope.full_run_id = 'run-stale';"));
+            Assert.AreEqual(1L, await afterBoundedCleanup.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage item
+JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+WHERE scope.shop_id = 'shop-a' AND scope.full_run_id = 'run-keep';"));
+            Assert.AreEqual(1L, await afterBoundedCleanup.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage item
+JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+WHERE scope.shop_id = 'shop-b' AND scope.full_run_id = 'run-stale';"));
+        }
+
+        Assert.AreEqual(1, await reconciler.ClearAuthoritativeStageAsync(
+            "run-stale", "shop-a", "SHOP-A"));
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage item
+JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+WHERE scope.shop_id = 'shop-a' AND scope.full_run_id = 'run-stale';"));
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage item
+JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+WHERE scope.shop_id = 'shop-a' AND scope.full_run_id = 'run-keep';"));
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage item
+JOIN catalog_authoritative_stage_scope scope ON scope.scope_id = item.scope_id
+WHERE scope.shop_id = 'shop-b' AND scope.full_run_id = 'run-stale';"));
+    }
+
+    [TestMethod]
     public async Task MissingSummary_RemainsExplicitlyUnverifiedForLegacyServer()
     {
         using var db = TestDb.Create();
@@ -1459,6 +2028,147 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
             checkpointAfterFailure.CursorFingerprints.Count);
     }
 
+    private static async Task<AuthoritativeStageContext> CreateAuthoritativeStageAsync(
+        TestDb db,
+        string suffix)
+    {
+        var shopId = "shop-" + suffix;
+        var shopCode = "SHOP-" + suffix.ToUpperInvariant();
+        await SaveShopAsync(db, shopId, shopCode);
+        var binding = await new CatalogShopStateRepository(db.Factory)
+            .EnsureAndLoadCursorAsync(shopId, shopCode);
+        var generation = new OnlineSyncGeneration(
+            "generation-" + suffix,
+            "session-" + suffix,
+            "device-" + suffix,
+            shopId,
+            shopCode);
+        await new OnlineSyncGenerationRepository(db.Factory)
+            .ActivateAndRecoverAsync(generation, 1);
+
+        return new AuthoritativeStageContext
+        {
+            Fence = new RemoteCatalogCommitFence
+            {
+                ExpectedEpoch = binding.Epoch,
+                ExpectedPreviousCursor = binding.Cursor,
+                ExpectedPreviousMode = binding.Mode,
+                GenerationFingerprint = generation.Fingerprint,
+                GenerationId = generation.GenerationId,
+                PosSessionId = generation.PosSessionId,
+                ShopCode = shopCode,
+                ShopDeviceId = generation.ShopDeviceId,
+                ShopId = shopId
+            },
+            FullRunId = "full-" + suffix,
+            Generation = generation,
+            ShopCode = shopCode,
+            ShopId = shopId
+        };
+    }
+
+    private static async Task AssertPreflightPreservedStateAsync(
+        TestDb db,
+        AuthoritativeStageContext stage,
+        CatalogShopBindingResult before,
+        string activeProductId)
+    {
+        var after = await new CatalogShopStateRepository(db.Factory)
+            .EnsureAndLoadCursorAsync(
+                stage.ShopId,
+                stage.ShopCode,
+                stage.Generation);
+        Assert.AreEqual(before.Epoch, after.Epoch);
+        Assert.AreEqual(before.Cursor, after.Cursor);
+        Assert.AreEqual(before.Mode, after.Mode);
+        Assert.AreEqual(stage.Fence.ExpectedEpoch, after.Epoch);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"
+SELECT is_active
+FROM products
+WHERE remote_product_id = @activeProductId;",
+            new { activeProductId }));
+    }
+
+    private static RemoteCatalogBatch StageBatch(
+        string fullRunId,
+        int pageNumber,
+        bool hasMore,
+        string productId,
+        string barcode,
+        string priceId)
+    {
+        return new RemoteCatalogBatch
+        {
+            AuthoritativeFullRefresh = true,
+            AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+            {
+                FullRunId = fullRunId,
+                HasMore = hasMore,
+                PageNumber = pageNumber
+            },
+            Categories = new[]
+            {
+                new RemoteCatalogCategoryWrite
+                {
+                    Name = "Category",
+                    RemoteCategoryId = "category-1",
+                    RemoteUpdatedAt = "2026-07-19T01:00:00Z"
+                }
+            },
+            Suppliers = new[]
+            {
+                new RemoteCatalogSupplierWrite
+                {
+                    Name = "Supplier",
+                    RemoteSupplierId = "supplier-1",
+                    RemoteUpdatedAt = "2026-07-19T01:00:00Z"
+                }
+            },
+            Products = new[]
+            {
+                new RemoteCatalogProductWrite
+                {
+                    Barcode = barcode,
+                    CategoryName = "Category",
+                    Name = "Product " + barcode,
+                    RemoteCategoryId = "category-1",
+                    RemoteProductId = productId,
+                    RemoteSupplierId = "supplier-1",
+                    StockQuantity = 1,
+                    SupplierName = "Supplier",
+                    UnitPrice = 100
+                }
+            },
+            Prices = new[]
+            {
+                new RemoteCatalogPriceWrite
+                {
+                    EffectiveAt = "2026-07-19T01:00:00Z",
+                    Price = 100,
+                    RemotePriceId = priceId,
+                    RemoteProductId = productId,
+                    Source = "catalog_pull",
+                    Type = "retail"
+                }
+            }
+        };
+    }
+
+    private static async Task SeedUnrelatedRemoteProductAsync(
+        TestDb db,
+        string productId,
+        string barcode)
+    {
+        using var conn = db.Factory.Open();
+        await conn.ExecuteAsync(@"
+INSERT INTO products(barcode, name, unitPrice, remote_product_id, is_active)
+VALUES(@barcode, 'Must stay active', 100, @productId, 1);
+INSERT INTO product_meta(barcode, stock_qty)
+VALUES(@barcode, 1);",
+            new { barcode, productId });
+    }
+
     private static async Task<CatalogFullRefreshResult> CreateCleanAuditAsync(TestDb db)
     {
         await SeedCleanCatalogAsync(db);
@@ -1600,6 +2310,15 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
         using var stream = new MemoryStream();
         serializer.WriteObject(stream, value);
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private sealed class AuthoritativeStageContext
+    {
+        public RemoteCatalogCommitFence Fence { get; set; } = null!;
+        public string FullRunId { get; set; } = string.Empty;
+        public OnlineSyncGeneration Generation { get; set; } = null!;
+        public string ShopCode { get; set; } = string.Empty;
+        public string ShopId { get; set; } = string.Empty;
     }
 
     private sealed class TestDb : IDisposable
