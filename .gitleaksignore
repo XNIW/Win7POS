@@ -7,3 +7,6 @@
 748412502411204b6f4a7fa2f9d0379d29c1d7c8:tests/Win7POS.Wpf.UiSmokeHarness/Program.cs:generic-api-key:3700
 748412502411204b6f4a7fa2f9d0379d29c1d7c8:tests/Win7POS.Wpf.UiSmokeHarness/Program.cs:private-key:3715
 748412502411204b6f4a7fa2f9d0379d29c1d7c8:tests/Win7POS.Wpf.UiSmokeHarness/Program.cs:private-key:3718
+
+# Exact PERF2-B test-identifier false positive; the identifier is renamed in dc5ae14.
+18a6e065d445445b201d5203807a06455311a862:tests/Win7POS.Core.Tests/Data/ProductQueryPlanTests.cs:generic-api-key:376
