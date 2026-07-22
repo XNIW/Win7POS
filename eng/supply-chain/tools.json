@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "cycloneDx": {
+    "packageId": "CycloneDX",
+    "version": "6.2.0",
+    "url": "https://api.nuget.org/v3-flatcontainer/cyclonedx/6.2.0/cyclonedx.6.2.0.nupkg",
+    "fileName": "cyclonedx.6.2.0.nupkg",
+    "size": 9424542,
+    "sha256": "3473525381eee02a649b75bbf5b4f0ffa66112f62917aff798fed196e290a884"
+  },
+  "gitleaks": {
+    "version": "8.30.1",
+    "url": "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_windows_x64.zip",
+    "fileName": "gitleaks_8.30.1_windows_x64.zip",
+    "size": 8438883,
+    "sha256": "d29144deff3a68aa93ced33dddf84b7fdc26070add4aa0f4513094c8332afc4e",
+    "executable": "gitleaks.exe"
+  }
+}

@@ -1,0 +1,951 @@
+name: Protected Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: protected-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-unsigned-release:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+    steps:
+      - name: Checkout protected tag commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Resolve and verify protected release tag
+        shell: pwsh
+        env:
+          WIN7POS_EXACT_SHA: ${{ github.sha }}
+        run: pwsh -NoProfile -File scripts/win7pos/windows/resolve-release-version.ps1 -CommitSha $env:WIN7POS_EXACT_SHA -Ref $env:GITHUB_REF -GitHubEnvironmentFile $env:GITHUB_ENV
+
+      - name: Setup deterministic .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore locked dependency graph
+        run: dotnet restore Win7POS.slnx --locked-mode
+
+      - name: Run canonical required gates
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-required-gates.ps1
+
+      - name: Build solution Release
+        run: dotnet build Win7POS.slnx -c Release --no-restore
+
+      - name: Test Core and Data
+        run: dotnet test tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj -c Release --no-build --no-restore
+
+      - name: CLI selftest
+        run: dotnet run --project src/Win7POS.Cli/Win7POS.Cli.csproj -c Release --no-build --no-restore -- --selftest --keepdb
+
+      - name: Build WPF Release x86
+        run: dotnet build src/Win7POS.Wpf/Win7POS.Wpf.csproj -c Release -p:Platform=x86 -p:PlatformTarget=x86 --no-restore
+
+      - name: Install hash-pinned supply-chain tools
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/install-pinned-supply-chain-tools.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source
+
+      - name: Install hash-pinned signing fixture tool
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/win7pos/windows/install-pinned-signtool.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-signtool" -GitHubEnvironmentFile $env:GITHUB_ENV
+
+      - name: Vulnerability, deprecation and license gates
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/invoke-nuget-supply-chain-gates.ps1 -OutputDirectory artifacts/protected-release/nuget -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source -SolutionPath Win7POS.slnx
+
+      - name: Generate and validate CycloneDX SBOM
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/new-cyclonedx-sbom.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -OutputPath dist/unsigned/sbom.cdx.json -Version $env:WIN7POS_BUILD_VERSION -CommitSha $env:WIN7POS_EXACT_SHA -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source
+
+      - name: Scan working tree and full repository history
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/invoke-gitleaks-scans.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -OutputDirectory artifacts/protected-release/gitleaks
+
+      - name: Compare two clean unsigned payload builds
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/win7pos/windows/test-unsigned-payload-reproducibility.ps1 -EvidenceDirectory artifacts/protected-release/reproducibility -ExpectedCommitSha $env:WIN7POS_EXACT_SHA -Ref $env:GITHUB_REF -DotnetExe (Get-Command dotnet -ErrorAction Stop).Source
+
+      - name: Execute fail-closed supply-chain and signing fixtures
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/test-supply-chain-gates.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source
+          if ($LASTEXITCODE -ne 0) { throw "Supply-chain negative vectors failed." }
+          pwsh -NoProfile -File scripts/win7pos/windows/test-unsigned-payload-reproducibility-negative.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Reproducibility negative vectors failed." }
+          pwsh -NoProfile -File scripts/win7pos/windows/test-release-signing-negative.ps1 -SignToolPath $env:WIN7POS_SIGNTOOL_EXE
+          if ($LASTEXITCODE -ne 0) { throw "NON-PRODUCTION signing vectors failed." }
+
+      - name: Install pinned Inno Setup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $toolDirectory = Join-Path $env:RUNNER_TEMP "win7pos-inno-6.7.3"
+          $isccOutput = @(& pwsh -NoProfile -File scripts/win7pos/windows/install-pinned-inno-setup.ps1 -ToolDirectory $toolDirectory)
+          if ($LASTEXITCODE -ne 0) { throw "Pinned Inno Setup installation failed." }
+          $iscc = ($isccOutput | Select-Object -Last 1) -as [string]
+          if ([string]::IsNullOrWhiteSpace($iscc) -or -not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
+            throw "Pinned Inno Setup did not return a valid compiler path."
+          }
+          [System.IO.File]::AppendAllText($env:GITHUB_ENV, "ISCC_EXE=$iscc" + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
+
+      - name: Build fresh unsigned payload and installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $env:WIN7POS_DOTNET_EXE = (Get-Command dotnet -ErrorAction Stop).Source
+          & pwsh -NoProfile -File scripts/win7pos/windows/build-release-x86.ps1 -Configuration Release -Platform x86 -SkipRestore -BuildInstaller
+          if ($LASTEXITCODE -ne 0) { throw "Canonical unsigned release build failed." }
+
+          $zip = "dist/Win7POS-$env:WIN7POS_BUILD_VERSION-x86.zip"
+          if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+          Compress-Archive -Path "dist/Win7POS/*" -DestinationPath $zip -Force
+
+          $installer = "installer/output/$env:WIN7POS_INSTALLER_BASE_FILENAME.exe"
+          if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
+            throw "Fresh unsigned installer is missing."
+          }
+          & pwsh -NoProfile -File scripts/check-release-pack-completeness.ps1 -ReleasePackSource $zip -ExpectedCommitSha $env:WIN7POS_EXACT_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Unsigned release-pack validation failed." }
+          & pwsh -NoProfile -File scripts/check-win7-runtime-release-validation.ps1 -ReleasePackSource $zip -ExpectedCommitSha $env:WIN7POS_EXACT_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Unsigned Win7 runtime validation failed." }
+
+      - name: Bind immutable unsigned evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dist = (Resolve-Path -LiteralPath dist).Path
+          $payload = (Resolve-Path -LiteralPath "dist/Win7POS").Path
+          $unsignedRoot = (Resolve-Path -LiteralPath "dist/unsigned").Path
+          $unsignedManifest = Join-Path $unsignedRoot "unsigned-payload-manifest.json"
+          $candidateManifest = Join-Path $unsignedRoot "release-candidate-payload-manifest.json"
+          $candidateComparison = Join-Path $unsignedRoot "release-candidate-comparison.json"
+          $sbom = Join-Path $unsignedRoot "sbom.cdx.json"
+          $securityEvidence = Join-Path $unsignedRoot "security"
+          New-Item -ItemType Directory -Path $securityEvidence -Force | Out-Null
+          Copy-Item -Path "artifacts/protected-release/*" -Destination $securityEvidence -Recurse -Force
+          Copy-Item -LiteralPath "artifacts/protected-release/reproducibility/unsigned-payload.normalized-manifest.json" -Destination $unsignedManifest -Force
+
+          & pwsh -NoProfile -File scripts/win7pos/windows/write-reproducibility-payload-manifest.ps1 `
+            -PayloadRoot $payload `
+            -ManifestPath $candidateManifest `
+            -ExpectedCommitSha $env:WIN7POS_EXACT_SHA `
+            -BuildVersion $env:WIN7POS_BUILD_VERSION
+          if ($LASTEXITCODE -ne 0) { throw "Protected release candidate manifest generation failed." }
+          & pwsh -NoProfile -File scripts/win7pos/windows/compare-reproducibility-payload-manifests.ps1 `
+            -ManifestA $unsignedManifest `
+            -ManifestB $candidateManifest `
+            -ComparisonEvidencePath $candidateComparison `
+            -ExpectedCommitSha $env:WIN7POS_EXACT_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Protected release candidate differs from the reproducible canonical payload." }
+
+          $repoUri = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
+          $runUrl = "$repoUri/actions/runs/$env:GITHUB_RUN_ID"
+          $builderId = "$repoUri/.github/workflows/protected-release.yml@$env:WIN7POS_EXACT_SHA"
+          & pwsh -NoProfile -File scripts/win7pos/windows/write-release-integrity-metadata.ps1 `
+            -ArtifactRoot $dist `
+            -ArtifactPath @($dist) `
+            -UnsignedPayloadManifestPath $unsignedManifest `
+            -SbomPath $sbom `
+            -OutputDirectory $unsignedRoot `
+            -StageName unsigned `
+            -FilePrefix unsigned-release `
+            -CommitSha $env:WIN7POS_EXACT_SHA `
+            -ProductVersion $env:WIN7POS_PRODUCT_VERSION `
+            -ReleaseTag $env:GITHUB_REF_NAME `
+            -RepositoryUri $repoUri `
+            -RepositoryRef $env:GITHUB_REF `
+            -WorkflowName $env:GITHUB_WORKFLOW `
+            -WorkflowRunId $env:GITHUB_RUN_ID `
+            -WorkflowRunAttempt $env:GITHUB_RUN_ATTEMPT `
+            -WorkflowRunUrl $runUrl `
+            -BuilderId $builderId
+          if ($LASTEXITCODE -ne 0) { throw "Unsigned integrity metadata generation failed." }
+
+          & pwsh -NoProfile -File scripts/win7pos/windows/test-protected-release-artifacts.ps1 `
+            -ArtifactRoot $dist `
+            -ChecksumManifestPath (Join-Path $unsignedRoot "unsigned-release-checksums.json") `
+            -UnsignedPayloadManifestPath $unsignedManifest `
+            -SbomPath $sbom `
+            -ProvenancePath (Join-Path $unsignedRoot "unsigned-release-provenance.json") `
+            -AttestationPath (Join-Path $unsignedRoot "unsigned-release-attestation.intoto.jsonl") `
+            -ExpectedStage unsigned `
+            -CommitSha $env:WIN7POS_EXACT_SHA `
+            -ProductVersion $env:WIN7POS_PRODUCT_VERSION `
+            -ReleaseTag $env:GITHUB_REF_NAME
+          if ($LASTEXITCODE -ne 0) { throw "Unsigned protected-release evidence validation failed." }
+
+      - name: Stage unsigned protected-release input
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $stage = "artifacts/protected-release-input"
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item -Path "dist/*" -Destination $stage -Recurse -Force
+
+      - name: Upload immutable unsigned input
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Win7POS-Protected-Unsigned-${{ github.run_id }}
+          path: artifacts/protected-release-input
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload unsigned security evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Win7POS-Protected-Security-${{ github.run_id }}
+          path: artifacts/protected-release
+          if-no-files-found: error
+          retention-days: 30
+
+  sign-protected-release:
+    needs: build-unsigned-release
+    runs-on: windows-latest
+    environment: win7pos-protected-release
+    outputs:
+      expected-signer-thumbprint: ${{ steps.import-signing-material.outputs.expected-signer-thumbprint }}
+    permissions:
+      actions: read
+      contents: read
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+      WIN7POS_SIGNING_CERT_THUMBPRINT: ${{ vars.WIN7POS_SIGNING_CERT_THUMBPRINT }}
+      WIN7POS_RFC3161_TIMESTAMP_URL: ${{ vars.WIN7POS_RFC3161_TIMESTAMP_URL }}
+      WIN7POS_RELEASE_TAG_BYPASS_ACTOR_ID: ${{ vars.WIN7POS_RELEASE_TAG_BYPASS_ACTOR_ID }}
+      WIN7POS_RELEASE_TAG_BYPASS_ACTOR_TYPE: ${{ vars.WIN7POS_RELEASE_TAG_BYPASS_ACTOR_TYPE }}
+    steps:
+      - name: Checkout protected tag commit
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Resolve and verify protected release tag
+        shell: pwsh
+        env:
+          WIN7POS_EXACT_SHA: ${{ github.sha }}
+        run: pwsh -NoProfile -File scripts/win7pos/windows/resolve-release-version.ps1 -CommitSha $env:WIN7POS_EXACT_SHA -Ref $env:GITHUB_REF -GitHubEnvironmentFile $env:GITHUB_ENV
+
+      - name: Verify protected environment and tag policy
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $expectedSha = $env:WIN7POS_EXACT_SHA.ToLowerInvariant()
+          $expectedBypassActorId = ([string]$env:WIN7POS_RELEASE_TAG_BYPASS_ACTOR_ID).Trim()
+          $expectedBypassActorType = ([string]$env:WIN7POS_RELEASE_TAG_BYPASS_ACTOR_TYPE).Trim()
+          $allowedBypassActorTypes = @("Integration", "Team", "User")
+          if ($expectedBypassActorId -notmatch '^[1-9][0-9]*$' -or
+              $expectedBypassActorType -notin $allowedBypassActorTypes) {
+            throw "Protected release tag creator policy is not explicitly configured."
+          }
+
+          function Get-ExactGitSha {
+            param([Parameter(Mandatory = $true)][string[]]$GitArguments)
+            $output = @(& git @GitArguments 2>$null)
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0 -or $output.Count -ne 1) {
+              throw "Protected release Git identity cannot be resolved."
+            }
+            $sha = ([string]$output[0]).Trim().ToLowerInvariant()
+            if ($sha -notmatch '^[0-9a-f]{40}$') {
+              throw "Protected release Git identity is not a full commit SHA."
+            }
+            return $sha
+          }
+
+          $headSha = Get-ExactGitSha -GitArguments @("rev-parse", "HEAD")
+          $tagCommitSha = Get-ExactGitSha -GitArguments @("rev-parse", "--verify", "$($env:GITHUB_REF)^{commit}")
+          [void](Get-ExactGitSha -GitArguments @("rev-parse", "--verify", "refs/remotes/origin/main^{commit}"))
+          if ($headSha -ne $expectedSha -or $tagCommitSha -ne $expectedSha) {
+            throw "Protected release tag, event SHA and checked-out HEAD do not identify one exact commit."
+          }
+          & git merge-base --is-ancestor $expectedSha refs/remotes/origin/main 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            throw "Protected release tag commit is not contained in origin/main."
+          }
+
+          $environmentName = "win7pos-protected-release"
+          $environmentJson = & gh api "repos/$env:GITHUB_REPOSITORY/environments/$environmentName"
+          if ($LASTEXITCODE -ne 0) { throw "Protected release environment policy cannot be verified." }
+          $environment = $environmentJson | ConvertFrom-Json
+          $reviewRules = @($environment.protection_rules | Where-Object { $_.type -eq "required_reviewers" })
+          $reviewerCount = @($reviewRules | ForEach-Object { @($_.reviewers).Count } | Measure-Object -Sum).Sum
+          if ($reviewRules.Count -ne 1 -or $reviewerCount -lt 1 -or
+              -not [bool]$reviewRules[0].prevent_self_review) {
+            throw "Protected release requires an independent reviewer and self-review prevention."
+          }
+          if (-not [bool]$environment.deployment_branch_policy.custom_branch_policies) {
+            throw "Protected release environment must use an explicit tag policy."
+          }
+
+          $policiesJson = & gh api "repos/$env:GITHUB_REPOSITORY/environments/$environmentName/deployment-branch-policies?per_page=100"
+          if ($LASTEXITCODE -ne 0) { throw "Protected release deployment policy cannot be verified." }
+          $policies = $policiesJson | ConvertFrom-Json
+          $matchingPolicy = @($policies.branch_policies | Where-Object {
+            $_.type -eq "tag" -and $_.name -eq "v*.*.*"
+          })
+          if ($matchingPolicy.Count -ne 1) {
+            throw "Protected release environment must allow exactly the semantic-version tag policy."
+          }
+
+          $rulesetListJson = & gh api "repos/$env:GITHUB_REPOSITORY/rulesets?includes_parents=true"
+          if ($LASTEXITCODE -ne 0) { throw "Protected tag ruleset cannot be verified." }
+          $matchingRuleset = $false
+          foreach ($summary in @($rulesetListJson | ConvertFrom-Json)) {
+            $detailJson = & gh api "repos/$env:GITHUB_REPOSITORY/rulesets/$($summary.id)"
+            if ($LASTEXITCODE -ne 0) { throw "Protected tag ruleset detail cannot be verified." }
+            $detail = $detailJson | ConvertFrom-Json
+            $includes = @($detail.conditions.ref_name.include)
+            $excludes = @($detail.conditions.ref_name.exclude | Where-Object { $null -ne $_ })
+            $bypassActors = @($detail.bypass_actors | Where-Object { $null -ne $_ })
+            $ruleTypes = @($detail.rules | ForEach-Object { $_.type })
+            if ($detail.target -eq "tag" -and $detail.enforcement -eq "active" -and
+                $includes.Count -eq 1 -and $includes[0] -ceq "refs/tags/v*.*.*" -and
+                $excludes.Count -eq 0 -and $bypassActors.Count -eq 1 -and
+                ([string]$bypassActors[0].actor_id) -ceq $expectedBypassActorId -and
+                ([string]$bypassActors[0].actor_type) -ceq $expectedBypassActorType -and
+                ([string]$bypassActors[0].bypass_mode) -ceq "always" -and
+                $ruleTypes -contains "creation" -and $ruleTypes -contains "deletion" -and
+                $ruleTypes -contains "non_fast_forward") {
+              $matchingRuleset = $true
+            }
+          }
+          if (-not $matchingRuleset) { throw "An active immutable semantic-version tag ruleset is required." }
+
+      - name: Download immutable unsigned input
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: Win7POS-Protected-Unsigned-${{ github.run_id }}
+          path: dist
+
+      - name: Install pinned signing and installer toolchains
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & pwsh -NoProfile -File scripts/win7pos/windows/install-pinned-signtool.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-signtool" -GitHubEnvironmentFile $env:GITHUB_ENV
+          if ($LASTEXITCODE -ne 0) { throw "Pinned signing toolchain installation failed." }
+
+          $isccOutput = @(& pwsh -NoProfile -File scripts/win7pos/windows/install-pinned-inno-setup.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-inno-6.7.3")
+          if ($LASTEXITCODE -ne 0) { throw "Pinned installer toolchain installation failed." }
+          $iscc = ($isccOutput | Select-Object -Last 1) -as [string]
+          if ([string]::IsNullOrWhiteSpace($iscc) -or -not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
+            throw "Pinned installer toolchain did not return a valid compiler path."
+          }
+          [System.IO.File]::AppendAllText($env:GITHUB_ENV, "ISCC_EXE=$iscc" + [Environment]::NewLine, (New-Object System.Text.UTF8Encoding($false)))
+
+      - name: Import protected signing material
+        id: import-signing-material
+        shell: pwsh
+        env:
+          WIN7POS_SIGNING_PFX_B64: ${{ secrets.WIN7POS_SIGNING_PFX_B64 }}
+          WIN7POS_SIGNING_PFX_PASSWORD: ${{ secrets.WIN7POS_SIGNING_PFX_PASSWORD }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $thumbprintPattern = '^[0-9A-F]{40}$'
+          $expectedThumbprint = ($env:WIN7POS_SIGNING_CERT_THUMBPRINT -replace '\s', '').ToUpperInvariant()
+          if ([string]::IsNullOrWhiteSpace($env:WIN7POS_SIGNING_PFX_B64) -or
+              [string]::IsNullOrWhiteSpace($env:WIN7POS_SIGNING_PFX_PASSWORD) -or
+              $expectedThumbprint -notmatch $thumbprintPattern -or
+              $env:WIN7POS_RFC3161_TIMESTAMP_URL -notmatch '^https://') {
+            throw "Protected signing configuration is incomplete."
+          }
+
+          function Get-NormalizedThumbprint {
+            param([Parameter(Mandatory = $true)]$Certificate)
+            $thumbprint = (($Certificate.Thumbprint -as [string]) -replace '\s', '').ToUpperInvariant()
+            if ($thumbprint -notmatch $thumbprintPattern) {
+              throw "Certificate store contains an invalid thumbprint."
+            }
+            return $thumbprint
+          }
+
+          function Get-CurrentSigningStoreCertificates {
+            return @(Get-ChildItem -LiteralPath Cert:\CurrentUser\My -ErrorAction Stop)
+          }
+
+          function Write-OwnedCertificateMarker {
+            param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Thumbprints)
+            $normalized = @($Thumbprints | ForEach-Object {
+                $value = (($_ -as [string]) -replace '\s', '').ToUpperInvariant()
+                if ($value -notmatch $thumbprintPattern) { throw "Owned certificate thumbprint is invalid." }
+                $value
+              } | Sort-Object -Unique)
+            $json = ConvertTo-Json -InputObject @($normalized) -Compress
+            [System.IO.File]::WriteAllText($markerPath, $json, (New-Object System.Text.UTF8Encoding($false)))
+          }
+
+          function Write-ImportOutcome {
+            param(
+              [Parameter(Mandatory = $true)][ValidateSet("started", "success", "failed")][string]$Status,
+              [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$BeforeThumbprints,
+              [Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$OwnedThumbprints)
+            function Normalize-OutcomeThumbprints([string[]]$Values) {
+              return @($Values | ForEach-Object {
+                  $value = (($_ -as [string]) -replace '\s', '').ToUpperInvariant()
+                  if ($value -notmatch $thumbprintPattern) { throw "Import outcome thumbprint is invalid." }
+                  $value
+                } | Sort-Object -Unique)
+            }
+            $outcome = [pscustomobject][ordered]@{
+              schemaVersion = 1
+              status = $Status
+              beforeThumbprints = @(Normalize-OutcomeThumbprints $BeforeThumbprints)
+              ownedThumbprints = @(Normalize-OutcomeThumbprints $OwnedThumbprints)
+            }
+            [System.IO.File]::WriteAllText(
+              $outcomePath,
+              ($outcome | ConvertTo-Json -Depth 4 -Compress),
+              (New-Object System.Text.UTF8Encoding($false)))
+          }
+
+          function Remove-OwnedCertificates {
+            param([Parameter(Mandatory = $true)][AllowEmptyCollection()][string[]]$Thumbprints)
+            foreach ($thumbprint in @($Thumbprints | Sort-Object -Unique)) {
+              if ($thumbprint -notmatch $thumbprintPattern) { throw "Owned certificate thumbprint is invalid." }
+              $certificatePath = "Cert:\CurrentUser\My\$thumbprint"
+              if (Test-Path -LiteralPath $certificatePath -PathType Leaf) {
+                $storedCertificate = Get-Item -LiteralPath $certificatePath -ErrorAction Stop
+                if ($storedCertificate.HasPrivateKey) {
+                  Remove-Item -Path $certificatePath -DeleteKey -Force -ErrorAction Stop
+                }
+                else {
+                  Remove-Item -Path $certificatePath -Force -ErrorAction Stop
+                }
+              }
+              if (Test-Path -LiteralPath $certificatePath -PathType Leaf) {
+                throw "Owned certificate remains after cleanup."
+              }
+            }
+          }
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP "win7pos-release-signing.pfx"
+          $markerPath = Join-Path $env:RUNNER_TEMP "win7pos-imported-certs.json"
+          $outcomePath = Join-Path $env:RUNNER_TEMP "win7pos-import-outcome.json"
+          $beforeCertificates = @(Get-CurrentSigningStoreCertificates)
+          $beforeThumbprints = @($beforeCertificates | ForEach-Object { Get-NormalizedThumbprint $_ } | Sort-Object -Unique)
+          $importedCertificates = @()
+          $ownedThumbprints = @()
+          $preflightThumbprints = @()
+          $pfxBytes = $null
+          Write-OwnedCertificateMarker -Thumbprints @()
+          Write-ImportOutcome -Status started -BeforeThumbprints $beforeThumbprints -OwnedThumbprints @()
+          try {
+            $pfxBytes = [Convert]::FromBase64String($env:WIN7POS_SIGNING_PFX_B64)
+            $preflightCertificates = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+            try {
+              $preflightCertificates.Import(
+                $pfxBytes,
+                $env:WIN7POS_SIGNING_PFX_PASSWORD,
+                [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet)
+              if ($preflightCertificates.Count -eq 0) {
+                throw "Protected signing PFX contains no certificates."
+              }
+              $preflightThumbprints = @($preflightCertificates | ForEach-Object {
+                  Get-NormalizedThumbprint $_
+                } | Sort-Object -Unique)
+              $preflightPrivateKeyCertificates = @($preflightCertificates | Where-Object { $_.HasPrivateKey })
+              $preflightExpectedLeaves = @($preflightPrivateKeyCertificates | Where-Object {
+                  (Get-NormalizedThumbprint $_) -eq $expectedThumbprint
+                })
+              if ($preflightThumbprints.Count -ne $preflightCertificates.Count -or
+                  $preflightPrivateKeyCertificates.Count -ne 1 -or
+                  $preflightExpectedLeaves.Count -ne 1) {
+                throw "Protected signing PFX identity is ambiguous."
+              }
+              if (@($preflightThumbprints | Where-Object { $_ -in $beforeThumbprints }).Count -ne 0) {
+                throw "Protected signing PFX collides with a pre-existing certificate-store entry."
+              }
+            }
+            finally {
+              foreach ($preflightCertificate in @($preflightCertificates)) {
+                $preflightCertificate.Dispose()
+              }
+            }
+
+            [System.IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+            [Array]::Clear($pfxBytes, 0, $pfxBytes.Length)
+            $pfxBytes = $null
+            $password = $null
+            try {
+              $password = ConvertTo-SecureString $env:WIN7POS_SIGNING_PFX_PASSWORD -AsPlainText -Force
+              $importedCertificates = @(Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $password -Exportable:$false)
+            }
+            finally {
+              if ($null -ne $password) {
+                $password.Dispose()
+                $password = $null
+              }
+              if (Test-Path -LiteralPath $pfxPath -PathType Leaf) {
+                Remove-Item -LiteralPath $pfxPath -Force -ErrorAction Stop
+              }
+              if (Test-Path -LiteralPath $pfxPath -PathType Leaf) {
+                throw "Protected signing PFX remains after import."
+              }
+            }
+
+            if ($importedCertificates.Count -eq 0) { throw "Protected signing certificate import failed." }
+            $importedThumbprints = @($importedCertificates | ForEach-Object { Get-NormalizedThumbprint $_ } | Sort-Object -Unique)
+            $afterCertificates = @(Get-CurrentSigningStoreCertificates)
+            $ownedCertificates = @($afterCertificates | Where-Object {
+                (Get-NormalizedThumbprint $_) -notin $beforeThumbprints
+              })
+            $ownedThumbprints = @($ownedCertificates | ForEach-Object { Get-NormalizedThumbprint $_ } | Sort-Object -Unique)
+            Write-OwnedCertificateMarker -Thumbprints $ownedThumbprints
+
+            $expectedLeafCertificates = @($ownedCertificates | Where-Object {
+                (Get-NormalizedThumbprint $_) -eq $expectedThumbprint -and $_.HasPrivateKey
+              })
+            $ownedPrivateKeyCertificates = @($ownedCertificates | Where-Object { $_.HasPrivateKey })
+            $returnedExpectedLeaves = @($importedCertificates | Where-Object {
+                (Get-NormalizedThumbprint $_) -eq $expectedThumbprint -and $_.HasPrivateKey
+              })
+            if ($expectedLeafCertificates.Count -ne 1 -or
+                $ownedPrivateKeyCertificates.Count -ne 1 -or
+                $returnedExpectedLeaves.Count -ne 1 -or
+                $importedThumbprints -notcontains $expectedThumbprint -or
+                $importedThumbprints.Count -ne $preflightThumbprints.Count -or
+                @($preflightThumbprints | Where-Object { $_ -notin $importedThumbprints }).Count -ne 0 -or
+                $ownedThumbprints.Count -ne $preflightThumbprints.Count -or
+                @($preflightThumbprints | Where-Object { $_ -notin $ownedThumbprints }).Count -ne 0) {
+              throw "Protected signing certificate identity mismatch."
+            }
+            Write-ImportOutcome -Status success -BeforeThumbprints $beforeThumbprints -OwnedThumbprints $ownedThumbprints
+            [System.IO.File]::AppendAllText(
+              $env:GITHUB_OUTPUT,
+              "expected-signer-thumbprint=$expectedThumbprint" + [Environment]::NewLine,
+              (New-Object System.Text.UTF8Encoding($false)))
+          }
+          catch {
+            $cleanupFailed = $false
+            try {
+              $currentCertificates = @(Get-CurrentSigningStoreCertificates)
+              $ownedThumbprints = @($currentCertificates | Where-Object {
+                  (Get-NormalizedThumbprint $_) -notin $beforeThumbprints
+                } | ForEach-Object { Get-NormalizedThumbprint $_ } | Sort-Object -Unique)
+            }
+            catch { $cleanupFailed = $true }
+            try { Write-OwnedCertificateMarker -Thumbprints $ownedThumbprints }
+            catch { $cleanupFailed = $true }
+            try { Write-ImportOutcome -Status failed -BeforeThumbprints $beforeThumbprints -OwnedThumbprints $ownedThumbprints }
+            catch { $cleanupFailed = $true }
+            try { Remove-OwnedCertificates -Thumbprints $ownedThumbprints }
+            catch { $cleanupFailed = $true }
+            if ($cleanupFailed) {
+              throw "Protected signing material import failed and owned certificate cleanup could not be verified."
+            }
+            throw "Protected signing material import or identity validation failed."
+          }
+          finally {
+            if ($null -ne $pfxBytes) {
+              [Array]::Clear($pfxBytes, 0, $pfxBytes.Length)
+              $pfxBytes = $null
+            }
+            if (Test-Path -LiteralPath $pfxPath -PathType Leaf) {
+              Remove-Item -LiteralPath $pfxPath -Force -ErrorAction Stop
+            }
+            if (Test-Path -LiteralPath $pfxPath -PathType Leaf) {
+              throw "Protected signing PFX cleanup failed closed."
+            }
+          }
+
+      - name: Sign application payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dist = (Resolve-Path -LiteralPath dist).Path
+          $unsignedRoot = Join-Path $dist "unsigned"
+          $signingRoot = Join-Path $dist "signing"
+          New-Item -ItemType Directory -Path $signingRoot -Force | Out-Null
+          & pwsh -NoProfile -File scripts/win7pos/windows/invoke-protected-release-signing.ps1 `
+            -Mode Application `
+            -ArtifactRoot $dist `
+            -ApplicationPayloadRoot (Join-Path $dist "Win7POS") `
+            -SignToolPath $env:WIN7POS_SIGNTOOL_EXE `
+            -CertificateThumbprint $env:WIN7POS_SIGNING_CERT_THUMBPRINT `
+            -TimestampUrl $env:WIN7POS_RFC3161_TIMESTAMP_URL `
+            -ProductVersion $env:WIN7POS_PRODUCT_VERSION `
+            -ReleaseTag $env:GITHUB_REF_NAME `
+            -CommitSha $env:WIN7POS_EXACT_SHA `
+            -ChecksumManifestPath (Join-Path $unsignedRoot "unsigned-release-checksums.json") `
+            -UnsignedPayloadManifestPath (Join-Path $unsignedRoot "unsigned-payload-manifest.json") `
+            -SbomPath (Join-Path $unsignedRoot "sbom.cdx.json") `
+            -ProvenancePath (Join-Path $unsignedRoot "unsigned-release-provenance.json") `
+            -AttestationPath (Join-Path $unsignedRoot "unsigned-release-attestation.intoto.jsonl") `
+            -OutputSigningRecordPath (Join-Path $signingRoot "application-signing-record.json") `
+            -EnvironmentName win7pos-protected-release
+          if ($LASTEXITCODE -ne 0) { throw "Application signing failed closed." }
+
+          & pwsh -NoProfile -File scripts/check-release-pack-completeness.ps1 `
+            -ReleasePackSource (Join-Path $dist "Win7POS") `
+            -WriteManifests `
+            -ExpectedCommitSha $env:WIN7POS_EXACT_SHA `
+            -AllowDirtyTreeState
+          if ($LASTEXITCODE -ne 0) { throw "Signed application manifest regeneration failed." }
+
+      - name: Compile and sign installer from signed payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installerOutput = "installer/output/$env:WIN7POS_INSTALLER_BASE_FILENAME.exe"
+          if (Test-Path -LiteralPath $installerOutput) { Remove-Item -LiteralPath $installerOutput -Force }
+          & $env:ISCC_EXE `
+            "/DMyAppVersion=$env:WIN7POS_BUILD_VERSION" `
+            "/DMyAppNumericVersion=$env:WIN7POS_FILE_VERSION" `
+            "/DMyAppOutputBaseFilename=$env:WIN7POS_INSTALLER_BASE_FILENAME" `
+            "installer/Win7POS.iss"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $installerOutput -PathType Leaf)) {
+            throw "Fresh installer compilation from signed payload failed."
+          }
+
+          $dist = (Resolve-Path -LiteralPath dist).Path
+          $installer = Join-Path $dist "$env:WIN7POS_INSTALLER_BASE_FILENAME.exe"
+          Copy-Item -LiteralPath $installerOutput -Destination $installer -Force
+          $unsignedRoot = Join-Path $dist "unsigned"
+          $signingRoot = Join-Path $dist "signing"
+          & pwsh -NoProfile -File scripts/win7pos/windows/invoke-protected-release-signing.ps1 `
+            -Mode Installer `
+            -ArtifactRoot $dist `
+            -InstallerPath $installer `
+            -ApplicationSigningRecordPath (Join-Path $signingRoot "application-signing-record.json") `
+            -SignToolPath $env:WIN7POS_SIGNTOOL_EXE `
+            -CertificateThumbprint $env:WIN7POS_SIGNING_CERT_THUMBPRINT `
+            -TimestampUrl $env:WIN7POS_RFC3161_TIMESTAMP_URL `
+            -ProductVersion $env:WIN7POS_PRODUCT_VERSION `
+            -ReleaseTag $env:GITHUB_REF_NAME `
+            -CommitSha $env:WIN7POS_EXACT_SHA `
+            -ChecksumManifestPath (Join-Path $unsignedRoot "unsigned-release-checksums.json") `
+            -UnsignedPayloadManifestPath (Join-Path $unsignedRoot "unsigned-payload-manifest.json") `
+            -SbomPath (Join-Path $unsignedRoot "sbom.cdx.json") `
+            -ProvenancePath (Join-Path $unsignedRoot "unsigned-release-provenance.json") `
+            -AttestationPath (Join-Path $unsignedRoot "unsigned-release-attestation.intoto.jsonl") `
+            -OutputSigningRecordPath (Join-Path $signingRoot "installer-signing-record.json") `
+            -EnvironmentName win7pos-protected-release
+          if ($LASTEXITCODE -ne 0) { throw "Installer signing failed closed." }
+
+      - name: Generate and validate final signed release evidence
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dist = (Resolve-Path -LiteralPath dist).Path
+          $payload = Join-Path $dist "Win7POS"
+          $unsignedRoot = Join-Path $dist "unsigned"
+          $signingRoot = Join-Path $dist "signing"
+          $installer = Join-Path $dist "$env:WIN7POS_INSTALLER_BASE_FILENAME.exe"
+          $zip = Join-Path $dist "Win7POS-$env:WIN7POS_BUILD_VERSION-x86.zip"
+          if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
+          Compress-Archive -Path (Join-Path $payload "*") -DestinationPath $zip -Force
+
+          $repoUri = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
+          $runUrl = "$repoUri/actions/runs/$env:GITHUB_RUN_ID"
+          $builderId = "$repoUri/.github/workflows/protected-release.yml@$env:WIN7POS_EXACT_SHA"
+          & pwsh -NoProfile -File scripts/win7pos/windows/write-release-integrity-metadata.ps1 `
+            -ArtifactRoot $dist `
+            -ArtifactPath @($dist) `
+            -UnsignedPayloadManifestPath (Join-Path $unsignedRoot "unsigned-payload-manifest.json") `
+            -SbomPath (Join-Path $unsignedRoot "sbom.cdx.json") `
+            -OutputDirectory $dist `
+            -StageName signed `
+            -FilePrefix release `
+            -CommitSha $env:WIN7POS_EXACT_SHA `
+            -ProductVersion $env:WIN7POS_PRODUCT_VERSION `
+            -ReleaseTag $env:GITHUB_REF_NAME `
+            -RepositoryUri $repoUri `
+            -RepositoryRef $env:GITHUB_REF `
+            -WorkflowName $env:GITHUB_WORKFLOW `
+            -WorkflowRunId $env:GITHUB_RUN_ID `
+            -WorkflowRunAttempt $env:GITHUB_RUN_ATTEMPT `
+            -WorkflowRunUrl $runUrl `
+            -BuilderId $builderId
+          if ($LASTEXITCODE -ne 0) { throw "Final signed integrity metadata generation failed." }
+
+          & pwsh -NoProfile -File scripts/win7pos/windows/test-protected-release-artifacts.ps1 `
+            -ArtifactRoot $dist `
+            -ChecksumManifestPath (Join-Path $dist "release-checksums.json") `
+            -UnsignedPayloadManifestPath (Join-Path $unsignedRoot "unsigned-payload-manifest.json") `
+            -SbomPath (Join-Path $unsignedRoot "sbom.cdx.json") `
+            -ProvenancePath (Join-Path $dist "release-provenance.json") `
+            -AttestationPath (Join-Path $dist "release-attestation.intoto.jsonl") `
+            -ExpectedStage signed `
+            -CommitSha $env:WIN7POS_EXACT_SHA `
+            -ProductVersion $env:WIN7POS_PRODUCT_VERSION `
+            -ReleaseTag $env:GITHUB_REF_NAME `
+            -SigningRecordPath @((Join-Path $signingRoot "application-signing-record.json"), (Join-Path $signingRoot "installer-signing-record.json")) `
+            -ExpectedSignerThumbprint $env:WIN7POS_SIGNING_CERT_THUMBPRINT `
+            -RequireProductionSignatures
+          if ($LASTEXITCODE -ne 0) { throw "Final protected-release validation failed." }
+
+      - name: Stage signed release candidate
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $stage = "artifacts/protected-release-signed"
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          Copy-Item -Path "dist/*" -Destination $stage -Recurse -Force
+
+      - name: Upload signed candidate for attestation
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Win7POS-Protected-Signed-${{ github.run_id }}
+          path: artifacts/protected-release-signed
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove imported signing material
+        if: always()
+        shell: pwsh
+        env:
+          WIN7POS_IMPORT_STEP_OUTCOME: ${{ steps.import-signing-material.outcome }}
+        run: |
+          $ErrorActionPreference = "Continue"
+          $cleanupFailed = $false
+          $thumbprintPattern = '^[0-9A-F]{40}$'
+          $marker = Join-Path $env:RUNNER_TEMP "win7pos-imported-certs.json"
+          $outcomeMarker = Join-Path $env:RUNNER_TEMP "win7pos-import-outcome.json"
+          $pfxPath = Join-Path $env:RUNNER_TEMP "win7pos-release-signing.pfx"
+          $markerThumbprints = @()
+          $outcomeOwnedThumbprints = @()
+          $beforeThumbprints = @()
+          $outcomeStatus = ""
+          $outcomeIsValid = $false
+          $importStepOutcome = ([string]$env:WIN7POS_IMPORT_STEP_OUTCOME).Trim().ToLowerInvariant()
+          $importWasAttempted = $importStepOutcome -in @("success", "failure", "cancelled")
+          if ($importStepOutcome -notin @("success", "failure", "cancelled", "skipped")) {
+            $cleanupFailed = $true
+          }
+
+          function Get-ValidatedThumbprints {
+            param([Parameter(Mandatory = $true)][AllowNull()]$Values)
+            $result = @()
+            foreach ($rawValue in @($Values | Where-Object { $null -ne $_ })) {
+              $thumbprint = (($rawValue -as [string]) -replace '\s', '').ToUpperInvariant()
+              if ($thumbprint -notmatch $thumbprintPattern) { throw "invalid thumbprint marker" }
+              $result += $thumbprint
+            }
+            return @($result | Sort-Object -Unique)
+          }
+
+          try {
+            if (Test-Path -LiteralPath $marker -PathType Leaf) {
+              $markerJson = [System.IO.File]::ReadAllText($marker)
+              $markerValues = @($markerJson | ConvertFrom-Json -ErrorAction Stop)
+              $markerThumbprints = @(Get-ValidatedThumbprints -Values $markerValues)
+            }
+            elseif ($importWasAttempted) {
+              throw "owned certificate marker is missing"
+            }
+          }
+          catch { $cleanupFailed = $true }
+
+          try {
+            if (Test-Path -LiteralPath $outcomeMarker -PathType Leaf) {
+              $outcome = [System.IO.File]::ReadAllText($outcomeMarker) | ConvertFrom-Json -ErrorAction Stop
+              $outcomePropertyNames = @($outcome.PSObject.Properties.Name)
+              if ($outcomePropertyNames -notcontains "schemaVersion" -or
+                  $outcomePropertyNames -notcontains "status" -or
+                  $outcomePropertyNames -notcontains "beforeThumbprints" -or
+                  $outcomePropertyNames -notcontains "ownedThumbprints" -or
+                  [int]$outcome.schemaVersion -ne 1 -or
+                  [string]$outcome.status -notin @("started", "success", "failed")) {
+                throw "invalid import outcome"
+              }
+              $outcomeStatus = [string]$outcome.status
+              $beforeThumbprints = @(Get-ValidatedThumbprints -Values $outcome.beforeThumbprints)
+              $outcomeOwnedThumbprints = @(Get-ValidatedThumbprints -Values $outcome.ownedThumbprints)
+              $outcomeIsValid = $true
+            }
+            elseif ($importWasAttempted) {
+              throw "import outcome marker is missing"
+            }
+          }
+          catch { $cleanupFailed = $true }
+
+          if ($importStepOutcome -eq "success" -and $outcomeStatus -ne "success") {
+            $cleanupFailed = $true
+          }
+          if ($importStepOutcome -eq "failure" -and $outcomeStatus -notin @("started", "failed")) {
+            $cleanupFailed = $true
+          }
+          if ($importStepOutcome -eq "skipped" -and
+              ((Test-Path -LiteralPath $marker -PathType Leaf) -or
+               (Test-Path -LiteralPath $outcomeMarker -PathType Leaf))) {
+            $cleanupFailed = $true
+          }
+
+          $derivedOwnedThumbprints = @()
+          try {
+            if ($outcomeIsValid) {
+              $currentThumbprints = @(Get-ChildItem -LiteralPath Cert:\CurrentUser\My -ErrorAction Stop |
+                ForEach-Object {
+                  $value = (($_.Thumbprint -as [string]) -replace '\s', '').ToUpperInvariant()
+                  if ($value -notmatch $thumbprintPattern) { throw "invalid current-store thumbprint" }
+                  $value
+                } | Sort-Object -Unique)
+              $derivedOwnedThumbprints = @($currentThumbprints | Where-Object { $_ -notin $beforeThumbprints })
+            }
+          }
+          catch { $cleanupFailed = $true }
+
+          if ($importStepOutcome -eq "success") {
+            $expectedThumbprint = (($env:WIN7POS_SIGNING_CERT_THUMBPRINT -as [string]) -replace '\s', '').ToUpperInvariant()
+            if ($expectedThumbprint -notmatch $thumbprintPattern -or
+                $markerThumbprints.Count -eq 0 -or
+                $markerThumbprints.Count -ne $outcomeOwnedThumbprints.Count -or
+                @($markerThumbprints | Where-Object { $_ -notin $outcomeOwnedThumbprints }).Count -ne 0 -or
+                $markerThumbprints -notcontains $expectedThumbprint) {
+              $cleanupFailed = $true
+            }
+          }
+
+          $ownedThumbprints = @(
+            $markerThumbprints + $outcomeOwnedThumbprints + $derivedOwnedThumbprints |
+              Sort-Object -Unique)
+          foreach ($thumbprint in $ownedThumbprints) {
+            try {
+              $certificatePath = "Cert:\CurrentUser\My\$thumbprint"
+              if (Test-Path -LiteralPath $certificatePath -PathType Leaf) {
+                $storedCertificate = Get-Item -LiteralPath $certificatePath -ErrorAction Stop
+                if ($storedCertificate.HasPrivateKey) {
+                  Remove-Item -Path $certificatePath -DeleteKey -Force -ErrorAction Stop
+                }
+                else {
+                  Remove-Item -Path $certificatePath -Force -ErrorAction Stop
+                }
+              }
+              if (Test-Path -LiteralPath $certificatePath -PathType Leaf) { throw "owned certificate remains" }
+            }
+            catch { $cleanupFailed = $true }
+          }
+
+          try {
+            $remainingOwnedCertificates = @($ownedThumbprints | Where-Object {
+                Test-Path -LiteralPath "Cert:\CurrentUser\My\$_" -PathType Leaf
+              })
+            if ($remainingOwnedCertificates.Count -ne 0) { throw "owned certificates remain" }
+          }
+          catch { $cleanupFailed = $true }
+
+          foreach ($filePath in @($marker, $outcomeMarker, $pfxPath)) {
+            try {
+              if (Test-Path -LiteralPath $filePath -PathType Leaf) {
+                Remove-Item -LiteralPath $filePath -Force -ErrorAction Stop
+              }
+              if (Test-Path -LiteralPath $filePath -PathType Leaf) { throw "file remains" }
+            }
+            catch { $cleanupFailed = $true }
+          }
+          if ($cleanupFailed) { throw "Protected signing material cleanup failed closed." }
+
+  attest-signed-release:
+    needs: sign-protected-release
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Checkout exact protected tag validator
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: Download validated signed candidate
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: Win7POS-Protected-Signed-${{ github.run_id }}
+          path: dist
+
+      - name: Attest signed installer and release pack provenance
+        id: provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: |
+            dist/Win7POS-*-Setup.exe
+            dist/Win7POS-*-x86.zip
+
+      - name: Attest signed installer and release pack SBOM
+        id: sbom
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: |
+            dist/Win7POS-*-Setup.exe
+            dist/Win7POS-*-x86.zip
+          sbom-path: dist/unsigned/sbom.cdx.json
+
+      - name: Verify platform attestations against exact source
+        shell: pwsh
+        env:
+          PROVENANCE_BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          SBOM_BUNDLE: ${{ steps.sbom.outputs.bundle-path }}
+          EXPECTED_SIGNER_THUMBPRINT: ${{ needs.sign-protected-release.outputs.expected-signer-thumbprint }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          $installer = "dist/Win7POS-$version-Setup.exe"
+          $zip = "dist/Win7POS-$version-x86.zip"
+          $signer = "$env:GITHUB_REPOSITORY/.github/workflows/protected-release.yml"
+          foreach ($artifact in @($installer, $zip)) {
+            if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) { throw "Expected signed artifact is missing." }
+            & gh attestation verify $artifact --bundle $env:PROVENANCE_BUNDLE --repo $env:GITHUB_REPOSITORY --signer-workflow $signer --source-digest $env:GITHUB_SHA --source-ref $env:GITHUB_REF
+            if ($LASTEXITCODE -ne 0) { throw "SLSA provenance attestation verification failed." }
+            & gh attestation verify $artifact --bundle $env:SBOM_BUNDLE --repo $env:GITHUB_REPOSITORY --signer-workflow $signer --source-digest $env:GITHUB_SHA --source-ref $env:GITHUB_REF --predicate-type https://cyclonedx.org/bom
+            if ($LASTEXITCODE -ne 0) { throw "SBOM attestation verification failed." }
+          }
+          $dist = (Resolve-Path -LiteralPath "dist").Path
+          $unsignedRoot = Join-Path $dist "unsigned"
+          $signingRoot = Join-Path $dist "signing"
+          $attestationRoot = Join-Path $dist "attestations"
+          $githubProvenanceBundle = Join-Path $attestationRoot "github-provenance.sigstore.json"
+          $githubSbomBundle = Join-Path $attestationRoot "github-sbom.sigstore.json"
+          New-Item -ItemType Directory -Path $attestationRoot -Force | Out-Null
+          Copy-Item -LiteralPath $env:PROVENANCE_BUNDLE -Destination $githubProvenanceBundle -Force
+          Copy-Item -LiteralPath $env:SBOM_BUNDLE -Destination $githubSbomBundle -Force
+
+          & pwsh -NoProfile -File scripts/win7pos/windows/test-protected-release-artifacts.ps1 `
+            -ArtifactRoot $dist `
+            -ChecksumManifestPath (Join-Path $dist "release-checksums.json") `
+            -UnsignedPayloadManifestPath (Join-Path $unsignedRoot "unsigned-payload-manifest.json") `
+            -SbomPath (Join-Path $unsignedRoot "sbom.cdx.json") `
+            -ProvenancePath (Join-Path $dist "release-provenance.json") `
+            -AttestationPath (Join-Path $dist "release-attestation.intoto.jsonl") `
+            -ExpectedStage signed `
+            -CommitSha $env:GITHUB_SHA `
+            -ProductVersion $version `
+            -ReleaseTag $env:GITHUB_REF_NAME `
+            -SigningRecordPath @((Join-Path $signingRoot "application-signing-record.json"), (Join-Path $signingRoot "installer-signing-record.json")) `
+            -ExpectedSignerThumbprint $env:EXPECTED_SIGNER_THUMBPRINT `
+            -RequireProductionSignatures `
+            -PostMetadataArtifactPath @($githubProvenanceBundle, $githubSbomBundle)
+          if ($LASTEXITCODE -ne 0) { throw "Attested protected-release closed-world validation failed." }
+
+      - name: Upload attested protected release
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Win7POS-${{ github.ref_name }}-Protected-Release
+          path: dist
+          if-no-files-found: error
+          retention-days: 90

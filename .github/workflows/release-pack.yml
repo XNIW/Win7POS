@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-    tags:
-      - "v*"
   workflow_dispatch:
 
 permissions:
@@ -18,9 +16,15 @@ jobs:
       DOTNET_NOLOGO: "true"
       DOTNET_CLI_TELEMETRY_OPTOUT: "true"
     steps:
+      - name: Reject tag invocation outside protected release
+        if: ${{ github.ref_type == 'tag' }}
+        shell: pwsh
+        run: throw "Tag artifacts may be produced only by the Protected Release workflow."
+
       - name: Checkout
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
+          fetch-depth: 0
           persist-credentials: false
           ref: ${{ github.sha }}
 
@@ -40,6 +44,40 @@ jobs:
 
       - name: Restore solution
         run: dotnet restore Win7POS.slnx --locked-mode
+
+      - name: Install hash-pinned supply-chain tools
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/install-pinned-supply-chain-tools.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source
+
+      - name: Install hash-pinned signing fixture tool
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/win7pos/windows/install-pinned-signtool.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-signtool" -GitHubEnvironmentFile $env:GITHUB_ENV
+
+      - name: Vulnerability, deprecation and license gates
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/invoke-nuget-supply-chain-gates.ps1 -OutputDirectory artifacts/release-security/nuget -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source -SolutionPath Win7POS.slnx
+
+      - name: Generate and validate CycloneDX SBOM
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/new-cyclonedx-sbom.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -OutputPath "dist/Win7POS-$env:WIN7POS_BUILD_VERSION.cdx.json" -Version $env:WIN7POS_BUILD_VERSION -CommitSha $env:WIN7POS_EXACT_SHA -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source
+
+      - name: Scan working tree and full repository history
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/invoke-gitleaks-scans.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -OutputDirectory artifacts/release-security/gitleaks
+
+      - name: Compare two clean unsigned payload builds
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/win7pos/windows/test-unsigned-payload-reproducibility.ps1 -EvidenceDirectory artifacts/release-security/reproducibility -ExpectedCommitSha $env:WIN7POS_EXACT_SHA -Ref $env:GITHUB_REF -DotnetExe (Get-Command dotnet -ErrorAction Stop).Source
+
+      - name: Execute supply-chain negative vectors
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/test-supply-chain-gates.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source
+          if ($LASTEXITCODE -ne 0) { throw "Supply-chain negative vectors failed." }
+          pwsh -NoProfile -File scripts/win7pos/windows/test-unsigned-payload-reproducibility-negative.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Reproducibility negative vectors failed." }
+          pwsh -NoProfile -File scripts/win7pos/windows/test-release-signing-negative.ps1 -SignToolPath $env:WIN7POS_SIGNTOOL_EXE
+          if ($LASTEXITCODE -ne 0) { throw "NON-PRODUCTION signing vectors failed." }
 
       - name: Run canonical required gates
         shell: pwsh
@@ -87,6 +125,8 @@ jobs:
           if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
             throw "Fresh versioned installer is missing: $installer"
           }
+          $publishedInstaller = "dist/$env:WIN7POS_INSTALLER_BASE_FILENAME.exe"
+          Copy-Item -LiteralPath $installer -Destination $publishedInstaller -Force
           & pwsh -NoProfile -File scripts/check-release-pack-completeness.ps1 -ReleasePackSource $zip -ExpectedCommitSha $env:WIN7POS_EXACT_SHA
           if ($LASTEXITCODE -ne 0) { throw "Versioned release pack completeness check failed." }
           & pwsh -NoProfile -File scripts/check-win7-runtime-release-validation.ps1 -ReleasePackSource $zip -ExpectedCommitSha $env:WIN7POS_EXACT_SHA
@@ -95,13 +135,86 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Versioned online-linking validation failed." }
 
           $hashLines = @(
-            "$((Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($installer))",
-            "$((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($zip))"
+            "$((Get-FileHash -LiteralPath $publishedInstaller -Algorithm SHA256).Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($publishedInstaller))",
+            "$((Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant())  $([System.IO.Path]::GetFileName($zip))",
+            "$((Get-FileHash -LiteralPath "dist/Win7POS-$env:WIN7POS_BUILD_VERSION.cdx.json" -Algorithm SHA256).Hash.ToLowerInvariant())  Win7POS-$env:WIN7POS_BUILD_VERSION.cdx.json"
           )
           [System.IO.File]::WriteAllLines(
             "dist/RELEASE-ARTIFACTS-SHA256.txt",
             $hashLines,
             (New-Object System.Text.UTF8Encoding($false)))
+
+      - name: Bind checksums and exact-run provenance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $dist = (Resolve-Path -LiteralPath dist).Path
+          $payload = Join-Path $dist "Win7POS"
+          $zip = Join-Path $dist "Win7POS-$env:WIN7POS_BUILD_VERSION-x86.zip"
+          $installer = Join-Path $dist "$env:WIN7POS_INSTALLER_BASE_FILENAME.exe"
+          $sbom = Join-Path $dist "Win7POS-$env:WIN7POS_BUILD_VERSION.cdx.json"
+          $integrityRoot = Join-Path $dist "release-evidence"
+          New-Item -ItemType Directory -Path $integrityRoot -Force | Out-Null
+          $unsignedManifest = Join-Path $integrityRoot "unsigned-payload-manifest.json"
+          $candidateManifest = Join-Path $integrityRoot "release-candidate-payload-manifest.json"
+          $candidateComparison = Join-Path $integrityRoot "release-candidate-comparison.json"
+          $securityEvidence = Join-Path $integrityRoot "security"
+          New-Item -ItemType Directory -Path $securityEvidence -Force | Out-Null
+          Copy-Item -Path "artifacts/release-security/*" -Destination $securityEvidence -Recurse -Force
+          Copy-Item -LiteralPath "artifacts/release-security/reproducibility/unsigned-payload.normalized-manifest.json" -Destination $unsignedManifest -Force
+
+          & pwsh -NoProfile -File scripts/win7pos/windows/write-reproducibility-payload-manifest.ps1 `
+            -PayloadRoot $payload `
+            -ManifestPath $candidateManifest `
+            -ExpectedCommitSha $env:WIN7POS_EXACT_SHA `
+            -BuildVersion $env:WIN7POS_BUILD_VERSION
+          if ($LASTEXITCODE -ne 0) { throw "Release candidate payload manifest generation failed." }
+          & pwsh -NoProfile -File scripts/win7pos/windows/compare-reproducibility-payload-manifests.ps1 `
+            -ManifestA $unsignedManifest `
+            -ManifestB $candidateManifest `
+            -ComparisonEvidencePath $candidateComparison `
+            -ExpectedCommitSha $env:WIN7POS_EXACT_SHA
+          if ($LASTEXITCODE -ne 0) { throw "Published release payload differs from the reproducible canonical payload." }
+
+          $stage = "development-unsigned"
+          $releaseTag = ""
+          $repoUri = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
+          $runUrl = "$repoUri/actions/runs/$env:GITHUB_RUN_ID"
+          $builderId = "$repoUri/.github/workflows/release-pack.yml@$env:WIN7POS_EXACT_SHA"
+          & pwsh -NoProfile -File scripts/win7pos/windows/write-release-integrity-metadata.ps1 `
+            -ArtifactRoot $dist `
+            -ArtifactPath @($dist) `
+            -UnsignedPayloadManifestPath $unsignedManifest `
+            -SbomPath $sbom `
+            -OutputDirectory $integrityRoot `
+            -StageName $stage `
+            -FilePrefix release `
+            -CommitSha $env:WIN7POS_EXACT_SHA `
+            -ProductVersion $env:WIN7POS_PRODUCT_VERSION `
+            -BuildVersion $env:WIN7POS_BUILD_VERSION `
+            -ReleaseTag $releaseTag `
+            -RepositoryUri $repoUri `
+            -RepositoryRef $env:GITHUB_REF `
+            -WorkflowName $env:GITHUB_WORKFLOW `
+            -WorkflowRunId $env:GITHUB_RUN_ID `
+            -WorkflowRunAttempt $env:GITHUB_RUN_ATTEMPT `
+            -WorkflowRunUrl $runUrl `
+            -BuilderId $builderId
+          if ($LASTEXITCODE -ne 0) { throw "Release integrity metadata generation failed." }
+
+          & pwsh -NoProfile -File scripts/win7pos/windows/test-protected-release-artifacts.ps1 `
+            -ArtifactRoot $dist `
+            -ChecksumManifestPath (Join-Path $integrityRoot "release-checksums.json") `
+            -UnsignedPayloadManifestPath $unsignedManifest `
+            -SbomPath $sbom `
+            -ProvenancePath (Join-Path $integrityRoot "release-provenance.json") `
+            -AttestationPath (Join-Path $integrityRoot "release-attestation.intoto.jsonl") `
+            -ExpectedStage $stage `
+            -CommitSha $env:WIN7POS_EXACT_SHA `
+            -ProductVersion $env:WIN7POS_PRODUCT_VERSION `
+            -BuildVersion $env:WIN7POS_BUILD_VERSION `
+            -ReleaseTag $releaseTag
+          if ($LASTEXITCODE -ne 0) { throw "Release integrity evidence validation failed." }
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
@@ -125,6 +238,9 @@ jobs:
           name: Win7POS-${{ env.WIN7POS_BUILD_VERSION }}-ReleasePack-x86
           path: |
             dist/Win7POS-${{ env.WIN7POS_BUILD_VERSION }}-x86.zip
+            dist/${{ env.WIN7POS_INSTALLER_BASE_FILENAME }}.exe
+            dist/Win7POS-${{ env.WIN7POS_BUILD_VERSION }}.cdx.json
             dist/RELEASE-ARTIFACTS-SHA256.txt
+            dist/release-evidence
           if-no-files-found: error
           retention-days: 14

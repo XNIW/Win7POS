@@ -76,7 +76,7 @@ Require-Match "FileLogger redacts camel/snake token aliases" $logger 'trusted\[_
 Require-Match "FileLogger redacts client secret/API key aliases" $logger 'client\[_-\]\?secret[\s\S]*api\[_-\]\?key'
 Require-Match "FileLogger redacts bearer auth" $logger 'Authorization\\s\*:\\s\*Bearer'
 Require-Match "UI smoke executes secret-body redaction vectors" $uiSmoke 'VerifyLogRedactionTestVectors'
-foreach ($vectorMarker in @('CorrectHorseBatteryStaple', 'PRIVATEKEYBODY123456789', 'TRUNCATEDPRIVATEKEYBODY987654321', 'secrets\.All')) {
+foreach ($vectorMarker in @('CorrectHorseBatteryStaple', 'PRIVATEKEYBODY123456789', 'TRUNCATEDPRIVATEKEYBODY987654321', 'secrets\.All')) { # gitleaks:allow -- synthetic redaction-test markers
     Require-Match "UI smoke secret-body marker: $vectorMarker" $uiSmoke $vectorMarker
 }
 

@@ -1,0 +1,197 @@
+name: Security Supply Chain
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: "41 4 * * 2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-supply-chain-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  dependency-sbom-secret-reproducibility:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+      WIN7POS_EXACT_REF: ${{ github.event_name == 'pull_request' && format('refs/heads/{0}', github.event.pull_request.head.ref) || github.ref }}
+    steps:
+      - name: Checkout full history at exact SHA
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Resolve exact-SHA build version
+        shell: pwsh
+        env:
+          WIN7POS_EXACT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: pwsh -NoProfile -File scripts/win7pos/windows/resolve-release-version.ps1 -CommitSha $env:WIN7POS_EXACT_SHA -Ref $env:WIN7POS_EXACT_REF -GitHubEnvironmentFile $env:GITHUB_ENV
+
+      - name: Setup deterministic .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore locked dependency graph
+        run: dotnet restore Win7POS.slnx --locked-mode
+
+      - name: Install hash-pinned supply-chain tools
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/install-pinned-supply-chain-tools.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source
+
+      - name: Install hash-pinned signing fixture tool
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/win7pos/windows/install-pinned-signtool.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-signtool" -GitHubEnvironmentFile $env:GITHUB_ENV
+
+      - name: Vulnerability, deprecation and license gates
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/invoke-nuget-supply-chain-gates.ps1 -OutputDirectory artifacts/security/nuget -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source -SolutionPath Win7POS.slnx
+
+      - name: Generate and validate CycloneDX SBOM
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/new-cyclonedx-sbom.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -OutputPath artifacts/security/sbom/win7pos.cdx.json -Version $env:WIN7POS_BUILD_VERSION -CommitSha $env:WIN7POS_EXACT_SHA -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source
+
+      - name: Scan working tree and full repository history
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/invoke-gitleaks-scans.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -OutputDirectory artifacts/security/gitleaks
+
+      - name: Compare two clean unsigned payload builds
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/win7pos/windows/test-unsigned-payload-reproducibility.ps1 -EvidenceDirectory artifacts/security/reproducibility -ExpectedCommitSha $env:WIN7POS_EXACT_SHA -Ref $env:WIN7POS_EXACT_REF -DotnetExe (Get-Command dotnet -ErrorAction Stop).Source
+
+      - name: Execute supply-chain negative vectors
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/test-supply-chain-gates.ps1 -ToolDirectory "$env:RUNNER_TEMP\win7pos-supply-chain" -DotNetExe (Get-Command dotnet -ErrorAction Stop).Source
+          if ($LASTEXITCODE -ne 0) { throw "Supply-chain negative vectors failed." }
+          pwsh -NoProfile -File scripts/win7pos/windows/test-unsigned-payload-reproducibility-negative.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Reproducibility negative vectors failed." }
+          pwsh -NoProfile -File scripts/win7pos/windows/test-release-signing-negative.ps1 -SignToolPath $env:WIN7POS_SIGNTOOL_EXE
+          if ($LASTEXITCODE -ne 0) { throw "NON-PRODUCTION signing vectors failed." }
+
+      - name: Bind development checksums and provenance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $artifactRoot = (Resolve-Path -LiteralPath artifacts/security).Path
+          $integrityRoot = Join-Path $artifactRoot "integrity"
+          New-Item -ItemType Directory -Path $integrityRoot -Force | Out-Null
+          $unsignedManifest = Join-Path $integrityRoot "unsigned-payload-manifest.json"
+          $sbom = (Resolve-Path -LiteralPath "artifacts/security/sbom/win7pos.cdx.json").Path
+          Copy-Item -LiteralPath "artifacts/security/reproducibility/unsigned-payload.normalized-manifest.json" -Destination $unsignedManifest -Force
+
+          $repoUri = "$env:GITHUB_SERVER_URL/$env:GITHUB_REPOSITORY"
+          $runUrl = "$repoUri/actions/runs/$env:GITHUB_RUN_ID"
+          $builderId = "$repoUri/.github/workflows/security-supply-chain.yml@$env:WIN7POS_EXACT_SHA"
+          & pwsh -NoProfile -File scripts/win7pos/windows/write-release-integrity-metadata.ps1 `
+            -ArtifactRoot $artifactRoot `
+            -ArtifactPath @($artifactRoot) `
+            -UnsignedPayloadManifestPath $unsignedManifest `
+            -SbomPath $sbom `
+            -OutputDirectory $integrityRoot `
+            -StageName development-unsigned `
+            -FilePrefix build `
+            -CommitSha $env:WIN7POS_EXACT_SHA `
+            -ProductVersion $env:WIN7POS_PRODUCT_VERSION `
+            -BuildVersion $env:WIN7POS_BUILD_VERSION `
+            -ReleaseTag "" `
+            -RepositoryUri $repoUri `
+            -RepositoryRef $env:WIN7POS_EXACT_REF `
+            -WorkflowName $env:GITHUB_WORKFLOW `
+            -WorkflowRunId $env:GITHUB_RUN_ID `
+            -WorkflowRunAttempt $env:GITHUB_RUN_ATTEMPT `
+            -WorkflowRunUrl $runUrl `
+            -BuilderId $builderId
+          if ($LASTEXITCODE -ne 0) { throw "Development integrity metadata generation failed." }
+
+          & pwsh -NoProfile -File scripts/win7pos/windows/test-protected-release-artifacts.ps1 `
+            -ArtifactRoot $artifactRoot `
+            -ChecksumManifestPath (Join-Path $integrityRoot "build-checksums.json") `
+            -UnsignedPayloadManifestPath $unsignedManifest `
+            -SbomPath $sbom `
+            -ProvenancePath (Join-Path $integrityRoot "build-provenance.json") `
+            -AttestationPath (Join-Path $integrityRoot "build-attestation.intoto.jsonl") `
+            -ExpectedStage development-unsigned `
+            -CommitSha $env:WIN7POS_EXACT_SHA `
+            -ProductVersion $env:WIN7POS_PRODUCT_VERSION `
+            -BuildVersion $env:WIN7POS_BUILD_VERSION `
+            -ReleaseTag ""
+          if ($LASTEXITCODE -ne 0) { throw "Development integrity evidence validation failed." }
+
+      - name: Upload machine-readable supply-chain evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Win7POS-Supply-Chain-${{ github.run_id }}
+          path: artifacts/security
+          if-no-files-found: error
+          retention-days: 30
+
+  codeql-csharp:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      DOTNET_NOLOGO: "true"
+      DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+    steps:
+      - name: Checkout exact SHA
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup deterministic .NET SDK
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore locked dependency graph
+        run: dotnet restore Win7POS.slnx --locked-mode
+
+      - name: Initialize CodeQL C#
+        uses: github/codeql-action/init@e0647621c2984b5ed2f768cb892365bf2a616ad1 # v4.37.2
+        with:
+          languages: csharp
+          build-mode: manual
+          queries: security-extended
+
+      - name: Build analyzed solution
+        run: dotnet build Win7POS.slnx -c Release --no-restore
+
+      - name: Analyze and emit SARIF
+        uses: github/codeql-action/analyze@e0647621c2984b5ed2f768cb892365bf2a616ad1 # v4.37.2
+        with:
+          category: /language:csharp
+          output: artifacts/security/codeql
+          ref: ${{ github.event.pull_request.number && format('refs/pull/{0}/head', github.event.pull_request.number) || github.ref }}
+          sha: ${{ github.event.pull_request.head.sha || github.sha }}
+          upload: always
+
+      - name: Fail closed on CodeQL findings or missing SARIF
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/check-codeql-sarif.ps1 -SarifDirectory artifacts/security/codeql -SummaryPath artifacts/security/codeql-summary.json
+
+      - name: Upload CodeQL SARIF evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: Win7POS-CodeQL-${{ github.run_id }}
+          path: artifacts/security
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,4 @@
+title = "Win7POS full default secret detection"
+
+[extend]
+useDefault = true

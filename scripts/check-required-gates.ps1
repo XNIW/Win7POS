@@ -12,6 +12,7 @@ $sourceGates = @(
     "check-dialog-standards.ps1",
     "check-architecture-boundaries.ps1",
     "check-release-foundation.ps1",
+    "check-release-supply-chain.ps1",
     "check-pos-startup-win7-safe.ps1",
     "check-win7pos-startup-no-eager-db.ps1",
     "check-win7pos-legacy-db-migrations.ps1",

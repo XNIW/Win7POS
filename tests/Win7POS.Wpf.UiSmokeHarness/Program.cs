@@ -3748,7 +3748,7 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                 const string sessionSecret = "SessionSecret123456";
                 const string refreshSecret = "RefreshSecret123456";
                 const string clientSecret = "ClientSecret123456";
-                const string apiSecret = "ApiSecret123456";
+                const string apiSecret = "ApiSecret123456"; // gitleaks:allow -- synthetic redaction-test value
                 const string passwordSecret = "CorrectHorseBatteryStaple";
                 const string credentialSecret = "CredentialSecret123456";
                 const string pinSecret = "12345678";
@@ -3756,8 +3756,8 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                 const string bearerSecret = "BearerSecret123456";
                 const string prefixSecret = "sk-abcdefghijklmnopqrstuvwxyz";
                 const string jwtSecret = "eyJheader12345.payload12345.signature12345";
-                const string privateKeyBody = "PRIVATEKEYBODY123456789";
-                const string truncatedPrivateKeyBody = "TRUNCATEDPRIVATEKEYBODY987654321";
+                const string privateKeyBody = "PRIVATEKEYBODY123456789"; // gitleaks:allow -- synthetic redaction-test value
+                const string truncatedPrivateKeyBody = "TRUNCATEDPRIVATEKEYBODY987654321"; // gitleaks:allow -- synthetic redaction-test value
                 var input = string.Join(
                     Environment.NewLine,
                     new[]
@@ -3772,10 +3772,10 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                         "Authorization: Bearer " + bearerSecret,
                         prefixSecret,
                         jwtSecret,
-                        "-----BEGIN PRIVATE KEY-----",
+                        "-----BEGIN PRIVATE KEY-----", // gitleaks:allow -- synthetic redaction-test envelope
                         privateKeyBody,
                         "-----END PRIVATE KEY-----",
-                        "-----BEGIN RSA PRIVATE KEY-----",
+                        "-----BEGIN RSA PRIVATE KEY-----", // gitleaks:allow -- synthetic truncated redaction-test envelope
                         truncatedPrivateKeyBody
                     });
                 var outputs = new[]

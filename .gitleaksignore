@@ -1,0 +1,9 @@
+# Exact synthetic-secret fixture findings from commit 7484125 only.
+748412502411204b6f4a7fa2f9d0379d29c1d7c8:scripts/check-pos-login-logging.ps1:generic-api-key:79
+748412502411204b6f4a7fa2f9d0379d29c1d7c8:scripts/check-pos-debug-logging.ps1:generic-api-key:74
+748412502411204b6f4a7fa2f9d0379d29c1d7c8:scripts/check-security-hardening.ps1:generic-api-key:106
+748412502411204b6f4a7fa2f9d0379d29c1d7c8:tests/Win7POS.Wpf.UiSmokeHarness/Program.cs:generic-api-key:3691
+748412502411204b6f4a7fa2f9d0379d29c1d7c8:tests/Win7POS.Wpf.UiSmokeHarness/Program.cs:generic-api-key:3699
+748412502411204b6f4a7fa2f9d0379d29c1d7c8:tests/Win7POS.Wpf.UiSmokeHarness/Program.cs:generic-api-key:3700
+748412502411204b6f4a7fa2f9d0379d29c1d7c8:tests/Win7POS.Wpf.UiSmokeHarness/Program.cs:private-key:3715
+748412502411204b6f4a7fa2f9d0379d29c1d7c8:tests/Win7POS.Wpf.UiSmokeHarness/Program.cs:private-key:3718
