@@ -73,7 +73,7 @@ Require-Marker "POS token prefix redaction" $logger "mcpos_\(device\|session\)"
 Require-Marker "standalone JWT redaction" $logger "eyJ\[A-Za-z0-9_-"
 Require-Marker "standalone secret/private-key redaction" $logger "sb_secret[\s\S]*PRIVATE KEY"
 Require-Marker "executable log-redaction vector method" $uiSmoke "VerifyLogRedactionTestVectors"
-foreach ($vectorMarker in @('client_secret', 'sk-abcdefghijklmnopqrstuvwxyz', 'PRIVATEKEYBODY123456789', 'TRUNCATEDPRIVATEKEYBODY987654321', 'secrets\.All')) {
+foreach ($vectorMarker in @('client_secret', 'sk-abcdefghijklmnopqrstuvwxyz', 'PRIVATEKEYBODY123456789', 'TRUNCATEDPRIVATEKEYBODY987654321', 'secrets\.All')) { # gitleaks:allow -- synthetic redaction-test markers
     Require-Marker "executable log-redaction vector marker: $vectorMarker" $uiSmoke $vectorMarker
 }
 Require-Marker "log rotation" $logger "RotateIfNeeded"

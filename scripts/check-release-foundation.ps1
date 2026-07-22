@@ -39,17 +39,44 @@ function Get-WorkflowViolations {
     param([string]$Name, [string]$Text)
 
     $violations = New-Object System.Collections.Generic.List[string]
+    $allowedWritePermissions = @{
+        "security-supply-chain.yml|codeql-csharp|security-events" = $true
+        "protected-release.yml|attest-signed-release|id-token" = $true
+        "protected-release.yml|attest-signed-release|attestations" = $true
+        "protected-release.yml|attest-signed-release|artifact-metadata" = $true
+    }
     if ($Text -notmatch '(?m)^permissions:\s*\r?$') {
         $violations.Add("$Name has no explicit top-level permissions block")
     }
     if ($Text -notmatch '(?m)^permissions:\s*\r?\n\s{2}contents:\s*read\s*\r?$') {
         $violations.Add("$Name does not declare least-privilege contents: read")
     }
-    if ($Text -match '(?im)^\s*(?:permissions:\s*write-all|[a-z-]+:\s*write)\s*$') {
-        $violations.Add("$Name grants write permission")
+    if ($Text -match '(?im)^\s*permissions:\s*write-all\s*$') {
+        $violations.Add("$Name grants write-all permission")
+    }
+    $lines = @($Text -split '\r?\n')
+    $inJobs = $false
+    $currentJob = ""
+    foreach ($line in $lines) {
+        if ($line -match '^jobs:\s*$') {
+            $inJobs = $true
+            $currentJob = ""
+            continue
+        }
+        if ($inJobs -and $line -match '^  ([A-Za-z0-9_-]+):\s*$') {
+            $currentJob = $Matches[1]
+            continue
+        }
+        if ($line -match '^\s*([a-z-]+):\s*write\s*$') {
+            $permissionName = $Matches[1].ToLowerInvariant()
+            $permissionKey = "$Name|$currentJob|$permissionName"
+            if (-not $allowedWritePermissions.ContainsKey($permissionKey)) {
+                $scope = if ([string]::IsNullOrWhiteSpace($currentJob)) { "top level" } else { "job '$currentJob'" }
+                $violations.Add("$Name grants unapproved write permission '$permissionName' in $scope")
+            }
+        }
     }
 
-    $lines = @($Text -split '\r?\n')
     $usesCount = 0
     for ($index = 0; $index -lt $lines.Count; $index++) {
         $line = $lines[$index]
@@ -124,9 +151,26 @@ else {
         'actions/checkout@v5')
     $credentialVector = $goodVector.Replace('persist-credentials: false', 'persist-credentials: true')
     $restoreVector = $goodVector.Replace('dotnet restore Demo.sln --locked-mode', 'dotnet restore Demo.sln')
+    $writeVector = $goodVector.Replace('contents: read', 'contents: write')
+    $wrongJobWriteVector = @"
+permissions:
+  contents: read
+jobs:
+  dependency-sbom-secret-reproducibility:
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@1111111111111111111111111111111111111111 # v1.2.3
+        with:
+          persist-credentials: false
+          ref: `${{ github.sha }}
+"@
     if ((Get-WorkflowViolations -Name "mobile-vector" -Text $mobileVector).Count -eq 0 -or
         (Get-WorkflowViolations -Name "credential-vector" -Text $credentialVector).Count -eq 0 -or
-        (Get-WorkflowViolations -Name "restore-vector" -Text $restoreVector).Count -eq 0) {
+        (Get-WorkflowViolations -Name "restore-vector" -Text $restoreVector).Count -eq 0 -or
+        (Get-WorkflowViolations -Name "write-vector" -Text $writeVector).Count -eq 0 -or
+        (Get-WorkflowViolations -Name "security-supply-chain.yml" -Text $wrongJobWriteVector).Count -eq 0) {
         Fail "Workflow policy negative self-tests did not fail closed"
     }
     else {

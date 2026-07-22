@@ -1,0 +1,12 @@
+{
+  "packageId": "Microsoft.Windows.SDK.BuildTools",
+  "version": "10.0.26100.7705",
+  "downloadUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.windows.sdk.buildtools/10.0.26100.7705/microsoft.windows.sdk.buildtools.10.0.26100.7705.nupkg",
+  "packageSize": 22582767,
+  "packageSha256": "48a81375752f9f1ff56a34062084b426bfe412a5a8072e1c99b6a4be0e774841",
+  "packageSha512Base64": "BIV+AD93Eh3Yv3xE55a9AD/o5f+wmW1NOoSu2DajGsnC324bnshnjr2vhRcyzC8fCY0tIRFX0nZg9yQQ/9+l5w==",
+  "signToolRelativePath": "bin/10.0.26100.0/x64/signtool.exe",
+  "signToolSha256": "431ee314c83988cacda86606356fd321b75ae0093481b97e3b738e99c412f2a0",
+  "signToolProductVersion": "10.0.26100.7705",
+  "expectedSignerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
+}

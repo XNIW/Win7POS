@@ -111,7 +111,7 @@ Require "DB bootstrap logger redacts bearer/POS/JWT/private-key forms" $dbInitia
 Require "FileLogger applies regex redaction" $logger "Regex\.Replace[\s\S]*\[redacted\]"
 Require "StartupTrace applies regex redaction" $startup "Regex\.Replace[\s\S]*\[redacted\]"
 Require "UI smoke defines executable redaction vectors" $uiSmoke 'VerifyLogRedactionTestVectors'
-foreach ($vectorMarker in @('session_token', 'refresh-token', 'client_secret', 'api_key', 'Authorization: Bearer', 'sk-abcdefghijklmnopqrstuvwxyz', 'eyJheader12345', 'BEGIN PRIVATE KEY', 'TRUNCATEDPRIVATEKEYBODY987654321', 'secrets\.All')) {
+foreach ($vectorMarker in @('session_token', 'refresh-token', 'client_secret', 'api_key', 'Authorization: Bearer', 'sk-abcdefghijklmnopqrstuvwxyz', 'eyJheader12345', 'BEGIN PRIVATE KEY', 'TRUNCATEDPRIVATEKEYBODY987654321', 'secrets\.All')) { # gitleaks:allow -- synthetic redaction-test markers
     Require "UI smoke redaction vector marker: $vectorMarker" $uiSmoke $vectorMarker
 }
 Require "lifecycle requires redaction-vector success" $uiSmoke 'logRedactionVectorsPass[\s\S]*physicalPrinterQaPayloadPass\s*&&\s*logRedactionVectorsPass'
