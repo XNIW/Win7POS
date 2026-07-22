@@ -27,6 +27,7 @@ $sourceGates = @(
     "check-public-staging-config.ps1",
     "check-supplier-excel-wizard.ps1",
     "check-product-dialog-free-text.ps1",
+    "check-product-keyset-paging.ps1",
     "check-win7pos-ui-ux-guard.ps1",
     "check-pos-customer-display-safety.ps1",
     "check-pos-shop-data-readonly.ps1",

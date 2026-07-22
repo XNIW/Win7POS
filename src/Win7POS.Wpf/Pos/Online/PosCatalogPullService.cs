@@ -1262,35 +1262,45 @@ namespace Win7POS.Wpf.Pos.Online
                     if (fullRefresh)
                     {
                         syncTimer.Stop();
-                        var exactness = await catalogReconciler
-                            .ReconcileAndVerifyStagedAsync(
-                            fullStageGeneration,
-                            lastResponse.GeneratedAt,
-                            snapshotSummary,
-                            new CatalogExactnessRunContext
-                            {
-                                CatalogVersion = FirstNonEmpty(snapshotCatalogVersion, lastResponse.CatalogVersion),
-                                DurationMilliseconds = syncTimer.ElapsedMilliseconds,
-                                HasMore = lastResponse.HasMore,
-                                Pages = pagesProcessed,
-                                PriceRowsReceived = totalStats.PriceRowsReceived,
-                                PriceRowsAccepted = totalStats.PriceRowsApplied + totalStats.PriceRowsQueued,
-                                InvalidPriceRows = totalStats.PriceRowsSkipped,
-                                DuplicatePriceRows = 0,
-                                ProductRowsReceived = totalStats.UpdatedProducts,
-                                CategoryRowsReceived = receivedFullLanes.Categories,
-                                SupplierRowsReceived = receivedFullLanes.Suppliers,
-                                SyncCursor = lastResponse.SyncCursor,
-                                SyncMode = lastResponse.SyncMode,
-                                TombstonesReceived = totalStats.TombstonesReceived
-                            },
-                            CreateCommitFence(
-                                trustedSession,
-                                binding.Epoch,
-                                committedCursor,
-                                committedMode,
-                                generation),
-                            cancellationToken).ConfigureAwait(false);
+                        CatalogExactnessResult exactness;
+                        try
+                        {
+                            exactness = await catalogReconciler
+                                .ReconcileAndVerifyStagedAsync(
+                                fullStageGeneration,
+                                lastResponse.GeneratedAt,
+                                snapshotSummary,
+                                new CatalogExactnessRunContext
+                                {
+                                    CatalogVersion = FirstNonEmpty(snapshotCatalogVersion, lastResponse.CatalogVersion),
+                                    DurationMilliseconds = syncTimer.ElapsedMilliseconds,
+                                    HasMore = lastResponse.HasMore,
+                                    Pages = pagesProcessed,
+                                    PriceRowsReceived = totalStats.PriceRowsReceived,
+                                    PriceRowsAccepted = totalStats.PriceRowsApplied + totalStats.PriceRowsQueued,
+                                    InvalidPriceRows = totalStats.PriceRowsSkipped,
+                                    DuplicatePriceRows = 0,
+                                    ProductRowsReceived = totalStats.UpdatedProducts,
+                                    CategoryRowsReceived = receivedFullLanes.Categories,
+                                    SupplierRowsReceived = receivedFullLanes.Suppliers,
+                                    SyncCursor = lastResponse.SyncCursor,
+                                    SyncMode = lastResponse.SyncMode,
+                                    TombstonesReceived = totalStats.TombstonesReceived
+                                },
+                                CreateCommitFence(
+                                    trustedSession,
+                                    binding.Epoch,
+                                    committedCursor,
+                                    committedMode,
+                                    generation),
+                                cancellationToken).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            // Reconciliation owns a separate commit that can change active rows.
+                            // Invalidate UI cursors even when later exactness publication fails closed.
+                            CatalogEvents.AdvanceRevision();
+                        }
                         await catalogState.StoreExactnessAsync(
                             trustedSession.ShopId,
                             trustedSession.ShopCode,
@@ -1444,6 +1454,7 @@ namespace Win7POS.Wpf.Pos.Online
                                 "Catalog authoritative stage cleanup deferred: category=catalog.pull code=catalog_authoritative_stage_cleanup_failed");
                         }
                     }
+                    CatalogEvents.AdvanceRevision();
                     _logger.LogInfo(
                         "Catalog pull completed: category=catalog.pull products=" + totalStats.UpdatedProducts.ToString() +
                         ", prices=" + totalStats.PriceRowsApplied.ToString() +
@@ -1653,6 +1664,11 @@ namespace Win7POS.Wpf.Pos.Online
                         expectedPreviousMode,
                         generation))
                 .ConfigureAwait(false);
+
+            // Product paging observes this monotonic process revision without invoking
+            // UI subscribers from the background sync thread. Every committed page
+            // invalidates cursors before another page can be requested.
+            CatalogEvents.AdvanceRevision();
 
             if (tombstones > 0)
             {

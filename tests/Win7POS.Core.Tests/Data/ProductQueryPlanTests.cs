@@ -16,8 +16,29 @@ WHERE COALESCE(p.is_active, 1) = 1
   AND ($q = '' OR p.barcode = $q OR p.name LIKE $like)";
 
     private const string ProductPageSqlSuffix = @"
-ORDER BY p.barcode ASC
+ORDER BY p.barcode COLLATE BINARY ASC, p.id ASC
 LIMIT 200 OFFSET 0;";
+
+    private const string ProductLastPageKeysetSql = @"
+SELECT p.id, p.barcode
+FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode
+WHERE COALESCE(p.is_active, 1) = 1
+  AND p.barcode COLLATE BINARY >= $cursor_barcode COLLATE BINARY
+  AND (
+    p.barcode COLLATE BINARY > $cursor_barcode COLLATE BINARY
+    OR (p.barcode COLLATE BINARY = $cursor_barcode COLLATE BINARY AND p.id > $cursor_id)
+  )
+ORDER BY p.barcode COLLATE BINARY ASC, p.id ASC
+LIMIT 200;";
+
+    private const string ProductLastPageOffsetSql = @"
+SELECT p.id, p.barcode
+FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode
+WHERE COALESCE(p.is_active, 1) = 1
+ORDER BY p.barcode COLLATE BINARY ASC, p.id ASC
+LIMIT 200 OFFSET $offset;";
 
     public TestContext TestContext { get; set; } = null!;
 
@@ -72,6 +93,33 @@ ANALYZE;");
                     $"PRODUCT_QUERY_PLAN rows={rows} query={item.Name} " +
                     $"before_ms={baseline.MedianMilliseconds:F3} after_ms={after.MedianMilliseconds:F3} " +
                     $"before=[{string.Join(" | ", baseline.Plan)}] after=[{string.Join(" | ", after.Plan)}]");
+            }
+
+            if (rows == 100000)
+            {
+                var lastPage = CaptureLastPageEvidence(connection, rows);
+                Assert.AreEqual(200, lastPage.ResultCount);
+                Assert.AreEqual(rows - 199, lastPage.FirstId);
+                Assert.AreEqual(rows, lastPage.LastId);
+                Assert.IsTrue(
+                    lastPage.Plan.Any(detail =>
+                        detail.IndexOf("SEARCH p", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                        detail.IndexOf("barcode", StringComparison.OrdinalIgnoreCase) >= 0),
+                    "Ordinary keyset navigation must use a barcode range search.");
+                Assert.IsFalse(
+                    lastPage.Plan.Any(detail => detail.IndexOf("TEMP B-TREE", StringComparison.OrdinalIgnoreCase) >= 0),
+                    "Ordinary keyset navigation must not materialize a temporary order tree.");
+                Assert.IsTrue(
+                    lastPage.KeysetP95Milliseconds <= 100d,
+                    $"100,000-row last-page keyset p95 exceeded 100 ms: {lastPage.KeysetP95Milliseconds:F3} ms.");
+                Assert.IsTrue(
+                    lastPage.OffsetP95Milliseconds / Math.Max(lastPage.KeysetP95Milliseconds, 0.001d) >= 2d,
+                    "The same-host keyset last page must be at least 2x faster than the deliberate OFFSET fallback.");
+                TestContext.WriteLine(
+                    $"PRODUCT_KEYSET_100K p95_ms={lastPage.KeysetP95Milliseconds:F3} " +
+                    $"offset_p95_ms={lastPage.OffsetP95Milliseconds:F3} " +
+                    $"ratio={lastPage.OffsetP95Milliseconds / Math.Max(lastPage.KeysetP95Milliseconds, 0.001d):F2}x " +
+                    $"plan=[{string.Join(" | ", lastPage.Plan)}]");
             }
         }
         finally
@@ -132,6 +180,105 @@ ANALYZE;");
 
     private static string BuildSql(QueryCase query) =>
         ProductPageSqlPrefix + query.FilterSql + ProductPageSqlSuffix;
+
+    private static LastPageEvidence CaptureLastPageEvidence(SqliteConnection connection, int rows)
+    {
+        var cursorId = rows - 200L;
+        var cursorBarcode = $"BC-{cursorId:D8}";
+        var plan = new List<string>();
+        using (var command = CreateLastPageCommand(
+            connection,
+            "EXPLAIN QUERY PLAN " + ProductLastPageKeysetSql,
+            cursorBarcode,
+            cursorId,
+            rows - 200))
+        using (var reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+                plan.Add(reader.GetString(3));
+        }
+
+        var keysetSamples = new double[20];
+        var offsetSamples = new double[20];
+        long firstId = 0;
+        long lastId = 0;
+        var resultCount = 0;
+        for (var index = 0; index < keysetSamples.Length; index++)
+        {
+            var keyset = MeasureLastPage(
+                connection,
+                ProductLastPageKeysetSql,
+                cursorBarcode,
+                cursorId,
+                rows - 200);
+            keysetSamples[index] = keyset.ElapsedMilliseconds;
+            resultCount = keyset.Count;
+            firstId = keyset.FirstId;
+            lastId = keyset.LastId;
+
+            var offset = MeasureLastPage(
+                connection,
+                ProductLastPageOffsetSql,
+                cursorBarcode,
+                cursorId,
+                rows - 200);
+            offsetSamples[index] = offset.ElapsedMilliseconds;
+            Assert.AreEqual(resultCount, offset.Count);
+            Assert.AreEqual(firstId, offset.FirstId);
+            Assert.AreEqual(lastId, offset.LastId);
+        }
+
+        Array.Sort(keysetSamples);
+        Array.Sort(offsetSamples);
+        var p95Index = (int)Math.Ceiling(keysetSamples.Length * 0.95d) - 1;
+        return new LastPageEvidence(
+            plan,
+            resultCount,
+            firstId,
+            lastId,
+            keysetSamples[p95Index],
+            offsetSamples[p95Index]);
+    }
+
+    private static LastPageSample MeasureLastPage(
+        SqliteConnection connection,
+        string sql,
+        string cursorBarcode,
+        long cursorId,
+        int offset)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        using var command = CreateLastPageCommand(connection, sql, cursorBarcode, cursorId, offset);
+        using var reader = command.ExecuteReader();
+        var count = 0;
+        long firstId = 0;
+        long lastId = 0;
+        while (reader.Read())
+        {
+            var id = reader.GetInt64(0);
+            if (count == 0)
+                firstId = id;
+            lastId = id;
+            count++;
+        }
+        stopwatch.Stop();
+        return new LastPageSample(count, firstId, lastId, stopwatch.Elapsed.TotalMilliseconds);
+    }
+
+    private static SqliteCommand CreateLastPageCommand(
+        SqliteConnection connection,
+        string sql,
+        string cursorBarcode,
+        long cursorId,
+        int offset)
+    {
+        var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("$cursor_barcode", cursorBarcode);
+        command.Parameters.AddWithValue("$cursor_id", cursorId);
+        command.Parameters.AddWithValue("$offset", offset);
+        return command;
+    }
 
     private static void SeedProducts(SqliteConnection connection, int rows)
     {
@@ -210,5 +357,47 @@ VALUES($barcode, $supplier_id, $category_id, 1);";
         internal IReadOnlyList<string> Plan { get; }
         internal int ResultCount { get; }
         internal double MedianMilliseconds { get; }
+    }
+
+    private sealed class LastPageEvidence
+    {
+        internal LastPageEvidence(
+            IReadOnlyList<string> plan,
+            int resultCount,
+            long firstId,
+            long lastId,
+            double keysetP95Milliseconds,
+            double offsetP95Milliseconds)
+        {
+            Plan = plan;
+            ResultCount = resultCount;
+            FirstId = firstId;
+            LastId = lastId;
+            KeysetP95Milliseconds = keysetP95Milliseconds;
+            OffsetP95Milliseconds = offsetP95Milliseconds;
+        }
+
+        internal IReadOnlyList<string> Plan { get; }
+        internal int ResultCount { get; }
+        internal long FirstId { get; }
+        internal long LastId { get; }
+        internal double KeysetP95Milliseconds { get; }
+        internal double OffsetP95Milliseconds { get; }
+    }
+
+    private sealed class LastPageSample
+    {
+        internal LastPageSample(int count, long firstId, long lastId, double elapsedMilliseconds)
+        {
+            Count = count;
+            FirstId = firstId;
+            LastId = lastId;
+            ElapsedMilliseconds = elapsedMilliseconds;
+        }
+
+        internal int Count { get; }
+        internal long FirstId { get; }
+        internal long LastId { get; }
+        internal double ElapsedMilliseconds { get; }
     }
 }

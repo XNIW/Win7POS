@@ -358,10 +358,20 @@ namespace Win7POS.Wpf.Products
 
         private async Task RefreshAsync()
         {
-            await LoadCategoriesAsync().ConfigureAwait(true);
-            await LoadSuppliersAsync().ConfigureAwait(true);
-            await RefreshCatalogStatsAsync().ConfigureAwait(true);
-            await LoadPageAsync().ConfigureAwait(true);
+            if (IsBusy) return;
+            IsBusy = true;
+            try
+            {
+                await LoadCategoriesAsync().ConfigureAwait(true);
+                await LoadSuppliersAsync().ConfigureAwait(true);
+                await RefreshCatalogStatsAsync().ConfigureAwait(true);
+                _service.ResetProductPaging();
+                await LoadPageAsync(1).ConfigureAwait(true);
+            }
+            finally
+            {
+                IsBusy = false;
+            }
         }
 
         private async Task RefreshCatalogStatsAsync()
@@ -448,7 +458,6 @@ namespace Win7POS.Wpf.Products
                 _appliedSearchText = string.Empty;
                 _appliedCategoryId = null;
                 _appliedSupplierId = null;
-                PageIndex = 1;
                 AreFiltersDirty = false;
             }
             finally
@@ -459,7 +468,8 @@ namespace Win7POS.Wpf.Products
             OnPropertyChanged(nameof(HasActiveFilters));
             OnPropertyChanged(nameof(FilterSummary));
             RaiseCanExecuteChanged();
-            await LoadPageAsync().ConfigureAwait(true);
+            _service.ResetProductPaging();
+            await LoadPageAsync(1).ConfigureAwait(true);
         }
 
         private int? GetPendingCategoryId()
@@ -494,9 +504,9 @@ namespace Win7POS.Wpf.Products
             AreFiltersDirty = false;
             IsSupplierDropdownOpen = false;
             IsCategoryDropdownOpen = false;
-            PageIndex = 1;
             SelectedProduct = null;
-            await LoadPageAsync().ConfigureAwait(true);
+            _service.ResetProductPaging();
+            await LoadPageAsync(1).ConfigureAwait(true);
             OnPropertyChanged(nameof(HasActiveFilters));
             OnPropertyChanged(nameof(FilterSummary));
         }
@@ -630,18 +640,23 @@ namespace Win7POS.Wpf.Products
             return (name ?? string.Empty).IndexOf(text, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private async Task LoadPageAsync()
+        private async Task LoadPageAsync(int targetPage)
         {
             IsBusy = true;
             try
             {
                 var categoryId = _appliedCategoryId;
                 var supplierId = _appliedSupplierId;
-                TotalCount = await _service.CountDetailsAsync(_appliedSearchText, categoryId, supplierId).ConfigureAwait(true);
-                var offset = (PageIndex - 1) * PageSize;
-                var rows = await _service.SearchDetailsPageAsync(_appliedSearchText, PageSize, offset, categoryId, supplierId).ConfigureAwait(true);
+                var selectedId = SelectedProduct?.Id;
+                var page = await _service.LoadDetailsPageAsync(
+                    _appliedSearchText,
+                    targetPage,
+                    PageSize,
+                    categoryId,
+                    supplierId).ConfigureAwait(true);
+
                 Items.Clear();
-                foreach (var p in rows)
+                foreach (var p in page.Items)
                 {
                     Items.Add(new ProductDetailsRow
                     {
@@ -659,6 +674,11 @@ namespace Win7POS.Wpf.Products
                         CategoryName = p.CategoryName ?? string.Empty
                     });
                 }
+                TotalCount = page.TotalCount;
+                PageIndex = page.PageIndex;
+                SelectedProduct = selectedId.HasValue
+                    ? Items.FirstOrDefault(item => item.Id == selectedId.Value)
+                    : null;
                 StatusMessage = PagingStatus;
                 OnPropertyChanged(nameof(PagingStatus));
                 OnPropertyChanged(nameof(ResultSummary));
@@ -679,22 +699,26 @@ namespace Win7POS.Wpf.Products
         private async Task PrevPageAsync()
         {
             if (PageIndex <= 1) return;
-            PageIndex--;
-            await LoadPageAsync().ConfigureAwait(false);
+            await LoadPageAsync(PageIndex - 1).ConfigureAwait(false);
         }
 
         private async Task NextPageAsync()
         {
             if (PageIndex >= TotalPages) return;
-            PageIndex++;
-            await LoadPageAsync().ConfigureAwait(false);
+            await LoadPageAsync(PageIndex + 1).ConfigureAwait(false);
         }
 
         private async Task GoToPageAsync()
         {
-            if (!string.IsNullOrWhiteSpace(GoPageText) && int.TryParse(GoPageText.Trim(), out var p) && p >= 1 && p <= TotalPages)
-                PageIndex = p;
-            await LoadPageAsync().ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(GoPageText) ||
+                !int.TryParse(GoPageText.Trim(), out var page) ||
+                page < 1 ||
+                page > TotalPages)
+            {
+                return;
+            }
+
+            await LoadPageAsync(page).ConfigureAwait(false);
         }
 
         private async Task NewProductAsync()

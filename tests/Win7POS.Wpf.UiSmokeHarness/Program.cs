@@ -87,6 +87,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             var automatedRun = HasArg(args, "--seed") ||
                                HasArg(args, "--authorization-lease-smoke") ||
+                               HasArg(args, "--product-paging-dispatcher-smoke") ||
                                HasArg(args, "--supplier-excel-wpf-viewmodel-smoke") ||
                                HasArg(args, "--offline-sales-sandbox") ||
                                HasArg(args, "--shell-window-state") ||
@@ -126,6 +127,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             .ConfigureAwait(true);
                         File.WriteAllText(
                             Path.Combine(dataDir, "authorization-lease-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
+                    if (HasArg(args, "--product-paging-dispatcher-smoke"))
+                    {
+                        var result = await ProductPagingWpfSmoke.RunAsync().ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(dataDir, "product-paging-dispatcher-smoke.txt"),
                             result,
                             Encoding.UTF8);
                         app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
