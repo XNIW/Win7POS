@@ -28,6 +28,9 @@ $required = @(
     "src/Win7POS.Core/Online/CatalogFullLaneEvidenceTracker.cs",
     "src/Win7POS.Core/Online/CatalogPaginationSafetyPolicy.cs",
     "src/Win7POS.Data/Repositories/RemoteCatalogBatchRepository.cs",
+    "src/Win7POS.Data/Repositories/CatalogMutationGate.cs",
+    "src/Win7POS.Data/Repositories/LocalProductWriter.cs",
+    "src/Win7POS.Data/Repositories/ProductMetaResolver.cs",
     "src/Win7POS.Data/Repositories/RemotePriceHistoryRepository.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
@@ -39,6 +42,7 @@ $required = @(
     "tests/Win7POS.Core.Tests/Data/CatalogExactnessTests.cs",
     "tests/Win7POS.Core.Tests/Data/CatalogFullResponseStageRepositoryTests.cs",
     "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs",
+    "tests/Win7POS.Core.Tests/Data/LocalProductWriterTests.cs",
     "tests/Win7POS.Core.Tests/Data/RemoteCatalogReferenceTombstoneTests.cs",
     "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs",
     "tests/Win7POS.Core.Tests/Online/CatalogPaginationSafetyPolicyTests.cs",
@@ -73,6 +77,9 @@ $heartbeatPolicy = Read-Text "src/Win7POS.Core/Online/CatalogHeartbeatPolicy.cs"
 $cli = Read-Text "src/Win7POS.Cli/Program.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $repository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
+$catalogMutationGate = Read-Text "src/Win7POS.Data/Repositories/CatalogMutationGate.cs"
+$localProductWriter = Read-Text "src/Win7POS.Data/Repositories/LocalProductWriter.cs"
+$productMetaResolver = Read-Text "src/Win7POS.Data/Repositories/ProductMetaResolver.cs"
 $remotePriceHistoryRepository = Read-Text "src/Win7POS.Data/Repositories/RemotePriceHistoryRepository.cs"
 $categoryRepository = Read-Text "src/Win7POS.Data/Repositories/CategoryRepository.cs"
 $supplierRepository = Read-Text "src/Win7POS.Data/Repositories/SupplierRepository.cs"
@@ -84,6 +91,7 @@ $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $catalogExactnessTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogExactnessTests.cs"
 $batchRepositoryTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs"
+$localProductWriterTests = Read-Text "tests/Win7POS.Core.Tests/Data/LocalProductWriterTests.cs"
 $referenceTombstoneTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogReferenceTombstoneTests.cs"
 $restoreTests = Read-Text "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs"
 $paginationTests = Read-Text "tests/Win7POS.Core.Tests/Online/CatalogPaginationSafetyPolicyTests.cs"
@@ -580,7 +588,7 @@ if ($compatibility -notmatch "row\.ProductName" -or
     Pass "remote catalog persisted text is bounded and Unicode-valid at ingress"
 }
 if ($batchRepository -notmatch "ValidateBatchContent\(batch\)" -or
-    $batchRepository.IndexOf("ValidateBatchContent(batch)") -gt $batchRepository.IndexOf("CatalogMetaWriteGate.WaitAsync") -or
+    $batchRepository.IndexOf("ValidateBatchContent(batch)") -gt $batchRepository.IndexOf("CatalogMutationGate.Instance.WaitAsync") -or
     $batchRepositoryTests -notmatch "ApplyAsync_RejectsOversizedProductTextBeforeAnyMutation" -or
     $batchRepositoryTests -notmatch "ApplyAsync_RejectsMalformedTimestampBeforeAnyMutation" -or
     $fullRefresh -notmatch "EnsureOptionalTimestamp\([\s\S]{0,160}generatedAt" -or
@@ -645,6 +653,77 @@ if ($repository -notmatch "private readonly RemotePriceHistoryRepository _remote
     Fail "ProductRepository must preserve its remote price facade through the extracted collaborator"
 } else {
     Pass "ProductRepository delegates remote price operations through the extracted collaborator"
+}
+$localFacadeMethods = @(
+    "UpsertAsync",
+    "UpsertMetaAsync",
+    "UpsertMetaFullAsync",
+    "DeleteByBarcodeAsync",
+    "UpsertProductAndMetaInTransactionAsync",
+    "UpdateProductAndMetaInTransactionAsync",
+    "UpdateProductAndMetaWithPriceHistoryAsync",
+    "InsertPriceHistoryAsync",
+    "UpdateProductPricesAsync",
+    "UpdateAsync"
+)
+$missingLocalFacadeMethods = @($localFacadeMethods | Where-Object {
+    $repository -notmatch ("_localProductWriter\s*\.\s*{0}\s*\(" -f [regex]::Escape($_))
+})
+if ($repository -notmatch "private readonly LocalProductWriter _localProductWriter" -or
+    $missingLocalFacadeMethods.Count -gt 0) {
+    Fail "ProductRepository must preserve every local mutation through LocalProductWriter: $($missingLocalFacadeMethods -join ', ')"
+} else {
+    Pass "ProductRepository delegates every local mutation through LocalProductWriter"
+}
+if ($repository -notmatch "string\.IsNullOrWhiteSpace\(remoteProductId\)" -or
+    $repository -notmatch "_localProductWriter\.UpsertProductAndMetaInTransactionAsync") {
+    Fail "ProductRepository must route only blank remoteProductId values to the local writer"
+} else {
+    Pass "ProductRepository keeps blank-vs-remote product ownership explicit"
+}
+if ($localProductWriter -notmatch "SalesReceiptContentPolicy\.EnsureValidProductIdentity" -or
+    $localProductWriter -notmatch "IsReservedBarcode" -or
+    $localProductWriter -notmatch "product_price_history" -or
+    $localProductWriter -notmatch "remote_deleted_at" -or
+    $localProductWriter -notmatch "sales_sync_outbox") {
+    Fail "LocalProductWriter must retain local identity validation, soft-delete, price history and pending-stock safeguards"
+} else {
+    Pass "LocalProductWriter retains local write safeguards"
+}
+if ($productMetaResolver -notmatch "ResolveSupplierReferenceAsync" -or
+    $productMetaResolver -notmatch "ResolveCategoryReferenceAsync" -or
+    $productMetaResolver -notmatch "FindSupplierByNormalizedNameAsync" -or
+    $productMetaResolver -notmatch "FindCategoryByNormalizedNameAsync" -or
+    $productMetaResolver -notmatch "NormalizeCatalogName" -or
+    $productMetaResolver -notmatch "StringComparison\.OrdinalIgnoreCase") {
+    Fail "ProductMetaResolver must own normalized supplier/category resolution"
+} else {
+    Pass "ProductMetaResolver owns normalized supplier/category resolution"
+}
+if ($repository -match "private\s+static\s+(async\s+)?Task<ProductMetaReference>\s+ResolveSupplierReferenceAsync" -or
+    $repository -match "private\s+static\s+(async\s+)?Task<ProductMetaReference>\s+ResolveCategoryReferenceAsync" -or
+    $repository -match "private\s+static\s+Task<ProductMetaReference>\s+FindSupplierByNormalizedNameAsync" -or
+    $repository -match "private\s+static\s+Task<ProductMetaReference>\s+FindCategoryByNormalizedNameAsync") {
+    Fail "ProductRepository must not retain duplicate local metadata resolver ownership"
+} else {
+    Pass "ProductRepository has no duplicate local metadata resolver ownership"
+}
+if ($localProductWriter -notmatch "UpsertProductAndMetaInTransactionCoreAsync\s*\(\s*SqliteConnection\s+conn\s*,\s*SqliteTransaction\s+tx" -or
+    $localProductWriterTests -notmatch "LocalProductWriter_CallerTransactionRollbackLeavesNoLocalRows" -or
+    $localProductWriterTests -notmatch "LocalProductWriter_AndProductFacade_KeepLocalMutationParity" -or
+    $localProductWriterTests -notmatch "LocalProductWriter_AndProductFacade_RejectReservedBarcodeWithoutMutation" -or
+    $localProductWriterTests -notmatch "LocalProductWriter_ConcurrentFacadeReads_LeaveLocalStateUnchanged") {
+    Fail "local writer must retain caller-owned transaction semantics and direct parity/read/negative regressions"
+} else {
+    Pass "local writer transaction ownership and direct parity/read/negative regressions are present"
+}
+if ($catalogMutationGate -notmatch "SemaphoreSlim\s+Instance\s*=\s*new\s+SemaphoreSlim\(1\s*,\s*1\)" -or
+    $localProductWriter -notmatch "CatalogMutationGate\.Instance\.WaitAsync" -or
+    $batchRepository -notmatch "CatalogMutationGate\.Instance\.WaitAsync" -or
+    $fullRefresh -notmatch "CatalogMutationGate\.Instance\.WaitAsync") {
+    Fail "local writes, catalog batches and full refresh must share CatalogMutationGate.Instance"
+} else {
+    Pass "local writes, catalog batches and full refresh share one mutation gate"
 }
 $transactionHelpersValid = $true
 foreach ($transactionMethod in @(

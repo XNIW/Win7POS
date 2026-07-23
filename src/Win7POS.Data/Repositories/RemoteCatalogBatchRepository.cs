@@ -58,7 +58,7 @@ namespace Win7POS.Data.Repositories
             ValidateAuthoritativeStage(batch, commitFence, required: true);
 
             cancellationToken.ThrowIfCancellationRequested();
-            await ProductRepository.CatalogMetaWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -88,7 +88,7 @@ namespace Win7POS.Data.Repositories
             }
             finally
             {
-                ProductRepository.CatalogMetaWriteGate.Release();
+                CatalogMutationGate.Instance.Release();
             }
         }
 
@@ -104,7 +104,7 @@ namespace Win7POS.Data.Repositories
             ValidateAuthoritativeStage(batch, commitFence, required: false);
 
             cancellationToken.ThrowIfCancellationRequested();
-            await ProductRepository.CatalogMetaWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -482,7 +482,7 @@ AND NOT EXISTS (
             }
             finally
             {
-                ProductRepository.CatalogMetaWriteGate.Release();
+                CatalogMutationGate.Instance.Release();
             }
         }
 
