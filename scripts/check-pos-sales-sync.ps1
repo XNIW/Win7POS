@@ -21,6 +21,7 @@ $required = @(
     "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
     "src/Win7POS.Data/Online/CatalogShopStateRepository.cs",
+    "src/Win7POS.Core/Online/CatalogSaleSafetyPolicy.cs",
     "src/Win7POS.Data/Online/PosSalesSyncRequestBuilder.cs",
     "src/Win7POS.Data/DbInitializer.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
@@ -39,6 +40,7 @@ if ($fail) {
 $sync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $saleRepo = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
 $catalogState = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.cs"
+$catalogSaleSafetyPolicy = Read-Text "src/Win7POS.Core/Online/CatalogSaleSafetyPolicy.cs"
 $builder = Read-Text "src/Win7POS.Data/Online/PosSalesSyncRequestBuilder.cs"
 $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
@@ -70,10 +72,10 @@ if ($sync -notmatch "duplicate" -or $sync -notmatch "idempotent" -or $sync -notm
 if ($saleRepo -notmatch "InsertSaleAsync" -or $saleRepo -notmatch "ApplyLocalStockMovementsAsync" -or $saleRepo -notmatch "EnqueueSalesSyncOutboxAsync" -or $saleRepo -notmatch "tx\.Commit\(\)") { Fail "sale save must persist sale, stock movement and outbox in one transaction" } else { Pass "sale save persists sale, stock and outbox together" }
 if ($saleRepo -notmatch "sale\.Kind\s*==\s*\(int\)SaleKind\.Sale" -or
     $saleRepo -notmatch "RequireSaleSafeForOrdinarySaleAsync\(conn, tx\)" -or
-    $catalogState -notmatch "catalog_sale_blocked_binding_partial" -or
-    $catalogState -notmatch "catalog_sale_blocked_repair_required" -or
-    $catalogState -notmatch "catalog_sale_blocked_not_sale_safe" -or
-    $catalogState -notmatch "catalog_sale_blocked_exactness_shop_mismatch" -or
+    $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_binding_partial" -or
+    $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_repair_required" -or
+    $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_not_sale_safe" -or
+    $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_exactness_shop_mismatch" -or
     $saleRepo.IndexOf("RequireSaleSafeForOrdinarySaleAsync(conn, tx)") -gt $saleRepo.IndexOf("ApplyLocalStockMovementsAsync")) {
     Fail "ordinary sale persistence must enforce catalog sale-safe state inside the sale transaction before stock/outbox writes"
 } else {

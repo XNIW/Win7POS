@@ -21,6 +21,7 @@ $required = @(
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs",
     "src/Win7POS.Data/Online/CatalogShopStateRepository.cs",
+    "src/Win7POS.Core/Online/CatalogSaleSafetyPolicy.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
     "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs",
     "src/Win7POS.Wpf/Pos/PosViewModel.cs",
@@ -45,6 +46,7 @@ $mainXaml = Read-Text "src/Win7POS.Wpf/MainWindow.xaml"
 $mainCode = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $reader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $catalogState = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.cs"
+$catalogSaleSafetyPolicy = Read-Text "src/Win7POS.Core/Online/CatalogSaleSafetyPolicy.cs"
 $sales = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
 $catalogOutbox = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
 $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
@@ -94,8 +96,8 @@ if ($reader -notmatch "EvaluateSaleSafetyForOfficialShopAsync" -or
     $catalogState -notmatch "EvaluateSaleSafetyAsync" -or
     $catalogState -notmatch "allowLegacyUnbound:\s*false" -or
     $catalogState -notmatch "allowLegacyUnbound:\s*true" -or
-    $catalogState -notmatch "TryParseOptionalBinaryFlag" -or
-    $catalogState -notmatch "catalog_sale_blocked_repair_state_invalid" -or
+    $catalogSaleSafetyPolicy -notmatch "TryParseOptionalBinaryFlag" -or
+    $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_repair_state_invalid" -or
     $catalogState -notmatch "throw new InvalidOperationException\(evaluation\.ReasonCode\)") {
     Fail "sync readiness and ordinary-sale persistence must share one shop-bound sale-safety evaluation with a redacted reason code"
 } else {
