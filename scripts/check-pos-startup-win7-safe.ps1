@@ -17,7 +17,10 @@ function Pass([string]$message) {
 }
 
 function Read-Text([string]$relativePath) {
-    [System.IO.File]::ReadAllText((Join-Path $repoRoot $relativePath))
+    # Static source-distance checks must not change with the checkout EOL policy.
+    ([System.IO.File]::ReadAllText((Join-Path $repoRoot $relativePath))).Replace(
+        [string][char]13 + [char]10,
+        [string][char]10).Replace([string][char]13, [string][char]10)
 }
 
 function Test-TranslationEntry(
