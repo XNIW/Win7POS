@@ -38,20 +38,13 @@ namespace Win7POS.Data.Repositories
 
         private readonly SqliteConnectionFactory _factory;
         private readonly SaleReadRepository _reads;
-
-        private sealed class SaleLineBudgetRow
-        {
-            public long AggregateNameCharacters { get; set; }
-            public long AggregateNameUtf8Bytes { get; set; }
-            public long LineCount { get; set; }
-            public long MaximumBarcodeCharacters { get; set; }
-            public long MaximumNameCharacters { get; set; }
-        }
+        private readonly SaleLineReadRepository _lineReads;
 
         public SaleRepository(SqliteConnectionFactory factory)
         {
             _factory = factory;
             _reads = new SaleReadRepository(factory);
+            _lineReads = new SaleLineReadRepository(factory);
         }
 
         public async Task<long> InsertSaleAsync(Sale sale, IReadOnlyList<SaleLine> lines)
@@ -151,29 +144,8 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         public Task<IReadOnlyList<Sale>> GetByCodeLikeAsync(string codeFilter, bool includeFiscalPrinted = true) =>
             _reads.GetByCodeLikeAsync(codeFilter, includeFiscalPrinted);
 
-        public async Task<IReadOnlyList<SaleLine>> GetLinesBySaleIdAsync(long saleId)
-        {
-            using var conn = _factory.Open();
-            using var tx = conn.BeginTransaction(deferred: true);
-            var budget = await ReadSaleLineBudgetAsync(conn, tx, saleId).ConfigureAwait(false);
-            SalesReceiptContentPolicy.EnsureStoredLineBudget(
-                budget.LineCount,
-                budget.MaximumNameCharacters,
-                budget.MaximumBarcodeCharacters,
-                budget.AggregateNameCharacters,
-                budget.AggregateNameUtf8Bytes);
-            var rows = await conn.QueryAsync<SaleLine>(
-                @"SELECT id, saleId, productId, barcode, name, quantity, unitPrice, lineTotal, related_original_line_id AS RelatedOriginalLineId
-                  FROM sale_lines
-                  WHERE saleId = @saleId
-                  ORDER BY id ASC",
-                new { saleId },
-                tx).ConfigureAwait(false);
-            var result = rows.ToList();
-            SalesReceiptContentPolicy.EnsureValidLines(result);
-            tx.Commit();
-            return result;
-        }
+        public Task<IReadOnlyList<SaleLine>> GetLinesBySaleIdAsync(long saleId) =>
+            _lineReads.GetLinesBySaleIdAsync(saleId);
 
         public async Task<bool> IsVoidedAsync(long saleId)
         {
@@ -457,13 +429,9 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
             foreach (var group in lines.GroupBy(line => line.SaleId))
             {
                 var appended = group.ToList();
-                var budget = await ReadSaleLineBudgetAsync(conn, tx, group.Key).ConfigureAwait(false);
-                SalesReceiptContentPolicy.EnsureStoredLineBudget(
-                    budget.LineCount,
-                    budget.MaximumNameCharacters,
-                    budget.MaximumBarcodeCharacters,
-                    budget.AggregateNameCharacters,
-                    budget.AggregateNameUtf8Bytes);
+                var budget = await SaleLineReadRepository
+                    .EnsureStoredLineBudgetAsync(conn, tx, group.Key)
+                    .ConfigureAwait(false);
                 SalesReceiptContentPolicy.EnsureCumulativeLineBudget(
                     budget.LineCount,
                     budget.AggregateNameCharacters,
@@ -474,23 +442,6 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
             {
                 line.Id = await InsertSaleLineAsync(conn, tx, line).ConfigureAwait(false);
             }
-        }
-
-        private static async Task<SaleLineBudgetRow> ReadSaleLineBudgetAsync(
-            SqliteConnection conn,
-            SqliteTransaction tx,
-            long saleId)
-        {
-            return await conn.QuerySingleAsync<SaleLineBudgetRow>(@"
-SELECT COUNT(1) AS LineCount,
-       COALESCE(MAX(LENGTH(COALESCE(name, ''))), 0) AS MaximumNameCharacters,
-       COALESCE(MAX(LENGTH(COALESCE(barcode, ''))), 0) AS MaximumBarcodeCharacters,
-       COALESCE(SUM(LENGTH(COALESCE(name, ''))), 0) AS AggregateNameCharacters,
-       COALESCE(SUM(LENGTH(CAST(COALESCE(name, '') AS BLOB))), 0) AS AggregateNameUtf8Bytes
-FROM sale_lines
-WHERE saleId = @saleId;",
-                new { saleId },
-                tx).ConfigureAwait(false);
         }
 
         public async Task<string> EnsureClientSaleIdAsync(SqliteConnection conn, SqliteTransaction tx, long saleId)

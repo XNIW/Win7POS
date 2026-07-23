@@ -50,6 +50,7 @@ $printOptions = Read-Required "src/Win7POS.Wpf/Printing/ReceiptPrintOptions.cs"
 $spooler = Read-Required "src/Win7POS.Wpf/Printing/WindowsSpoolerReceiptPrinter.cs"
 $contentPolicy = Read-Required "src/Win7POS.Core/Receipt/ReceiptContentPolicy.cs"
 $saleRepository = Read-Required "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$saleLineReadRepository = Read-Required "src/Win7POS.Data/Repositories/SaleLineReadRepository.cs"
 $receiptPolicyTests = Read-Required "tests/Win7POS.Core.Tests/Pos/ReceiptContentPolicyTests.cs"
 $settingKeys = Read-Required "src/Win7POS.Wpf/Infrastructure/AppSettingKeys.cs"
 $uiSmoke = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
@@ -81,26 +82,46 @@ if ($saleInsertStart -lt 0 -or $saleInsertGuard -le $saleInsertStart -or $saleIn
     Pass "sale and refund persistence validates receipt lines before opening SQLite"
 }
 $lineInsertStart = $saleRepository.IndexOf("public async Task InsertSaleLinesAsync", [System.StringComparison]::Ordinal)
+$lineInsertEnd = $saleRepository.IndexOf("public async Task<string> EnsureClientSaleIdAsync", $lineInsertStart, [System.StringComparison]::Ordinal)
 $lineInsertTransactionGuard = $saleRepository.IndexOf("ReferenceEquals(tx.Connection, conn)", $lineInsertStart, [System.StringComparison]::Ordinal)
 $lineInsertGuard = $saleRepository.IndexOf("SalesReceiptContentPolicy.EnsureValidLines(lines)", $lineInsertStart, [System.StringComparison]::Ordinal)
+$lineInsertStoredBudget = $saleRepository.IndexOf("EnsureStoredLineBudgetAsync(conn, tx, group.Key)", $lineInsertStart, [System.StringComparison]::Ordinal)
 $lineInsertBudget = $saleRepository.IndexOf("EnsureCumulativeLineBudget(", $lineInsertStart, [System.StringComparison]::Ordinal)
 $lineInsertWrite = $saleRepository.IndexOf("InsertSaleLineAsync(conn, tx, line)", $lineInsertStart, [System.StringComparison]::Ordinal)
-if ($lineInsertStart -lt 0 -or $lineInsertTransactionGuard -le $lineInsertStart -or
+if ($lineInsertStart -lt 0 -or $lineInsertEnd -le $lineInsertStart -or
+    $lineInsertTransactionGuard -le $lineInsertStart -or $lineInsertTransactionGuard -ge $lineInsertEnd -or
     $lineInsertGuard -le $lineInsertTransactionGuard -or
-    $lineInsertBudget -le $lineInsertGuard -or $lineInsertWrite -le $lineInsertBudget) {
+    $lineInsertGuard -ge $lineInsertEnd -or
+    $lineInsertStoredBudget -le $lineInsertGuard -or
+    $lineInsertStoredBudget -ge $lineInsertEnd -or
+    $lineInsertBudget -le $lineInsertStoredBudget -or $lineInsertBudget -ge $lineInsertEnd -or
+    $lineInsertWrite -le $lineInsertBudget -or $lineInsertWrite -ge $lineInsertEnd) {
     Fail "direct sale-line persistence must require its owning transaction and enforce budgets before writes"
 } else {
     Pass "direct sale-line persistence requires its owning transaction and enforces budgets before writes"
 }
-$lineReadStart = $saleRepository.IndexOf("GetLinesBySaleIdAsync", [System.StringComparison]::Ordinal)
-$lineReadDeferredTransaction = $saleRepository.IndexOf("conn.BeginTransaction(deferred: true)", $lineReadStart, [System.StringComparison]::Ordinal)
-$lineReadBudget = $saleRepository.IndexOf("ReadSaleLineBudgetAsync(conn, tx, saleId)", $lineReadStart, [System.StringComparison]::Ordinal)
-$lineReadMaterialize = $saleRepository.IndexOf("QueryAsync<SaleLine>", $lineReadStart, [System.StringComparison]::Ordinal)
-if ($lineReadStart -lt 0 -or $lineReadDeferredTransaction -le $lineReadStart -or
-    $lineReadBudget -le $lineReadDeferredTransaction -or $lineReadMaterialize -le $lineReadBudget) {
-    Fail "historical sale-line reads must use a deferred snapshot and preflight SQL budgets before row materialization"
+$lineFacadeStart = $saleRepository.IndexOf("public Task<IReadOnlyList<SaleLine>> GetLinesBySaleIdAsync", [System.StringComparison]::Ordinal)
+$lineFacadeDelegate = $saleRepository.IndexOf("_lineReads.GetLinesBySaleIdAsync(saleId)", $lineFacadeStart, [System.StringComparison]::Ordinal)
+$lineReadStart = $saleLineReadRepository.IndexOf("GetLinesBySaleIdAsync", [System.StringComparison]::Ordinal)
+$lineReadEnd = $saleLineReadRepository.IndexOf("internal static async Task<SaleLineBudgetRow> EnsureStoredLineBudgetAsync", $lineReadStart, [System.StringComparison]::Ordinal)
+$lineReadDeferredTransaction = $saleLineReadRepository.IndexOf("conn.BeginTransaction(deferred: true)", $lineReadStart, [System.StringComparison]::Ordinal)
+$lineReadBudget = $saleLineReadRepository.IndexOf("EnsureStoredLineBudgetAsync(conn, tx, saleId)", $lineReadStart, [System.StringComparison]::Ordinal)
+$lineReadMaterialize = $saleLineReadRepository.IndexOf("QueryAsync<SaleLine>", $lineReadStart, [System.StringComparison]::Ordinal)
+$lineReadMethod = if ($lineReadStart -ge 0 -and $lineReadEnd -gt $lineReadStart) {
+    $saleLineReadRepository.Substring($lineReadStart, $lineReadEnd - $lineReadStart)
 } else {
-    Pass "historical sale-line reads use a deferred snapshot and preflight SQL budgets before materialization"
+    ""
+}
+$lineReadUsesTransaction = $lineReadMethod -match "QueryAsync<SaleLine>\([\s\S]*?new\s*\{\s*saleId\s*\}\s*,\s*tx\s*\)"
+if ($lineFacadeStart -lt 0 -or $lineFacadeDelegate -le $lineFacadeStart -or
+    $lineReadStart -lt 0 -or $lineReadEnd -le $lineReadStart -or
+    $lineReadDeferredTransaction -le $lineReadStart -or $lineReadDeferredTransaction -ge $lineReadEnd -or
+    $lineReadBudget -le $lineReadDeferredTransaction -or $lineReadBudget -ge $lineReadEnd -or
+    $lineReadMaterialize -le $lineReadBudget -or $lineReadMaterialize -ge $lineReadEnd -or
+    -not $lineReadUsesTransaction) {
+    Fail "historical sale-line reads must use one deferred transaction for preflight SQL budgets and row materialization"
+} else {
+    Pass "historical sale-line reads use one deferred snapshot transaction through preflight and materialization"
 }
 Require-Pattern "sale-line policy bounds individual, aggregate and count amplification" $contentPolicy 'class\s+SalesReceiptContentPolicy[\s\S]*MaxSaleLines\s*=\s*512[\s\S]*MaxSaleLineNameCharacters\s*=\s*512[\s\S]*MaxAggregateLineNameCharacters[\s\S]*MaxAggregateLineNameUtf8Bytes'
 Require-Pattern "sale-line amplification regressions execute across render, write and historical boundaries" $receiptPolicyTests 'SaleLinePreflight_AcceptsBoundariesAndRejectsAmplificationOrUnsafeText[\s\S]*SalesReceiptRenderModel_RejectsUnsafeLinesBeforeFormatting[\s\S]*UnsafeSaleAndRefundLines_AreRejectedBeforeDatabaseMutation[\s\S]*LegacyRefundIngress_RejectsUnsafeReasonBeforeMutation[\s\S]*RepeatedSaleLineBatches_CannotExceedCumulativeBudget[\s\S]*DirectSaleLineInsert_RequiresTheOwningTransaction[\s\S]*HistoricalCorruptSaleLines_AreRejectedBeforeRowMaterialization'
