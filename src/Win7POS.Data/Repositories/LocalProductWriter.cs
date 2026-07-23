@@ -20,18 +20,11 @@ namespace Win7POS.Data.Repositories
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
         }
 
-        internal static bool IsReservedBarcode(string barcode)
-        {
-            if (string.IsNullOrEmpty(barcode)) return false;
-            return barcode.StartsWith("DISC:", StringComparison.Ordinal)
-                || barcode.StartsWith("MANUAL:", StringComparison.Ordinal);
-        }
-
         internal async Task<long> UpsertAsync(Product p)
         {
             if (p == null) throw new ArgumentNullException(nameof(p));
             SalesReceiptContentPolicy.EnsureValidProductIdentity(p.Barcode, p.Name);
-            if (IsReservedBarcode(p.Barcode))
+            if (ProductIdentityPolicy.IsReservedBarcode(p.Barcode))
                 throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
 
             using var conn = _factory.Open();
@@ -193,7 +186,7 @@ WHERE barcode = @barcode
             if (conn == null) throw new ArgumentNullException(nameof(conn));
             if (p == null) throw new ArgumentNullException(nameof(p));
             SalesReceiptContentPolicy.EnsureValidProductIdentity(p.Barcode, p.Name);
-            if (IsReservedBarcode(p.Barcode))
+            if (ProductIdentityPolicy.IsReservedBarcode(p.Barcode))
                 throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
 
             var updated = await conn.ExecuteAsync(@"

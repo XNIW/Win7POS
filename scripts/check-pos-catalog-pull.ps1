@@ -30,7 +30,10 @@ $required = @(
     "src/Win7POS.Data/Repositories/RemoteCatalogBatchRepository.cs",
     "src/Win7POS.Data/Repositories/CatalogMutationGate.cs",
     "src/Win7POS.Data/Repositories/LocalProductWriter.cs",
+    "src/Win7POS.Data/Repositories/ProductIdentityPolicy.cs",
+    "src/Win7POS.Data/Repositories/ProductMetaReference.cs",
     "src/Win7POS.Data/Repositories/ProductMetaResolver.cs",
+    "src/Win7POS.Data/Repositories/RemoteCatalogProductWriter.cs",
     "src/Win7POS.Data/Repositories/RemotePriceHistoryRepository.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
@@ -43,6 +46,7 @@ $required = @(
     "tests/Win7POS.Core.Tests/Data/CatalogFullResponseStageRepositoryTests.cs",
     "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs",
     "tests/Win7POS.Core.Tests/Data/LocalProductWriterTests.cs",
+    "tests/Win7POS.Core.Tests/Data/RemoteCatalogProductWriterTests.cs",
     "tests/Win7POS.Core.Tests/Data/RemoteCatalogReferenceTombstoneTests.cs",
     "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs",
     "tests/Win7POS.Core.Tests/Online/CatalogPaginationSafetyPolicyTests.cs",
@@ -79,7 +83,10 @@ $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $repository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
 $catalogMutationGate = Read-Text "src/Win7POS.Data/Repositories/CatalogMutationGate.cs"
 $localProductWriter = Read-Text "src/Win7POS.Data/Repositories/LocalProductWriter.cs"
+$productIdentityPolicy = Read-Text "src/Win7POS.Data/Repositories/ProductIdentityPolicy.cs"
+$productMetaReference = Read-Text "src/Win7POS.Data/Repositories/ProductMetaReference.cs"
 $productMetaResolver = Read-Text "src/Win7POS.Data/Repositories/ProductMetaResolver.cs"
+$remoteCatalogProductWriter = Read-Text "src/Win7POS.Data/Repositories/RemoteCatalogProductWriter.cs"
 $remotePriceHistoryRepository = Read-Text "src/Win7POS.Data/Repositories/RemotePriceHistoryRepository.cs"
 $categoryRepository = Read-Text "src/Win7POS.Data/Repositories/CategoryRepository.cs"
 $supplierRepository = Read-Text "src/Win7POS.Data/Repositories/SupplierRepository.cs"
@@ -92,6 +99,7 @@ $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $catalogExactnessTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogExactnessTests.cs"
 $batchRepositoryTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs"
 $localProductWriterTests = Read-Text "tests/Win7POS.Core.Tests/Data/LocalProductWriterTests.cs"
+$remoteCatalogProductWriterTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogProductWriterTests.cs"
 $referenceTombstoneTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogReferenceTombstoneTests.cs"
 $restoreTests = Read-Text "tests/Win7POS.Core.Tests/Data/RestoreShopSafetyTests.cs"
 $paginationTests = Read-Text "tests/Win7POS.Core.Tests/Online/CatalogPaginationSafetyPolicyTests.cs"
@@ -165,11 +173,11 @@ if ($batchRepository -notmatch "temp_catalog_page_product_identities" -or
     Pass "catalog run context uses page-scoped queries and prepared commands"
 }
 if ($batchRepository -notmatch "UpsertRemoteInTransactionAsync" -or
-    $batchRepository -notmatch "UpsertProductAndMetaInTransactionCoreAsync" -or
+    $batchRepository -notmatch "RemoteCatalogProductWriter\s*\.\s*UpsertProductAndMetaInTransactionCoreAsync" -or
     $batchRepository -notmatch "RemotePriceHistoryRepository\s*\.\s*UpsertOrQueueRemotePriceHistoryInTransactionAsync" -or
     $batchRepository -notmatch "RemotePriceHistoryRepository\s*\.\s*ApplyPendingRemotePricesInTransactionAsync" -or
     $batchRepository -notmatch "RemotePriceHistoryRepository\s*\.\s*PrepareAuthoritativeRemotePriceRepairAsync" -or
-    $batchRepository -notmatch "ApplyRemoteProductTombstoneInTransactionAsync") {
+    $batchRepository -notmatch "RemoteCatalogProductWriter\s*\.\s*ApplyRemoteProductTombstoneInTransactionAsync") {
     Fail "catalog batch does not keep all catalog mutations inside the shared transaction"
 } else {
     Pass "catalog batch routes products, references, prices and tombstones through one transaction"
@@ -642,7 +650,7 @@ if ($client -notmatch 'DataMember\(Name = "syncCursor"') { Fail "catalog pull sy
 if ($client -notmatch 'DataMember\(Name = "catalogVersion"') { Fail "catalog version wire field missing" } else { Pass "catalog version wire field present" }
 if ($client -notmatch 'DataMember\(Name = "hasMore"') { Fail "hasMore wire field missing" } else { Pass "hasMore wire field present" }
 if ($client -notmatch 'DataMember\(Name = "tombstones"') { Fail "tombstones wire field missing" } else { Pass "tombstones wire field present" }
-if ($repository -notmatch "remote_product_id") { Fail "remote product id column missing in repository" } else { Pass "remote product id used in repository" }
+if ($remoteCatalogProductWriter -notmatch "remote_product_id") { Fail "remote product id column missing in remote product writer" } else { Pass "remote product id used in remote product writer" }
 if ($remotePriceHistoryRepository -notmatch "remote_catalog_pending_prices" -or $remotePriceHistoryRepository -notmatch "QueuePendingRemotePriceAsync" -or $remotePriceHistoryRepository -notmatch "ApplyPendingRemotePricesAsync") { Fail "pending remote price replay missing" } else { Pass "pending remote price replay present" }
 if ($remotePriceHistoryRepository -notmatch "PendingRemotePriceReplayBatchSize" -or $remotePriceHistoryRepository -notmatch "while\s*\(true\)" -or $remotePriceHistoryRepository -notmatch "canonical" -or $remotePriceHistoryRepository -notmatch "GROUP BY remote_product_id") { Fail "pending remote price replay must drain all resolvable batches against a canonical remote product per remote_product_id" } else { Pass "pending remote price replay drains all resolvable batches against canonical remote product" }
 if ($remotePriceHistoryRepository -notmatch "remote_price_id" -or $initializer -notmatch "remote_price_id" -or $service -notmatch "RemotePriceId\s*=\s*Normalize\(row\.PriceId\)" -or $batchRepository -notmatch "price\.RemotePriceId") { Fail "remote priceId idempotency missing" } else { Pass "remote priceId idempotency present" }
@@ -676,19 +684,37 @@ if ($repository -notmatch "private readonly LocalProductWriter _localProductWrit
     Pass "ProductRepository delegates every local mutation through LocalProductWriter"
 }
 if ($repository -notmatch "string\.IsNullOrWhiteSpace\(remoteProductId\)" -or
-    $repository -notmatch "_localProductWriter\.UpsertProductAndMetaInTransactionAsync") {
-    Fail "ProductRepository must route only blank remoteProductId values to the local writer"
+    $repository -notmatch "_localProductWriter\.UpsertProductAndMetaInTransactionAsync" -or
+    $repository -notmatch "_remoteProductWriter\.UpsertProductAndMetaInTransactionAsync" -or
+    $repository -notmatch "_remoteProductWriter\.ApplyRemoteProductTombstoneAsync" -or
+    $repository -notmatch "private readonly RemoteCatalogProductWriter _remoteProductWriter") {
+    Fail "ProductRepository must preserve explicit local/remote writer delegation"
 } else {
     Pass "ProductRepository keeps blank-vs-remote product ownership explicit"
 }
 if ($localProductWriter -notmatch "SalesReceiptContentPolicy\.EnsureValidProductIdentity" -or
-    $localProductWriter -notmatch "IsReservedBarcode" -or
+    $localProductWriter -notmatch "ProductIdentityPolicy\.IsReservedBarcode" -or
     $localProductWriter -notmatch "product_price_history" -or
     $localProductWriter -notmatch "remote_deleted_at" -or
     $localProductWriter -notmatch "sales_sync_outbox") {
     Fail "LocalProductWriter must retain local identity validation, soft-delete, price history and pending-stock safeguards"
 } else {
     Pass "LocalProductWriter retains local write safeguards"
+}
+if ($productIdentityPolicy -notmatch "IsReservedBarcode" -or
+    $productIdentityPolicy -notmatch '"DISC:"' -or
+    $productIdentityPolicy -notmatch '"MANUAL:"' -or
+    $productIdentityPolicy -notmatch "StringComparison\.Ordinal") {
+    Fail "ProductIdentityPolicy must retain the exact reserved barcode rules shared by local and remote writers"
+} else {
+    Pass "ProductIdentityPolicy retains shared reserved barcode rules"
+}
+if ($productMetaReference -notmatch "internal sealed class ProductMetaReference" -or
+    $productMetaReference -notmatch "int\? Id" -or
+    $productMetaReference -notmatch "string Name") {
+    Fail "ProductMetaReference must remain a shared metadata value object outside ProductRepository"
+} else {
+    Pass "ProductMetaReference is shared outside ProductRepository"
 }
 if ($productMetaResolver -notmatch "ResolveSupplierReferenceAsync" -or
     $productMetaResolver -notmatch "ResolveCategoryReferenceAsync" -or
@@ -700,7 +726,8 @@ if ($productMetaResolver -notmatch "ResolveSupplierReferenceAsync" -or
 } else {
     Pass "ProductMetaResolver owns normalized supplier/category resolution"
 }
-if ($repository -match "private\s+static\s+(async\s+)?Task<ProductMetaReference>\s+ResolveSupplierReferenceAsync" -or
+if ($repository -match "internal\s+sealed\s+class\s+ProductMetaReference" -or
+    $repository -match "private\s+static\s+(async\s+)?Task<ProductMetaReference>\s+ResolveSupplierReferenceAsync" -or
     $repository -match "private\s+static\s+(async\s+)?Task<ProductMetaReference>\s+ResolveCategoryReferenceAsync" -or
     $repository -match "private\s+static\s+Task<ProductMetaReference>\s+FindSupplierByNormalizedNameAsync" -or
     $repository -match "private\s+static\s+Task<ProductMetaReference>\s+FindCategoryByNormalizedNameAsync") {
@@ -717,13 +744,45 @@ if ($localProductWriter -notmatch "UpsertProductAndMetaInTransactionCoreAsync\s*
 } else {
     Pass "local writer transaction ownership and direct parity/read/negative regressions are present"
 }
+if ($remoteCatalogProductWriter -notmatch "UpsertProductAndMetaInTransactionCoreAsync\s*\(\s*SqliteConnection\s+conn\s*,\s*SqliteTransaction\s+tx" -or
+    $remoteCatalogProductWriter -notmatch "ApplyRemoteProductTombstoneInTransactionAsync\s*\(\s*SqliteConnection\s+conn\s*,\s*SqliteTransaction\s+tx" -or
+    $remoteCatalogProductWriter -notmatch "ProductIdentityPolicy\.IsReservedBarcode" -or
+    $remoteCatalogProductWriter -notmatch "CanonicalizeRemoteProductBeforeUpsertAsync" -or
+    $remoteCatalogProductWriter -notmatch "DeactivateRemoteProductDuplicatesAsync" -or
+    $remoteCatalogProductWriter -notmatch "hasPendingLocalStock" -or
+    $remoteCatalogProductWriter -notmatch "sales_sync_outbox" -or
+    $remoteCatalogProductWriter -notmatch "stockQtyToWrite = existingStock" -or
+    $remoteCatalogProductWriterTests -notmatch "RemoteCatalogProductWriter_CallerTransactionRollbackLeavesNoRemoteRows" -or
+    $remoteCatalogProductWriterTests -notmatch "RemoteCatalogProductWriter_AndProductFacade_KeepRemoteMutationParity" -or
+    $remoteCatalogProductWriterTests -notmatch "RemoteCatalogProductWriter_AndProductFacade_RejectReservedBarcodeWithoutMutation" -or
+    $remoteCatalogProductWriterTests -notmatch "RemoteCatalogProductWriter_AndProductFacade_KeepTombstoneParityAndIdempotence" -or
+    $remoteCatalogProductWriterTests -notmatch "RemoteCatalogProductWriter_PreservesPendingLocalStockAcrossCanonicalBarcodeChange") {
+    Fail "remote product writer must retain caller transactions, identity safeguards and direct parity regressions"
+} else {
+    Pass "remote product writer retains transaction ownership, identity safeguards and direct parity regressions"
+}
+if ($remoteCatalogProductWriter -notmatch "internal sealed class CatalogProductPreparedCommands" -or
+    $remoteCatalogProductWriter -notmatch "internal sealed class CatalogProductBatchContext" -or
+    $batchRepository -notmatch "RemoteCatalogProductWriter\.CatalogProductPreparedCommands" -or
+    $batchRepository -notmatch "RemoteCatalogProductWriter\.CatalogProductBatchContext" -or
+    $batchRepository -match "ProductRepository\.(CatalogProductPreparedCommands|CatalogProductBatchContext|ProductMetaReference)") {
+    Fail "remote catalog batch must consume extracted remote writer types directly"
+} else {
+    Pass "remote catalog batch consumes extracted remote writer types directly"
+}
+if ($repository -match "CanonicalizeRemoteProductBeforeUpsertAsync|DeactivateRemoteProductDuplicatesAsync|ApplyRemoteProductTombstoneInTransactionAsync|UpsertProductAndMetaInTransactionCoreAsync|CatalogProductPreparedCommands|CatalogProductBatchContext|ProductMetaReference|CatalogMutationGate\.Instance|remote_product_id|remote_deleted_at") {
+    Fail "ProductRepository must remain a façade and must not retain remote writer implementation ownership"
+} else {
+    Pass "ProductRepository has no remote writer implementation ownership"
+}
 if ($catalogMutationGate -notmatch "SemaphoreSlim\s+Instance\s*=\s*new\s+SemaphoreSlim\(1\s*,\s*1\)" -or
     $localProductWriter -notmatch "CatalogMutationGate\.Instance\.WaitAsync" -or
+    $remoteCatalogProductWriter -notmatch "CatalogMutationGate\.Instance\.WaitAsync" -or
     $batchRepository -notmatch "CatalogMutationGate\.Instance\.WaitAsync" -or
     $fullRefresh -notmatch "CatalogMutationGate\.Instance\.WaitAsync") {
-    Fail "local writes, catalog batches and full refresh must share CatalogMutationGate.Instance"
+    Fail "local writes, remote products, catalog batches and full refresh must share CatalogMutationGate.Instance"
 } else {
-    Pass "local writes, catalog batches and full refresh share one mutation gate"
+    Pass "local writes, remote products, catalog batches and full refresh share one mutation gate"
 }
 $transactionHelpersValid = $true
 foreach ($transactionMethod in @(
@@ -759,11 +818,11 @@ if ($batchRepository -notmatch "PricesSkipped" -or
 } else {
     Pass "price received/accepted/skipped/duplicate evidence is verified fail-closed"
 }
-if ($repository -notmatch "remote_deleted_at") { Fail "remote tombstone column missing in repository" } else { Pass "remote tombstone column used in repository" }
-if ($repository -notmatch "ApplyRemoteProductTombstoneAsync") { Fail "remote product tombstone apply missing" } else { Pass "remote product tombstone apply present" }
-if ($repository -notmatch "CanonicalizeRemoteProductBeforeUpsertAsync" -or $repository -notmatch "DeactivateRemoteProductDuplicatesAsync" -or $repository -notmatch "remote_product_id\s*=\s*@remoteProductId[\s\S]{0,160}barcode\s*<>\s*@barcode") { Fail "remote product upsert must canonicalize remote_product_id and deactivate duplicate active barcodes" } else { Pass "remote product upsert canonicalizes remote_product_id duplicates" }
-if ($repository -notmatch "hasPendingLocalStock" -or $repository -notmatch "sales_sync_outbox" -or $repository -notmatch "'pending', 'retry', 'in_progress', 'failed_blocked'" -or $repository -notmatch "stockQtyToWrite = existingStock") { Fail "catalog upsert must preserve stock_qty when unresolved local stock movements exist" } else { Pass "catalog upsert preserves unresolved local stock" }
-$tombstoneMethod = [regex]::Match($repository, "ApplyRemoteProductTombstoneAsync[\s\S]*?UpsertRemotePriceHistoryAsync").Value
+if ($remoteCatalogProductWriter -notmatch "remote_deleted_at") { Fail "remote tombstone column missing in remote product writer" } else { Pass "remote tombstone column used in remote product writer" }
+if ($repository -notmatch "ApplyRemoteProductTombstoneAsync") { Fail "remote product tombstone facade missing" } else { Pass "remote product tombstone facade present" }
+if ($remoteCatalogProductWriter -notmatch "CanonicalizeRemoteProductBeforeUpsertAsync" -or $remoteCatalogProductWriter -notmatch "DeactivateRemoteProductDuplicatesAsync" -or $remoteCatalogProductWriter -notmatch "remote_product_id\s*=\s*@remoteProductId[\s\S]{0,160}barcode\s*<>\s*@barcode") { Fail "remote product upsert must canonicalize remote_product_id and deactivate duplicate active barcodes" } else { Pass "remote product upsert canonicalizes remote_product_id duplicates" }
+if ($remoteCatalogProductWriter -notmatch "hasPendingLocalStock" -or $remoteCatalogProductWriter -notmatch "sales_sync_outbox" -or $remoteCatalogProductWriter -notmatch "'pending', 'retry', 'in_progress', 'failed_blocked'" -or $remoteCatalogProductWriter -notmatch "stockQtyToWrite = existingStock") { Fail "catalog upsert must preserve stock_qty when unresolved local stock movements exist" } else { Pass "catalog upsert preserves unresolved local stock" }
+$tombstoneMethod = [regex]::Match($remoteCatalogProductWriter, "ApplyRemoteProductTombstoneInTransactionAsync[\s\S]*?return rows > 0;").Value
 if ($tombstoneMethod -notmatch "is_active\s*=\s*0" -or $tombstoneMethod -notmatch "remote_deleted_at") { Fail "product tombstone must soft-delete/inactivate products" } else { Pass "product tombstone is soft-delete/inactive" }
 if ($tombstoneMethod -match "DELETE\s+FROM") { Fail "product tombstone must not purge rows" } else { Pass "product tombstone does not purge rows" }
 if ($batchRepository -notmatch "CategoryRepository\.UpsertRemoteInTransactionAsync" -or $batchRepository -notmatch "SupplierRepository\.UpsertRemoteInTransactionAsync") { Fail "remote category/supplier identities are not persisted by the batch repository" } else { Pass "remote category/supplier identities persisted by the batch repository" }
@@ -811,9 +870,9 @@ if ($categoryRepository -notmatch "remote_category_id" -or $categoryRepository -
 if ($supplierRepository -notmatch "remote_supplier_id" -or $supplierRepository -notmatch "remote_deleted_at" -or $supplierRepository -notmatch "is_active\s*=\s*0") { Fail "supplier remote identity/tombstone state missing" } else { Pass "supplier remote identity/tombstone state present" }
 if ($categoryRepository -match "DELETE\s+FROM\s+categories" -or $supplierRepository -match "DELETE\s+FROM\s+suppliers") { Fail "category/supplier tombstones must not purge reference rows" } else { Pass "category/supplier tombstones are non-destructive" }
 if ($initializer -notmatch "remote_category_id" -or $initializer -notmatch "remote_supplier_id" -or $initializer -notmatch "idx_categories_remote_category_id" -or $initializer -notmatch "idx_suppliers_remote_supplier_id") { Fail "category/supplier remote identity migration or indexes missing" } else { Pass "category/supplier remote identity migration present" }
-$localReferenceWriters = @($categorySupplierResolver, $productImportApply, $productDbImporter, $repository) -join "`n"
+$localReferenceWriters = @($categorySupplierResolver, $productImportApply, $productDbImporter, $productMetaResolver) -join "`n"
 if ($localReferenceWriters -match "INSERT\s+OR\s+REPLACE\s+INTO\s+(categories|suppliers)") { Fail "local import can destructively replace remote category/supplier identity" } else { Pass "local import does not replace remote category/supplier identity" }
-if ($categorySupplierResolver -notmatch "COALESCE\(is_active, 1\) = 1" -or $repository -notmatch "COALESCE\(is_active, 1\) = 1") { Fail "local reference resolution can reuse remote tombstones" } else { Pass "local reference resolution excludes remote tombstones" }
+if ($categorySupplierResolver -notmatch "COALESCE\(is_active, 1\) = 1" -or $productMetaResolver -notmatch "COALESCE\(is_active, 1\) = 1") { Fail "local reference resolution can reuse remote tombstones" } else { Pass "local reference resolution excludes remote tombstones" }
 if ($productImportApply -notmatch "remote_supplier_id" -or $productImportApply -notmatch "remote_category_id" -or $productDbImporter -notmatch "remote_supplier_id" -or $productDbImporter -notmatch "remote_category_id") { Fail "local import remote-identity collision guards missing" } else { Pass "local import remote-identity collision guards present" }
 if ($initializer -notmatch "remote_product_id") { Fail "remote product id column missing in db initializer" } else { Pass "remote product id column present" }
 if ($initializer -notmatch "remote_deleted_at") { Fail "remote tombstone column missing in db initializer" } else { Pass "remote tombstone column present" }

@@ -12,7 +12,7 @@ namespace Win7POS.Data.Repositories
     /// </summary>
     internal sealed class ProductMetaResolver
     {
-        internal static async Task<ProductRepository.ProductMetaReference> ResolveSupplierReferenceAsync(
+        internal static async Task<ProductMetaReference> ResolveSupplierReferenceAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             int? supplierId,
@@ -28,7 +28,7 @@ namespace Win7POS.Data.Repositories
             }
 
             if (normalizedName.Length == 0)
-                return new ProductRepository.ProductMetaReference();
+                return new ProductMetaReference();
 
             var existingByName = await FindSupplierByNormalizedNameAsync(conn, tx, normalizedName).ConfigureAwait(false);
             if (existingByName != null)
@@ -42,7 +42,7 @@ namespace Win7POS.Data.Repositories
                 ?? throw new InvalidOperationException("Supplier reference could not be resolved.");
         }
 
-        internal static async Task<ProductRepository.ProductMetaReference> ResolveCategoryReferenceAsync(
+        internal static async Task<ProductMetaReference> ResolveCategoryReferenceAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             int? categoryId,
@@ -58,7 +58,7 @@ namespace Win7POS.Data.Repositories
             }
 
             if (normalizedName.Length == 0)
-                return new ProductRepository.ProductMetaReference();
+                return new ProductMetaReference();
 
             var existingByName = await FindCategoryByNormalizedNameAsync(conn, tx, normalizedName).ConfigureAwait(false);
             if (existingByName != null)
@@ -87,40 +87,40 @@ namespace Win7POS.Data.Repositories
             return string.Join(" ", value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
         }
 
-        private static Task<ProductRepository.ProductMetaReference> FindSupplierByIdAsync(
+        private static Task<ProductMetaReference> FindSupplierByIdAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             int? supplierId)
         {
             if (!supplierId.HasValue || supplierId.Value == 0)
-                return Task.FromResult<ProductRepository.ProductMetaReference>(null);
+                return Task.FromResult<ProductMetaReference>(null);
 
-            return conn.QueryFirstOrDefaultAsync<ProductRepository.ProductMetaReference>(
+            return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
                 "SELECT id AS Id, name AS Name FROM suppliers WHERE id = @id AND COALESCE(is_active, 1) = 1 LIMIT 1",
                 new { id = supplierId.Value },
                 tx);
         }
 
-        private static Task<ProductRepository.ProductMetaReference> FindCategoryByIdAsync(
+        private static Task<ProductMetaReference> FindCategoryByIdAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             int? categoryId)
         {
             if (!categoryId.HasValue || categoryId.Value == 0)
-                return Task.FromResult<ProductRepository.ProductMetaReference>(null);
+                return Task.FromResult<ProductMetaReference>(null);
 
-            return conn.QueryFirstOrDefaultAsync<ProductRepository.ProductMetaReference>(
+            return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
                 "SELECT id AS Id, name AS Name FROM categories WHERE id = @id AND COALESCE(is_active, 1) = 1 LIMIT 1",
                 new { id = categoryId.Value },
                 tx);
         }
 
-        private static Task<ProductRepository.ProductMetaReference> FindSupplierByNormalizedNameAsync(
+        private static Task<ProductMetaReference> FindSupplierByNormalizedNameAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             string normalizedName)
         {
-            return conn.QueryFirstOrDefaultAsync<ProductRepository.ProductMetaReference>(
+            return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
                 @"SELECT id AS Id, name AS Name
 FROM suppliers
 WHERE COALESCE(is_active, 1) = 1
@@ -131,12 +131,12 @@ LIMIT 1",
                 tx);
         }
 
-        private static Task<ProductRepository.ProductMetaReference> FindCategoryByNormalizedNameAsync(
+        private static Task<ProductMetaReference> FindCategoryByNormalizedNameAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             string normalizedName)
         {
-            return conn.QueryFirstOrDefaultAsync<ProductRepository.ProductMetaReference>(
+            return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
                 @"SELECT id AS Id, name AS Name
 FROM categories
 WHERE COALESCE(is_active, 1) = 1
