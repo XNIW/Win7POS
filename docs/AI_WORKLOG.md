@@ -933,3 +933,45 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - No force push, squash/rebase merge, production data or physical effect was
   used. Full closeout evidence is in
   `docs/reports/2026-07-22_WIN7POS_ALL_RESIDUALS_CLOSEOUT.md`.
+
+## 2026-07-23 - Repository-local residual closeout and external blocker record
+
+- Normal merge closure completed for SQLite durability PR #25 (`3887262`),
+  ARCH-005 PR #26 (`56b3803`), PR-C #27 (`d6751576`), ProductRepository/
+  ARCH-003 PRs #28-#31 (`6556a85`, `f2175ab`, `bc52904`, `38cf284`) and
+  SaleRepository/PR-F PRs #32-#38 (`0918437`, `0c95204`, `e2d8e24`,
+  `93100e2`, `8bcbaea`, `f20030c`, `cc9f02c`). The linked PRs retain their
+  individual exact-head and post-merge records. Post-merge CI on PR #33 merge
+  `0c952047` failed in run `29985031154`; PR #34 remediated that failure and
+  completed its post-merge workflows successfully.
+- PERF-05 merged normally through PR #39 from exact head
+  `777931aba66727779480fd6774d8c5c2548d5a3a` as
+  `93a5e4afa819f0de14513ddb7603091433d917ba`. It adds page-local remote-price
+  SQL command/statement diagnostics that are merged only after `tx.Commit()`.
+  The fresh 3-price/2-page fixture proves 19 commands / 22 statements; rollback
+  coverage proves failed pages publish no counters.
+- PERF-05 local evidence: Core/Data `610/610`, required gates `44/44`, WPF and
+  smoke-harness Release `net48/x86` builds zero warnings/errors, CLI self-test,
+  Gitleaks worktree/history (424 commits), `batch-price-only 3 1 2` at 19/22 and
+  19,763-row paged-full exactness `Verified` in 3/3 iterations. Local harness
+  execution was blocked by host Application Control and was not bypassed; the
+  exact-head and post-merge CI runners completed both WPF smoke checks.
+- PR #39 exact-head CI/Security/Release Pack runs `30005059126` /
+  `30005059146` / `30005117027` and post-merge runs `30005966795` /
+  `30005966771` / `30005966770` all completed successfully on their exact SHAs.
+- Structural and historical-P2 source-of-truth state is now nine
+  `DONE_MERGED`, zero `OPEN`, zero `PARTIAL`, zero `SUPERSEDED`. This does not
+  promote external work: `P1-REL-01=PARTIAL_EXTERNAL_SIGNING` and physical
+  Windows 7 is `DEFERRED_BY_USER`.
+- External staging remains blocked. Source migration inventory is 72, applied
+  staging history is 79 and 71 IDs are common; no authoritative
+  source-provenance/recovery reconciliation manifest and verified backup for the
+  eight remote-only Supabase staging migrations was supplied. The remote-only
+  applied IDs are `20260707183000`, `20260707200500`,
+  `20260708003000`, `20260713010000`, `20260713020000`, `20260718120000`,
+  `20260718235345`, `20260719090000`. Source-only `20260719170600` was observed.
+  No migration was repaired, rebased, baselined, reverted or deployed.
+- The required owner action is one concrete input: provide the authoritative
+  source-provenance/recovery reconciliation manifest and verified backup for the
+  eight remote-only Supabase staging migrations. No token, credential or
+  production data was recorded.

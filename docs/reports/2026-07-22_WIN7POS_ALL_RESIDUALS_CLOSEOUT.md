@@ -1,5 +1,9 @@
 # Win7POS all-residuals closeout — 2026-07-22
 
+> Historical snapshot. The subsequent repository-local closeout and its unchanged
+> external blockers are recorded in
+> [`2026-07-23_WIN7POS_FINAL_REPO_LOCAL_CLOSEOUT.md`](2026-07-23_WIN7POS_FINAL_REPO_LOCAL_CLOSEOUT.md).
+
 ## Executive status
 
 - Initial main: `0ad16bd2c40454c07d0ffb6e4908e23b89b4a5a1`.

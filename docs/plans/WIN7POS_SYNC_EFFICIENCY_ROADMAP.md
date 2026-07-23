@@ -56,6 +56,29 @@ protected-tag certificate and RFC3161 timestamp have not been exercised.
   Supply Chain `29908121286`, Release Pack `29908121289` and Catalog Performance
   `29908134313`, all `completed/success`.
 
+## Delivery update — 2026-07-23
+
+- SQLite durability is `DONE_MERGED` through PR #25 (`3887262`); the policy
+  explicitly exercises DELETE journal mode, FULL synchronous mode, foreign keys,
+  busy handling and bounded temporary/cache behavior without introducing a WAL
+  requirement.
+- ARCH-005 is `DONE_MERGED` through PR #26 (`56b3803`), PR-C through PR #27
+  (`d6751576`), and ProductRepository/ARCH-003 through façade-preserving PRs
+  #28-#31 (`6556a85`, `f2175ab`, `bc52904`, `38cf284`).
+- SaleRepository/PR-F is `DONE_MERGED` through façade-preserving PRs #32-#38,
+  ending at normal merge `cc9f02c`. The temporary concurrent monotonic-settings
+  reservation fix in PR #34 is included in that validated sequence.
+- PERF-05 is `DONE_MERGED` through PR #39 at normal merge
+  `93a5e4afa819f0de14513ddb7603091433d917ba`. It adds observational,
+  page-local remote-price SQL diagnostics published only after commit. The
+  controlled fresh-price fixture for `N=3`, `P=2` proves 19 commands and 22 SQL
+  statements; it is neither a set-based rewrite nor a performance threshold.
+- PR #39 exact-head CI/Security/Release Pack runs `30005059126`, `30005059146`
+  and `30005117027`, and post-merge runs `30005966795`, `30005966771` and
+  `30005966770`, all completed successfully on their exact SHAs.
+- `P1-REL-01` remains `PARTIAL_EXTERNAL_SIGNING`; physical Windows 7 remains
+  `DEFERRED_BY_USER`. Neither status is promoted by repository-local evidence.
+
 ## A — Additive Admin heartbeat contract
 
 Add optional fields to `PosHeartbeatResponse`:
@@ -235,6 +258,13 @@ reserved-capacity, redaction, rotation, writer failure and bounded shutdown
 tests passed. These are controlled Windows x86 measurements, not physical
 Windows 7 certification.
 
+PERF-05 is `DONE_MERGED` as a bounded observability slice. It records only
+remote-price apply command/statement evidence in a fresh page accumulator and
+merges it into run diagnostics only after `tx.Commit()`. The exact 3-price/
+2-page baseline is 19 commands / 22 statements; rollback tests prove that a
+failed page publishes no counters. It does not impose a timing/allocation
+threshold and does not claim a set-based price rewrite.
+
 ## Release and supply-chain follow-up
 
 - PR #7 already closed fail-closed installer generation, exact clean-tree
@@ -263,37 +293,37 @@ item.
 
 ## Closure state and next work
 
-`SYNC-1`, `SYNC-2`, `PERF-1`, RELEASE1-A, the repository-local RELEASE1-B work
-and PERF2-A/B/C are `DONE_MERGED` through independent normal merges. The Admin
-backend repository exists and catalog-v2 PR #4 is merged there, but the current
-backend SHA is not deployed to the configured staging environment and no
-authenticated deterministic fixture run exists. The next evidence-bearing step
-is an authorized staging deployment/migration followed by full, incremental and
-recovery E2E runs; production signing and physical Windows 7/hardware validation
-remain separate external gates.
+`SYNC-1`, `SYNC-2`, `PERF-1`, RELEASE1-A, the repository-local RELEASE1-B work,
+PERF2-A/B/C, SQLite durability, ARCH-005, PR-C, PR-E/ARCH-003, PR-F and PERF-05
+are `DONE_MERGED` through independent normal merges. No further repository-local
+structural or historical-P2 slice remains open.
 
-The older Startup coordinator, ProductRepository split and SaleRepository split
-remain `PARTIAL`, `OPEN` and `OPEN`. They should be divided into small façade-
-preserving PRs only when the measurable maintenance benefit justifies their
-regression surface; the merged correctness/performance prerequisites do not make
-an unperformed decomposition `DONE_MERGED` or `SUPERSEDED`.
+The next evidence-bearing action is not deployment: first provide the
+authoritative source-provenance/recovery reconciliation manifest and verified
+backup for the eight remote-only Supabase staging migrations. Until that is
+available, no migration may be repaired, rebased, baselined, reverted or deployed
+and no staging E2E result can be claimed. After authorized reconciliation, an
+isolated staging deployment/migration and full, incremental and recovery E2E
+runs may be planned. Production signing and physical Windows 7/hardware remain
+separate external gates.
 
 ## Historical P2 reassessment
 
-The nine P2 findings from the 2026-07-16 optimization audit were rechecked on
-`0c5052f3`; none was promoted merely because adjacent code changed.
+The nine P2 findings from the 2026-07-16 optimization audit were completed by
+independent normal merges with their own validation. The final 2026-07-23
+PERF-05 post-merge workflows provide cumulative integration evidence.
 
 | ID | Status | Current evidence / action |
 | --- | --- | --- |
-| ARCH-003 | `OPEN` | Product query/local write/remote identity/price-history responsibilities remain in `ProductRepository`; extract only through façade-preserving PRs when justified. |
-| ARCH-005 | `OPEN` | `CatalogShopStateRepository` still combines persistence and sale-safety evaluation; a pure immutable policy extraction remains repo-local debt. |
+| ARCH-003 | `DONE_MERGED` | PRs #28-#31 extracted product query, remote price history, local write and remote catalog product write responsibilities behind preserved façades. |
+| ARCH-005 | `DONE_MERGED` | PR #26 extracted the immutable catalog sale-safety policy from state persistence. |
 | ARCH-006 | `DONE_MERGED` | Commit `1d53bea2` makes the canonical architecture gate compare all classified projects with `Win7POS.slnx` and fail unknown/missing entries. |
-| SQLITE-DURABILITY-001 | `PARTIAL` | Tests observe rollback, integrity, busy timeout and `synchronous=FULL(2)`, but the factory does not explicitly select a journal mode/synchronous policy; a WAL change also needs Win7 backup/restore evidence. |
+| SQLITE-DURABILITY-001 | `DONE_MERGED` | PR #25 makes DELETE/FULL/foreign-key/busy/temp/cache policy explicit and regression-tested without claiming a WAL migration. |
 | SYNC-03 | `DONE_MERGED` | Commit `ecb41239` and cancellation tests distinguish caller cancellation from internal timeout. |
 | SYNC-05 | `DONE_MERGED` | Commit `bb4178b5` requires a nonblank canonical catalog version before response/checkpoint persistence and proves invalid versions cannot advance the cursor. |
 | PERF-02 | `DONE_MERGED` | PERF2-B normal merge `63152222` uses keyset paging for ordinary navigation with explicit arbitrary-jump fallback and 100,000-row guards. |
-| PERF-05 | `OPEN` | Price apply still performs per-price owner/product/history/pending resolution; add statement/allocation counters before considering a set-based rewrite. |
+| PERF-05 | `DONE_MERGED` | PR #39 adds commit-published command/statement diagnostics with an exact fresh-price 19/22 baseline and rollback non-publication coverage; no set-based rewrite is claimed. |
 | E-CI-003 | `DONE_MERGED` | Commit `252fad20` cancels superseded PR CI, while main/protected release runs remain non-cancellable. |
 
-Result: five `DONE_MERGED`, three `OPEN`, one `PARTIAL`, zero `SUPERSEDED`.
-Four repo-local P2 slices therefore remain unresolved.
+Result: nine `DONE_MERGED`, zero `OPEN`, zero `PARTIAL`, zero `SUPERSEDED`.
+No repo-local P2 slice remains unresolved.
