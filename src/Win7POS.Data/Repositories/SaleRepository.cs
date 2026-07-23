@@ -1,14 +1,10 @@
 using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
 using System.Threading.Tasks;
 using System;
-using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
 using Win7POS.Core.Online;
 using Win7POS.Core.Pos;
-using Win7POS.Core.Receipt;
 using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
@@ -36,16 +32,15 @@ namespace Win7POS.Data.Repositories
     {
         public const long SalesSyncInProgressLeaseMilliseconds = 15 * 60 * 1000L;
 
-        private readonly SqliteConnectionFactory _factory;
         private readonly SaleReadRepository _reads;
         private readonly SaleLineReadRepository _lineReads;
         private readonly SaleStockMovementWriter _stockMovementWriter;
         private readonly SaleReversalWriter _reversalWriter;
         private readonly SalesSyncOutboxRepository _salesSyncOutbox;
+        private readonly SaleTransactionWriter _transactionWriter;
 
         public SaleRepository(SqliteConnectionFactory factory)
         {
-            _factory = factory;
             _reads = new SaleReadRepository(factory);
             _lineReads = new SaleLineReadRepository(factory);
             _stockMovementWriter = new SaleStockMovementWriter();
@@ -53,58 +48,15 @@ namespace Win7POS.Data.Repositories
             _salesSyncOutbox = new SalesSyncOutboxRepository(
                 factory,
                 SalesSyncInProgressLeaseMilliseconds);
+            _transactionWriter = new SaleTransactionWriter(
+                factory,
+                _stockMovementWriter,
+                _reversalWriter,
+                _salesSyncOutbox);
         }
 
-        public async Task<long> InsertSaleAsync(Sale sale, IReadOnlyList<SaleLine> lines)
-        {
-            if (sale == null) throw new ArgumentNullException(nameof(sale));
-            if (lines == null) throw new ArgumentNullException(nameof(lines));
-            SalesReceiptContentPolicy.EnsureValid(sale, lines);
-            ReceiptDocumentPolicy.EnsureValidSnapshotJson(sale.ReceiptShopSnapshotJson);
-            using var conn = await _factory.OpenAsync().ConfigureAwait(false);
-            using var tx = conn.BeginTransaction();
-
-            try
-            {
-                if (sale.Kind == 0)
-                    sale.Kind = (int)SaleKind.Sale;
-
-                if (sale.Kind == (int)SaleKind.Sale)
-                {
-                    await CatalogShopStateRepository
-                        .RequireSaleSafeForOrdinarySaleAsync(conn, tx)
-                        .ConfigureAwait(false);
-                }
-
-                await ValidateReversalBoundaryAsync(conn, tx, sale, lines)
-                    .ConfigureAwait(false);
-
-                var saleId = await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change, operator_id, receipt_shop_snapshot)
-VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @VoidedBySaleId, @VoidedAt, @Reason, @Total, @PaidCash, @PaidCard, @Change, @OperatorId, @ReceiptShopSnapshotJson);
-SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
-                sale.Id = saleId;
-                sale.ClientSaleId = await EnsureClientSaleIdAsync(conn, tx, saleId).ConfigureAwait(false);
-
-                foreach (var l in lines.Select((line, index) => new { line, index }))
-                {
-                    l.line.SaleId = saleId;
-                    l.line.LineTotal = l.line.Quantity * l.line.UnitPrice;
-                    l.line.Id = await InsertSaleLineAsync(conn, tx, l.line).ConfigureAwait(false);
-                }
-
-                await ApplyLocalStockMovementsAsync(conn, tx, sale, lines).ConfigureAwait(false);
-                await EnqueueSalesSyncOutboxAsync(conn, tx, saleId, sale.ClientSaleId).ConfigureAwait(false);
-
-                tx.Commit();
-                return saleId;
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
-        }
+        public Task<long> InsertSaleAsync(Sale sale, IReadOnlyList<SaleLine> lines) =>
+            _transactionWriter.InsertSaleAsync(sale, lines);
 
         public Task<IReadOnlyList<Sale>> LastSalesAsync(int take = 5) =>
             _reads.LastSalesAsync(take);
@@ -142,13 +94,8 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         public Task<Sale> GetByIdAsync(long saleId) => _reads.GetByIdAsync(saleId);
 
         /// <summary>Imposta pdf_printed=1 come stato documentale locale senza rimuovere la vendita da report o sync.</summary>
-        public Task MarkPdfPrintedAsync(long saleId)
-        {
-            using var conn = _factory.Open();
-            return conn.ExecuteAsync(
-                "UPDATE sales SET pdf_printed = 1 WHERE id = @saleId",
-                new { saleId });
-        }
+        public Task MarkPdfPrintedAsync(long saleId) =>
+            _transactionWriter.MarkPdfPrintedAsync(saleId);
 
         public Task<IReadOnlyList<Sale>> GetByCodeLikeAsync(string codeFilter, bool includeFiscalPrinted = true) =>
             _reads.GetByCodeLikeAsync(codeFilter, includeFiscalPrinted);
@@ -183,223 +130,74 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
         public Task MarkSaleVoidedAsync(long originalSaleId, long refundSaleId, long nowMs) =>
             _reversalWriter.MarkSaleVoidedAsync(originalSaleId, refundSaleId, nowMs);
 
-        public async Task<long> InsertRefundSaleAsync(
+        public Task<long> InsertRefundSaleAsync(
             RefundCreateRequest req,
             long totalMinor,
             long paidCashMinor,
             long paidCardMinor,
-            long changeMinor)
-        {
-            if (req == null || req.OriginalSaleId <= 0)
-                throw new InvalidOperationException("Refund requires an existing original sale.");
-            SalesReceiptContentPolicy.EnsureValidSaleReason(req.Reason);
-            using var conn = _factory.Open();
-            using var tx = conn.BeginTransaction();
-            try
-            {
-                var saleId = await InsertRefundSaleAsync(conn, tx, req, totalMinor, paidCashMinor, paidCardMinor, changeMinor).ConfigureAwait(false);
-                tx.Commit();
-                return saleId;
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
-        }
+            long changeMinor) =>
+            _transactionWriter.InsertRefundSaleAsync(
+                req,
+                totalMinor,
+                paidCashMinor,
+                paidCardMinor,
+                changeMinor);
 
-        public async Task<long> InsertRefundSaleAsync(
+        public Task<long> InsertRefundSaleAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             RefundCreateRequest req,
             long totalMinor,
             long paidCashMinor,
             long paidCardMinor,
-            long changeMinor)
-        {
-            if (req == null || req.OriginalSaleId <= 0)
-                throw new InvalidOperationException("Refund requires an existing original sale.");
-            SalesReceiptContentPolicy.EnsureValidSaleReason(req.Reason);
-            var originalKind = await conn.ExecuteScalarAsync<int?>(
-                "SELECT kind FROM sales WHERE id = @originalSaleId;",
-                new { originalSaleId = req.OriginalSaleId },
-                tx).ConfigureAwait(false);
-            if (originalKind != (int)SaleKind.Sale)
-                throw new InvalidOperationException("Refund original sale is missing or incoherent.");
+            long changeMinor) =>
+            _transactionWriter.InsertRefundSaleAsync(
+                conn,
+                tx,
+                req,
+                totalMinor,
+                paidCashMinor,
+                paidCardMinor,
+                changeMinor);
 
-            var sale = new Sale
-            {
-                Code = "R" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(),
-                CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                Kind = (int)SaleKind.Refund,
-                RelatedSaleId = req?.OriginalSaleId,
-                Reason = req?.Reason,
-                Total = totalMinor,
-                PaidCash = paidCashMinor,
-                PaidCard = paidCardMinor,
-                Change = changeMinor
-            };
-            SalesReceiptContentPolicy.EnsureValid(sale, Array.Empty<SaleLine>());
-
-            var saleId = await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change, receipt_shop_snapshot)
-VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @VoidedBySaleId, @VoidedAt, @Reason, @Total, @PaidCash, @PaidCard, @Change, @ReceiptShopSnapshotJson);
-SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
-
-            return saleId;
-        }
-
-        public async Task<long> InsertRefundOrVoidAsync(
+        public Task<long> InsertRefundOrVoidAsync(
             Sale refundSale,
             IReadOnlyList<SaleLine> refundLines,
             long? originalSaleIdToMarkVoided,
             string auditAction,
-            Func<long, string> auditDetailsFactory)
-        {
-            if (refundSale == null) throw new ArgumentNullException(nameof(refundSale));
-            if (refundLines == null) throw new ArgumentNullException(nameof(refundLines));
-            SalesReceiptContentPolicy.EnsureValid(refundSale, refundLines);
-            ReceiptDocumentPolicy.EnsureValidSnapshotJson(refundSale.ReceiptShopSnapshotJson);
+            Func<long, string> auditDetailsFactory) =>
+            _transactionWriter.InsertRefundOrVoidAsync(
+                refundSale,
+                refundLines,
+                originalSaleIdToMarkVoided,
+                auditAction,
+                auditDetailsFactory);
 
-            using var conn = _factory.Open();
-            using var tx = conn.BeginTransaction();
-            try
-            {
-                await ValidateReversalBoundaryAsync(conn, tx, refundSale, refundLines)
-                    .ConfigureAwait(false);
-                var saleId = await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO sales(code, createdAt, kind, related_sale_id, reason, total, paidCash, paidCard, change, receipt_shop_snapshot)
-VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @Reason, @Total, @PaidCash, @PaidCard, @Change, @ReceiptShopSnapshotJson);
-SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
+        public Task InsertSaleLinesAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            IReadOnlyList<SaleLine> lines) =>
+            _transactionWriter.InsertSaleLinesAsync(conn, tx, lines);
 
-                refundSale.Id = saleId;
-                refundSale.ClientSaleId = await EnsureClientSaleIdAsync(conn, tx, saleId).ConfigureAwait(false);
+        public Task<string> EnsureClientSaleIdAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            long saleId) =>
+            _transactionWriter.EnsureClientSaleIdAsync(conn, tx, saleId);
 
-                foreach (var line in refundLines)
-                {
-                    line.SaleId = saleId;
-                }
-
-                await InsertSaleLinesAsync(conn, tx, refundLines).ConfigureAwait(false);
-                await ApplyLocalStockMovementsAsync(conn, tx, refundSale, refundLines).ConfigureAwait(false);
-                await EnqueueSalesSyncOutboxAsync(conn, tx, saleId, refundSale.ClientSaleId).ConfigureAwait(false);
-
-                if (!string.IsNullOrWhiteSpace(auditAction))
-                {
-                    await new AuditLogRepository()
-                        .AppendAsync(
-                            conn,
-                            tx,
-                            DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-                            auditAction,
-                            auditDetailsFactory == null ? string.Empty : auditDetailsFactory(saleId))
-                        .ConfigureAwait(false);
-                }
-
-                if (originalSaleIdToMarkVoided.HasValue)
-                {
-                    await MarkSaleVoidedAsync(
-                        conn,
-                        tx,
-                        originalSaleIdToMarkVoided.Value,
-                        saleId,
-                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).ConfigureAwait(false);
-                }
-
-                tx.Commit();
-                return saleId;
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
-        }
-
-        public async Task InsertSaleLinesAsync(SqliteConnection conn, SqliteTransaction tx, IReadOnlyList<SaleLine> lines)
-        {
-            if (conn == null) throw new ArgumentNullException(nameof(conn));
-            if (tx == null) throw new ArgumentNullException(nameof(tx));
-            if (!ReferenceEquals(tx.Connection, conn))
-            {
-                throw new ArgumentException(
-                    "The sale-line transaction must belong to the supplied connection.",
-                    nameof(tx));
-            }
-            SalesReceiptContentPolicy.EnsureValidLines(lines);
-            if (lines == null || lines.Count == 0) return;
-            foreach (var group in lines.GroupBy(line => line.SaleId))
-            {
-                var appended = group.ToList();
-                var budget = await SaleLineReadRepository
-                    .EnsureStoredLineBudgetAsync(conn, tx, group.Key)
-                    .ConfigureAwait(false);
-                SalesReceiptContentPolicy.EnsureCumulativeLineBudget(
-                    budget.LineCount,
-                    budget.AggregateNameCharacters,
-                    budget.AggregateNameUtf8Bytes,
-                    appended);
-            }
-            foreach (var line in lines)
-            {
-                line.Id = await InsertSaleLineAsync(conn, tx, line).ConfigureAwait(false);
-            }
-        }
-
-        public async Task<string> EnsureClientSaleIdAsync(SqliteConnection conn, SqliteTransaction tx, long saleId)
-        {
-            var existing = await conn.QuerySingleOrDefaultAsync<string>(
-                "SELECT client_sale_id FROM sales WHERE id = @saleId",
-                new { saleId }, tx).ConfigureAwait(false);
-
-            if (!string.IsNullOrWhiteSpace(existing))
-            {
-                return existing;
-            }
-
-            var clientSaleId = BuildClientSaleId(saleId);
-            await conn.ExecuteAsync(
-                "UPDATE sales SET client_sale_id = @clientSaleId WHERE id = @saleId",
-                new { clientSaleId, saleId }, tx).ConfigureAwait(false);
-            return clientSaleId;
-        }
-
-        public async Task ApplyLocalStockMovementsAsync(
+        public Task ApplyLocalStockMovementsAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             Sale sale,
-            IReadOnlyList<SaleLine> lines)
-        {
-            if (sale == null || lines == null || lines.Count == 0)
-            {
-                return;
-            }
+            IReadOnlyList<SaleLine> lines) =>
+            _transactionWriter.ApplyLocalStockMovementsAsync(conn, tx, sale, lines);
 
-            var clientSaleId = sale.ClientSaleId;
-            if (string.IsNullOrWhiteSpace(clientSaleId))
-            {
-                clientSaleId = await EnsureClientSaleIdAsync(conn, tx, sale.Id).ConfigureAwait(false);
-                sale.ClientSaleId = clientSaleId;
-            }
-
-            await _stockMovementWriter
-                .ApplyAsync(conn, tx, sale, lines, clientSaleId)
-                .ConfigureAwait(false);
-        }
-
-        public async Task EnqueueSalesSyncOutboxAsync(
+        public Task EnqueueSalesSyncOutboxAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             long saleId,
-            string clientSaleId)
-        {
-            var normalizedClientSaleId = string.IsNullOrWhiteSpace(clientSaleId)
-                ? BuildClientSaleId(saleId)
-                : clientSaleId.Trim();
-            await _salesSyncOutbox
-                .EnqueueAsync(conn, tx, saleId, normalizedClientSaleId)
-                .ConfigureAwait(false);
-        }
+            string clientSaleId) =>
+            _transactionWriter.EnqueueSalesSyncOutboxAsync(conn, tx, saleId, clientSaleId);
 
         public Task<IReadOnlyList<SalesSyncOutboxItem>> GetPendingSalesSyncOutboxAsync(
             int take,
@@ -659,28 +457,12 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
                 expectedAttemptCount,
                 expectedLeaseObservedAt);
 
-        private static string BuildClientSaleId(long saleId)
-        {
-            return "win7pos-sale-" + saleId.ToString(CultureInfo.InvariantCulture);
-        }
-
         internal Task ValidateReversalBoundaryAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             Sale sale,
             IReadOnlyList<SaleLine> lines) =>
             _reversalWriter.ValidateReversalBoundaryAsync(conn, tx, sale, lines);
-
-        private static async Task<long> InsertSaleLineAsync(
-            SqliteConnection conn,
-            SqliteTransaction tx,
-            SaleLine line)
-        {
-            return await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO sale_lines(saleId, productId, barcode, name, quantity, unitPrice, lineTotal, related_original_line_id)
-VALUES(@SaleId, @ProductId, @Barcode, @Name, @Quantity, @UnitPrice, @LineTotal, @RelatedOriginalLineId);
-SELECT last_insert_rowid();", line, tx).ConfigureAwait(false);
-        }
 
         public Task MarkSaleVoidedAsync(
             SqliteConnection conn,
