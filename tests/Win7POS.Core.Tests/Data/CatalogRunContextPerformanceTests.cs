@@ -70,6 +70,126 @@ WHERE c.remote_category_id = 'category-run'
     }
 
     [TestMethod]
+    public async Task PriceOnlyPagesPublishExactRemotePriceApplyDiagnostics()
+    {
+        using var db = TestDb.Create();
+        await SeedPriceOnlyProductsAsync(db);
+        using var run = new RemoteCatalogBatchRepository(db.Factory).CreateRunContext();
+
+        var first = await run.ApplyAsync(new RemoteCatalogBatch
+        {
+            Prices = new[]
+            {
+                Price("product-run-1", "price-run-1", 101),
+                Price("product-run-2", "price-run-2", 102)
+            }
+        });
+        var second = await run.ApplyAsync(new RemoteCatalogBatch
+        {
+            Prices = new[]
+            {
+                Price("product-run-3", "price-run-3", 103)
+            }
+        });
+
+        Assert.AreEqual(2, first.PricesApplied);
+        Assert.AreEqual(1, second.PricesApplied);
+        Assert.AreEqual(2, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(19L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
+        Assert.AreEqual(22L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(3L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE remote_price_id IN ('price-run-1', 'price-run-2', 'price-run-3');"));
+        Assert.AreEqual(3L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM remote_catalog_price_ownership
+WHERE remote_price_id IN ('price-run-1', 'price-run-2', 'price-run-3');"));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM remote_catalog_pending_prices;"));
+    }
+
+    [TestMethod]
+    public async Task FailedPricePageDoesNotPublishRemotePriceApplyDiagnostics()
+    {
+        using var db = TestDb.Create();
+        await SeedPriceOnlyProductsAsync(db);
+        using (var trigger = db.Factory.Open())
+        {
+            await trigger.ExecuteAsync(@"
+CREATE TRIGGER fail_remote_price_diagnostics_owner_insert
+BEFORE INSERT ON remote_catalog_price_ownership
+WHEN NEW.remote_price_id = 'price-run-rollback'
+BEGIN
+  SELECT RAISE(ABORT, 'fault_remote_price_diagnostics_owner_insert');
+END;");
+        }
+
+        using (var failedRun = new RemoteCatalogBatchRepository(db.Factory).CreateRunContext())
+        {
+            await Assert.ThrowsExactlyAsync<SqliteException>(() => failedRun.ApplyAsync(
+                new RemoteCatalogBatch
+                {
+                    Prices = new[]
+                    {
+                        Price("product-run-2", "price-run-rollback", 202)
+                    }
+                }));
+
+            Assert.AreEqual(0, failedRun.Diagnostics.PagesApplied);
+            Assert.AreEqual(0L, failedRun.Diagnostics.RemotePriceApply.SqlCommandCount);
+            Assert.AreEqual(0L, failedRun.Diagnostics.RemotePriceApply.SqlStatementCount);
+        }
+
+        using var run = new RemoteCatalogBatchRepository(db.Factory).CreateRunContext();
+        var committed = await run.ApplyAsync(new RemoteCatalogBatch
+        {
+            Prices = new[]
+            {
+                Price("product-run-1", "price-run-committed", 201)
+            }
+        });
+
+        Assert.AreEqual(1, committed.PricesApplied);
+        Assert.AreEqual(1, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(7L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
+        Assert.AreEqual(8L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+
+        await Assert.ThrowsExactlyAsync<SqliteException>(() => run.ApplyAsync(
+            new RemoteCatalogBatch
+            {
+                Prices = new[]
+                {
+                    Price("product-run-2", "price-run-rollback", 202)
+                }
+            }));
+
+        Assert.AreEqual(1, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(7L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
+        Assert.AreEqual(8L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE remote_price_id = 'price-run-committed';"));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE remote_price_id = 'price-run-rollback';"));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM remote_catalog_price_ownership
+WHERE remote_price_id = 'price-run-rollback';"));
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM remote_catalog_pending_prices
+WHERE remote_price_id = 'price-run-rollback';"));
+    }
+
+    [TestMethod]
     public async Task InvalidBatchDoesNotPublishRunDiagnosticsOrDurableRows()
     {
         using var db = TestDb.Create();
@@ -239,6 +359,51 @@ SELECT supplier_id FROM product_meta WHERE barcode = 'RUN-TOMB-002';"));
             SupplierName = "Run Supplier",
             UnitPrice = 100
         };
+    }
+
+    private static RemoteCatalogPriceWrite Price(
+        string remoteProductId,
+        string remotePriceId,
+        int price)
+    {
+        return new RemoteCatalogPriceWrite
+        {
+            EffectiveAt = "2026-07-23T10:00:00Z",
+            Price = price,
+            RemotePriceId = remotePriceId,
+            RemoteProductId = remoteProductId,
+            Source = "catalog_pull",
+            Type = "retail"
+        };
+    }
+
+    private static Task<RemoteCatalogBatchApplyResult> SeedPriceOnlyProductsAsync(TestDb db)
+    {
+        return new RemoteCatalogBatchRepository(db.Factory).ApplyAsync(new RemoteCatalogBatch
+        {
+            Categories = new[]
+            {
+                new RemoteCatalogCategoryWrite
+                {
+                    RemoteCategoryId = "category-run",
+                    Name = "Run Category"
+                }
+            },
+            Suppliers = new[]
+            {
+                new RemoteCatalogSupplierWrite
+                {
+                    RemoteSupplierId = "supplier-run",
+                    Name = "Run Supplier"
+                }
+            },
+            Products = new[]
+            {
+                Product("product-run-1", "PRICE-RUN-001", 1),
+                Product("product-run-2", "PRICE-RUN-002", 2),
+                Product("product-run-3", "PRICE-RUN-003", 3)
+            }
+        });
     }
 
     private sealed class TestDb : IDisposable

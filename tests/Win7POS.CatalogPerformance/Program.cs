@@ -22,7 +22,7 @@ catch (ArgumentException ex)
 {
     Console.Error.WriteLine(ex.Message);
     Console.Error.WriteLine(
-        "Usage: Win7POS.CatalogPerformance <legacy|batch|batch-paged|batch-paged-full|batch-delta> " +
+        "Usage: Win7POS.CatalogPerformance <legacy|batch|batch-paged|batch-paged-full|batch-delta|batch-price-only> " +
         "[rows] [iterations] [page-size]");
     return 2;
 }

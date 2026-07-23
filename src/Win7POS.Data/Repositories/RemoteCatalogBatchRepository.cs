@@ -123,6 +123,7 @@ namespace Win7POS.Data.Repositories
                             commitFence).ConfigureAwait(false);
                     }
                     var result = new RemoteCatalogBatchApplyResult();
+                    var pageRemotePriceApply = new RemotePriceApplyDiagnostics();
                     var appliedCategoryTombstoneIds = new HashSet<string>(StringComparer.Ordinal);
                     var appliedSupplierTombstoneIds = new HashSet<string>(StringComparer.Ordinal);
                     var pendingPriceCollisionIds = new HashSet<long>();
@@ -331,7 +332,10 @@ namespace Win7POS.Data.Repositories
                     }
 
                     var pendingReplay = await RemotePriceHistoryRepository
-                        .ApplyPendingRemotePricesInTransactionAsync(conn, tx)
+                        .ApplyPendingRemotePricesInTransactionAsync(
+                            conn,
+                            tx,
+                            pageRemotePriceApply)
                         .ConfigureAwait(false);
                     result.PendingPricesApplied += pendingReplay.Applied;
                     pendingPriceCollisionIds.UnionWith(pendingReplay.CollisionIds);
@@ -433,7 +437,8 @@ AND NOT EXISTS (
                                     price.Type,
                                     price.Price,
                                     price.EffectiveAt,
-                                    price.Source).ConfigureAwait(false))
+                                    price.Source,
+                                    pageRemotePriceApply).ConfigureAwait(false))
                             {
                                 result.PricesSkipped += 1;
                                 continue;
@@ -448,14 +453,18 @@ AND NOT EXISTS (
                             price.Type,
                             price.Price,
                             price.EffectiveAt,
-                            price.Source).ConfigureAwait(false);
+                            price.Source,
+                            pageRemotePriceApply).ConfigureAwait(false);
                         if (applied.Applied) result.PricesApplied += 1;
                         if (applied.Queued) result.PricesQueued += 1;
                         if (!applied.Applied && !applied.Queued) result.PricesSkipped += 1;
                     }
 
                     pendingReplay = await RemotePriceHistoryRepository
-                        .ApplyPendingRemotePricesInTransactionAsync(conn, tx)
+                        .ApplyPendingRemotePricesInTransactionAsync(
+                            conn,
+                            tx,
+                            pageRemotePriceApply)
                         .ConfigureAwait(false);
                     result.PendingPricesApplied += pendingReplay.Applied;
                     pendingPriceCollisionIds.UnionWith(pendingReplay.CollisionIds);
@@ -466,6 +475,7 @@ AND NOT EXISTS (
                         appliedCategoryTombstoneIds,
                         appliedSupplierTombstoneIds);
                     tx.Commit();
+                    runContext.RecordRemotePriceApply(pageRemotePriceApply);
                     runContext.CommitPageState(pageState);
                     runContext.RecordPageApplied();
                     return result;
@@ -1810,6 +1820,11 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
             Diagnostics.PagesApplied += 1;
         }
 
+        internal void RecordRemotePriceApply(RemotePriceApplyDiagnostics pageDiagnostics)
+        {
+            Diagnostics.RemotePriceApply.MergeFrom(pageDiagnostics);
+        }
+
         public void Dispose()
         {
             if (_disposed)
@@ -1872,8 +1887,38 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
         public int ProductIdentityQueryCount { get; internal set; }
         public long ProductIdentityRowsLoaded { get; internal set; }
         public int ReferenceMapRefreshQueryCount { get; internal set; }
+        public RemotePriceApplyDiagnostics RemotePriceApply { get; } =
+            new RemotePriceApplyDiagnostics();
         public int ScopeSqlQueryCount { get; internal set; }
         public long StagedProductIdentityCount { get; internal set; }
+    }
+
+    public sealed class RemotePriceApplyDiagnostics
+    {
+        public long SqlCommandCount { get; internal set; }
+        public long SqlStatementCount { get; internal set; }
+
+        internal void RecordSqlCommand(int statementCount)
+        {
+            if (statementCount < 1)
+            {
+                throw new ArgumentOutOfRangeException(nameof(statementCount));
+            }
+
+            SqlCommandCount += 1;
+            SqlStatementCount += statementCount;
+        }
+
+        internal void MergeFrom(RemotePriceApplyDiagnostics pageDiagnostics)
+        {
+            if (pageDiagnostics == null)
+            {
+                throw new ArgumentNullException(nameof(pageDiagnostics));
+            }
+
+            SqlCommandCount += pageDiagnostics.SqlCommandCount;
+            SqlStatementCount += pageDiagnostics.SqlStatementCount;
+        }
     }
 
     internal sealed class RemoteCatalogPageState

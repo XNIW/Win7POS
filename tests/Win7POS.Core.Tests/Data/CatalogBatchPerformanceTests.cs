@@ -8,6 +8,27 @@ public sealed class CatalogBatchPerformanceTests
     public TestContext TestContext { get; set; } = null!;
 
     [TestMethod]
+    public async Task BatchPriceOnlyScenarioReportsExactRemotePriceApplyDiagnostics()
+    {
+        const int rows = 3;
+        const int pageSize = 2;
+        var samples = await CatalogBatchPerformanceScenario.RunAsync(
+            "batch-price-only",
+            rows,
+            iterations: 1,
+            pageSize);
+
+        Assert.AreEqual(1, samples.Count);
+        var sample = samples[0];
+        Assert.AreEqual(2, sample.LogicalRequestCount);
+        Assert.AreEqual(3L, sample.ProductCount);
+        Assert.AreEqual(3L, sample.PriceCount);
+        Assert.AreEqual(0L, sample.PendingPriceCount);
+        Assert.AreEqual(19L, sample.RemotePriceApplySqlCommandCount);
+        Assert.AreEqual(22L, sample.RemotePriceApplySqlStatementCount);
+    }
+
+    [TestMethod]
     public async Task CompareLegacyAndBatchApply()
     {
         if (!string.Equals(
@@ -26,7 +47,7 @@ public sealed class CatalogBatchPerformanceTests
             .ToLowerInvariant();
         var modes = requestedMode == "legacy" || requestedMode == "batch" ||
                     requestedMode == "batch-paged" || requestedMode == "batch-paged-full" ||
-                    requestedMode == "batch-delta"
+                    requestedMode == "batch-delta" || requestedMode == "batch-price-only"
             ? new[] { requestedMode }
             : new[] { "legacy", "batch" };
         var samplesByMode = new Dictionary<string, IReadOnlyList<CatalogBatchPerformanceSample>>(
@@ -48,6 +69,12 @@ public sealed class CatalogBatchPerformanceTests
                 {
                     Assert.AreEqual("Verified", sample.ExactnessStatus);
                     Assert.AreEqual(0L, sample.AuthoritativeStageRowsAfter);
+                }
+                if (mode == "batch-price-only")
+                {
+                    var pages = (rows + pageSize - 1) / pageSize;
+                    Assert.AreEqual(5L * rows + (2L * pages), sample.RemotePriceApplySqlCommandCount);
+                    Assert.AreEqual(6L * rows + (2L * pages), sample.RemotePriceApplySqlStatementCount);
                 }
                 TestContext.WriteLine(sample.ToEvidenceLine());
             }
