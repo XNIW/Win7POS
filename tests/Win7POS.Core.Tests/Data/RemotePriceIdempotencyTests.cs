@@ -16,7 +16,7 @@ public sealed class RemotePriceIdempotencyTests
     {
         using var db = TestDb.Create();
         await SeedProductAsync(db.Factory, "product-a", "PRICE-A");
-        var repository = new ProductRepository(db.Factory);
+        var repository = new RemotePriceHistoryRepository(db.Factory);
 
         var first = await repository.UpsertOrQueueRemotePriceHistoryAsync(
             "product-a",
@@ -45,6 +45,48 @@ public sealed class RemotePriceIdempotencyTests
     }
 
     [TestMethod]
+    public async Task RemotePriceHistoryRepository_AndProductFacade_KeepPublicApplyQueueReplayParity()
+    {
+        using var directDb = TestDb.Create();
+        using var facadeDb = TestDb.Create();
+        await SeedProductAsync(directDb.Factory, "parity-applied", "PARITY-APPLIED");
+        await SeedProductAsync(facadeDb.Factory, "parity-applied", "PARITY-APPLIED");
+
+        var direct = new RemotePriceHistoryRepository(directDb.Factory);
+        var facade = new ProductRepository(facadeDb.Factory);
+        var directApplied = await direct.UpsertRemotePriceHistoryAsync(
+            "parity-applied", "retail", 125, EffectiveAt, "catalog_pull");
+        var facadeApplied = await facade.UpsertRemotePriceHistoryAsync(
+            "parity-applied", "retail", 125, EffectiveAt, "catalog_pull");
+        var directQueued = await direct.UpsertOrQueueRemotePriceHistoryAsync(
+            "parity-queued", "parity-queued-price", "retail", 450, EffectiveAt, "catalog_pull");
+        var facadeQueued = await facade.UpsertOrQueueRemotePriceHistoryAsync(
+            "parity-queued", "parity-queued-price", "retail", 450, EffectiveAt, "catalog_pull");
+
+        Assert.AreEqual(directApplied, facadeApplied);
+        Assert.AreEqual(directQueued.Applied, facadeQueued.Applied);
+        Assert.AreEqual(directQueued.Queued, facadeQueued.Queued);
+        await SeedProductAsync(directDb.Factory, "parity-queued", "PARITY-QUEUED");
+        await SeedProductAsync(facadeDb.Factory, "parity-queued", "PARITY-QUEUED");
+
+        Assert.AreEqual(
+            await direct.ApplyPendingRemotePricesAsync(),
+            await facade.ApplyPendingRemotePricesAsync());
+        Assert.AreEqual(
+            await ScalarAsync(directDb.Factory, "SELECT COUNT(1) FROM product_price_history;"),
+            await ScalarAsync(facadeDb.Factory, "SELECT COUNT(1) FROM product_price_history;"));
+        Assert.AreEqual(
+            await ScalarAsync(directDb.Factory, "SELECT COUNT(1) FROM remote_catalog_pending_prices;"),
+            await ScalarAsync(facadeDb.Factory, "SELECT COUNT(1) FROM remote_catalog_pending_prices;"));
+        Assert.AreEqual(
+            await ScalarAsync(directDb.Factory, "SELECT COUNT(1) FROM remote_catalog_price_ownership;"),
+            await ScalarAsync(facadeDb.Factory, "SELECT COUNT(1) FROM remote_catalog_price_ownership;"));
+        Assert.AreEqual(
+            await ScalarAsync(directDb.Factory, "SELECT COUNT(1) FROM product_price_history WHERE remote_price_id = 'parity-queued-price';"),
+            await ScalarAsync(facadeDb.Factory, "SELECT COUNT(1) FROM product_price_history WHERE remote_price_id = 'parity-queued-price';"));
+    }
+
+    [TestMethod]
     [DataRow("product-b", "retail", 125, EffectiveAt, "catalog_pull", DisplayName = "different remote product and barcode")]
     [DataRow("product-a", "wholesale", 125, EffectiveAt, "catalog_pull", DisplayName = "different type")]
     [DataRow("product-a", "retail", 126, EffectiveAt, "catalog_pull", DisplayName = "different price")]
@@ -60,7 +102,7 @@ public sealed class RemotePriceIdempotencyTests
         using var db = TestDb.Create();
         await SeedProductAsync(db.Factory, "product-a", "PRICE-A");
         await SeedProductAsync(db.Factory, "product-b", "PRICE-B");
-        var repository = new ProductRepository(db.Factory);
+        var repository = new RemotePriceHistoryRepository(db.Factory);
         var first = await repository.UpsertOrQueueRemotePriceHistoryAsync(
             "product-a",
             "price-collision",
@@ -100,7 +142,7 @@ WHERE remote_price_id = 'price-collision'
     {
         using var db = TestDb.Create();
         await SeedProductAsync(db.Factory, "product-a", "PRICE-A");
-        var repository = new ProductRepository(db.Factory);
+        var repository = new RemotePriceHistoryRepository(db.Factory);
         Assert.IsTrue((await repository.UpsertOrQueueRemotePriceHistoryAsync(
             "product-a",
             "price-barcode",
@@ -142,7 +184,7 @@ WHERE remote_price_id = 'price-barcode';"));
     {
         using var db = TestDb.Create();
         await SeedProductAsync(db.Factory, "product-a", "REUSED-BARCODE");
-        var repository = new ProductRepository(db.Factory);
+        var repository = new RemotePriceHistoryRepository(db.Factory);
         Assert.IsTrue((await repository.UpsertOrQueueRemotePriceHistoryAsync(
             "product-a",
             "price-reused-barcode",
@@ -216,7 +258,7 @@ FROM remote_catalog_price_ownership
 WHERE remote_price_id = 'legacy-price-owner-unknown';"));
         }
 
-        var retry = await new ProductRepository(db.Factory).UpsertOrQueueRemotePriceHistoryAsync(
+        var retry = await new RemotePriceHistoryRepository(db.Factory).UpsertOrQueueRemotePriceHistoryAsync(
             "product-current",
             "legacy-price-owner-unknown",
             "retail",
@@ -240,7 +282,7 @@ WHERE remote_price_id = 'legacy-price-owner-unknown';"));
     public async Task PendingPrice_ExactRetryStaysQueuedAndReplaysWhenProductArrives()
     {
         using var db = TestDb.Create();
-        var repository = new ProductRepository(db.Factory);
+        var repository = new RemotePriceHistoryRepository(db.Factory);
 
         var first = await repository.UpsertOrQueueRemotePriceHistoryAsync(
             "product-pending",
@@ -349,7 +391,7 @@ WHERE remote_price_id = 'price-pending-idempotent'
         using var db = TestDb.Create();
         await SeedProductAsync(db.Factory, "product-a", "PRICE-A");
         await SeedProductAsync(db.Factory, "product-b", "PRICE-B");
-        var repository = new ProductRepository(db.Factory);
+        var repository = new RemotePriceHistoryRepository(db.Factory);
         Assert.IsTrue((await repository.UpsertOrQueueRemotePriceHistoryAsync(
             "product-a",
             "price-replay-collision",
@@ -399,7 +441,7 @@ WHERE remote_price_id = 'price-replay-collision'
         using var db = TestDb.Create();
         await SeedProductAsync(db.Factory, "product-a", "PRICE-A");
         await SeedProductAsync(db.Factory, "product-b", "PRICE-B");
-        var prices = new ProductRepository(db.Factory);
+        var prices = new RemotePriceHistoryRepository(db.Factory);
         Assert.IsTrue((await prices.UpsertOrQueueRemotePriceHistoryAsync(
             "product-a",
             "price-batch-replay-collision",
@@ -460,7 +502,7 @@ VALUES(
         }
 
         DbInitializer.EnsureCreated(PosDbOptions.ForPath(db.Factory.DbPath));
-        var ordinaryRetry = await new ProductRepository(db.Factory)
+        var ordinaryRetry = await new RemotePriceHistoryRepository(db.Factory)
             .UpsertOrQueueRemotePriceHistoryAsync(
                 "product-repair",
                 "price-authoritative-repair",
@@ -524,7 +566,7 @@ WHERE barcode = 'REPAIR-CURRENT'
     {
         using var db = TestDb.Create();
         await SeedProductAsync(db.Factory, "product-owned", "PRICE-OWNED");
-        var prices = new ProductRepository(db.Factory);
+        var prices = new RemotePriceHistoryRepository(db.Factory);
         Assert.IsTrue((await prices.UpsertOrQueueRemotePriceHistoryAsync(
             "product-owned",
             "price-owned-drift",
@@ -575,7 +617,7 @@ WHERE remote_price_id = 'price-owned-drift';"));
         const string storedEffectiveAt = "2020-01-02T03:04:05Z";
         using var db = TestDb.Create();
         await SeedProductAsync(db.Factory, "product-blank-time", "PRICE-BLANK-TIME");
-        var prices = new ProductRepository(db.Factory);
+        var prices = new RemotePriceHistoryRepository(db.Factory);
         Assert.IsTrue((await prices.UpsertOrQueueRemotePriceHistoryAsync(
             "product-blank-time",
             "price-blank-time",
@@ -622,7 +664,7 @@ WHERE remote_price_id = 'price-blank-time'
         using var db = TestDb.Create();
         await SeedProductAsync(db.Factory, "product-owner", "PRICE-OWNER");
         await SeedProductAsync(db.Factory, "product-conflict", "PRICE-CONFLICT");
-        var prices = new ProductRepository(db.Factory);
+        var prices = new RemotePriceHistoryRepository(db.Factory);
         Assert.IsTrue((await prices.UpsertOrQueueRemotePriceHistoryAsync(
             "product-owner",
             "price-prevalidated-conflict",
@@ -680,7 +722,47 @@ WHERE remote_price_id = 'price-prevalidated-conflict';"));
     }
 
     [TestMethod]
-    public async Task PublicRemotePriceApply_OwnershipFailureRollsBackHistoryInsert()
+    public async Task InTransactionApply_CallerRollbackLeavesNoRemotePriceEvidence()
+    {
+        using var db = TestDb.Create();
+        await SeedProductAsync(db.Factory, "product-caller-rollback", "PRICE-CALLER-ROLLBACK");
+
+        using (var connection = db.Factory.Open())
+        using (var transaction = connection.BeginTransaction())
+        {
+            var result = await RemotePriceHistoryRepository
+                .UpsertOrQueueRemotePriceHistoryInTransactionAsync(
+                    connection,
+                    transaction,
+                    "product-caller-rollback",
+                    "price-caller-rollback",
+                    "retail",
+                    310,
+                    EffectiveAt,
+                    "catalog_pull");
+
+            Assert.IsTrue(result.Applied);
+            Assert.IsFalse(result.Queued);
+            transaction.Rollback();
+        }
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(0L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE remote_price_id = 'price-caller-rollback';"));
+        Assert.AreEqual(0L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM remote_catalog_pending_prices
+WHERE remote_price_id = 'price-caller-rollback';"));
+        Assert.AreEqual(0L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM remote_catalog_price_ownership
+WHERE remote_price_id = 'price-caller-rollback';"));
+    }
+
+    [TestMethod]
+    public async Task RemotePriceApply_OwnershipFailureRollsBackHistoryInsert()
     {
         using var db = TestDb.Create();
         await SeedProductAsync(db.Factory, "product-atomic", "PRICE-ATOMIC");
@@ -695,7 +777,7 @@ END;");
         }
 
         await Assert.ThrowsExactlyAsync<SqliteException>(() =>
-            new ProductRepository(db.Factory).UpsertOrQueueRemotePriceHistoryAsync(
+            new RemotePriceHistoryRepository(db.Factory).UpsertOrQueueRemotePriceHistoryAsync(
                 "product-atomic",
                 "price-atomic-fault",
                 "retail",
@@ -715,7 +797,7 @@ WHERE remote_price_id = 'price-atomic-fault';"));
     }
 
     [TestMethod]
-    public async Task PublicPendingReplay_OwnershipFailureRollsBackHistoryAndPreservesPending()
+    public async Task PendingReplay_OwnershipFailureRollsBackHistoryAndPreservesPending()
     {
         using var db = TestDb.Create();
         await SeedProductAsync(db.Factory, "product-pending-atomic", "PENDING-ATOMIC");
@@ -737,7 +819,7 @@ END;",
         }
 
         await Assert.ThrowsExactlyAsync<SqliteException>(() =>
-            new ProductRepository(db.Factory).ApplyPendingRemotePricesAsync());
+            new RemotePriceHistoryRepository(db.Factory).ApplyPendingRemotePricesAsync());
 
         using var verify = db.Factory.Open();
         Assert.AreEqual(1L, await ScalarAsync(verify, @"
@@ -793,6 +875,12 @@ VALUES(@barcode, @name, 100, @remoteProductId, 1);",
     private static Task<long> ScalarAsync(SqliteConnection connection, string sql)
     {
         return connection.ExecuteScalarAsync<long>(sql);
+    }
+
+    private static async Task<long> ScalarAsync(SqliteConnectionFactory factory, string sql)
+    {
+        using var connection = factory.Open();
+        return await connection.ExecuteScalarAsync<long>(sql);
     }
 
     private sealed class TestDb : IDisposable

@@ -33,6 +33,7 @@ $cli = Read-Text "src/Win7POS.Cli/Program.cs"
 $viewModel = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs"
 $workflow = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs"
 $productRepository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
+$remotePriceHistoryRepository = Read-Text "src/Win7POS.Data/Repositories/RemotePriceHistoryRepository.cs"
 $restoreGuard = Read-Text "scripts/check-win7pos-restore-guard.ps1"
 $combinedSrc = Get-ChildItem -Path (Join-Path $repoRoot "src") -Recurse -File -Include *.cs,*.xaml,*.csproj |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
@@ -80,6 +81,12 @@ Assert-Contains $repository "ApplyRemoteProductIdsAsync" "catalog import ack app
 Assert-Contains $repository "ApplyRemotePriceIdsAsync" "catalog import ack applies remote price ids"
 Assert-Contains $repository "catalog_import_client_item_id = @ClientItemId" "catalog import remote price ack matches original client item"
 Assert-Contains $repository "catalog_import_idempotency_key = @IdempotencyKey" "catalog import remote price ack matches original idempotency key"
+if ($repository -match "RemotePriceHistoryRepository\s*\.\s*StoreRemotePriceOwnershipAsync") {
+    Pass "catalog import ack uses the extracted remote price ownership collaborator"
+} else {
+    Fail "catalog import ack uses the extracted remote price ownership collaborator"
+}
+Assert-Contains $remotePriceHistoryRepository "StoreRemotePriceOwnershipAsync" "remote price ownership collaborator provides the transaction helper"
 Assert-Contains $syncService "MarkRetryAsync" "catalog import sync can retry transient failures"
 Assert-Contains $syncService "MarkBlockedAsync" "catalog import sync can block validation/conflict"
 Assert-Contains $cli "--catalog-import-sync-http-harness" "catalog import HTTP harness present"
