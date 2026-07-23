@@ -62,8 +62,8 @@ $specMarkers = @(
     "SqlStatementCount",
     "page-local",
     "tx\.Commit\(\)",
-    "19 SQL commands",
-    "22 SQL statements",
+    "16 SQL commands",
+    "18 SQL statements",
     "not a performance budget",
     "rollback"
 )
@@ -153,12 +153,12 @@ if ($missingPriceMarkers.Count -gt 0) {
 $baselineTest = Get-TestSlice $tests "PriceOnlyPagesPublishExactRemotePriceApplyDiagnostics"
 if ([string]::IsNullOrWhiteSpace($baselineTest) -or
     $baselineTest -notmatch "Assert\.AreEqual\(\s*16L?\s*,[\s\S]{0,180}RemotePriceApply\.SqlCommandCount" -or
-    $baselineTest -notmatch "Assert\.AreEqual\(\s*20L?\s*,[\s\S]{0,180}RemotePriceApply\.SqlStatementCount" -or
+    $baselineTest -notmatch "Assert\.AreEqual\(\s*18L?\s*,[\s\S]{0,180}RemotePriceApply\.SqlStatementCount" -or
     $baselineTest -notmatch "RemotePriceApply\.SetBasedPageCount" -or
     $baselineTest -notmatch "RemotePriceApply\.FallbackPageCount") {
-    Fail "the price-only test must assert the exact set-based 16-command/20-statement contract"
+    Fail "the price-only test must assert the exact set-based 16-command/18-statement contract"
 } else {
-    Pass "the price-only test asserts the exact set-based 16-command/20-statement contract"
+    Pass "the price-only test asserts the exact set-based 16-command/18-statement contract"
 }
 
 $rollbackTest = Get-TestSlice $tests "FailedPricePageDoesNotPublishRemotePriceApplyDiagnostics"

@@ -140,18 +140,9 @@ namespace Win7POS.Data.Repositories
                 return new RemotePriceBatchApplyResult { Skipped = skipped };
             }
 
-            RecordSqlCommand(diagnostics, statementCount: 2);
-            await conn.ExecuteAsync(@"
-CREATE TEMP TABLE IF NOT EXISTS temp_catalog_page_remote_prices(
-  ordinal INTEGER PRIMARY KEY NOT NULL,
-  remote_price_id TEXT NOT NULL,
-  remote_product_id TEXT NOT NULL,
-  type TEXT NOT NULL,
-  price INTEGER NOT NULL,
-  effective_at TEXT NOT NULL,
-  source TEXT NOT NULL
-);
-DELETE FROM temp_catalog_page_remote_prices;",
+            RecordSqlCommand(diagnostics);
+            await conn.ExecuteAsync(
+                "DELETE FROM temp_catalog_page_remote_prices;",
                 transaction: tx).ConfigureAwait(false);
 
             await InsertRemotePriceStageRowsAsync(
@@ -163,11 +154,16 @@ DELETE FROM temp_catalog_page_remote_prices;",
             RecordSqlCommand(diagnostics);
             var setBasedShapeSupported = await conn.ExecuteScalarAsync<long>(@"
 WITH canonical_products AS (
-  SELECT remote_product_id, MIN(id) AS product_id
-  FROM products
-  WHERE COALESCE(is_active, 1) = 1
-    AND COALESCE(remote_product_id, '') <> ''
-  GROUP BY remote_product_id
+  SELECT product.remote_product_id, MIN(product.id) AS product_id
+  FROM products product
+  JOIN (
+    SELECT DISTINCT remote_product_id
+    FROM temp_catalog_page_remote_prices
+  ) staged_product
+    ON staged_product.remote_product_id = product.remote_product_id
+  WHERE COALESCE(product.is_active, 1) = 1
+    AND COALESCE(product.remote_product_id, '') <> ''
+  GROUP BY product.remote_product_id
 ),
 canonical_stage AS (
   SELECT staged.*
@@ -270,11 +266,16 @@ WITH canonical_stage AS (
    AND first_row.ordinal = staged.ordinal
 ),
 canonical_products AS (
-  SELECT remote_product_id, MIN(id) AS product_id
-  FROM products
-  WHERE COALESCE(is_active, 1) = 1
-    AND COALESCE(remote_product_id, '') <> ''
-  GROUP BY remote_product_id
+  SELECT product.remote_product_id, MIN(product.id) AS product_id
+  FROM products product
+  JOIN (
+    SELECT DISTINCT remote_product_id
+    FROM temp_catalog_page_remote_prices
+  ) staged_product
+    ON staged_product.remote_product_id = product.remote_product_id
+  WHERE COALESCE(product.is_active, 1) = 1
+    AND COALESCE(product.remote_product_id, '') <> ''
+  GROUP BY product.remote_product_id
 )
 INSERT OR IGNORE INTO product_price_history(
   barcode,

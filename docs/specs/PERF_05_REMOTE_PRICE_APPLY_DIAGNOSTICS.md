@@ -28,9 +28,11 @@ queue, retry, or transaction behavior.
 ## Deterministic baseline
 
 For three valid remote-price rows across two committed price-only pages, the
-expected aggregate is **19 SQL commands** and **22 SQL statements**:
+expected aggregate is **16 SQL commands** and **18 SQL statements**:
 
-`commands = 5N + 2P`; `statements = 6N + 2P`, with `N = 3` and `P = 2`.
+Each of the two pages uses one staged insert command plus seven bounded
+set-based/evidence commands; the history/ownership write accounts for the
+one additional statement per page.
 
 This is an exact functional accounting assertion for that controlled input,
 not a performance budget.  Failed-page tests must prove that this accounting
@@ -39,7 +41,7 @@ same evidence but imposes no pass/fail timing or allocation threshold.
 
 ## Acceptance evidence
 
-- `PriceOnlyPagesPublishExactRemotePriceApplyDiagnostics` proves the 19/22
+- `PriceOnlyPagesPublishExactRemotePriceApplyDiagnostics` proves the 16/18
   baseline.
 - `FailedPricePageDoesNotPublishRemotePriceApplyDiagnostics` proves
   post-commit publication only.

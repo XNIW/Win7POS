@@ -11,6 +11,7 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
 using Win7POS.Core.Online;
+using Win7POS.Core.Receipt;
 using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
@@ -236,7 +237,36 @@ namespace Win7POS.Data.Repositories
                             StringComparer.Ordinal);
                     var preparedProductCommands = runContext.ProductCommands;
                     var preparedReferenceCommand = runContext.ReferenceCommand;
-                    foreach (var product in batch.Products ?? Array.Empty<RemoteCatalogProductWrite>())
+                    var pageProducts = batch.Products ?? Array.Empty<RemoteCatalogProductWrite>();
+                    var pageRequiresLegacyProductPath = await runContext
+                        .PageRequiresLegacyProductRebindAsync(tx)
+                        .ConfigureAwait(false);
+                    if (!pageRequiresLegacyProductPath)
+                    {
+                        var validIdentities = pageProducts
+                            .Where(product =>
+                                product != null &&
+                                !string.IsNullOrWhiteSpace(product.Barcode) &&
+                                !string.IsNullOrWhiteSpace(product.RemoteProductId))
+                            .Select(product => new
+                            {
+                                Barcode = NormalizeBarcode(product.Barcode),
+                                RemoteProductId = product.RemoteProductId.Trim()
+                            })
+                            .ToArray();
+                        pageRequiresLegacyProductPath =
+                            validIdentities
+                                .GroupBy(identity => identity.Barcode, StringComparer.OrdinalIgnoreCase)
+                                .Any(group => group.Count() > 1) ||
+                            validIdentities
+                                .GroupBy(identity => identity.RemoteProductId, StringComparer.Ordinal)
+                                .Any(group => group.Count() > 1);
+                    }
+
+                    var cleanProducts =
+                        new List<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite>(
+                            pageProducts.Count);
+                    foreach (var product in pageProducts)
                     {
                         var normalizedBarcode = NormalizeBarcode(product?.Barcode);
                         var normalizedRemoteProductId = (product?.RemoteProductId ?? string.Empty).Trim();
@@ -283,30 +313,77 @@ namespace Win7POS.Data.Repositories
                             supplierId = resolvedSupplierId;
                         }
 
-                        await RemoteCatalogProductWriter.UpsertProductAndMetaInTransactionCoreAsync(
-                            conn,
-                            tx,
-                            new Product
-                            {
-                                Barcode = product.Barcode.Trim(),
-                                Name = product.Name,
-                                UnitPrice = product.UnitPrice
-                            },
-                            product.ArticleCode,
-                            product.SecondName,
-                            product.PurchasePrice,
-                            supplierId,
-                            product.SupplierName,
-                            categoryId,
-                            product.CategoryName,
-                            product.StockQuantity,
-                            normalizedRemoteProductId,
-                            preparedProductCommands,
-                            productBatchContext).ConfigureAwait(false);
-                        await preparedReferenceCommand.UpsertAsync(
-                            normalizedRemoteProductId,
-                            product.RemoteCategoryId,
-                            product.RemoteSupplierId).ConfigureAwait(false);
+                        SalesReceiptContentPolicy.EnsureValidProductIdentity(
+                            normalizedBarcode,
+                            product.Name);
+                        if (ProductIdentityPolicy.IsReservedBarcode(normalizedBarcode))
+                        {
+                            throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
+                        }
+
+                        var hasPendingLocalStock = productBatchContext.HasPendingLocalStock(
+                            normalizedBarcode,
+                            normalizedRemoteProductId);
+                        if (!pageRequiresLegacyProductPath && !hasPendingLocalStock)
+                        {
+                            var supplierRef = await productBatchContext.ResolveSupplierAsync(
+                                conn,
+                                tx,
+                                supplierId,
+                                product.SupplierName).ConfigureAwait(false);
+                            var categoryRef = await productBatchContext.ResolveCategoryAsync(
+                                conn,
+                                tx,
+                                categoryId,
+                                product.CategoryName).ConfigureAwait(false);
+                            cleanProducts.Add(
+                                new RemoteCatalogProductWriter.RemoteCatalogSetProductWrite
+                                {
+                                    ArticleCode = product.ArticleCode ?? string.Empty,
+                                    Barcode = normalizedBarcode,
+                                    CategoryId = categoryRef.Id,
+                                    CategoryName = categoryRef.Name ?? string.Empty,
+                                    Name = product.Name,
+                                    PurchasePrice = product.PurchasePrice,
+                                    RemoteCategoryId =
+                                        (product.RemoteCategoryId ?? string.Empty).Trim(),
+                                    RemoteProductId = normalizedRemoteProductId,
+                                    RemoteSupplierId =
+                                        (product.RemoteSupplierId ?? string.Empty).Trim(),
+                                    SecondName = product.SecondName ?? string.Empty,
+                                    StockQuantity = product.StockQuantity,
+                                    SupplierId = supplierRef.Id,
+                                    SupplierName = supplierRef.Name ?? string.Empty,
+                                    UnitPrice = product.UnitPrice
+                                });
+                        }
+                        else
+                        {
+                            await RemoteCatalogProductWriter.UpsertProductAndMetaInTransactionCoreAsync(
+                                conn,
+                                tx,
+                                new Product
+                                {
+                                    Barcode = normalizedBarcode,
+                                    Name = product.Name,
+                                    UnitPrice = product.UnitPrice
+                                },
+                                product.ArticleCode,
+                                product.SecondName,
+                                product.PurchasePrice,
+                                supplierId,
+                                product.SupplierName,
+                                categoryId,
+                                product.CategoryName,
+                                product.StockQuantity,
+                                normalizedRemoteProductId,
+                                preparedProductCommands,
+                                productBatchContext).ConfigureAwait(false);
+                            await preparedReferenceCommand.UpsertAsync(
+                                normalizedRemoteProductId,
+                                product.RemoteCategoryId,
+                                product.RemoteSupplierId).ConfigureAwait(false);
+                        }
                         if (activeBarcodeByRemoteId.TryGetValue(
                                 normalizedRemoteProductId,
                                 out var previousBarcode) &&
@@ -330,6 +407,12 @@ namespace Win7POS.Data.Repositories
                         relinkProductRemoteIds.Add(normalizedRemoteProductId);
                         result.ProductsApplied += 1;
                     }
+
+                    await runContext.StageCleanProductsAsync(cleanProducts).ConfigureAwait(false);
+                    await RemoteCatalogProductWriter.ApplyCleanProductsSetBasedInTransactionAsync(
+                        conn,
+                        tx,
+                        cleanProducts).ConfigureAwait(false);
 
                     var pendingReplay = await RemotePriceHistoryRepository
                         .ApplyPendingRemotePricesInTransactionAsync(
@@ -1587,7 +1670,9 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
         private readonly RemoteCatalogBatchRepository _repository;
         private readonly SemaphoreSlim _singleFlight = new SemaphoreSlim(1, 1);
         private readonly SqliteCommand _clearPageProducts;
+        private readonly SqliteCommand _clearPageSetProducts;
         private readonly SqliteCommand _stagePageProduct;
+        private readonly SqliteCommand _stagePageSetProduct;
         private Dictionary<string, int> _categoryIdsByRemoteId =
             new Dictionary<string, int>(StringComparer.Ordinal);
         private Dictionary<string, int> _supplierIdsByRemoteId =
@@ -1618,7 +1703,39 @@ CREATE TEMP TABLE IF NOT EXISTS temp_catalog_page_product_identities (
   PRIMARY KEY(barcode, remote_product_id)
 );
 CREATE INDEX IF NOT EXISTS temp_catalog_page_product_remote_id_idx
-  ON temp_catalog_page_product_identities(remote_product_id);";
+  ON temp_catalog_page_product_identities(remote_product_id);
+CREATE TEMP TABLE IF NOT EXISTS temp_catalog_page_products(
+  ordinal INTEGER PRIMARY KEY NOT NULL,
+  barcode TEXT NOT NULL COLLATE NOCASE,
+  name TEXT NOT NULL,
+  unit_price INTEGER NOT NULL,
+  remote_product_id TEXT NOT NULL,
+  article_code TEXT NOT NULL,
+  second_name TEXT NOT NULL,
+  purchase_price INTEGER NOT NULL,
+  supplier_id INTEGER,
+  supplier_name TEXT NOT NULL,
+  category_id INTEGER,
+  category_name TEXT NOT NULL,
+  stock_quantity INTEGER NOT NULL,
+  remote_category_id TEXT NOT NULL,
+  remote_supplier_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS temp_catalog_page_products_remote_id_idx
+  ON temp_catalog_page_products(remote_product_id);
+CREATE TEMP TABLE IF NOT EXISTS temp_catalog_page_remote_prices(
+  ordinal INTEGER PRIMARY KEY NOT NULL,
+  remote_price_id TEXT NOT NULL,
+  remote_product_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  price INTEGER NOT NULL,
+  effective_at TEXT NOT NULL,
+  source TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS temp_catalog_page_remote_prices_remote_id_idx
+  ON temp_catalog_page_remote_prices(remote_price_id);
+CREATE INDEX IF NOT EXISTS temp_catalog_page_remote_prices_product_id_idx
+  ON temp_catalog_page_remote_prices(remote_product_id);";
                     create.ExecuteNonQuery();
                 }
 
@@ -1632,6 +1749,10 @@ CREATE INDEX IF NOT EXISTS temp_catalog_page_product_remote_id_idx
                 _clearPageProducts.CommandText =
                     "DELETE FROM temp_catalog_page_product_identities;";
                 _clearPageProducts.Prepare();
+                _clearPageSetProducts = Connection.CreateCommand();
+                _clearPageSetProducts.CommandText =
+                    "DELETE FROM temp_catalog_page_products;";
+                _clearPageSetProducts.Prepare();
                 _stagePageProduct = Connection.CreateCommand();
                 _stagePageProduct.CommandText = @"
 INSERT OR IGNORE INTO temp_catalog_page_product_identities(barcode, remote_product_id)
@@ -1639,7 +1760,72 @@ VALUES(@barcode, @remoteProductId);";
                 _stagePageProduct.Parameters.Add(new SqliteParameter("@barcode", string.Empty));
                 _stagePageProduct.Parameters.Add(new SqliteParameter("@remoteProductId", string.Empty));
                 _stagePageProduct.Prepare();
-                Diagnostics.PreparedCommandCount = 8;
+                _stagePageSetProduct = Connection.CreateCommand();
+                _stagePageSetProduct.CommandText = @"
+INSERT INTO temp_catalog_page_products(
+  ordinal,
+  barcode,
+  name,
+  unit_price,
+  remote_product_id,
+  article_code,
+  second_name,
+  purchase_price,
+  supplier_id,
+  supplier_name,
+  category_id,
+  category_name,
+  stock_quantity,
+  remote_category_id,
+  remote_supplier_id)
+VALUES(
+  @ordinal,
+  @barcode,
+  @name,
+  @unitPrice,
+  @remoteProductId,
+  @articleCode,
+  @secondName,
+  @purchasePrice,
+  @supplierId,
+  @supplierName,
+  @categoryId,
+  @categoryName,
+  @stockQuantity,
+  @remoteCategoryId,
+  @remoteSupplierId);";
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@ordinal", SqliteType.Integer));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@barcode", SqliteType.Text));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@name", SqliteType.Text));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@unitPrice", SqliteType.Integer));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@remoteProductId", SqliteType.Text));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@articleCode", SqliteType.Text));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@secondName", SqliteType.Text));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@purchasePrice", SqliteType.Integer));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@supplierId", SqliteType.Integer));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@supplierName", SqliteType.Text));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@categoryId", SqliteType.Integer));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@categoryName", SqliteType.Text));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@stockQuantity", SqliteType.Integer));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@remoteCategoryId", SqliteType.Text));
+                _stagePageSetProduct.Parameters.Add(
+                    new SqliteParameter("@remoteSupplierId", SqliteType.Text));
+                _stagePageSetProduct.Prepare();
+                Diagnostics.PreparedCommandCount = 10;
                 Diagnostics.ContextSqlCommandCount = 1;
             }
             catch
@@ -1684,7 +1870,9 @@ VALUES(@barcode, @remoteProductId);";
             ProductCommands.SetTransaction(transaction);
             ReferenceCommand.SetTransaction(transaction);
             _clearPageProducts.Transaction = transaction;
+            _clearPageSetProducts.Transaction = transaction;
             _stagePageProduct.Transaction = transaction;
+            _stagePageSetProduct.Transaction = transaction;
         }
 
         internal async Task<RemoteCatalogPageState> CreatePageStateAsync(
@@ -1824,6 +2012,62 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
             return rows;
         }
 
+        internal async Task<bool> PageRequiresLegacyProductRebindAsync(
+            SqliteTransaction transaction)
+        {
+            var required = await Connection.ExecuteScalarAsync<long>(@"
+SELECT EXISTS (
+  SELECT 1
+  FROM temp_catalog_page_product_identities incoming
+  JOIN products existing_remote
+    ON incoming.remote_product_id <> ''
+   AND existing_remote.remote_product_id = incoming.remote_product_id
+   AND existing_remote.barcode <> incoming.barcode
+  WHERE incoming.barcode <> ''
+    AND NOT EXISTS (
+      SELECT 1
+      FROM products target
+      WHERE target.barcode = incoming.barcode
+    )
+);",
+                transaction: transaction).ConfigureAwait(false);
+            Diagnostics.ScopeSqlQueryCount += 1;
+            Diagnostics.ContextSqlCommandCount += 1;
+            return required != 0;
+        }
+
+        internal async Task StageCleanProductsAsync(
+            IReadOnlyList<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite> products)
+        {
+            await _clearPageSetProducts.ExecuteNonQueryAsync().ConfigureAwait(false);
+            Diagnostics.ContextSqlCommandCount += 1;
+            var rows = products ??
+                Array.Empty<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite>();
+            for (var index = 0; index < rows.Count; index += 1)
+            {
+                var row = rows[index];
+                _stagePageSetProduct.Parameters["@ordinal"].Value = index;
+                _stagePageSetProduct.Parameters["@barcode"].Value = row.Barcode;
+                _stagePageSetProduct.Parameters["@name"].Value = row.Name;
+                _stagePageSetProduct.Parameters["@unitPrice"].Value = row.UnitPrice;
+                _stagePageSetProduct.Parameters["@remoteProductId"].Value = row.RemoteProductId;
+                _stagePageSetProduct.Parameters["@articleCode"].Value = row.ArticleCode;
+                _stagePageSetProduct.Parameters["@secondName"].Value = row.SecondName;
+                _stagePageSetProduct.Parameters["@purchasePrice"].Value = row.PurchasePrice;
+                _stagePageSetProduct.Parameters["@supplierId"].Value =
+                    (object)row.SupplierId ?? DBNull.Value;
+                _stagePageSetProduct.Parameters["@supplierName"].Value = row.SupplierName;
+                _stagePageSetProduct.Parameters["@categoryId"].Value =
+                    (object)row.CategoryId ?? DBNull.Value;
+                _stagePageSetProduct.Parameters["@categoryName"].Value = row.CategoryName;
+                _stagePageSetProduct.Parameters["@stockQuantity"].Value = row.StockQuantity;
+                _stagePageSetProduct.Parameters["@remoteCategoryId"].Value = row.RemoteCategoryId;
+                _stagePageSetProduct.Parameters["@remoteSupplierId"].Value = row.RemoteSupplierId;
+                await _stagePageSetProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
+                Diagnostics.ContextSqlCommandCount += 1;
+            }
+        }
+
         internal void CommitPageState(RemoteCatalogPageState pageState)
         {
             _categoryIdsByRemoteId = pageState.CategoryIdsByRemoteId;
@@ -1851,7 +2095,9 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
 
             _disposed = true;
             BindTransaction(null);
+            _stagePageSetProduct.Dispose();
             _stagePageProduct.Dispose();
+            _clearPageSetProducts.Dispose();
             _clearPageProducts.Dispose();
             ReferenceCommand.Dispose();
             ProductCommands.Dispose();

@@ -304,6 +304,164 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
             return id;
         }
 
+        internal sealed class RemoteCatalogSetProductWrite
+        {
+            public string ArticleCode { get; set; } = string.Empty;
+            public string Barcode { get; set; } = string.Empty;
+            public int? CategoryId { get; set; }
+            public string CategoryName { get; set; } = string.Empty;
+            public string Name { get; set; } = string.Empty;
+            public int PurchasePrice { get; set; }
+            public string RemoteCategoryId { get; set; } = string.Empty;
+            public string RemoteProductId { get; set; } = string.Empty;
+            public string RemoteSupplierId { get; set; } = string.Empty;
+            public string SecondName { get; set; } = string.Empty;
+            public int StockQuantity { get; set; }
+            public int? SupplierId { get; set; }
+            public string SupplierName { get; set; } = string.Empty;
+            public long UnitPrice { get; set; }
+        }
+
+        internal static async Task ApplyCleanProductsSetBasedInTransactionAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            IReadOnlyList<RemoteCatalogSetProductWrite> products)
+        {
+            if (conn == null) throw new ArgumentNullException(nameof(conn));
+            if (tx == null) throw new ArgumentNullException(nameof(tx));
+            var rows = products ?? Array.Empty<RemoteCatalogSetProductWrite>();
+            if (rows.Count == 0)
+            {
+                return;
+            }
+
+            await conn.ExecuteAsync(@"
+INSERT INTO products(
+  barcode,
+  name,
+  unitPrice,
+  remote_product_id,
+  remote_deleted_at,
+  is_active)
+SELECT
+  staged.barcode,
+  staged.name,
+  staged.unit_price,
+  staged.remote_product_id,
+  NULL,
+  1
+FROM temp_catalog_page_products staged
+WHERE 1 = 1
+ON CONFLICT(barcode) DO UPDATE SET
+  name = excluded.name,
+  unitPrice = excluded.unitPrice,
+  remote_product_id = excluded.remote_product_id,
+  remote_deleted_at = NULL,
+  is_active = 1;
+
+UPDATE products
+SET is_active = 0,
+    remote_deleted_at = @remoteDeletedAt
+WHERE COALESCE(is_active, 1) = 1
+  AND EXISTS (
+    SELECT 1
+    FROM temp_catalog_page_products staged
+    WHERE staged.remote_product_id = products.remote_product_id
+      AND staged.barcode <> products.barcode
+  );
+
+INSERT OR REPLACE INTO product_meta(
+  barcode,
+  article_code,
+  name2,
+  purchase_price,
+  purchase_old,
+  retail_old,
+  supplier_id,
+  supplier_name,
+  category_id,
+  category_name,
+  stock_qty)
+SELECT
+  barcode,
+  article_code,
+  second_name,
+  purchase_price,
+  0,
+  0,
+  supplier_id,
+  supplier_name,
+  category_id,
+  category_name,
+  stock_quantity
+FROM temp_catalog_page_products;
+
+INSERT INTO remote_catalog_product_references(
+  remote_product_id,
+  remote_category_id,
+  remote_supplier_id)
+SELECT
+  remote_product_id,
+  NULLIF(remote_category_id, ''),
+  NULLIF(remote_supplier_id, '')
+FROM temp_catalog_page_products
+WHERE 1 = 1
+ON CONFLICT(remote_product_id) DO UPDATE SET
+  remote_category_id = excluded.remote_category_id,
+  remote_supplier_id = excluded.remote_supplier_id;",
+                new
+                {
+                    remoteDeletedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                },
+                tx).ConfigureAwait(false);
+
+            var verified = await conn.ExecuteScalarAsync<long>(@"
+SELECT CASE WHEN
+  (
+    SELECT COUNT(1)
+    FROM temp_catalog_page_products staged
+    JOIN products product
+      ON product.barcode = staged.barcode
+     AND product.remote_product_id = staged.remote_product_id
+     AND product.name = staged.name
+     AND product.unitPrice = staged.unit_price
+     AND COALESCE(product.is_active, 1) = 1
+    JOIN product_meta meta
+      ON meta.barcode = staged.barcode
+     AND meta.article_code = staged.article_code
+     AND meta.name2 = staged.second_name
+     AND meta.purchase_price = staged.purchase_price
+     AND meta.supplier_id IS staged.supplier_id
+     AND meta.supplier_name = staged.supplier_name
+     AND meta.category_id IS staged.category_id
+     AND meta.category_name = staged.category_name
+     AND meta.stock_qty = staged.stock_quantity
+    JOIN remote_catalog_product_references reference
+      ON reference.remote_product_id = staged.remote_product_id
+     AND COALESCE(reference.remote_category_id, '') = staged.remote_category_id
+     AND COALESCE(reference.remote_supplier_id, '') = staged.remote_supplier_id
+  ) = (SELECT COUNT(1) FROM temp_catalog_page_products)
+  AND NOT EXISTS (
+    SELECT product.remote_product_id
+    FROM products product
+    JOIN temp_catalog_page_products staged
+      ON staged.remote_product_id = product.remote_product_id
+    WHERE COALESCE(product.is_active, 1) = 1
+    GROUP BY product.remote_product_id
+    HAVING COUNT(1) > 1
+  )
+THEN 1 ELSE 0 END;",
+                transaction: tx).ConfigureAwait(false);
+            if (verified != 1)
+            {
+                throw new InvalidOperationException("catalog_product_set_apply_verification_failed");
+            }
+
+            await conn.ExecuteAsync(
+                "DELETE FROM temp_catalog_page_products;",
+                transaction: tx).ConfigureAwait(false);
+        }
+
         internal sealed class CatalogProductPreparedCommands : IDisposable
         {
             private readonly SqliteCommand _getProductId;

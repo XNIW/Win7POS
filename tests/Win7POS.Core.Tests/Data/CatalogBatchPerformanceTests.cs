@@ -25,7 +25,7 @@ public sealed class CatalogBatchPerformanceTests
         Assert.AreEqual(3L, sample.PriceCount);
         Assert.AreEqual(0L, sample.PendingPriceCount);
         Assert.AreEqual(16L, sample.RemotePriceApplySqlCommandCount);
-        Assert.AreEqual(20L, sample.RemotePriceApplySqlStatementCount);
+        Assert.AreEqual(18L, sample.RemotePriceApplySqlStatementCount);
         Assert.AreEqual(0L, sample.RemotePriceApplyFallbackPageCount);
         Assert.AreEqual(2L, sample.RemotePriceApplyPreparedCommandCount);
         Assert.AreEqual(2L, sample.RemotePriceApplySetBasedPageCount);
