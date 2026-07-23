@@ -25,6 +25,7 @@ function Check {
 
 $core = Read-RepoFile "src/Win7POS.Core/Products/ProductPaging.cs"
 $repository = Read-RepoFile "src/Win7POS.Data/Repositories/ProductRepository.cs"
+$queryRepository = Read-RepoFile "src/Win7POS.Data/Repositories/ProductQueryRepository.cs"
 $workflow = Read-RepoFile "src/Win7POS.Wpf/Products/ProductsWorkflowService.cs"
 $viewModel = Read-RepoFile "src/Win7POS.Wpf/Products/ProductsViewModel.cs"
 $catalogEvents = Read-RepoFile "src/Win7POS.Wpf/Infrastructure/CatalogEvents.cs"
@@ -56,17 +57,44 @@ Check ($core -match 'SHA256\.Create' -and
     "fingerprint, SQLite BINARY comparison, state fencing, bounded anchors, reverse paging and explicit fallback are present" `
     "pure paging policy is missing collation/state/fingerprint/bounds/reverse/fallback"
 
-Check ($repository -match 'p\.barcode\s+COLLATE\s+BINARY\s+"\s*\+\s*barcodeComparison' -and
-       $repository -match 'p\.id\s+"\s*\+\s*idComparison' -and
-       $repository -match 'p\.barcode\s+COLLATE\s+BINARY\s+"\s*\+\s*direction' -and
-       $repository -match 'p\.id\s+"\s*\+\s*direction') `
+$forwardedQueryMethods = @(
+    'GetByBarcodeAsync',
+    'GetByBarcodesAsync',
+    'GetByIdAsync',
+    'ListAllAsync',
+    'SearchAsync',
+    'SearchDetailsAsync',
+    'CountDetailsAsync',
+    'GetCatalogStatsAsync',
+    'SearchDetailsPageAsync',
+    'GetDetailsByIdAsync',
+    'GetDetailsByBarcodeAsync',
+    'GetPriceHistoryByBarcodeAsync',
+    'ListAllDetailsAsync',
+    'ListDetailsByBarcodesAsync',
+    'ListAllPriceHistoryAsync',
+    'CountActiveRemoteProductsAsync'
+)
+$missingForwardedQueryMethods = @($forwardedQueryMethods | Where-Object {
+    $repository -notmatch ("_queries\." + [regex]::Escape($_) + "\(")
+})
+
+Check ($repository -match 'private\s+readonly\s+ProductQueryRepository\s+_queries;' -and
+       $missingForwardedQueryMethods.Count -eq 0) `
+    "public ProductRepository remains a complete forwarding facade for query reads" `
+    "ProductRepository no longer forwards every public query read through ProductQueryRepository"
+
+Check ($queryRepository -match 'p\.barcode\s+COLLATE\s+BINARY\s+"\s*\+\s*barcodeComparison' -and
+       $queryRepository -match 'p\.id\s+"\s*\+\s*idComparison' -and
+       $queryRepository -match 'p\.barcode\s+COLLATE\s+BINARY\s+"\s*\+\s*direction' -and
+       $queryRepository -match 'p\.id\s+"\s*\+\s*direction') `
     "Data keyset uses BINARY barcode and id in predicates/order" `
     "Data keyset predicate/order is not the stable barcode/id tuple"
 
-Check ($repository -match 'plan\.Kind\s*==\s*ProductPageQueryKind\.OffsetFallback' -and
-       $repository -match 'OFFSET\s+@offset' -and
-       $repository -match 'ProductPageQueryKind\.Forward' -and
-       $repository -match 'ProductPageQueryKind\.Reverse') `
+Check ($queryRepository -match 'plan\.Kind\s*==\s*ProductPageQueryKind\.OffsetFallback' -and
+       $queryRepository -match 'OFFSET\s+@offset' -and
+       $queryRepository -match 'ProductPageQueryKind\.Forward' -and
+       $queryRepository -match 'ProductPageQueryKind\.Reverse') `
     "OFFSET is isolated behind the explicit arbitrary-jump plan" `
     "OFFSET fallback is not explicitly isolated from ordinary navigation"
 
@@ -115,6 +143,10 @@ Check ($coreTests -match 'duplicate' -and
        $repositoryTests -match 'SqliteBinaryUnicodeOrder' -and
        $repositoryTests -match 'ReverseKeyset' -and
        $repositoryTests -match 'OffsetFallback' -and
+       $repositoryTests -match 'QueryRepository_AndPublicFacade_ReturnEquivalentKeysetSnapshot' -and
+       $repositoryTests -match 'QueryRepository_RejectsPagingPlanForDifferentFilter' -and
+       $repositoryTests -match 'QueryRepository_SupportsParallelReadsWithoutSharedQueryState' -and
+       $repositoryTests -match 'QueryRepository_BatchLookup_TrimsDeduplicatesAndCrossesSqliteParameterBoundary' -and
        $repositoryPerformanceTests -match 'PRODUCT_REPOSITORY_KEYSET_100K' -and
        $repositoryPerformanceTests -match 'offset_p95_ms' -and
        $repositoryPerformanceTests -match '1\.15d' -and

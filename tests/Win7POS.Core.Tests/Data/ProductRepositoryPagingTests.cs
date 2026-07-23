@@ -161,6 +161,94 @@ public sealed class ProductRepositoryPagingTests
         CollectionAssert.AreEqual(new[] { "B11", "B12" }, sixth.Items.Select(item => item.Barcode).ToArray());
     }
 
+    [TestMethod]
+    public async Task QueryRepository_AndPublicFacade_ReturnEquivalentKeysetSnapshot()
+    {
+        using var fixture = new Fixture();
+        fixture.Seed(
+            (1, "900", "milk long-life"),
+            (2, "milk", "exact product"),
+            (3, "100", "milk fresh"),
+            (4, "ZZZ", "milk powder"));
+
+        var filter = new ProductPageFilter("milk", null, null, 2, 1);
+        var plan = new ProductPagingCoordinator().Plan(filter, 1);
+
+        var facade = await fixture.Repository.SearchDetailsPageAsync(filter, plan);
+        var query = await fixture.Queries.SearchDetailsPageAsync(filter, plan);
+
+        Assert.AreEqual(facade.TotalCount, query.TotalCount);
+        CollectionAssert.AreEqual(
+            facade.Items.Select(item => item.Id).ToArray(),
+            query.Items.Select(item => item.Id).ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "milk", "100" },
+            query.Items.Select(item => item.Barcode).ToArray());
+    }
+
+    [TestMethod]
+    public async Task QueryRepository_RejectsPagingPlanForDifferentFilter()
+    {
+        using var fixture = new Fixture();
+        fixture.Seed((1, "A", "alpha"));
+
+        var requestedFilter = new ProductPageFilter("alpha", null, null, 25, 1);
+        var otherFilter = new ProductPageFilter("beta", null, null, 25, 1);
+        var plan = new ProductPagingCoordinator().Plan(otherFilter, 1);
+
+        try
+        {
+            await fixture.Queries.SearchDetailsPageAsync(requestedFilter, plan);
+            Assert.Fail("A paging plan bound to another filter must be rejected.");
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    [TestMethod]
+    public async Task QueryRepository_SupportsParallelReadsWithoutSharedQueryState()
+    {
+        using var fixture = new Fixture();
+        fixture.Seed(Enumerable.Range(1, 12)
+            .Select(index => ((long)index, $"B{index:D2}", $"Product {index:D2}"))
+            .ToArray());
+
+        var filter = new ProductPageFilter(string.Empty, null, null, 3, 1);
+        var plan = new ProductPagingCoordinator().Plan(filter, 1);
+        var snapshots = await Task.WhenAll(
+            Enumerable.Range(0, 8)
+                .Select(_ => fixture.Queries.SearchDetailsPageAsync(filter, plan)));
+
+        foreach (var snapshot in snapshots)
+        {
+            Assert.AreEqual(12, snapshot.TotalCount);
+            CollectionAssert.AreEqual(
+                new[] { "B01", "B02", "B03" },
+                snapshot.Items.Select(item => item.Barcode).ToArray());
+        }
+    }
+
+    [TestMethod]
+    public async Task QueryRepository_BatchLookup_TrimsDeduplicatesAndCrossesSqliteParameterBoundary()
+    {
+        using var fixture = new Fixture();
+        fixture.Seed(Enumerable.Range(1, 901)
+            .Select(index => ((long)index, $"B{index:D4}", $"Product {index:D4}"))
+            .ToArray());
+
+        var requested = Enumerable.Range(1, 901)
+            .Select(index => $" B{index:D4} ")
+            .Concat(new[] { "B0001", string.Empty, null })
+            .ToArray();
+
+        var products = await fixture.Queries.GetByBarcodesAsync(requested);
+
+        Assert.AreEqual(901, products.Count);
+        Assert.AreEqual("B0001", products["B0001"].Barcode);
+        Assert.AreEqual("B0901", products["B0901"].Barcode);
+    }
+
     private static async Task<ProductRepository.ProductDetailsPageSnapshot> LoadAndAcceptAsync(
         ProductRepository repository,
         ProductPagingCoordinator coordinator,
@@ -193,9 +281,12 @@ public sealed class ProductRepositoryPagingTests
             DbInitializer.EnsureCreated(options);
             _factory = new SqliteConnectionFactory(options);
             Repository = new ProductRepository(_factory);
+            Queries = new ProductQueryRepository(_factory);
         }
 
         internal ProductRepository Repository { get; }
+
+        internal ProductQueryRepository Queries { get; }
 
         internal void Seed(params (long Id, string Barcode, string Name)[] products)
         {

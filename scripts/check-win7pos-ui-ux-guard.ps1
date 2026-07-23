@@ -45,6 +45,7 @@ $productsView = Read-Text "src/Win7POS.Wpf/Products/ProductsView.xaml"
 $productsViewModel = Read-Text "src/Win7POS.Wpf/Products/ProductsViewModel.cs"
 $productsWorkflow = Read-Text "src/Win7POS.Wpf/Products/ProductsWorkflowService.cs"
 $productRepository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
+$productQueryRepository = Read-Text "src/Win7POS.Data/Repositories/ProductQueryRepository.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml"
 $mainWindowCode = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $settingsHub = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/SettingsHubDialog.xaml"
@@ -350,13 +351,18 @@ Test-ContainsAll "Products catalog stats are surfaced in header" $productsView @
     'ResultSummary'
 )
 
-Test-ContainsAll "Products catalog stats are queried globally" $productRepository @(
+Test-ContainsAll "Products catalog stats are queried globally" $productQueryRepository @(
     'ProductCatalogStats',
     'GetCatalogStatsAsync',
     'TotalProducts',
     'TotalCategories',
     'TotalSuppliers',
     'TotalStockUnits'
+)
+
+Test-ContainsAll "Products catalog stats preserve the public repository facade" $productRepository @(
+    'ProductQueryRepository',
+    '_queries.GetCatalogStatsAsync'
 )
 
 Test-ContainsAll "Products stats refresh with catalog changes" ($productsViewModel + $productsWorkflow) @(
