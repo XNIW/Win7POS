@@ -525,8 +525,9 @@ if ($originBlockedWriters.Count -ne 1) {
 }
 
 # Enqueue owns the inline reversal economics needed to serialize its immutable
-# payload.  F5's standalone reversal APIs remain on SaleRepository and must not
-# migrate into the F4 writer.
+# payload. F5 keeps its public/internal façade on SaleRepository, while the
+# standalone reversal implementation belongs to SaleReversalWriter and must
+# never migrate into the F4 writer.
 $forbiddenWriterOwnership = @(
     "EnsureClientSaleId",
     "BuildClientSaleId",
@@ -559,26 +560,24 @@ if ($forbiddenWriterOwnership.Count -gt 0) {
 }
 
 $requiredF5FacadeMarkers = @(
-    "InsertSaleLineAsync",
-    "InsertRefundSaleAsync",
-    "InsertRefundOrVoidAsync",
-    "ValidateReversalBoundaryAsync",
-    "IsReversalDependencyReadyAsync",
-    "EvaluateReversalDependencyAsync",
-    "\bDependency\s*\(",
-    "IsReversalEconomicsCode",
-    "GetPersistedReversalEconomicsErrorAsync",
-    "GetRefundedQtyAsync",
-    "IsVoidedAsync",
-    "GetReversalEconomicsSnapshotExcludingAsync",
-    "GetReturnableLinesAsync",
-    "MarkSaleVoidedAsync"
+    "private readonly SaleReversalWriter _reversalWriter",
+    "_reversalWriter\s*=\s*new SaleReversalWriter\(factory\)",
+    "_reversalWriter\s*\.\s*ValidateReversalBoundaryAsync\s*\(",
+    "_reversalWriter\s*\.\s*IsReversalDependencyReadyAsync\s*\(",
+    "_reversalWriter\s*\.\s*EvaluateReversalDependencyAsync\s*\(",
+    "_reversalWriter\s*\.\s*GetPersistedReversalEconomicsErrorAsync\s*\(",
+    "_reversalWriter\s*\.\s*GetRefundedQtyAsync\s*\(",
+    "_reversalWriter\s*\.\s*IsVoidedAsync\s*\(",
+    "_reversalWriter\s*\.\s*GetReversalEconomicsSnapshotAsync\s*\(",
+    "_reversalWriter\s*\.\s*GetReversalEconomicsSnapshotExcludingAsync\s*\(",
+    "_reversalWriter\s*\.\s*GetReturnableLinesAsync\s*\(",
+    "_reversalWriter\s*\.\s*MarkSaleVoidedAsync\s*\("
 )
 $missingF5FacadeMarkers = @($requiredF5FacadeMarkers | Where-Object { $saleRepository -notmatch $_ })
 if ($missingF5FacadeMarkers.Count -gt 0) {
-    Fail "F5 reversal APIs must remain in SaleRepository: $($missingF5FacadeMarkers -join ', ')"
+    Fail "F5 reversal facades must remain on SaleRepository and delegate outside the F4 writer: $($missingF5FacadeMarkers -join ', ')"
 } else {
-    Pass "F5 standalone reversal APIs remain in SaleRepository"
+    Pass "F5 reversal facades remain on SaleRepository while F4 keeps only inline payload economics"
 }
 
 $requiredTestContracts = @(

@@ -50,6 +50,7 @@ $binding = Read-Text "src/Win7POS.Data/Online/OutboxShopBinding.cs"
 $catalogRepository = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
 $catalogSync = Read-Text "src/Win7POS.Data/Online/CatalogImportSyncService.cs"
 $saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$reversalWriter = Read-Text "src/Win7POS.Data/Repositories/SaleReversalWriter.cs"
 $salesOutboxRepository = Read-Text "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs"
 $salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $salesBuilder = Read-Text "src/Win7POS.Data/Online/PosSalesSyncRequestBuilder.cs"
@@ -88,10 +89,10 @@ if (-not $enqueueFacadeDelegates -or
     $salesOutboxRepository -notmatch "payload_json IS @payloadJson" -or
     $salesOutboxRepository -notmatch "payload_hash IS @payloadHash" -or
     $salesSync -notmatch "Sha256Hex\(item\.PayloadJson\)" -or $salesSync -notmatch "payload_hash_mismatch") { Fail "sales immutable payload/hash guards incomplete" } else { Pass "sales payload/hash are captured at F4 enqueue and verified on retry" }
-if ($saleRepository -notmatch "EvaluateReversalDependencyAsync" -or
-    $saleRepository -notmatch "ReversalDependencyState\.PermanentBlock" -or
-    $saleRepository -notmatch "ValidateReversalBoundaryAsync" -or
-    $saleRepository -notmatch "OriginalOriginShopCode" -or
+if ($saleRepository -notmatch "_reversalWriter\s*\.\s*EvaluateReversalDependencyAsync\s*\(\s*saleId\s*\)" -or
+    $saleRepository -notmatch "_reversalWriter\s*\.\s*ValidateReversalBoundaryAsync\s*\(\s*conn\s*,\s*tx\s*,\s*sale\s*,\s*lines\s*\)" -or
+    $reversalWriter -notmatch "ReversalDependencyState\.PermanentBlock" -or
+    $reversalWriter -notmatch "OriginalOriginShopCode" -or
     $salesSync -notmatch "ReversalDependencyState\.Wait" -or
     $salesSync -notmatch "ReversalDependencyState\.PermanentBlock") { Fail "reversal boundary/dependency shop guards incomplete" } else { Pass "reversal boundary distinguishes waiting and permanently invalid dependencies" }
 if ($shopState -notmatch "TransitionEpochKey" -or $transition -notmatch "ApplyAuthorizedTransitionAndHoldAsync" -or $barrier -notmatch "SemaphoreSlim" -or $catalogSafetyTests -notmatch "TransitionLease_CoversResetUntilDestinationIdentityIsCommitted") { Fail "catalog pull/shop transition race protection incomplete" } else { Pass "catalog pull/shop transition lease covers reset through destination identity commit" }

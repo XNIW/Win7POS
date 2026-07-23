@@ -61,7 +61,7 @@ if ($saleRepository -notmatch "private readonly SaleLineReadRepository _lineRead
 }
 
 $lineFacadeStart = $saleRepository.IndexOf("public Task<IReadOnlyList<SaleLine>> GetLinesBySaleIdAsync", [System.StringComparison]::Ordinal)
-$lineFacadeEnd = $saleRepository.IndexOf("public async Task<bool> IsVoidedAsync", $lineFacadeStart, [System.StringComparison]::Ordinal)
+$lineFacadeEnd = $saleRepository.IndexOf("public Task<bool> IsVoidedAsync", $lineFacadeStart, [System.StringComparison]::Ordinal)
 $lineFacade = if ($lineFacadeStart -ge 0 -and $lineFacadeEnd -gt $lineFacadeStart) {
     $saleRepository.Substring($lineFacadeStart, $lineFacadeEnd - $lineFacadeStart)
 } else {
