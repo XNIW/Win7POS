@@ -66,6 +66,7 @@ $required = @(
     "src/Win7POS.Core/Models/Sale.cs",
     "src/Win7POS.Data/DbInitializer.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs",
     "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs",
     "scripts/start-offline-sales-qa.ps1",
     "docs/QA/WIN7POS_OFFLINE_SALES_SANDBOX.md"
@@ -94,6 +95,7 @@ $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.Secondar
 $saleModel = Read-Text "src/Win7POS.Core/Models/Sale.cs"
 $dbInitializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$saleTransactionWriter = Read-Text "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs"
 $uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $offlineQaLauncher = Read-Text "scripts/start-offline-sales-qa.ps1"
 $offlineQaDocs = Read-Text "docs/QA/WIN7POS_OFFLINE_SALES_SANDBOX.md"
@@ -400,7 +402,7 @@ if ($spooler -match 'MaximumReceiptPages\s*=\s*128' -and
 
 if ($saleModel -match 'ReceiptShopSnapshotJson' -and
     $dbInitializer -match 'receipt_shop_snapshot' -and
-    $saleRepository -match 'receipt_shop_snapshot' -and
+    $saleTransactionWriter -match 'receipt_shop_snapshot' -and
     $workflow -match 'SerializeReceiptShopSnapshot' -and
     $workflow -match 'GetReceiptShopInfoNoLockAsync' -and
     $uiSmoke -match 'VerifyReceiptShopSnapshotReprintAsync') {

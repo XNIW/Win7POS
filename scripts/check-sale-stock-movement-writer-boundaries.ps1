@@ -16,6 +16,8 @@ function Read-Text([string]$relativePath) {
     [System.IO.File]::ReadAllText((Join-Path $repoRoot $relativePath))
 }
 
+. (Join-Path $PSScriptRoot "sales-sync-outbox-gate-helpers.ps1")
+
 function Get-Slice([string]$text, [string]$startMarker, [string]$endMarker) {
     $start = $text.IndexOf($startMarker, [System.StringComparison]::Ordinal)
     if ($start -lt 0) {
@@ -51,6 +53,7 @@ function Test-MethodDeclared([string]$text, [string]$methodName) {
 
 $required = @(
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs",
     "src/Win7POS.Data/Repositories/SaleStockMovementWriter.cs",
     "tests/Win7POS.Core.Tests/Data/SaleStockMovementWriterTests.cs"
 )
@@ -66,6 +69,7 @@ if ($fail) {
 }
 
 $saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$transactionWriter = Read-Text "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs"
 $writer = Read-Text "src/Win7POS.Data/Repositories/SaleStockMovementWriter.cs"
 $tests = Read-Text "tests/Win7POS.Core.Tests/Data/SaleStockMovementWriterTests.cs"
 
@@ -76,17 +80,31 @@ if ($saleRepository -notmatch "private readonly SaleStockMovementWriter _stockMo
     Pass "SaleRepository retains the F3 stock-movement writer collaborator"
 }
 
-$facade = Get-Slice `
-    $saleRepository `
-    "public async Task ApplyLocalStockMovementsAsync" `
-    "public async Task EnqueueSalesSyncOutboxAsync"
+$repositoryFacades = @(Get-CSharpMethodSlices $saleRepository "public" "ApplyLocalStockMovementsAsync" |
+    ForEach-Object { $_.Text })
+if ($repositoryFacades.Count -ne 1 -or
+    $repositoryFacades[0] -notmatch "_transactionWriter\s*\.\s*ApplyLocalStockMovementsAsync\(\s*conn\s*,\s*tx\s*,\s*sale\s*,\s*lines\s*\)" -or
+    $repositoryFacades[0] -match "_stockMovementWriter\s*\.\s*ApplyAsync|EnsureClientSaleIdAsync|\.Open(?:Async)?\s*\(|BeginTransaction|\.Commit\s*\(|\.Rollback\s*\(") {
+    Fail "SaleRepository F3 public facade must exactly forward to F6 without stock or transaction ownership"
+} else {
+    Pass "SaleRepository F3 public facade exactly forwards to F6"
+}
+
+$facadeSlices = @(Get-CSharpMethodSlices $transactionWriter "internal" "ApplyLocalStockMovementsAsync" |
+    ForEach-Object { $_.Text })
+if ($facadeSlices.Count -ne 1) {
+    Fail "F6 must retain exactly one internal F3 stock facade"
+    $facade = ""
+} else {
+    $facade = $facadeSlices[0]
+}
 if ($facade -notmatch "if \(sale == null \|\| lines == null \|\| lines.Count == 0\)" -or
     $facade -notmatch "EnsureClientSaleIdAsync\(conn, tx, sale.Id\)" -or
     $facade -notmatch "sale.ClientSaleId\s*=\s*clientSaleId" -or
     $facade -notmatch "_stockMovementWriter\s*\.\s*ApplyAsync\(conn, tx, sale, lines, clientSaleId\)") {
-    Fail "F3 facade must retain empty-input and client-sale-id fallback before delegation"
+    Fail "F6 F3 facade must retain empty-input and client-sale-id fallback before delegation"
 } else {
-    Pass "F3 facade retains empty-input and client-sale-id fallback before delegation"
+    Pass "F6 F3 facade retains empty-input and client-sale-id fallback before delegation"
 }
 
 $emptyInputGuardIndex = $facade.IndexOf("if (sale == null || lines == null || lines.Count == 0)", [System.StringComparison]::Ordinal)
@@ -94,9 +112,9 @@ $fallbackIndex = $facade.IndexOf("EnsureClientSaleIdAsync", [System.StringCompar
 $delegationIndex = $facade.IndexOf("_stockMovementWriter", [System.StringComparison]::Ordinal)
 if ($emptyInputGuardIndex -lt 0 -or $fallbackIndex -le $emptyInputGuardIndex -or
     $delegationIndex -le $fallbackIndex) {
-    Fail "F3 facade must return for empty input before client-sale-id fallback and writer delegation"
+    Fail "F6 F3 facade must return for empty input before client-sale-id fallback and writer delegation"
 } else {
-    Pass "F3 facade returns for empty input before fallback and writer delegation"
+    Pass "F6 F3 facade returns for empty input before fallback and writer delegation"
 }
 
 $facadeLeaks = @(
@@ -109,15 +127,15 @@ $facadeLeaks = @(
     "DiscountKeys\.ManualPrefix"
 ) | Where-Object { $facade -match $_ }
 if ($facadeLeaks.Count -gt 0) {
-    Fail "SaleRepository F3 facade must delegate stock-ledger SQL and movement rules: $($facadeLeaks -join ', ')"
+    Fail "F6 F3 facade must delegate stock-ledger SQL and movement rules: $($facadeLeaks -join ', ')"
 } else {
-    Pass "SaleRepository F3 facade contains fallback and delegation only"
+    Pass "F6 F3 facade contains fallback and delegation only"
 }
 
 if ($facade -match "clientSaleId\.Trim\s*\(") {
-    Fail "SaleRepository must pass the resolved nonblank client-sale-id through to F3 without trimming it"
+    Fail "F6 must pass the resolved nonblank client-sale-id through to F3 without trimming it"
 } else {
-    Pass "SaleRepository passes the resolved nonblank client-sale-id through without trimming it"
+    Pass "F6 passes the resolved nonblank client-sale-id through without trimming it"
 }
 
 $forbiddenFacadeLifecycle = @(
@@ -128,23 +146,21 @@ $forbiddenFacadeLifecycle = @(
 )
 $facadeLifecycleLeaks = @($forbiddenFacadeLifecycle | Where-Object { $facade -match $_ })
 if ($facadeLifecycleLeaks.Count -gt 0) {
-    Fail "SaleRepository F3 facade must not own connection or transaction lifecycle: $($facadeLifecycleLeaks -join ', ')"
+    Fail "F6 F3 facade must not own connection or transaction lifecycle: $($facadeLifecycleLeaks -join ', ')"
 } else {
-    Pass "SaleRepository F3 facade has no connection or transaction lifecycle ownership"
+    Pass "F6 F3 facade has no connection or transaction lifecycle ownership"
 }
 
-$insertSaleScope = Get-Slice `
-    $saleRepository `
-    "public async Task<long> InsertSaleAsync" `
-    "public Task<IReadOnlyList<Sale>> LastSalesAsync"
-$refundOrVoidScope = Get-Slice `
-    $saleRepository `
-    "public async Task<long> InsertRefundOrVoidAsync" `
-    "public async Task InsertSaleLinesAsync"
-$applyReferenceCount = [regex]::Matches($saleRepository, "\bApplyLocalStockMovementsAsync\s*\(").Count
+$insertSaleScope = @(
+    Get-CSharpMethodSlices $transactionWriter "internal" "InsertSaleAsync" |
+        ForEach-Object { $_.Text }) -join "`n"
+$refundOrVoidScope = @(
+    Get-CSharpMethodSlices $transactionWriter "internal" "InsertRefundOrVoidAsync" |
+        ForEach-Object { $_.Text }) -join "`n"
+$applyReferenceCount = [regex]::Matches($transactionWriter, "\bApplyLocalStockMovementsAsync\s*\(").Count
 $applyDeclarationCount = [regex]::Matches(
-    $saleRepository,
-    "(?m)^\s*public async Task ApplyLocalStockMovementsAsync\s*\(").Count
+    $transactionWriter,
+    "(?m)^\s*internal\s+(?:async\s+)?Task ApplyLocalStockMovementsAsync\s*\(").Count
 $insertSaleApplyCount = [regex]::Matches($insertSaleScope, "\bApplyLocalStockMovementsAsync\s*\(").Count
 $refundOrVoidApplyCount = [regex]::Matches($refundOrVoidScope, "\bApplyLocalStockMovementsAsync\s*\(").Count
 $staleSaleRepositoryF3Markers = @(
@@ -163,9 +179,9 @@ $staleSaleRepositoryF3Markers = @(
 if ($applyReferenceCount -ne 3 -or $applyDeclarationCount -ne 1 -or
     $insertSaleApplyCount -ne 1 -or $refundOrVoidApplyCount -ne 1 -or
     $staleSaleRepositoryF3Markers.Count -gt 0) {
-    Fail "SaleRepository must retain only the two F3 orchestration call sites and facade, without stale ledger/stock-rule ownership. References=$applyReferenceCount; declarations=$applyDeclarationCount; insert=$insertSaleApplyCount; refundVoid=$refundOrVoidApplyCount; stale=$($staleSaleRepositoryF3Markers -join ', ')"
+    Fail "F6 must retain only the two F3 orchestration call sites and facade, while SaleRepository has no stale ledger/stock-rule ownership. References=$applyReferenceCount; declarations=$applyDeclarationCount; insert=$insertSaleApplyCount; refundVoid=$refundOrVoidApplyCount; stale=$($staleSaleRepositoryF3Markers -join ', ')"
 } else {
-    Pass "SaleRepository retains only F3 orchestration call sites and no ledger/stock-rule ownership"
+    Pass "F6 retains only F3 orchestration call sites while SaleRepository has no ledger/stock-rule ownership"
 }
 
 if ($writer -notmatch "internal sealed class SaleStockMovementWriter" -or

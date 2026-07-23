@@ -168,6 +168,7 @@ function Assert-TransactionalTransitionExecutions(
 
 $required = @(
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs",
     "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs",
     "tests/Win7POS.Core.Tests/Data/SalesSyncOutboxRepositoryTests.cs"
 )
@@ -183,6 +184,7 @@ if ($fail) {
 }
 
 $saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$transactionWriter = Read-Text "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs"
 $outboxRepository = Read-Text "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs"
 $tests = Read-Text "tests/Win7POS.Core.Tests/Data/SalesSyncOutboxRepositoryTests.cs"
 
@@ -194,7 +196,6 @@ if ($saleRepository -notmatch "private readonly SalesSyncOutboxRepository _sales
 }
 
 $facadeDelegations = @(
-    [pscustomobject]@{ Facade = "EnqueueSalesSyncOutboxAsync"; Writer = "EnqueueAsync"; Forwarding = @("conn\s*,\s*tx\s*,\s*saleId\s*,\s*normalizedClientSaleId") },
     [pscustomobject]@{ Facade = "GetPendingSalesSyncOutboxAsync"; Writer = "GetPendingAsync"; Forwarding = @("take\s*,\s*nowMs") },
     [pscustomobject]@{ Facade = "GetSalesSyncOutboxSummaryAsync"; Writer = "GetSummaryAsync"; Forwarding = @("\s*") },
     [pscustomobject]@{ Facade = "GetSalesSyncDrainStateAsync"; Writer = "GetDrainStateAsync"; Forwarding = @("nowMs") },
@@ -271,16 +272,30 @@ if ($delegationFailures.Count -gt 0) {
     Pass "Every F4 public facade overload forwards its exact argument order inside its structural implementation slice"
 }
 
-$enqueueFacades = @(Get-MethodSlices $saleRepository "public" "EnqueueSalesSyncOutboxAsync")
-if ($enqueueFacades.Count -ne 1) {
-    Fail "F4 enqueue facade must have exactly one implementation slice"
+$enqueueRepositoryFacades = @(Get-MethodSlices $saleRepository "public" "EnqueueSalesSyncOutboxAsync")
+$enqueueTransactionFacades = @(Get-MethodSlices $transactionWriter "internal" "EnqueueSalesSyncOutboxAsync")
+if ($enqueueRepositoryFacades.Count -ne 1 -or $enqueueTransactionFacades.Count -ne 1) {
+    Fail "F4 enqueue must retain exactly one SaleRepository facade and one F6 transaction facade"
 } else {
-    Assert-SliceMarkers $enqueueFacades[0] "F4 enqueue facade" @(
+    Assert-SliceMarkers $enqueueRepositoryFacades[0] "F4 SaleRepository enqueue facade" @(
+        "_transactionWriter\s*\.\s*EnqueueSalesSyncOutboxAsync\(conn, tx, saleId, clientSaleId\)"
+    )
+    if ($enqueueRepositoryFacades[0] -match "_salesSyncOutbox\s*\.\s*EnqueueAsync|BuildClientSaleId|clientSaleId\.Trim\(\)|\.Open(?:Async)?\s*\(|BeginTransaction|\.Commit\s*\(|\.Rollback\s*\(") {
+        Fail "F4 SaleRepository enqueue facade must not retain normalization, outbox or lifecycle ownership after F6"
+    } else {
+        Pass "F4 SaleRepository enqueue facade delegates exact caller data to F6"
+    }
+    Assert-SliceMarkers $enqueueTransactionFacades[0] "F4 F6 enqueue facade" @(
         "string\.IsNullOrWhiteSpace\(clientSaleId\)",
         "BuildClientSaleId\(saleId\)",
         "clientSaleId\.Trim\(\)",
         "_salesSyncOutbox\s*\.\s*EnqueueAsync\(conn, tx, saleId, normalizedClientSaleId\)"
     )
+    if ($enqueueTransactionFacades[0] -match "INSERT\s+OR\s+IGNORE\s+INTO\s+sales_sync_outbox|SerializeCanonical|Sha256Hex|\.Open(?:Async)?\s*\(|BeginTransaction|\.Commit\s*\(|\.Rollback\s*\(") {
+        Fail "F4 F6 enqueue facade must keep only client-ID normalization and caller-transaction delegation"
+    } else {
+        Pass "F4 F6 enqueue facade keeps normalization while F4 owns immutable payload persistence"
+    }
 }
 
 if ($outboxRepository -notmatch "internal sealed class SalesSyncOutboxRepository" -or

@@ -46,9 +46,30 @@ function Test-SalesOutboxFacadeDelegation(
     return $true
 }
 
+function Test-SalesOutboxEnqueueThroughTransactionWriter(
+    [string]$saleRepository,
+    [string]$transactionWriter) {
+    $repositorySlices = @(Get-CSharpMethodSlices $saleRepository "public" "EnqueueSalesSyncOutboxAsync")
+    $writerSlices = @(Get-CSharpMethodSlices $transactionWriter "internal" "EnqueueSalesSyncOutboxAsync")
+    if ($repositorySlices.Count -ne 1 -or $writerSlices.Count -ne 1) {
+        return $false
+    }
+
+    $repositorySlice = $repositorySlices[0].Text
+    $writerSlice = $writerSlices[0].Text
+    return $repositorySlice -match "(?s)_transactionWriter\s*\.\s*EnqueueSalesSyncOutboxAsync\(\s*conn\s*,\s*tx\s*,\s*saleId\s*,\s*clientSaleId\s*\)" -and
+        $repositorySlice -notmatch "_salesSyncOutbox\s*\.\s*EnqueueAsync|BuildClientSaleId|clientSaleId\.Trim\(\)|\.Open(?:Async)?\s*\(|BeginTransaction|\.Commit\s*\(|\.Rollback\s*\(" -and
+        $writerSlice -match "string\.IsNullOrWhiteSpace\(clientSaleId\)" -and
+        $writerSlice -match "BuildClientSaleId\(saleId\)" -and
+        $writerSlice -match "clientSaleId\.Trim\(\)" -and
+        $writerSlice -match "(?s)_salesSyncOutbox\s*\.\s*EnqueueAsync\(\s*conn\s*,\s*tx\s*,\s*saleId\s*,\s*normalizedClientSaleId\s*\)" -and
+        $writerSlice -notmatch "INSERT\s+OR\s+IGNORE\s+INTO\s+sales_sync_outbox|SerializeCanonical|Sha256Hex|\.Open(?:Async)?\s*\(|BeginTransaction|\.Commit\s*\(|\.Rollback\s*\("
+}
+
 $required = @(
     "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs",
     "src/Win7POS.Data/Repositories/SaleReversalWriter.cs",
     "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs",
     "src/Win7POS.Data/Online/CatalogShopStateRepository.cs",
@@ -70,6 +91,7 @@ if ($fail) {
 
 $sync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $saleRepo = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$transactionWriter = Read-Text "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs"
 $reversalWriter = Read-Text "src/Win7POS.Data/Repositories/SaleReversalWriter.cs"
 $salesOutbox = Read-Text "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs"
 $catalogState = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.cs"
@@ -81,9 +103,9 @@ $pendingFacadeDelegates = Test-SalesOutboxFacadeDelegation $saleRepo "GetPending
 $releaseFacadeDelegates = Test-SalesOutboxFacadeDelegation $saleRepo "ReleaseSalesSyncAttemptAsync" "ReleaseAttemptAsync" @(
     "outboxId\s*,\s*saleId\s*,\s*errorCode\s*,\s*nextRetryAt\s*,\s*nowMs\s*,\s*expectedAttemptCount",
     "outboxId\s*,\s*saleId\s*,\s*errorCode\s*,\s*nextRetryAt\s*,\s*nowMs\s*,\s*expectedAttemptCount\s*,\s*fence")
-$enqueueFacadeDelegates = Test-SalesOutboxFacadeDelegation $saleRepo "EnqueueSalesSyncOutboxAsync" "EnqueueAsync" @("conn\s*,\s*tx\s*,\s*saleId\s*,\s*normalizedClientSaleId")
+$enqueueFacadeDelegates = Test-SalesOutboxEnqueueThroughTransactionWriter $saleRepo $transactionWriter
 $summaryFacadeDelegates = Test-SalesOutboxFacadeDelegation $saleRepo "GetSalesSyncOutboxSummaryAsync" "GetSummaryAsync" @("\s*")
-$salesScope = @($sync, $saleRepo, $reversalWriter, $salesOutbox, $builder, $initializer, $statusReader) -join "`n"
+$salesScope = @($sync, $saleRepo, $transactionWriter, $reversalWriter, $salesOutbox, $builder, $initializer, $statusReader) -join "`n"
 $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.csproj |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) } |
@@ -111,14 +133,14 @@ if ($sync -notmatch "MarkSalesSyncBlockedAsync" -or $sync -notmatch "failed_bloc
 if ($sync -notmatch "validation_failed" -or $sync -notmatch "conflict") { Fail "validation/conflict failures must be blocked" } else { Pass "validation/conflict failures are handled" }
 if ($sync -notmatch "duplicate" -or $sync -notmatch "idempotent" -or $sync -notmatch "acked" -or $sync -notmatch "synced") { Fail "duplicate/idempotent ack statuses missing" } else { Pass "duplicate/idempotent ack statuses accepted" }
 
-if ($saleRepo -notmatch "InsertSaleAsync" -or $saleRepo -notmatch "ApplyLocalStockMovementsAsync" -or $saleRepo -notmatch "EnqueueSalesSyncOutboxAsync" -or $saleRepo -notmatch "tx\.Commit\(\)") { Fail "sale save must persist sale, stock movement and outbox in one transaction" } else { Pass "sale save persists sale, stock and outbox together" }
-if ($saleRepo -notmatch "sale\.Kind\s*==\s*\(int\)SaleKind\.Sale" -or
-    $saleRepo -notmatch "RequireSaleSafeForOrdinarySaleAsync\(conn, tx\)" -or
+if ($transactionWriter -notmatch "InsertSaleAsync" -or $transactionWriter -notmatch "ApplyLocalStockMovementsAsync" -or $transactionWriter -notmatch "EnqueueSalesSyncOutboxAsync" -or $transactionWriter -notmatch "tx\.Commit\(\)") { Fail "sale save must persist sale, stock movement and outbox in one transaction through F6" } else { Pass "sale save persists sale, stock and outbox together through F6" }
+if ($transactionWriter -notmatch "sale\.Kind\s*==\s*\(int\)SaleKind\.Sale" -or
+    $transactionWriter -notmatch "RequireSaleSafeForOrdinarySaleAsync\(conn, tx\)" -or
     $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_binding_partial" -or
     $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_repair_required" -or
     $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_not_sale_safe" -or
     $catalogSaleSafetyPolicy -notmatch "catalog_sale_blocked_exactness_shop_mismatch" -or
-    $saleRepo.IndexOf("RequireSaleSafeForOrdinarySaleAsync(conn, tx)") -gt $saleRepo.IndexOf("ApplyLocalStockMovementsAsync")) {
+    $transactionWriter.IndexOf("RequireSaleSafeForOrdinarySaleAsync(conn, tx)") -gt $transactionWriter.IndexOf("ApplyLocalStockMovementsAsync")) {
     Fail "ordinary sale persistence must enforce catalog sale-safe state inside the sale transaction before stock/outbox writes"
 } else {
     Pass "ordinary sale persistence enforces catalog sale-safe state atomically before stock/outbox writes"
@@ -142,6 +164,7 @@ if (-not $enqueueFacadeDelegates -or
     $sync -notmatch "Sha256Hex\(item\.PayloadJson\)" -or $sync -notmatch "payload_hash_mismatch") { Fail "sales payload/hash immutability missing" } else { Pass "sales payload/hash are immutable from F4 enqueue through retry" }
 if ($saleRepo -notmatch "_reversalWriter\s*\.\s*EvaluateReversalDependencyAsync\s*\(\s*saleId\s*\)" -or
     $saleRepo -notmatch "_reversalWriter\s*\.\s*ValidateReversalBoundaryAsync\s*\(\s*conn\s*,\s*tx\s*,\s*sale\s*,\s*lines\s*\)" -or
+    $transactionWriter -notmatch "_reversalWriter\s*\.\s*ValidateReversalBoundaryAsync\s*\(\s*conn\s*,\s*tx\s*,\s*sale\s*,\s*lines\s*\)" -or
     $reversalWriter -notmatch "ReversalDependencyState\.PermanentBlock" -or
     $reversalWriter -notmatch "prior_reversal_blocked" -or
     $reversalWriter -notmatch "original_sale_blocked" -or

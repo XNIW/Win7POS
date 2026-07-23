@@ -16,6 +16,8 @@ function Read-Text([string]$relativePath) {
     [System.IO.File]::ReadAllText((Join-Path $repoRoot $relativePath))
 }
 
+. (Join-Path $PSScriptRoot "sales-sync-outbox-gate-helpers.ps1")
+
 function Get-Slice([string]$text, [string]$startMarker, [string]$endMarker) {
     $start = $text.IndexOf($startMarker, [System.StringComparison]::Ordinal)
     if ($start -lt 0) {
@@ -32,6 +34,7 @@ function Get-Slice([string]$text, [string]$startMarker, [string]$endMarker) {
 
 $required = @(
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs",
     "src/Win7POS.Data/Repositories/SaleReadRepository.cs",
     "src/Win7POS.Data/Repositories/SaleLineReadRepository.cs",
     "tests/Win7POS.Core.Tests/Data/SaleLineReadRepositoryTests.cs"
@@ -48,6 +51,7 @@ if ($fail) {
 }
 
 $saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$transactionWriter = Read-Text "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs"
 $saleReadRepository = Read-Text "src/Win7POS.Data/Repositories/SaleReadRepository.cs"
 $saleLineReadRepository = Read-Text "src/Win7POS.Data/Repositories/SaleLineReadRepository.cs"
 $tests = Read-Text "tests/Win7POS.Core.Tests/Data/SaleLineReadRepositoryTests.cs"
@@ -86,18 +90,26 @@ if ($obsoleteSaleRepositoryOwnership.Count -gt 0) {
     Pass "SaleRepository no longer owns F2 budget SQL or rows"
 }
 
-$insertLines = Get-Slice `
-    $saleRepository `
-    "public async Task InsertSaleLinesAsync" `
-    "public async Task<string> EnsureClientSaleIdAsync"
+$lineWriteFacades = @(Get-CSharpMethodSlices $saleRepository "public" "InsertSaleLinesAsync" |
+    ForEach-Object { $_.Text })
+if ($lineWriteFacades.Count -ne 1 -or
+    $lineWriteFacades[0] -notmatch "_transactionWriter\s*\.\s*InsertSaleLinesAsync\(\s*conn\s*,\s*tx\s*,\s*lines\s*\)" -or
+    $lineWriteFacades[0] -match "EnsureStoredLineBudgetAsync|EnsureCumulativeLineBudget|InsertSaleLineAsync|\.Open(?:Async)?\s*\(|BeginTransaction|\.Commit\s*\(|\.Rollback\s*\(") {
+    Fail "F2 public caller-owned line facade must exactly forward to F6 without retaining budget, line SQL or lifecycle ownership"
+} else {
+    Pass "F2 public caller-owned line facade exactly forwards to F6"
+}
+$insertLineSlices = @(Get-CSharpMethodSlices $transactionWriter "internal" "InsertSaleLinesAsync" |
+    ForEach-Object { $_.Text })
+$insertLines = if ($insertLineSlices.Count -eq 1) { $insertLineSlices[0] } else { "" }
 if ($insertLines -notmatch "ReferenceEquals\(tx.Connection, conn\)" -or
     $insertLines -notmatch "SalesReceiptContentPolicy\.EnsureValidLines\(lines\)" -or
     $insertLines -notmatch "SaleLineReadRepository\s*\.\s*EnsureStoredLineBudgetAsync\(conn, tx, group.Key\)" -or
     $insertLines -notmatch "EnsureCumulativeLineBudget\(" -or
     $insertLines -notmatch "InsertSaleLineAsync\(conn, tx, line\)") {
-    Fail "caller-owned sale-line writes must reuse the F2 budget guard before cumulative validation and inserts"
+    Fail "F6 caller-owned sale-line writes must reuse the F2 budget guard before cumulative validation and inserts"
 } else {
-    Pass "caller-owned sale-line writes reuse the F2 budget guard before inserts"
+    Pass "F6 caller-owned sale-line writes reuse the F2 budget guard before inserts"
 }
 
 $declaredLineReadMethods = @(

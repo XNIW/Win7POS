@@ -45,11 +45,32 @@ function Test-SalesOutboxFacadeDelegation(
     return $true
 }
 
+function Test-SalesOutboxEnqueueThroughTransactionWriter(
+    [string]$saleRepository,
+    [string]$transactionWriter) {
+    $repositorySlices = @(Get-CSharpMethodSlices $saleRepository "public" "EnqueueSalesSyncOutboxAsync")
+    $writerSlices = @(Get-CSharpMethodSlices $transactionWriter "internal" "EnqueueSalesSyncOutboxAsync")
+    if ($repositorySlices.Count -ne 1 -or $writerSlices.Count -ne 1) {
+        return $false
+    }
+
+    $repositorySlice = $repositorySlices[0].Text
+    $writerSlice = $writerSlices[0].Text
+    return $repositorySlice -match "(?s)_transactionWriter\s*\.\s*EnqueueSalesSyncOutboxAsync\(\s*conn\s*,\s*tx\s*,\s*saleId\s*,\s*clientSaleId\s*\)" -and
+        $repositorySlice -notmatch "_salesSyncOutbox\s*\.\s*EnqueueAsync|BuildClientSaleId|clientSaleId\.Trim\(\)|\.Open(?:Async)?\s*\(|BeginTransaction|\.Commit\s*\(|\.Rollback\s*\(" -and
+        $writerSlice -match "string\.IsNullOrWhiteSpace\(clientSaleId\)" -and
+        $writerSlice -match "BuildClientSaleId\(saleId\)" -and
+        $writerSlice -match "clientSaleId\.Trim\(\)" -and
+        $writerSlice -match "(?s)_salesSyncOutbox\s*\.\s*EnqueueAsync\(\s*conn\s*,\s*tx\s*,\s*saleId\s*,\s*normalizedClientSaleId\s*\)" -and
+        $writerSlice -notmatch "INSERT\s+OR\s+IGNORE\s+INTO\s+sales_sync_outbox|SerializeCanonical|Sha256Hex|\.Open(?:Async)?\s*\(|BeginTransaction|\.Commit\s*\(|\.Rollback\s*\("
+}
+
 $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $binding = Read-Text "src/Win7POS.Data/Online/OutboxShopBinding.cs"
 $catalogRepository = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
 $catalogSync = Read-Text "src/Win7POS.Data/Online/CatalogImportSyncService.cs"
 $saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$transactionWriter = Read-Text "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs"
 $reversalWriter = Read-Text "src/Win7POS.Data/Repositories/SaleReversalWriter.cs"
 $salesOutboxRepository = Read-Text "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs"
 $salesSync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
@@ -59,7 +80,7 @@ $transition = Read-Text "src/Win7POS.Data/Online/PosShopTransitionGuard.cs"
 $barrier = Read-Text "src/Win7POS.Data/Online/CatalogShopTransitionBarrier.cs"
 $tests = Read-Text "tests/Win7POS.Core.Tests/Data/OutboxShopBindingTests.cs"
 $catalogSafetyTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogSafetyInvariantTests.cs"
-$enqueueFacadeDelegates = Test-SalesOutboxFacadeDelegation $saleRepository "EnqueueSalesSyncOutboxAsync" "EnqueueAsync" @("conn\s*,\s*tx\s*,\s*saleId\s*,\s*normalizedClientSaleId")
+$enqueueFacadeDelegates = Test-SalesOutboxEnqueueThroughTransactionWriter $saleRepository $transactionWriter
 $prepareFacadeDelegates = Test-SalesOutboxFacadeDelegation $saleRepository "PrepareSalesSyncAttemptAsync" "PrepareAttemptAsync" @(
     "outboxId\s*,\s*clientBatchId\s*,\s*payloadJson\s*,\s*payloadHash\s*,\s*nowMs\s*,\s*expectedAttemptCount",
     "outboxId\s*,\s*clientBatchId\s*,\s*payloadJson\s*,\s*payloadHash\s*,\s*nowMs\s*,\s*expectedAttemptCount\s*,\s*expectedStatus\s*,\s*expectedNextRetryAt\s*,\s*expectedLeaseObservedAt",
