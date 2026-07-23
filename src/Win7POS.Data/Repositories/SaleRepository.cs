@@ -39,12 +39,14 @@ namespace Win7POS.Data.Repositories
         private readonly SqliteConnectionFactory _factory;
         private readonly SaleReadRepository _reads;
         private readonly SaleLineReadRepository _lineReads;
+        private readonly SaleStockMovementWriter _stockMovementWriter;
 
         public SaleRepository(SqliteConnectionFactory factory)
         {
             _factory = factory;
             _reads = new SaleReadRepository(factory);
             _lineReads = new SaleLineReadRepository(factory);
+            _stockMovementWriter = new SaleStockMovementWriter();
         }
 
         public async Task<long> InsertSaleAsync(Sale sale, IReadOnlyList<SaleLine> lines)
@@ -480,60 +482,9 @@ SELECT last_insert_rowid();", refundSale, tx).ConfigureAwait(false);
                 sale.ClientSaleId = clientSaleId;
             }
 
-            foreach (var line in lines)
-            {
-                var barcode = (line.Barcode ?? string.Empty).Trim();
-                if (barcode.Length == 0 ||
-                    line.Quantity == 0 ||
-                    DiscountKeys.IsEconomicAdjustment(barcode) ||
-                    barcode.StartsWith(DiscountKeys.ManualPrefix, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                var quantityDelta = sale.Kind == (int)SaleKind.Refund || sale.Kind == (int)SaleKind.Void
-                    ? Math.Abs(line.Quantity)
-                    : -Math.Abs(line.Quantity);
-                var movementKind = sale.Kind == (int)SaleKind.Refund
-                    ? "refund_increment"
-                    : sale.Kind == (int)SaleKind.Void
-                        ? "void_reverse"
-                        : "sale_decrement";
-                var movementKey = clientSaleId + ":" +
-                    line.Id.ToString(CultureInfo.InvariantCulture) + ":" +
-                    movementKind;
-
-                var inserted = await conn.ExecuteAsync(@"
-INSERT OR IGNORE INTO local_stock_movements(
-  movement_key, sale_id, sale_line_id, barcode, quantity_delta, movement_kind, created_at)
-VALUES(
-  @movementKey, @saleId, @saleLineId, @barcode, @quantityDelta, @movementKind, @createdAt);",
-                    new
-                    {
-                        movementKey,
-                        saleId = sale.Id,
-                        saleLineId = line.Id == 0 ? (long?)null : line.Id,
-                        barcode,
-                        quantityDelta,
-                        movementKind,
-                        createdAt = sale.CreatedAt
-                    }, tx).ConfigureAwait(false);
-
-                if (inserted == 0)
-                {
-                    continue;
-                }
-
-                await conn.ExecuteAsync(@"
-UPDATE product_meta
-SET stock_qty =
-  CASE
-    WHEN stock_qty + @quantityDelta < 0 THEN 0
-    ELSE stock_qty + @quantityDelta
-  END
-WHERE barcode = @barcode;",
-                    new { barcode, quantityDelta }, tx).ConfigureAwait(false);
-            }
+            await _stockMovementWriter
+                .ApplyAsync(conn, tx, sale, lines, clientSaleId)
+                .ConfigureAwait(false);
         }
 
         public async Task EnqueueSalesSyncOutboxAsync(
