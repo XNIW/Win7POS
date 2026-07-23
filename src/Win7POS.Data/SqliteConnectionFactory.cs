@@ -8,6 +8,13 @@ namespace Win7POS.Data
 {
     public sealed class SqliteConnectionFactory
     {
+        internal const string ExpectedJournalMode = "delete";
+        internal const long ExpectedSynchronous = 2;
+        internal const long ExpectedForeignKeys = 1;
+        internal const long ExpectedBusyTimeoutMilliseconds = 5000;
+        internal const long ExpectedTempStore = 1;
+        internal const long ExpectedCacheSizeKiB = -2048;
+
         private static readonly object MaintenanceSync = new object();
         private static readonly SemaphoreSlim MaintenanceGate = new SemaphoreSlim(1, 1);
         private static readonly AsyncLocal<MaintenanceContext> CurrentMaintenance = new AsyncLocal<MaintenanceContext>();
@@ -43,11 +50,7 @@ namespace Win7POS.Data
             try
             {
                 conn.Open();
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "PRAGMA busy_timeout=5000;";
-                    cmd.ExecuteNonQuery();
-                }
+                ApplyAndVerifyRuntimePolicy(conn);
                 return conn;
             }
             catch
@@ -67,11 +70,7 @@ namespace Win7POS.Data
             try
             {
                 await conn.OpenAsync(ct).ConfigureAwait(false);
-                using (var cmd = conn.CreateCommand())
-                {
-                    cmd.CommandText = "PRAGMA busy_timeout=5000;";
-                    await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-                }
+                await ApplyAndVerifyRuntimePolicyAsync(conn, ct).ConfigureAwait(false);
                 return conn;
             }
             catch
@@ -170,6 +169,187 @@ namespace Win7POS.Data
         public static void ClearAllPools()
         {
             SqliteConnection.ClearAllPools();
+        }
+
+        internal static void VerifyRuntimePolicy(SqliteConnection connection)
+        {
+            if (connection == null)
+                throw new ArgumentNullException(nameof(connection));
+            if (connection.State != ConnectionState.Open)
+                throw new InvalidOperationException("SQLite runtime policy cannot be verified on a closed connection.");
+
+            VerifyPolicyValue("journal_mode", ExpectedJournalMode, ReadPragmaString(connection, "journal_mode"));
+            VerifyPolicyValue("synchronous", ExpectedSynchronous, ReadPragmaLong(connection, "synchronous"));
+            VerifyPolicyValue("foreign_keys", ExpectedForeignKeys, ReadPragmaLong(connection, "foreign_keys"));
+            VerifyPolicyValue(
+                "busy_timeout",
+                ExpectedBusyTimeoutMilliseconds,
+                ReadPragmaLong(connection, "busy_timeout"));
+            VerifyPolicyValue("temp_store", ExpectedTempStore, ReadPragmaLong(connection, "temp_store"));
+            VerifyPolicyValue("cache_size", ExpectedCacheSizeKiB, ReadPragmaLong(connection, "cache_size"));
+        }
+
+        private static void ApplyAndVerifyRuntimePolicy(SqliteConnection connection)
+        {
+            // These are connection-local settings and must be established again when a
+            // pooled physical connection is handed out.
+            ExecutePragma(connection, "foreign_keys=ON");
+            ExecutePragma(connection, "busy_timeout=" + ExpectedBusyTimeoutMilliseconds);
+            ExecutePragma(connection, "temp_store=FILE");
+            ExecutePragma(connection, "cache_size=" + ExpectedCacheSizeKiB);
+            EnsureDeleteJournalMode(connection);
+            ExecutePragma(connection, "synchronous=FULL");
+            VerifyRuntimePolicy(connection);
+        }
+
+        private static async Task ApplyAndVerifyRuntimePolicyAsync(
+            SqliteConnection connection,
+            CancellationToken cancellationToken)
+        {
+            await ExecutePragmaAsync(connection, "foreign_keys=ON", cancellationToken).ConfigureAwait(false);
+            await ExecutePragmaAsync(
+                    connection,
+                    "busy_timeout=" + ExpectedBusyTimeoutMilliseconds,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await ExecutePragmaAsync(connection, "temp_store=FILE", cancellationToken).ConfigureAwait(false);
+            await ExecutePragmaAsync(
+                    connection,
+                    "cache_size=" + ExpectedCacheSizeKiB,
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            var journalMode = await ReadPragmaStringAsync(connection, "journal_mode", cancellationToken)
+                .ConfigureAwait(false);
+            if (!string.Equals(journalMode, ExpectedJournalMode, StringComparison.OrdinalIgnoreCase))
+            {
+                await ExecutePragmaAsync(connection, "journal_mode=DELETE", cancellationToken).ConfigureAwait(false);
+            }
+
+            await ExecutePragmaAsync(connection, "synchronous=FULL", cancellationToken).ConfigureAwait(false);
+            await VerifyRuntimePolicyAsync(connection, cancellationToken).ConfigureAwait(false);
+        }
+
+        private static void EnsureDeleteJournalMode(SqliteConnection connection)
+        {
+            var journalMode = ReadPragmaString(connection, "journal_mode");
+            if (!string.Equals(journalMode, ExpectedJournalMode, StringComparison.OrdinalIgnoreCase))
+                ExecutePragma(connection, "journal_mode=DELETE");
+        }
+
+        private static async Task VerifyRuntimePolicyAsync(
+            SqliteConnection connection,
+            CancellationToken cancellationToken)
+        {
+            VerifyPolicyValue(
+                "journal_mode",
+                ExpectedJournalMode,
+                await ReadPragmaStringAsync(connection, "journal_mode", cancellationToken).ConfigureAwait(false));
+            VerifyPolicyValue(
+                "synchronous",
+                ExpectedSynchronous,
+                await ReadPragmaLongAsync(connection, "synchronous", cancellationToken).ConfigureAwait(false));
+            VerifyPolicyValue(
+                "foreign_keys",
+                ExpectedForeignKeys,
+                await ReadPragmaLongAsync(connection, "foreign_keys", cancellationToken).ConfigureAwait(false));
+            VerifyPolicyValue(
+                "busy_timeout",
+                ExpectedBusyTimeoutMilliseconds,
+                await ReadPragmaLongAsync(connection, "busy_timeout", cancellationToken).ConfigureAwait(false));
+            VerifyPolicyValue(
+                "temp_store",
+                ExpectedTempStore,
+                await ReadPragmaLongAsync(connection, "temp_store", cancellationToken).ConfigureAwait(false));
+            VerifyPolicyValue(
+                "cache_size",
+                ExpectedCacheSizeKiB,
+                await ReadPragmaLongAsync(connection, "cache_size", cancellationToken).ConfigureAwait(false));
+        }
+
+        private static void ExecutePragma(SqliteConnection connection, string pragma)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "PRAGMA " + pragma + ";";
+                command.ExecuteNonQuery();
+            }
+        }
+
+        private static async Task ExecutePragmaAsync(
+            SqliteConnection connection,
+            string pragma,
+            CancellationToken cancellationToken)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "PRAGMA " + pragma + ";";
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        private static string ReadPragmaString(SqliteConnection connection, string pragma)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "PRAGMA " + pragma + ";";
+                return Convert.ToString(command.ExecuteScalar()) ?? string.Empty;
+            }
+        }
+
+        private static long ReadPragmaLong(SqliteConnection connection, string pragma)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "PRAGMA " + pragma + ";";
+                return Convert.ToInt64(command.ExecuteScalar());
+            }
+        }
+
+        private static async Task<string> ReadPragmaStringAsync(
+            SqliteConnection connection,
+            string pragma,
+            CancellationToken cancellationToken)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "PRAGMA " + pragma + ";";
+                var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                return Convert.ToString(value) ?? string.Empty;
+            }
+        }
+
+        private static async Task<long> ReadPragmaLongAsync(
+            SqliteConnection connection,
+            string pragma,
+            CancellationToken cancellationToken)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "PRAGMA " + pragma + ";";
+                var value = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                return Convert.ToInt64(value);
+            }
+        }
+
+        private static void VerifyPolicyValue(string pragma, string expected, string actual)
+        {
+            if (!string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    "SQLite runtime policy verification failed for " + pragma +
+                    ". Expected '" + expected + "' but observed '" + actual + "'.");
+            }
+        }
+
+        private static void VerifyPolicyValue(string pragma, long expected, long actual)
+        {
+            if (expected != actual)
+            {
+                throw new InvalidOperationException(
+                    "SQLite runtime policy verification failed for " + pragma +
+                    ". Expected " + expected + " but observed " + actual + ".");
+            }
         }
 
         private static ActiveConnectionLease RegisterConnection()
