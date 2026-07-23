@@ -19,6 +19,7 @@ function Read-Text([string]$relativePath) {
 $required = @(
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
     "src/Win7POS.Data/Repositories/SaleReadRepository.cs",
+    "src/Win7POS.Data/Repositories/SaleReversalWriter.cs",
     "tests/Win7POS.Core.Tests/Data/SaleReadRepositoryTests.cs"
 )
 
@@ -34,6 +35,7 @@ if ($fail) {
 
 $saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
 $saleReadRepository = Read-Text "src/Win7POS.Data/Repositories/SaleReadRepository.cs"
+$saleReversalWriter = Read-Text "src/Win7POS.Data/Repositories/SaleReversalWriter.cs"
 $tests = Read-Text "tests/Win7POS.Core.Tests/Data/SaleReadRepositoryTests.cs"
 
 $f1ReadMethods = @(
@@ -50,6 +52,14 @@ $f1ReadMethods = @(
 
 if ($saleRepository -notmatch "private readonly SaleReadRepository _reads") {
     Fail "SaleRepository must retain the SaleReadRepository collaborator"
+}
+
+if ($saleRepository -notmatch "private readonly SaleReversalWriter _reversalWriter" -or
+    $saleRepository -notmatch "_reversalWriter\s*=\s*new SaleReversalWriter\(factory\)" -or
+    $saleReversalWriter -notmatch "internal sealed class SaleReversalWriter") {
+    Fail "F1 must leave the extracted F5 reversal implementation outside SaleReadRepository"
+} else {
+    Pass "F1 keeps the extracted F5 reversal implementation outside SaleReadRepository"
 }
 
 $missingFacadeDelegations = @($f1ReadMethods | Where-Object {
@@ -133,9 +143,9 @@ $retainedSaleRepositoryMarkers = @(
 )
 $missingRetainedOwnership = @($retainedSaleRepositoryMarkers | Where-Object { $saleRepository -notmatch $_ })
 if ($missingRetainedOwnership.Count -gt 0) {
-    Fail "F1 must leave the deferred writer/reversal/stock/outbox boundaries in SaleRepository: $($missingRetainedOwnership -join ', ')"
+    Fail "F1 must leave the deferred writer/reversal façade/stock/outbox boundaries in SaleRepository: $($missingRetainedOwnership -join ', ')"
 } else {
-    Pass "F1 leaves the deferred writer, reversal, stock and outbox boundaries in SaleRepository"
+    Pass "F1 leaves the deferred writer, reversal façade, stock and outbox boundaries in SaleRepository"
 }
 
 $requiredTests = @(

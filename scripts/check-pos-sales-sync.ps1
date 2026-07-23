@@ -49,6 +49,7 @@ function Test-SalesOutboxFacadeDelegation(
 $required = @(
     "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Repositories/SaleReversalWriter.cs",
     "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs",
     "src/Win7POS.Data/Online/CatalogShopStateRepository.cs",
     "src/Win7POS.Core/Online/CatalogSaleSafetyPolicy.cs",
@@ -69,6 +70,7 @@ if ($fail) {
 
 $sync = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSalesSyncService.cs"
 $saleRepo = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$reversalWriter = Read-Text "src/Win7POS.Data/Repositories/SaleReversalWriter.cs"
 $salesOutbox = Read-Text "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs"
 $catalogState = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.cs"
 $catalogSaleSafetyPolicy = Read-Text "src/Win7POS.Core/Online/CatalogSaleSafetyPolicy.cs"
@@ -81,7 +83,7 @@ $releaseFacadeDelegates = Test-SalesOutboxFacadeDelegation $saleRepo "ReleaseSal
     "outboxId\s*,\s*saleId\s*,\s*errorCode\s*,\s*nextRetryAt\s*,\s*nowMs\s*,\s*expectedAttemptCount\s*,\s*fence")
 $enqueueFacadeDelegates = Test-SalesOutboxFacadeDelegation $saleRepo "EnqueueSalesSyncOutboxAsync" "EnqueueAsync" @("conn\s*,\s*tx\s*,\s*saleId\s*,\s*normalizedClientSaleId")
 $summaryFacadeDelegates = Test-SalesOutboxFacadeDelegation $saleRepo "GetSalesSyncOutboxSummaryAsync" "GetSummaryAsync" @("\s*")
-$salesScope = @($sync, $saleRepo, $salesOutbox, $builder, $initializer, $statusReader) -join "`n"
+$salesScope = @($sync, $saleRepo, $reversalWriter, $salesOutbox, $builder, $initializer, $statusReader) -join "`n"
 $combined = Get-ChildItem -Path $srcRoot -Recurse -File -Include *.cs,*.xaml,*.csproj |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) } |
@@ -138,15 +140,15 @@ if (-not $enqueueFacadeDelegates -or
     $salesOutbox -notmatch "payload_hash" -or
     $salesOutbox -notmatch "payload_json IS @payloadJson" -or
     $sync -notmatch "Sha256Hex\(item\.PayloadJson\)" -or $sync -notmatch "payload_hash_mismatch") { Fail "sales payload/hash immutability missing" } else { Pass "sales payload/hash are immutable from F4 enqueue through retry" }
-if ($saleRepo -notmatch "EvaluateReversalDependencyAsync" -or
-    $saleRepo -notmatch "ReversalDependencyState\.PermanentBlock" -or
-    $saleRepo -notmatch "prior_reversal_blocked" -or
-    $saleRepo -notmatch "original_sale_blocked" -or
-    $saleRepo -notmatch "ValidateReversalBoundaryAsync" -or
+if ($saleRepo -notmatch "_reversalWriter\s*\.\s*EvaluateReversalDependencyAsync\s*\(\s*saleId\s*\)" -or
+    $saleRepo -notmatch "_reversalWriter\s*\.\s*ValidateReversalBoundaryAsync\s*\(\s*conn\s*,\s*tx\s*,\s*sale\s*,\s*lines\s*\)" -or
+    $reversalWriter -notmatch "ReversalDependencyState\.PermanentBlock" -or
+    $reversalWriter -notmatch "prior_reversal_blocked" -or
+    $reversalWriter -notmatch "original_sale_blocked" -or
     $sync -notmatch "dependency\.State\s*==\s*ReversalDependencyState\.Wait" -or
     $sync -notmatch "dependency\.State\s*==\s*ReversalDependencyState\.PermanentBlock") {
-    Fail "refund/void dependency must distinguish bounded wait from permanent block"
-} else { Pass "refund/void dependency distinguishes wait from permanent block" }
+    Fail "refund/void dependency must distinguish bounded wait from permanent block through the F5 façade"
+} else { Pass "refund/void dependency distinguishes wait from permanent block through the F5 façade" }
 if ($salesScope -match "DELETE\s+FROM\s+sales_sync_outbox") { Fail "destructive sales_sync_outbox cleanup detected" } else { Pass "no destructive outbox cleanup detected" }
 if ($salesScope -match "DROP\s+TABLE\s+sales_sync_outbox") { Fail "destructive sales_sync_outbox drop detected" } else { Pass "no outbox drop detected" }
 
