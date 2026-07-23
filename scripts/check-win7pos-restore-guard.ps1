@@ -30,6 +30,7 @@ $required = @(
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSignalBus.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncRevocationLatch.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs",
     "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
@@ -74,6 +75,7 @@ $connectionPolicyTests = Read-Text "tests/Win7POS.Core.Tests/Data/SqliteConnecti
 $syncSignalBusTests = Read-Text "tests/Win7POS.Core.Tests/Online/PosOnlineSyncSignalBusTests.cs"
 $testProject = Read-Text "tests/Win7POS.Core.Tests/Win7POS.Core.Tests.csproj"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$startupCoordinator = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs"
 $maintenanceDialog = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml.cs"
 $maintenanceViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceViewModel.cs"
 $syncSignalBus = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSignalBus.cs"
@@ -244,30 +246,42 @@ if ($vmRestoreCall -lt 0 -or $vmAudit -le $vmRestoreCall -or
     Pass "successful restore audits and forces logout"
 }
 
-$registrationStart = $mainWindow.IndexOf("PosOnlineSyncSignalBus.Register(", [System.StringComparison]::Ordinal)
-$registrationEnd = $mainWindow.IndexOf("await LoadLanguagePreferenceAsync", [System.StringComparison]::Ordinal)
-$registrationBody = if ($registrationStart -ge 0 -and $registrationEnd -gt $registrationStart) {
-    $mainWindow.Substring($registrationStart, $registrationEnd - $registrationStart)
+$registrationStart = $startupCoordinator.IndexOf("PosOnlineSyncSignalBus.Register(", [System.StringComparison]::Ordinal)
+$registrationEnd = $startupCoordinator.IndexOf("public IOperatorSession EnsureSession", [System.StringComparison]::Ordinal)
+$registrationSetupBody = if ($registrationStart -ge 0 -and $registrationEnd -gt $registrationStart) {
+    $startupCoordinator.Substring($registrationStart, $registrationEnd - $registrationStart)
 } else { "" }
+$stopForMaintenanceStart = $startupCoordinator.IndexOf("private async Task StopForMaintenanceAsync", [System.StringComparison]::Ordinal)
+$resumeAfterMaintenanceStart = $startupCoordinator.IndexOf("private async Task ResumeAfterMaintenanceAsync", [System.StringComparison]::Ordinal)
+$resumeAfterMaintenanceBody = if ($resumeAfterMaintenanceStart -ge 0 -and $stopForMaintenanceStart -gt $resumeAfterMaintenanceStart) {
+    $startupCoordinator.Substring($resumeAfterMaintenanceStart, $stopForMaintenanceStart - $resumeAfterMaintenanceStart)
+} else { "" }
+$stopForMaintenanceBody = if ($stopForMaintenanceStart -ge 0) {
+    $startupCoordinator.Substring($stopForMaintenanceStart)
+} else { "" }
+# Keep the causal order explicit: registration setup, stop-state capture, then resume/re-arm.
+$registrationBody = $registrationSetupBody + $stopForMaintenanceBody + $resumeAfterMaintenanceBody
 $hostStop = $registrationBody.IndexOf(".StopAsync()", [System.StringComparison]::Ordinal)
 $hadGeneration = $registrationBody.IndexOf("stoppedState.HadGeneration", [System.StringComparison]::Ordinal)
 $wasContinuous = $registrationBody.IndexOf("stoppedState.WasContinuous", [System.StringComparison]::Ordinal)
 $resumeRead = $registrationBody.IndexOf("Interlocked.CompareExchange", [System.StringComparison]::Ordinal)
-$attachTrust = $registrationBody.IndexOf("AttachCurrentTrustAsync(token)", [System.StringComparison]::Ordinal)
+$attachTrust = $registrationBody.IndexOf("AttachCurrentTrustAsync(cancellationToken)", [System.StringComparison]::Ordinal)
 $continuousStart = $registrationBody.IndexOf("StartContinuous()", [System.StringComparison]::Ordinal)
 $resumeCatch = $registrationBody.IndexOf("catch", $continuousStart, [System.StringComparison]::Ordinal)
 $resumeRearm = if ($resumeCatch -ge 0) {
-    $registrationBody.IndexOf("_onlineSyncMaintenanceResumeRequested", $resumeCatch, [System.StringComparison]::Ordinal)
+    $registrationBody.IndexOf("_maintenanceResumeRequested", $resumeCatch, [System.StringComparison]::Ordinal)
 } else { -1 }
 if ($hostStop -lt 0 -or $hadGeneration -le $hostStop -or
     $wasContinuous -le $hadGeneration -or $resumeRead -le $wasContinuous -or
     $attachTrust -le $resumeRead -or $continuousStart -le $attachTrust -or
     $resumeCatch -le $continuousStart -or $resumeRearm -le $resumeCatch -or
     $registrationBody -notmatch 'shouldResume\s*\?\s*1\s*:\s*0' -or
-    $registrationBody.Substring($resumeCatch) -notmatch '_onlineSyncMaintenanceResumeRequested,[\s\S]{0,80}1') {
-    Fail "MainWindow maintenance resume must use actual stop state and re-arm after failure"
+    $registrationSetupBody -notmatch 'StopForMaintenanceAsync\(registeredHost\)' -or
+    $registrationSetupBody -notmatch 'ResumeAfterMaintenanceAsync\(registeredHost,\s*token\)' -or
+    $registrationBody.Substring($resumeCatch) -notmatch '_maintenanceResumeRequested,[\s\S]{0,80}1') {
+    Fail "startup coordinator maintenance resume must use actual stop state and re-arm after failure"
 } else {
-    Pass "MainWindow maintenance resume is stateful and retry-safe"
+    Pass "startup coordinator maintenance resume is stateful and retry-safe"
 }
 
 if ($connectionFactory -notmatch "RunExclusiveMaintenanceAsync" -or

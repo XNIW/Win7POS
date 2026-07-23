@@ -391,6 +391,19 @@ public sealed class BoundedAsyncLogWriterTests
     }
 
     [TestMethod]
+    public void Sanitizer_MultilineSecretPreservesPrivateKeyRedactionMarker()
+    {
+        var result = LogSanitizer.Sanitize(
+            "session_token=alpha-secret\r\n" + // gitleaks:allow -- synthetic redaction-test value
+            "-----BEGIN PRIVATE KEY-----private-key-body-----END PRIVATE KEY-----"); // gitleaks:allow -- synthetic redaction-test envelope
+
+        StringAssert.Contains(result, "[redacted]");
+        StringAssert.Contains(result, "[private-key-redacted]");
+        Assert.IsFalse(result.Contains("alpha-secret", StringComparison.Ordinal));
+        Assert.IsFalse(result.Contains("private-key-body", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void Sanitizer_LongIncompleteJwtAcrossWorkOrStorageBoundaryReturnsOnlyMarker()
     {
         var incompleteJwt = "eyJ" + new string('J', 256);

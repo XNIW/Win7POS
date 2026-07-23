@@ -19,6 +19,7 @@ function Read-Text([string]$relativePath) {
 $required = @(
     "src/Win7POS.Wpf/MainWindow.xaml",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
     "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs",
     "src/Win7POS.Data/Online/CatalogShopStateRepository.cs",
     "src/Win7POS.Core/Online/CatalogSaleSafetyPolicy.cs",
@@ -44,6 +45,7 @@ if ($fail) { exit 1 }
 
 $mainXaml = Read-Text "src/Win7POS.Wpf/MainWindow.xaml"
 $mainCode = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$startupCoordinator = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs"
 $reader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $catalogState = Read-Text "src/Win7POS.Data/Online/CatalogShopStateRepository.cs"
 $catalogSaleSafetyPolicy = Read-Text "src/Win7POS.Core/Online/CatalogSaleSafetyPolicy.cs"
@@ -112,12 +114,12 @@ if ($syncCenter -notmatch 'x:Class="Win7POS\.Wpf\.Pos\.Dialogs\.SyncCenterDialog
 if ($syncCenterCode -notmatch "ApplyConfirmDialog\.ShowConfirm" -or
     $mainCode -notmatch "AuthorizeFullCatalogRepairAsync" -or
     $mainCode -notmatch "PermissionCodes\.DbMaintenance" -or
-    $mainCode -notmatch "requestedTrigger\s*==\s*CatalogSyncTrigger\.AdministratorRepair" -or
+    $startupCoordinator -notmatch "requestedTrigger\s*==\s*CatalogSyncTrigger\.AdministratorRepair" -or
     $mainCode -notmatch '"CatalogFullRepair"') { Fail "Full Repair must be owner-safe, confirmed and protected by database maintenance permission" } else { Pass "Full Repair is confirmed and permission protected" }
 if ($syncCenter -notmatch "DialogCancelButtonStyle" -or $syncCenter -notmatch "DialogActionButtonStyle" -or $syncCenter -notmatch "AutomationProperties\.Name") { Fail "Sync Center actions must use shared dialog resources and automation names" } else { Pass "Sync Center actions use shared resources and automation names" }
 if ($mainCode -notmatch "allowFullDecision:\s*administratorRepairAuthorized" -or
-    $mainCode -notmatch "!allowFullDecision\s*&&\s*previewDecision\.Mode\s*==\s*CatalogSyncMode\.Full" -or
-    $mainCode -notmatch "catalog_sync_full_repair_required") { Fail "Sync Now must not be able to start a Full run" } else { Pass "Sync Now is constrained to incremental/resume" }
+    $startupCoordinator -notmatch "!allowFullDecision\s*&&\s*previewDecision\.Mode\s*==\s*CatalogSyncMode\.Full" -or
+    $startupCoordinator -notmatch "catalog_sync_full_repair_required") { Fail "Sync Now must not be able to start a Full run" } else { Pass "Sync Now is constrained to incremental/resume" }
 if ($syncCenterCode -notmatch "_fullRepairRunning" -or
     $syncCenterCode -notmatch "OnClosing\(CancelEventArgs e\)" -or
     $syncCenterCode -notmatch "e\.Cancel\s*=\s*true" -or

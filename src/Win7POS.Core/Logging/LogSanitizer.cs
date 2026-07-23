@@ -15,6 +15,7 @@ namespace Win7POS.Core.Logging
         public const int DefaultMaxMessageLength = MaxStoredChars;
         public const int DefaultMaxSourceLength = 128;
         private const string TruncationMarker = "[truncated]";
+        private const string PrivateKeyRedactionMarker = "[private-key-redacted]";
 
         private const RegexOptions CommonOptions =
             RegexOptions.Compiled | RegexOptions.CultureInvariant | RegexOptions.IgnoreCase;
@@ -103,14 +104,17 @@ namespace Win7POS.Core.Logging
             sanitized = sanitized.Replace("\r", " ").Replace("\n", " ");
             sanitized = ControlCharacters.Replace(sanitized, " ");
 
-            sanitized = StructuredSecret.Replace(sanitized, "$1[redacted]");
-            sanitized = ConnectionStringSecret.Replace(sanitized, "$1[redacted]");
-            sanitized = KeyValueSecret.Replace(sanitized, "$1[redacted]");
+            // Shield complete private-key envelopes before a fail-closed structured-field
+            // matcher redacts the rest of the logical line. The evaluator preserves only
+            // this safe marker; it never re-emits any part of the matched value.
+            sanitized = PrivateKey.Replace(sanitized, PrivateKeyRedactionMarker);
+            sanitized = StructuredSecret.Replace(sanitized, RedactSensitiveValue);
+            sanitized = ConnectionStringSecret.Replace(sanitized, RedactSensitiveValue);
+            sanitized = KeyValueSecret.Replace(sanitized, RedactSensitiveValue);
             sanitized = BearerToken.Replace(sanitized, "$1[redacted]");
             sanitized = McPosToken.Replace(sanitized, "mcpos_$1_[redacted]");
             sanitized = ProviderSecret.Replace(sanitized, "[secret-redacted]");
             sanitized = Jwt.Replace(sanitized, "[jwt-redacted]");
-            sanitized = PrivateKey.Replace(sanitized, "[private-key-redacted]");
             sanitized = WindowsPersonalPath.Replace(sanitized, "[path]");
             sanitized = UnixPersonalPath.Replace(sanitized, "[path]");
 
@@ -141,6 +145,30 @@ namespace Win7POS.Core.Logging
             return maxLength >= TruncationMarker.Length
                 ? TruncationMarker
                 : TruncationMarker.Substring(0, maxLength);
+        }
+
+        private static string RedactSensitiveValue(Match match)
+        {
+            var prefix = match.Groups[1].Value;
+            var matchedValue = match.Value.Substring(prefix.Length);
+            var result = prefix + "[redacted]";
+            var searchStart = 0;
+            while (searchStart < matchedValue.Length)
+            {
+                var markerIndex = matchedValue.IndexOf(
+                    PrivateKeyRedactionMarker,
+                    searchStart,
+                    StringComparison.Ordinal);
+                if (markerIndex < 0)
+                {
+                    break;
+                }
+
+                result += PrivateKeyRedactionMarker + "[redacted]";
+                searchStart = markerIndex + PrivateKeyRedactionMarker.Length;
+            }
+
+            return result;
         }
     }
 }

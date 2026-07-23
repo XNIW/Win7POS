@@ -29,6 +29,7 @@ $required = @(
     "src/Win7POS.Core/Online/CatalogPaginationSafetyPolicy.cs",
     "src/Win7POS.Data/Repositories/RemoteCatalogBatchRepository.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs",
     "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs",
     "src/Win7POS.Core/Online/OnlineSyncSupervisorContracts.cs",
@@ -55,6 +56,7 @@ if ($fail) {
 
 $client = (Read-Text "src/Win7POS.Data/Online/PosAdminWebClient.cs") + "`n" + (Read-Text "src/Win7POS.Core/Online/PosOnlineTransportContracts.cs")
 $service = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
+$startupCoordinator = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs"
 $syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
 $supervisor = Read-Text "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs"
 $supervisorContracts = Read-Text "src/Win7POS.Core/Online/OnlineSyncSupervisorContracts.cs"
@@ -205,7 +207,7 @@ if ($fullLaneEvidence -notmatch "ProductActiveTombstoneConflictCode" -or
 } else {
     Pass "full snapshot active/tombstone overlap fails before destructive promotion"
 }
-if ($mainWindow -notmatch "QueueBackgroundOnlineRefresh[\s\S]{0,700}_onlineSyncHost\?\.StartContinuous\(\)" -or
+if ($startupCoordinator -notmatch "StartBackground[\s\S]{0,500}host\.StartContinuous\(\)" -or
     $supervisor -notmatch 'new\s+OnlineSyncLaneOutcome\(false,\s*"lane_exception"\)' -or
     $supervisor -notmatch "OnlineSyncLaneSchedulePolicy\.Evaluate[\s\S]{0,700}if\s*\(schedule\.ShouldSchedule\)[\s\S]{0,120}Schedule\(slot,\s*schedule\.Delay,\s*outcome\)" -or
     $supervisorContracts -notmatch "outcome\.AuthenticationDenied\s*\|\|\s*outcome\.Terminal[\s\S]{0,260}OnlineSyncLaneScheduleDecision\(false" -or
@@ -714,7 +716,7 @@ if ($productImportApply -notmatch "remote_supplier_id" -or $productImportApply -
 if ($initializer -notmatch "remote_product_id") { Fail "remote product id column missing in db initializer" } else { Pass "remote product id column present" }
 if ($initializer -notmatch "remote_deleted_at") { Fail "remote tombstone column missing in db initializer" } else { Pass "remote tombstone column present" }
 if ($initializer -notmatch "is_active") { Fail "active product column missing in db initializer" } else { Pass "active product column present" }
-if ($mainWindow -notmatch "OnlineSyncLane\.CatalogDelta" -or
+if ($startupCoordinator -notmatch "OnlineSyncLane\.CatalogDelta" -or
     $syncHost -notmatch "TryPullCatalogForSupervisorAsync") { Fail "startup catalog supervisor lane missing" } else { Pass "startup catalog supervisor lane present" }
 
 if ($combined -match "SUPABASE_SERVICE_ROLE_KEY|service_role") { Fail "service-role reference found" }
