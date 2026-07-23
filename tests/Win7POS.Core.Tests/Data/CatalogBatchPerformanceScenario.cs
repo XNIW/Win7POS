@@ -23,10 +23,10 @@ public static class CatalogBatchPerformanceScenario
         var normalizedMode = (mode ?? string.Empty).Trim().ToLowerInvariant();
         if (normalizedMode != "legacy" && normalizedMode != "batch" &&
             normalizedMode != "batch-paged" && normalizedMode != "batch-paged-full" &&
-            normalizedMode != "batch-delta")
+            normalizedMode != "batch-delta" && normalizedMode != "batch-price-only")
         {
             throw new ArgumentException(
-                "Mode must be 'legacy', 'batch', 'batch-paged', 'batch-paged-full' or 'batch-delta'.",
+                "Mode must be 'legacy', 'batch', 'batch-paged', 'batch-paged-full', 'batch-delta' or 'batch-price-only'.",
                 nameof(mode));
         }
         if (rows <= 0) throw new ArgumentOutOfRangeException(nameof(rows));
@@ -55,6 +55,7 @@ public static class CatalogBatchPerformanceScenario
                     ? Math.Max(19763, rows)
                     : rows;
                 var streamFullPages = normalizedMode == "batch-paged-full";
+                var priceOnlyPages = normalizedMode == "batch-price-only";
                 var productWrites = streamFullPages
                     ? Array.Empty<RemoteCatalogProductWrite>()
                     : BuildProducts(catalogRows);
@@ -75,6 +76,16 @@ public static class CatalogBatchPerformanceScenario
                     productWrites = BuildDeltaProducts(rows);
                     priceWrites = BuildDeltaPrices(rows);
                     expectedPriceCount += rows;
+                }
+                else if (priceOnlyPages)
+                {
+                    await SeedPagedCatalogAsync(
+                        factory,
+                        categoryWrites,
+                        supplierWrites,
+                        productWrites,
+                        Array.Empty<RemoteCatalogPriceWrite>(),
+                        pageSize).ConfigureAwait(false);
                 }
 
                 CatalogShopBindingResult? fullBinding = null;
@@ -146,6 +157,19 @@ public static class CatalogBatchPerformanceScenario
                         await run.ApplyAsync(new RemoteCatalogBatch
                         {
                             Products = productWrites.Skip(offset).Take(pageSize).ToArray(),
+                            Prices = priceWrites.Skip(offset).Take(pageSize).ToArray()
+                        }).ConfigureAwait(false);
+                        logicalRequestCount++;
+                    }
+                    runDiagnostics = run.Diagnostics;
+                }
+                else if (priceOnlyPages)
+                {
+                    using var run = new RemoteCatalogBatchRepository(factory).CreateRunContext();
+                    for (var offset = 0; offset < rows; offset += pageSize)
+                    {
+                        await run.ApplyAsync(new RemoteCatalogBatch
+                        {
                             Prices = priceWrites.Skip(offset).Take(pageSize).ToArray()
                         }).ConfigureAwait(false);
                         logicalRequestCount++;
@@ -345,6 +369,10 @@ public static class CatalogBatchPerformanceScenario
                         "SELECT COUNT(1) FROM products WHERE COALESCE(is_active, 1) = 1 AND remote_product_id IS NOT NULL;"),
                     PreflightStageElapsedMilliseconds = preflightStageElapsedMilliseconds,
                     ReconcileElapsedMilliseconds = reconcileElapsedMilliseconds,
+                    RemotePriceApplySqlCommandCount =
+                        runDiagnostics?.RemotePriceApply.SqlCommandCount ?? 0,
+                    RemotePriceApplySqlStatementCount =
+                        runDiagnostics?.RemotePriceApply.SqlStatementCount ?? 0,
                     Rows = rows,
                     ScopeSqlQueryCount = runDiagnostics?.ScopeSqlQueryCount ?? 0,
                     ContextSqlCommandCount = runDiagnostics?.ContextSqlCommandCount ?? 0,
@@ -789,6 +817,8 @@ public sealed class CatalogBatchPerformanceSample
     public double PreflightStageElapsedMilliseconds { get; set; }
     public long ProductCount { get; set; }
     public double ReconcileElapsedMilliseconds { get; set; }
+    public long RemotePriceApplySqlCommandCount { get; set; }
+    public long RemotePriceApplySqlStatementCount { get; set; }
     public int Rows { get; set; }
     public int ScopeSqlQueryCount { get; set; }
     public long WorkingSetBytes { get; set; }
@@ -804,6 +834,8 @@ public sealed class CatalogBatchPerformanceSample
             $"cpu_ms={CpuMilliseconds:F3} requests={LogicalRequestCount} " +
             $"scope_sql_before={LegacyScopeSqlQueryEstimate} scope_sql_after={ScopeSqlQueryCount} " +
             $"context_sql_commands={ContextSqlCommandCount} " +
+            $"remote_price_apply_sql_commands={RemotePriceApplySqlCommandCount} " +
+            $"remote_price_apply_sql_statements={RemotePriceApplySqlStatementCount} " +
             $"working_set_bytes={WorkingSetBytes} peak_working_set_bytes={PeakWorkingSetBytes} " +
             $"peak_private_bytes={PeakPrivateBytes} gc0={Gen0Collections} gc1={Gen1Collections} gc2={Gen2Collections} " +
             $"allocated_bytes={AllocatedBytes} dispatcher_max_delay_ms={DispatcherMaxDelayMilliseconds:F3} " +

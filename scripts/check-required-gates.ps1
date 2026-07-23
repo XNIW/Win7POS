@@ -40,6 +40,7 @@ $sourceGates = @(
     "check-sales-sync-outbox-repository-boundaries.ps1",
     "check-sale-reversal-writer-boundaries.ps1",
     "check-sale-transaction-writer-boundaries.ps1",
+    "check-remote-price-apply-diagnostics.ps1",
     "check-pos-outbox-shop-binding.ps1",
     "check-pos-catalog-pull.ps1",
     "check-pos-catalog-import-outbox.ps1",
