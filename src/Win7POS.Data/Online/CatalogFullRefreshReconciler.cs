@@ -79,7 +79,7 @@ namespace Win7POS.Data.Online
                 : generatedAt.Trim();
 
             cancellationToken.ThrowIfCancellationRequested();
-            await ProductRepository.CatalogMetaWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -134,7 +134,7 @@ namespace Win7POS.Data.Online
             }
             finally
             {
-                ProductRepository.CatalogMetaWriteGate.Release();
+                CatalogMutationGate.Instance.Release();
             }
         }
 
@@ -164,7 +164,7 @@ namespace Win7POS.Data.Online
                 throw new ArgumentNullException(nameof(commitFence));
 
             cancellationToken.ThrowIfCancellationRequested();
-            await ProductRepository.CatalogMetaWriteGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -202,7 +202,7 @@ namespace Win7POS.Data.Online
             }
             finally
             {
-                ProductRepository.CatalogMetaWriteGate.Release();
+                CatalogMutationGate.Instance.Release();
             }
         }
 
@@ -218,7 +218,7 @@ namespace Win7POS.Data.Online
             if (maximumRows <= 0 || maximumRows > 16384)
                 throw new ArgumentOutOfRangeException(nameof(maximumRows));
 
-            await ProductRepository.CatalogMetaWriteGate.WaitAsync().ConfigureAwait(false);
+            await CatalogMutationGate.Instance.WaitAsync().ConfigureAwait(false);
             try
             {
                 using var conn = _factory.Open();
@@ -264,7 +264,7 @@ WHERE scope_id IN (
             }
             finally
             {
-                ProductRepository.CatalogMetaWriteGate.Release();
+                CatalogMutationGate.Instance.Release();
             }
         }
 
@@ -277,7 +277,7 @@ WHERE scope_id IN (
             var normalizedShopId = RequireStageScopeValue(shopId, nameof(shopId));
             var normalizedShopCode = RequireStageScopeValue(shopCode, nameof(shopCode));
 
-            await ProductRepository.CatalogMetaWriteGate.WaitAsync().ConfigureAwait(false);
+            await CatalogMutationGate.Instance.WaitAsync().ConfigureAwait(false);
             try
             {
                 var totalRemoved = 0;
@@ -327,7 +327,7 @@ WHERE shop_id = @normalizedShopId
             }
             finally
             {
-                ProductRepository.CatalogMetaWriteGate.Release();
+                CatalogMutationGate.Instance.Release();
             }
         }
 

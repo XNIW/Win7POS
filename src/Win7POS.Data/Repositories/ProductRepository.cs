@@ -12,16 +12,16 @@ namespace Win7POS.Data.Repositories
 {
     public sealed class ProductRepository
     {
-        internal static readonly System.Threading.SemaphoreSlim CatalogMetaWriteGate =
-            new System.Threading.SemaphoreSlim(1, 1);
         private readonly SqliteConnectionFactory _factory;
         private readonly ProductQueryRepository _queries;
+        private readonly LocalProductWriter _localProductWriter;
         private readonly RemotePriceHistoryRepository _remotePriceHistory;
 
         public ProductRepository(SqliteConnectionFactory factory)
         {
             _factory = factory;
             _queries = new ProductQueryRepository(factory);
+            _localProductWriter = new LocalProductWriter(factory);
             _remotePriceHistory = new RemotePriceHistoryRepository(factory);
         }
 
@@ -53,38 +53,10 @@ namespace Win7POS.Data.Repositories
 
         internal static bool IsReservedBarcode(string barcode)
         {
-            if (string.IsNullOrEmpty(barcode)) return false;
-            return barcode.StartsWith("DISC:", StringComparison.Ordinal)
-                || barcode.StartsWith("MANUAL:", StringComparison.Ordinal);
+            return LocalProductWriter.IsReservedBarcode(barcode);
         }
 
-        public async Task<long> UpsertAsync(Product p)
-        {
-            if (p == null) throw new ArgumentNullException(nameof(p));
-            SalesReceiptContentPolicy.EnsureValidProductIdentity(p.Barcode, p.Name);
-            if (IsReservedBarcode(p.Barcode))
-                throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
-
-            using var conn = _factory.Open();
-
-            var updated = await conn.ExecuteAsync(@"
-UPDATE products
-SET name = @Name, unitPrice = @UnitPrice, is_active = 1, remote_deleted_at = NULL
-WHERE barcode = @Barcode", p).ConfigureAwait(false);
-
-            if (updated == 0)
-            {
-                return await conn.ExecuteScalarAsync<long>(@"
-INSERT INTO products(barcode, name, unitPrice, is_active, remote_deleted_at)
-VALUES(@Barcode, @Name, @UnitPrice, 1, NULL);
-SELECT last_insert_rowid();", p).ConfigureAwait(false);
-            }
-
-            return await conn.ExecuteScalarAsync<long>(
-                "SELECT id FROM products WHERE barcode = @Barcode",
-                new { p.Barcode }
-            ).ConfigureAwait(false);
-        }
+        public Task<long> UpsertAsync(Product p) => _localProductWriter.UpsertAsync(p);
 
         public Task<IReadOnlyList<Product>> ListAllAsync() => _queries.ListAllAsync();
 
@@ -110,43 +82,11 @@ SELECT last_insert_rowid();", p).ConfigureAwait(false);
         public Task<ProductDetailsRow> GetDetailsByBarcodeAsync(string barcode) =>
             _queries.GetDetailsByBarcodeAsync(barcode);
 
-        public async Task UpsertMetaAsync(string barcode, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty)
-        {
-            using var conn = _factory.Open();
-            await conn.ExecuteAsync(@"
-INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
-VALUES(@barcode, '', '', @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
-                new
-                {
-                    barcode,
-                    purchasePrice,
-                    supplierId,
-                    supplierName = supplierName ?? string.Empty,
-                    categoryId,
-                    categoryName = categoryName ?? string.Empty,
-                    stockQty
-                }).ConfigureAwait(false);
-        }
+        public Task UpsertMetaAsync(string barcode, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty) =>
+            _localProductWriter.UpsertMetaAsync(barcode, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty);
 
-        public async Task UpsertMetaFullAsync(string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty)
-        {
-            using var conn = _factory.Open();
-            await conn.ExecuteAsync(@"
-INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
-VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
-                new
-                {
-                    barcode,
-                    articleCode = articleCode ?? string.Empty,
-                    name2 = name2 ?? string.Empty,
-                    purchasePrice,
-                    supplierId,
-                    supplierName = supplierName ?? string.Empty,
-                    categoryId,
-                    categoryName = categoryName ?? string.Empty,
-                    stockQty
-                }).ConfigureAwait(false);
-        }
+        public Task UpsertMetaFullAsync(string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty) =>
+            _localProductWriter.UpsertMetaFullAsync(barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty);
 
         public async Task<bool> ApplyRemoteProductTombstoneAsync(string remoteProductId, string remoteDeletedAt)
         {
@@ -217,30 +157,29 @@ WHERE remote_product_id = @remoteProductId
 
         public Task<long> CountActiveRemoteProductsAsync() => _queries.CountActiveRemoteProductsAsync();
 
-        public async Task<bool> DeleteByBarcodeAsync(string barcode)
-        {
-            if (string.IsNullOrWhiteSpace(barcode)) return false;
-            using var conn = _factory.Open();
-            var rows = await conn.ExecuteAsync(@"
-UPDATE products
-SET is_active = 0,
-    remote_deleted_at = @deletedAt
-WHERE barcode = @barcode
-  AND COALESCE(is_active, 1) = 1",
-                new
-                {
-                    barcode = barcode.Trim(),
-                    deletedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-                }).ConfigureAwait(false);
-            return rows > 0;
-        }
+        public Task<bool> DeleteByBarcodeAsync(string barcode) => _localProductWriter.DeleteByBarcodeAsync(barcode);
 
         /// <summary>Upsert prodotto + meta in una transazione (robustezza negozio).</summary>
         public async Task<long> UpsertProductAndMetaInTransactionAsync(Product p, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string remoteProductId = null)
         {
+            if (string.IsNullOrWhiteSpace(remoteProductId))
+            {
+                return await _localProductWriter.UpsertProductAndMetaInTransactionAsync(
+                    p,
+                    articleCode,
+                    name2,
+                    purchasePrice,
+                    supplierId,
+                    supplierName,
+                    categoryId,
+                    categoryName,
+                    stockQty).ConfigureAwait(false);
+            }
+
+            // Remote identity canonicalization remains owned here until E4.
             if (p == null) throw new ArgumentNullException(nameof(p));
             SalesReceiptContentPolicy.EnsureValidProductIdentity(p.Barcode, p.Name);
-            await CatalogMetaWriteGate.WaitAsync().ConfigureAwait(false);
+            await CatalogMutationGate.Instance.WaitAsync().ConfigureAwait(false);
             try
             {
                 using var conn = _factory.Open();
@@ -271,7 +210,7 @@ WHERE barcode = @barcode
             }
             finally
             {
-                CatalogMetaWriteGate.Release();
+                CatalogMutationGate.Instance.Release();
             }
         }
 
@@ -291,6 +230,22 @@ WHERE barcode = @barcode
             CatalogProductPreparedCommands preparedCommands = null,
             CatalogProductBatchContext batchContext = null)
         {
+            if (string.IsNullOrWhiteSpace(remoteProductId))
+            {
+                return await LocalProductWriter.UpsertProductAndMetaInTransactionCoreAsync(
+                    conn,
+                    tx,
+                    p,
+                    articleCode,
+                    name2,
+                    purchasePrice,
+                    supplierId,
+                    supplierName,
+                    categoryId,
+                    categoryName,
+                    stockQty).ConfigureAwait(false);
+            }
+
             if (p == null) throw new ArgumentNullException(nameof(p));
             SalesReceiptContentPolicy.EnsureValidProductIdentity(p.Barcode, p.Name);
             if (IsReservedBarcode(p.Barcode))
@@ -374,10 +329,10 @@ SELECT last_insert_rowid();", new
             }
 
             var supplierRef = batchContext == null
-                ? await ResolveSupplierReferenceAsync(conn, tx, supplierId, supplierName).ConfigureAwait(false)
+                ? await ProductMetaResolver.ResolveSupplierReferenceAsync(conn, tx, supplierId, supplierName).ConfigureAwait(false)
                 : await batchContext.ResolveSupplierAsync(conn, tx, supplierId, supplierName).ConfigureAwait(false);
             var categoryRef = batchContext == null
-                ? await ResolveCategoryReferenceAsync(conn, tx, categoryId, categoryName).ConfigureAwait(false)
+                ? await ProductMetaResolver.ResolveCategoryReferenceAsync(conn, tx, categoryId, categoryName).ConfigureAwait(false)
                 : await batchContext.ResolveCategoryAsync(conn, tx, categoryId, categoryName).ConfigureAwait(false);
             var hasPendingLocalStock = batchContext == null
                 ? await conn.ExecuteScalarAsync<long>(@"
@@ -688,7 +643,7 @@ VALUES(
                 }
 
                 _categoriesById.Remove(id);
-                var name = NormalizeCatalogName(existing.Name);
+                var name = ProductMetaResolver.NormalizeCatalogName(existing.Name);
                 if (name.Length > 0 &&
                     _categoriesByName.TryGetValue(name, out var byName) &&
                     byName.Id == id)
@@ -705,7 +660,7 @@ VALUES(
                 }
 
                 _suppliersById.Remove(id);
-                var name = NormalizeCatalogName(existing.Name);
+                var name = ProductMetaResolver.NormalizeCatalogName(existing.Name);
                 if (name.Length > 0 &&
                     _suppliersByName.TryGetValue(name, out var byName) &&
                     byName.Id == id)
@@ -755,7 +710,7 @@ VALUES(
                 {
                     if (reference == null || !reference.Id.HasValue) continue;
                     byId[reference.Id.Value] = reference;
-                    var normalizedName = NormalizeCatalogName(reference.Name);
+                    var normalizedName = ProductMetaResolver.NormalizeCatalogName(reference.Name);
                     if (normalizedName.Length > 0 && !byName.ContainsKey(normalizedName))
                     {
                         byName[normalizedName] = reference;
@@ -772,9 +727,9 @@ VALUES(
                 IDictionary<int, ProductMetaReference> byId,
                 IDictionary<string, ProductMetaReference> byName)
             {
-                var normalizedName = NormalizeCatalogName(name);
+                var normalizedName = ProductMetaResolver.NormalizeCatalogName(name);
                 if (id.HasValue && id.Value != 0 && byId.TryGetValue(id.Value, out var existingById) &&
-                    (normalizedName.Length == 0 || NamesMatch(normalizedName, existingById.Name)))
+                    (normalizedName.Length == 0 || ProductMetaResolver.NamesMatch(normalizedName, existingById.Name)))
                 {
                     return existingById;
                 }
@@ -896,253 +851,15 @@ WHERE remote_product_id = @remoteProductId
         }
 
         /// <summary>Update prodotto + meta in una transazione.</summary>
-        public async Task UpdateProductAndMetaInTransactionAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty)
-        {
-            if (productId <= 0) throw new ArgumentException("invalid product id");
-            SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
-            await CatalogMetaWriteGate.WaitAsync().ConfigureAwait(false);
-            try
-            {
-            using var conn = _factory.Open();
-            using var tx = conn.BeginTransaction();
-            try
-            {
-                var rows = await conn.ExecuteAsync(
-                    "UPDATE products SET name = @name, unitPrice = @unitPriceMinor WHERE id = @productId",
-                    new { productId, name = name ?? string.Empty, unitPriceMinor }, tx).ConfigureAwait(false);
-                if (rows == 0) { tx.Rollback(); throw new InvalidOperationException("Product not found."); }
-                var supplierRef = await ResolveSupplierReferenceAsync(conn, tx, supplierId, supplierName).ConfigureAwait(false);
-                var categoryRef = await ResolveCategoryReferenceAsync(conn, tx, categoryId, categoryName).ConfigureAwait(false);
-                await conn.ExecuteAsync(@"
-INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
-VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
-                    new
-                    {
-                        barcode,
-                        articleCode = articleCode ?? string.Empty,
-                        name2 = name2 ?? string.Empty,
-                        purchasePrice,
-                        supplierId = supplierRef.Id,
-                        supplierName = supplierRef.Name,
-                        categoryId = categoryRef.Id,
-                        categoryName = categoryRef.Name,
-                        stockQty
-                    }, tx).ConfigureAwait(false);
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
-            }
-            finally
-            {
-                CatalogMetaWriteGate.Release();
-            }
-        }
+        public Task UpdateProductAndMetaInTransactionAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty) =>
+            _localProductWriter.UpdateProductAndMetaInTransactionAsync(productId, name, unitPriceMinor, barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty);
 
         /// <summary>Update prodotto + meta e scrive righe in price_history se prezzi cambiano. source es. MANUAL_EDIT.</summary>
-        public async Task UpdateProductAndMetaWithPriceHistoryAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string source)
-        {
-            if (productId <= 0) throw new ArgumentException("invalid product id");
-            SalesReceiptContentPolicy.EnsureValidProductIdentity(barcode, name);
-            await CatalogMetaWriteGate.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                using (var conn = _factory.Open())
-                using (var tx = conn.BeginTransaction())
-                {
-                    try
-                    {
-                        var current = await conn.QueryFirstOrDefaultAsync<(long UnitPrice, int PurchasePrice)>(@"
-SELECT p.unitPrice AS UnitPrice, COALESCE(m.purchase_price, 0) AS PurchasePrice
-FROM products p LEFT JOIN product_meta m ON m.barcode = p.barcode WHERE p.id = @productId",
-                            new { productId },
-                            tx).ConfigureAwait(false);
+        public Task UpdateProductAndMetaWithPriceHistoryAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string source) =>
+            _localProductWriter.UpdateProductAndMetaWithPriceHistoryAsync(productId, name, unitPriceMinor, barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty, source);
 
-                        var rows = await conn.ExecuteAsync(
-                            "UPDATE products SET name = @name, unitPrice = @unitPriceMinor WHERE id = @productId",
-                            new { productId, name = name ?? string.Empty, unitPriceMinor }, tx).ConfigureAwait(false);
-                        if (rows == 0) { throw new InvalidOperationException("Product not found."); }
-                        var supplierRef = await ResolveSupplierReferenceAsync(conn, tx, supplierId, supplierName).ConfigureAwait(false);
-                        var categoryRef = await ResolveCategoryReferenceAsync(conn, tx, categoryId, categoryName).ConfigureAwait(false);
-                        await conn.ExecuteAsync(@"
-INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
-VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @supplierName, @categoryId, @categoryName, @stockQty)",
-                            new
-                            {
-                                barcode,
-                                articleCode = articleCode ?? string.Empty,
-                                name2 = name2 ?? string.Empty,
-                                purchasePrice,
-                                supplierId = supplierRef.Id,
-                                supplierName = supplierRef.Name,
-                                categoryId = categoryRef.Id,
-                                categoryName = categoryRef.Name,
-                                stockQty
-                            }, tx).ConfigureAwait(false);
-
-                        var changedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-                        var src = source ?? "MANUAL_EDIT";
-                        var newRetail = (int)unitPriceMinor;
-                        if (current.UnitPrice != unitPriceMinor)
-                        {
-                            await conn.ExecuteAsync(@"
-INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
-VALUES(@barcode, @changedAt, 'retail', @oldPrice, @newPrice, @source)",
-                                new { barcode, changedAt, oldPrice = (int)current.UnitPrice, newPrice = newRetail, source = src },
-                                tx).ConfigureAwait(false);
-                        }
-
-                        if (current.PurchasePrice != purchasePrice)
-                        {
-                            await conn.ExecuteAsync(@"
-INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
-VALUES(@barcode, @changedAt, 'purchase', @oldPrice, @newPrice, @source)",
-                                new { barcode, changedAt, oldPrice = current.PurchasePrice, newPrice = purchasePrice, source = src },
-                                tx).ConfigureAwait(false);
-                        }
-
-                        tx.Commit();
-                    }
-                    catch
-                    {
-                        tx.Rollback();
-                        throw;
-                    }
-                }
-            }
-            finally
-            {
-                CatalogMetaWriteGate.Release();
-            }
-        }
-
-        private static async Task<ProductMetaReference> ResolveSupplierReferenceAsync(SqliteConnection conn, SqliteTransaction tx, int? supplierId, string supplierName)
-        {
-            var normalizedName = NormalizeCatalogName(supplierName);
-            var existingById = await FindSupplierByIdAsync(conn, tx, supplierId).ConfigureAwait(false);
-
-            if (existingById != null &&
-                (normalizedName.Length == 0 || NamesMatch(normalizedName, existingById.Name)))
-            {
-                return existingById;
-            }
-
-            if (normalizedName.Length == 0)
-                return new ProductMetaReference();
-
-            var existingByName = await FindSupplierByNormalizedNameAsync(conn, tx, normalizedName).ConfigureAwait(false);
-            if (existingByName != null)
-                return existingByName;
-
-            await conn.ExecuteAsync(
-                "INSERT OR IGNORE INTO suppliers(name, is_active) VALUES(@name, 1)",
-                new { name = normalizedName },
-                tx).ConfigureAwait(false);
-            return await FindSupplierByNormalizedNameAsync(conn, tx, normalizedName).ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Supplier reference could not be resolved.");
-        }
-
-        private static async Task<ProductMetaReference> ResolveCategoryReferenceAsync(SqliteConnection conn, SqliteTransaction tx, int? categoryId, string categoryName)
-        {
-            var normalizedName = NormalizeCatalogName(categoryName);
-            var existingById = await FindCategoryByIdAsync(conn, tx, categoryId).ConfigureAwait(false);
-
-            if (existingById != null &&
-                (normalizedName.Length == 0 || NamesMatch(normalizedName, existingById.Name)))
-            {
-                return existingById;
-            }
-
-            if (normalizedName.Length == 0)
-                return new ProductMetaReference();
-
-            var existingByName = await FindCategoryByNormalizedNameAsync(conn, tx, normalizedName).ConfigureAwait(false);
-            if (existingByName != null)
-                return existingByName;
-
-            await conn.ExecuteAsync(
-                "INSERT OR IGNORE INTO categories(name, is_active) VALUES(@name, 1)",
-                new { name = normalizedName },
-                tx).ConfigureAwait(false);
-            return await FindCategoryByNormalizedNameAsync(conn, tx, normalizedName).ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Category reference could not be resolved.");
-        }
-
-        private static Task<ProductMetaReference> FindSupplierByIdAsync(SqliteConnection conn, SqliteTransaction tx, int? supplierId)
-        {
-            if (!supplierId.HasValue || supplierId.Value == 0)
-                return Task.FromResult<ProductMetaReference>(null);
-
-            return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
-                "SELECT id AS Id, name AS Name FROM suppliers WHERE id = @id AND COALESCE(is_active, 1) = 1 LIMIT 1",
-                new { id = supplierId.Value },
-                tx);
-        }
-
-        private static Task<ProductMetaReference> FindCategoryByIdAsync(SqliteConnection conn, SqliteTransaction tx, int? categoryId)
-        {
-            if (!categoryId.HasValue || categoryId.Value == 0)
-                return Task.FromResult<ProductMetaReference>(null);
-
-            return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
-                "SELECT id AS Id, name AS Name FROM categories WHERE id = @id AND COALESCE(is_active, 1) = 1 LIMIT 1",
-                new { id = categoryId.Value },
-                tx);
-        }
-
-        private static Task<ProductMetaReference> FindSupplierByNormalizedNameAsync(SqliteConnection conn, SqliteTransaction tx, string normalizedName)
-        {
-            return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
-                @"SELECT id AS Id, name AS Name
-FROM suppliers
-WHERE COALESCE(is_active, 1) = 1
-  AND LOWER(TRIM(name)) = LOWER(@name)
-ORDER BY id ASC
-LIMIT 1",
-                new { name = normalizedName },
-                tx);
-        }
-
-        private static Task<ProductMetaReference> FindCategoryByNormalizedNameAsync(SqliteConnection conn, SqliteTransaction tx, string normalizedName)
-        {
-            return conn.QueryFirstOrDefaultAsync<ProductMetaReference>(
-                @"SELECT id AS Id, name AS Name
-FROM categories
-WHERE COALESCE(is_active, 1) = 1
-  AND LOWER(TRIM(name)) = LOWER(@name)
-ORDER BY id ASC
-LIMIT 1",
-                new { name = normalizedName },
-                tx);
-        }
-
-        private static bool NamesMatch(string left, string right)
-        {
-            return string.Equals(
-                NormalizeCatalogName(left),
-                NormalizeCatalogName(right),
-                StringComparison.OrdinalIgnoreCase);
-        }
-
-        private static string NormalizeCatalogName(string name)
-        {
-            var value = (name ?? string.Empty).Trim();
-            if (value.Length == 0) return string.Empty;
-            return string.Join(" ", value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
-        }
-
-        public async Task InsertPriceHistoryAsync(string barcode, string type, int newPrice, string source = "MANUAL")
-        {
-            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-            using var conn = _factory.Open();
-            await conn.ExecuteAsync(@"
-INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
-VALUES(@barcode, @timestamp, @type, NULL, @newPrice, @source)",
-                new { barcode, timestamp, type, newPrice, source }).ConfigureAwait(false);
-        }
+        public Task InsertPriceHistoryAsync(string barcode, string type, int newPrice, string source = "MANUAL") =>
+            _localProductWriter.InsertPriceHistoryAsync(barcode, type, newPrice, source);
 
         /// <summary>Storico prezzi per barcode, ordinato per data DESC.</summary>
         public Task<IReadOnlyList<ProductPriceHistoryRow>> GetPriceHistoryByBarcodeAsync(string barcode) =>
@@ -1159,69 +876,11 @@ VALUES(@barcode, @timestamp, @type, NULL, @newPrice, @source)",
             _queries.ListAllPriceHistoryAsync();
 
         /// <summary>Aggiorna prezzi prodotto e scrive storico nella stessa transazione. source es. MANUAL_EDIT, IMPORT.</summary>
-        public async Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source)
-        {
-            if (productId <= 0) throw new ArgumentException("Invalid product id.");
-            using var conn = _factory.Open();
-            var product = await conn.QueryFirstOrDefaultAsync<(string Barcode, long UnitPrice)>(@"
-SELECT p.barcode, p.unitPrice FROM products p WHERE p.id = @productId", new { productId }).ConfigureAwait(false);
-            if (product.Barcode == null) throw new InvalidOperationException("Prodotto non trovato.");
+        public Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source) =>
+            _localProductWriter.UpdateProductPricesAsync(productId, newPurchasePrice, newRetailPrice, source);
 
-            var purchaseCurrent = await conn.ExecuteScalarAsync<int?>(@"
-SELECT purchase_price FROM product_meta WHERE barcode = @barcode", new { barcode = product.Barcode }).ConfigureAwait(false);
-            var currentPurchase = purchaseCurrent ?? 0;
-            var currentRetail = (int)product.UnitPrice;
-
-            using var tx = conn.BeginTransaction();
-            try
-            {
-                var changedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-                if (currentPurchase != newPurchasePrice)
-                {
-                    await conn.ExecuteAsync(@"
-INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
-VALUES(@barcode, @changedAt, 'purchase', @oldPrice, @newPrice, @source)",
-                        new { barcode = product.Barcode, changedAt, oldPrice = currentPurchase, newPrice = newPurchasePrice, source }, tx).ConfigureAwait(false);
-                    var metaRows = await conn.ExecuteAsync(@"UPDATE product_meta SET purchase_price = @newPrice WHERE barcode = @barcode",
-                        new { barcode = product.Barcode, newPrice = newPurchasePrice }, tx).ConfigureAwait(false);
-                    if (metaRows == 0)
-                        await conn.ExecuteAsync(@"
-INSERT OR REPLACE INTO product_meta(barcode, article_code, name2, purchase_price, purchase_old, retail_old, supplier_id, supplier_name, category_id, category_name, stock_qty)
-VALUES(@barcode, '', '', @newPrice, 0, 0, NULL, '', NULL, '', 0)",
-                            new { barcode = product.Barcode, newPrice = newPurchasePrice }, tx).ConfigureAwait(false);
-                }
-                if (currentRetail != newRetailPrice)
-                {
-                    await conn.ExecuteAsync(@"
-INSERT INTO product_price_history(barcode, timestamp, type, old_price, new_price, source)
-VALUES(@barcode, @changedAt, 'retail', @oldPrice, @newPrice, @source)",
-                        new { barcode = product.Barcode, changedAt, oldPrice = currentRetail, newPrice = newRetailPrice, source }, tx).ConfigureAwait(false);
-                    await conn.ExecuteAsync(@"UPDATE products SET unitPrice = @newPrice WHERE id = @productId",
-                        new { productId, newPrice = newRetailPrice }, tx).ConfigureAwait(false);
-                }
-                tx.Commit();
-            }
-            catch
-            {
-                tx.Rollback();
-                throw;
-            }
-        }
-
-        public async Task<bool> UpdateAsync(long productId, string name, long unitPriceMinor)
-        {
-            SalesReceiptContentPolicy.EnsureValidProductIdentity(null, name);
-            using var conn = _factory.Open();
-            var rows = await conn.ExecuteAsync(
-                "UPDATE products SET name = @name, unitPrice = @unitPriceMinor WHERE id = @productId",
-                new
-                {
-                    productId,
-                    name = name ?? string.Empty,
-                    unitPriceMinor
-                }).ConfigureAwait(false);
-            return rows > 0;
-        }
+        public Task<bool> UpdateAsync(long productId, string name, long unitPriceMinor) =>
+            _localProductWriter.UpdateAsync(productId, name, unitPriceMinor);
     }
 
     public sealed class RemotePriceHistoryApplyResult

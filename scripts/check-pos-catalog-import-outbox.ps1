@@ -33,6 +33,7 @@ $cli = Read-Text "src/Win7POS.Cli/Program.cs"
 $viewModel = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportViewModel.cs"
 $workflow = Read-Text "src/Win7POS.Wpf/Import/SupplierExcelImportWorkflowService.cs"
 $productRepository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
+$localProductWriter = Read-Text "src/Win7POS.Data/Repositories/LocalProductWriter.cs"
 $remotePriceHistoryRepository = Read-Text "src/Win7POS.Data/Repositories/RemotePriceHistoryRepository.cs"
 $restoreGuard = Read-Text "scripts/check-win7pos-restore-guard.ps1"
 $combinedSrc = Get-ChildItem -Path (Join-Path $repoRoot "src") -Recurse -File -Include *.cs,*.xaml,*.csproj |
@@ -99,15 +100,22 @@ Assert-Contains $workflow "CatalogImportOutboxPayloadBuilder.BuildSupplierExcelE
 Assert-Contains $viewModel "_service.ApplyAsync(SyncPreview, false, SelectedFileName)" "supplier apply passes redacted file name"
 Assert-Contains $workflow "ListDetailsByBarcodesAsync" "supplier workflow uses targeted catalog lookup"
 Assert-Contains $productRepository "ListDetailsByBarcodesAsync" "targeted product details lookup present"
-Assert-Contains $productRepository "is_active = 0" "product delete uses soft delete"
-Assert-Contains $productRepository "remote_deleted_at = @deletedAt" "product soft delete records timestamp"
+Assert-Contains $localProductWriter "is_active = 0" "local product delete uses soft delete"
+Assert-Contains $localProductWriter "remote_deleted_at = @deletedAt" "local product soft delete records timestamp"
+if ($productRepository -match "_localProductWriter\s*\.\s*DeleteByBarcodeAsync") {
+    Pass "product facade delegates delete to the local writer"
+} else {
+    Fail "product facade must delegate delete to the local writer"
+}
 Assert-Contains $restoreGuard "catalog_import_outbox" "restore guard covers catalog import outbox"
 
-$deleteMethod = [regex]::Match($productRepository, "public\s+async\s+Task<bool>\s+DeleteByBarcodeAsync[\s\S]*?^\s*}\s*$", [System.Text.RegularExpressions.RegexOptions]::Multiline)
-if ($deleteMethod.Success -and $deleteMethod.Value -match "(?i)\bDELETE\s+FROM\s+(products|product_meta)\b") {
-    Fail "DeleteByBarcodeAsync must not hard-delete products/product_meta"
+$deleteMethod = [regex]::Match($localProductWriter, "(?:public|internal)\s+async\s+Task<bool>\s+DeleteByBarcodeAsync[\s\S]*?^\s*}\s*$", [System.Text.RegularExpressions.RegexOptions]::Multiline)
+if (-not $deleteMethod.Success) {
+    Fail "LocalProductWriter.DeleteByBarcodeAsync implementation missing"
+} elseif ($deleteMethod.Value -match "(?i)\bDELETE\s+FROM\s+(products|product_meta)\b") {
+    Fail "LocalProductWriter.DeleteByBarcodeAsync must not hard-delete products/product_meta"
 } else {
-    Pass "DeleteByBarcodeAsync has no product hard-delete"
+    Pass "LocalProductWriter.DeleteByBarcodeAsync has no product hard-delete"
 }
 
 if ($combinedSrc -match "SUPABASE_SERVICE_ROLE_KEY|service_role|NEXT_PUBLIC_SUPABASE|supabase\.co|createClient\s*\(|supabaseUrl|supabaseKey") {
