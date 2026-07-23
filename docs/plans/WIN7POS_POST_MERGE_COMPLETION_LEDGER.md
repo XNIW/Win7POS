@@ -41,21 +41,48 @@
   Security Supply Chain, Release Pack and Catalog Performance runs are
   `29908121321`, `29908121286`, `29908121289` and `29908134313`, all
   `completed/success` on `0c5052f3`.
-- Production certification remains `OPEN`. The authoritative 25-row status and
-  evidence live only in `docs/QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md`.
+- 2026-07-23 repo-local residual closure: SQLite durability is `DONE_MERGED`
+  through PR #25 (`3887262`), ARCH-005 through PR #26 (`56b3803`), PR-C through
+  PR #27 (`d6751576`), ProductRepository/ARCH-003 through PRs #28-#31
+  (`6556a85`, `f2175ab`, `bc52904`, `38cf284`), and SaleRepository/PR-F through
+  PRs #32-#38 (`0918437`, `0c95204`, `e2d8e24`, `93100e2`, `8bcbaea`,
+  `f20030c`, `cc9f02c`). All were normal merges; their individual linked PR
+  records retain the exact-head and post-merge evidence. Post-merge CI on PR #33
+  merge `0c952047` failed in run `29985031154`; PR #34 remediated that failure
+  and completed its post-merge workflows successfully.
+- PERF-05 is `DONE_MERGED` through PR #39 at normal merge commit
+  `93a5e4afa819f0de14513ddb7603091433d917ba` from exact head
+  `777931aba66727779480fd6774d8c5c2548d5a3a`. Exact-head CI, Security Supply
+  Chain and Release Pack runs `30005059126`, `30005059146` and `30005117027`,
+  and post-merge runs `30005966795`, `30005966771` and `30005966770`, all
+  completed successfully on their respective exact SHAs.
+- This closeout's derived production-certification disposition is
+  `BLOCKED_EXTERNAL`. The authoritative 25-row backlog status remains `OPEN` and
+  its evidence lives only in `docs/QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md`;
+  no external backlog row was changed by this repository-local closure.
 - The Admin backend repository is available at
   `XNIW/merchandise-control-admin-web`, branch `main`, SHA `9406da338691e70e627c26867122499f944de897`.
   Its catalog-v2 change is not deployed to the configured staging environment,
   and no synthetic authenticated Win7POS session/fixture run exists; staging
   validation therefore remains `BLOCKED_EXTERNAL`.
-- Physical Windows 7, real release signing/timestamp and production/hardware
-  certification remain `BLOCKED_EXTERNAL`. No external backlog row was changed.
+- Supabase staging reconciliation is `BLOCKED_EXTERNAL` in this closeout: the
+  source has 72 migration IDs, staging history has 79 and 71 are common. No
+  authoritative source-provenance/recovery reconciliation manifest and verified
+  backup for the eight remote-only Supabase staging migrations was supplied:
+  `20260707183000`, `20260707200500`, `20260708003000`, `20260713010000`,
+  `20260713020000`, `20260718120000`, `20260718235345`, `20260719090000`.
+  Source-only `20260719170600` is recorded as observed evidence, not a repair
+  instruction. No migration was repaired, rebased, baselined, reverted or
+  deployed in this execution.
+- Physical Windows 7 is `DEFERRED_BY_USER`. Real release signing/timestamp and
+  production/hardware certification remain `BLOCKED_EXTERNAL`.
 - A structural item becomes `DONE_MERGED` only after an explicit later merge.
   Publishing a green PR leaves it `READY_FOR_REVIEW`.
 
 ## A. External certification
 
-Overall status: `OPEN`; authoritative PASS count: `10/25` (rows 15 and 17–25).
+This closeout's derived disposition: `BLOCKED_EXTERNAL`; authoritative backlog
+status: `OPEN`; historical PASS count: `10/25` (rows 15 and 17–25).
 The Windows 11 Epson evidence closes only those tested receipt/drawer scenarios;
 physical Windows 7 remains open. Static checks, tests, synthetic databases, CI
 and packaging cannot promote any external row. Do not duplicate the row matrix
@@ -67,17 +94,19 @@ here; use `docs/QA/WIN7POS_EXTERNAL_VALIDATION_BACKLOG.md`.
 | --- | --- | --- | --- | --- |
 | B | Persistence foundation | PR-A / GitHub `#5` | `DONE_MERGED` | Fast-forward head `607e1f1`; PR/main CI and Release Pack green on the exact SHA. |
 | C | Versioned migrations | PR-B / GitHub `#6` | `DONE_MERGED` | Normal merge `ea85d91`; seven immutable checksummed migrations, verified legacy bootstrap/backup/rollback and seven sanitized fixtures. |
-| D | Startup coordinator | PR-C | `PARTIAL` | PRs #8, #9 and #11 extracted scheduler/supervisor/trust policy, but `MainWindow.OnLoadedAsync` still directly owns DB, session, recovery and online-host sequencing. Use small C1/C2/C3 extraction PRs only if the regression surface is accepted. |
-| E | Catalog state-machine/performance split | PR-D / GitHub `#10`, `#21`–`#23` | `DONE_MERGED` | PERF-1 plus durable authoritative staging, keyset paging and bounded logging passed exact-head and post-merge specialist workflows. |
-| F | ProductRepository split | PR-E | `OPEN` | PERF-1/PERF-2 removed measured hot paths, but the public repository still owns query, local write, remote identity and price-history concerns. No decomposition is claimed. |
-| G | SaleRepository split | PR-F | `OPEN` | Safety/CAS/reversal prerequisites are merged, but sale, reporting, reversal, stock and outbox responsibilities remain together. No decomposition is claimed. |
+| D | Startup coordinator | PR-C / GitHub `#27` | `DONE_MERGED` | Normal merge `d6751576`; the startup orchestration responsibility was extracted behind its existing façade and post-merge acceptance workflows passed. |
+| E | Catalog state-machine/performance split | PR-D / GitHub `#10`, `#21`–`#23`, `#39` | `DONE_MERGED` | PERF-1/PERF-2 plus PERF-05 post-commit remote-price diagnostics passed exact-head and post-merge specialist workflows. PERF-05 is observational, not a set-based rewrite or timing threshold. |
+| F | ProductRepository split | PR-E / GitHub `#28`–`#31` | `DONE_MERGED` | Façade-preserving query, remote-price-history, local-writer and remote-product-writer extractions were normally merged and validated post-merge. |
+| G | SaleRepository split | PR-F / GitHub `#32`–`#38` | `DONE_MERGED` | Façade-preserving read, line, stock, outbox, reversal and transaction writer extractions were normally merged. PR #33 post-merge CI `29985031154` failed; PR #34 remediated it, and final integration evidence is green in PR #39. |
 | H | Reproducible/signable release chain | PR-G / GitHub `#13`, `#20` | `PARTIAL_EXTERNAL_SIGNING` | Actions/toolchain/locks/version, SBOM/security gates, reproducibility, checksums, provenance and unsigned attestation are merged. A real protected-tag certificate plus RFC3161 timestamp remains external. |
 
 PR-A, PR-B, SYNC-1, SYNC-2, PERF-1, RELEASE1-A, the repository-local portion of
-RELEASE1-B and PERF2-A/B/C are normally merged. PR-C remains `PARTIAL`; PR-E and
-PR-F remain `OPEN` maintainability work and are not mislabeled as superseded.
-The historical nine-P2 reassessment leaves ARCH-003, ARCH-005 and PERF-05
-`OPEN`, SQLITE-DURABILITY-001 `PARTIAL`, five items `DONE_MERGED` and none
-`SUPERSEDED`.
-External certification remains `OPEN 10/25`, with authenticated staging,
-production signing and physical Windows 7 still unverified.
+RELEASE1-B, PERF2-A/B/C, PR-C, PR-E, PR-F, ARCH-005, PERF-05 and
+SQLITE-DURABILITY-001 are normally merged. No completed structural item is
+mislabelled as superseded.
+The historical nine-P2 reassessment is now nine `DONE_MERGED`, zero `OPEN`,
+zero `PARTIAL` and zero `SUPERSEDED`.
+The authoritative external-certification backlog remains `OPEN` at the
+historical 10/25 snapshot. This closeout's derived disposition is
+`BLOCKED_EXTERNAL`: authenticated staging reconciliation, production signing and
+physical Windows 7 remain unverified.
