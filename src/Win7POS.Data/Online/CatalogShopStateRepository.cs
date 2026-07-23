@@ -1207,113 +1207,21 @@ WHERE key IN (
                 return values.TryGetValue(key, out var value) ? value : string.Empty;
             }
 
-            var boundShopId = Normalize(Read(BoundShopIdKey));
-            var boundShopCode = OutboxShopBinding.NormalizeCode(Read(BoundShopCodeKey));
-            var hasBoundShopId = boundShopId.Length > 0;
-            var hasBoundShopCode = boundShopCode.Length > 0;
+            var snapshot = new CatalogSaleSafetySnapshot(
+                Normalize(Read(BoundShopIdKey)),
+                OutboxShopBinding.NormalizeCode(Read(BoundShopCodeKey)),
+                Normalize(Read(OutboxShopBinding.OfficialShopIdKey)),
+                OutboxShopBinding.NormalizeCode(Read(OutboxShopBinding.OfficialShopCodeKey)),
+                Read(RepairRequiredKey),
+                Read(SaleSafeAtKey),
+                Read(CompletenessStatusKey),
+                Normalize(Read(ExactnessShopIdKey)),
+                OutboxShopBinding.NormalizeCode(Read(ExactnessShopCodeKey)));
+            var decision = CatalogSaleSafetyPolicy.Evaluate(snapshot, allowLegacyUnbound);
 
-            // Databases that have never been linked retain their legacy/local sale
-            // behavior. Official-catalog readiness remains false for that same state.
-            if (!hasBoundShopId && !hasBoundShopCode)
-            {
-                return allowLegacyUnbound
-                    ? CatalogSaleSafetyEvaluation.Safe(
-                        isCatalogBound: false,
-                        "catalog_sale_safe_legacy_unbound")
-                    : CatalogSaleSafetyEvaluation.Blocked(
-                        isCatalogBound: false,
-                        "catalog_sale_blocked_not_bound");
-            }
-
-            if (!hasBoundShopId || !hasBoundShopCode)
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_binding_partial");
-            }
-
-            var officialShopId = Normalize(Read(OutboxShopBinding.OfficialShopIdKey));
-            var officialShopCode = OutboxShopBinding.NormalizeCode(
-                Read(OutboxShopBinding.OfficialShopCodeKey));
-            if (officialShopId.Length == 0 || officialShopCode.Length == 0)
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_official_shop_partial");
-            }
-
-            if (!string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
-                boundShopId,
-                boundShopCode,
-                officialShopId,
-                officialShopCode)))
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_shop_mismatch");
-            }
-
-            var rawRepairRequired = Read(RepairRequiredKey);
-            if (!TryParseOptionalBinaryFlag(rawRepairRequired, out var repairRequired))
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_repair_state_invalid");
-            }
-
-            if (repairRequired)
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_repair_required");
-            }
-
-            if (string.IsNullOrWhiteSpace(Read(SaleSafeAtKey)))
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_not_sale_safe");
-            }
-
-            var rawExactnessStatus = Read(CompletenessStatusKey);
-            if (string.IsNullOrWhiteSpace(rawExactnessStatus))
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_exactness_missing");
-            }
-
-            if (!Enum.TryParse(rawExactnessStatus, true, out CatalogCompletenessStatus exactnessStatus) ||
-                exactnessStatus != CatalogCompletenessStatus.Verified)
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_exactness_not_verified");
-            }
-
-            var exactnessShopId = Normalize(Read(ExactnessShopIdKey));
-            var exactnessShopCode = OutboxShopBinding.NormalizeCode(Read(ExactnessShopCodeKey));
-            if (exactnessShopId.Length == 0 || exactnessShopCode.Length == 0)
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_exactness_binding_partial");
-            }
-
-            if (!string.IsNullOrWhiteSpace(OutboxShopBinding.GetMismatchCode(
-                exactnessShopId,
-                exactnessShopCode,
-                officialShopId,
-                officialShopCode)))
-            {
-                return CatalogSaleSafetyEvaluation.Blocked(
-                    isCatalogBound: true,
-                    "catalog_sale_blocked_exactness_shop_mismatch");
-            }
-
-            return CatalogSaleSafetyEvaluation.Safe(
-                isCatalogBound: true,
-                "catalog_sale_safe");
+            return decision.IsSaleSafe
+                ? CatalogSaleSafetyEvaluation.Safe(decision.IsCatalogBound, decision.ReasonCode)
+                : CatalogSaleSafetyEvaluation.Blocked(decision.IsCatalogBound, decision.ReasonCode);
         }
 
         private sealed class CatalogSaleSafetySettingRow
