@@ -125,7 +125,7 @@ if ($forbiddenReadOwnership.Count -gt 0) {
 
 $retainedSaleRepositoryMarkers = @(
     "GetLinesBySaleIdAsync",
-    "ReadSaleLineBudgetAsync",
+    "InsertSaleLinesAsync",
     "GetReversalEconomicsSnapshotAsync",
     "InsertSaleAsync",
     "ApplyLocalStockMovementsAsync",
@@ -133,9 +133,9 @@ $retainedSaleRepositoryMarkers = @(
 )
 $missingRetainedOwnership = @($retainedSaleRepositoryMarkers | Where-Object { $saleRepository -notmatch $_ })
 if ($missingRetainedOwnership.Count -gt 0) {
-    Fail "F1 must leave line/budget/reversal/stock/outbox ownership in SaleRepository: $($missingRetainedOwnership -join ', ')"
+    Fail "F1 must leave the deferred writer/reversal/stock/outbox boundaries in SaleRepository: $($missingRetainedOwnership -join ', ')"
 } else {
-    Pass "F1 leaves line, budget, reversal, stock and outbox ownership in SaleRepository"
+    Pass "F1 leaves the deferred writer, reversal, stock and outbox boundaries in SaleRepository"
 }
 
 $requiredTests = @(
