@@ -330,7 +330,7 @@ namespace Win7POS.Data.Repositories
                         result.ProductsApplied += 1;
                     }
 
-                    var pendingReplay = await ProductRepository
+                    var pendingReplay = await RemotePriceHistoryRepository
                         .ApplyPendingRemotePricesInTransactionAsync(conn, tx)
                         .ConfigureAwait(false);
                     result.PendingPricesApplied += pendingReplay.Applied;
@@ -425,7 +425,7 @@ AND NOT EXISTS (
                         if (batch.AuthoritativeFullRefresh &&
                             !string.IsNullOrWhiteSpace(price.RemotePriceId))
                         {
-                            if (!await ProductRepository.PrepareAuthoritativeRemotePriceRepairAsync(
+                            if (!await RemotePriceHistoryRepository.PrepareAuthoritativeRemotePriceRepairAsync(
                                     conn,
                                     tx,
                                     price.RemoteProductId,
@@ -440,7 +440,7 @@ AND NOT EXISTS (
                             }
                         }
 
-                        var applied = await ProductRepository.UpsertOrQueueRemotePriceHistoryInTransactionAsync(
+                        var applied = await RemotePriceHistoryRepository.UpsertOrQueueRemotePriceHistoryInTransactionAsync(
                             conn,
                             tx,
                             price.RemoteProductId,
@@ -454,7 +454,7 @@ AND NOT EXISTS (
                         if (!applied.Applied && !applied.Queued) result.PricesSkipped += 1;
                     }
 
-                    pendingReplay = await ProductRepository
+                    pendingReplay = await RemotePriceHistoryRepository
                         .ApplyPendingRemotePricesInTransactionAsync(conn, tx)
                         .ConfigureAwait(false);
                     result.PendingPricesApplied += pendingReplay.Applied;

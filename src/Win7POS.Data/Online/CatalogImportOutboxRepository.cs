@@ -925,7 +925,7 @@ WHERE barcode = @barcode
                 throw new InvalidOperationException("catalog_import_remote_price_owner_missing_or_ambiguous");
             }
 
-            if (!await ProductRepository.StoreRemotePriceOwnershipAsync(
+            if (!await RemotePriceHistoryRepository.StoreRemotePriceOwnershipAsync(
                     conn,
                     tx,
                     normalizedRemotePriceId,

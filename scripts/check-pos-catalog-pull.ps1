@@ -28,6 +28,7 @@ $required = @(
     "src/Win7POS.Core/Online/CatalogFullLaneEvidenceTracker.cs",
     "src/Win7POS.Core/Online/CatalogPaginationSafetyPolicy.cs",
     "src/Win7POS.Data/Repositories/RemoteCatalogBatchRepository.cs",
+    "src/Win7POS.Data/Repositories/RemotePriceHistoryRepository.cs",
     "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs",
     "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs",
@@ -72,6 +73,7 @@ $heartbeatPolicy = Read-Text "src/Win7POS.Core/Online/CatalogHeartbeatPolicy.cs"
 $cli = Read-Text "src/Win7POS.Cli/Program.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $repository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
+$remotePriceHistoryRepository = Read-Text "src/Win7POS.Data/Repositories/RemotePriceHistoryRepository.cs"
 $categoryRepository = Read-Text "src/Win7POS.Data/Repositories/CategoryRepository.cs"
 $supplierRepository = Read-Text "src/Win7POS.Data/Repositories/SupplierRepository.cs"
 $categorySupplierResolver = Read-Text "src/Win7POS.Data/Import/CategorySupplierResolver.cs"
@@ -156,7 +158,9 @@ if ($batchRepository -notmatch "temp_catalog_page_product_identities" -or
 }
 if ($batchRepository -notmatch "UpsertRemoteInTransactionAsync" -or
     $batchRepository -notmatch "UpsertProductAndMetaInTransactionCoreAsync" -or
-    $batchRepository -notmatch "UpsertOrQueueRemotePriceHistoryInTransactionAsync" -or
+    $batchRepository -notmatch "RemotePriceHistoryRepository\s*\.\s*UpsertOrQueueRemotePriceHistoryInTransactionAsync" -or
+    $batchRepository -notmatch "RemotePriceHistoryRepository\s*\.\s*ApplyPendingRemotePricesInTransactionAsync" -or
+    $batchRepository -notmatch "RemotePriceHistoryRepository\s*\.\s*PrepareAuthoritativeRemotePriceRepairAsync" -or
     $batchRepository -notmatch "ApplyRemoteProductTombstoneInTransactionAsync") {
     Fail "catalog batch does not keep all catalog mutations inside the shared transaction"
 } else {
@@ -631,16 +635,35 @@ if ($client -notmatch 'DataMember\(Name = "catalogVersion"') { Fail "catalog ver
 if ($client -notmatch 'DataMember\(Name = "hasMore"') { Fail "hasMore wire field missing" } else { Pass "hasMore wire field present" }
 if ($client -notmatch 'DataMember\(Name = "tombstones"') { Fail "tombstones wire field missing" } else { Pass "tombstones wire field present" }
 if ($repository -notmatch "remote_product_id") { Fail "remote product id column missing in repository" } else { Pass "remote product id used in repository" }
-if ($repository -notmatch "remote_catalog_pending_prices" -or $repository -notmatch "QueuePendingRemotePriceAsync" -or $repository -notmatch "ApplyPendingRemotePricesAsync") { Fail "pending remote price replay missing" } else { Pass "pending remote price replay present" }
-if ($repository -notmatch "PendingRemotePriceReplayBatchSize" -or $repository -notmatch "while\s*\(true\)" -or $repository -notmatch "canonical" -or $repository -notmatch "GROUP BY remote_product_id") { Fail "pending remote price replay must drain all resolvable batches against a canonical product per remote_product_id" } else { Pass "pending remote price replay drains all resolvable batches against canonical remote product" }
-if ($repository -notmatch "remote_price_id" -or $initializer -notmatch "remote_price_id" -or $service -notmatch "RemotePriceId\s*=\s*Normalize\(row\.PriceId\)" -or $batchRepository -notmatch "price\.RemotePriceId") { Fail "remote priceId idempotency missing" } else { Pass "remote priceId idempotency present" }
+if ($remotePriceHistoryRepository -notmatch "remote_catalog_pending_prices" -or $remotePriceHistoryRepository -notmatch "QueuePendingRemotePriceAsync" -or $remotePriceHistoryRepository -notmatch "ApplyPendingRemotePricesAsync") { Fail "pending remote price replay missing" } else { Pass "pending remote price replay present" }
+if ($remotePriceHistoryRepository -notmatch "PendingRemotePriceReplayBatchSize" -or $remotePriceHistoryRepository -notmatch "while\s*\(true\)" -or $remotePriceHistoryRepository -notmatch "canonical" -or $remotePriceHistoryRepository -notmatch "GROUP BY remote_product_id") { Fail "pending remote price replay must drain all resolvable batches against a canonical remote product per remote_product_id" } else { Pass "pending remote price replay drains all resolvable batches against canonical remote product" }
+if ($remotePriceHistoryRepository -notmatch "remote_price_id" -or $initializer -notmatch "remote_price_id" -or $service -notmatch "RemotePriceId\s*=\s*Normalize\(row\.PriceId\)" -or $batchRepository -notmatch "price\.RemotePriceId") { Fail "remote priceId idempotency missing" } else { Pass "remote priceId idempotency present" }
+if ($repository -notmatch "private readonly RemotePriceHistoryRepository _remotePriceHistory" -or
+    $repository -notmatch "_remotePriceHistory\.UpsertRemotePriceHistoryAsync" -or
+    $repository -notmatch "_remotePriceHistory\.UpsertOrQueueRemotePriceHistoryAsync" -or
+    $repository -notmatch "_remotePriceHistory\.ApplyPendingRemotePricesAsync") {
+    Fail "ProductRepository must preserve its remote price facade through the extracted collaborator"
+} else {
+    Pass "ProductRepository delegates remote price operations through the extracted collaborator"
+}
+$transactionHelpersValid = $true
+foreach ($transactionMethod in @(
+    "UpsertOrQueueRemotePriceHistoryInTransactionAsync",
+    "ApplyPendingRemotePricesInTransactionAsync",
+    "PrepareAuthoritativeRemotePriceRepairAsync")) {
+    if ($remotePriceHistoryRepository -notmatch ("{0}\s*\(\s*SqliteConnection\s+conn\s*,\s*SqliteTransaction\s+tx" -f $transactionMethod)) {
+        Fail "remote price transaction helper $transactionMethod must accept the caller connection and transaction"
+        $transactionHelpersValid = $false
+    }
+}
+if ($transactionHelpersValid) { Pass "remote price transaction helpers retain the caller transaction boundary" }
 if ($initializer -notmatch "remote_catalog_price_evidence_quarantine" -or
-    $repository -notmatch "PrepareAuthoritativeRemotePriceRepairAsync" -or
-    $repository -notmatch "StoreRemotePriceOwnershipAsync" -or
+    $remotePriceHistoryRepository -notmatch "PrepareAuthoritativeRemotePriceRepairAsync" -or
+    $remotePriceHistoryRepository -notmatch "StoreRemotePriceOwnershipAsync" -or
     $batchRepository -notmatch "AuthoritativeFullRefresh" -or
     $service -notmatch "AuthoritativeFullRefresh\s*=\s*authoritativeFullRefresh" -or
     $catalogImportOutbox -notmatch "EnsureAssignedRemotePriceOwnershipAsync" -or
-    $catalogImportOutbox -notmatch "StoreRemotePriceOwnershipAsync") {
+    $catalogImportOutbox -notmatch "RemotePriceHistoryRepository\s*\.\s*StoreRemotePriceOwnershipAsync") {
     Fail "remote price ownership must be atomic for pull/import writers and legacy evidence must be quarantined only on authoritative full refresh"
 } else {
     Pass "remote price ownership is atomic and authoritative repair preserves legacy evidence in quarantine"
