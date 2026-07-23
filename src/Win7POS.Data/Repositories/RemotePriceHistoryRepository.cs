@@ -10,6 +10,7 @@ namespace Win7POS.Data.Repositories
     internal sealed class RemotePriceHistoryRepository
     {
         private const int PendingRemotePriceReplayBatchSize = 2000;
+        private const int RemotePriceStageRowsPerCommand = 100;
         private readonly SqliteConnectionFactory _factory;
 
         internal RemotePriceHistoryRepository(SqliteConnectionFactory factory)
@@ -52,10 +53,381 @@ namespace Win7POS.Data.Repositories
             public RemotePriceIdEvidenceState State { get; set; }
         }
 
+        private sealed class RemotePriceStageRow
+        {
+            public string EffectiveAt { get; set; } = string.Empty;
+            public int Ordinal { get; set; }
+            public int Price { get; set; }
+            public string RemotePriceId { get; set; } = string.Empty;
+            public string RemoteProductId { get; set; } = string.Empty;
+            public string Source { get; set; } = string.Empty;
+            public string Type { get; set; } = string.Empty;
+        }
+
+        internal sealed class RemotePriceBatchApplyResult
+        {
+            public int Applied { get; set; }
+            public int Queued { get; set; }
+            public int Skipped { get; set; }
+        }
+
         internal sealed class PendingRemotePriceReplayResult
         {
             public int Applied { get; set; }
             public HashSet<long> CollisionIds { get; } = new HashSet<long>();
+        }
+
+        internal static async Task<RemotePriceBatchApplyResult> TryApplyRemotePricesSetBasedInTransactionAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            IReadOnlyList<RemoteCatalogPriceWrite> prices,
+            RemotePriceApplyDiagnostics diagnostics = null)
+        {
+            if (conn == null) throw new ArgumentNullException(nameof(conn));
+            if (tx == null) throw new ArgumentNullException(nameof(tx));
+
+            var input = prices ?? Array.Empty<RemoteCatalogPriceWrite>();
+            if (input.Count == 0)
+            {
+                return new RemotePriceBatchApplyResult();
+            }
+
+            var staged = new List<RemotePriceStageRow>(input.Count);
+            var skipped = 0;
+            for (var index = 0; index < input.Count; index += 1)
+            {
+                var price = input[index];
+                if (price == null)
+                {
+                    skipped += 1;
+                    continue;
+                }
+
+                var remoteProductId = (price.RemoteProductId ?? string.Empty).Trim();
+                var remotePriceId = (price.RemotePriceId ?? string.Empty).Trim();
+                var type = (price.Type ?? string.Empty).Trim().ToUpperInvariant();
+                if (remoteProductId.Length == 0 || type.Length == 0 || price.Price < 0)
+                {
+                    skipped += 1;
+                    continue;
+                }
+
+                // Rows without an immutable remote price id, or without an explicit
+                // effective timestamp, retain the legacy per-row path. Those shapes
+                // cannot be classified safely by the page-level evidence lookup.
+                if (remotePriceId.Length == 0 || string.IsNullOrWhiteSpace(price.EffectiveAt))
+                {
+                    diagnostics?.RecordFallbackPage();
+                    return null;
+                }
+
+                staged.Add(new RemotePriceStageRow
+                {
+                    EffectiveAt = price.EffectiveAt.Trim(),
+                    Ordinal = index,
+                    Price = price.Price,
+                    RemotePriceId = remotePriceId,
+                    RemoteProductId = remoteProductId,
+                    Source = string.IsNullOrWhiteSpace(price.Source)
+                        ? "remote_catalog"
+                        : price.Source.Trim(),
+                    Type = type
+                });
+            }
+
+            if (staged.Count == 0)
+            {
+                return new RemotePriceBatchApplyResult { Skipped = skipped };
+            }
+
+            RecordSqlCommand(diagnostics, statementCount: 2);
+            await conn.ExecuteAsync(@"
+CREATE TEMP TABLE IF NOT EXISTS temp_catalog_page_remote_prices(
+  ordinal INTEGER PRIMARY KEY NOT NULL,
+  remote_price_id TEXT NOT NULL,
+  remote_product_id TEXT NOT NULL,
+  type TEXT NOT NULL,
+  price INTEGER NOT NULL,
+  effective_at TEXT NOT NULL,
+  source TEXT NOT NULL
+);
+DELETE FROM temp_catalog_page_remote_prices;",
+                transaction: tx).ConfigureAwait(false);
+
+            await InsertRemotePriceStageRowsAsync(
+                conn,
+                tx,
+                staged,
+                diagnostics).ConfigureAwait(false);
+
+            RecordSqlCommand(diagnostics);
+            var setBasedShapeSupported = await conn.ExecuteScalarAsync<long>(@"
+WITH canonical_products AS (
+  SELECT remote_product_id, MIN(id) AS product_id
+  FROM products
+  WHERE COALESCE(is_active, 1) = 1
+    AND COALESCE(remote_product_id, '') <> ''
+  GROUP BY remote_product_id
+),
+canonical_stage AS (
+  SELECT staged.*
+  FROM temp_catalog_page_remote_prices staged
+  JOIN (
+    SELECT remote_price_id, MIN(ordinal) AS ordinal
+    FROM temp_catalog_page_remote_prices
+    GROUP BY remote_price_id
+  ) first_row
+    ON first_row.remote_price_id = staged.remote_price_id
+   AND first_row.ordinal = staged.ordinal
+)
+SELECT CASE WHEN
+  EXISTS (
+    SELECT 1
+    FROM temp_catalog_page_remote_prices
+    GROUP BY remote_price_id
+    HAVING COUNT(DISTINCT remote_product_id) > 1
+        OR COUNT(DISTINCT type) > 1
+        OR COUNT(DISTINCT price) > 1
+        OR COUNT(DISTINCT effective_at) > 1
+        OR COUNT(DISTINCT source) > 1
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM temp_catalog_page_remote_prices staged
+    JOIN canonical_products canonical
+      ON canonical.remote_product_id = staged.remote_product_id
+    JOIN products product
+      ON product.id = canonical.product_id
+    GROUP BY product.barcode, staged.type, staged.price, staged.effective_at, staged.source
+    HAVING COUNT(DISTINCT staged.remote_price_id) > 1
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM canonical_stage staged
+    LEFT JOIN canonical_products canonical
+      ON canonical.remote_product_id = staged.remote_product_id
+    LEFT JOIN remote_catalog_price_ownership ownership
+      ON ownership.remote_price_id = staged.remote_price_id
+    LEFT JOIN product_price_history history
+      ON history.remote_price_id = staged.remote_price_id
+    WHERE canonical.product_id IS NULL
+       OR EXISTS (
+            SELECT 1
+            FROM remote_catalog_pending_prices pending
+            WHERE pending.remote_price_id = staged.remote_price_id
+          )
+       OR (
+            ownership.remote_price_id IS NOT NULL
+            AND TRIM(COALESCE(ownership.remote_product_id, '')) <> staged.remote_product_id
+          )
+       OR (
+            history.remote_price_id IS NOT NULL
+            AND (
+                 ownership.remote_price_id IS NULL
+                 OR history.type <> staged.type
+                 OR history.new_price <> staged.price
+                 OR history.timestamp <> staged.effective_at
+                 OR COALESCE(history.source, '') <> staged.source
+            )
+          )
+       OR EXISTS (
+            SELECT 1
+            FROM product_price_history tuple_history
+            JOIN products tuple_product
+              ON tuple_product.barcode = tuple_history.barcode
+             AND tuple_product.id = canonical.product_id
+            WHERE tuple_history.timestamp = staged.effective_at
+              AND tuple_history.type = staged.type
+              AND tuple_history.new_price = staged.price
+              AND COALESCE(tuple_history.source, '') = staged.source
+              AND COALESCE(tuple_history.remote_price_id, '') <> staged.remote_price_id
+          )
+  )
+THEN 0 ELSE 1 END;",
+                transaction: tx).ConfigureAwait(false);
+
+            if (setBasedShapeSupported != 1)
+            {
+                RecordSqlCommand(diagnostics);
+                await conn.ExecuteAsync(
+                    "DELETE FROM temp_catalog_page_remote_prices;",
+                    transaction: tx).ConfigureAwait(false);
+                diagnostics?.RecordFallbackPage();
+                return null;
+            }
+
+            RecordSqlCommand(diagnostics, statementCount: 2);
+            await conn.ExecuteAsync(@"
+WITH canonical_stage AS (
+  SELECT staged.*
+  FROM temp_catalog_page_remote_prices staged
+  JOIN (
+    SELECT remote_price_id, MIN(ordinal) AS ordinal
+    FROM temp_catalog_page_remote_prices
+    GROUP BY remote_price_id
+  ) first_row
+    ON first_row.remote_price_id = staged.remote_price_id
+   AND first_row.ordinal = staged.ordinal
+),
+canonical_products AS (
+  SELECT remote_product_id, MIN(id) AS product_id
+  FROM products
+  WHERE COALESCE(is_active, 1) = 1
+    AND COALESCE(remote_product_id, '') <> ''
+  GROUP BY remote_product_id
+)
+INSERT OR IGNORE INTO product_price_history(
+  barcode,
+  timestamp,
+  type,
+  old_price,
+  new_price,
+  source,
+  remote_price_id)
+SELECT
+  product.barcode,
+  staged.effective_at,
+  staged.type,
+  NULL,
+  staged.price,
+  staged.source,
+  staged.remote_price_id
+FROM canonical_stage staged
+JOIN canonical_products canonical
+  ON canonical.remote_product_id = staged.remote_product_id
+JOIN products product
+  ON product.id = canonical.product_id;
+
+INSERT OR IGNORE INTO remote_catalog_price_ownership(
+  remote_price_id,
+  remote_product_id)
+SELECT DISTINCT remote_price_id, remote_product_id
+FROM temp_catalog_page_remote_prices;",
+                transaction: tx).ConfigureAwait(false);
+
+            RecordSqlCommand(diagnostics);
+            var invalidAppliedRows = await conn.ExecuteScalarAsync<long>(@"
+WITH canonical_stage AS (
+  SELECT staged.*
+  FROM temp_catalog_page_remote_prices staged
+  JOIN (
+    SELECT remote_price_id, MIN(ordinal) AS ordinal
+    FROM temp_catalog_page_remote_prices
+    GROUP BY remote_price_id
+  ) first_row
+    ON first_row.remote_price_id = staged.remote_price_id
+   AND first_row.ordinal = staged.ordinal
+)
+SELECT COUNT(1)
+FROM canonical_stage staged
+LEFT JOIN remote_catalog_price_ownership ownership
+  ON ownership.remote_price_id = staged.remote_price_id
+LEFT JOIN product_price_history history
+  ON history.remote_price_id = staged.remote_price_id
+WHERE ownership.remote_price_id IS NULL
+   OR TRIM(COALESCE(ownership.remote_product_id, '')) <> staged.remote_product_id
+   OR history.remote_price_id IS NULL
+   OR history.type <> staged.type
+   OR history.new_price <> staged.price
+   OR history.timestamp <> staged.effective_at
+   OR COALESCE(history.source, '') <> staged.source;",
+                transaction: tx).ConfigureAwait(false);
+            if (invalidAppliedRows != 0)
+            {
+                throw new InvalidOperationException("catalog_remote_price_set_apply_verification_failed");
+            }
+
+            RecordSqlCommand(diagnostics);
+            await conn.ExecuteAsync(
+                "DELETE FROM temp_catalog_page_remote_prices;",
+                transaction: tx).ConfigureAwait(false);
+            diagnostics?.RecordSetBasedPage(staged.Count);
+
+            return new RemotePriceBatchApplyResult
+            {
+                Applied = staged.Count,
+                Skipped = skipped
+            };
+        }
+
+        private static async Task InsertRemotePriceStageRowsAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            IReadOnlyList<RemotePriceStageRow> rows,
+            RemotePriceApplyDiagnostics diagnostics)
+        {
+            SqliteCommand command = null;
+            var preparedRowCount = 0;
+            try
+            {
+                for (var offset = 0; offset < rows.Count;)
+                {
+                    var rowCount = Math.Min(RemotePriceStageRowsPerCommand, rows.Count - offset);
+                    if (command == null || preparedRowCount != rowCount)
+                    {
+                        command?.Dispose();
+                        command = CreateRemotePriceStageInsertCommand(conn, tx, rowCount);
+                        command.Prepare();
+                        diagnostics?.RecordPreparedCommand();
+                        preparedRowCount = rowCount;
+                    }
+
+                    for (var rowIndex = 0; rowIndex < rowCount; rowIndex += 1)
+                    {
+                        var row = rows[offset + rowIndex];
+                        command.Parameters[$"@ordinal{rowIndex}"].Value = row.Ordinal;
+                        command.Parameters[$"@remotePriceId{rowIndex}"].Value = row.RemotePriceId;
+                        command.Parameters[$"@remoteProductId{rowIndex}"].Value = row.RemoteProductId;
+                        command.Parameters[$"@type{rowIndex}"].Value = row.Type;
+                        command.Parameters[$"@price{rowIndex}"].Value = row.Price;
+                        command.Parameters[$"@effectiveAt{rowIndex}"].Value = row.EffectiveAt;
+                        command.Parameters[$"@source{rowIndex}"].Value = row.Source;
+                    }
+
+                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                    RecordSqlCommand(diagnostics);
+                    offset += rowCount;
+                }
+            }
+            finally
+            {
+                command?.Dispose();
+            }
+        }
+
+        private static SqliteCommand CreateRemotePriceStageInsertCommand(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            int rowCount)
+        {
+            var values = new string[rowCount];
+            var command = conn.CreateCommand();
+            command.Transaction = tx;
+            for (var index = 0; index < rowCount; index += 1)
+            {
+                values[index] =
+                    $"(@ordinal{index}, @remotePriceId{index}, @remoteProductId{index}, " +
+                    $"@type{index}, @price{index}, @effectiveAt{index}, @source{index})";
+                command.Parameters.Add($"@ordinal{index}", SqliteType.Integer);
+                command.Parameters.Add($"@remotePriceId{index}", SqliteType.Text);
+                command.Parameters.Add($"@remoteProductId{index}", SqliteType.Text);
+                command.Parameters.Add($"@type{index}", SqliteType.Text);
+                command.Parameters.Add($"@price{index}", SqliteType.Integer);
+                command.Parameters.Add($"@effectiveAt{index}", SqliteType.Text);
+                command.Parameters.Add($"@source{index}", SqliteType.Text);
+            }
+
+            command.CommandText = @"
+INSERT INTO temp_catalog_page_remote_prices(
+  ordinal,
+  remote_price_id,
+  remote_product_id,
+  type,
+  price,
+  effective_at,
+  source)
+VALUES " + string.Join(",\n", values) + ";";
+            return command;
         }
 
         internal async Task<bool> UpsertRemotePriceHistoryAsync(string remoteProductId, string type, int price, string timestamp, string source)

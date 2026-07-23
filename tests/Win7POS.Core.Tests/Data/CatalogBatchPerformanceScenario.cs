@@ -23,10 +23,11 @@ public static class CatalogBatchPerformanceScenario
         var normalizedMode = (mode ?? string.Empty).Trim().ToLowerInvariant();
         if (normalizedMode != "legacy" && normalizedMode != "batch" &&
             normalizedMode != "batch-paged" && normalizedMode != "batch-paged-full" &&
-            normalizedMode != "batch-delta" && normalizedMode != "batch-price-only")
+            normalizedMode != "batch-delta" && normalizedMode != "batch-price-only" &&
+            normalizedMode != "batch-no-change")
         {
             throw new ArgumentException(
-                "Mode must be 'legacy', 'batch', 'batch-paged', 'batch-paged-full', 'batch-delta' or 'batch-price-only'.",
+                "Mode must be 'legacy', 'batch', 'batch-paged', 'batch-paged-full', 'batch-delta', 'batch-price-only' or 'batch-no-change'.",
                 nameof(mode));
         }
         if (rows <= 0) throw new ArgumentOutOfRangeException(nameof(rows));
@@ -56,6 +57,7 @@ public static class CatalogBatchPerformanceScenario
                     : rows;
                 var streamFullPages = normalizedMode == "batch-paged-full";
                 var priceOnlyPages = normalizedMode == "batch-price-only";
+                var noChange = normalizedMode == "batch-no-change";
                 var productWrites = streamFullPages
                     ? Array.Empty<RemoteCatalogProductWrite>()
                     : BuildProducts(catalogRows);
@@ -85,6 +87,16 @@ public static class CatalogBatchPerformanceScenario
                         supplierWrites,
                         productWrites,
                         Array.Empty<RemoteCatalogPriceWrite>(),
+                        pageSize).ConfigureAwait(false);
+                }
+                else if (noChange)
+                {
+                    await SeedPagedCatalogAsync(
+                        factory,
+                        categoryWrites,
+                        supplierWrites,
+                        productWrites,
+                        priceWrites,
                         pageSize).ConfigureAwait(false);
                 }
 
@@ -162,6 +174,24 @@ public static class CatalogBatchPerformanceScenario
                         logicalRequestCount++;
                     }
                     runDiagnostics = run.Diagnostics;
+                }
+                else if (noChange)
+                {
+                    var decision = CatalogHeartbeatPolicy.Evaluate(
+                        "benchmark-revision",
+                        catalogChangesAvailable: false,
+                        nextPollAfterSeconds: 30,
+                        committedRevision: "benchmark-revision",
+                        fullOrRepairRequired: false,
+                        partialCursorPending: false,
+                        manualTrigger: false,
+                        catalogImportAckPending: false);
+                    if (!decision.ShouldSkipCatalogPull ||
+                        decision.Code != "catalog_unchanged_at_committed_revision")
+                    {
+                        throw new InvalidOperationException(
+                            "Synthetic no-change heartbeat did not skip the catalog pull.");
+                    }
                 }
                 else if (priceOnlyPages)
                 {
@@ -294,7 +324,7 @@ public static class CatalogBatchPerformanceScenario
 
                 applyElapsedMilliseconds =
                     stopwatch.Elapsed.TotalMilliseconds - applyStartedAtMilliseconds;
-                var completeness = "not_evaluated";
+                var completeness = noChange ? "Verified" : "not_evaluated";
                 if (normalizedMode == "batch-paged-full")
                 {
                     var reconcileStartedAt = stopwatch.Elapsed.TotalMilliseconds;
@@ -369,10 +399,18 @@ public static class CatalogBatchPerformanceScenario
                         "SELECT COUNT(1) FROM products WHERE COALESCE(is_active, 1) = 1 AND remote_product_id IS NOT NULL;"),
                     PreflightStageElapsedMilliseconds = preflightStageElapsedMilliseconds,
                     ReconcileElapsedMilliseconds = reconcileElapsedMilliseconds,
+                    RemotePriceApplyFallbackPageCount =
+                        runDiagnostics?.RemotePriceApply.FallbackPageCount ?? 0,
+                    RemotePriceApplyPreparedCommandCount =
+                        runDiagnostics?.RemotePriceApply.PreparedCommandCount ?? 0,
+                    RemotePriceApplySetBasedPageCount =
+                        runDiagnostics?.RemotePriceApply.SetBasedPageCount ?? 0,
                     RemotePriceApplySqlCommandCount =
                         runDiagnostics?.RemotePriceApply.SqlCommandCount ?? 0,
                     RemotePriceApplySqlStatementCount =
                         runDiagnostics?.RemotePriceApply.SqlStatementCount ?? 0,
+                    RemotePriceApplyStagedRowCount =
+                        runDiagnostics?.RemotePriceApply.StagedRowCount ?? 0,
                     Rows = rows,
                     ScopeSqlQueryCount = runDiagnostics?.ScopeSqlQueryCount ?? 0,
                     ContextSqlCommandCount = runDiagnostics?.ContextSqlCommandCount ?? 0,
@@ -817,8 +855,12 @@ public sealed class CatalogBatchPerformanceSample
     public double PreflightStageElapsedMilliseconds { get; set; }
     public long ProductCount { get; set; }
     public double ReconcileElapsedMilliseconds { get; set; }
+    public long RemotePriceApplyFallbackPageCount { get; set; }
+    public long RemotePriceApplyPreparedCommandCount { get; set; }
+    public long RemotePriceApplySetBasedPageCount { get; set; }
     public long RemotePriceApplySqlCommandCount { get; set; }
     public long RemotePriceApplySqlStatementCount { get; set; }
+    public long RemotePriceApplyStagedRowCount { get; set; }
     public int Rows { get; set; }
     public int ScopeSqlQueryCount { get; set; }
     public long WorkingSetBytes { get; set; }
@@ -834,8 +876,12 @@ public sealed class CatalogBatchPerformanceSample
             $"cpu_ms={CpuMilliseconds:F3} requests={LogicalRequestCount} " +
             $"scope_sql_before={LegacyScopeSqlQueryEstimate} scope_sql_after={ScopeSqlQueryCount} " +
             $"context_sql_commands={ContextSqlCommandCount} " +
+            $"remote_price_apply_fallback_pages={RemotePriceApplyFallbackPageCount} " +
+            $"remote_price_apply_prepared_commands={RemotePriceApplyPreparedCommandCount} " +
+            $"remote_price_apply_set_based_pages={RemotePriceApplySetBasedPageCount} " +
             $"remote_price_apply_sql_commands={RemotePriceApplySqlCommandCount} " +
             $"remote_price_apply_sql_statements={RemotePriceApplySqlStatementCount} " +
+            $"remote_price_apply_staged_rows={RemotePriceApplyStagedRowCount} " +
             $"working_set_bytes={WorkingSetBytes} peak_working_set_bytes={PeakWorkingSetBytes} " +
             $"peak_private_bytes={PeakPrivateBytes} gc0={Gen0Collections} gc1={Gen1Collections} gc2={Gen2Collections} " +
             $"allocated_bytes={AllocatedBytes} dispatcher_max_delay_ms={DispatcherMaxDelayMilliseconds:F3} " +

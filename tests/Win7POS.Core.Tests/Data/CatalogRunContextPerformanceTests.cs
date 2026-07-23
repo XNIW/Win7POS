@@ -95,8 +95,12 @@ WHERE c.remote_category_id = 'category-run'
         Assert.AreEqual(2, first.PricesApplied);
         Assert.AreEqual(1, second.PricesApplied);
         Assert.AreEqual(2, run.Diagnostics.PagesApplied);
-        Assert.AreEqual(19L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
-        Assert.AreEqual(22L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(16L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
+        Assert.AreEqual(20L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(0L, run.Diagnostics.RemotePriceApply.FallbackPageCount);
+        Assert.AreEqual(2L, run.Diagnostics.RemotePriceApply.PreparedCommandCount);
+        Assert.AreEqual(2L, run.Diagnostics.RemotePriceApply.SetBasedPageCount);
+        Assert.AreEqual(3L, run.Diagnostics.RemotePriceApply.StagedRowCount);
 
         using var verify = db.Factory.Open();
         Assert.AreEqual(3L, await verify.ExecuteScalarAsync<long>(@"
@@ -154,8 +158,12 @@ END;");
 
         Assert.AreEqual(1, committed.PricesApplied);
         Assert.AreEqual(1, run.Diagnostics.PagesApplied);
-        Assert.AreEqual(7L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
-        Assert.AreEqual(8L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(8L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
+        Assert.AreEqual(10L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(0L, run.Diagnostics.RemotePriceApply.FallbackPageCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.PreparedCommandCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.SetBasedPageCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.StagedRowCount);
 
         await Assert.ThrowsExactlyAsync<SqliteException>(() => run.ApplyAsync(
             new RemoteCatalogBatch
@@ -167,8 +175,12 @@ END;");
             }));
 
         Assert.AreEqual(1, run.Diagnostics.PagesApplied);
-        Assert.AreEqual(7L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
-        Assert.AreEqual(8L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(8L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
+        Assert.AreEqual(10L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
+        Assert.AreEqual(0L, run.Diagnostics.RemotePriceApply.FallbackPageCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.PreparedCommandCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.SetBasedPageCount);
+        Assert.AreEqual(1L, run.Diagnostics.RemotePriceApply.StagedRowCount);
 
         using var verify = db.Factory.Open();
         Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"

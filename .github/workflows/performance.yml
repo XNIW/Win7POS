@@ -104,19 +104,69 @@ jobs:
           if (!(Test-Path -LiteralPath $exe -PathType Leaf)) {
             throw "net48/x86 benchmark executable missing: $exe"
           }
-          $output = @(& $exe batch-paged-full 19763 3 1000)
+          $warmupCount = 2
+          $measuredCount = 20
+          $totalCount = $warmupCount + $measuredCount
+          $output = @(& $exe batch-paged-full 19763 $totalCount 1000)
           $benchmarkExitCode = $LASTEXITCODE
           $evidencePath = "artifacts/performance/catalog-performance-19763-net48-x86.txt"
           $output | Set-Content -LiteralPath $evidencePath -Encoding utf8
           if ($benchmarkExitCode -ne 0) { throw "net48/x86 catalog benchmark failed with exit code $benchmarkExitCode. Evidence: $evidencePath" }
           $text = $output -join "`n"
           if ($text -notmatch "is_64_bit=False") { throw "Catalog benchmark did not run as x86." }
-          $verifiedCount = @([regex]::Matches($text, "completeness=Verified")).Count
-          if ($verifiedCount -ne 3) {
-            throw "net48/x86 catalog benchmark verified $verifiedCount of 3 iterations. Evidence: $evidencePath"
+          $sampleLines = @($output | Where-Object { $_ -match "^iteration=" })
+          if ($sampleLines.Count -ne $totalCount) {
+            throw "net48/x86 catalog benchmark produced $($sampleLines.Count) of $totalCount samples. Evidence: $evidencePath"
           }
-          $delays = @([regex]::Matches($text, "dispatcher_max_delay_ms=([0-9.]+)") |
-            ForEach-Object { [double]$_.Groups[1].Value })
+          $measuredLines = @($sampleLines | Select-Object -Skip $warmupCount)
+          $verifiedCount = @($measuredLines | Where-Object { $_ -match "completeness=Verified" }).Count
+          $exactCount = @($measuredLines | Where-Object {
+            $_ -match "products=19763" -and
+            $_ -match "prices=19763" -and
+            $_ -match "pending=0"
+          }).Count
+          if ($verifiedCount -ne $measuredCount -or $exactCount -ne $measuredCount) {
+            throw "net48/x86 exactness invalid: verified=$verifiedCount/$measuredCount exact=$exactCount/$measuredCount. Evidence: $evidencePath"
+          }
+
+          $elapsed = @($measuredLines | ForEach-Object {
+            [double]([regex]::Match($_, "elapsed_ms=([0-9.]+)").Groups[1].Value)
+          } | Sort-Object)
+          $p50 = ($elapsed[9] + $elapsed[10]) / 2.0
+          $p90 = $elapsed[[Math]::Ceiling(0.90 * $measuredCount) - 1]
+          $p95 = $elapsed[[Math]::Ceiling(0.95 * $measuredCount) - 1]
+          $maximum = ($elapsed | Measure-Object -Maximum).Maximum
+          if ($p95 -gt 15000.0) {
+            throw "net48/x86 19,763-row p95 exceeded 15 seconds: p95_ms=$p95. Evidence: $evidencePath"
+          }
+
+          $statementCounts = @($measuredLines | ForEach-Object {
+            [long]([regex]::Match($_, "remote_price_apply_sql_statements=([0-9]+)").Groups[1].Value)
+          } | Select-Object -Unique)
+          $commandCounts = @($measuredLines | ForEach-Object {
+            [long]([regex]::Match($_, "remote_price_apply_sql_commands=([0-9]+)").Groups[1].Value)
+          } | Select-Object -Unique)
+          if ($statementCounts.Count -ne 1 -or $statementCounts[0] -ge 158144) {
+            throw "net48/x86 set-based statement reduction invalid: values=$($statementCounts -join ','). Evidence: $evidencePath"
+          }
+          if ($commandCounts.Count -ne 1) {
+            throw "net48/x86 SQL command count is not deterministic: values=$($commandCounts -join ','). Evidence: $evidencePath"
+          }
+
+          $peakWorkingSet = ($measuredLines | ForEach-Object {
+            [long]([regex]::Match($_, "peak_working_set_bytes=([0-9]+)").Groups[1].Value)
+          } | Measure-Object -Maximum).Maximum
+          $peakPrivateBytes = ($measuredLines | ForEach-Object {
+            [long]([regex]::Match($_, "peak_private_bytes=([0-9]+)").Groups[1].Value)
+          } | Measure-Object -Maximum).Maximum
+          $x86MemoryLimit = 96MB
+          if ($peakWorkingSet -gt $x86MemoryLimit -or $peakPrivateBytes -gt $x86MemoryLimit) {
+            throw "net48/x86 19,763-row memory exceeded 96 MiB: working_set=$peakWorkingSet private_bytes=$peakPrivateBytes. Evidence: $evidencePath"
+          }
+
+          $delays = @($measuredLines | ForEach-Object {
+            [double]([regex]::Match($_, "dispatcher_max_delay_ms=([0-9.]+)").Groups[1].Value)
+          })
           $delaySummary = if ($delays.Count -eq 0) { "none" } else { $delays -join ", " }
           $stableLimitMilliseconds = 150.0
           $hardLimitMilliseconds = 200.0
@@ -124,23 +174,27 @@ jobs:
             ($delays | Measure-Object -Maximum).Maximum
           }
           $stableSampleCount = @($delays | Where-Object { $_ -le $stableLimitMilliseconds }).Count
-          $medianDelay = if ($delays.Count -eq 3) {
-            @($delays | Sort-Object)[1]
+          $orderedDelays = @($delays | Sort-Object)
+          $medianDelay = if ($delays.Count -eq $measuredCount) {
+            ($orderedDelays[9] + $orderedDelays[10]) / 2.0
           } else {
             [double]::PositiveInfinity
           }
-          Write-Host "net48/x86 dispatcher delays (ms): values=[$delaySummary], median=$medianDelay, max=$maximumDelay, stable_samples=$stableSampleCount/3"
+          $summary = "measured=$measuredCount warmups=$warmupCount p50_ms=$p50 p90_ms=$p90 p95_ms=$p95 max_ms=$maximum sql_commands=$($commandCounts[0]) sql_statements=$($statementCounts[0]) peak_working_set_bytes=$peakWorkingSet peak_private_bytes=$peakPrivateBytes dispatcher_median_ms=$medianDelay dispatcher_max_ms=$maximumDelay"
+          $summary | Add-Content -LiteralPath $evidencePath -Encoding utf8
+          Write-Host "net48/x86 19,763 summary: $summary"
+          Write-Host "net48/x86 dispatcher delays (ms): values=[$delaySummary], stable_samples=$stableSampleCount/$measuredCount"
 
           # GitHub-hosted Windows runners are not real-time systems. The probe runs on a
           # dedicated STA dispatcher, so one scheduler/VM pause can delay it even when the
           # catalog path is not blocking that dispatcher. Require a reproducible <=150 ms
-          # result (the median and at least two of three samples), while retaining a 200 ms
+          # result (the median and at least 18 of 20 samples), while retaining a 200 ms
           # hard ceiling so a material single-sample stall still fails the gate.
-          if ($delays.Count -ne 3 -or
+          if ($delays.Count -ne $measuredCount -or
               $medianDelay -gt $stableLimitMilliseconds -or
-              $stableSampleCount -lt 2 -or
+              $stableSampleCount -lt 18 -or
               $maximumDelay -gt $hardLimitMilliseconds) {
-            throw "net48/x86 dispatcher responsiveness invalid: samples=$($delays.Count), median_ms=$medianDelay, stable_limit_ms=$stableLimitMilliseconds, stable_samples=$stableSampleCount/3, max_ms=$maximumDelay, hard_limit_ms=$hardLimitMilliseconds, values_ms=[$delaySummary]. Evidence: $evidencePath"
+            throw "net48/x86 dispatcher responsiveness invalid: samples=$($delays.Count), median_ms=$medianDelay, stable_limit_ms=$stableLimitMilliseconds, stable_samples=$stableSampleCount/$measuredCount, max_ms=$maximumDelay, hard_limit_ms=$hardLimitMilliseconds, values_ms=[$delaySummary]. Evidence: $evidencePath"
           }
 
       - name: Probe 100,000-row bounded authoritative path
@@ -180,14 +234,48 @@ jobs:
           $x86Text = $net48 -join "`n"
           $peakWorkingSet = [long]([regex]::Match($x86Text, "peak_working_set_bytes=([0-9]+)").Groups[1].Value)
           $peakPrivateBytes = [long]([regex]::Match($x86Text, "peak_private_bytes=([0-9]+)").Groups[1].Value)
-          # Same-host pre-PERF2-A baselines were 133,173,248 peak working-set bytes
-          # and 117,084,160 private bytes. These ceilings fail above the allowed 20%.
-          if ($peakWorkingSet -le 0 -or $peakWorkingSet -gt 159807898) {
-            throw "100,000-row x86 peak working set exceeded the 20% regression ceiling: $peakWorkingSet. Evidence: $net48Evidence"
+          $x86MemoryLimit = 96MB
+          if ($peakWorkingSet -le 0 -or $peakWorkingSet -gt $x86MemoryLimit) {
+            throw "100,000-row x86 peak working set exceeded 96 MiB: $peakWorkingSet. Evidence: $net48Evidence"
           }
-          if ($peakPrivateBytes -le 0 -or $peakPrivateBytes -gt 140500992) {
-            throw "100,000-row x86 private bytes exceeded the 20% regression ceiling: $peakPrivateBytes. Evidence: $net48Evidence"
+          if ($peakPrivateBytes -le 0 -or $peakPrivateBytes -gt $x86MemoryLimit) {
+            throw "100,000-row x86 private bytes exceeded 96 MiB: $peakPrivateBytes. Evidence: $net48Evidence"
           }
+
+      - name: Benchmark no-change skip (20 samples)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = "tests/Win7POS.CatalogPerformance/bin/Release/net48/Win7POS.CatalogPerformance.exe"
+          $evidencePath = "artifacts/performance/catalog-no-change-19763-net48-x86.txt"
+          $output = @(& $exe batch-no-change 19763 20 1000)
+          $exitCode = $LASTEXITCODE
+          $output | Set-Content -LiteralPath $evidencePath -Encoding utf8
+          if ($exitCode -ne 0) { throw "net48/x86 no-change benchmark failed. Evidence: $evidencePath" }
+          $sampleLines = @($output | Where-Object { $_ -match "^iteration=" })
+          if ($sampleLines.Count -ne 20) {
+            throw "No-change benchmark produced $($sampleLines.Count) of 20 samples. Evidence: $evidencePath"
+          }
+          $exactCount = @($sampleLines | Where-Object {
+            $_ -match "products=19763" -and
+            $_ -match "prices=19763" -and
+            $_ -match "pending=0" -and
+            $_ -match "completeness=Verified" -and
+            $_ -match "context_sql_commands=0" -and
+            $_ -match "remote_price_apply_sql_statements=0"
+          }).Count
+          if ($exactCount -ne 20) {
+            throw "No-change skip rewrote or changed catalog state: exact=$exactCount/20. Evidence: $evidencePath"
+          }
+          $elapsed = @($sampleLines | ForEach-Object {
+            [double]([regex]::Match($_, "elapsed_ms=([0-9.]+)").Groups[1].Value)
+          } | Sort-Object)
+          $p95 = $elapsed[[Math]::Ceiling(0.95 * 20) - 1]
+          if ($p95 -gt 1500.0) {
+            throw "No-change p95 exceeded 1.5 seconds: p95_ms=$p95. Evidence: $evidencePath"
+          }
+          "samples=20 p95_ms=$p95 rewrites=0 price_history_inserts=0" |
+            Add-Content -LiteralPath $evidencePath -Encoding utf8
 
       - name: Upload benchmark evidence
         if: always()

@@ -418,46 +418,63 @@ AND NOT EXISTS (
                         relinkCategoryRemoteIds,
                         relinkSupplierRemoteIds).ConfigureAwait(false);
 
-                    foreach (var price in batch.Prices ?? Array.Empty<RemoteCatalogPriceWrite>())
+                    var prices = batch.Prices ?? Array.Empty<RemoteCatalogPriceWrite>();
+                    var setBasedPrices = await RemotePriceHistoryRepository
+                        .TryApplyRemotePricesSetBasedInTransactionAsync(
+                            conn,
+                            tx,
+                            prices,
+                            pageRemotePriceApply)
+                        .ConfigureAwait(false);
+                    if (setBasedPrices != null)
                     {
-                        if (price == null)
+                        result.PricesApplied += setBasedPrices.Applied;
+                        result.PricesQueued += setBasedPrices.Queued;
+                        result.PricesSkipped += setBasedPrices.Skipped;
+                    }
+                    else
+                    {
+                        foreach (var price in prices)
                         {
-                            result.PricesSkipped += 1;
-                            continue;
-                        }
-
-                        if (batch.AuthoritativeFullRefresh &&
-                            !string.IsNullOrWhiteSpace(price.RemotePriceId))
-                        {
-                            if (!await RemotePriceHistoryRepository.PrepareAuthoritativeRemotePriceRepairAsync(
-                                    conn,
-                                    tx,
-                                    price.RemoteProductId,
-                                    price.RemotePriceId,
-                                    price.Type,
-                                    price.Price,
-                                    price.EffectiveAt,
-                                    price.Source,
-                                    pageRemotePriceApply).ConfigureAwait(false))
+                            if (price == null)
                             {
                                 result.PricesSkipped += 1;
                                 continue;
                             }
-                        }
 
-                        var applied = await RemotePriceHistoryRepository.UpsertOrQueueRemotePriceHistoryInTransactionAsync(
-                            conn,
-                            tx,
-                            price.RemoteProductId,
-                            price.RemotePriceId,
-                            price.Type,
-                            price.Price,
-                            price.EffectiveAt,
-                            price.Source,
-                            pageRemotePriceApply).ConfigureAwait(false);
-                        if (applied.Applied) result.PricesApplied += 1;
-                        if (applied.Queued) result.PricesQueued += 1;
-                        if (!applied.Applied && !applied.Queued) result.PricesSkipped += 1;
+                            if (batch.AuthoritativeFullRefresh &&
+                                !string.IsNullOrWhiteSpace(price.RemotePriceId))
+                            {
+                                if (!await RemotePriceHistoryRepository.PrepareAuthoritativeRemotePriceRepairAsync(
+                                        conn,
+                                        tx,
+                                        price.RemoteProductId,
+                                        price.RemotePriceId,
+                                        price.Type,
+                                        price.Price,
+                                        price.EffectiveAt,
+                                        price.Source,
+                                        pageRemotePriceApply).ConfigureAwait(false))
+                                {
+                                    result.PricesSkipped += 1;
+                                    continue;
+                                }
+                            }
+
+                            var applied = await RemotePriceHistoryRepository.UpsertOrQueueRemotePriceHistoryInTransactionAsync(
+                                conn,
+                                tx,
+                                price.RemoteProductId,
+                                price.RemotePriceId,
+                                price.Type,
+                                price.Price,
+                                price.EffectiveAt,
+                                price.Source,
+                                pageRemotePriceApply).ConfigureAwait(false);
+                            if (applied.Applied) result.PricesApplied += 1;
+                            if (applied.Queued) result.PricesQueued += 1;
+                            if (!applied.Applied && !applied.Queued) result.PricesSkipped += 1;
+                        }
                     }
 
                     pendingReplay = await RemotePriceHistoryRepository
@@ -1895,8 +1912,33 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
 
     public sealed class RemotePriceApplyDiagnostics
     {
+        public long FallbackPageCount { get; internal set; }
+        public long PreparedCommandCount { get; internal set; }
+        public long SetBasedPageCount { get; internal set; }
         public long SqlCommandCount { get; internal set; }
         public long SqlStatementCount { get; internal set; }
+        public long StagedRowCount { get; internal set; }
+
+        internal void RecordFallbackPage()
+        {
+            FallbackPageCount += 1;
+        }
+
+        internal void RecordPreparedCommand()
+        {
+            PreparedCommandCount += 1;
+        }
+
+        internal void RecordSetBasedPage(int stagedRows)
+        {
+            if (stagedRows < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(stagedRows));
+            }
+
+            SetBasedPageCount += 1;
+            StagedRowCount += stagedRows;
+        }
 
         internal void RecordSqlCommand(int statementCount)
         {
@@ -1916,8 +1958,12 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
                 throw new ArgumentNullException(nameof(pageDiagnostics));
             }
 
+            FallbackPageCount += pageDiagnostics.FallbackPageCount;
+            PreparedCommandCount += pageDiagnostics.PreparedCommandCount;
+            SetBasedPageCount += pageDiagnostics.SetBasedPageCount;
             SqlCommandCount += pageDiagnostics.SqlCommandCount;
             SqlStatementCount += pageDiagnostics.SqlStatementCount;
+            StagedRowCount += pageDiagnostics.StagedRowCount;
         }
     }
 
