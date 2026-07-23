@@ -109,12 +109,16 @@ $invalidIgnoreLines = @($ignoreLines | Where-Object {
         $_ -notmatch '^[0-9a-f]{40}:[^:*?]+:[a-z0-9-]+:[0-9]+$'
     })
 $perf2bFalsePositive = "18a6e065d445445b201d5203807a06455311a862:tests/Win7POS.Core.Tests/Data/ProductQueryPlanTests.cs:generic-api-key:376"
-if ($ignoreLines.Count -ne 9 -or
+$f4OutboxFalsePositive = "044d95541a183cd58360d7ffefe4a69d9eb3d4d9:tests/Win7POS.Core.Tests/Data/SalesSyncOutboxRepositoryTests.cs:generic-api-key:971"
+$f4ReserveOutboxFalsePositive = "044d95541a183cd58360d7ffefe4a69d9eb3d4d9:tests/Win7POS.Core.Tests/Data/SalesSyncOutboxRepositoryTests.cs:generic-api-key:1012"
+if ($ignoreLines.Count -ne 11 -or
     $invalidIgnoreLines.Count -ne 0 -or
-    $ignoreLines -cnotcontains $perf2bFalsePositive) {
-    Fail "Gitleaks history exceptions must be nine reviewed exact commit/path/rule/line fingerprints"
+    $ignoreLines -cnotcontains $perf2bFalsePositive -or
+    $ignoreLines -cnotcontains $f4OutboxFalsePositive -or
+    $ignoreLines -cnotcontains $f4ReserveOutboxFalsePositive) {
+    Fail "Gitleaks history exceptions must be eleven reviewed exact commit/path/rule/line fingerprints"
 }
-else { Pass "Gitleaks history exceptions are nine reviewed exact fingerprints with no wildcard" }
+else { Pass "Gitleaks history exceptions are eleven reviewed exact fingerprints with no wildcard" }
 
 $securityWorkflow = Read-RequiredText ".github\workflows\security-supply-chain.yml"
 $releaseWorkflow = Read-RequiredText ".github\workflows\release-pack.yml"

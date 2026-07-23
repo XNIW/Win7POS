@@ -10,3 +10,7 @@
 
 # Exact PERF2-B test-identifier false positive; the identifier is renamed in dc5ae14.
 18a6e065d445445b201d5203807a06455311a862:tests/Win7POS.Core.Tests/Data/ProductQueryPlanTests.cs:generic-api-key:376
+
+# Exact F4 synthetic outbox-identifier false positives; identifiers are replaced in the follow-up commit.
+044d95541a183cd58360d7ffefe4a69d9eb3d4d9:tests/Win7POS.Core.Tests/Data/SalesSyncOutboxRepositoryTests.cs:generic-api-key:971
+044d95541a183cd58360d7ffefe4a69d9eb3d4d9:tests/Win7POS.Core.Tests/Data/SalesSyncOutboxRepositoryTests.cs:generic-api-key:1012

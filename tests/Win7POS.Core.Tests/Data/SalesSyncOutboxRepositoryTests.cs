@@ -968,7 +968,7 @@ SELECT last_insert_rowid();",
                 saleId,
                 clientSaleId,
                 clientBatchId,
-                idempotencyKey = "f4-idempotency-" + key,
+                idempotencyKey = BuildOpaqueIdentifier("test-outbox-idempotency", key),
                 payloadJson,
                 payloadHash,
                 status,
@@ -978,6 +978,13 @@ SELECT last_insert_rowid();",
                 updatedAt = lastAttemptAt ?? NowMs - 100
             });
         return saleId;
+    }
+
+    private static string BuildOpaqueIdentifier(string scope, string seed)
+    {
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var bytes = System.Text.Encoding.UTF8.GetBytes(string.Concat(scope, ":", seed));
+        return Convert.ToBase64String(sha256.ComputeHash(bytes));
     }
 
     private static async Task ReserveAcknowledgedOutboxIdentityAsync(
@@ -1009,7 +1016,7 @@ VALUES(
                 reserveSaleId,
                 reserveClientSaleId,
                 reserveClientBatchId = "f4-reserve-batch-" + key,
-                reserveIdempotencyKey = "f4-reserve-idempotency-" + key,
+                reserveIdempotencyKey = BuildOpaqueIdentifier("test-outbox-reserved-idempotency", key),
                 reservePayloadHash = "f4-reserve-hash-" + key,
                 createdAt = NowMs - 101
             });
