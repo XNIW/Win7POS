@@ -34,6 +34,7 @@ $sourceGates = @(
     "check-pos-shop-data-readonly.ps1",
     "check-pos-sync-status-ux.ps1",
     "check-pos-sales-sync.ps1",
+    "check-sale-repository-boundaries.ps1",
     "check-pos-outbox-shop-binding.ps1",
     "check-pos-catalog-pull.ps1",
     "check-pos-catalog-import-outbox.ps1",
