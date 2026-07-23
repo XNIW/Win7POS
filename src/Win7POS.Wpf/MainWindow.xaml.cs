@@ -1,6 +1,5 @@
 using System;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -39,18 +38,12 @@ namespace Win7POS.Wpf
         private DispatcherTimer _networkStatusTimer;
         private DispatcherTimer _authorizationLeaseTimer;
         private bool _authorizationLeaseBlockHandled;
-        private SqliteConnectionFactory _onlineSchedulerFactory;
-        private PosOnlineSyncSupervisorHost _onlineSyncHost;
-        private IDisposable _onlineSyncSignalRegistration;
+        private PosStartupCoordinator _startupCoordinator;
         private bool? _lastNetworkOnline;
         private DateTimeOffset _lastForegroundSyncTrigger = DateTimeOffset.MinValue;
         private bool _operatorLoginReached;
-        private bool _recoveryMode;
-        private int _onlineSyncMaintenanceResumeRequested;
         private bool _recoveryTabClampActive;
-        private PosAuthenticatedAccessMode _authenticatedAccessMode = PosAuthenticatedAccessMode.Normal;
         private SqliteConnectionFactory _languageSettingsFactory;
-        private SqliteConnectionFactory _recoveryFactory;
         private PosWorkflowService _recoveryWorkflowService;
         private string _startupPhase = "constructed";
         private string _productsDataContextOperatorUsername;
@@ -67,7 +60,6 @@ namespace Win7POS.Wpf
         private EventHandler _languageChangedHandler;
         private IOperatorSession _observedOperatorSession;
         private Action _operatorSessionChangedHandler;
-        private int _fullCatalogRepairInProgress;
         public static readonly DependencyProperty ShellTitleProperty = DependencyProperty.Register(
             nameof(ShellTitle), typeof(string), typeof(MainWindow), new PropertyMetadata("Win7POS"));
         public static readonly DependencyProperty CurrentMenuKeyProperty = DependencyProperty.Register(
@@ -91,6 +83,15 @@ namespace Win7POS.Wpf
             get => (string)GetValue(ShellTitleProperty);
             set => SetValue(ShellTitleProperty, string.IsNullOrWhiteSpace(value) ? "Win7POS" : value.Trim());
         }
+
+        private SqliteConnectionFactory OnlineSchedulerFactory => _startupCoordinator?.Factory;
+
+        private PosOnlineSyncSupervisorHost OnlineSyncHost => _startupCoordinator?.Host;
+
+        private PosAuthenticatedAccessMode CurrentAccessMode =>
+            _startupCoordinator?.AccessMode ?? PosAuthenticatedAccessMode.Normal;
+
+        private bool IsRecoveryMode => _startupCoordinator?.IsRecoveryMode == true;
 
         public MainWindow()
         {
@@ -207,14 +208,12 @@ namespace Win7POS.Wpf
             if (vm?.CartItems.Count > 0) state |= MainShellCloseState.CartNotEmpty;
             if (PaymentViewControl?.DataContext != null || vm?.IsPaymentCommitInProgress == true)
                 state |= MainShellCloseState.PaymentInProgress;
-            var syncSnapshot = _onlineSyncHost?.GetSnapshot();
+            var syncSnapshot = _startupCoordinator?.GetSnapshot();
             if (syncSnapshot != null && syncSnapshot.Lanes.Any(lane => lane.InFlight))
             {
                 state |= MainShellCloseState.IncrementalSyncInProgress;
             }
-            if (Volatile.Read(ref _fullCatalogRepairInProgress) > 0)
-                state |= MainShellCloseState.FullCatalogRepairInProgress;
-            if (_onlineSyncHost?.IsFullCatalogSyncInProgress == true)
+            if (_startupCoordinator?.IsFullCatalogRepairInProgress == true)
                 state |= MainShellCloseState.FullCatalogRepairInProgress;
             return state;
         }
@@ -249,20 +248,13 @@ namespace Win7POS.Wpf
             catch { }
             _observedOperatorSession = null;
             _operatorSessionChangedHandler = null;
-            Interlocked.Exchange(ref _onlineSyncMaintenanceResumeRequested, 0);
             try { _authorizationLeaseTimer?.Stop(); } catch { }
             try { _syncStatusTimer?.Stop(); } catch { }
             try { _networkStatusTimer?.Stop(); } catch { }
             try
             {
-                _onlineSyncSignalRegistration?.Dispose();
-                _onlineSyncSignalRegistration = null;
-            }
-            catch { }
-            try
-            {
-                _onlineSyncHost?.Dispose();
-                _onlineSyncHost = null;
+                _startupCoordinator?.Dispose();
+                _startupCoordinator = null;
             }
             catch { }
             try { DailyReportViewControl.DataContext = null; } catch { }
@@ -311,7 +303,11 @@ namespace Win7POS.Wpf
 
             try
             {
-                var factory = _languageSettingsFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+                var factory = _languageSettingsFactory ?? _startupCoordinator?.Factory;
+                if (factory == null)
+                {
+                    return;
+                }
                 _languageSettingsFactory = factory;
                 await PosLocalization.Current
                     .SetLanguageAsync(new SettingsRepository(factory), selected)
@@ -345,75 +341,13 @@ namespace Win7POS.Wpf
 
             try
             {
-                var options = PosDbOptions.Default();
-                _startupPhase = "DbInitializer start";
+                _startupPhase = "Startup coordinator initialization";
                 StartupTrace.Write("DB init start");
-                _logger.LogInfo("DbInitializer start");
-                DbInitializer.EnsureCreated(options);
+                _startupCoordinator = new PosStartupCoordinator(
+                    () => App.IsSafeStart,
+                    _logger.LogInfo);
+                var factory = _startupCoordinator.Initialize();
                 StartupTrace.Write("DB init end");
-                _logger.LogInfo("DbInitializer done");
-
-                var factory = new SqliteConnectionFactory(options);
-                _onlineSchedulerFactory = factory;
-                _onlineSyncHost = new PosOnlineSyncSupervisorHost(factory);
-                var registeredSyncHost = _onlineSyncHost;
-                _onlineSyncSignalRegistration = PosOnlineSyncSignalBus.Register(
-                    registeredSyncHost.Signal,
-                    (lane, trigger, token) => registeredSyncHost.TriggerAsync(
-                        lane,
-                        trigger,
-                        token),
-                    async () =>
-                    {
-                        var resumeAllowed = !App.IsSafeStart &&
-                            !_recoveryMode &&
-                            _authenticatedAccessMode == PosAuthenticatedAccessMode.Normal;
-                        var stoppedState = await registeredSyncHost
-                            .StopAsync().ConfigureAwait(false);
-                        var shouldResume = resumeAllowed &&
-                            stoppedState.HadGeneration &&
-                            stoppedState.WasContinuous;
-                        Interlocked.Exchange(
-                            ref _onlineSyncMaintenanceResumeRequested,
-                            shouldResume ? 1 : 0);
-                    },
-                    async token =>
-                    {
-                        var shouldResume = Interlocked.CompareExchange(
-                            ref _onlineSyncMaintenanceResumeRequested,
-                            1,
-                            1) == 1;
-                        if (!shouldResume ||
-                            App.IsSafeStart ||
-                            _recoveryMode ||
-                            _authenticatedAccessMode != PosAuthenticatedAccessMode.Normal)
-                        {
-                            Interlocked.Exchange(
-                                ref _onlineSyncMaintenanceResumeRequested,
-                                0);
-                            return;
-                        }
-                        try
-                        {
-                            if (await registeredSyncHost.AttachCurrentTrustAsync(token)
-                                    .ConfigureAwait(false) == null)
-                            {
-                                throw new InvalidOperationException(
-                                    "The trusted sync generation could not be resumed.");
-                            }
-                            registeredSyncHost.StartContinuous();
-                            Interlocked.Exchange(
-                                ref _onlineSyncMaintenanceResumeRequested,
-                                0);
-                        }
-                        catch
-                        {
-                            Interlocked.Exchange(
-                                ref _onlineSyncMaintenanceResumeRequested,
-                                1);
-                            throw;
-                        }
-                    });
                 await LoadLanguagePreferenceAsync(factory).ConfigureAwait(true);
                 await RefreshShellTitleAsync(factory).ConfigureAwait(true);
                 if (App.IsSafeStart)
@@ -428,14 +362,6 @@ namespace Win7POS.Wpf
                 UpdateNetworkStatusBadge();
                 StartNetworkStatusTimer();
 
-                var userRepo = new UserRepository(factory);
-                if (OperatorSessionHolder.Current == null)
-                {
-                    var securityRepo = new SecurityRepository(factory);
-                    var operatorSession = new OperatorSession(userRepo, securityRepo);
-                    OperatorSessionHolder.Current = operatorSession;
-                }
-
                 await WaitForContentRenderedOrTimeoutAsync().ConfigureAwait(true);
 
                 _logger.LogInfo("POS access dialog opening");
@@ -444,7 +370,7 @@ namespace Win7POS.Wpf
                 var login = new PosOnlineFirstLoginDialog(
                     factory,
                     resumeCatalogOnly: false,
-                    _onlineSyncHost) { Owner = this };
+                    OnlineSyncHost) { Owner = this };
                 login.ShowActivated = true;
                 Activate();
                 _operatorLoginReached = true;
@@ -459,15 +385,12 @@ namespace Win7POS.Wpf
                     return;
                 }
                 _logger.LogInfo("POS access dialog accepted");
-                _authenticatedAccessMode = login.AccessMode;
-                if (!App.IsSafeStart &&
-                    login.AccessMode == PosAuthenticatedAccessMode.Normal)
-                {
-                    await _onlineSyncHost.AttachCurrentTrustAsync().ConfigureAwait(true);
-                }
+                var access = await _startupCoordinator
+                    .AcceptAuthenticatedAccessAsync(login.AccessMode)
+                    .ConfigureAwait(true);
                 await RefreshShellTitleAsync(factory).ConfigureAwait(true);
 
-                var session = OperatorSessionHolder.Current;
+                var session = access.Session;
                 StartOfDaySyncResult startOfDayResult = null;
                 if (session != null)
                 {
@@ -475,10 +398,7 @@ namespace Win7POS.Wpf
                     // before the modal sync gate so a later data-safety block is not mistaken for
                     // a failed sign-in.
                     UpdateOperatorDisplay(session);
-                    var catalogSaleSafe = await PosCatalogPullService
-                        .IsCatalogSaleSafeAsync(factory)
-                        .ConfigureAwait(true);
-                    var shellMode = PosShellStartupPolicy.Determine(login.AccessMode, catalogSaleSafe);
+                    var shellMode = access.ShellMode;
 
                     if (shellMode == PosShellMode.Recovery)
                     {
@@ -533,7 +453,7 @@ namespace Win7POS.Wpf
                     session.SessionChanged += _operatorSessionChangedHandler;
                 }
 
-                if (_recoveryMode)
+                if (IsRecoveryMode)
                 {
                     StartupTrace.Write("online refresh deferred: recovery mode");
                     _logger.LogInfo("BackgroundOnlineRefresh deferred: recovery mode");
@@ -565,7 +485,7 @@ namespace Win7POS.Wpf
 
         private async Task<StartOfDaySyncResult> RunStartOfDaySyncAsync(SqliteConnectionFactory factory)
         {
-            var dialog = new PosStartOfDaySyncDialog(factory, _onlineSyncHost)
+            var dialog = new PosStartOfDaySyncDialog(factory, OnlineSyncHost)
             {
                 Owner = this
             };
@@ -621,230 +541,43 @@ namespace Win7POS.Wpf
             }
 
             StartupTrace.Write("online sync supervisor start");
-            _onlineSyncHost?.StartContinuous();
+            _startupCoordinator?.StartBackground();
         }
 
         private void StartAdaptiveOnlineScheduler(
             SqliteConnectionFactory factory,
             CatalogSyncTrigger initialTrigger)
         {
-            if (factory == null || App.IsSafeStart || _recoveryMode)
+            if (factory == null)
             {
                 return;
             }
 
-            _onlineSchedulerFactory = factory;
-            var host = _onlineSyncHost;
-            if (host == null) return;
-            host.StartContinuous();
-            var trigger = MapOnlineSyncTrigger(initialTrigger);
-            host.Signal(OnlineSyncLane.Heartbeat, trigger);
-            host.Signal(OnlineSyncLane.SalesOutbox, trigger);
-            host.Signal(OnlineSyncLane.CatalogImportOutbox, trigger);
+            _startupCoordinator?.StartAdaptive(factory, initialTrigger);
         }
 
 
-        private async Task<CatalogSyncRunResult> TriggerAdaptiveOnlineRefreshAsync(
+        private Task<CatalogSyncRunResult> TriggerAdaptiveOnlineRefreshAsync(
             SqliteConnectionFactory factory,
             CatalogSyncTrigger requestedTrigger,
             CancellationToken cancellationToken,
             bool administratorRepairAuthorized = false,
             bool allowFullDecision = true)
         {
-            var timer = Stopwatch.StartNew();
-            if (App.IsSafeStart ||
-                _authenticatedAccessMode == PosAuthenticatedAccessMode.LocalRecovery)
+            var coordinator = _startupCoordinator;
+            if (coordinator == null)
             {
-                _logger.LogInfo("category=catalog.sync result=skipped reason=safe_or_recovery_mode");
-                return new CatalogSyncRunResult(
-                    success: false,
-                    code: "sync_disabled_safe_mode");
-            }
-
-            var operatorSession = OperatorSessionHolder.Current;
-            if (operatorSession == null || !operatorSession.EnsureAuthorizationValid())
-            {
-                return new CatalogSyncRunResult(
+                return Task.FromResult(new CatalogSyncRunResult(
                     success: false,
                     authenticationDenied: true,
-                    code: "authorization_lease_denied");
+                    code: "trusted_session_missing"));
             }
 
-            if (requestedTrigger == CatalogSyncTrigger.AdministratorRepair &&
-                !administratorRepairAuthorized)
-            {
-                return new CatalogSyncRunResult(
-                    success: false,
-                    code: "catalog_sync_administrator_repair_denied");
-            }
-
-            var host = _onlineSyncHost;
-            if (host == null ||
-                await host.AttachCurrentTrustAsync(cancellationToken)
-                    .ConfigureAwait(false) == null)
-            {
-                return new CatalogSyncRunResult(
-                    success: false,
-                    authenticationDenied: true,
-                    code: "trusted_session_missing");
-            }
-
-            var trigger = MapOnlineSyncTrigger(requestedTrigger);
-            var previewDecision = await host.EvaluateCatalogDecisionAsync(
-                trigger,
+            return coordinator.TriggerAdaptiveOnlineRefreshAsync(
+                requestedTrigger,
+                cancellationToken,
                 administratorRepairAuthorized,
-                cancellationToken).ConfigureAwait(false);
-            if (previewDecision == null)
-            {
-                return new CatalogSyncRunResult(
-                    false,
-                    authenticationDenied: true,
-                    code: "trusted_generation_changed");
-            }
-            if (!allowFullDecision && previewDecision.Mode == CatalogSyncMode.Full)
-            {
-                return new CatalogSyncRunResult(
-                    false,
-                    code: "catalog_sync_full_repair_required");
-            }
-
-            var heartbeatTask = host.TriggerAsync(
-                OnlineSyncLane.Heartbeat,
-                trigger,
-                cancellationToken);
-            var salesTask = host.TriggerAsync(
-                OnlineSyncLane.SalesOutbox,
-                trigger,
-                cancellationToken);
-            var importTask = host.TriggerAsync(
-                OnlineSyncLane.CatalogImportOutbox,
-                trigger,
-                cancellationToken);
-            await Task.WhenAll(heartbeatTask, salesTask, importTask).ConfigureAwait(false);
-
-            var heartbeat = heartbeatTask.Result;
-            var sales = salesTask.Result;
-            var catalogImport = importTask.Result;
-            var authenticationDenied = heartbeat.AuthenticationDenied ||
-                sales.AuthenticationDenied ||
-                catalogImport.AuthenticationDenied;
-            if (authenticationDenied)
-            {
-                return new CatalogSyncRunResult(
-                    false,
-                    authenticationDenied: true,
-                    durationMilliseconds: timer.ElapsedMilliseconds,
-                    code: FirstNonEmpty(
-                        heartbeat.AuthenticationDenied ? heartbeat.Code : null,
-                        sales.AuthenticationDenied ? sales.Code : null,
-                        catalogImport.Code,
-                        "auth_denied"));
-            }
-
-            var catalogRequested = heartbeat.RequestCatalogNow ||
-                catalogImport.RequestCatalogNow ||
-                IsExplicitCatalogTrigger(requestedTrigger);
-            OnlineSyncLaneOutcome catalog = null;
-            var tracksFullRepair = requestedTrigger == CatalogSyncTrigger.AdministratorRepair;
-            if (tracksFullRepair) Interlocked.Increment(ref _fullCatalogRepairInProgress);
-            try
-            {
-                if (catalogRequested)
-                {
-                    catalog = await host.TriggerAsync(
-                        OnlineSyncLane.CatalogDelta,
-                        trigger,
-                        cancellationToken).ConfigureAwait(false);
-                }
-            }
-            finally
-            {
-                if (tracksFullRepair) Interlocked.Decrement(ref _fullCatalogRepairInProgress);
-            }
-
-            var offline = heartbeat.Offline || sales.Offline ||
-                catalogImport.Offline || catalog?.Offline == true;
-            var outboxWorkRemaining = sales.HasImmediateMore ||
-                sales.NextRetryAt.HasValue ||
-                catalogImport.HasImmediateMore ||
-                catalogImport.NextRetryAt.HasValue;
-            return new CatalogSyncRunResult(
-                success: heartbeat.Success &&
-                    sales.Success &&
-                    catalogImport.Success &&
-                    (!catalogRequested || catalog?.Success == true),
-                authenticationDenied: catalog?.AuthenticationDenied == true,
-                offline: offline,
-                hasMore: catalog?.CatalogHasMore == true,
-                receivedChanges: (catalog?.CatalogRowsApplied ?? 0) > 0,
-                pages: catalog?.CatalogPagesProcessed ?? 0,
-                rows: catalog?.CatalogRowsApplied ?? 0,
-                durationMilliseconds: timer.ElapsedMilliseconds,
-                code: catalogRequested
-                    ? FirstNonEmpty(catalog?.Code, "catalog_sync_failed")
-                    : FirstNonEmpty(heartbeat.Code, "catalog_pull_not_requested"),
-                outboxWorkRemaining: outboxWorkRemaining,
-                nextPollAfterSeconds: heartbeat.NextPollAfterSeconds,
-                catalogPullAttempted: catalogRequested,
-                catalogPullSkippedCode: catalogRequested ? string.Empty : heartbeat.Code,
-                nextOutboxRetryAt: MinimumRetryAt(
-                    sales.NextRetryAt,
-                    catalogImport.NextRetryAt));
-        }
-
-        private static OnlineSyncLaneTrigger MapOnlineSyncTrigger(
-            CatalogSyncTrigger trigger)
-        {
-            switch (trigger)
-            {
-                case CatalogSyncTrigger.StartOfDay:
-                case CatalogSyncTrigger.FirstBootstrap:
-                case CatalogSyncTrigger.RestoreCompleted:
-                case CatalogSyncTrigger.ExactnessMismatch:
-                    return OnlineSyncLaneTrigger.StartOfDay;
-                case CatalogSyncTrigger.CatalogImportAcked:
-                    return OnlineSyncLaneTrigger.ImportAcknowledged;
-                case CatalogSyncTrigger.NetworkRecovered:
-                    return OnlineSyncLaneTrigger.NetworkRecovered;
-                case CatalogSyncTrigger.PartialResume:
-                    return OnlineSyncLaneTrigger.PartialResume;
-                case CatalogSyncTrigger.Foreground:
-                    return OnlineSyncLaneTrigger.Foreground;
-                case CatalogSyncTrigger.Manual:
-                    return OnlineSyncLaneTrigger.Manual;
-                case CatalogSyncTrigger.AdministratorRepair:
-                    return OnlineSyncLaneTrigger.AdministratorRepair;
-                default:
-                    return OnlineSyncLaneTrigger.Periodic;
-            }
-        }
-
-        private static bool IsExplicitCatalogTrigger(CatalogSyncTrigger trigger)
-        {
-            switch (trigger)
-            {
-                case CatalogSyncTrigger.FirstBootstrap:
-                case CatalogSyncTrigger.StartOfDay:
-                case CatalogSyncTrigger.Manual:
-                case CatalogSyncTrigger.CatalogImportAcked:
-                case CatalogSyncTrigger.PartialResume:
-                case CatalogSyncTrigger.CursorRejected:
-                case CatalogSyncTrigger.ServerFullRequired:
-                case CatalogSyncTrigger.ShopTransition:
-                case CatalogSyncTrigger.RestoreCompleted:
-                case CatalogSyncTrigger.ExactnessMismatch:
-                case CatalogSyncTrigger.AdministratorRepair:
-                    return true;
-                default:
-                    return false;
-            }
-        }
-
-        private static long? MinimumRetryAt(long? first, long? second)
-        {
-            if (!first.HasValue) return second;
-            if (!second.HasValue) return first;
-            return Math.Min(first.Value, second.Value);
+                allowFullDecision);
         }
 
 
@@ -929,7 +662,13 @@ namespace Win7POS.Wpf
 
         private async Task EnterRecoveryModeAsync(SqliteConnectionFactory factory)
         {
-            _recoveryMode = true;
+            var coordinator = _startupCoordinator;
+            if (coordinator == null)
+            {
+                return;
+            }
+
+            await coordinator.EnterRecoveryAsync(factory).ConfigureAwait(true);
             if (HasLeaseFreeLocalRecoveryAccess())
             {
                 _authorizationLeaseTimer?.Stop();
@@ -939,18 +678,15 @@ namespace Win7POS.Wpf
                 RefreshAuthorizationLeaseSchedule(OperatorSessionHolder.Current);
             }
             _syncStatusTimer?.Stop();
-            if (_onlineSyncHost != null)
-                await _onlineSyncHost.StopAsync().ConfigureAwait(true);
             CancelActivePaymentForRecovery();
             DailyReportViewControl.DataContext = null;
             UserManagementViewControl.DataContext = null;
             SuspendPosViewForRecovery();
             ClearProductsViewModel();
-            _recoveryFactory = factory ?? throw new ArgumentNullException(nameof(factory));
             RecoveryModeBanner.Visibility = Visibility.Visible;
             RecoveryPlaceholder.Visibility = Visibility.Visible;
             var localRecoveryAccess =
-                _authenticatedAccessMode == PosAuthenticatedAccessMode.LocalRecovery;
+                CurrentAccessMode == PosAuthenticatedAccessMode.LocalRecovery;
             RecoveryStatusText.Text = PosLocalization.Current.Text(
                 localRecoveryAccess ? "access.login.recoveryOnlineRequired"
                     : "access.login.recoveryModeHelp");
@@ -978,44 +714,49 @@ namespace Win7POS.Wpf
 
         private async Task<bool> ExitRecoveryModeAsync()
         {
-            if (!HasNormalAuthorizedAccessForRecoveryExit())
+            var coordinator = _startupCoordinator;
+            if (coordinator == null)
             {
-                RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.recoveryOnlineRequired");
-                _logger.LogInfo("category=pos.recovery result=blocked reason=normal_online_access_required");
                 return false;
             }
 
-            var factory = _recoveryFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
-            if (!await PosCatalogPullService.IsCatalogSaleSafeAsync(factory).ConfigureAwait(true))
+            var session = coordinator.Session;
+            var validation = await coordinator
+                .ValidateRecoveryExitAsync(session)
+                .ConfigureAwait(true);
+            if (!validation.CanExit)
             {
-                RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.catalogStillUnsafe");
+                RecoveryStatusText.Text = validation.Code == "catalog_still_unsafe"
+                    ? PosLocalization.Current.Text("access.login.catalogStillUnsafe")
+                    : PosLocalization.Current.Text("access.login.recoveryOnlineRequired");
+                _logger.LogInfo("category=pos.recovery result=blocked reason=" + validation.Code);
                 return false;
             }
 
+            var factory = coordinator.GetRecoveryFactory();
             StartOfDaySyncResult startOfDayResult = null;
             if (!App.IsSafeStart)
             {
                 startOfDayResult = await RunStartOfDaySyncAsync(factory).ConfigureAwait(true);
                 if (startOfDayResult == null || !startOfDayResult.CanOpenPos)
                 {
-                    if (_onlineSyncHost != null)
-                        await _onlineSyncHost.StopAsync().ConfigureAwait(true);
+                    await coordinator.StopAsync().ConfigureAwait(true);
                     RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.recoveryModeHelp");
                     return false;
                 }
             }
 
-            if (!HasNormalAuthorizedAccessForRecoveryExit())
+            var completion = await coordinator
+                .CompleteRecoveryExitAsync(coordinator.Session)
+                .ConfigureAwait(true);
+            if (!completion.CanExit)
             {
-                if (_onlineSyncHost != null)
-                    await _onlineSyncHost.StopAsync().ConfigureAwait(true);
                 RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.recoveryOnlineRequired");
                 _logger.LogInfo("category=pos.recovery result=blocked reason=authorization_changed");
                 return false;
             }
 
             ClearProductsViewModel();
-            _recoveryMode = false;
             _syncStatusTimer?.Start();
             RefreshAuthorizationLeaseSchedule(OperatorSessionHolder.Current);
             RecoveryModeBanner.Visibility = Visibility.Collapsed;
@@ -1051,31 +792,22 @@ namespace Win7POS.Wpf
             }
         }
 
-        private bool HasNormalAuthorizedAccessForRecoveryExit()
-        {
-            var session = OperatorSessionHolder.Current;
-            return _authenticatedAccessMode == PosAuthenticatedAccessMode.Normal &&
-                session != null &&
-                session.IsLoggedIn &&
-                session.EvaluateAuthorizationLease().Allowed;
-        }
-
         private bool HasLeaseFreeLocalRecoveryAccess()
         {
-            return PosAccessRecoveryPolicy.IsLeaseFreeLocalRecovery(
-                _recoveryMode ? PosShellMode.Recovery : PosShellMode.Pos,
-                _authenticatedAccessMode);
+            return _startupCoordinator?.HasLeaseFreeLocalRecoveryAccess() == true;
         }
 
         private async void OnRetryRecoveryOnlineClick(object sender, RoutedEventArgs e)
         {
-            if (!_recoveryMode) return;
+            if (!IsRecoveryMode) return;
 
-            var factory = _recoveryFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+            var coordinator = _startupCoordinator;
+            if (coordinator == null) return;
+            var factory = coordinator.GetRecoveryFactory();
             var login = new PosOnlineFirstLoginDialog(
                 factory,
                 resumeCatalogOnly: false,
-                syncHost: _onlineSyncHost)
+                syncHost: OnlineSyncHost)
             {
                 Owner = DialogOwnerHelper.GetSafeOwner(this)
             };
@@ -1083,12 +815,12 @@ namespace Win7POS.Wpf
                 OperatorSessionHolder.Current == null ||
                 !OperatorSessionHolder.Current.IsLoggedIn)
             {
-                if (_onlineSyncHost != null)
-                    await _onlineSyncHost.StopAsync().ConfigureAwait(true);
+                if (_startupCoordinator != null)
+                    await _startupCoordinator.StopAsync().ConfigureAwait(true);
                 return;
             }
 
-            _authenticatedAccessMode = login.AccessMode;
+            coordinator.SetAuthenticatedAccessMode(login.AccessMode);
             UpdateOperatorDisplay(OperatorSessionHolder.Current);
             if (login.AccessMode == PosAuthenticatedAccessMode.Normal)
             {
@@ -1097,8 +829,8 @@ namespace Win7POS.Wpf
             RefreshShellAfterOperatorChange(OperatorSessionHolder.Current);
             if (login.AccessMode != PosAuthenticatedAccessMode.Normal)
             {
-                if (_onlineSyncHost != null)
-                    await _onlineSyncHost.StopAsync().ConfigureAwait(true);
+                if (_startupCoordinator != null)
+                    await _startupCoordinator.StopAsync().ConfigureAwait(true);
                 RecoveryStatusText.Text = PosLocalization.Current.Text("access.login.recoveryOnlineRequired");
                 return;
             }
@@ -1108,7 +840,7 @@ namespace Win7POS.Wpf
 
         private async void OnVerifyRecoveryCatalogClick(object sender, RoutedEventArgs e)
         {
-            if (!_recoveryMode || VerifyRecoveryCatalogButton == null) return;
+            if (!IsRecoveryMode || VerifyRecoveryCatalogButton == null) return;
 
             VerifyRecoveryCatalogButton.IsEnabled = false;
             try
@@ -1128,8 +860,7 @@ namespace Win7POS.Wpf
                     return;
                 }
 
-                var factory = _recoveryFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
-                var approved = await new CatalogRecoveryRepository(factory)
+                var approved = await _startupCoordinator
                     .TryApproveLocalCatalogAsync(user.Id)
                     .ConfigureAwait(true);
                 if (!approved)
@@ -1148,7 +879,7 @@ namespace Win7POS.Wpf
             }
             finally
             {
-                if (_recoveryMode)
+                if (IsRecoveryMode)
                 {
                     VerifyRecoveryCatalogButton.IsEnabled = true;
                 }
@@ -1167,7 +898,11 @@ namespace Win7POS.Wpf
         {
             try
             {
-                factory = factory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+                factory = factory ?? _startupCoordinator?.Factory ?? _languageSettingsFactory;
+                if (factory == null)
+                {
+                    return;
+                }
                 var official = await new ShopOfficialSnapshotRepository(factory).GetAsync().ConfigureAwait(true);
                 var fallbackCode = await new SettingsRepository(factory).GetLastPosLoginShopCodeAsync().ConfigureAwait(true);
                 var title = FirstNonEmpty(official?.ShopName, fallbackCode, "Win7POS");
@@ -1215,7 +950,7 @@ namespace Win7POS.Wpf
         private async void OnShellActivated(object sender, EventArgs e)
         {
             if (!_operatorLoginReached ||
-                _recoveryMode ||
+                IsRecoveryMode ||
                 App.IsSafeStart ||
                 OperatorSessionHolder.Current == null ||
                 !OperatorSessionHolder.Current.IsLoggedIn)
@@ -1229,7 +964,7 @@ namespace Win7POS.Wpf
                 return;
             }
 
-            var factory = _onlineSchedulerFactory ?? _languageSettingsFactory;
+            var factory = OnlineSchedulerFactory ?? _languageSettingsFactory;
             if (factory == null)
             {
                 return;
@@ -1295,7 +1030,7 @@ namespace Win7POS.Wpf
 
                 if (online && wasOnline == false)
                 {
-                    var factory = _onlineSchedulerFactory ?? _languageSettingsFactory;
+                    var factory = OnlineSchedulerFactory ?? _languageSettingsFactory;
                     if (factory != null &&
                         OperatorSessionHolder.Current != null &&
                         OperatorSessionHolder.Current.IsLoggedIn)
@@ -1410,7 +1145,11 @@ namespace Win7POS.Wpf
         {
             try
             {
-                factory = factory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+                factory = factory ?? _startupCoordinator?.Factory ?? _languageSettingsFactory;
+                if (factory == null)
+                {
+                    return;
+                }
                 var status = await new PosSyncStatusReader(factory).ReadAsync().ConfigureAwait(true);
                 if (SyncStatusText != null)
                 {
@@ -1477,8 +1216,14 @@ namespace Win7POS.Wpf
             string requiredPermissionName = null,
             Window dialogOwner = null)
         {
-            var factory = new SqliteConnectionFactory(PosDbOptions.Default());
-            var session = EnsureOperatorSession(factory);
+            var coordinator = _startupCoordinator;
+            var factory = coordinator?.Factory;
+            if (factory == null || coordinator == null)
+            {
+                return false;
+            }
+
+            var session = coordinator.EnsureSession();
             var switchDlg = new OperatorSwitchDialog(factory, session)
             {
                 Owner = DialogOwnerHelper.GetSafeOwner(dialogOwner ?? this)
@@ -1507,7 +1252,7 @@ namespace Win7POS.Wpf
             }
             finally
             {
-                _customerDisplayManager?.SetOperatorLocked(_recoveryMode);
+                _customerDisplayManager?.SetOperatorLocked(IsRecoveryMode);
             }
         }
 
@@ -1518,7 +1263,7 @@ namespace Win7POS.Wpf
             var loginDlg = new PosOnlineFirstLoginDialog(
                 factory,
                 resumeCatalogOnly: false,
-                syncHost: _onlineSyncHost)
+                syncHost: OnlineSyncHost)
             {
                 Owner = DialogOwnerHelper.GetSafeOwner(dialogOwner ?? this)
             };
@@ -1527,7 +1272,7 @@ namespace Win7POS.Wpf
             if (!accessAccepted || currentSession == null || !currentSession.IsLoggedIn)
             {
                 var existingSession = currentSession;
-                if (_authenticatedAccessMode == PosAuthenticatedAccessMode.Normal &&
+                if (CurrentAccessMode == PosAuthenticatedAccessMode.Normal &&
                     existingSession != null &&
                     existingSession.IsLoggedIn)
                 {
@@ -1553,7 +1298,7 @@ namespace Win7POS.Wpf
             }
 
             var session = OperatorSessionHolder.Current;
-            _authenticatedAccessMode = loginDlg.AccessMode;
+            _startupCoordinator?.SetAuthenticatedAccessMode(loginDlg.AccessMode);
             UpdateOperatorDisplay(session);
             _ = RefreshShellTitleAsync(factory);
 
@@ -1564,7 +1309,7 @@ namespace Win7POS.Wpf
                 return true;
             }
 
-            if (_recoveryMode)
+            if (IsRecoveryMode)
             {
                 RefreshAuthorizationLeaseSchedule(session);
                 RefreshShellAfterOperatorChange(session);
@@ -1574,18 +1319,6 @@ namespace Win7POS.Wpf
             RefreshAuthorizationLeaseSchedule(session);
             RefreshShellAfterOperatorChange(session);
             return true;
-        }
-
-        private static IOperatorSession EnsureOperatorSession(SqliteConnectionFactory factory)
-        {
-            if (OperatorSessionHolder.Current == null)
-            {
-                OperatorSessionHolder.Current = new OperatorSession(
-                    new UserRepository(factory),
-                    new SecurityRepository(factory));
-            }
-
-            return OperatorSessionHolder.Current;
         }
 
         internal static async Task<bool> IsSessionBoundToCurrentTrustedIdentityAsync(
@@ -1670,7 +1403,7 @@ namespace Win7POS.Wpf
             string actionName,
             Window dialogOwner = null)
         {
-            if (_recoveryMode && !LocalRecoveryPermissionPolicy.IsAllowed(permissionCode))
+            if (IsRecoveryMode && !LocalRecoveryPermissionPolicy.IsAllowed(permissionCode))
             {
                 LogPermissionDenied(permissionCode, actionName, "recovery_scope");
                 return false;
@@ -1721,7 +1454,7 @@ namespace Win7POS.Wpf
                 return false;
             }
 
-            if (_recoveryMode)
+            if (IsRecoveryMode)
             {
                 if (!HasLeaseFreeLocalRecoveryAccess() &&
                     !session.EnsureAuthorizationValid())
@@ -1822,8 +1555,8 @@ namespace Win7POS.Wpf
         /// <summary>Dopo cambio operatore: ricaricare permessi, aggiornare UI e uscire da tab non consentiti.</summary>
         private void RefreshShellAfterOperatorChange(IOperatorSession session)
         {
-            var posVm = _recoveryMode ? null : GetPosViewModel();
-            if (!_recoveryMode)
+            var posVm = IsRecoveryMode ? null : GetPosViewModel();
+            if (!IsRecoveryMode)
             {
                 posVm?.RaiseCanExecuteChanged();
                 System.Windows.Input.CommandManager.InvalidateRequerySuggested();
@@ -1842,16 +1575,16 @@ namespace Win7POS.Wpf
                 UserManagementViewControl.DataContext = null;
                 DailyReportViewControl.DataContext = null;
                 MainTabControl.SelectedIndex = 0;
-                CurrentMenuKey = _recoveryMode ? "Settings" : "Pos";
+                CurrentMenuKey = IsRecoveryMode ? "Settings" : "Pos";
                 return;
             }
-            var hasUsersManage = !_recoveryMode &&
+            var hasUsersManage = !IsRecoveryMode &&
                 (session.CurrentUser.IsAdmin ||
                  session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.UsersManage) == true);
-            var hasDailyCloseView = !_recoveryMode &&
+            var hasDailyCloseView = !IsRecoveryMode &&
                 (session.CurrentUser.IsAdmin ||
                  session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.DailyCloseView) == true);
-            var hasCatalogView = _recoveryMode
+            var hasCatalogView = IsRecoveryMode
                 ? HasCurrentPermission(PermissionCodes.CatalogView)
                 : session.CurrentUser.IsAdmin ||
                   session.CurrentUser.PermissionCodes?.Contains(PermissionCodes.CatalogView) == true;
@@ -1895,10 +1628,10 @@ namespace Win7POS.Wpf
             {
                 ClearProductsViewModel();
                 MainTabControl.SelectedIndex = 0;
-                CurrentMenuKey = _recoveryMode ? "Settings" : "Pos";
+                CurrentMenuKey = IsRecoveryMode ? "Settings" : "Pos";
             }
 
-            if (_recoveryMode)
+            if (IsRecoveryMode)
             {
                 if (hasCatalogView && ProductsViewControl?.DataContext == null)
                 {
@@ -2035,7 +1768,7 @@ namespace Win7POS.Wpf
 
         private void MainTabControl_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
-            if (_recoveryMode && !IsRecoveryTab(MainTabControl?.SelectedItem))
+            if (IsRecoveryMode && !IsRecoveryTab(MainTabControl?.SelectedItem))
             {
                 ClampRecoveryTabSelection();
                 return;
@@ -2055,7 +1788,7 @@ namespace Win7POS.Wpf
 
         private void ClampRecoveryTabSelection()
         {
-            if (!_recoveryMode || _recoveryTabClampActive || MainTabControl == null)
+            if (!IsRecoveryMode || _recoveryTabClampActive || MainTabControl == null)
             {
                 return;
             }
@@ -2182,7 +1915,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuPosClick(object sender, RoutedEventArgs e)
         {
-            if (_recoveryMode)
+            if (IsRecoveryMode)
             {
                 ClampRecoveryTabSelection();
                 SetSideMenuOpen(false);
@@ -2196,7 +1929,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuOpenCashDrawerClick(object sender, RoutedEventArgs e)
         {
-            if (_recoveryMode) return;
+            if (IsRecoveryMode) return;
             GetPosViewModel()?.OpenCashDrawerCommand?.Execute(null);
             SetSideMenuOpen(false);
         }
@@ -2245,14 +1978,14 @@ namespace Win7POS.Wpf
             if (ProductsViewControl?.DataContext is ProductsViewModel existing &&
                 ReferenceEquals(_productsDataContextSession, session) &&
                 string.Equals(_productsDataContextOperatorUsername ?? "", currentUsername, StringComparison.OrdinalIgnoreCase) &&
-                _productsDataContextRecoveryMode == _recoveryMode &&
+                _productsDataContextRecoveryMode == IsRecoveryMode &&
                 _productsDataContextLeaseFreeLocalRecovery == leaseFreeLocalRecovery)
             {
                 return existing;
             }
 
             IPermissionService permissionService = null;
-            if (_recoveryMode)
+            if (IsRecoveryMode)
             {
                 permissionService = leaseFreeLocalRecovery
                     ? (IPermissionService)new LocalRecoveryPermissionService(session)
@@ -2261,7 +1994,7 @@ namespace Win7POS.Wpf
             var vm = new ProductsViewModel(permissionService);
             ProductsViewControl.DataContext = vm;
             _productsDataContextOperatorUsername = currentUsername;
-            _productsDataContextRecoveryMode = _recoveryMode;
+            _productsDataContextRecoveryMode = IsRecoveryMode;
             _productsDataContextLeaseFreeLocalRecovery = leaseFreeLocalRecovery;
             _productsDataContextSession = session;
             return vm;
@@ -2347,7 +2080,7 @@ namespace Win7POS.Wpf
 
         private async void OnMenuDailyReportClick(object sender, RoutedEventArgs e)
         {
-            if (_recoveryMode)
+            if (IsRecoveryMode)
             {
                 SetSideMenuOpen(false);
                 return;
@@ -2387,7 +2120,7 @@ namespace Win7POS.Wpf
         private void OnSyncStatusPillClick(object sender, RoutedEventArgs e)
         {
             if (App.IsSafeStart ||
-                _authenticatedAccessMode == PosAuthenticatedAccessMode.LocalRecovery) return;
+                CurrentAccessMode == PosAuthenticatedAccessMode.LocalRecovery) return;
             ShowSyncCenterDialog();
         }
 
@@ -2396,9 +2129,9 @@ namespace Win7POS.Wpf
             try
             {
                 var dialog = new SettingsHubDialog(
-                    _recoveryMode,
+                    IsRecoveryMode,
                     App.IsSafeStart ||
-                    _authenticatedAccessMode == PosAuthenticatedAccessMode.LocalRecovery)
+                    CurrentAccessMode == PosAuthenticatedAccessMode.LocalRecovery)
                 {
                     Owner = DialogOwnerHelper.GetSafeOwner()
                 };
@@ -2427,7 +2160,7 @@ namespace Win7POS.Wpf
 
         private async Task ShowCustomerDisplaySettingsAsync()
         {
-            if (_recoveryMode) return;
+            if (IsRecoveryMode) return;
             if (!HasCurrentPermission(PermissionCodes.SettingsPrinter) &&
                 !await TrySwitchForPermissionAsync(
                     PermissionCodes.SettingsPrinter,
@@ -2438,7 +2171,11 @@ namespace Win7POS.Wpf
                 return;
             }
 
-            var factory = _onlineSchedulerFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+            var factory = OnlineSchedulerFactory ?? _languageSettingsFactory;
+            if (factory == null)
+            {
+                return;
+            }
             await EnsureCustomerDisplayManagerAsync(factory).ConfigureAwait(true);
             if (_customerDisplayManager == null)
             {
@@ -2488,13 +2225,17 @@ namespace Win7POS.Wpf
         private void ShowSyncCenterDialog(Window owner = null)
         {
             if (App.IsSafeStart ||
-                _authenticatedAccessMode == PosAuthenticatedAccessMode.LocalRecovery)
+                CurrentAccessMode == PosAuthenticatedAccessMode.LocalRecovery)
             {
                 _logger.LogInfo("category=sync.center result=blocked reason=safe_or_recovery_mode");
                 return;
             }
 
-            var factory = _onlineSchedulerFactory ?? new SqliteConnectionFactory(PosDbOptions.Default());
+            var factory = OnlineSchedulerFactory ?? _languageSettingsFactory;
+            if (factory == null)
+            {
+                return;
+            }
             try
             {
                 var dialog = new SyncCenterDialog(
@@ -2530,7 +2271,7 @@ namespace Win7POS.Wpf
         private async Task<bool> AuthorizeFullCatalogRepairAsync(Window dialogOwner)
         {
             if (App.IsSafeStart ||
-                _authenticatedAccessMode == PosAuthenticatedAccessMode.LocalRecovery) return false;
+                CurrentAccessMode == PosAuthenticatedAccessMode.LocalRecovery) return false;
 
             if (HasCurrentPermission(PermissionCodes.DbMaintenance))
             {
@@ -2561,7 +2302,7 @@ namespace Win7POS.Wpf
                 return;
             }
 
-            if (_recoveryMode)
+            if (IsRecoveryMode)
             {
                 ShowRecoveryDbMaintenanceDialog();
             }
@@ -2593,7 +2334,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuPrinterClick(object sender, RoutedEventArgs e)
         {
-            if (_recoveryMode) return;
+            if (IsRecoveryMode) return;
             CurrentMenuKey = "Printer";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.PrinterSettingsCommand?.Execute(null);
@@ -2602,7 +2343,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuShopSettingsClick(object sender, RoutedEventArgs e)
         {
-            if (_recoveryMode) return;
+            if (IsRecoveryMode) return;
             CurrentMenuKey = "ShopSettings";
             MainTabControl.SelectedIndex = 0;
             GetPosViewModel()?.OpenShopSettingsCommand?.Execute(null);
@@ -2613,7 +2354,7 @@ namespace Win7POS.Wpf
         {
             CurrentMenuKey = "About";
             MainTabControl.SelectedIndex = 0;
-            if (_recoveryMode)
+            if (IsRecoveryMode)
             {
                 if (_recoveryWorkflowService == null)
                 {
@@ -2634,7 +2375,7 @@ namespace Win7POS.Wpf
 
         private void OnMenuSalesRegisterClick(object sender, RoutedEventArgs e)
         {
-            if (_recoveryMode)
+            if (IsRecoveryMode)
             {
                 SetSideMenuOpen(false);
                 return;
@@ -2648,7 +2389,7 @@ namespace Win7POS.Wpf
         /// <summary>Mostra la schermata Pagamento e attende la chiusura (RequestClose).</summary>
         public Task<bool> ShowPaymentScreenAsync(PaymentViewModel vm)
         {
-            if (_recoveryMode || vm == null || _activePaymentCleanup != null)
+            if (IsRecoveryMode || vm == null || _activePaymentCleanup != null)
             {
                 return Task.FromResult(false);
             }
@@ -2668,7 +2409,7 @@ namespace Win7POS.Wpf
                 vm.RequestClose -= OnClose;
                 PaymentViewControl.DataContext = null;
                 _activePaymentCleanup = null;
-                if (_recoveryMode)
+                if (IsRecoveryMode)
                 {
                     ClampRecoveryTabSelection();
                 }
@@ -2689,7 +2430,7 @@ namespace Win7POS.Wpf
             _activePaymentCleanup = Cleanup;
             Dispatcher.BeginInvoke(new Action(() =>
             {
-                if (_recoveryMode)
+                if (IsRecoveryMode)
                 {
                     Cleanup(false);
                     return;

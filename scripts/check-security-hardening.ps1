@@ -105,12 +105,11 @@ foreach ($redactor in @(
     @{ Label = "private-key headers"; Pattern = 'PRIVATE KEY' }
 )) {
     Require "FileLogger redacts $($redactor.Label)" $logSanitizer $redactor.Pattern
-    Require "StartupTrace redacts $($redactor.Label)" $startup $redactor.Pattern
 }
 Require "DB bootstrap logger delegates shared redaction" $dbInitializer 'LogSanitizer\.Sanitize\('
 Require "DB bootstrap logger uses bounded process writer" $dbInitializer 'ProcessFileLog\.TryWrite\('
 Require "FileLogger applies regex redaction" $logSanitizer "StructuredSecret\.Replace[\s\S]*ConnectionStringSecret\.Replace[\s\S]*KeyValueSecret\.Replace"
-Require "StartupTrace applies regex redaction" $startup "Regex\.Replace[\s\S]*\[redacted\]"
+Require "StartupTrace delegates shared redaction" $startup 'LogSanitizer\.Sanitize\(value,\s*500\)'
 Require "UI smoke defines executable redaction vectors" $uiSmoke 'VerifyLogRedactionTestVectors'
 foreach ($vectorMarker in @('session_token', 'refresh-token', 'client_secret', 'api_key', 'Authorization: Bearer', 'sk-abcdefghijklmnopqrstuvwxyz', 'eyJheader12345', 'BEGIN PRIVATE KEY', 'TRUNCATEDPRIVATEKEYBODY987654321', 'secrets\.All')) { # gitleaks:allow -- synthetic redaction-test markers
     Require "UI smoke redaction vector marker: $vectorMarker" $uiSmoke $vectorMarker

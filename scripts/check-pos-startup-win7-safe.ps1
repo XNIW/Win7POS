@@ -171,6 +171,8 @@ $requiredFiles = @(
     "src/Win7POS.Wpf/App.xaml.cs",
     "src/Win7POS.Wpf/App.xaml",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
+    "src/Win7POS.Core/Online/PosStartupCoordinatorPolicy.cs",
     "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs",
     "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs",
     "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs",
@@ -187,6 +189,7 @@ $requiredFiles = @(
     "installer/Win7POS.iss",
     "scripts/check-release-pack-completeness.ps1",
     "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs",
+    "tests/Win7POS.Core.Tests/Online/PosStartupCoordinatorPolicyTests.cs",
     "scripts/win7pos/collect-win7-startup-diagnostics.bat"
 )
 
@@ -203,6 +206,8 @@ if ($fail) {
 $app = Read-Text "src/Win7POS.Wpf/App.xaml.cs"
 $appXaml = Read-Text "src/Win7POS.Wpf/App.xaml"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$startupCoordinator = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs"
+$startupCoordinatorPolicy = Read-Text "src/Win7POS.Core/Online/PosStartupCoordinatorPolicy.cs"
 $syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
 $supervisor = Read-Text "src/Win7POS.Data/Online/OnlineSyncSupervisor.cs"
 $startOfDayService = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs"
@@ -217,6 +222,7 @@ $posViewModel = Read-Text "src/Win7POS.Wpf/Pos/PosViewModel.cs"
 $hardwareSafety = Read-Text "src/Win7POS.Wpf/Printing/PrinterHardwareSafety.cs"
 $receiptSpooler = Read-Text "src/Win7POS.Wpf/Printing/WindowsSpoolerReceiptPrinter.cs"
 $uiSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
+$startupCoordinatorPolicyTests = Read-Text "tests/Win7POS.Core.Tests/Online/PosStartupCoordinatorPolicyTests.cs"
 $startupTrace = Read-Text "src/Win7POS.Wpf/Infrastructure/StartupTrace.cs"
 $catalogPull = Read-Text "src/Win7POS.Wpf/Pos/Online/PosCatalogPullService.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosLocalization.cs"
@@ -347,7 +353,9 @@ $drainIndex = $supervisor.IndexOf("private async Task DrainLaneAsync", [System.S
 $queueBody = if ($queueIndex -ge 0 -and $drainIndex -gt $queueIndex) {
     $supervisor.Substring($queueIndex, $drainIndex - $queueIndex)
 } else { "" }
-if ($mainWindow -notmatch 'QueueBackgroundOnlineRefresh[\s\S]{0,450}_onlineSyncHost\?\.StartContinuous\(\)' -or
+if ($mainWindow -notmatch 'QueueBackgroundOnlineRefresh[\s\S]{0,450}_startupCoordinator\?\.StartBackground\(\)' -or
+    $startupCoordinator -notmatch 'PosOnlineSyncSignalBus\.Register' -or
+    $startupCoordinator -notmatch 'public\s+void\s+StartBackground\s*\([\s\S]{0,420}PosStartupCoordinatorPolicy\.CanStartBackground[\s\S]{0,220}host\.StartContinuous\(\)' -or
     $hostStartBody -notmatch 'IsAuthorizationMaintenanceActive' -or
     $hostStartBody -notmatch 'IsMaintenanceActive' -or
     $hostStartBody -notmatch '_continuousStarted' -or
@@ -360,6 +368,49 @@ if ($mainWindow -notmatch 'QueueBackgroundOnlineRefresh[\s\S]{0,450}_onlineSyncH
 }
 else {
     Pass "supervised online lanes run in background tasks"
+}
+
+$onLoadedBody = Get-MethodBody `
+    $mainWindow `
+    'private\s+async\s+void\s+OnLoadedAsync\s*\([^\)]*\)' `
+    'private\s+async\s+Task<StartOfDaySyncResult>\s+RunStartOfDaySyncAsync'
+$enterRecoveryBody = Get-MethodBody `
+    $mainWindow `
+    'private\s+async\s+Task\s+EnterRecoveryModeAsync\s*\([^\)]*\)' `
+    'private\s+async\s+Task<bool>\s+ExitRecoveryModeAsync'
+$exitRecoveryBody = Get-MethodBody `
+    $mainWindow `
+    'private\s+async\s+Task<bool>\s+ExitRecoveryModeAsync\s*\([^\)]*\)' `
+    'private\s+void\s+SetRecoveryNavigationState'
+$verifyRecoveryBody = Get-MethodBody `
+    $mainWindow `
+    'private\s+async\s+void\s+OnVerifyRecoveryCatalogClick\s*\([^\)]*\)' `
+    'private\s+void\s+UpdateOperatorDisplay'
+$mainOwnsStartupState =
+    $onLoadedBody -match 'DbInitializer\.EnsureCreated|PosDbOptions\.Default\(|new\s+SqliteConnectionFactory|new\s+UserRepository|new\s+SecurityRepository|new\s+OperatorSession|AttachCurrentTrustAsync|PosCatalogPullService\.IsCatalogSaleSafeAsync|PosShellStartupPolicy\.Determine' -or
+    $mainWindow -match 'private\s+(?:bool|PosAuthenticatedAccessMode|SqliteConnectionFactory)\s+_(?:recoveryMode|authenticatedAccessMode|recoveryFactory)\b' -or
+    $mainWindow -match 'CaptureStartupCoordinatorState'
+if ($mainOwnsStartupState -or
+    $startupCoordinator -notmatch 'public\s+SqliteConnectionFactory\s+Initialize\s*\([\s\S]{0,900}DbInitializer\.EnsureCreated[\s\S]{0,1100}EnsureSession' -or
+    $startupCoordinator -notmatch 'public\s+async\s+Task<PosStartupAccessResult>\s+AcceptAuthenticatedAccessAsync[\s\S]{0,700}PosStartupCoordinatorPolicy\.DetermineShellMode' -or
+    $startupCoordinatorPolicy -notmatch 'DetermineShellMode[\s\S]{0,220}PosShellStartupPolicy\.Determine' -or
+    $startupCoordinatorPolicy -notmatch 'CanResumeAfterMaintenance' -or
+    $startupCoordinatorPolicyTests -notmatch 'MaintenanceResume_RequiresExistingRequestAndNormalLiveState' -or
+    $startupCoordinatorPolicyTests -notmatch 'RecoveryExit_RequiresNormalLoggedInAuthorizedSession' -or
+    $startupCoordinator -notmatch 'public\s+async\s+Task\s+EnterRecoveryAsync[\s\S]{0,280}StopAsync' -or
+    $startupCoordinator -notmatch 'public\s+async\s+Task<PosRecoveryExitValidation>\s+ValidateRecoveryExitAsync[\s\S]{0,500}IsCatalogSaleSafeAsync' -or
+    $startupCoordinator -notmatch 'public\s+async\s+Task<PosRecoveryExitValidation>\s+CompleteRecoveryExitAsync[\s\S]{0,350}StopAsync' -or
+    $startupCoordinator -notmatch 'TryApproveLocalCatalogAsync[\s\S]{0,450}CatalogRecoveryRepository' -or
+    $enterRecoveryBody -notmatch 'coordinator\.EnterRecoveryAsync' -or
+    $enterRecoveryBody -match 'PosCatalogPullService|CatalogRecoveryRepository|new\s+SqliteConnectionFactory' -or
+    $exitRecoveryBody -notmatch 'coordinator[\s\S]{0,80}\.ValidateRecoveryExitAsync[\s\S]{0,1600}coordinator[\s\S]{0,80}\.CompleteRecoveryExitAsync' -or
+    $exitRecoveryBody -match 'PosCatalogPullService|CatalogRecoveryRepository|new\s+SqliteConnectionFactory' -or
+    $verifyRecoveryBody -notmatch '_startupCoordinator[\s\S]{0,180}TryApproveLocalCatalogAsync' -or
+    $verifyRecoveryBody -match 'CatalogRecoveryRepository|new\s+SqliteConnectionFactory') {
+    Fail "startup coordinator must own DB/session/access/recovery state while MainWindow renders only the UI transition"
+}
+else {
+    Pass "startup coordinator owns DB/session/access/recovery state and MainWindow renders the UI transition"
 }
 
 if ($mainWindow -notmatch "Dispatcher\.BeginInvoke[\s\S]*RefreshSyncStatusStripAsync") {
@@ -378,10 +429,11 @@ else {
 }
 
 $refreshBody = Get-MethodBody `
-    $mainWindow `
-    "private\s+async\s+Task<CatalogSyncRunResult>\s+TriggerAdaptiveOnlineRefreshAsync\s*\([^\)]*\)" `
-    "private\s+static\s+OnlineSyncLaneTrigger\s+MapOnlineSyncTrigger"
-if ($refreshBody -match "ModernMessageDialog\.Show") {
+    $startupCoordinator `
+    "public\s+async\s+Task<CatalogSyncRunResult>\s+TriggerAdaptiveOnlineRefreshAsync\s*\([^\)]*\)" `
+    "public\s+Task\s+StopAsync"
+if ([string]::IsNullOrWhiteSpace($refreshBody) -or
+    $refreshBody -match "ModernMessageDialog\.Show") {
     Fail "coordinated background refresh shows a blocking dialog"
 }
 else {
@@ -499,7 +551,7 @@ else {
     Pass "safe-start blocks external Admin Web at the request boundary"
 }
 
-if ($mainWindow -notmatch 'TriggerAdaptiveOnlineRefreshAsync[\s\S]{0,450}App\.IsSafeStart[\s\S]{0,900}authorization_lease_denied' -or
+if ($startupCoordinator -notmatch 'TriggerAdaptiveOnlineRefreshAsync[\s\S]{0,450}state\.IsSafeStart[\s\S]{0,900}authorization_lease_denied' -or
     $mainWindow -notmatch 'ShowSyncCenterDialog\(Window owner = null\)[\s\S]{0,260}App\.IsSafeStart' -or
     $mainWindow -notmatch 'new SettingsHubDialog\([\s\S]{0,180}App\.IsSafeStart') {
     Fail "safe-start must block manual catalog sync and hide Sync Center"

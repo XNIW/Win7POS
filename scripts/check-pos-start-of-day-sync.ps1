@@ -34,6 +34,7 @@ $required = @(
     "src/Win7POS.Core/Online/StartOfDaySalesDrainPolicy.cs",
     "tests/Win7POS.Core.Tests/Online/StartOfDaySalesDrainPolicyTests.cs",
     "src/Win7POS.Wpf/MainWindow.xaml.cs",
+    "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml",
     "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml.cs",
     "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs",
@@ -56,6 +57,7 @@ if ($fail) {
 }
 
 $main = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
+$startupCoordinator = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartupCoordinator.cs"
 $drainPolicy = Read-Text "src/Win7POS.Core/Online/StartOfDaySalesDrainPolicy.cs"
 $drainTests = Read-Text "tests/Win7POS.Core.Tests/Online/StartOfDaySalesDrainPolicyTests.cs"
 $dialogXaml = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/PosStartOfDaySyncDialog.xaml"
@@ -272,8 +274,9 @@ if ($main -match "startOfDayResult\s*==\s*null\s*\|\|\s*startOfDayResult\.Should
     Pass "MainWindow always starts the scheduler after normal POS opening"
 }
 
-if ($main -notmatch "StartAdaptiveOnlineScheduler[\s\S]{0,400}factory\s*==\s*null\s*\|\|\s*App\.IsSafeStart\s*\|\|\s*_recoveryMode" -or
-    $main -notmatch "StartAdaptiveOnlineScheduler[\s\S]{0,700}host\.StartContinuous\(\)" -or
+if ($main -notmatch "StartAdaptiveOnlineScheduler[\s\S]{0,300}_startupCoordinator\?\.StartAdaptive\(factory,\s*initialTrigger\)" -or
+    $startupCoordinator -notmatch "public\s+void\s+StartAdaptive\s*\([\s\S]{0,360}PosStartupCoordinatorPolicy\.CanStartBackground" -or
+    $startupCoordinator -notmatch "public\s+void\s+StartAdaptive\s*\([\s\S]{0,500}host\.StartContinuous\(\)" -or
     $syncHost -notmatch "StartContinuous\(\)[\s\S]{0,300}lock\s*\(_stateGate\)[\s\S]{0,260}_disposed\s*\|\|\s*_supervisor\s*==\s*null\s*\|\|\s*_continuousStarted[\s\S]{0,160}_continuousStarted\s*=\s*true[\s\S]{0,160}supervisor\.Start\(\)") {
     Fail "shared supervisor safe-start/recovery/single-flight guards missing"
 } else {
