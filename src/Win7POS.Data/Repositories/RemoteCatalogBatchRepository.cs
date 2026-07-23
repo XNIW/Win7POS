@@ -282,7 +282,7 @@ namespace Win7POS.Data.Repositories
                             supplierId = resolvedSupplierId;
                         }
 
-                        await ProductRepository.UpsertProductAndMetaInTransactionCoreAsync(
+                        await RemoteCatalogProductWriter.UpsertProductAndMetaInTransactionCoreAsync(
                             conn,
                             tx,
                             new Product
@@ -344,7 +344,7 @@ namespace Win7POS.Data.Repositories
                             continue;
                         }
 
-                        if (await ProductRepository.ApplyRemoteProductTombstoneInTransactionAsync(
+                        if (await RemoteCatalogProductWriter.ApplyRemoteProductTombstoneInTransactionAsync(
                             conn,
                             tx,
                             tombstone.RemoteProductId,
@@ -916,7 +916,7 @@ FROM incoming;";
                 string.IsNullOrWhiteSpace(row.Barcode) ||
                 string.IsNullOrWhiteSpace(row.Name) ||
                 row.UnitPrice <= 0 ||
-                ProductRepository.IsReservedBarcode(row.Barcode.Trim()))
+                ProductIdentityPolicy.IsReservedBarcode(row.Barcode.Trim()))
             {
                 return InvalidStageFingerprint;
             }
@@ -1565,10 +1565,10 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
             new Dictionary<string, int>(StringComparer.Ordinal);
         private Dictionary<string, int> _supplierIdsByRemoteId =
             new Dictionary<string, int>(StringComparer.Ordinal);
-        private ProductRepository.CatalogProductBatchContext _productContext =
-            ProductRepository.CatalogProductBatchContext.FromReferences(
-                Array.Empty<ProductRepository.ProductMetaReference>(),
-                Array.Empty<ProductRepository.ProductMetaReference>());
+        private RemoteCatalogProductWriter.CatalogProductBatchContext _productContext =
+            RemoteCatalogProductWriter.CatalogProductBatchContext.FromReferences(
+                Array.Empty<ProductMetaReference>(),
+                Array.Empty<ProductMetaReference>());
         private bool _disposed;
         private bool _referencesLoaded;
 
@@ -1595,7 +1595,7 @@ CREATE INDEX IF NOT EXISTS temp_catalog_page_product_remote_id_idx
                     create.ExecuteNonQuery();
                 }
 
-                ProductCommands = new ProductRepository.CatalogProductPreparedCommands(
+                ProductCommands = new RemoteCatalogProductWriter.CatalogProductPreparedCommands(
                     Connection,
                     null);
                 ReferenceCommand = new RemoteCatalogBatchRepository.RemoteProductReferencePreparedCommand(
@@ -1626,7 +1626,7 @@ VALUES(@barcode, @remoteProductId);";
             new CatalogApplyRunDiagnostics();
 
         internal SqliteConnection Connection { get; }
-        internal ProductRepository.CatalogProductPreparedCommands ProductCommands { get; }
+        internal RemoteCatalogProductWriter.CatalogProductPreparedCommands ProductCommands { get; }
         internal RemoteCatalogBatchRepository.RemoteProductReferencePreparedCommand ReferenceCommand { get; }
 
         public async Task<RemoteCatalogBatchApplyResult> ApplyAsync(
@@ -1698,13 +1698,13 @@ ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
             return new RemoteCatalogPageState(
                 ToRemoteIdMap(categories),
                 ToRemoteIdMap(suppliers),
-                ProductRepository.CatalogProductBatchContext.FromReferences(
-                    categories.Select(row => new ProductRepository.ProductMetaReference
+                RemoteCatalogProductWriter.CatalogProductBatchContext.FromReferences(
+                    categories.Select(row => new ProductMetaReference
                     {
                         Id = row.Id,
                         Name = row.Name
                     }),
-                    suppliers.Select(row => new ProductRepository.ProductMetaReference
+                    suppliers.Select(row => new ProductMetaReference
                     {
                         Id = row.Id,
                         Name = row.Name
@@ -1881,7 +1881,7 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
         internal RemoteCatalogPageState(
             Dictionary<string, int> categoryIdsByRemoteId,
             Dictionary<string, int> supplierIdsByRemoteId,
-            ProductRepository.CatalogProductBatchContext productContext)
+            RemoteCatalogProductWriter.CatalogProductBatchContext productContext)
         {
             CategoryIdsByRemoteId = categoryIdsByRemoteId;
             SupplierIdsByRemoteId = supplierIdsByRemoteId;
@@ -1890,7 +1890,7 @@ WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
 
         internal Dictionary<string, int> CategoryIdsByRemoteId { get; }
         internal Dictionary<string, int> SupplierIdsByRemoteId { get; }
-        internal ProductRepository.CatalogProductBatchContext ProductContext { get; set; }
+        internal RemoteCatalogProductWriter.CatalogProductBatchContext ProductContext { get; set; }
 
         internal void RemoveTombstonedReferences(
             IEnumerable<string> categoryRemoteIds,
