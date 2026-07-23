@@ -37,6 +37,7 @@ $sourceGates = @(
     "check-sale-repository-boundaries.ps1",
     "check-sale-line-read-repository-boundaries.ps1",
     "check-sale-stock-movement-writer-boundaries.ps1",
+    "check-sales-sync-outbox-repository-boundaries.ps1",
     "check-pos-outbox-shop-binding.ps1",
     "check-pos-catalog-pull.ps1",
     "check-pos-catalog-import-outbox.ps1",

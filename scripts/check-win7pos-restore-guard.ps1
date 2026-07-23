@@ -16,6 +16,35 @@ function Read-Text([string]$relativePath) {
     [System.IO.File]::ReadAllText((Join-Path $repoRoot $relativePath))
 }
 
+. (Join-Path $PSScriptRoot "sales-sync-outbox-gate-helpers.ps1")
+
+function Test-SalesOutboxFacadeDelegation(
+    [string]$text,
+    [string]$methodName,
+    [string]$writerName,
+    [string[]]$forwarding) {
+    $slices = @(Get-CSharpMethodSlices $text "public" $methodName)
+    if ($slices.Count -eq 0 -or $slices.Count -ne $forwarding.Count) {
+        return $false
+    }
+
+    for ($index = 0; $index -lt $slices.Count; $index++) {
+        $slice = $slices[$index].Text
+        $delegation = "_salesSyncOutbox\s*\.\s*" +
+            [regex]::Escape($writerName) + "\s*\("
+        $exactForwarding = "(?s)_salesSyncOutbox\s*\.\s*" +
+            [regex]::Escape($writerName) + "\s*\(\s*" +
+            $forwarding[$index] + "\s*\)"
+        if ([regex]::Matches($slice, $delegation).Count -ne 1 -or
+            [regex]::Matches($slice, $exactForwarding).Count -ne 1 -or
+            $slice -match "\bsales_sync_outbox\b|\b(?:conn|_factory)\s*\.\s*(?:Execute(?:Scalar)?|Query(?:Single(?:OrDefault)?)?)Async\b|\b(?:Open|BeginTransaction|Commit|Rollback)\s*\(") {
+            return $false
+        }
+    }
+
+    return $true
+}
+
 function Index-OrFail([string]$text, [string]$needle, [string]$message) {
     $index = $text.IndexOf($needle, [System.StringComparison]::Ordinal)
     if ($index -lt 0) {
@@ -37,6 +66,7 @@ $required = @(
     "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceDialog.xaml.cs",
     "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceViewModel.cs",
     "src/Win7POS.Data/Repositories/SaleRepository.cs",
+    "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs",
     "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs",
     "src/Win7POS.Data/Online/AtomicRestoreInstaller.cs",
     "src/Win7POS.Data/Backup/SqliteOnlineBackup.cs",
@@ -63,6 +93,7 @@ $startOfDay = Read-Text "src/Win7POS.Wpf/Pos/Online/PosStartOfDaySyncService.cs"
 $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $translations = Read-Text "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs"
 $saleRepo = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
+$salesOutboxRepo = Read-Text "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs"
 $catalogOutboxRepo = Read-Text "src/Win7POS.Data/Online/CatalogImportOutboxRepository.cs"
 $maintenance = Read-Text "src/Win7POS.Data/Repositories/DbMaintenanceRepository.cs"
 $restoreSafety = Read-Text "src/Win7POS.Data/Online/RestoreShopSafetyRepository.cs"
@@ -81,6 +112,7 @@ $maintenanceViewModel = Read-Text "src/Win7POS.Wpf/Pos/Dialogs/DbMaintenanceView
 $syncSignalBus = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSignalBus.cs"
 $revocationLatch = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncRevocationLatch.cs"
 $syncHost = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
+$unresolvedFacadeDelegates = Test-SalesOutboxFacadeDelegation $saleRepo "HasUnresolvedSalesSyncOutboxAsync" "HasUnresolvedAsync" @("\s*")
 $combined = Get-ChildItem -Path (Join-Path $repoRoot "src") -Recurse -File -Include *.cs,*.xaml |
     Where-Object { $_.FullName -notmatch "[\\/](bin|obj)[\\/]" } |
     ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) } |
@@ -383,7 +415,8 @@ if ($onlineBackup -notmatch "BackupDatabase" -or
     Pass "verified online backup is used and covered under concurrent writes"
 }
 
-if ($saleRepo -notmatch "WHERE status IN \('pending', 'retry', 'in_progress', 'failed_blocked'\)") {
+if (-not $unresolvedFacadeDelegates -or
+    $salesOutboxRepo -notmatch "WHERE status IN \('pending', 'retry', 'in_progress', 'failed_blocked'\)") {
     Fail "unresolved outbox guard must include pending, retry, in_progress and failed_blocked"
 } else {
     Pass "unresolved outbox guard includes pending/retry/in_progress/failed_blocked"
