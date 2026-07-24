@@ -117,7 +117,15 @@ namespace Win7POS.Data.Repositories
                 try
                 {
                     await RequireCommitFenceAsync(conn, tx, commitFence).ConfigureAwait(false);
-                    if (batch.AuthoritativeStagePage != null)
+                    if (batch.ReuseValidatedAuthoritativeStagePage)
+                    {
+                        await RequireValidatedAuthoritativeStagePageAsync(
+                            conn,
+                            tx,
+                            batch.AuthoritativeStagePage,
+                            commitFence).ConfigureAwait(false);
+                    }
+                    else if (batch.AuthoritativeStagePage != null)
                     {
                         await ReplaceAuthoritativeStagePageAsync(
                             conn,
@@ -683,6 +691,11 @@ AND NOT EXISTS (
             var stage = batch?.AuthoritativeStagePage;
             if (stage == null)
             {
+                if (batch?.ReuseValidatedAuthoritativeStagePage == true)
+                {
+                    throw new InvalidDataException(
+                        "Validated authoritative catalog stage reuse requires a stage page.");
+                }
                 if (required)
                     throw new InvalidDataException("Authoritative catalog stage page is required.");
                 return;
@@ -823,6 +836,79 @@ VALUES(
                 identity,
                 occurrences,
                 stagedAt).ConfigureAwait(false);
+        }
+
+        private static async Task RequireValidatedAuthoritativeStagePageAsync(
+            SqliteConnection conn,
+            SqliteTransaction tx,
+            CatalogAuthoritativeStagePage stage,
+            RemoteCatalogCommitFence commitFence)
+        {
+            var identity = CatalogAuthoritativeStageIdentity.Create(stage, commitFence);
+            var scopes = (await conn.QueryAsync<CatalogAuthoritativeStageScopeRow>(@"
+SELECT scope_id AS ScopeId,
+       transition_epoch AS TransitionEpoch
+FROM catalog_authoritative_stage_scope
+WHERE shop_id = @ShopId
+  AND shop_code = @ShopCode
+  AND generation_id = @GenerationId
+  AND generation_fingerprint = @GenerationFingerprint
+  AND full_run_id = @FullRunId;",
+                identity,
+                tx).ConfigureAwait(false)).ToArray();
+            if (scopes.Length != 1)
+            {
+                throw new InvalidDataException(
+                    "Validated authoritative catalog stage scope is missing or ambiguous.");
+            }
+
+            var scope = scopes[0];
+            if (scope.TransitionEpoch != identity.TransitionEpoch)
+            {
+                // Full-refresh preflight deliberately runs before the destructive repair
+                // boundary increments the shop epoch. Adopt the already validated scope
+                // into that new epoch once; its generation fingerprint and run identity
+                // remain unchanged, and the surrounding page transaction rolls this back
+                // if any subsequent catalog mutation fails.
+                var adopted = await conn.ExecuteAsync(@"
+UPDATE catalog_authoritative_stage_scope
+SET transition_epoch = @transitionEpoch
+WHERE scope_id = @scopeId
+  AND transition_epoch = @previousTransitionEpoch;",
+                    new
+                    {
+                        transitionEpoch = identity.TransitionEpoch,
+                        scopeId = scope.ScopeId,
+                        previousTransitionEpoch = scope.TransitionEpoch
+                    },
+                    tx).ConfigureAwait(false);
+                if (adopted != 1)
+                {
+                    throw new InvalidDataException(
+                        "Validated authoritative catalog stage scope could not be adopted.");
+                }
+            }
+
+            var markerCount = await conn.QuerySingleAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage staged
+WHERE staged.scope_id = @scopeId
+  AND staged.page_number = @PageNumber
+  AND staged.entity_kind = 'page'
+  AND staged.remote_id = ''
+  AND staged.has_more = @hasMore;",
+                new
+                {
+                    scopeId = scope.ScopeId,
+                    identity.PageNumber,
+                    hasMore = stage.HasMore ? 1 : 0
+                },
+                tx).ConfigureAwait(false);
+            if (markerCount != 1)
+            {
+                throw new InvalidDataException(
+                    "Validated authoritative catalog stage page is missing or ambiguous.");
+            }
         }
 
         private static async Task<long> EnsureAuthoritativeStageScopeAsync(
@@ -1600,6 +1686,12 @@ WHERE barcode IN (
                 RowsAffected = rowsAffected,
                 StageCommandCount = stageCommandCount
             };
+        }
+
+        private sealed class CatalogAuthoritativeStageScopeRow
+        {
+            public long ScopeId { get; set; }
+            public long TransitionEpoch { get; set; }
         }
 
         private static async Task<int> FillTempRelinkIdsAsync(
@@ -2539,6 +2631,7 @@ FROM staged;
     {
         public bool AuthoritativeFullRefresh { get; set; }
         public CatalogAuthoritativeStagePage AuthoritativeStagePage { get; set; }
+        public bool ReuseValidatedAuthoritativeStagePage { get; set; }
         public IReadOnlyList<RemoteCatalogCategoryWrite> Categories { get; set; } =
             Array.Empty<RemoteCatalogCategoryWrite>();
         public IReadOnlyList<RemoteCatalogCategoryTombstoneWrite> CategoryTombstones { get; set; } =

@@ -62,7 +62,7 @@ $specMarkers = @(
     "SqlStatementCount",
     "page-local",
     "tx\.Commit\(\)",
-    "16 SQL commands",
+    "14 SQL commands",
     "18 SQL statements",
     "not a performance budget",
     "rollback"

@@ -279,6 +279,15 @@ if ($batchRepository -notmatch "AddStageOccurrences" -or
 } else {
     Pass "authoritative staging preserves invalid/duplicate evidence"
 }
+if ($service -notmatch "ReuseValidatedAuthoritativeStagePage\s*=\s*authoritativeFullRefresh\s*&&\s*stagePage\s*!=\s*null" -or
+    $batchRepository -notmatch "RequireValidatedAuthoritativeStagePageAsync" -or
+    $batchRepository -notmatch "Validated authoritative catalog stage scope is missing or ambiguous" -or
+    $batchRepository -notmatch "UPDATE catalog_authoritative_stage_scope[\s\S]{0,180}SET transition_epoch" -or
+    $batchRepository -notmatch "Validated authoritative catalog stage page is missing or ambiguous") {
+    Fail "validated full-refresh stage reuse must adopt the fenced epoch and fail closed on missing scope/page evidence"
+} else {
+    Pass "validated full-refresh stage is adopted once and reused with fail-closed scope/page checks"
+}
 if ($service -notmatch "CatalogFullRefreshReconciler" -or $fullRefresh -notmatch "NOT EXISTS" -or $fullRefresh -notmatch "remote_product_id" -or $fullRefresh -notmatch "remote_category_id" -or $fullRefresh -notmatch "remote_supplier_id") { Fail "full_refresh reconciliation missing" } else { Pass "full_refresh reconciles remote rows absent from authoritative snapshot" }
 if ($service -notmatch "RequestFullRepairWhileBarrierHeldAsync" -or
     $service -notmatch "catalog_full_repair_requires_full_refresh" -or

@@ -12,6 +12,118 @@ namespace Win7POS.Core.Tests.Data;
 public sealed class RemoteCatalogBatchRepositoryTests
 {
     [TestMethod]
+    public async Task ApplyAsync_ReusesValidatedAuthoritativeStageWithoutRewritingIt()
+    {
+        using var db = TestDb.Create();
+        var stage = await CreateAuthoritativeStageAsync(db, "validated-reuse");
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        var batch = new RemoteCatalogBatch
+        {
+            AuthoritativeFullRefresh = true,
+            AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+            {
+                FullRunId = stage.FullRunId,
+                HasMore = false,
+                PageNumber = 1
+            },
+            Products = new[] { Product("product-validated-reuse", "REUSE-001", 5) }
+        };
+
+        await repository.StageAuthoritativePageAsync(
+            batch,
+            CancellationToken.None,
+            stage.Fence);
+        using (var mark = db.Factory.Open())
+        {
+            await mark.ExecuteAsync(@"
+UPDATE catalog_authoritative_id_stage
+SET staged_at = 123
+WHERE scope_id IN (
+  SELECT scope_id
+  FROM catalog_authoritative_stage_scope
+  WHERE full_run_id = @fullRunId
+);",
+                new { fullRunId = stage.FullRunId });
+        }
+
+        var generation = new OnlineSyncGeneration(
+            stage.Fence.GenerationId,
+            stage.Fence.PosSessionId,
+            stage.Fence.ShopDeviceId,
+            stage.ShopId,
+            stage.ShopCode);
+        var state = new CatalogShopStateRepository(db.Factory);
+        await state.RequestFullRepairAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Fence.ExpectedEpoch,
+            generation);
+        var repairedBinding = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            generation);
+        stage.Fence.ExpectedEpoch = repairedBinding.Epoch;
+        stage.Fence.ExpectedPreviousCursor = repairedBinding.Cursor;
+        stage.Fence.ExpectedPreviousMode = repairedBinding.Mode;
+
+        batch.ReuseValidatedAuthoritativeStagePage = true;
+        var applied = await repository.ApplyAsync(
+            batch,
+            CancellationToken.None,
+            stage.Fence);
+
+        Assert.AreEqual(1, applied.ProductsApplied);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(2L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage staged
+JOIN catalog_authoritative_stage_scope scope USING(scope_id)
+WHERE scope.full_run_id = @fullRunId
+  AND scope.transition_epoch = @transitionEpoch
+  AND staged.staged_at = 123;",
+            new
+            {
+                fullRunId = stage.FullRunId,
+                transitionEpoch = repairedBinding.Epoch
+            }));
+        Assert.AreEqual(1L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM products
+WHERE remote_product_id = 'product-validated-reuse'
+  AND is_active = 1;"));
+    }
+
+    [TestMethod]
+    public async Task ApplyAsync_ValidatedStageReuseFailsClosedWhenPageIsMissing()
+    {
+        using var db = TestDb.Create();
+        var stage = await CreateAuthoritativeStageAsync(db, "validated-missing");
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(() => repository.ApplyAsync(
+            new RemoteCatalogBatch
+            {
+                AuthoritativeFullRefresh = true,
+                AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+                {
+                    FullRunId = stage.FullRunId,
+                    HasMore = false,
+                    PageNumber = 1
+                },
+                ReuseValidatedAuthoritativeStagePage = true,
+                Products = new[] { Product("product-must-not-apply", "REUSE-MISSING-001", 1) }
+            },
+            CancellationToken.None,
+            stage.Fence));
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(0L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM products
+WHERE remote_product_id = 'product-must-not-apply';"));
+    }
+
+    [TestMethod]
     public async Task ApplyAsync_RetrySamePageIsIdempotent()
     {
         using var db = TestDb.Create();

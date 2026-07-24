@@ -287,6 +287,7 @@ public static class CatalogBatchPerformanceScenario
                                 HasMore = offset + count < rows,
                                 PageNumber = pageNumber
                             },
+                            ReuseValidatedAuthoritativeStagePage = true,
                             Categories = offset == 0
                                 ? categoryWrites
                                 : Array.Empty<RemoteCatalogCategoryWrite>(),

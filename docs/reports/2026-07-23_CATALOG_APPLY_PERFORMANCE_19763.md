@@ -9,7 +9,13 @@ Runtime under test: `net48`, x86, Windows, SQLite DELETE journal with `synchrono
 ## Change
 
 The page transaction, commit fence, validation, price-history semantics, and
-authoritative reconciliation remain unchanged. Page-scoped identities,
+authoritative reconciliation remain unchanged. A full refresh now adopts the
+already validated authoritative stage into the post-repair epoch and verifies
+the exact page marker before applying it. It no longer deletes and reinserts
+the same durable stage rows a second time during apply. Missing or ambiguous
+stage scope/page evidence fails closed inside the page transaction.
+
+Page-scoped identities,
 set-based product rows, remote price rows, and reference relink identities are
 now encoded as bounded parameterized JSON payloads and expanded with SQLite
 `json_each`. Product and authoritative payloads are split below the net48
@@ -36,14 +42,14 @@ by 20 measured full-refresh samples on the same host with 19,763 products,
 19,763 prices, and page size 1,000.
 
 - Exactness: 20/20 `Verified`; products 19,763; prices 19,763; pending 0
-- p50: 3,058.202 ms
-- p90: 3,081.521 ms
-- p95: 3,114.069 ms
-- Maximum: 3,118.485 ms
-- Signed-host peak working set: 106,496,000 bytes
-- Signed-host peak private bytes: 82,554,880 bytes
-- Dispatcher median maximum delay: 24.357 ms
-- Dispatcher maximum delay: 28.865 ms
+- p50: 3,730.046 ms
+- p90: 3,865.859 ms
+- p95: 3,912.935 ms
+- Maximum: 3,916.935 ms
+- Peak working set: 57,651,200 bytes
+- Peak private bytes: 41,181,184 bytes
+- Dispatcher median maximum delay: 19.592 ms
+- Dispatcher maximum delay: 21.933 ms
 - Maximum Gen2 collections: 1
 - Context SQL commands: 103 per sample
 - Relink identity staging commands: 20 per sample
@@ -52,14 +58,11 @@ by 20 measured full-refresh samples on the same host with 19,763 products,
 
 Measured elapsed times in milliseconds:
 
-`3118.485, 3070.855, 3051.300, 3050.920, 3051.092, 3114.069, 3081.521, 3020.353, 3030.451, 3058.312, 3070.163, 3077.740, 3069.004, 3079.318, 3062.730, 3050.338, 3050.652, 3040.410, 3052.031, 3058.091`
+`3565.088, 3853.925, 3728.876, 3287.201, 3695.743, 3776.209, 3714.041, 3790.225, 3767.159, 3916.935, 3636.871, 3737.191, 3809.263, 3731.216, 3559.237, 3620.461, 3912.935, 3714.607, 3865.859, 3705.587`
 
-Local Windows Application Control blocks the newly rebuilt unsigned benchmark
-apphost. The stable-path timing rerun therefore loaded the same net48/x86
-assemblies in the signed 32-bit Windows PowerShell host. Its absolute process
-memory includes that host and is not apphost-comparable; the exact-head GitHub
-workflow executes the apphost directly and is authoritative for both time and
-memory gates.
+These measurements executed the rebuilt net48/x86 benchmark apphost directly.
+The exact-head GitHub workflow remains authoritative for the remote 15-second
+release gate.
 
 ## Bounded-path checks
 
@@ -73,12 +76,12 @@ memory gates.
 - 100,000 net48/x86: `Verified`; products/prices 100,000; pending 0;
   authoritative staging rows after cleanup 0; 100 relink staging commands;
   503 context commands; 700 price commands / 1,800 statements;
-  maximum Gen2 collections 2; signed-host peak working set 107,847,680 bytes;
-  signed-host peak private bytes 82,968,576 bytes; dispatcher maximum 28.836 ms
+  Gen2 collections 8; peak working set 57,958,400 bytes;
+  peak private bytes 40,656,896 bytes; dispatcher maximum 22.231 ms
 
 ## Regression evidence
 
-- Core/Data: 614 passed, 0 failed, 0 skipped
+- Core/Data: 616 passed, 0 failed, 0 skipped
 - Canonical gates: 44/44
 - WPF Release net48/x86: 0 warnings, 0 errors
 - CLI self-test: PASS

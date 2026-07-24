@@ -1711,6 +1711,8 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 AuthoritativeFullRefresh = authoritativeFullRefresh,
                 AuthoritativeStagePage = stagePage,
+                ReuseValidatedAuthoritativeStagePage =
+                    authoritativeFullRefresh && stagePage != null,
                 Categories = (catalog.Categories ?? Array.Empty<PosCatalogCategoryResponse>())
                     .Select(row => row == null ? null : new RemoteCatalogCategoryWrite
                     {
