@@ -226,7 +226,7 @@ if ([string]::IsNullOrWhiteSpace($testReceiptBody) -or
 
 if ($workflow -match 'ReceiptShopInfo\s+receiptShopSnapshot\s*=\s*null' -and
     $workflow -match 'receiptShopSnapshot\s*\?\?' -and
-    $posVm -match 'CompleteSaleAsync\([\s\S]{0,240}draft\.ShopInfo') {
+    $posVm -match 'CompleteSaleAsync\([\s\S]{0,420}draft\.ShopInfo') {
     Pass "payment freezes the shop snapshot used by completed-sale receipt output"
 } else {
     Fail "payment preview and completed-sale receipt must use the same shop snapshot"

@@ -162,9 +162,9 @@ $catalogBarrier = Index-OrFail $restoreBody "new CatalogShopTransitionBarrier" "
 $generationTombstone = Index-OrFail $restoreBody ".ResetForRestoreAsync(" "restore must install an inactive generation tombstone"
 $catalogReviewReset = Index-OrFail $restoreBody ".ResetForRestoreReviewWhileBarrierHeldAsync(" "restore must reset catalog review state"
 $restoreAudit = Index-OrFail $restoreBody "_audit.AppendAsync(" "restore must persist its audit record"
-$authorizationInvalidate = Index-OrFail $restoreBody ".InvalidateAuthorizationState();" "restore must invalidate process authorization state"
+$authorizationInvalidate = Index-OrFail $restoreBody ".InvalidateAuthorizationStateWhileMaintenanceHeld();" "restore must invalidate process authorization state"
 $installedMarker = Index-OrFail $restoreBody "restoreInstalled = true" "restore success marker missing"
-$generationRevoke = Index-OrFail $restoreBody "PosOnlineSyncRevocationLatch.Revoke(invalidatedGeneration)" "restore must latch the invalidated generation"
+$generationRevoke = Index-OrFail $restoreBody "PosOnlineSyncRevocationLatch.RevokeWhileMaintenanceHeld(" "restore must latch the invalidated generation"
 $trustedClear = Index-OrFail $restoreBody "trustedDeviceStore.Clear()" "restore must clear all persisted trust"
 if ($authorizationMaintenance -gt $syncStop -or $syncStop -gt $trustedCapture -or
     $trustedCapture -gt $catalogBarrier -or $catalogBarrier -gt $generationTombstone -or

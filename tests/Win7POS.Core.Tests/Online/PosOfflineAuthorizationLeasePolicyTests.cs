@@ -142,6 +142,65 @@ public sealed class PosOfflineAuthorizationLeasePolicyTests
     }
 
     [TestMethod]
+    public void Evaluate_UsesMonotonicLowerBoundWhenWallClockIsFrozen()
+    {
+        var authoritativeExpiry = ServerContact.AddMilliseconds(200);
+        var frozenHighWater = ServerContact.AddMilliseconds(50);
+        var session = Session(ServerContact.AddHours(12));
+        session.EffectiveOfflineAuthorizationExpiresAt =
+            authoritativeExpiry.ToString("O");
+
+        var decision = PosOfflineAuthorizationLeasePolicy.Evaluate(
+            session,
+            LocalReceipt.AddMilliseconds(50),
+            frozenHighWater,
+            authoritativeExpiry);
+
+        Assert.IsFalse(decision.Allowed);
+        Assert.AreEqual("offline_lease_expired", decision.Code);
+        Assert.AreEqual(authoritativeExpiry, decision.EstimatedServerNow);
+    }
+
+    [TestMethod]
+    public void Evaluate_AllowsEqualWallHighWaterBeforeMonotonicExpiry()
+    {
+        var frozenHighWater = ServerContact.AddMilliseconds(50);
+        var monotonicLowerBound = ServerContact.AddMilliseconds(75);
+        var session = Session(ServerContact.AddHours(12));
+        session.EffectiveOfflineAuthorizationExpiresAt =
+            ServerContact.AddMilliseconds(200).ToString("O");
+
+        var decision = PosOfflineAuthorizationLeasePolicy.Evaluate(
+            session,
+            LocalReceipt.AddMilliseconds(50),
+            frozenHighWater,
+            monotonicLowerBound);
+
+        Assert.IsTrue(decision.Allowed);
+        Assert.AreEqual(monotonicLowerBound, decision.EstimatedServerNow);
+        Assert.AreEqual(frozenHighWater, decision.WallEstimatedServerNow);
+    }
+
+    [TestMethod]
+    public void Evaluate_WallRollbackStillDeniesWithMonotonicLowerBound()
+    {
+        var wallHighWater = ServerContact.AddMilliseconds(50);
+        var session = Session(ServerContact.AddHours(12));
+
+        var decision = PosOfflineAuthorizationLeasePolicy.Evaluate(
+            session,
+            LocalReceipt.AddMilliseconds(49),
+            wallHighWater,
+            ServerContact.AddMilliseconds(100));
+
+        Assert.IsFalse(decision.Allowed);
+        Assert.AreEqual("clock_rollback", decision.Code);
+        Assert.AreEqual(
+            ServerContact.AddMilliseconds(49),
+            decision.WallEstimatedServerNow);
+    }
+
+    [TestMethod]
     public void Evaluate_DeniesPersistedSessionWithoutAuthoritativeOfflineExpiry()
     {
         var session = Session(ServerContact.AddHours(12));

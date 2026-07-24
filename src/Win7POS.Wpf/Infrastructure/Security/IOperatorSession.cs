@@ -1,5 +1,7 @@
+using System;
 using System.Threading.Tasks;
 using Win7POS.Core.Online;
+using Win7POS.Core.Pos;
 using Win7POS.Core.Security;
 
 namespace Win7POS.Wpf.Infrastructure.Security
@@ -10,6 +12,11 @@ namespace Win7POS.Wpf.Infrastructure.Security
         Failed,
         LockedOut,
         AuthorizationExpired
+    }
+
+    internal interface IPosAuthorizationUseLease : IDisposable
+    {
+        SaleAuthorizationCommitGuard CommitGuard { get; }
     }
 
     public interface IOperatorSession

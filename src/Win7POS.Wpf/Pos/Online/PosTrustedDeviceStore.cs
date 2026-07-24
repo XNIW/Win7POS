@@ -1,4 +1,6 @@
 using System;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
@@ -16,9 +18,40 @@ namespace Win7POS.Wpf.Pos.Online
         private const int PreviousFormatVersion = 3;
         private const int OlderFormatVersion = 2;
         private const int LegacyFormatVersion = 1;
+        private const int MaximumTrustedDeviceStateBytes = 64 * 1024;
+        private const int MaximumBindingValueCharacters = 16 * 1024;
+        private const int MaximumBindingMaterialCharacters = 128 * 1024;
         private static readonly object StateGate = new object();
         private static readonly string ProcessAuthorizationScope =
             CreateProcessAuthorizationScope();
+        private static readonly string DefaultMonotonicClockDomain =
+            "system-stopwatch";
+        private static ProcessAuthorizationClockAnchor
+            _processAuthorizationClockAnchor;
+        private readonly Func<long> _monotonicTimestamp;
+        private readonly long _monotonicFrequency;
+        private readonly string _monotonicClockDomain;
+
+        public PosTrustedDeviceStore()
+            : this(
+                Stopwatch.GetTimestamp,
+                Stopwatch.Frequency,
+                DefaultMonotonicClockDomain)
+        {
+        }
+
+        internal PosTrustedDeviceStore(
+            Func<long> monotonicTimestamp,
+            long monotonicFrequency,
+            string monotonicClockDomain)
+        {
+            _monotonicTimestamp = monotonicTimestamp ??
+                throw new ArgumentNullException(nameof(monotonicTimestamp));
+            _monotonicFrequency = monotonicFrequency;
+            _monotonicClockDomain =
+                (monotonicClockDomain ?? string.Empty).Trim();
+        }
+
         public string TrustedDeviceFilePath => Path.Combine(AppPaths.DataDirectory, "pos-trusted-device.json");
 
         public bool HasStoredState()
@@ -96,6 +129,42 @@ namespace Win7POS.Wpf.Pos.Online
             }
         }
 
+        internal bool TryGetReusableGenerationId(
+            PosFirstLoginResponse response,
+            string expectedCurrentFingerprint,
+            out string generationId)
+        {
+            generationId = string.Empty;
+            if (response?.Device == null ||
+                response.Session == null ||
+                response.Shop == null ||
+                response.Staff == null ||
+                string.IsNullOrWhiteSpace(expectedCurrentFingerprint))
+            {
+                return false;
+            }
+
+            lock (StateGate)
+            {
+                if (!TryReadState(out var state, out var session) ||
+                    state.FormatVersion != CurrentFormatVersion ||
+                    !PosOnlineSyncSupervisorHost.TryCreateGeneration(
+                        session,
+                        out var generation) ||
+                    !string.Equals(
+                        generation.Fingerprint,
+                        expectedCurrentFingerprint.Trim(),
+                        StringComparison.Ordinal) ||
+                    !IsExactFirstLoginResponse(session, response))
+                {
+                    return false;
+                }
+
+                generationId = generation.GenerationId;
+                return true;
+            }
+        }
+
         public bool HasCredentialStamp(
             OnlineSyncGeneration expectedGeneration,
             string expectedCredentialStamp)
@@ -118,9 +187,59 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 throw new ArgumentNullException(nameof(response));
             }
+            var receiptClock = CaptureOnlineReceiptClock(
+                !string.IsNullOrWhiteSpace(
+                    response.EffectiveOfflineAuthorizationExpiresAt));
+            SaveFirstLogin(response, generationId, receiptClock);
+        }
+
+        internal PosAuthoritativeReceiptClock CaptureOnlineReceiptClock(
+            bool requireMonotonicClock)
+        {
+            var receiptTimestamp = 0L;
+            if (requireMonotonicClock &&
+                !TryCaptureMonotonicTimestamp(out receiptTimestamp))
+            {
+                throw new InvalidDataException(
+                    "Invalid POS authorization lease: trusted_time_continuity_lost");
+            }
+
+            return new PosAuthoritativeReceiptClock(
+                DateTimeOffset.UtcNow,
+                receiptTimestamp,
+                _monotonicFrequency,
+                _monotonicClockDomain);
+        }
+
+        internal void SaveFirstLogin(
+            PosFirstLoginResponse response,
+            string generationId,
+            PosAuthoritativeReceiptClock receiptClock)
+        {
+            if (response == null || response.Device == null || response.Session == null)
+            {
+                throw new ArgumentNullException(nameof(response));
+            }
+            if (receiptClock == null)
+                throw new ArgumentNullException(nameof(receiptClock));
+
+            var requiresOfflineClock =
+                !string.IsNullOrWhiteSpace(
+                    response.EffectiveOfflineAuthorizationExpiresAt);
+            if (requiresOfflineClock &&
+                (receiptClock.Frequency != _monotonicFrequency ||
+                 !string.Equals(
+                     receiptClock.ClockDomain,
+                     _monotonicClockDomain,
+                     StringComparison.Ordinal)))
+            {
+                throw new InvalidDataException(
+                    "Invalid POS authorization lease: trusted_time_continuity_lost");
+            }
             ReceiptShopMetadataPolicy.EnsureValidRemoteShop(response.Shop);
 
-            var localReceiptAt = DateTimeOffset.UtcNow;
+            var localReceiptAt = receiptClock.LocalReceiptAt;
+            var receiptTimestamp = receiptClock.MonotonicTimestamp;
             generationId = (generationId ?? string.Empty).Trim();
             if (generationId.Length == 0 || generationId.Length > 64)
                 throw new ArgumentException("A bounded generation ID is required.", nameof(generationId));
@@ -154,7 +273,20 @@ namespace Win7POS.Wpf.Pos.Online
 
             lock (StateGate)
             {
+                ProcessAuthorizationClockAnchor preparedClockAnchor = null;
+                if (candidate.OfflineAuthorizationAttested &&
+                    !TryPrepareProcessAuthorizationClockAnchor(
+                        candidate,
+                        receiptTimestamp,
+                        out preparedClockAnchor,
+                        out var clockFailureCode))
+                {
+                    throw new InvalidDataException(
+                        "Invalid POS authorization lease: " +
+                        clockFailureCode);
+                }
                 SaveState(state);
+                _processAuthorizationClockAnchor = preparedClockAnchor;
             }
         }
 
@@ -201,6 +333,12 @@ namespace Win7POS.Wpf.Pos.Online
                 : response.Session.SessionToken;
 
             var localReceiptAt = DateTimeOffset.UtcNow;
+            var receiptTimestamp = 0L;
+            if (expectedSession.OfflineAuthorizationAttested &&
+                !TryCaptureMonotonicTimestamp(out receiptTimestamp))
+            {
+                return false;
+            }
             var candidate = new PosTrustedDeviceSession
             {
                 EffectiveOfflineAuthorizationExpiresAt =
@@ -253,7 +391,18 @@ namespace Win7POS.Wpf.Pos.Online
                 };
 
                 EnsureFreshOnlineReceipt(refreshedCandidate, localReceiptAt);
+                ProcessAuthorizationClockAnchor preparedClockAnchor = null;
+                if (refreshedCandidate.OfflineAuthorizationAttested &&
+                    !TryPrepareProcessAuthorizationClockAnchor(
+                        refreshedCandidate,
+                        receiptTimestamp,
+                        out preparedClockAnchor,
+                        out _))
+                {
+                    return false;
+                }
                 SaveState(CreateStoredState(refreshedCandidate));
+                _processAuthorizationClockAnchor = preparedClockAnchor;
                 return TryReadState(out _, out refreshedSession);
             }
         }
@@ -277,6 +426,7 @@ namespace Win7POS.Wpf.Pos.Online
             lock (StateGate)
             {
                 DeleteStateBestEffort();
+                _processAuthorizationClockAnchor = null;
             }
         }
 
@@ -293,8 +443,211 @@ namespace Win7POS.Wpf.Pos.Online
                     return false;
                 }
 
-                return DeleteStateBestEffort();
+                var cleared = DeleteStateBestEffort();
+                _processAuthorizationClockAnchor = null;
+                return cleared;
             }
+        }
+
+        internal bool TryGetProcessAuthorizationTrustedNow(
+            OnlineSyncGeneration expectedGeneration,
+            out DateTimeOffset trustedServerNow)
+        {
+            trustedServerNow = default;
+            if (expectedGeneration == null)
+                return false;
+
+            lock (StateGate)
+            {
+                var anchor = _processAuthorizationClockAnchor;
+                if (anchor == null ||
+                    !string.Equals(
+                        anchor.GenerationFingerprint,
+                        expectedGeneration.Fingerprint,
+                        StringComparison.Ordinal) ||
+                    !string.Equals(
+                        anchor.ClockDomain,
+                        _monotonicClockDomain,
+                        StringComparison.Ordinal) ||
+                    anchor.Frequency != _monotonicFrequency ||
+                    !TryCaptureMonotonicTimestamp(out var currentTimestamp))
+                {
+                    return false;
+                }
+
+                return TryAdvanceServerAnchor(
+                    anchor.ServerAnchor,
+                    anchor.MonotonicTimestamp,
+                    currentTimestamp,
+                    anchor.Frequency,
+                    out trustedServerNow);
+            }
+        }
+
+        private bool TryPrepareProcessAuthorizationClockAnchor(
+            PosTrustedDeviceSession session,
+            long receiptTimestamp,
+            out ProcessAuthorizationClockAnchor prepared,
+            out string failureCode)
+        {
+            prepared = null;
+            failureCode = "trusted_time_continuity_lost";
+            if (session == null ||
+                !session.OfflineAuthorizationAttested ||
+                _monotonicFrequency <= 0 ||
+                string.IsNullOrWhiteSpace(_monotonicClockDomain) ||
+                !TryParseUtc(session.LastOkServerAt, out var serverAnchor) ||
+                !TryParseUtc(session.LastOkLocalAt, out var localReceiptAt) ||
+                !TryCreateGenerationFingerprint(
+                    session,
+                    out var generationFingerprint) ||
+                !TryCaptureMonotonicTimestamp(out var currentTimestamp) ||
+                !TryAdvanceServerAnchor(
+                    serverAnchor,
+                    receiptTimestamp,
+                    currentTimestamp,
+                    _monotonicFrequency,
+                    out serverAnchor))
+            {
+                return false;
+            }
+
+            var existing = _processAuthorizationClockAnchor;
+            if (existing != null &&
+                string.Equals(
+                    existing.GenerationFingerprint,
+                    generationFingerprint,
+                    StringComparison.Ordinal))
+            {
+                if (!string.Equals(
+                        existing.ClockDomain,
+                        _monotonicClockDomain,
+                        StringComparison.Ordinal) ||
+                    existing.Frequency != _monotonicFrequency ||
+                    !TryAdvanceServerAnchor(
+                        existing.ServerAnchor,
+                        existing.MonotonicTimestamp,
+                        currentTimestamp,
+                        existing.Frequency,
+                        out var existingTrustedNow))
+                {
+                    return false;
+                }
+
+                if (existingTrustedNow > serverAnchor)
+                    serverAnchor = existingTrustedNow;
+            }
+
+            var decision = PosOfflineAuthorizationLeasePolicy.Evaluate(
+                session,
+                localReceiptAt,
+                null,
+                serverAnchor);
+            if (!decision.Allowed)
+            {
+                failureCode = decision.Code;
+                return false;
+            }
+
+            prepared = new ProcessAuthorizationClockAnchor(
+                generationFingerprint,
+                decision.EstimatedServerNow.Value,
+                currentTimestamp,
+                _monotonicFrequency,
+                _monotonicClockDomain);
+            return true;
+        }
+
+        private bool TryCaptureMonotonicTimestamp(out long timestamp)
+        {
+            timestamp = 0;
+            if (_monotonicFrequency <= 0)
+                return false;
+
+            try
+            {
+                timestamp = _monotonicTimestamp();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryAdvanceServerAnchor(
+            DateTimeOffset serverAnchor,
+            long anchorTimestamp,
+            long currentTimestamp,
+            long frequency,
+            out DateTimeOffset trustedServerNow)
+        {
+            trustedServerNow = default;
+            if (frequency <= 0 || currentTimestamp < anchorTimestamp)
+                return false;
+
+            try
+            {
+                var elapsedCounterTicks =
+                    (decimal)currentTimestamp - anchorTimestamp;
+                var elapsedTimeSpanTicks = decimal.Truncate(
+                    elapsedCounterTicks *
+                    TimeSpan.TicksPerSecond /
+                    frequency);
+                if (elapsedTimeSpanTicks < 0 ||
+                    elapsedTimeSpanTicks > long.MaxValue)
+                {
+                    return false;
+                }
+
+                trustedServerNow = serverAnchor.AddTicks(
+                    decimal.ToInt64(elapsedTimeSpanTicks));
+                return true;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return false;
+            }
+            catch (OverflowException)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryCreateGenerationFingerprint(
+            PosTrustedDeviceSession session,
+            out string fingerprint)
+        {
+            fingerprint = string.Empty;
+            try
+            {
+                fingerprint = new OnlineSyncGeneration(
+                    session.GenerationId,
+                    session.PosSessionId,
+                    session.ShopDeviceId,
+                    session.ShopId,
+                    session.ShopCode,
+                    session.StaffId,
+                    session.StaffCredentialVersion).Fingerprint;
+                return !string.IsNullOrWhiteSpace(fingerprint);
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+        }
+
+        private static bool TryParseUtc(
+            string value,
+            out DateTimeOffset parsed)
+        {
+            return DateTimeOffset.TryParse(
+                value,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces |
+                    DateTimeStyles.AssumeUniversal |
+                    DateTimeStyles.AdjustToUniversal,
+                out parsed);
         }
 
         private bool DeleteStateBestEffort()
@@ -323,8 +676,13 @@ namespace Win7POS.Wpf.Pos.Online
                 if (!File.Exists(TrustedDeviceFilePath))
                     return false;
 
-                state = Deserialize<StoredTrustedDeviceState>(
-                    File.ReadAllText(TrustedDeviceFilePath, Encoding.UTF8));
+                if (!TryReadBoundedUtf8(
+                        TrustedDeviceFilePath,
+                        out var stateJson))
+                {
+                    return false;
+                }
+                state = Deserialize<StoredTrustedDeviceState>(stateJson);
                 if (state == null ||
                     (state.FormatVersion != CurrentFormatVersion &&
                      state.FormatVersion != PreviousFormatVersion &&
@@ -396,6 +754,73 @@ namespace Win7POS.Wpf.Pos.Online
                     StringComparison.Ordinal) &&
                 expected.TrustedStateFormatVersion ==
                     current.TrustedStateFormatVersion;
+        }
+
+        private static bool IsExactFirstLoginResponse(
+            PosTrustedDeviceSession session,
+            PosFirstLoginResponse response)
+        {
+            return session != null &&
+                response?.Device != null &&
+                response.Session != null &&
+                response.Shop != null &&
+                response.Staff != null &&
+                FixedTimeEquals(
+                    session.DeviceToken,
+                    response.TrustedDeviceToken) &&
+                FixedTimeEquals(
+                    session.SessionToken,
+                    response.Session.SessionToken) &&
+                string.Equals(
+                    session.EffectiveOfflineAuthorizationExpiresAt,
+                    response.EffectiveOfflineAuthorizationExpiresAt,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    session.LastOkServerAt,
+                    response.ServerTime,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    session.PosSessionId,
+                    response.Session.PosSessionId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    session.SessionExpiresAt,
+                    response.Session.ExpiresAt,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    session.ShopCode,
+                    response.Shop.ShopCode,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    session.ShopId,
+                    response.Shop.ShopId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    session.ShopName,
+                    response.Shop.ShopName,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    session.ShopDeviceId,
+                    response.Device.ShopDeviceId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    session.StaffCode,
+                    response.Staff.StaffCode,
+                    StringComparison.Ordinal) &&
+                session.StaffCredentialVersion ==
+                    response.Staff.CredentialVersion &&
+                string.Equals(
+                    session.StaffDisplayName,
+                    response.Staff.DisplayName,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    session.StaffId,
+                    response.Staff.StaffId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    session.StaffRoleKey,
+                    response.Staff.RoleKey,
+                    StringComparison.Ordinal);
         }
 
         private static string ComputeCredentialStamp(PosTrustedDeviceSession session)
@@ -513,6 +938,29 @@ namespace Win7POS.Wpf.Pos.Online
             }
         }
 
+        private sealed class ProcessAuthorizationClockAnchor
+        {
+            public ProcessAuthorizationClockAnchor(
+                string generationFingerprint,
+                DateTimeOffset serverAnchor,
+                long monotonicTimestamp,
+                long frequency,
+                string clockDomain)
+            {
+                GenerationFingerprint = generationFingerprint ?? string.Empty;
+                ServerAnchor = serverAnchor;
+                MonotonicTimestamp = monotonicTimestamp;
+                Frequency = frequency;
+                ClockDomain = clockDomain ?? string.Empty;
+            }
+
+            public string GenerationFingerprint { get; }
+            public DateTimeOffset ServerAnchor { get; }
+            public long MonotonicTimestamp { get; }
+            public long Frequency { get; }
+            public string ClockDomain { get; }
+        }
+
         private static string ComputeSecretStamp(PosTrustedDeviceSession session)
         {
             var material = new StringBuilder();
@@ -526,6 +974,13 @@ namespace Win7POS.Wpf.Pos.Online
             string value)
         {
             value = value ?? string.Empty;
+            if (value.Length > MaximumBindingValueCharacters ||
+                builder.Length >
+                    MaximumBindingMaterialCharacters - value.Length - 32)
+            {
+                throw new InvalidDataException(
+                    "Trusted authorization binding exceeds the supported size.");
+            }
             builder.Append(value.Length);
             builder.Append(':');
             builder.Append(value);
@@ -554,7 +1009,53 @@ namespace Win7POS.Wpf.Pos.Online
         private void SaveState(StoredTrustedDeviceState state)
         {
             AppPaths.EnsureDataDirectories();
-            WriteAllTextAtomic(TrustedDeviceFilePath, Serialize(state));
+            var serialized = Serialize(state);
+            if (Encoding.UTF8.GetByteCount(serialized) >
+                MaximumTrustedDeviceStateBytes)
+            {
+                throw new InvalidDataException(
+                    "Trusted-device state exceeds the supported size.");
+            }
+            WriteAllTextAtomic(TrustedDeviceFilePath, serialized);
+        }
+
+        private static bool TryReadBoundedUtf8(
+            string path,
+            out string text)
+        {
+            text = null;
+            var bytes = new byte[MaximumTrustedDeviceStateBytes + 1];
+            using (var stream = new FileStream(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read))
+            {
+                var count = 0;
+                while (count < bytes.Length)
+                {
+                    var read = stream.Read(
+                        bytes,
+                        count,
+                        bytes.Length - count);
+                    if (read <= 0)
+                        break;
+                    count += read;
+                }
+                if (count > MaximumTrustedDeviceStateBytes ||
+                    stream.ReadByte() >= 0)
+                {
+                    return false;
+                }
+
+                text = new UTF8Encoding(
+                        encoderShouldEmitUTF8Identifier: false,
+                        throwOnInvalidBytes: true)
+                    .GetString(bytes, 0, count);
+                if (text.Length > 0 && text[0] == '\uFEFF')
+                    text = text.Substring(1);
+                return true;
+            }
         }
 
         private static void WriteAllTextAtomic(string path, string text)
@@ -694,4 +1195,23 @@ namespace Win7POS.Wpf.Pos.Online
         }
     }
 
+    internal sealed class PosAuthoritativeReceiptClock
+    {
+        public PosAuthoritativeReceiptClock(
+            DateTimeOffset localReceiptAt,
+            long monotonicTimestamp,
+            long frequency,
+            string clockDomain)
+        {
+            LocalReceiptAt = localReceiptAt;
+            MonotonicTimestamp = monotonicTimestamp;
+            Frequency = frequency;
+            ClockDomain = clockDomain ?? string.Empty;
+        }
+
+        public DateTimeOffset LocalReceiptAt { get; }
+        public long MonotonicTimestamp { get; }
+        public long Frequency { get; }
+        public string ClockDomain { get; }
+    }
 }

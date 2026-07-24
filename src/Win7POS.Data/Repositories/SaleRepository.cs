@@ -55,8 +55,26 @@ namespace Win7POS.Data.Repositories
                 _salesSyncOutbox);
         }
 
-        public Task<long> InsertSaleAsync(Sale sale, IReadOnlyList<SaleLine> lines) =>
+        internal Task<long> InsertSaleAsync(
+            Sale sale,
+            IReadOnlyList<SaleLine> lines) =>
             _transactionWriter.InsertSaleAsync(sale, lines);
+
+        public Task<long> InsertAuthorizedSaleAsync(
+            Sale sale,
+            IReadOnlyList<SaleLine> lines,
+            SaleAuthorizationCommitGuard authorizationCommitGuard)
+        {
+            if (authorizationCommitGuard == null)
+            {
+                throw new ArgumentNullException(
+                    nameof(authorizationCommitGuard));
+            }
+            return _transactionWriter.InsertSaleAsync(
+                sale,
+                lines,
+                authorizationCommitGuard);
+        }
 
         public Task<IReadOnlyList<Sale>> LastSalesAsync(int take = 5) =>
             _reads.LastSalesAsync(take);

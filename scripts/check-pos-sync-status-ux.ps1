@@ -119,7 +119,7 @@ if ($catalogOutbox -notmatch "InProgress" -or $catalogOutbox -notmatch "PendingO
 if ($uxCopy -notmatch "Sync in corso" -or $reader -notmatch "IsSyncing" -or $salesSync -notmatch "pos\.sales_sync\.in_progress") { Fail "syncing status must be visible while background sync runs" } else { Pass "syncing status visible" }
 if ($salesSync -notmatch "Interlocked\.CompareExchange" -or $salesSync -notmatch "Sales sync skipped: already running") { Fail "sales sync service must guard concurrent runs" } else { Pass "sales sync concurrency guard present" }
 if ($salesSync -notmatch "pos\.sales_sync\.last_success_at" -or $salesSync -notmatch "pos\.sales_sync\.last_error") { Fail "sales sync diagnostics settings missing" } else { Pass "sales sync diagnostics settings present" }
-if ($workflow -notmatch 'InsertSaleAsync\([\s\S]{0,220}QueueSalesOutboxSyncNoThrow\(\)' -or
+if ($workflow -notmatch 'InsertAuthorizedSaleAsync\([\s\S]{0,2500}QueueSalesOutboxSyncNoThrow\(\)' -or
     $workflow -notmatch 'QueueSalesOutboxSyncNoThrow[\s\S]{0,260}PosOnlineSyncSignalBus\.Signal\([\s\S]{0,120}OnlineSyncLane\.SalesOutbox,[\s\S]{0,100}OnlineSyncLaneTrigger\.LocalCommit' -or
     $posViewModel -match "await _service\.TrySyncPendingSalesAsync\(\)\.ConfigureAwait\(true\)") { Fail "payment path must signal sales sync without awaiting remote sync" } else { Pass "payment path signals sales sync without awaiting remote sync" }
 if (-not $unresolvedFacadeDelegates -or

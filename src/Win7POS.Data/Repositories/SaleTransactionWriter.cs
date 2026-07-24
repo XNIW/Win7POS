@@ -36,19 +36,51 @@ namespace Win7POS.Data.Repositories
             _salesSyncOutbox = salesSyncOutbox;
         }
 
-        internal async Task<long> InsertSaleAsync(Sale sale, IReadOnlyList<SaleLine> lines)
+        internal async Task<long> InsertSaleAsync(
+            Sale sale,
+            IReadOnlyList<SaleLine> lines,
+            SaleAuthorizationCommitGuard authorizationCommitGuard = null)
         {
             if (sale == null) throw new ArgumentNullException(nameof(sale));
             if (lines == null) throw new ArgumentNullException(nameof(lines));
             SalesReceiptContentPolicy.EnsureValid(sale, lines);
             ReceiptDocumentPolicy.EnsureValidSnapshotJson(sale.ReceiptShopSnapshotJson);
+            ValidateAuthorizationBinding(sale, authorizationCommitGuard);
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
             using var tx = conn.BeginTransaction();
+            var transactionCommitted = false;
+            Action commitTransaction = () =>
+            {
+                tx.Commit();
+                transactionCommitted = true;
+            };
 
             try
             {
                 if (sale.Kind == 0)
                     sale.Kind = (int)SaleKind.Sale;
+
+                authorizationCommitGuard?.DemandStillValid();
+                var replaySaleId = await TryResolveExactSaleReplayAsync(
+                        conn,
+                        tx,
+                        sale,
+                        lines)
+                    .ConfigureAwait(false);
+                if (replaySaleId.HasValue)
+                {
+                    if (authorizationCommitGuard == null)
+                    {
+                        CommitExactSaleReplay(commitTransaction);
+                    }
+                    else
+                    {
+                        authorizationCommitGuard.CommitIfStillValid(
+                            () => CommitExactSaleReplay(
+                                commitTransaction));
+                    }
+                    return replaySaleId.Value;
+                }
 
                 if (sale.Kind == (int)SaleKind.Sale)
                 {
@@ -60,6 +92,7 @@ namespace Win7POS.Data.Repositories
                 await _reversalWriter.ValidateReversalBoundaryAsync(conn, tx, sale, lines)
                     .ConfigureAwait(false);
 
+                authorizationCommitGuard?.DemandStillValid();
                 var saleId = await conn.ExecuteScalarAsync<long>(@"
 INSERT INTO sales(code, createdAt, kind, related_sale_id, voided_by_sale_id, voided_at, reason, total, paidCash, paidCard, change, operator_id, receipt_shop_snapshot)
 VALUES(@Code, @CreatedAt, @Kind, @RelatedSaleId, @VoidedBySaleId, @VoidedAt, @Reason, @Total, @PaidCash, @PaidCard, @Change, @OperatorId, @ReceiptShopSnapshotJson);
@@ -77,13 +110,219 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
                 await ApplyLocalStockMovementsAsync(conn, tx, sale, lines).ConfigureAwait(false);
                 await EnqueueSalesSyncOutboxAsync(conn, tx, saleId, sale.ClientSaleId).ConfigureAwait(false);
 
-                tx.Commit();
+                if (authorizationCommitGuard == null)
+                {
+                    commitTransaction();
+                }
+                else
+                {
+                    authorizationCommitGuard.CommitIfStillValid(
+                        commitTransaction);
+                }
                 return saleId;
             }
             catch
             {
-                tx.Rollback();
+                if (!transactionCommitted)
+                {
+                    try
+                    {
+                        tx.Rollback();
+                    }
+                    catch
+                    {
+                        // Preserve the original failure. A COMMIT can be
+                        // durable even when SQLite reports an ambiguous error;
+                        // the exact identity is retried idempotently.
+                    }
+                }
                 throw;
+            }
+        }
+
+        private static void CommitExactSaleReplay(
+            Action commit)
+        {
+            commit();
+        }
+
+        private static async Task<long?> TryResolveExactSaleReplayAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            Sale sale,
+            IReadOnlyList<SaleLine> lines)
+        {
+            var existing = await connection.QuerySingleOrDefaultAsync<Sale>(@"
+SELECT
+  id AS Id,
+  client_sale_id AS ClientSaleId,
+  code AS Code,
+  createdAt AS CreatedAt,
+  kind AS Kind,
+  related_sale_id AS RelatedSaleId,
+  voided_by_sale_id AS VoidedBySaleId,
+  voided_at AS VoidedAt,
+  reason AS Reason,
+  total AS Total,
+  paidCash AS PaidCash,
+  paidCard AS PaidCard,
+  change AS Change,
+  operator_id AS OperatorId,
+  receipt_shop_snapshot AS ReceiptShopSnapshotJson
+FROM sales
+WHERE code = @Code
+LIMIT 1;",
+                    new { sale.Code },
+                    transaction)
+                .ConfigureAwait(false);
+            if (existing == null)
+                return null;
+
+            var existingLines = (await connection.QueryAsync<SaleLine>(@"
+SELECT
+  id AS Id,
+  saleId AS SaleId,
+  productId AS ProductId,
+  barcode AS Barcode,
+  name AS Name,
+  quantity AS Quantity,
+  unitPrice AS UnitPrice,
+  lineTotal AS LineTotal,
+  related_original_line_id AS RelatedOriginalLineId
+FROM sale_lines
+WHERE saleId = @saleId
+ORDER BY id;",
+                    new { saleId = existing.Id },
+                    transaction)
+                .ConfigureAwait(false)).AsList();
+            var outboxCount = await connection.ExecuteScalarAsync<long>(@"
+SELECT COUNT(*)
+FROM sales_sync_outbox
+WHERE sale_id = @saleId
+  AND client_sale_id = @clientSaleId;",
+                    new
+                    {
+                        saleId = existing.Id,
+                        clientSaleId = existing.ClientSaleId
+                    },
+                    transaction)
+                .ConfigureAwait(false);
+
+            if (!IsExactSaleReplay(existing, sale) ||
+                !IsExactLineReplay(existingLines, lines) ||
+                string.IsNullOrWhiteSpace(existing.ClientSaleId) ||
+                outboxCount != 1)
+            {
+                throw new InvalidOperationException(
+                    "The sale code already belongs to a different or incomplete sale.");
+            }
+
+            sale.Id = existing.Id;
+            sale.ClientSaleId = existing.ClientSaleId;
+            return existing.Id;
+        }
+
+        private static bool IsExactSaleReplay(
+            Sale existing,
+            Sale candidate)
+        {
+            return existing != null &&
+                candidate != null &&
+                string.Equals(
+                    existing.Code,
+                    candidate.Code,
+                    StringComparison.Ordinal) &&
+                existing.CreatedAt == candidate.CreatedAt &&
+                existing.Kind == candidate.Kind &&
+                existing.RelatedSaleId == candidate.RelatedSaleId &&
+                existing.VoidedBySaleId == candidate.VoidedBySaleId &&
+                existing.VoidedAt == candidate.VoidedAt &&
+                string.Equals(
+                    existing.Reason,
+                    candidate.Reason,
+                    StringComparison.Ordinal) &&
+                existing.Total == candidate.Total &&
+                existing.PaidCash == candidate.PaidCash &&
+                existing.PaidCard == candidate.PaidCard &&
+                existing.Change == candidate.Change &&
+                existing.OperatorId == candidate.OperatorId &&
+                string.Equals(
+                    existing.ReceiptShopSnapshotJson,
+                    candidate.ReceiptShopSnapshotJson,
+                    StringComparison.Ordinal);
+        }
+
+        private static bool IsExactLineReplay(
+            IReadOnlyList<SaleLine> existing,
+            IReadOnlyList<SaleLine> candidate)
+        {
+            if (existing == null ||
+                candidate == null ||
+                existing.Count != candidate.Count)
+            {
+                return false;
+            }
+
+            for (var index = 0; index < existing.Count; index++)
+            {
+                var left = existing[index];
+                var right = candidate[index];
+                if (left == null ||
+                    right == null ||
+                    left.ProductId != right.ProductId ||
+                    !string.Equals(
+                        left.Barcode,
+                        right.Barcode,
+                        StringComparison.Ordinal) ||
+                    !string.Equals(
+                        left.Name,
+                        right.Name,
+                        StringComparison.Ordinal) ||
+                    left.Quantity != right.Quantity ||
+                    left.UnitPrice != right.UnitPrice ||
+                    left.LineTotal !=
+                        right.Quantity * right.UnitPrice ||
+                    left.RelatedOriginalLineId !=
+                        right.RelatedOriginalLineId)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static void ValidateAuthorizationBinding(
+            Sale sale,
+            SaleAuthorizationCommitGuard authorizationCommitGuard)
+        {
+            if (authorizationCommitGuard == null)
+                return;
+            if (sale.Kind != 0 &&
+                sale.Kind != (int)SaleKind.Sale)
+            {
+                throw new InvalidOperationException(
+                    "The authorization-use token only permits ordinary sales.");
+            }
+            if (!sale.OperatorId.HasValue ||
+                sale.OperatorId.Value != authorizationCommitGuard.OperatorId ||
+                authorizationCommitGuard.OperatorId <= 0 ||
+                authorizationCommitGuard.AuthorizationEpoch < 0 ||
+                string.IsNullOrWhiteSpace(
+                    authorizationCommitGuard.GenerationFingerprint) ||
+                string.IsNullOrWhiteSpace(
+                    authorizationCommitGuard.GenerationId) ||
+                (string.IsNullOrWhiteSpace(
+                     authorizationCommitGuard.ShopId) &&
+                 string.IsNullOrWhiteSpace(
+                     authorizationCommitGuard.ShopCode)) ||
+                string.IsNullOrWhiteSpace(
+                    authorizationCommitGuard.ShopDeviceId) ||
+                string.IsNullOrWhiteSpace(
+                    authorizationCommitGuard.StaffId) ||
+                authorizationCommitGuard.StaffCredentialVersion < 0)
+            {
+                throw new InvalidOperationException(
+                    "The ordinary-sale authorization binding is incomplete.");
             }
         }
 

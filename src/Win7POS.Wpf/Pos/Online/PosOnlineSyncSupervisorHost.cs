@@ -150,12 +150,18 @@ namespace Win7POS.Wpf.Pos.Online
         internal async Task<OnlineSyncGeneration> ActivateAuthenticatedTrustAsync(
             PosFirstLoginResponse response,
             string generationId,
+            PosAuthoritativeReceiptClock authoritativeReceiptClock,
             PosAuthenticatedTrustTransition transition,
             Func<Task<IDisposable>> applyAuthorizedLocalTransitionAsync,
             Func<OnlineSyncGeneration, Task> persistAuthenticatedLocalStateAsync,
             CancellationToken cancellationToken = default)
         {
             if (response == null) throw new ArgumentNullException(nameof(response));
+            if (authoritativeReceiptClock == null)
+            {
+                throw new ArgumentNullException(
+                    nameof(authoritativeReceiptClock));
+            }
             ReceiptShopMetadataPolicy.EnsureValidRemoteShop(response.Shop);
             if (persistAuthenticatedLocalStateAsync == null)
             {
@@ -245,7 +251,10 @@ namespace Win7POS.Wpf.Pos.Online
                     // The protected trust file is the final local commit marker.
                     // A crash before this write leaves DB/file generations
                     // mismatched and therefore fails closed on restart.
-                    _store.SaveFirstLogin(response, generationId);
+                    _store.SaveFirstLogin(
+                        response,
+                        generationId,
+                        authoritativeReceiptClock);
                 }
                 finally
                 {

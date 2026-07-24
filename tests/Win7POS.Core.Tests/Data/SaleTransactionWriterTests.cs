@@ -8,6 +8,7 @@ using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Win7POS.Core.Models;
+using Win7POS.Core.Pos;
 using Win7POS.Core.Receipt;
 using Win7POS.Data;
 using Win7POS.Data.Online;
@@ -59,6 +60,88 @@ public sealed class SaleTransactionWriterTests
             direct.Outbox.PayloadHash,
             ignoreCase: true);
         Assert.AreEqual("pending", direct.Outbox.Status);
+    }
+
+    [TestMethod]
+    public async Task AuthorizedSale_PreCommitRevocation_RollsBackSaleStockAndOutbox()
+    {
+        using var db = TestDb.Create();
+        const string barcode = "F6-AUTH-ROLLBACK";
+        await SaveShopAsync(db.Factory);
+        await SeedStockAsync(db.Factory, barcode, 5);
+        var sale = NewOrdinarySale("F6-AUTH-ROLLBACK");
+        sale.OperatorId = 42;
+        var guard = new TestAuthorizationCommitGuard(throwOnDemand: 3);
+
+        await Assert.ThrowsExactlyAsync<TestAuthorizationRevokedException>(
+            () => new SaleRepository(db.Factory).InsertAuthorizedSaleAsync(
+                sale,
+                new[] { NewLine(barcode, 2, 100) },
+                guard.Guard));
+
+        using var connection = db.Factory.Open();
+        Assert.AreEqual(3, guard.DemandCount);
+        Assert.AreEqual(
+            0L,
+            await CountAsync(
+                connection,
+                "SELECT COUNT(1) FROM sales WHERE code = 'F6-AUTH-ROLLBACK';"));
+        Assert.AreEqual(
+            0L,
+            await CountAsync(connection, "SELECT COUNT(1) FROM sales_sync_outbox;"));
+        Assert.AreEqual(
+            0L,
+            await CountAsync(
+                connection,
+                "SELECT COUNT(1) FROM local_stock_movements;"));
+        Assert.AreEqual(
+            5L,
+            await CountAsync(
+                connection,
+                "SELECT stock_qty FROM product_meta WHERE barcode = @barcode;",
+                new { barcode }));
+    }
+
+    [TestMethod]
+    public async Task ExactSaleRetry_ReturnsOriginalIdWithoutDuplicateSideEffects()
+    {
+        using var db = TestDb.Create();
+        const string barcode = "F6-IDEMPOTENT";
+        await SaveShopAsync(db.Factory);
+        await SeedStockAsync(db.Factory, barcode, 5);
+        var repository = new SaleRepository(db.Factory);
+
+        var firstId = await repository.InsertSaleAsync(
+            NewOrdinarySale("F6-IDEMPOTENT"),
+            new[] { NewLine(barcode, 2, 100) });
+        var retryId = await repository.InsertSaleAsync(
+            NewOrdinarySale("F6-IDEMPOTENT"),
+            new[] { NewLine(barcode, 2, 100) });
+
+        Assert.AreEqual(firstId, retryId);
+        using var connection = db.Factory.Open();
+        Assert.AreEqual(
+            1L,
+            await CountAsync(
+                connection,
+                "SELECT COUNT(1) FROM sales WHERE code = 'F6-IDEMPOTENT';"));
+        Assert.AreEqual(
+            1L,
+            await CountAsync(connection, "SELECT COUNT(1) FROM sales_sync_outbox;"));
+        Assert.AreEqual(
+            1L,
+            await CountAsync(connection, "SELECT COUNT(1) FROM local_stock_movements;"));
+        Assert.AreEqual(
+            3L,
+            await CountAsync(
+                connection,
+                "SELECT stock_qty FROM product_meta WHERE barcode = @barcode;",
+                new { barcode }));
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => repository.InsertSaleAsync(
+                NewOrdinarySale("F6-IDEMPOTENT", total: 300),
+                new[] { NewLine(barcode, 3, 100) }));
     }
 
     [TestMethod]
@@ -896,6 +979,46 @@ WHERE id = @saleId;", new { saleId });
             SqliteTransaction tx,
             long saleId) =>
             _repository.EnsureClientSaleIdAsync(conn, tx, saleId);
+    }
+
+    private sealed class TestAuthorizationCommitGuard
+    {
+        private readonly int _throwOnDemand;
+
+        public TestAuthorizationCommitGuard(int throwOnDemand)
+        {
+            _throwOnDemand = throwOnDemand;
+            Guard = new SaleAuthorizationCommitGuard(
+                authorizationEpoch: 1,
+                generationFingerprint: new string('a', 64),
+                generationId: "f6-auth-generation",
+                operatorId: 42,
+                shopCode: SaleTransactionWriterTests.ShopCode,
+                shopDeviceId: "f6-device",
+                shopId: SaleTransactionWriterTests.ShopId,
+                staffCredentialVersion: 1,
+                staffId: "f6-staff",
+                demandStillValid: DemandStillValid,
+                commitIfStillValid: commit =>
+                {
+                    DemandStillValid();
+                    commit();
+                });
+        }
+
+        public int DemandCount { get; private set; }
+        public SaleAuthorizationCommitGuard Guard { get; }
+
+        private void DemandStillValid()
+        {
+            DemandCount++;
+            if (DemandCount == _throwOnDemand)
+                throw new TestAuthorizationRevokedException();
+        }
+    }
+
+    private sealed class TestAuthorizationRevokedException : Exception
+    {
     }
 
     private sealed class FullSaleSnapshot

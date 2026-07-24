@@ -253,18 +253,27 @@ if ($main -match 'MainTabControl_SelectionChanged[\s\S]{0,500}!IsRecoveryTab[\s\
 $permissionMethod = [regex]::Match(
     $main,
     'private\s+bool\s+HasCurrentPermission\(string\s+permissionCode\)[\s\S]*?(?=\r?\n\s*private\s+)').Value
+$normalPermissionIndex = $permissionMethod.IndexOf(
+    'new PermissionService(session)',
+    [System.StringComparison]::Ordinal)
 $leaseFreeIndex = $permissionMethod.IndexOf(
     'HasLeaseFreeLocalRecoveryAccess()',
     [System.StringComparison]::Ordinal)
-$normalLeaseIndex = $permissionMethod.IndexOf(
-    'session.EnsureAuthorizationValid()',
+$localRecoveryPermissionIndex = $permissionMethod.IndexOf(
+    'new LocalRecoveryPermissionService(session)',
     [System.StringComparison]::Ordinal)
-$recoveryPermissionIndex = $permissionMethod.IndexOf(
-    'LocalRecoveryPermissionPolicy.IsGranted(user, permissionCode)',
+$remoteRecoveryAllowlistIndex = $permissionMethod.IndexOf(
+    'LocalRecoveryPermissionPolicy.IsAllowed(',
     [System.StringComparison]::Ordinal)
-if ($leaseFreeIndex -ge 0 -and $normalLeaseIndex -gt $leaseFreeIndex -and
-    $recoveryPermissionIndex -gt $normalLeaseIndex) {
-    Pass "remote recovery validates its lease before the recovery allowlist"
+$remoteRecoveryPermissionIndex = $permissionMethod.LastIndexOf(
+    'new PermissionService(session)',
+    [System.StringComparison]::Ordinal)
+if ($normalPermissionIndex -ge 0 -and
+    $leaseFreeIndex -gt $normalPermissionIndex -and
+    $localRecoveryPermissionIndex -gt $leaseFreeIndex -and
+    $remoteRecoveryAllowlistIndex -gt $localRecoveryPermissionIndex -and
+    $remoteRecoveryPermissionIndex -gt $remoteRecoveryAllowlistIndex) {
+    Pass "only proven local recovery bypasses the lease; remote recovery remains lease-bound and allowlisted"
 } else {
     Fail "recovery permissions must bypass the lease only for proven local-recovery provenance"
 }

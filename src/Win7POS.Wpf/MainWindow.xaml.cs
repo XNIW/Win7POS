@@ -1443,39 +1443,28 @@ namespace Win7POS.Wpf
         private bool HasCurrentPermission(string permissionCode)
         {
             var session = OperatorSessionHolder.Current;
-            if (session == null || !session.IsLoggedIn)
+            if (session == null ||
+                !session.IsLoggedIn ||
+                string.IsNullOrWhiteSpace(permissionCode))
             {
                 return false;
             }
 
-            var user = session.CurrentUser;
-            if (user == null || string.IsNullOrWhiteSpace(permissionCode))
+            if (!IsRecoveryMode)
             {
-                return false;
+                return new PermissionService(session)
+                    .Has(permissionCode);
             }
 
-            if (IsRecoveryMode)
+            if (HasLeaseFreeLocalRecoveryAccess())
             {
-                if (!HasLeaseFreeLocalRecoveryAccess() &&
-                    !session.EnsureAuthorizationValid())
-                {
-                    return false;
-                }
-
-                return LocalRecoveryPermissionPolicy.IsGranted(user, permissionCode);
+                return new LocalRecoveryPermissionService(session)
+                    .Has(permissionCode);
             }
 
-            if (!session.EnsureAuthorizationValid())
-            {
-                return false;
-            }
-
-            if (user.IsAdmin)
-            {
-                return true;
-            }
-
-            return user.PermissionCodes?.Contains(permissionCode) == true;
+            return LocalRecoveryPermissionPolicy.IsAllowed(
+                    permissionCode) &&
+                new PermissionService(session).Has(permissionCode);
         }
 
         private static string BuildPermissionDeniedMessage(string message, string currentRole, string missingPermission)

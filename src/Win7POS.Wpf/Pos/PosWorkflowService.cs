@@ -14,6 +14,7 @@ using Win7POS.Core.Models;
 using Win7POS.Core.Online;
 using Win7POS.Core.Pos;
 using Win7POS.Core.Receipt;
+using Win7POS.Core.Security;
 using Win7POS.Core.Util;
 using Win7POS.Data;
 using Win7POS.Data.Adapters;
@@ -21,6 +22,7 @@ using Win7POS.Data.Backup;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Localization;
 using Win7POS.Wpf.Pos.Online;
 using Win7POS.Wpf.Printing;
@@ -95,6 +97,16 @@ namespace Win7POS.Wpf.Pos
         private readonly IReceiptPrinter _receiptPrinter = new WindowsSpoolerReceiptPrinter();
 
         private SaleCompleted _lastCompletedSale;
+        private PendingSaleAttempt _pendingSaleAttempt;
+
+        private void InvalidatePendingSaleAttemptIfCartChanged()
+        {
+            if (_pendingSaleAttempt != null &&
+                !_pendingSaleAttempt.MatchesCart(_session.Lines))
+            {
+                _pendingSaleAttempt = null;
+            }
+        }
 
         public PosWorkflowService()
         {
@@ -112,7 +124,7 @@ namespace Win7POS.Wpf.Pos
             _categories = new CategoryRepository(_factory);
             _heldCarts = new HeldCartRepository(_factory);
             _officialShopSnapshots = new ShopOfficialSnapshotRepository(_factory);
-            _session = new PosSession(new DataProductLookup(_products), new DataSalesStore(_sales));
+            _session = new PosSession(new DataProductLookup(_products));
         }
 
         public string DbPath => _options.DbPath;
@@ -341,7 +353,9 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 authorizationMaintenanceLease =
-                    PosOnlineSyncRevocationLatch.EnterAuthorizationMaintenance();
+                    await PosOnlineSyncRevocationLatch
+                        .EnterAuthorizationMaintenanceAsync()
+                        .ConfigureAwait(false);
                 syncSupervisorStopAttempted = true;
                 await PosOnlineSyncSignalBus.StopAsync().ConfigureAwait(false);
                 trustedDeviceStore = new PosTrustedDeviceStore();
@@ -502,12 +516,13 @@ namespace Win7POS.Wpf.Pos
                                 // post-swap action. Every pre-restore synchronous
                                 // authorization cache is invalid from this point.
                                 PosOnlineSyncRevocationLatch
-                                    .InvalidateAuthorizationState();
+                                    .InvalidateAuthorizationStateWhileMaintenanceHeld();
                             }).ConfigureAwait(false);
                     }).ConfigureAwait(false);
                     restoreInstalled = true;
 
-                    PosOnlineSyncRevocationLatch.Revoke(invalidatedGeneration);
+                    PosOnlineSyncRevocationLatch.RevokeWhileMaintenanceHeld(
+                        invalidatedGeneration);
                     trustedDeviceStore.Clear();
                     if (trustedDeviceStore.HasStoredState())
                     {
@@ -907,6 +922,7 @@ namespace Win7POS.Wpf.Pos
                 var code = (barcode ?? string.Empty).Trim();
                 _logger.LogInfo("POS add barcode: " + code);
                 await _session.AddByBarcodeAsync(code).ConfigureAwait(false);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.itemAdded"));
             }
             catch (Exception ex)
@@ -927,6 +943,7 @@ namespace Win7POS.Wpf.Pos
             {
                 _logger.LogInfo("POS add manual price: " + unitPriceMinor);
                 await _session.AddManualPriceAsync(unitPriceMinor).ConfigureAwait(false);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.manualItemAdded"));
             }
             catch (Exception ex)
@@ -1016,6 +1033,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.SetLineUnitPrice(code, unitPriceMinor);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.priceUpdated"));
             }
             finally
@@ -1043,11 +1061,13 @@ namespace Win7POS.Wpf.Pos
                 if (product == null)
                 {
                     _session.SetQuantity(code, 0);
+                    InvalidatePendingSaleAttemptIfCartChanged();
                     return await BuildSnapshotAsync(PosLocalization.T("pos.status.productRemovedFromCartMissing")).ConfigureAwait(false);
                 }
 
                 _session.SetLineUnitPrice(code, product.UnitPrice);
                 _session.SetLineName(code, product.Name ?? string.Empty);
+                InvalidatePendingSaleAttemptIfCartChanged();
 
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.catalogSynced")).ConfigureAwait(false);
             }
@@ -1067,45 +1087,20 @@ namespace Win7POS.Wpf.Pos
             return await _categories.ListAllAsync().ConfigureAwait(false);
         }
 
-        public async Task<PosPayResult> PayAsync()
-        {
-            await _gate.WaitAsync().ConfigureAwait(false);
-            try
-            {
-                _logger.LogInfo("POS pay start");
-                var completed = await _session.PayCashAsync().ConfigureAwait(false);
-                _lastCompletedSale = completed;
-                var shop = await GetShopInfoNoLockAsync().ConfigureAwait(false);
-                var preview = BuildReceiptPreview(completed, true, shop);
-                var snapshot = await BuildSnapshotAsync(PosLocalization.T("pos.status.paymentCompleted"));
-                _logger.LogInfo("POS pay done: " + completed.Sale.Code);
-                return new PosPayResult
-                {
-                    SaleCode = completed.Sale.Code,
-                    ReceiptPreview = preview,
-                    Snapshot = snapshot
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "POS pay failed");
-                throw;
-            }
-            finally
-            {
-                _gate.Release();
-            }
-        }
-
         public async Task<PosSaleResult> CompleteSaleAsync(
             PosPaymentInfo payment,
+            OperatorSession operatorSession,
             string saleCode = null,
             long? createdAtMs = null,
-            int? operatorId = null,
             ReceiptShopInfo receiptShopSnapshot = null)
         {
             if (payment == null) throw new ArgumentNullException(nameof(payment));
+            if (operatorSession == null)
+                throw new ArgumentNullException(nameof(operatorSession));
 
+            string authorizationDeniedCode = null;
+            var authorizationDeniedOperatorAuthorityVersion =
+                long.MinValue;
             await _gate.WaitAsync().ConfigureAwait(false);
             try
             {
@@ -1125,7 +1120,6 @@ namespace Win7POS.Wpf.Pos
                     PaidCash = payment.CashAmountMinor,
                     PaidCard = payment.CardAmountMinor,
                     Change = payment.GetChangeMinor(total),
-                    OperatorId = operatorId
                 };
 
                 var saleLines = _session.Lines.Select(x => new SaleLine
@@ -1141,7 +1135,76 @@ namespace Win7POS.Wpf.Pos
                 var shop = FreezeReceiptShopInfo(
                     receiptShopSnapshot ?? await GetShopInfoNoLockAsync().ConfigureAwait(false));
                 sale.ReceiptShopSnapshotJson = SerializeReceiptShopSnapshot(shop);
-                var saleId = await _sales.InsertSaleAsync(sale, saleLines).ConfigureAwait(false);
+                var authorizationUse = await operatorSession
+                    .BeginAuthorizationUseAsync(
+                        PermissionCodes.PosPay,
+                        PosLocalization.T("operations.pay"))
+                    .ConfigureAwait(false);
+                long saleId;
+                using (authorizationUse)
+                {
+                    PendingSaleAttempt saleAttempt = null;
+                    var createdSaleAttempt = false;
+                    try
+                    {
+                        var authorizationCommitGuard =
+                            authorizationUse.CommitGuard;
+                        authorizationCommitGuard.DemandStillValid();
+                        sale.OperatorId =
+                            authorizationCommitGuard.OperatorId;
+                        if (_pendingSaleAttempt != null)
+                        {
+                            if (!_pendingSaleAttempt.MatchesContent(
+                                    sale,
+                                    saleLines) ||
+                                !_pendingSaleAttempt.MatchesAuthority(
+                                    authorizationCommitGuard))
+                            {
+                                throw new InvalidOperationException(
+                                    "La vendita in sospeso non corrisponde al tentativo corrente; è richiesta la riconciliazione.");
+                            }
+                            saleAttempt = _pendingSaleAttempt;
+                            saleAttempt.ApplyIdentity(sale);
+                            shop = TryDeserializeReceiptShopSnapshot(
+                                sale.ReceiptShopSnapshotJson) ??
+                                throw new InvalidOperationException(
+                                    "Lo snapshot della vendita in sospeso non è valido.");
+                        }
+                        else
+                        {
+                            saleAttempt = new PendingSaleAttempt(
+                                sale,
+                                saleLines,
+                                authorizationCommitGuard);
+                            _pendingSaleAttempt = saleAttempt;
+                            createdSaleAttempt = true;
+                        }
+                        saleId = await _sales.InsertAuthorizedSaleAsync(
+                                sale,
+                                saleLines,
+                                authorizationCommitGuard)
+                            .ConfigureAwait(false);
+                        if (ReferenceEquals(
+                                _pendingSaleAttempt,
+                                saleAttempt))
+                        {
+                            _pendingSaleAttempt = null;
+                        }
+                    }
+                    catch (PosAuthorizationLeaseException)
+                    {
+                        if (createdSaleAttempt &&
+                            ReferenceEquals(
+                                _pendingSaleAttempt,
+                                saleAttempt))
+                        {
+                            _pendingSaleAttempt = null;
+                        }
+                        // The outer denial handler runs only after both the
+                        // authorization-use lease and workflow gate release.
+                        throw;
+                    }
+                }
                 sale.Id = saleId;
                 QueueSalesOutboxSyncNoThrow();
 
@@ -1163,6 +1226,16 @@ namespace Win7POS.Wpf.Pos
                     Snapshot = snapshot
                 };
             }
+            catch (PosAuthorizationLeaseException ex)
+            {
+                authorizationDeniedCode = ex.Code;
+                authorizationDeniedOperatorAuthorityVersion =
+                    ex.OperatorAuthorityVersion;
+                _logger.LogError(
+                    ex,
+                    "POS complete sale authorization denied");
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "POS complete sale failed");
@@ -1171,6 +1244,25 @@ namespace Win7POS.Wpf.Pos
             finally
             {
                 _gate.Release();
+                if (!string.IsNullOrWhiteSpace(
+                        authorizationDeniedCode))
+                {
+                    try
+                    {
+                        operatorSession.HandleAuthorizationUseDenied(
+                            authorizationDeniedCode,
+                            authorizationDeniedOperatorAuthorityVersion);
+                    }
+                    catch (Exception denialHandlingError)
+                    {
+                        // The original authorization denial remains the public
+                        // failure. Operator authority is cleared before session
+                        // notifications are raised.
+                        _logger.LogError(
+                            denialHandlingError,
+                            "POS authorization denial handling failed");
+                    }
+                }
             }
         }
 
@@ -1426,6 +1518,7 @@ namespace Win7POS.Wpf.Pos
                 var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, barcode, StringComparison.Ordinal));
                 if (line == null) return await BuildSnapshotAsync(string.Empty);
                 _session.SetQuantity(line.Barcode, line.Quantity + 1);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityPlus", 1));
             }
             finally
@@ -1444,6 +1537,7 @@ namespace Win7POS.Wpf.Pos
                 var next = line.Quantity - 1;
                 if (next < 1) next = 1;
                 _session.SetQuantity(line.Barcode, next);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityMinus", 1));
             }
             finally
@@ -1463,6 +1557,7 @@ namespace Win7POS.Wpf.Pos
                 var line = _session.Lines.FirstOrDefault(x => string.Equals(x.Barcode, code, StringComparison.Ordinal));
                 if (line == null) return await BuildSnapshotAsync(string.Empty);
                 _session.SetQuantity(code, qty <= 0 ? 0 : qty);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityUpdated", qty));
             }
             catch (Exception ex)
@@ -1492,6 +1587,7 @@ namespace Win7POS.Wpf.Pos
                 if (DiscountKeys.IsDiscount(line.Barcode ?? ""))
                     return await BuildSnapshotAsync(string.Empty);
                 _session.SetQuantity(line.Barcode ?? "", qty <= 0 ? 0 : qty);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.F("pos.status.quantityUpdated", qty));
             }
             catch (Exception ex)
@@ -1511,6 +1607,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.RemoveLine(barcode);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.lineRemoved"));
             }
             finally
@@ -1525,6 +1622,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyCartDiscountPercent(percent);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(percent <= 0 ? PosLocalization.T("pos.status.cartDiscountRemoved") : PosLocalization.T("pos.status.cartDiscountApplied"));
             }
             finally
@@ -1539,6 +1637,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountPercent(barcode, percent);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(percent <= 0 ? PosLocalization.T("pos.status.discountRemoved") : PosLocalization.T("pos.status.discountUpdated"));
             }
             finally
@@ -1553,6 +1652,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountAmount(barcode, amountMinor);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.amountDiscountApplied"));
             }
             finally
@@ -1568,6 +1668,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ApplyLineDiscountByFinalUnitPrice(barcode, finalUnitPriceMinor);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.discountUpdated"));
             }
             finally
@@ -1582,6 +1683,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.ClearCartDiscount();
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartDiscountRemoved"));
             }
             finally
@@ -1970,6 +2072,7 @@ namespace Win7POS.Wpf.Pos
                 }
                 foreach (var b in toRemove)
                     _session.RemoveLine(b);
+                InvalidatePendingSaleAttemptIfCartChanged();
                 var status = toRemove.Count > 0 ? "Prodotto rimosso dal carrello: non più presente nel database." : string.Empty;
                 return await BuildSnapshotAsync(status).ConfigureAwait(false);
             }
@@ -1985,6 +2088,7 @@ namespace Win7POS.Wpf.Pos
             try
             {
                 _session.Clear();
+                InvalidatePendingSaleAttemptIfCartChanged();
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartCleared"));
             }
             finally
@@ -2015,6 +2119,7 @@ namespace Win7POS.Wpf.Pos
 
                 await _heldCarts.CreateHoldAsync(holdId, createdAtMs, total, lines).ConfigureAwait(false);
                 _session.Clear();
+                InvalidatePendingSaleAttemptIfCartChanged();
 
                 return new SuspendCartResult { Success = true, HoldId = holdId, Message = PosLocalization.T("pos.status.cartSuspended") };
             }
@@ -2074,6 +2179,7 @@ namespace Win7POS.Wpf.Pos
                 }).ToList();
 
                 _session.ReplaceWithLines(restored);
+                _pendingSaleAttempt = null;
                 await _heldCarts.DeleteHoldAsync(holdId).ConfigureAwait(false);
 
                 return await BuildSnapshotAsync(PosLocalization.T("pos.status.cartRecovered"));
@@ -2525,6 +2631,217 @@ namespace Win7POS.Wpf.Pos
             public ReceiptPrintOptions Options { get; set; }
             public PosPrintResult Result { get; set; }
         }
+
+        private sealed class PendingSaleAttempt
+        {
+            private readonly IReadOnlyList<PendingSaleLineIdentity> _lines;
+            private readonly long _paidCard;
+            private readonly long _paidCash;
+            private readonly long _change;
+            private readonly long _total;
+
+            public PendingSaleAttempt(
+                Sale sale,
+                IReadOnlyList<SaleLine> lines,
+                SaleAuthorizationCommitGuard authorizationCommitGuard)
+            {
+                if (sale == null)
+                    throw new ArgumentNullException(nameof(sale));
+                if (lines == null)
+                    throw new ArgumentNullException(nameof(lines));
+                if (authorizationCommitGuard == null)
+                {
+                    throw new ArgumentNullException(
+                        nameof(authorizationCommitGuard));
+                }
+                Code = sale.Code ?? string.Empty;
+                CreatedAt = sale.CreatedAt;
+                AuthorizationEpoch =
+                    authorizationCommitGuard.AuthorizationEpoch;
+                GenerationFingerprint =
+                    authorizationCommitGuard.GenerationFingerprint;
+                GenerationId =
+                    authorizationCommitGuard.GenerationId;
+                OperatorId =
+                    authorizationCommitGuard.OperatorId;
+                ShopCode = authorizationCommitGuard.ShopCode;
+                ShopDeviceId =
+                    authorizationCommitGuard.ShopDeviceId;
+                ShopId = authorizationCommitGuard.ShopId;
+                StaffCredentialVersion =
+                    authorizationCommitGuard.StaffCredentialVersion;
+                StaffId = authorizationCommitGuard.StaffId;
+                ReceiptShopSnapshotJson =
+                    sale.ReceiptShopSnapshotJson ?? string.Empty;
+                _total = sale.Total;
+                _paidCash = sale.PaidCash;
+                _paidCard = sale.PaidCard;
+                _change = sale.Change;
+                _lines = lines.Select(
+                        line => new PendingSaleLineIdentity(line))
+                    .ToList();
+            }
+
+            public string Code { get; }
+            public long CreatedAt { get; }
+            public long AuthorizationEpoch { get; }
+            public string GenerationFingerprint { get; }
+            public string GenerationId { get; }
+            public int OperatorId { get; }
+            public string ReceiptShopSnapshotJson { get; }
+            public string ShopCode { get; }
+            public string ShopDeviceId { get; }
+            public string ShopId { get; }
+            public int StaffCredentialVersion { get; }
+            public string StaffId { get; }
+
+            public void ApplyIdentity(Sale sale)
+            {
+                if (sale == null)
+                    throw new ArgumentNullException(nameof(sale));
+                sale.Code = Code;
+                sale.CreatedAt = CreatedAt;
+                sale.OperatorId = OperatorId;
+                sale.ReceiptShopSnapshotJson =
+                    ReceiptShopSnapshotJson;
+            }
+
+            public bool MatchesContent(
+                Sale sale,
+                IReadOnlyList<SaleLine> lines)
+            {
+                if (sale == null ||
+                    lines == null ||
+                    sale.Total != _total ||
+                    sale.PaidCash != _paidCash ||
+                    sale.PaidCard != _paidCard ||
+                    sale.Change != _change ||
+                    lines.Count != _lines.Count)
+                {
+                    return false;
+                }
+                for (var index = 0; index < lines.Count; index++)
+                {
+                    if (!_lines[index].Matches(lines[index]))
+                        return false;
+                }
+                return true;
+            }
+
+            public bool MatchesCart(IReadOnlyList<PosLine> lines)
+            {
+                if (lines == null || lines.Count != _lines.Count)
+                    return false;
+
+                for (var index = 0; index < lines.Count; index++)
+                {
+                    if (!_lines[index].Matches(lines[index]))
+                        return false;
+                }
+
+                return true;
+            }
+
+            public bool MatchesAuthority(
+                SaleAuthorizationCommitGuard authorizationCommitGuard)
+            {
+                return authorizationCommitGuard != null &&
+                    AuthorizationEpoch ==
+                        authorizationCommitGuard.AuthorizationEpoch &&
+                    OperatorId ==
+                        authorizationCommitGuard.OperatorId &&
+                    StaffCredentialVersion ==
+                        authorizationCommitGuard
+                            .StaffCredentialVersion &&
+                    string.Equals(
+                        GenerationFingerprint,
+                        authorizationCommitGuard
+                            .GenerationFingerprint,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        GenerationId,
+                        authorizationCommitGuard.GenerationId,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        ShopCode,
+                        authorizationCommitGuard.ShopCode,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        ShopDeviceId,
+                        authorizationCommitGuard.ShopDeviceId,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        ShopId,
+                        authorizationCommitGuard.ShopId,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        StaffId,
+                        authorizationCommitGuard.StaffId,
+                        StringComparison.Ordinal);
+            }
+        }
+
+        private sealed class PendingSaleLineIdentity
+        {
+            private readonly string _barcode;
+            private readonly long _lineTotal;
+            private readonly string _name;
+            private readonly long? _productId;
+            private readonly int _quantity;
+            private readonly long? _relatedOriginalLineId;
+            private readonly long _unitPrice;
+
+            public PendingSaleLineIdentity(SaleLine line)
+            {
+                if (line == null)
+                    throw new ArgumentNullException(nameof(line));
+                _productId = line.ProductId;
+                _barcode = line.Barcode ?? string.Empty;
+                _name = line.Name ?? string.Empty;
+                _quantity = line.Quantity;
+                _unitPrice = line.UnitPrice;
+                _lineTotal = line.LineTotal;
+                _relatedOriginalLineId =
+                    line.RelatedOriginalLineId;
+            }
+
+            public bool Matches(SaleLine line)
+            {
+                return line != null &&
+                    line.ProductId == _productId &&
+                    string.Equals(
+                        line.Barcode ?? string.Empty,
+                        _barcode,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        line.Name ?? string.Empty,
+                        _name,
+                        StringComparison.Ordinal) &&
+                    line.Quantity == _quantity &&
+                    line.UnitPrice == _unitPrice &&
+                    line.LineTotal == _lineTotal &&
+                    line.RelatedOriginalLineId ==
+                        _relatedOriginalLineId;
+            }
+
+            public bool Matches(PosLine line)
+            {
+                return line != null &&
+                    line.ProductId == _productId &&
+                    string.Equals(
+                        line.Barcode ?? string.Empty,
+                        _barcode,
+                        StringComparison.Ordinal) &&
+                    string.Equals(
+                        line.Name ?? string.Empty,
+                        _name,
+                        StringComparison.Ordinal) &&
+                    line.Quantity == _quantity &&
+                    line.UnitPrice == _unitPrice &&
+                    line.LineTotal == _lineTotal &&
+                    !_relatedOriginalLineId.HasValue;
+            }
+        }
     }
 
     public sealed class RefundPreviewModel
@@ -2558,13 +2875,6 @@ namespace Win7POS.Wpf.Pos
         public long Subtotal { get; set; }
         public long Total { get; set; }
         public string Status { get; set; } = string.Empty;
-    }
-
-    public sealed class PosPayResult
-    {
-        public string SaleCode { get; set; } = string.Empty;
-        public string ReceiptPreview { get; set; } = string.Empty;
-        public PosWorkflowSnapshot Snapshot { get; set; } = new PosWorkflowSnapshot();
     }
 
     public sealed class PosSaleResult

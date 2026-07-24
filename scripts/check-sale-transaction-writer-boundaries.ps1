@@ -62,8 +62,13 @@ function Assert-StrictFacadeDelegations(
     )
 
     foreach ($contract in $contracts) {
-        $facadeSlices = @(Get-MethodSlices $saleRepository "public" $contract.Facade)
-        $facadeCount = Get-MethodDeclarationCount $saleRepository "public" $contract.Facade
+        $facadeAccess = if ($contract.PSObject.Properties.Name -contains "Access") {
+            $contract.Access
+        } else {
+            "public"
+        }
+        $facadeSlices = @(Get-MethodSlices $saleRepository $facadeAccess $contract.Facade)
+        $facadeCount = Get-MethodDeclarationCount $saleRepository $facadeAccess $contract.Facade
         $writerCount = Get-MethodDeclarationCount $writer "internal" $contract.Writer
         if ($facadeCount -ne $contract.Forwarding.Count -or
             $facadeSlices.Count -ne $contract.Forwarding.Count -or
@@ -203,7 +208,8 @@ if ($writer -notmatch "internal sealed class SaleTransactionWriter" -or
 }
 
 $facadeContracts = @(
-    [pscustomobject]@{ Facade = "InsertSaleAsync"; Writer = "InsertSaleAsync"; Forwarding = @("sale\s*,\s*lines") },
+    [pscustomobject]@{ Access = "internal"; Facade = "InsertSaleAsync"; Writer = "InsertSaleAsync"; Forwarding = @("sale\s*,\s*lines") },
+    [pscustomobject]@{ Access = "public"; Facade = "InsertAuthorizedSaleAsync"; Writer = "InsertSaleAsync"; Forwarding = @("sale\s*,\s*lines\s*,\s*authorizationCommitGuard") },
     [pscustomobject]@{ Facade = "MarkPdfPrintedAsync"; Writer = "MarkPdfPrintedAsync"; Forwarding = @("saleId") },
     [pscustomobject]@{ Facade = "InsertRefundSaleAsync"; Writer = "InsertRefundSaleAsync"; Forwarding = @(
             "req\s*,\s*totalMinor\s*,\s*paidCashMinor\s*,\s*paidCardMinor\s*,\s*changeMinor",
@@ -266,9 +272,9 @@ if ($saleWriters.Count -ne 1) {
         [pscustomobject]@{ Name = "sale line"; Pattern = "InsertSaleLineAsync\(conn\s*,\s*tx\s*,\s*l\.line\)" },
         [pscustomobject]@{ Name = "stock movements"; Pattern = "ApplyLocalStockMovementsAsync\(conn\s*,\s*tx\s*,\s*sale\s*,\s*lines\)" },
         [pscustomobject]@{ Name = "outbox enqueue"; Pattern = "EnqueueSalesSyncOutboxAsync\(conn\s*,\s*tx\s*,\s*saleId\s*,\s*sale\.ClientSaleId\)" },
-        [pscustomobject]@{ Name = "commit"; Pattern = "tx\.Commit\(\)" }
+        [pscustomobject]@{ Name = "authorized commit"; Pattern = "authorizationCommitGuard\.CommitIfStillValid\(\s*commitTransaction\)" }
     )
-    if ($saleWriter -notmatch "catch\s*\{\s*tx\.Rollback\(\)\s*;\s*throw;\s*\}" -or
+    if ($saleWriter -notmatch "catch\s*\{[\s\S]*if \(!transactionCommitted\)[\s\S]*tx\.Rollback\(\)[\s\S]*throw;\s*\}" -or
         $saleWriter -notmatch "if \(sale\.Kind == \(int\)SaleKind\.Sale\)" -or
         $saleWriter -notmatch "_reversalWriter\s*\.\s*ValidateReversalBoundaryAsync") {
         Fail "F6 full-sale writer must retain sale-safe/reversal validation and rollback"

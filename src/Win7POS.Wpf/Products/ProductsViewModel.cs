@@ -292,13 +292,7 @@ namespace Win7POS.Wpf.Products
 
         private bool HasPermission(string permissionCode)
         {
-            if (_permissionService != null)
-                return _permissionService.Has(permissionCode);
-
-            var user = OperatorSessionHolder.Current?.CurrentUser;
-            if (user == null) return false;
-            if (user.IsAdmin) return true;
-            return user.PermissionCodes?.Contains(permissionCode) == true;
+            return _permissionService?.Has(permissionCode) == true;
         }
 
         private bool CanEditCatalog => !IsBusy && HasPermission(PermissionCodes.CatalogEdit);

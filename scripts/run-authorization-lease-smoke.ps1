@@ -101,6 +101,52 @@ $verify = Invoke-AuthorizationHarness `
     -Mode "--authorization-lease-restart-verify" `
     -ArtifactName "authorization-lease-restart-verify.txt"
 
+if ((Read-ResultValue -Text $smoke.Result -Name "frozenClockMonotonicExpiry") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "frozenClockUnauthorizedSaleSinkRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "frozenClockUnauthorizedPublicationOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "monotonicCounterRegressionDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "monotonicProviderFailureDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "invalidMonotonicFrequencyDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "monotonicElapsedOverflowDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "preflightDelayExpiryDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "activationDelayCountedFromReceipt") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "firstUseReceiptClockExpiryDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "firstUseUnauthorizedSaleSinkRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "firstUseUnauthorizedPublicationOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "firstLoginRetryClockNotReset") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "heartbeatClockNotReset") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "staleHeartbeatClockNotReset") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "betweenPreflightsExpiryDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "crossPreflightRegressionDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "oversizedTrustedStateDenied") -ne "True") {
+    throw "Authorization lease smoke did not prove monotonic expiry and fail-closed continuity."
+}
+
+if ((Read-ResultValue -Text $smoke.Result -Name "saleExpiryRaceSinkRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "loginRevocationRaceDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "staleLoginCleanupDoesNotClearNewAuthority") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "staleDenialDoesNotClearNewAuthority") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "permissionSnapshotRejectsReplacementAdmin") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "permissionSnapshotRejectsConcurrentRevocation") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "localRecoveryCannotInheritPosAuthority") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleExpiryRaceOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleRevocationRaceSinkRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleRevocationRaceOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "denialCallbacksAfterGateRelease") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleGenerationRaceSinkRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleGenerationRaceOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleCommitExpiryRaceSinkRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleCommitExpiryRaceOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleCommitRevocationLinearized") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleExactRetryIdempotent") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleAmbiguousCommitRetryIdempotent") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleAmbiguousCartMutationStartsNewIdentity") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleAmbiguousAuthorityMismatchDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "concurrentAuthorizedSalesRows") -ne "2" -or
+    (Read-ResultValue -Text $smoke.Result -Name "concurrentAuthorizedSalesOutboxRows") -ne "2") {
+    throw "Authorization lease smoke did not prove the repository-native sale boundary."
+}
+
 $prepareInstance = Read-ResultValue `
     -Text $prepare.Result `
     -Name "processInstance"
