@@ -554,39 +554,15 @@ namespace Win7POS.Wpf.Pos.Online
                         var fullSnapshotExpected = pageIsFullRefresh ||
                             requiresFullBoundary ||
                             requestCursor.Length == 0;
-                        CatalogPaginationLaneCounts cumulativeFullEvidence = null;
-                        if (fullSnapshotExpected)
-                        {
-                            var stagedEvidence = await catalogBatchRepository
-                                .StageAuthoritativePageAsync(
-                                    BuildRemoteCatalogBatch(
-                                        result.Value,
-                                        true,
-                                        new CatalogAuthoritativeStagePage
-                                        {
-                                            FullRunId = fullStageGeneration,
-                                            HasMore = result.Value.HasMore,
-                                            PageNumber = page
-                                        }),
-                                    cancellationToken,
-                                    CreateCommitFence(
-                                        trustedSession,
-                                        binding.Epoch,
-                                        committedCursor,
-                                        committedMode,
-                                        generation))
-                                .ConfigureAwait(false);
-                            cumulativeFullEvidence = stagedEvidence.LaneCounts;
-                            fullLaneConflictCode = stagedEvidence.ConflictCode;
-                        }
-                        var paginationSafety = CatalogPaginationSafetyPolicy.EvaluateTerminalPage(
-                            result.Value,
-                            CatalogPullPageLimit,
-                            fullSnapshotExpected,
-                            receivedBeforePage: receivedFullLanes,
-                            cumulativeEvidence: cumulativeFullEvidence,
-                            pageAfterContinuation: page > 1);
-                        if (!paginationSafety.Allowed)
+                        var paginationSafety = fullSnapshotExpected
+                            ? null
+                            : CatalogPaginationSafetyPolicy.EvaluateTerminalPage(
+                                result.Value,
+                                CatalogPullPageLimit,
+                                fullSnapshotExpected: false,
+                                receivedBeforePage: receivedFullLanes,
+                                pageAfterContinuation: page > 1);
+                        if (paginationSafety != null && !paginationSafety.Allowed)
                         {
                             await StoreCatalogFailureAsync(paginationSafety.Code).ConfigureAwait(false);
                             await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
@@ -622,18 +598,6 @@ namespace Win7POS.Wpf.Pos.Online
                                     false,
                                     pagesProcessed);
                             }
-                        }
-
-                        if (fullSnapshotExpected && fullLaneConflictCode.Length > 0)
-                        {
-                            await StoreCatalogFailureAsync(fullLaneConflictCode).ConfigureAwait(false);
-                            await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
-                                .ConfigureAwait(false);
-                            return PosCatalogPullOutcome.Failure(
-                                fullLaneConflictCode,
-                                false,
-                                false,
-                                pagesProcessed);
                         }
 
                         var stagedResponseShopError = OutboxShopBinding.GetMismatchCode(
@@ -871,9 +835,10 @@ namespace Win7POS.Wpf.Pos.Online
                                 // A server-selected full refresh must drain in this run. Keeping the
                                 // background delta cap here would restart from page one forever because
                                 // full-refresh cursors are intentionally not checkpointed mid-snapshot.
-                                effectiveMaxPages = firstPageBudget == null
-                                    ? LegacyFullCatalogPullPages
-                                    : firstPageBudget.PageBudget;
+                                // The exact distinct-lane and tombstone evidence is staged and replayed
+                                // atomically after the durable response chain is drained. Until then,
+                                // keep the fetch bounded by the independent authoritative hard ceiling.
+                                effectiveMaxPages = MaxAuthoritativeCatalogPullPages;
                             }
                             if (requiresFullBoundary && !fullRefresh)
                             {
@@ -923,18 +888,6 @@ namespace Win7POS.Wpf.Pos.Online
 
                         if (fullRefresh)
                         {
-                            effectiveMaxPages = CatalogPaginationSafetyPolicy
-                                .ExpandFullPageBudgetForTombstoneContinuation(
-                                    effectiveMaxPages,
-                                    MaxAuthoritativeCatalogPullPages,
-                                    fullSnapshot: true,
-                                    hasMore: result.Value.HasMore,
-                                    cumulativeEvidence: cumulativeFullEvidence,
-                                    summary: result.Value.CatalogSummary);
-                        }
-
-                        if (fullRefresh)
-                        {
                             if (!fullStageStarted)
                             {
                                 await fullStage.BeginAsync(fullStageGeneration).ConfigureAwait(false);
@@ -946,7 +899,8 @@ namespace Win7POS.Wpf.Pos.Online
                                 page,
                                 result.Value,
                                 fullStageBytes).ConfigureAwait(false);
-                            receivedFullLanes = cumulativeFullEvidence ?? receivedFullLanes;
+                            receivedFullLanes = receivedFullLanes.Add(
+                                CatalogPaginationLaneCounts.FromPayload(result.Value.Catalog));
                             networkCursor = result.Value.SyncCursor;
                             lastResponse = result.Value;
                             lastResult = result;
@@ -1148,6 +1102,81 @@ namespace Win7POS.Wpf.Pos.Online
                                 pagesProcessed);
                         }
 
+                        var authoritativeEvidence = await catalogBatchRepository
+                            .StageAuthoritativePagesAtomicallyAsync(
+                                pagesProcessed,
+                                async (stagedPageNumber, _) =>
+                                {
+                                    var stagedResponse = await fullStage.LoadPageAsync(
+                                        fullStageGeneration,
+                                        stagedPageNumber).ConfigureAwait(false);
+                                    return BuildRemoteCatalogBatch(
+                                        stagedResponse,
+                                        true,
+                                        new CatalogAuthoritativeStagePage
+                                        {
+                                            FullRunId = fullStageGeneration,
+                                            HasMore = stagedResponse.HasMore,
+                                            PageNumber = stagedPageNumber
+                                        });
+                                },
+                                cancellationToken,
+                                CreateCommitFence(
+                                    trustedSession,
+                                    binding.Epoch,
+                                    committedCursor,
+                                    committedMode,
+                                    generation))
+                            .ConfigureAwait(false);
+                        receivedFullLanes = new CatalogPaginationLaneCounts(0, 0, 0, 0);
+                        for (var stagedPageNumber = 1;
+                             stagedPageNumber <= pagesProcessed;
+                             stagedPageNumber++)
+                        {
+                            var evidence = authoritativeEvidence[stagedPageNumber - 1];
+                            fullLaneConflictCode = evidence.ConflictCode;
+                            if (fullLaneConflictCode.Length > 0)
+                            {
+                                await StoreCatalogFailureAsync(fullLaneConflictCode)
+                                    .ConfigureAwait(false);
+                                await StoreCatalogBootstrapStatusAsync(
+                                        BootstrapStatusFailedRetryable)
+                                    .ConfigureAwait(false);
+                                return PosCatalogPullOutcome.Failure(
+                                    fullLaneConflictCode,
+                                    false,
+                                    false,
+                                    pagesProcessed);
+                            }
+
+                            var stagedResponse = await fullStage.LoadPageAsync(
+                                fullStageGeneration,
+                                stagedPageNumber).ConfigureAwait(false);
+                            var stagedPaginationSafety =
+                                CatalogPaginationSafetyPolicy.EvaluateTerminalPage(
+                                    stagedResponse,
+                                    CatalogPullPageLimit,
+                                    fullSnapshotExpected: true,
+                                    receivedBeforePage: receivedFullLanes,
+                                    cumulativeEvidence: evidence.LaneCounts,
+                                    pageAfterContinuation: stagedPageNumber > 1);
+                            if (!stagedPaginationSafety.Allowed)
+                            {
+                                await StoreCatalogFailureAsync(stagedPaginationSafety.Code)
+                                    .ConfigureAwait(false);
+                                await StoreCatalogBootstrapStatusAsync(
+                                        BootstrapStatusFailedRetryable)
+                                    .ConfigureAwait(false);
+                                return PosCatalogPullOutcome.Failure(
+                                    stagedPaginationSafety.Code,
+                                    false,
+                                    false,
+                                    pagesProcessed);
+                            }
+
+                            receivedFullLanes = evidence.LaneCounts;
+                        }
+
                         var stagedPreflightCode = await catalogReconciler
                             .ValidateStagedPreflightAsync(
                                 fullStageGeneration,
@@ -1208,6 +1237,10 @@ namespace Win7POS.Wpf.Pos.Online
                         committedCursor = binding.Cursor;
                         committedMode = binding.Mode;
                         totalStats = new CatalogApplyStats();
+                        var stagedPageStats = new List<CatalogApplyStats>(pagesProcessed);
+                        await catalogApplyRun
+                            .BeginAtomicFullRefreshAsync(cancellationToken)
+                            .ConfigureAwait(false);
                         for (var stagedPageNumber = 1;
                              stagedPageNumber <= pagesProcessed;
                              stagedPageNumber++)
@@ -1227,8 +1260,10 @@ namespace Win7POS.Wpf.Pos.Online
                                 committedCursor,
                                 committedMode,
                                 generation,
-                                cancellationToken).ConfigureAwait(false);
+                                cancellationToken,
+                                publishRevision: false).ConfigureAwait(false);
                             totalStats.Add(stagedStats);
+                            stagedPageStats.Add(stagedStats);
                             if (stagedStats.RowsSkipped > 0)
                             {
                                 const string stagedRowsCode = "catalog_rows_not_fully_applied";
@@ -1245,10 +1280,21 @@ namespace Win7POS.Wpf.Pos.Online
                                     totalStats.PriceRowsQueued,
                                     totalStats.PendingPriceRowsApplied);
                             }
-
+                        }
+                        await catalogApplyRun
+                            .CommitAtomicFullRefreshAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                        CatalogEvents.AdvanceRevision();
+                        for (var stagedPageNumber = 1;
+                             stagedPageNumber <= pagesProcessed;
+                             stagedPageNumber++)
+                        {
+                            var stagedResponse = await fullStage.LoadPageAsync(
+                                fullStageGeneration,
+                                stagedPageNumber).ConfigureAwait(false);
                             await StoreCatalogDiagnosticsAsync(
                                 stagedResponse,
-                                stagedStats,
+                                stagedPageStats[stagedPageNumber - 1],
                                 trustedSession,
                                 binding.Epoch,
                                 null,
@@ -1632,7 +1678,8 @@ namespace Win7POS.Wpf.Pos.Online
             string expectedPreviousCursor,
             string expectedPreviousMode,
             OnlineSyncGeneration generation,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool publishRevision = true)
         {
             var catalog = response.Catalog;
             var products = catalog.Products ?? Array.Empty<PosCatalogProductResponse>();
@@ -1668,7 +1715,10 @@ namespace Win7POS.Wpf.Pos.Online
             // Product paging observes this monotonic process revision without invoking
             // UI subscribers from the background sync thread. Every committed page
             // invalidates cursors before another page can be requested.
-            CatalogEvents.AdvanceRevision();
+            if (publishRevision)
+            {
+                CatalogEvents.AdvanceRevision();
+            }
 
             if (tombstones > 0)
             {
@@ -1711,6 +1761,8 @@ namespace Win7POS.Wpf.Pos.Online
             {
                 AuthoritativeFullRefresh = authoritativeFullRefresh,
                 AuthoritativeStagePage = stagePage,
+                ReuseValidatedAuthoritativeStagePage =
+                    authoritativeFullRefresh && stagePage != null,
                 Categories = (catalog.Categories ?? Array.Empty<PosCatalogCategoryResponse>())
                     .Select(row => row == null ? null : new RemoteCatalogCategoryWrite
                     {

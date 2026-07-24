@@ -62,8 +62,8 @@ $specMarkers = @(
     "SqlStatementCount",
     "page-local",
     "tx\.Commit\(\)",
-    "19 SQL commands",
-    "22 SQL statements",
+    "14 SQL commands",
+    "18 SQL statements",
     "not a performance budget",
     "rollback"
 )
@@ -75,12 +75,16 @@ if ($missingSpecMarkers.Count -gt 0) {
 }
 
 if ($batch -notmatch "public\s+sealed\s+class\s+RemotePriceApplyDiagnostics" -or
+    $batch -notmatch "public\s+long\s+SetBasedPageCount\s*\{\s*get;\s*internal\s+set;\s*\}" -or
+    $batch -notmatch "public\s+long\s+StagedRowCount\s*\{\s*get;\s*internal\s+set;\s*\}" -or
+    $batch -notmatch "public\s+long\s+PreparedCommandCount\s*\{\s*get;\s*internal\s+set;\s*\}" -or
+    $batch -notmatch "public\s+long\s+FallbackPageCount\s*\{\s*get;\s*internal\s+set;\s*\}" -or
     $batch -notmatch "public\s+long\s+SqlCommandCount\s*\{\s*get;\s*internal\s+set;\s*\}" -or
     $batch -notmatch "public\s+long\s+SqlStatementCount\s*\{\s*get;\s*internal\s+set;\s*\}" -or
     $batch -notmatch "internal\s+void\s+RecordSqlCommand\s*\(\s*int\s+statementCount\s*\)") {
-    Fail "RemotePriceApplyDiagnostics must expose internal-write command and statement counters"
+    Fail "RemotePriceApplyDiagnostics must expose set-based usage and internal-write SQL counters"
 } else {
-    Pass "RemotePriceApplyDiagnostics exposes the constrained command/statement contract"
+    Pass "RemotePriceApplyDiagnostics exposes set-based usage and the constrained SQL contract"
 }
 
 if ($batch -notmatch "public\s+RemotePriceApplyDiagnostics\s+RemotePriceApply\s*\{\s*get;\s*\}\s*=\s*new\s+RemotePriceApplyDiagnostics\s*\(\s*\)") {
@@ -94,6 +98,7 @@ if ([string]::IsNullOrWhiteSpace($applySlice)) {
     Fail "ApplyWithinRunAsync implementation slice is missing"
 } else {
     $localIndex = $applySlice.IndexOf("var pageRemotePriceApply = new RemotePriceApplyDiagnostics()", [System.StringComparison]::Ordinal)
+    $setBasedIndex = $applySlice.IndexOf("TryApplyRemotePricesSetBasedInTransactionAsync", [System.StringComparison]::Ordinal)
     $prepareIndex = $applySlice.IndexOf("PrepareAuthoritativeRemotePriceRepairAsync", [System.StringComparison]::Ordinal)
     $upsertIndex = $applySlice.IndexOf("UpsertOrQueueRemotePriceHistoryInTransactionAsync", [System.StringComparison]::Ordinal)
     $pendingCalls = @([regex]::Matches($applySlice, "ApplyPendingRemotePricesInTransactionAsync[\s\S]{0,240}pageRemotePriceApply"))
@@ -102,12 +107,13 @@ if ([string]::IsNullOrWhiteSpace($applySlice)) {
     $upsertHasDiagnostics = $upsertIndex -ge 0 -and
         $applySlice.Substring($upsertIndex, [Math]::Min(700, $applySlice.Length - $upsertIndex)) -match "pageRemotePriceApply"
     if ($localIndex -lt 0 -or
+        $setBasedIndex -lt 0 -or
         $pendingCalls.Count -lt 2 -or
         -not $prepareHasDiagnostics -or
         -not $upsertHasDiagnostics) {
-        Fail "each catalog page must use one fresh remote-price diagnostic for pending, repair and upsert paths"
+        Fail "each catalog page must use one fresh diagnostic through set-based, pending and fallback price paths"
     } else {
-        Pass "each catalog page passes its fresh remote-price diagnostic through all price paths"
+        Pass "each catalog page passes its fresh diagnostic through set-based, pending and fallback price paths"
     }
 
     $commitIndex = $applySlice.IndexOf("tx.Commit()", [System.StringComparison]::Ordinal)
@@ -146,11 +152,13 @@ if ($missingPriceMarkers.Count -gt 0) {
 
 $baselineTest = Get-TestSlice $tests "PriceOnlyPagesPublishExactRemotePriceApplyDiagnostics"
 if ([string]::IsNullOrWhiteSpace($baselineTest) -or
-    $baselineTest -notmatch "Assert\.AreEqual\(\s*19L?\s*,[\s\S]{0,180}RemotePriceApply\.SqlCommandCount" -or
-    $baselineTest -notmatch "Assert\.AreEqual\(\s*22L?\s*,[\s\S]{0,180}RemotePriceApply\.SqlStatementCount") {
-    Fail "the price-only test must assert the exact 19-command/22-statement diagnostic baseline"
+    $baselineTest -notmatch "Assert\.AreEqual\(\s*14L?\s*,[\s\S]{0,180}RemotePriceApply\.SqlCommandCount" -or
+    $baselineTest -notmatch "Assert\.AreEqual\(\s*18L?\s*,[\s\S]{0,180}RemotePriceApply\.SqlStatementCount" -or
+    $baselineTest -notmatch "RemotePriceApply\.SetBasedPageCount" -or
+    $baselineTest -notmatch "RemotePriceApply\.FallbackPageCount") {
+    Fail "the price-only test must assert the exact set-based 14-command/18-statement contract"
 } else {
-    Pass "the price-only test asserts the exact 19-command/22-statement baseline"
+    Pass "the price-only test asserts the exact set-based 14-command/18-statement contract"
 }
 
 $rollbackTest = Get-TestSlice $tests "FailedPricePageDoesNotPublishRemotePriceApplyDiagnostics"
@@ -167,8 +175,12 @@ $benchmarkMarkers = @(
     '"batch-price-only"',
     "RemotePriceApplySqlCommandCount",
     "RemotePriceApplySqlStatementCount",
+    "RemotePriceApplySetBasedPageCount",
+    "RemotePriceApplyStagedRowCount",
     "remote_price_apply_sql_commands",
-    "remote_price_apply_sql_statements"
+    "remote_price_apply_sql_statements",
+    "remote_price_apply_set_based_pages",
+    "remote_price_apply_staged_rows"
 )
 $missingBenchmarkMarkers = @($benchmarkMarkers | Where-Object { $benchmark -notmatch $_ })
 if ($missingBenchmarkMarkers.Count -gt 0) {

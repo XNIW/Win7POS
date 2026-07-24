@@ -98,6 +98,7 @@ $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $catalogExactnessTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogExactnessTests.cs"
 $batchRepositoryTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs"
+$runContextPerformanceTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogRunContextPerformanceTests.cs"
 $localProductWriterTests = Read-Text "tests/Win7POS.Core.Tests/Data/LocalProductWriterTests.cs"
 $remoteCatalogProductWriterTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogProductWriterTests.cs"
 $referenceTombstoneTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogReferenceTombstoneTests.cs"
@@ -164,13 +165,45 @@ if ($service -notmatch "using\s+var\s+catalogApplyRun[\s\S]{0,180}CreateRunConte
 } else {
     Pass "catalog sync reuses one apply context across pages"
 }
+$atomicCommitIndex = $batchRepository.IndexOf("public async Task CommitAtomicFullRefreshAsync")
+$physicalAtomicCommitIndex = if ($atomicCommitIndex -ge 0) {
+    $batchRepository.IndexOf("_atomicTransaction.Commit();", $atomicCommitIndex)
+} else {
+    -1
+}
+$atomicDiagnosticsIndex = if ($atomicCommitIndex -ge 0) {
+    $batchRepository.IndexOf("RecordRemotePriceApply(_atomicRemotePriceApply);", $atomicCommitIndex)
+} else {
+    -1
+}
+if ($service -notmatch "StageAuthoritativePagesAtomicallyAsync" -or
+    $service -notmatch "BeginAtomicFullRefreshAsync" -or
+    $service -notmatch "CommitAtomicFullRefreshAsync" -or
+    $batchRepository -notmatch "class\s+RemoteCatalogAuthoritativeStageRunContext" -or
+    $batchRepository -notmatch "RecordUncommittedAtomicPage" -or
+    $physicalAtomicCommitIndex -lt $atomicCommitIndex -or
+    $atomicDiagnosticsIndex -lt $physicalAtomicCommitIndex -or
+    $batchRepositoryTests -notmatch "AtomicFullRefreshFailureRollsBackEveryAppliedPage" -or
+    $batchRepositoryTests -notmatch "AtomicAuthoritativeStageFailureRollsBackEveryPage") {
+    Fail "authoritative staging and full-refresh promotion must be run-atomic with post-commit diagnostics and rollback coverage"
+} else {
+    Pass "authoritative staging and full-refresh promotion are run-atomic with post-commit diagnostics and rollback coverage"
+}
 if ($batchRepository -notmatch "temp_catalog_page_product_identities" -or
     $batchRepository -notmatch "LoadPageProductIdentitiesAsync" -or
     $batchRepository -notmatch "LoadPagePendingStockAsync" -or
-    $batchRepository -notmatch "PreparedCommandCount") {
+    $batchRepository -notmatch "PreparedCommandCount" -or
+    $batchRepository -notmatch "ProductIdentityStageRowsPerChunk" -or
+    $batchRepository -notmatch "ProductIdentityStageChunkCount" -or
+    $batchRepository -notmatch "ProductStageRowsPerChunk" -or
+    $batchRepository -notmatch "ProductStageChunkCount" -or
+    $batchRepository -notmatch "JsonChunkParameterName" -or
+    $batchRepository -notmatch "FROM\s+json_each\(" -or
+    $batchRepository -notmatch "BuildProductIdentityRowsJson" -or
+    $batchRepository -notmatch "BuildProductRowsJson") {
     Fail "catalog run context must use page-scoped identity/pending-stock queries and prepared commands"
 } else {
-    Pass "catalog run context uses page-scoped queries and prepared commands"
+    Pass "catalog run context uses page-scoped queries and bounded JSON staging commands"
 }
 if ($batchRepository -notmatch "UpsertRemoteInTransactionAsync" -or
     $batchRepository -notmatch "RemoteCatalogProductWriter\s*\.\s*UpsertProductAndMetaInTransactionCoreAsync" -or
@@ -202,17 +235,19 @@ if (-not $hardCapMatch.Success -or [int]$hardCapMatch.Groups[1].Value -lt 100) {
     Fail "authoritative catalog hard ceiling is missing or too low for 100,000-row lanes"
 } else { Pass "authoritative catalog hard ceiling supports 100,000-row lanes" }
 if ($service -notmatch "effectiveMaxPages" -or
-    $service -notmatch "firstPageBudget\.PageBudget" -or
+    $service -notmatch "firstPageBudget" -or
     $paginationPolicy -notmatch "CalculatePageBudget" -or
     $paginationPolicy -notmatch "Math\.Max\(" -or
+    $service -notmatch "effectiveMaxPages\s*=\s*MaxAuthoritativeCatalogPullPages" -or
     $service -notmatch "for\s*\(var page = 1; page <= effectiveMaxPages; page\+\+\)") {
-    Fail "server-selected full_refresh does not use an authoritative lane-derived budget"
+    Fail "server-selected full_refresh does not validate the lane-derived budget before using the hard ceiling"
 } else {
-    Pass "server-selected full_refresh uses the authoritative lane-derived budget"
+    Pass "server-selected full_refresh validates the lane-derived budget and remains hard-ceiling bounded"
 }
 if ($paginationPolicy -notmatch "ExpandFullPageBudgetForTombstoneContinuation" -or
     $paginationPolicy -notmatch "!cumulative\.HasAnyTombstones" -or
-    $service -notmatch "ExpandFullPageBudgetForTombstoneContinuation" -or
+    $service -notmatch "effectiveMaxPages\s*=\s*MaxAuthoritativeCatalogPullPages" -or
+    $service -notmatch "StageAuthoritativePagesAtomicallyAsync" -or
     $paginationTests -notmatch "FullHasMore_TombstonesCanContinueBeyondActiveSummaryBudget") {
     Fail "full tombstone chains must drain beyond the active-only summary budget within the hard ceiling"
 } else {
@@ -254,7 +289,7 @@ $networkIndex = $service.IndexOf("new PosAdminWebClient")
 if ($capturedSessionCheckIndex -lt 0 -or $bindingIndex -lt 0 -or $networkIndex -lt 0 -or $capturedSessionCheckIndex -gt $bindingIndex -or $capturedSessionCheckIndex -gt $networkIndex -or $shopState -notmatch "catalog_session_shop_changed") { Fail "captured catalog session must be revalidated inside the transition barrier before bind/network" } else { Pass "captured catalog session is revalidated before bind/network" }
 if ($shopState -notmatch "pos\.catalog\.bound_shop_id" -or $shopState -notmatch "pos\.catalog\.bound_shop_code" -or $shopState -notmatch "Catalog state shop binding mismatch") { Fail "persistent catalog shop binding missing" } else { Pass "persistent catalog shop binding present" }
 if ($service -notmatch "stagedResponseShopError[\s\S]*response_shop_mismatch[\s\S]*ApplyCatalogAsync") { Fail "catalog response shop must be validated before local apply" } else { Pass "catalog response shop validated before local apply" }
-if ($service -notmatch "StageAuthoritativePageAsync" -or
+if ($service -notmatch "StageAuthoritativePagesAtomicallyAsync" -or
     $batchRepository -notmatch "catalog_authoritative_id_stage" -or
     $batchRepository -notmatch "category_remote_id" -or
     $batchRepository -notmatch "supplier_remote_id" -or
@@ -269,6 +304,15 @@ if ($batchRepository -notmatch "AddStageOccurrences" -or
     Fail "authoritative staging must preserve invalid and duplicate row evidence"
 } else {
     Pass "authoritative staging preserves invalid/duplicate evidence"
+}
+if ($service -notmatch "ReuseValidatedAuthoritativeStagePage\s*=\s*authoritativeFullRefresh\s*&&\s*stagePage\s*!=\s*null" -or
+    $batchRepository -notmatch "RequireValidatedAuthoritativeStagePageAsync" -or
+    $batchRepository -notmatch "Validated authoritative catalog stage scope is missing or ambiguous" -or
+    $batchRepository -notmatch "UPDATE catalog_authoritative_stage_scope[\s\S]{0,180}SET transition_epoch" -or
+    $batchRepository -notmatch "Validated authoritative catalog stage page is missing or ambiguous") {
+    Fail "validated full-refresh stage reuse must adopt the fenced epoch and fail closed on missing scope/page evidence"
+} else {
+    Pass "validated full-refresh stage is adopted once and reused with fail-closed scope/page checks"
 }
 if ($service -notmatch "CatalogFullRefreshReconciler" -or $fullRefresh -notmatch "NOT EXISTS" -or $fullRefresh -notmatch "remote_product_id" -or $fullRefresh -notmatch "remote_category_id" -or $fullRefresh -notmatch "remote_supplier_id") { Fail "full_refresh reconciliation missing" } else { Pass "full_refresh reconciles remote rows absent from authoritative snapshot" }
 if ($service -notmatch "RequestFullRepairWhileBarrierHeldAsync" -or
@@ -291,10 +335,13 @@ if ($service -notmatch "IsCatalogCursorRejectionCode" -or
     Pass "expired/rejected cursors probe a controlled non-destructive full-refresh boundary"
 }
 $catalogApplyIndex = $service.IndexOf("var applyStats = await ApplyCatalogAsync(")
-$ambiguityGuardIndex = $service.IndexOf("var paginationSafety = CatalogPaginationSafetyPolicy.EvaluateTerminalPage(")
+$ambiguityGuardIndex = $service.IndexOf(
+    "CatalogPaginationSafetyPolicy.EvaluateTerminalPage(",
+    $compatibilityIndex)
 $compatibilityIndex = $service.IndexOf("var compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull")
 $responseShopIndex = $service.IndexOf("var stagedResponseShopError = OutboxShopBinding.GetMismatchCode(")
 $stageAppendIndex = $service.IndexOf("fullStage.AppendAsync(")
+$authoritativeStageIndex = $service.IndexOf("StageAuthoritativePagesAtomicallyAsync(")
 $promotionMarkerIndex = $service.IndexOf("Only a completely drained and protocol-validated full chain")
 $promotionResetIndex = if ($promotionMarkerIndex -ge 0) {
     $service.IndexOf("RequestFullRepairWhileBarrierHeldAsync(", $promotionMarkerIndex)
@@ -306,7 +353,9 @@ if ($catalogApplyIndex -lt 0 -or
     $ambiguityGuardIndex -le $compatibilityIndex -or
     $responseShopIndex -le $ambiguityGuardIndex -or
     $stageAppendIndex -lt $responseShopIndex -or
+    $authoritativeStageIndex -lt $stageAppendIndex -or
     $promotionMarkerIndex -lt $stageAppendIndex -or
+    $promotionMarkerIndex -lt $authoritativeStageIndex -or
     $promotionResetIndex -lt $promotionMarkerIndex -or
     $stagedApplyIndex -lt $promotionResetIndex -or
     $service -notmatch "var\s+requestCursor\s*=\s*networkCursor" -or
@@ -338,7 +387,7 @@ if ($fullStage -notmatch "MaximumPageBytes\s*=\s*8\s*\*\s*1024\s*\*\s*1024" -or
 }
 $ambiguityFailureBlock = [regex]::Match(
     $service,
-    'if \(!paginationSafety\.Allowed\)[\s\S]*?(?=\r?\n\s*if \(page == 1 && pageIsFullRefresh\))').Value
+    'if \(!stagedPaginationSafety\.Allowed\)[\s\S]*?(?=\r?\n\s*receivedFullLanes\s*=\s*evidence\.LaneCounts)').Value
 if ($paginationPolicy -notmatch "server_catalog_pagination_ambiguous" -or
     $ambiguityFailureBlock -notmatch "StoreCatalogFailureAsync" -or
     $ambiguityFailureBlock -notmatch "BootstrapStatusFailedRetryable" -or
@@ -508,7 +557,7 @@ $compatibilityIndex = $service.IndexOf(
     "ValidateCatalogPull(result.Value)",
     [System.StringComparison]::Ordinal)
 $evidenceIndex = $service.IndexOf(
-    ".StageAuthoritativePageAsync(",
+    ".StageAuthoritativePagesAtomicallyAsync(",
     [System.StringComparison]::Ordinal)
 $terminalIndex = $service.IndexOf(
     "CatalogPaginationSafetyPolicy.EvaluateTerminalPage(",
@@ -841,20 +890,26 @@ if ($initializer -notmatch "remote_catalog_product_references" -or
 }
 $relinkMethod = [regex]::Match(
     $batchRepository,
-    'private static Task<int> RelinkRemoteProductReferencesAsync[\s\S]*?private static string NormalizeBarcode').Value
+    'private static Task<RemoteCatalogRelinkResult> RelinkRemoteProductReferencesAsync[\s\S]*?private static string NormalizeBarcode').Value
 if ($relinkMethod -notmatch "temp_catalog_relink_product_ids" -or
     $relinkMethod -notmatch "temp_catalog_relink_category_ids" -or
     $relinkMethod -notmatch "temp_catalog_relink_supplier_ids" -or
     $relinkMethod -notmatch "temp_catalog_relink_barcodes" -or
+    $relinkMethod -notmatch "json_each\(@productIdsJson\)" -or
+    $relinkMethod -notmatch "json_each\(@categoryIdsJson\)" -or
+    $relinkMethod -notmatch "json_each\(@supplierIdsJson\)" -or
+    $batchRepository -notmatch "RelinkStageRowsPerCommand\s*=\s*1000" -or
     $relinkMethod -notmatch "WHERE barcode IN\s*\(\s*SELECT barcode\s*FROM temp_catalog_relink_barcodes" -or
     $relinkMethod -match "UPDATE product_meta[\s\S]{0,3000}WHERE EXISTS" -or
     $initializer -notmatch "idx_remote_product_refs_category" -or
     $initializer -notmatch "idx_remote_product_refs_supplier" -or
     $batchRepositoryTests -notmatch "product_meta_relink_touch_log" -or
-    $batchRepositoryTests -notmatch "WHERE barcode = 'UNRELATED-REF'") {
+    $batchRepositoryTests -notmatch "WHERE barcode = 'UNRELATED-REF'" -or
+    $runContextPerformanceTests -notmatch "RelinkStagesThousandIdsWithOneBoundedJsonCommand" -or
+    $runContextPerformanceTests -notmatch "Assert\.AreEqual\(1L,\s*run\.Diagnostics\.RelinkStageSqlCommandCount\)") {
     Fail "reference relink must target only page-affected products through indexed temporary sets"
 } else {
-    Pass "reference relink targets only page-affected products and preserves unrelated rows"
+    Pass "reference relink uses bounded JSON staging, targets page-affected products and preserves unrelated rows"
 }
 $referenceCleanup = [regex]::Match(
     $batchRepository,
