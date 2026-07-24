@@ -24,15 +24,17 @@ recorded 158,144 commands and 177,907 statements: reductions of 99.911% and
 
 ## Required net48/x86 measurement
 
-The database was recreated deterministically for every sample. Two warm-up
-samples were excluded, followed by 20 measured full-refresh samples on the same
-host with 19,763 products, 19,763 prices, and page size 1,000.
+The database was recreated deterministically for every sample on one stable
+temporary session path. This preserves fresh-database isolation without
+introducing per-sample path churn. Two warm-up samples were excluded, followed
+by 20 measured full-refresh samples on the same host with 19,763 products,
+19,763 prices, and page size 1,000.
 
 - Exactness: 20/20 `Verified`; products 19,763; prices 19,763; pending 0
-- p50: 4,229.749 ms
-- p90: 4,437.410 ms
-- p95: 4,446.318 ms
-- Maximum: 4,597.124 ms
+- p50: 3,544.574 ms
+- p90: 3,659.530 ms
+- p95: 3,715.443 ms
+- Maximum: 3,867.261 ms
 - Peak working set: 65,212,416 bytes
 - Peak private bytes: 48,660,480 bytes
 - Dispatcher median maximum delay: 23.373 ms
@@ -44,7 +46,14 @@ host with 19,763 products, 19,763 prices, and page size 1,000.
 
 Measured elapsed times in milliseconds:
 
-`4248.342, 4374.429, 4368.074, 4329.903, 4066.929, 3823.334, 4135.422, 4211.156, 4168.289, 4150.009, 4313.662, 4161.852, 4026.219, 4153.978, 4175.822, 4365.669, 4264.839, 4597.124, 4437.410, 4446.318`
+`3867.261, 3715.443, 3569.928, 3570.057, 3587.062, 3529.233, 3570.629, 3384.410, 3617.061, 3497.203, 3524.778, 3500.145, 3647.666, 3440.781, 3510.147, 3357.962, 3494.468, 3423.726, 3659.530, 3559.914`
+
+Local Windows Application Control blocks the newly rebuilt unsigned benchmark
+apphost. The stable-path timing rerun therefore loaded the same net48/x86
+assemblies in the signed 32-bit Windows PowerShell host. The memory figures
+above remain the direct-apphost figures from the immediately preceding run of
+the same production implementation; the exact-head GitHub workflow executes
+the apphost directly and is authoritative for both time and memory gates.
 
 ## Bounded-path checks
 

@@ -36,14 +36,14 @@ public static class CatalogBatchPerformanceScenario
 
         SQLitePCL.Batteries_V2.Init();
         var samples = new List<CatalogBatchPerformanceSample>(iterations);
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "Win7POS.CatalogPerformance",
+            Guid.NewGuid().ToString("N"));
+        var dbPath = Path.Combine(root, "pos.db");
         for (var iteration = 1; iteration <= iterations; iteration++)
         {
-            var root = Path.Combine(
-                Path.GetTempPath(),
-                "Win7POS.CatalogPerformance",
-                Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(root);
-            var dbPath = Path.Combine(root, "pos.db");
 
             try
             {
