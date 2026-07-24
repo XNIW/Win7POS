@@ -12,6 +12,7 @@ namespace Win7POS.Data.Repositories
     internal sealed class RemotePriceHistoryRepository
     {
         private const int PendingRemotePriceReplayBatchSize = 2000;
+        private const int RemotePriceStageRowsPerCommand = 100;
         private readonly SqliteConnectionFactory _factory;
 
         internal RemotePriceHistoryRepository(SqliteConnectionFactory factory)
@@ -353,34 +354,11 @@ WHERE ownership.remote_price_id IS NULL
             IReadOnlyList<RemotePriceStageRow> rows,
             RemotePriceApplyDiagnostics diagnostics)
         {
-            var rowsJson = new StringBuilder(Math.Max(512, rows.Count * 160));
-            rowsJson.Append('[');
-            for (var index = 0; index < rows.Count; index += 1)
-            {
-                if (index > 0) rowsJson.Append(',');
-                var row = rows[index];
-                rowsJson.Append('[');
-                rowsJson.Append(row.Ordinal.ToString(CultureInfo.InvariantCulture));
-                rowsJson.Append(',');
-                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.RemotePriceId);
-                rowsJson.Append(',');
-                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.RemoteProductId);
-                rowsJson.Append(',');
-                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.Type);
-                rowsJson.Append(',');
-                rowsJson.Append(row.Price.ToString(CultureInfo.InvariantCulture));
-                rowsJson.Append(',');
-                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.EffectiveAt);
-                rowsJson.Append(',');
-                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.Source);
-                rowsJson.Append(']');
-            }
-            rowsJson.Append(']');
-
             using var command = conn.CreateCommand();
             command.Transaction = tx;
             command.CommandText = @"
-DELETE FROM temp_catalog_page_remote_prices;
+DELETE FROM temp_catalog_page_remote_prices
+WHERE @clearExisting = 1;
 WITH staged AS (
   SELECT
     CAST(json_extract(value, '$[0]') AS INTEGER) AS ordinal,
@@ -409,11 +387,52 @@ SELECT
   effective_at,
   source
 FROM staged;";
-            command.Parameters.Add("@rowsJson", SqliteType.Text).Value = rowsJson.ToString();
+            command.Parameters.Add("@clearExisting", SqliteType.Integer).Value = 1;
+            command.Parameters.Add("@rowsJson", SqliteType.Text).Value = "[]";
             command.Prepare();
             diagnostics?.RecordPreparedCommand();
-            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
-            RecordSqlCommand(diagnostics, statementCount: 2);
+            for (var offset = 0; offset < rows.Count; offset += RemotePriceStageRowsPerCommand)
+            {
+                var rowCount = Math.Min(
+                    RemotePriceStageRowsPerCommand,
+                    rows.Count - offset);
+                command.Parameters["@clearExisting"].Value = offset == 0 ? 1 : 0;
+                command.Parameters["@rowsJson"].Value =
+                    BuildRemotePriceStageRowsJson(rows, offset, rowCount);
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                RecordSqlCommand(diagnostics, statementCount: 2);
+            }
+        }
+
+        private static string BuildRemotePriceStageRowsJson(
+            IReadOnlyList<RemotePriceStageRow> rows,
+            int offset,
+            int rowCount)
+        {
+            var rowsJson = new StringBuilder(Math.Max(512, rowCount * 160));
+            rowsJson.Append('[');
+            for (var index = 0; index < rowCount; index += 1)
+            {
+                if (index > 0) rowsJson.Append(',');
+                var row = rows[offset + index];
+                rowsJson.Append('[');
+                rowsJson.Append(row.Ordinal.ToString(CultureInfo.InvariantCulture));
+                rowsJson.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.RemotePriceId);
+                rowsJson.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.RemoteProductId);
+                rowsJson.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.Type);
+                rowsJson.Append(',');
+                rowsJson.Append(row.Price.ToString(CultureInfo.InvariantCulture));
+                rowsJson.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.EffectiveAt);
+                rowsJson.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.Source);
+                rowsJson.Append(']');
+            }
+            rowsJson.Append(']');
+            return rowsJson.ToString();
         }
 
         internal async Task<bool> UpsertRemotePriceHistoryAsync(string remoteProductId, string type, int price, string timestamp, string source)

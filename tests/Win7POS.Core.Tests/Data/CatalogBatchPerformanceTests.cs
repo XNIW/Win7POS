@@ -46,8 +46,8 @@ public sealed class CatalogBatchPerformanceTests
         Assert.AreEqual((long)rows, sample.ProductCount);
         Assert.AreEqual((long)rows, sample.PriceCount);
         Assert.AreEqual(0L, sample.PendingPriceCount);
-        Assert.AreEqual(7L, sample.RemotePriceApplySqlCommandCount);
-        Assert.AreEqual(9L, sample.RemotePriceApplySqlStatementCount);
+        Assert.AreEqual(16L, sample.RemotePriceApplySqlCommandCount);
+        Assert.AreEqual(27L, sample.RemotePriceApplySqlStatementCount);
         Assert.AreEqual(0L, sample.RemotePriceApplyFallbackPageCount);
         Assert.AreEqual(1L, sample.RemotePriceApplyPreparedCommandCount);
         Assert.AreEqual(1L, sample.RemotePriceApplySetBasedPageCount);
@@ -71,8 +71,8 @@ public sealed class CatalogBatchPerformanceTests
         Assert.AreEqual("Verified", sample.ExactnessStatus);
         Assert.AreEqual(0L, sample.AuthoritativeStageRowsAfter);
         Assert.IsTrue(
-            sample.ContextSqlCommandCount <= 15L,
-            $"Expected at most 15 run-context SQL commands, observed {sample.ContextSqlCommandCount}.");
+            sample.ContextSqlCommandCount <= 25L,
+            $"Expected at most 25 run-context SQL commands, observed {sample.ContextSqlCommandCount}.");
     }
 
     [TestMethod]
@@ -145,8 +145,18 @@ public sealed class CatalogBatchPerformanceTests
                 if (mode == "batch-price-only")
                 {
                     var pages = (rows + pageSize - 1) / pageSize;
-                    Assert.AreEqual(7L * pages, sample.RemotePriceApplySqlCommandCount);
-                    Assert.AreEqual(9L * pages, sample.RemotePriceApplySqlStatementCount);
+                    var stageCommands = Enumerable.Range(0, pages)
+                        .Sum(page =>
+                        {
+                            var pageRows = Math.Min(pageSize, rows - (page * pageSize));
+                            return (pageRows + 99) / 100;
+                        });
+                    Assert.AreEqual(
+                        (long)stageCommands + (6L * pages),
+                        sample.RemotePriceApplySqlCommandCount);
+                    Assert.AreEqual(
+                        (2L * stageCommands) + (7L * pages),
+                        sample.RemotePriceApplySqlStatementCount);
                     Assert.AreEqual(0L, sample.RemotePriceApplyFallbackPageCount);
                     Assert.AreEqual((long)pages, sample.RemotePriceApplyPreparedCommandCount);
                     Assert.AreEqual((long)pages, sample.RemotePriceApplySetBasedPageCount);

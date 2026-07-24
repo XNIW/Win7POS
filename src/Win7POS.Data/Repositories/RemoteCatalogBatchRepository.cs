@@ -23,6 +23,7 @@ namespace Win7POS.Data.Repositories
     /// </summary>
     public sealed class RemoteCatalogBatchRepository
     {
+        private const int AuthoritativeStageRowsPerCommand = 100;
         private const int RelinkStageRowsPerCommand = 1000;
         private readonly SqliteConnectionFactory _factory;
 
@@ -880,34 +881,6 @@ WHERE shop_id = @ShopId
         {
             if (occurrences == null || occurrences.Count == 0) return;
 
-            // One bounded page is encoded as JSON and expanded by SQLite's built-in
-            // JSON table function. This keeps the durable insert at one statement per
-            // page without retaining identities beyond the current page on x86.
-            var rowsJson = new StringBuilder(Math.Max(256, occurrences.Count * 96));
-            rowsJson.Append('[');
-            var first = true;
-            foreach (var occurrence in occurrences)
-            {
-                if (!first) rowsJson.Append(',');
-                first = false;
-                rowsJson.Append('[');
-                AppendJsonString(rowsJson, occurrence.Key.EntityKind);
-                rowsJson.Append(',');
-                AppendJsonString(rowsJson, occurrence.Key.RemoteId);
-                rowsJson.Append(',');
-                AppendJsonString(rowsJson, occurrence.Key.ContentFingerprint);
-                rowsJson.Append(',');
-                AppendJsonString(rowsJson, occurrence.Key.CategoryRemoteId);
-                rowsJson.Append(',');
-                AppendJsonString(rowsJson, occurrence.Key.SupplierRemoteId);
-                rowsJson.Append(',');
-                AppendJsonString(rowsJson, occurrence.Key.ProductRemoteId);
-                rowsJson.Append(',');
-                rowsJson.Append(occurrence.Value.ToString(CultureInfo.InvariantCulture));
-                rowsJson.Append(']');
-            }
-            rowsJson.Append(']');
-
             using var command = conn.CreateCommand();
             command.Transaction = tx;
             command.CommandText = @"
@@ -950,8 +923,50 @@ FROM incoming;";
             AddParameter(command, "@scopeId", identity.ScopeId);
             AddParameter(command, "@pageNumber", identity.PageNumber);
             AddParameter(command, "@stagedAt", stagedAt);
-            AddParameter(command, "@rowsJson", rowsJson.ToString());
-            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            AddParameter(command, "@rowsJson", "[]");
+            command.Prepare();
+
+            var rows = occurrences.ToArray();
+            for (var offset = 0; offset < rows.Length; offset += AuthoritativeStageRowsPerCommand)
+            {
+                var rowCount = Math.Min(
+                    AuthoritativeStageRowsPerCommand,
+                    rows.Length - offset);
+                command.Parameters["@rowsJson"].Value =
+                    BuildAuthoritativeStageRowsJson(rows, offset, rowCount);
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            }
+        }
+
+        private static string BuildAuthoritativeStageRowsJson(
+            IReadOnlyList<KeyValuePair<CatalogAuthoritativeStageKey, int>> rows,
+            int offset,
+            int rowCount)
+        {
+            var rowsJson = new StringBuilder(Math.Max(256, rowCount * 96));
+            rowsJson.Append('[');
+            for (var index = 0; index < rowCount; index += 1)
+            {
+                if (index > 0) rowsJson.Append(',');
+                var occurrence = rows[offset + index];
+                rowsJson.Append('[');
+                AppendJsonString(rowsJson, occurrence.Key.EntityKind);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.RemoteId);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.ContentFingerprint);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.CategoryRemoteId);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.SupplierRemoteId);
+                rowsJson.Append(',');
+                AppendJsonString(rowsJson, occurrence.Key.ProductRemoteId);
+                rowsJson.Append(',');
+                rowsJson.Append(occurrence.Value.ToString(CultureInfo.InvariantCulture));
+                rowsJson.Append(']');
+            }
+            rowsJson.Append(']');
+            return rowsJson.ToString();
         }
 
         internal static void AppendJsonString(StringBuilder target, string value)
@@ -1723,8 +1738,8 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
     /// </summary>
     public sealed class RemoteCatalogApplyRunContext : IDisposable
     {
-        private const int ProductIdentityStageRowsPerCommand = 1000;
-        private const int ProductStageRowsPerCommand = 1000;
+        private const int ProductIdentityStageRowsPerCommand = 500;
+        private const int ProductStageRowsPerCommand = 100;
         private readonly RemoteCatalogBatchRepository _repository;
         private readonly SemaphoreSlim _singleFlight = new SemaphoreSlim(1, 1);
         private readonly SqliteCommand _stagePageProduct;

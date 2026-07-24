@@ -146,17 +146,31 @@ jobs:
           $commandCounts = @($measuredLines | ForEach-Object {
             [long]([regex]::Match($_, "remote_price_apply_sql_commands=([0-9]+)").Groups[1].Value)
           } | Select-Object -Unique)
+          $contextCommandCounts = @($measuredLines | ForEach-Object {
+            [long]([regex]::Match($_, "context_sql_commands=([0-9]+)").Groups[1].Value)
+          } | Select-Object -Unique)
           $relinkStageCommandCounts = @($measuredLines | ForEach-Object {
             [long]([regex]::Match($_, "relink_stage_sql_commands=([0-9]+)").Groups[1].Value)
           } | Select-Object -Unique)
-          if ($statementCounts.Count -ne 1 -or $statementCounts[0] -ge 158144) {
-            throw "net48/x86 set-based statement reduction invalid: values=$($statementCounts -join ','). Evidence: $evidencePath"
+          if ($statementCounts.Count -ne 1 -or $statementCounts[0] -ne 536) {
+            throw "net48/x86 set-based statement count invalid: values=$($statementCounts -join ','). Evidence: $evidencePath"
           }
-          if ($commandCounts.Count -ne 1) {
+          if ($commandCounts.Count -ne 1 -or $commandCounts[0] -ne 318) {
             throw "net48/x86 SQL command count is not deterministic: values=$($commandCounts -join ','). Evidence: $evidencePath"
+          }
+          if ($contextCommandCounts.Count -ne 1 -or $contextCommandCounts[0] -ne 301) {
+            throw "net48/x86 bounded context command count invalid: values=$($contextCommandCounts -join ','). Evidence: $evidencePath"
           }
           if ($relinkStageCommandCounts.Count -ne 1 -or $relinkStageCommandCounts[0] -ne 20) {
             throw "net48/x86 relink staging is not page-bounded: values=$($relinkStageCommandCounts -join ','). Evidence: $evidencePath"
+          }
+
+          $gen2Counts = @($measuredLines | ForEach-Object {
+            [long]([regex]::Match($_, "gc2=([0-9]+)").Groups[1].Value)
+          })
+          $maximumGen2 = ($gen2Counts | Measure-Object -Maximum).Maximum
+          if ($gen2Counts.Count -ne $measuredCount -or $maximumGen2 -gt 5) {
+            throw "net48/x86 bounded JSON staging caused excessive Gen2 collections: samples=$($gen2Counts.Count), max=$maximumGen2. Evidence: $evidencePath"
           }
 
           $peakWorkingSet = ($measuredLines | ForEach-Object {
@@ -186,7 +200,7 @@ jobs:
           } else {
             [double]::PositiveInfinity
           }
-          $summary = "measured=$measuredCount warmups=$warmupCount p50_ms=$p50 p90_ms=$p90 p95_ms=$p95 max_ms=$maximum relink_stage_sql_commands=$($relinkStageCommandCounts[0]) sql_commands=$($commandCounts[0]) sql_statements=$($statementCounts[0]) peak_working_set_bytes=$peakWorkingSet peak_private_bytes=$peakPrivateBytes dispatcher_median_ms=$medianDelay dispatcher_max_ms=$maximumDelay"
+          $summary = "measured=$measuredCount warmups=$warmupCount p50_ms=$p50 p90_ms=$p90 p95_ms=$p95 max_ms=$maximum context_sql_commands=$($contextCommandCounts[0]) relink_stage_sql_commands=$($relinkStageCommandCounts[0]) sql_commands=$($commandCounts[0]) sql_statements=$($statementCounts[0]) max_gen2=$maximumGen2 peak_working_set_bytes=$peakWorkingSet peak_private_bytes=$peakPrivateBytes dispatcher_median_ms=$medianDelay dispatcher_max_ms=$maximumDelay"
           $summary | Add-Content -LiteralPath $evidencePath -Encoding utf8
           Write-Host "net48/x86 19,763 summary: $summary"
           Write-Host "net48/x86 dispatcher delays (ms): values=[$delaySummary], stable_samples=$stableSampleCount/$measuredCount"
@@ -240,6 +254,15 @@ jobs:
           $x86Text = $net48 -join "`n"
           if ($x86Text -notmatch "relink_stage_sql_commands=100") {
             throw "100,000-row net48 relink staging is not bounded to one command per page. Evidence: $net48Evidence"
+          }
+          if ($x86Text -notmatch "context_sql_commands=1503" -or
+              $x86Text -notmatch "remote_price_apply_sql_commands=1600" -or
+              $x86Text -notmatch "remote_price_apply_sql_statements=2700") {
+            throw "100,000-row net48 bounded SQL command evidence is invalid. Evidence: $net48Evidence"
+          }
+          $gen2Collections = [long]([regex]::Match($x86Text, "gc2=([0-9]+)").Groups[1].Value)
+          if ($gen2Collections -gt 5) {
+            throw "100,000-row net48 bounded staging caused excessive Gen2 collections: $gen2Collections. Evidence: $net48Evidence"
           }
           $peakWorkingSet = [long]([regex]::Match($x86Text, "peak_working_set_bytes=([0-9]+)").Groups[1].Value)
           $peakPrivateBytes = [long]([regex]::Match($x86Text, "peak_private_bytes=([0-9]+)").Groups[1].Value)
