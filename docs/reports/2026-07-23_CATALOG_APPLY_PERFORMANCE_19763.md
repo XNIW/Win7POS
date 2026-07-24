@@ -1,7 +1,9 @@
 # Catalog apply performance — 19,763 rows
 
-Date: 2026-07-23  
-Branch: `agent/final-catalog-apply-performance`  
+Date: 2026-07-23
+
+Branch: `agent/final-catalog-apply-performance`
+
 Runtime under test: `net48`, x86, Windows, SQLite DELETE journal with `synchronous=FULL`
 
 ## Change
