@@ -24,7 +24,7 @@ public sealed class CatalogBatchPerformanceTests
         Assert.AreEqual(3L, sample.ProductCount);
         Assert.AreEqual(3L, sample.PriceCount);
         Assert.AreEqual(0L, sample.PendingPriceCount);
-        Assert.AreEqual(16L, sample.RemotePriceApplySqlCommandCount);
+        Assert.AreEqual(14L, sample.RemotePriceApplySqlCommandCount);
         Assert.AreEqual(18L, sample.RemotePriceApplySqlStatementCount);
         Assert.AreEqual(0L, sample.RemotePriceApplyFallbackPageCount);
         Assert.AreEqual(2L, sample.RemotePriceApplyPreparedCommandCount);
@@ -46,12 +46,8 @@ public sealed class CatalogBatchPerformanceTests
         Assert.AreEqual((long)rows, sample.ProductCount);
         Assert.AreEqual((long)rows, sample.PriceCount);
         Assert.AreEqual(0L, sample.PendingPriceCount);
-        Assert.IsTrue(
-            sample.RemotePriceApplySqlCommandCount <= 20L,
-            $"Expected at most 20 SQL round trips, observed {sample.RemotePriceApplySqlCommandCount}.");
-        Assert.IsTrue(
-            sample.RemotePriceApplySqlStatementCount <= 20L,
-            $"Expected at most 20 SQL statements, observed {sample.RemotePriceApplySqlStatementCount}.");
+        Assert.AreEqual(7L, sample.RemotePriceApplySqlCommandCount);
+        Assert.AreEqual(9L, sample.RemotePriceApplySqlStatementCount);
         Assert.AreEqual(0L, sample.RemotePriceApplyFallbackPageCount);
         Assert.AreEqual(1L, sample.RemotePriceApplyPreparedCommandCount);
         Assert.AreEqual(1L, sample.RemotePriceApplySetBasedPageCount);
@@ -75,8 +71,8 @@ public sealed class CatalogBatchPerformanceTests
         Assert.AreEqual("Verified", sample.ExactnessStatus);
         Assert.AreEqual(0L, sample.AuthoritativeStageRowsAfter);
         Assert.IsTrue(
-            sample.ContextSqlCommandCount <= 40L,
-            $"Expected at most 40 run-context SQL commands, observed {sample.ContextSqlCommandCount}.");
+            sample.ContextSqlCommandCount <= 15L,
+            $"Expected at most 15 run-context SQL commands, observed {sample.ContextSqlCommandCount}.");
     }
 
     [TestMethod]
@@ -149,13 +145,8 @@ public sealed class CatalogBatchPerformanceTests
                 if (mode == "batch-price-only")
                 {
                     var pages = (rows + pageSize - 1) / pageSize;
-                    var fullPages = rows / pageSize;
-                    var finalPageRows = rows % pageSize;
-                    var stageChunks =
-                        fullPages * ((pageSize + 99L) / 100L) +
-                        (finalPageRows == 0 ? 0L : (finalPageRows + 99L) / 100L);
-                    Assert.AreEqual(stageChunks + (7L * pages), sample.RemotePriceApplySqlCommandCount);
-                    Assert.AreEqual(stageChunks + (9L * pages), sample.RemotePriceApplySqlStatementCount);
+                    Assert.AreEqual(7L * pages, sample.RemotePriceApplySqlCommandCount);
+                    Assert.AreEqual(9L * pages, sample.RemotePriceApplySqlStatementCount);
                     Assert.AreEqual(0L, sample.RemotePriceApplyFallbackPageCount);
                     Assert.AreEqual((long)pages, sample.RemotePriceApplyPreparedCommandCount);
                     Assert.AreEqual((long)pages, sample.RemotePriceApplySetBasedPageCount);

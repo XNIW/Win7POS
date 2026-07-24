@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
@@ -10,7 +12,6 @@ namespace Win7POS.Data.Repositories
     internal sealed class RemotePriceHistoryRepository
     {
         private const int PendingRemotePriceReplayBatchSize = 2000;
-        private const int RemotePriceStageRowsPerCommand = 100;
         private readonly SqliteConnectionFactory _factory;
 
         internal RemotePriceHistoryRepository(SqliteConnectionFactory factory)
@@ -139,11 +140,6 @@ namespace Win7POS.Data.Repositories
             {
                 return new RemotePriceBatchApplyResult { Skipped = skipped };
             }
-
-            RecordSqlCommand(diagnostics);
-            await conn.ExecuteAsync(
-                "DELETE FROM temp_catalog_page_remote_prices;",
-                transaction: tx).ConfigureAwait(false);
 
             await InsertRemotePriceStageRowsAsync(
                 conn,
@@ -357,68 +353,45 @@ WHERE ownership.remote_price_id IS NULL
             IReadOnlyList<RemotePriceStageRow> rows,
             RemotePriceApplyDiagnostics diagnostics)
         {
-            SqliteCommand command = null;
-            var preparedRowCount = 0;
-            try
+            var rowsJson = new StringBuilder(Math.Max(512, rows.Count * 160));
+            rowsJson.Append('[');
+            for (var index = 0; index < rows.Count; index += 1)
             {
-                for (var offset = 0; offset < rows.Count;)
-                {
-                    var rowCount = Math.Min(RemotePriceStageRowsPerCommand, rows.Count - offset);
-                    if (command == null || preparedRowCount != rowCount)
-                    {
-                        command?.Dispose();
-                        command = CreateRemotePriceStageInsertCommand(conn, tx, rowCount);
-                        command.Prepare();
-                        diagnostics?.RecordPreparedCommand();
-                        preparedRowCount = rowCount;
-                    }
-
-                    for (var rowIndex = 0; rowIndex < rowCount; rowIndex += 1)
-                    {
-                        var row = rows[offset + rowIndex];
-                        command.Parameters[$"@ordinal{rowIndex}"].Value = row.Ordinal;
-                        command.Parameters[$"@remotePriceId{rowIndex}"].Value = row.RemotePriceId;
-                        command.Parameters[$"@remoteProductId{rowIndex}"].Value = row.RemoteProductId;
-                        command.Parameters[$"@type{rowIndex}"].Value = row.Type;
-                        command.Parameters[$"@price{rowIndex}"].Value = row.Price;
-                        command.Parameters[$"@effectiveAt{rowIndex}"].Value = row.EffectiveAt;
-                        command.Parameters[$"@source{rowIndex}"].Value = row.Source;
-                    }
-
-                    await command.ExecuteNonQueryAsync().ConfigureAwait(false);
-                    RecordSqlCommand(diagnostics);
-                    offset += rowCount;
-                }
+                if (index > 0) rowsJson.Append(',');
+                var row = rows[index];
+                rowsJson.Append('[');
+                rowsJson.Append(row.Ordinal.ToString(CultureInfo.InvariantCulture));
+                rowsJson.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.RemotePriceId);
+                rowsJson.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.RemoteProductId);
+                rowsJson.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.Type);
+                rowsJson.Append(',');
+                rowsJson.Append(row.Price.ToString(CultureInfo.InvariantCulture));
+                rowsJson.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.EffectiveAt);
+                rowsJson.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(rowsJson, row.Source);
+                rowsJson.Append(']');
             }
-            finally
-            {
-                command?.Dispose();
-            }
-        }
+            rowsJson.Append(']');
 
-        private static SqliteCommand CreateRemotePriceStageInsertCommand(
-            SqliteConnection conn,
-            SqliteTransaction tx,
-            int rowCount)
-        {
-            var values = new string[rowCount];
-            var command = conn.CreateCommand();
+            using var command = conn.CreateCommand();
             command.Transaction = tx;
-            for (var index = 0; index < rowCount; index += 1)
-            {
-                values[index] =
-                    $"(@ordinal{index}, @remotePriceId{index}, @remoteProductId{index}, " +
-                    $"@type{index}, @price{index}, @effectiveAt{index}, @source{index})";
-                command.Parameters.Add($"@ordinal{index}", SqliteType.Integer);
-                command.Parameters.Add($"@remotePriceId{index}", SqliteType.Text);
-                command.Parameters.Add($"@remoteProductId{index}", SqliteType.Text);
-                command.Parameters.Add($"@type{index}", SqliteType.Text);
-                command.Parameters.Add($"@price{index}", SqliteType.Integer);
-                command.Parameters.Add($"@effectiveAt{index}", SqliteType.Text);
-                command.Parameters.Add($"@source{index}", SqliteType.Text);
-            }
-
             command.CommandText = @"
+DELETE FROM temp_catalog_page_remote_prices;
+WITH staged AS (
+  SELECT
+    CAST(json_extract(value, '$[0]') AS INTEGER) AS ordinal,
+    CAST(json_extract(value, '$[1]') AS TEXT) AS remote_price_id,
+    CAST(json_extract(value, '$[2]') AS TEXT) AS remote_product_id,
+    CAST(json_extract(value, '$[3]') AS TEXT) AS type,
+    CAST(json_extract(value, '$[4]') AS INTEGER) AS price,
+    CAST(json_extract(value, '$[5]') AS TEXT) AS effective_at,
+    CAST(json_extract(value, '$[6]') AS TEXT) AS source
+  FROM json_each(@rowsJson)
+)
 INSERT INTO temp_catalog_page_remote_prices(
   ordinal,
   remote_price_id,
@@ -427,8 +400,20 @@ INSERT INTO temp_catalog_page_remote_prices(
   price,
   effective_at,
   source)
-VALUES " + string.Join(",\n", values) + ";";
-            return command;
+SELECT
+  ordinal,
+  remote_price_id,
+  remote_product_id,
+  type,
+  price,
+  effective_at,
+  source
+FROM staged;";
+            command.Parameters.Add("@rowsJson", SqliteType.Text).Value = rowsJson.ToString();
+            command.Prepare();
+            diagnostics?.RecordPreparedCommand();
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            RecordSqlCommand(diagnostics, statementCount: 2);
         }
 
         internal async Task<bool> UpsertRemotePriceHistoryAsync(string remoteProductId, string type, int price, string timestamp, string source)

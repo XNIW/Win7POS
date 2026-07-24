@@ -951,7 +951,7 @@ FROM incoming;";
             await command.ExecuteNonQueryAsync().ConfigureAwait(false);
         }
 
-        private static void AppendJsonString(StringBuilder target, string value)
+        internal static void AppendJsonString(StringBuilder target, string value)
         {
             target.Append('"');
             foreach (var character in value ?? string.Empty)
@@ -1667,12 +1667,10 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
     /// </summary>
     public sealed class RemoteCatalogApplyRunContext : IDisposable
     {
-        private const int ProductIdentityStageRowsPerCommand = 200;
-        private const int ProductStageRowsPerCommand = 50;
+        private const int ProductIdentityStageRowsPerCommand = 1000;
+        private const int ProductStageRowsPerCommand = 1000;
         private readonly RemoteCatalogBatchRepository _repository;
         private readonly SemaphoreSlim _singleFlight = new SemaphoreSlim(1, 1);
-        private readonly SqliteCommand _clearPageProducts;
-        private readonly SqliteCommand _clearPageSetProducts;
         private readonly SqliteCommand _stagePageProduct;
         private readonly SqliteCommand _stagePageSetProduct;
         private Dictionary<string, int> _categoryIdsByRemoteId =
@@ -1747,17 +1745,9 @@ CREATE INDEX IF NOT EXISTS temp_catalog_page_remote_prices_product_id_idx
                 ReferenceCommand = new RemoteCatalogBatchRepository.RemoteProductReferencePreparedCommand(
                     Connection,
                     null);
-                _clearPageProducts = Connection.CreateCommand();
-                _clearPageProducts.CommandText =
-                    "DELETE FROM temp_catalog_page_product_identities;";
-                _clearPageProducts.Prepare();
-                _clearPageSetProducts = Connection.CreateCommand();
-                _clearPageSetProducts.CommandText =
-                    "DELETE FROM temp_catalog_page_products;";
-                _clearPageSetProducts.Prepare();
                 _stagePageProduct = CreateProductIdentityStageCommand(Connection);
                 _stagePageSetProduct = CreateProductStageCommand(Connection);
-                Diagnostics.PreparedCommandCount = 10;
+                Diagnostics.PreparedCommandCount = 8;
                 Diagnostics.ContextSqlCommandCount = 1;
             }
             catch
@@ -1801,8 +1791,6 @@ CREATE INDEX IF NOT EXISTS temp_catalog_page_remote_prices_product_id_idx
         {
             ProductCommands.SetTransaction(transaction);
             ReferenceCommand.SetTransaction(transaction);
-            _clearPageProducts.Transaction = transaction;
-            _clearPageSetProducts.Transaction = transaction;
             _stagePageProduct.Transaction = transaction;
             _stagePageSetProduct.Transaction = transaction;
         }
@@ -1862,9 +1850,6 @@ ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
             RemoteCatalogBatch batch,
             SqliteTransaction transaction)
         {
-            await _clearPageProducts.ExecuteNonQueryAsync().ConfigureAwait(false);
-            Diagnostics.ContextSqlCommandCount += 1;
-
             var identities = new List<RemoteCatalogProductIdentityRow>(
                 (batch.Products?.Count ?? 0) + (batch.ProductTombstones?.Count ?? 0));
             foreach (var product in batch.Products ?? Array.Empty<RemoteCatalogProductWrite>())
@@ -1887,21 +1872,28 @@ ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
                 AddIdentity(identities, string.Empty, tombstone.RemoteProductId);
             }
 
-            for (var offset = 0; offset < identities.Count; offset += ProductIdentityStageRowsPerCommand)
+            if (identities.Count == 0)
             {
-                var rowCount = Math.Min(
-                    ProductIdentityStageRowsPerCommand,
-                    identities.Count - offset);
-                _stagePageProduct.Parameters["@rowCount"].Value = rowCount;
-                for (var index = 0; index < rowCount; index += 1)
-                {
-                    var row = identities[offset + index];
-                    _stagePageProduct.Parameters[$"@barcode{index}"].Value = row.Barcode;
-                    _stagePageProduct.Parameters[$"@remoteProductId{index}"].Value =
-                        row.RemoteProductId;
-                }
+                _stagePageProduct.Parameters["@clearExisting"].Value = 1;
+                _stagePageProduct.Parameters["@rowsJson"].Value = "[]";
                 await _stagePageProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
                 Diagnostics.ContextSqlCommandCount += 1;
+            }
+            else
+            {
+                for (var offset = 0;
+                    offset < identities.Count;
+                    offset += ProductIdentityStageRowsPerCommand)
+                {
+                    var rowCount = Math.Min(
+                        ProductIdentityStageRowsPerCommand,
+                        identities.Count - offset);
+                    _stagePageProduct.Parameters["@clearExisting"].Value = offset == 0 ? 1 : 0;
+                    _stagePageProduct.Parameters["@rowsJson"].Value =
+                        BuildProductIdentityRowsJson(identities, offset, rowCount);
+                    await _stagePageProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
+                    Diagnostics.ContextSqlCommandCount += 1;
+                }
             }
             Diagnostics.StagedProductIdentityCount += identities.Count;
         }
@@ -1991,44 +1983,26 @@ SELECT EXISTS (
         internal async Task StageCleanProductsAsync(
             IReadOnlyList<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite> products)
         {
-            await _clearPageSetProducts.ExecuteNonQueryAsync().ConfigureAwait(false);
-            Diagnostics.ContextSqlCommandCount += 1;
             var rows = products ??
                 Array.Empty<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite>();
-            for (var offset = 0; offset < rows.Count; offset += ProductStageRowsPerCommand)
+            if (rows.Count == 0)
             {
-                var rowCount = Math.Min(ProductStageRowsPerCommand, rows.Count - offset);
-                _stagePageSetProduct.Parameters["@rowCount"].Value = rowCount;
-                for (var index = 0; index < rowCount; index += 1)
-                {
-                    var row = rows[offset + index];
-                    _stagePageSetProduct.Parameters[$"@ordinal{index}"].Value = offset + index;
-                    _stagePageSetProduct.Parameters[$"@barcode{index}"].Value = row.Barcode;
-                    _stagePageSetProduct.Parameters[$"@name{index}"].Value = row.Name;
-                    _stagePageSetProduct.Parameters[$"@unitPrice{index}"].Value = row.UnitPrice;
-                    _stagePageSetProduct.Parameters[$"@remoteProductId{index}"].Value =
-                        row.RemoteProductId;
-                    _stagePageSetProduct.Parameters[$"@articleCode{index}"].Value = row.ArticleCode;
-                    _stagePageSetProduct.Parameters[$"@secondName{index}"].Value = row.SecondName;
-                    _stagePageSetProduct.Parameters[$"@purchasePrice{index}"].Value =
-                        row.PurchasePrice;
-                    _stagePageSetProduct.Parameters[$"@supplierId{index}"].Value =
-                        (object)row.SupplierId ?? DBNull.Value;
-                    _stagePageSetProduct.Parameters[$"@supplierName{index}"].Value =
-                        row.SupplierName;
-                    _stagePageSetProduct.Parameters[$"@categoryId{index}"].Value =
-                        (object)row.CategoryId ?? DBNull.Value;
-                    _stagePageSetProduct.Parameters[$"@categoryName{index}"].Value =
-                        row.CategoryName;
-                    _stagePageSetProduct.Parameters[$"@stockQuantity{index}"].Value =
-                        row.StockQuantity;
-                    _stagePageSetProduct.Parameters[$"@remoteCategoryId{index}"].Value =
-                        row.RemoteCategoryId;
-                    _stagePageSetProduct.Parameters[$"@remoteSupplierId{index}"].Value =
-                        row.RemoteSupplierId;
-                }
+                _stagePageSetProduct.Parameters["@clearExisting"].Value = 1;
+                _stagePageSetProduct.Parameters["@rowsJson"].Value = "[]";
                 await _stagePageSetProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
                 Diagnostics.ContextSqlCommandCount += 1;
+            }
+            else
+            {
+                for (var offset = 0; offset < rows.Count; offset += ProductStageRowsPerCommand)
+                {
+                    var rowCount = Math.Min(ProductStageRowsPerCommand, rows.Count - offset);
+                    _stagePageSetProduct.Parameters["@clearExisting"].Value = offset == 0 ? 1 : 0;
+                    _stagePageSetProduct.Parameters["@rowsJson"].Value =
+                        BuildProductRowsJson(rows, offset, rowCount);
+                    await _stagePageSetProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
+                    Diagnostics.ContextSqlCommandCount += 1;
+                }
             }
         }
 
@@ -2061,8 +2035,6 @@ SELECT EXISTS (
             BindTransaction(null);
             _stagePageSetProduct.Dispose();
             _stagePageProduct.Dispose();
-            _clearPageSetProducts.Dispose();
-            _clearPageProducts.Dispose();
             ReferenceCommand.Dispose();
             ProductCommands.Dispose();
             Connection.Dispose();
@@ -2091,25 +2063,20 @@ SELECT EXISTS (
         private static SqliteCommand CreateProductIdentityStageCommand(SqliteConnection connection)
         {
             var command = connection.CreateCommand();
-            var sql = new StringBuilder(@"
-WITH staged(slot, barcode, remote_product_id) AS (
-  VALUES ");
-            command.Parameters.Add("@rowCount", SqliteType.Integer).Value = 0;
-            for (var index = 0; index < ProductIdentityStageRowsPerCommand; index += 1)
-            {
-                if (index > 0) sql.AppendLine(",");
-                sql.Append($"({index}, @barcode{index}, @remoteProductId{index})");
-                command.Parameters.Add($"@barcode{index}", SqliteType.Text).Value = string.Empty;
-                command.Parameters.Add($"@remoteProductId{index}", SqliteType.Text).Value =
-                    string.Empty;
-            }
-            sql.Append(@"
+            command.CommandText = @"
+DELETE FROM temp_catalog_page_product_identities
+WHERE @clearExisting = 1;
+WITH staged AS (
+  SELECT
+    CAST(json_extract(value, '$[0]') AS TEXT) AS barcode,
+    CAST(json_extract(value, '$[1]') AS TEXT) AS remote_product_id
+  FROM json_each(@rowsJson)
 )
 INSERT OR IGNORE INTO temp_catalog_page_product_identities(barcode, remote_product_id)
 SELECT barcode, remote_product_id
-FROM staged
-WHERE slot < @rowCount;");
-            command.CommandText = sql.ToString();
+FROM staged;";
+            command.Parameters.Add("@clearExisting", SqliteType.Integer).Value = 1;
+            command.Parameters.Add("@rowsJson", SqliteType.Text).Value = "[]";
             command.Prepare();
             return command;
         }
@@ -2117,65 +2084,27 @@ WHERE slot < @rowCount;");
         private static SqliteCommand CreateProductStageCommand(SqliteConnection connection)
         {
             var command = connection.CreateCommand();
-            var sql = new StringBuilder(@"
-WITH staged(
-  slot,
-  ordinal,
-  barcode,
-  name,
-  unit_price,
-  remote_product_id,
-  article_code,
-  second_name,
-  purchase_price,
-  supplier_id,
-  supplier_name,
-  category_id,
-  category_name,
-  stock_quantity,
-  remote_category_id,
-  remote_supplier_id) AS (
-  VALUES ");
-            command.Parameters.Add("@rowCount", SqliteType.Integer).Value = 0;
-            for (var index = 0; index < ProductStageRowsPerCommand; index += 1)
-            {
-                if (index > 0) sql.AppendLine(",");
-                sql.Append(
-                    $"({index}, @ordinal{index}, @barcode{index}, @name{index}, " +
-                    $"@unitPrice{index}, @remoteProductId{index}, @articleCode{index}, " +
-                    $"@secondName{index}, @purchasePrice{index}, @supplierId{index}, " +
-                    $"@supplierName{index}, @categoryId{index}, @categoryName{index}, " +
-                    $"@stockQuantity{index}, @remoteCategoryId{index}, " +
-                    $"@remoteSupplierId{index})");
-                AddStageParameter(command, $"@ordinal{index}", SqliteType.Integer, 0);
-                AddStageParameter(command, $"@barcode{index}", SqliteType.Text, string.Empty);
-                AddStageParameter(command, $"@name{index}", SqliteType.Text, string.Empty);
-                AddStageParameter(command, $"@unitPrice{index}", SqliteType.Integer, 0L);
-                AddStageParameter(
-                    command,
-                    $"@remoteProductId{index}",
-                    SqliteType.Text,
-                    string.Empty);
-                AddStageParameter(command, $"@articleCode{index}", SqliteType.Text, string.Empty);
-                AddStageParameter(command, $"@secondName{index}", SqliteType.Text, string.Empty);
-                AddStageParameter(command, $"@purchasePrice{index}", SqliteType.Integer, 0);
-                AddStageParameter(command, $"@supplierId{index}", SqliteType.Integer, DBNull.Value);
-                AddStageParameter(command, $"@supplierName{index}", SqliteType.Text, string.Empty);
-                AddStageParameter(command, $"@categoryId{index}", SqliteType.Integer, DBNull.Value);
-                AddStageParameter(command, $"@categoryName{index}", SqliteType.Text, string.Empty);
-                AddStageParameter(command, $"@stockQuantity{index}", SqliteType.Integer, 0);
-                AddStageParameter(
-                    command,
-                    $"@remoteCategoryId{index}",
-                    SqliteType.Text,
-                    string.Empty);
-                AddStageParameter(
-                    command,
-                    $"@remoteSupplierId{index}",
-                    SqliteType.Text,
-                    string.Empty);
-            }
-            sql.Append(@"
+            command.CommandText = @"
+DELETE FROM temp_catalog_page_products
+WHERE @clearExisting = 1;
+WITH staged AS (
+  SELECT
+    CAST(json_extract(value, '$[0]') AS INTEGER) AS ordinal,
+    CAST(json_extract(value, '$[1]') AS TEXT) AS barcode,
+    CAST(json_extract(value, '$[2]') AS TEXT) AS name,
+    CAST(json_extract(value, '$[3]') AS INTEGER) AS unit_price,
+    CAST(json_extract(value, '$[4]') AS TEXT) AS remote_product_id,
+    CAST(json_extract(value, '$[5]') AS TEXT) AS article_code,
+    CAST(json_extract(value, '$[6]') AS TEXT) AS second_name,
+    CAST(json_extract(value, '$[7]') AS INTEGER) AS purchase_price,
+    CAST(json_extract(value, '$[8]') AS INTEGER) AS supplier_id,
+    CAST(json_extract(value, '$[9]') AS TEXT) AS supplier_name,
+    CAST(json_extract(value, '$[10]') AS INTEGER) AS category_id,
+    CAST(json_extract(value, '$[11]') AS TEXT) AS category_name,
+    CAST(json_extract(value, '$[12]') AS INTEGER) AS stock_quantity,
+    CAST(json_extract(value, '$[13]') AS TEXT) AS remote_category_id,
+    CAST(json_extract(value, '$[14]') AS TEXT) AS remote_supplier_id
+  FROM json_each(@rowsJson)
 )
 INSERT INTO temp_catalog_page_products(
   ordinal,
@@ -2209,20 +2138,96 @@ SELECT
   stock_quantity,
   remote_category_id,
   remote_supplier_id
-FROM staged
-WHERE slot < @rowCount;");
-            command.CommandText = sql.ToString();
+FROM staged;";
+            command.Parameters.Add("@clearExisting", SqliteType.Integer).Value = 1;
+            command.Parameters.Add("@rowsJson", SqliteType.Text).Value = "[]";
             command.Prepare();
             return command;
         }
 
-        private static void AddStageParameter(
-            SqliteCommand command,
-            string name,
-            SqliteType type,
-            object value)
+        private static string BuildProductIdentityRowsJson(
+            IReadOnlyList<RemoteCatalogProductIdentityRow> rows,
+            int offset,
+            int rowCount)
         {
-            command.Parameters.Add(name, type).Value = value;
+            var json = new StringBuilder(Math.Max(256, rowCount * 64));
+            json.Append('[');
+            for (var index = 0; index < rowCount; index += 1)
+            {
+                if (index > 0) json.Append(',');
+                var row = rows[offset + index];
+                json.Append('[');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.Barcode);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteProductId);
+                json.Append(']');
+            }
+            json.Append(']');
+            return json.ToString();
+        }
+
+        private static string BuildProductRowsJson(
+            IReadOnlyList<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite> rows,
+            int offset,
+            int rowCount)
+        {
+            var json = new StringBuilder(Math.Max(512, rowCount * 256));
+            json.Append('[');
+            for (var index = 0; index < rowCount; index += 1)
+            {
+                if (index > 0) json.Append(',');
+                var row = rows[offset + index];
+                json.Append('[');
+                AppendJsonInteger(json, offset + index);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.Barcode);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.Name);
+                json.Append(',');
+                AppendJsonInteger(json, row.UnitPrice);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteProductId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.ArticleCode);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.SecondName);
+                json.Append(',');
+                AppendJsonInteger(json, row.PurchasePrice);
+                json.Append(',');
+                AppendJsonNullableInteger(json, row.SupplierId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.SupplierName);
+                json.Append(',');
+                AppendJsonNullableInteger(json, row.CategoryId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.CategoryName);
+                json.Append(',');
+                AppendJsonInteger(json, row.StockQuantity);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteCategoryId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteSupplierId);
+                json.Append(']');
+            }
+            json.Append(']');
+            return json.ToString();
+        }
+
+        private static void AppendJsonInteger(StringBuilder json, long value)
+        {
+            json.Append(value.ToString(CultureInfo.InvariantCulture));
+        }
+
+        private static void AppendJsonNullableInteger(StringBuilder json, int? value)
+        {
+            if (value.HasValue)
+            {
+                AppendJsonInteger(json, value.Value);
+            }
+            else
+            {
+                json.Append("null");
+            }
         }
 
         private static Dictionary<string, int> ToRemoteIdMap(

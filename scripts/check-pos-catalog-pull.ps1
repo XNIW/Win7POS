@@ -170,11 +170,12 @@ if ($batchRepository -notmatch "temp_catalog_page_product_identities" -or
     $batchRepository -notmatch "PreparedCommandCount" -or
     $batchRepository -notmatch "ProductIdentityStageRowsPerCommand" -or
     $batchRepository -notmatch "ProductStageRowsPerCommand" -or
-    $batchRepository -notmatch "WITH staged\(slot, barcode, remote_product_id\)" -or
-    $batchRepository -notmatch "WHERE slot < @rowCount") {
+    $batchRepository -notmatch "json_each\(@rowsJson\)" -or
+    $batchRepository -notmatch "BuildProductIdentityRowsJson" -or
+    $batchRepository -notmatch "BuildProductRowsJson") {
     Fail "catalog run context must use page-scoped identity/pending-stock queries and prepared commands"
 } else {
-    Pass "catalog run context uses page-scoped queries and bounded multi-row staging commands"
+    Pass "catalog run context uses page-scoped queries and bounded JSON staging commands"
 }
 if ($batchRepository -notmatch "UpsertRemoteInTransactionAsync" -or
     $batchRepository -notmatch "RemoteCatalogProductWriter\s*\.\s*UpsertProductAndMetaInTransactionCoreAsync" -or
