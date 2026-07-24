@@ -17,8 +17,8 @@ contains at most 1,000 rows.
 This removes parameter-heavy staging loops without using unsafe pragmas,
 reducing the full-run catalog context from 598 to 103 SQL commands and the
 remote-price apply from 338 commands / 358 statements to 140 commands / 180
-statements. The original pre-optimization price path recorded 158,144
-statements.
+statements. The original pre-optimization price path recorded 158,144 commands
+and 177,907 statements: reductions of 99.911% and 99.899%, respectively.
 
 ## Required net48/x86 measurement
 
