@@ -53,19 +53,39 @@ $bootstrap = Read-Text "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 $wpfProject = Read-Text "src/Win7POS.Wpf/Win7POS.Wpf.csproj"
 $uiHarness = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $authorizationSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/AuthorizationLeaseWpfSmoke.cs"
+$authorizationSmokeRunner = Read-Text "scripts/run-authorization-lease-smoke.ps1"
 
 Require-Pattern "offline lease maximum is the 12-hour POS session contract" $contract 'OfflineAuthorizationMaxAgeSeconds\s*=\s*12\s*\*\s*60\s*\*\s*60'
 Require-Pattern "policy fails closed on missing legacy receipt timestamp" $policy 'local_receipt_time_invalid'
 Require-Pattern "policy rejects rollback and exact expiry" $policy 'clock_rollback[\s\S]*estimatedServerNow\s*>=\s*effectiveExpiry'
 Require-Pattern "first-login DTO consumes authenticated serverTime" $contracts 'class\s+PosFirstLoginResponse[\s\S]*DataMember\(Name\s*=\s*"serverTime"\)'
 Require-Pattern "heartbeat DTO consumes authenticated serverTime" $contracts 'class\s+PosHeartbeatResponse[\s\S]*DataMember\(Name\s*=\s*"serverTime"\)'
+Require-Pattern "first-login DTO consumes the optional authoritative offline expiry" $contracts 'class\s+PosFirstLoginResponse[\s\S]*DataMember\(\s*Name\s*=\s*"effectiveOfflineAuthorizationExpiresAt"'
+Require-Pattern "offline policy requires an attested authoritative expiry" $policy 'requireAuthoritativeOfflineExpiry[\s\S]*offline_attestation_required[\s\S]*authoritativeOfflineExpiry\s*<\s*effectiveExpiry'
+Require-Pattern "trusted state v4 persists an integrity-bound offline expiry" $store 'CurrentFormatVersion\s*=\s*4[\s\S]*EffectiveOfflineAuthorizationExpiresAt[\s\S]*ProtectedOfflineAuthorizationBinding[\s\S]*HasValidOfflineAuthorizationBinding'
+Require-Pattern "legacy v1/v2/v3 trusted state remains online-readable without offline authorization" $store 'PreviousFormatVersion\s*=\s*3[\s\S]*OlderFormatVersion\s*=\s*2[\s\S]*LegacyFormatVersion\s*=\s*1[\s\S]*ValidateOnlineReceipt'
+Require-Pattern "offline binding is scoped to a random process secret" $store 'ProcessAuthorizationScope\s*=\s*[\s\S]{0,120}CreateProcessAuthorizationScope\(\)[\s\S]*ComputeOfflineAuthorizationBinding[\s\S]*AppendBoundedValue\(material,\s*ProcessAuthorizationScope\)'
+if ($store -match 'DataMember\([\s\S]{0,100}processAuthorizationScope') {
+    Fail "process authorization scope must never be serialized"
+}
+else {
+    Pass "process authorization scope is not serialized"
+}
 Require-Pattern "trusted store persists server and local receipt clocks" $store 'LastOkLocalAt\s*=\s*candidate\.LastOkLocalAt[\s\S]*LastOkServerAt\s*=\s*candidate\.LastOkServerAt'
 Require-Pattern "only the non-shipping UI harness receives WPF internal test access" $wpfProject 'InternalsVisibleToAttribute[\s\S]{0,180}Win7POS\.Wpf\.UiSmokeHarness'
 Require-Pattern "authorization lease dynamic smoke is wired into the UI harness" $uiHarness '--authorization-lease-smoke[\s\S]*AuthorizationLeaseWpfSmoke\.RunAsync'
+Require-Pattern "authorization lease restart prepare and verify are separate harness modes" $uiHarness '--authorization-lease-restart-prepare[\s\S]*--authorization-lease-restart-verify[\s\S]*PrepareRestartProbeAsync[\s\S]*VerifyRestartProbeAsync'
 Require-Pattern "authorization lease dynamic smoke is restricted to an empty QA data root" $uiHarness 'restrictedSeed\s*=\s*physicalPrinterQa[\s\S]{0,300}--authorization-lease-smoke[\s\S]{0,700}EnsureSyntheticTrustedSessionSeedPath'
 Require-Pattern "wrong PIN dynamic regression leaves the generation uncommitted" $authorizationSmoke 'LoginAsync\(username,\s*WrongPin\)[\s\S]{0,900}sync_generation_inactive'
 Require-Pattern "epoch and generation changes are denied dynamically" $authorizationSmoke 'InvalidateAuthorizationState\(\)[\s\S]{0,900}sync_generation_changed[\s\S]{0,1500}qa-auth-generation-2[\s\S]{0,900}sync_generation_changed'
 Require-Pattern "successful PIN primes a monotonic authorization high-water" $authorizationSmoke 'LoginAsync\(username,\s*CorrectPin\)[\s\S]{0,1400}successful PIN did not prime[\s\S]{0,3200}clock_rollback'
+Require-Pattern "dynamic smoke denies legacy Admin and tampered offline state" $authorizationSmoke 'legacy Admin response synthesized an offline lease[\s\S]*tampered expiry retained offline authorization'
+Require-Pattern "dynamic smoke denies v1/v2/v3 state after reread" $authorizationSmoke 'VerifyLegacyStateReread[\s\S]*formatVersion:\s*3[\s\S]*legacy v[\s\S]*offline_attestation_required'
+Require-Pattern "dynamic smoke preserves the bound through retry and concurrent heartbeat CAS" $authorizationSmoke 'first-login retry after a lost response[\s\S]*heartbeat extended the authoritative offline expiry[\s\S]*concurrent heartbeat receipts did not resolve with one CAS winner'
+Require-Pattern "dynamic smoke denies sale and publication sinks before any write" $authorizationSmoke 'deniedPermissionService\.Demand[\s\S]{0,500}InsertUnauthorizedSaleAndOutbox[\s\S]{0,500}CountSaleRows\(factory\)\s*==\s*salesBefore[\s\S]{0,300}CountSalesOutboxRows\(factory\)\s*==\s*outboxBefore'
+Require-Pattern "unauthorized sink probe reaches the real sale and publication tables if the guard regresses" $authorizationSmoke 'InsertUnauthorizedSaleAndOutbox[\s\S]*INSERT INTO sales\([\s\S]*INSERT INTO sales_sync_outbox\('
+Require-Pattern "cross-process restart denies offline authorization before sale persistence" $authorizationSmoke 'PrepareRestartProbeAsync[\s\S]*VerifyRestartProbeAsync[\s\S]*offline_attestation_required[\s\S]*deniedBeforeSink[\s\S]*unauthorizedSaleSinkRows=0[\s\S]*freshOnlineRecovery=True'
+Require-Pattern "Windows runner executes prepare and verify in distinct processes" $authorizationSmokeRunner 'authorization-lease-restart-prepare[\s\S]*authorization-lease-restart-verify[\s\S]*prepareInstance[\s\S]*verifyInstance[\s\S]*offlineAttestationAfterRestart'
 Require-Pattern "cancelled operator switch rejects durable authority changes dynamically" $authorizationSmoke 'IsSessionBoundToCurrentTrustedIdentityAsync[\s\S]{0,1400}users\.UpdateAsync[\s\S]{0,900}durable authority change left the cached operator session bound[\s\S]{0,900}durableAuthorityChangeDenied=True'
 Require-Pattern "authorization lease smoke has an explicit zero-hardware boundary" $authorizationSmoke 'hardwareEffects=0'
 Require-Pattern "cancelled operator switch reloads and compares durable authority" $main 'IsSessionBoundToCurrentTrustedIdentityAsync[\s\S]{0,1400}GetByUsernameAsync[\s\S]{0,500}HasSameDurableAuthority'

@@ -71,8 +71,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
 
             var physicalPrinterQa = HasArg(args, "--physical-printer-qa");
+            var authorizationLeaseRestartPrepare =
+                HasArg(args, "--authorization-lease-restart-prepare");
+            var authorizationLeaseRestartVerify =
+                HasArg(args, "--authorization-lease-restart-verify");
             var restrictedSeed = physicalPrinterQa ||
                                  HasArg(args, "--authorization-lease-smoke") ||
+                                 authorizationLeaseRestartPrepare ||
+                                 authorizationLeaseRestartVerify ||
                                  HasArg(args, "--offline-sales-sandbox") ||
                                  (HasArg(args, "--seed") && HasArg(args, "--seed-trusted-session"));
             var verifyOfflineSalesSandboxSafety =
@@ -89,6 +95,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             var automatedRun = HasArg(args, "--seed") ||
                                HasArg(args, "--authorization-lease-smoke") ||
+                               authorizationLeaseRestartPrepare ||
+                               authorizationLeaseRestartVerify ||
                                HasArg(args, "--product-paging-dispatcher-smoke") ||
                                HasArg(args, "--bounded-logging-smoke") ||
                                HasArg(args, "--supplier-excel-wpf-viewmodel-smoke") ||
@@ -124,6 +132,42 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 try
                 {
+                    if (authorizationLeaseRestartPrepare)
+                    {
+                        var result = await AuthorizationLeaseWpfSmoke
+                            .PrepareRestartProbeAsync()
+                            .ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(
+                                dataDir,
+                                "authorization-lease-restart-prepare.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(
+                            result.StartsWith("PASS", StringComparison.Ordinal)
+                                ? 0
+                                : 1);
+                        return;
+                    }
+
+                    if (authorizationLeaseRestartVerify)
+                    {
+                        var result = await AuthorizationLeaseWpfSmoke
+                            .VerifyRestartProbeAsync()
+                            .ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(
+                                dataDir,
+                                "authorization-lease-restart-verify.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(
+                            result.StartsWith("PASS", StringComparison.Ordinal)
+                                ? 0
+                                : 1);
+                        return;
+                    }
+
                     if (HasArg(args, "--authorization-lease-smoke"))
                     {
                         var result = await AuthorizationLeaseWpfSmoke.RunAsync()
@@ -4366,6 +4410,9 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                 var now = DateTimeOffset.UtcNow;
                 new PosTrustedDeviceStore().SaveFirstLogin(new PosFirstLoginResponse
                 {
+                    EffectiveOfflineAuthorizationExpiresAt = now
+                        .AddSeconds(PosOnlineContract.OfflineAuthorizationMaxAgeSeconds)
+                        .ToString("O", CultureInfo.InvariantCulture),
                     Ok = true,
                     ServerTime = now.ToString("O", CultureInfo.InvariantCulture),
                     TrustedDeviceToken = Guid.NewGuid().ToString("N"),

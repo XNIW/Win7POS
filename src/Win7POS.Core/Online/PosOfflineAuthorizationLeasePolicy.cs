@@ -13,6 +13,30 @@ namespace Win7POS.Core.Online
             DateTimeOffset localNow,
             DateTimeOffset? minimumEstimatedServerNow = null)
         {
+            return EvaluateInternal(
+                session,
+                localNow,
+                minimumEstimatedServerNow,
+                requireAuthoritativeOfflineExpiry: true);
+        }
+
+        public static PosOfflineAuthorizationLeaseDecision ValidateOnlineReceipt(
+            PosTrustedDeviceSession session,
+            DateTimeOffset localNow)
+        {
+            return EvaluateInternal(
+                session,
+                localNow,
+                null,
+                requireAuthoritativeOfflineExpiry: false);
+        }
+
+        private static PosOfflineAuthorizationLeaseDecision EvaluateInternal(
+            PosTrustedDeviceSession session,
+            DateTimeOffset localNow,
+            DateTimeOffset? minimumEstimatedServerNow,
+            bool requireAuthoritativeOfflineExpiry)
+        {
             if (session == null)
             {
                 return PosOfflineAuthorizationLeaseDecision.Deny("trusted_session_missing");
@@ -36,6 +60,24 @@ namespace Win7POS.Core.Online
             if (sessionExpiresAt <= lastServerAt)
             {
                 return PosOfflineAuthorizationLeaseDecision.Deny("session_window_invalid");
+            }
+
+            DateTimeOffset authoritativeOfflineExpiry = default;
+            if (!session.OfflineAuthorizationAttested)
+            {
+                if (requireAuthoritativeOfflineExpiry)
+                {
+                    return PosOfflineAuthorizationLeaseDecision.Deny(
+                        "offline_attestation_required");
+                }
+            }
+            else if (!TryParseUtc(
+                session.EffectiveOfflineAuthorizationExpiresAt,
+                out authoritativeOfflineExpiry) ||
+                authoritativeOfflineExpiry <= lastServerAt)
+            {
+                return PosOfflineAuthorizationLeaseDecision.Deny(
+                    "offline_attestation_invalid");
             }
 
             var normalizedLocalNow = localNow.ToUniversalTime();
@@ -68,6 +110,11 @@ namespace Win7POS.Core.Online
             var effectiveExpiry = sessionExpiresAt <= maximumOfflineExpiry
                 ? sessionExpiresAt
                 : maximumOfflineExpiry;
+            if (session.OfflineAuthorizationAttested &&
+                authoritativeOfflineExpiry < effectiveExpiry)
+            {
+                effectiveExpiry = authoritativeOfflineExpiry;
+            }
             if (estimatedServerNow >= effectiveExpiry)
             {
                 return PosOfflineAuthorizationLeaseDecision.Deny(

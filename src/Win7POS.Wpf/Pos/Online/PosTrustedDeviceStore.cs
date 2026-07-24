@@ -12,9 +12,13 @@ namespace Win7POS.Wpf.Pos.Online
 {
     public sealed class PosTrustedDeviceStore
     {
-        private const int CurrentFormatVersion = 2;
+        private const int CurrentFormatVersion = 4;
+        private const int PreviousFormatVersion = 3;
+        private const int OlderFormatVersion = 2;
         private const int LegacyFormatVersion = 1;
         private static readonly object StateGate = new object();
+        private static readonly string ProcessAuthorizationScope =
+            CreateProcessAuthorizationScope();
         public string TrustedDeviceFilePath => Path.Combine(AppPaths.DataDirectory, "pos-trusted-device.json");
 
         public bool HasStoredState()
@@ -37,9 +41,15 @@ namespace Win7POS.Wpf.Pos.Online
                 if (string.IsNullOrWhiteSpace(state.GenerationId))
                 {
                     state.GenerationId = OnlineSyncGeneration.CreateGenerationId();
-                    state.FormatVersion = CurrentFormatVersion;
-                    SaveState(state);
                     session.GenerationId = state.GenerationId;
+                    if (state.FormatVersion == CurrentFormatVersion &&
+                        session.OfflineAuthorizationAttested)
+                    {
+                        state.ProtectedOfflineAuthorizationBinding =
+                            ProtectString(
+                                ComputeOfflineAuthorizationBinding(session));
+                    }
+                    SaveState(state);
                 }
 
                 return !string.IsNullOrWhiteSpace(session.DeviceToken) &&
@@ -116,35 +126,31 @@ namespace Win7POS.Wpf.Pos.Online
                 throw new ArgumentException("A bounded generation ID is required.", nameof(generationId));
             var candidate = new PosTrustedDeviceSession
             {
+                DeviceToken = response.TrustedDeviceToken,
+                EffectiveOfflineAuthorizationExpiresAt =
+                    response.EffectiveOfflineAuthorizationExpiresAt,
                 GenerationId = generationId,
                 LastOkLocalAt = localReceiptAt.ToString("O"),
                 LastOkServerAt = response.ServerTime,
+                OfflineAuthorizationAttested =
+                    !string.IsNullOrWhiteSpace(
+                        response.EffectiveOfflineAuthorizationExpiresAt),
                 PosSessionId = response.Session.PosSessionId,
                 SessionExpiresAt = response.Session.ExpiresAt,
-                ShopDeviceId = response.Device.ShopDeviceId
-            };
-            EnsureFreshLease(candidate, localReceiptAt);
-
-            var state = new StoredTrustedDeviceState
-            {
-                FormatVersion = CurrentFormatVersion,
-                GenerationId = generationId,
-                LastOkLocalAt = candidate.LastOkLocalAt,
-                LastOkServerAt = candidate.LastOkServerAt,
-                PosSessionId = response.Session.PosSessionId,
-                ProtectedDeviceSecret = ProtectString(response.TrustedDeviceToken),
-                ProtectedSessionSecret = ProtectString(response.Session.SessionToken),
-                SessionExpiresAt = response.Session.ExpiresAt,
+                SessionToken = response.Session.SessionToken,
                 ShopCode = response.Shop?.ShopCode,
                 ShopId = response.Shop?.ShopId,
                 ShopName = response.Shop?.ShopName,
                 ShopDeviceId = response.Device.ShopDeviceId,
-                StaffCredentialVersion = response.Staff?.CredentialVersion ?? 0,
                 StaffCode = response.Staff?.StaffCode,
+                StaffCredentialVersion = response.Staff?.CredentialVersion ?? 0,
                 StaffDisplayName = response.Staff?.DisplayName,
                 StaffId = response.Staff?.StaffId,
                 StaffRoleKey = response.Staff?.RoleKey,
+                TrustedStateFormatVersion = CurrentFormatVersion
             };
+            EnsureFreshOnlineReceipt(candidate, localReceiptAt);
+            var state = CreateStoredState(candidate);
 
             lock (StateGate)
             {
@@ -197,13 +203,17 @@ namespace Win7POS.Wpf.Pos.Online
             var localReceiptAt = DateTimeOffset.UtcNow;
             var candidate = new PosTrustedDeviceSession
             {
+                EffectiveOfflineAuthorizationExpiresAt =
+                    expectedSession.EffectiveOfflineAuthorizationExpiresAt,
                 LastOkLocalAt = localReceiptAt.ToString("O"),
                 LastOkServerAt = response.ServerTime,
+                OfflineAuthorizationAttested =
+                    expectedSession.OfflineAuthorizationAttested,
                 PosSessionId = responsePosSessionId,
                 SessionExpiresAt = response.Session.ExpiresAt,
                 ShopDeviceId = expectedSession.ShopDeviceId
             };
-            EnsureFreshLease(candidate, localReceiptAt);
+            EnsureFreshOnlineReceipt(candidate, localReceiptAt);
 
             lock (StateGate)
             {
@@ -217,15 +227,18 @@ namespace Win7POS.Wpf.Pos.Online
                     return false;
                 }
 
-                var state = new StoredTrustedDeviceState
+                var refreshedCandidate = new PosTrustedDeviceSession
                 {
-                    FormatVersion = CurrentFormatVersion,
+                    DeviceToken = currentSession.DeviceToken,
+                    EffectiveOfflineAuthorizationExpiresAt =
+                        currentSession.EffectiveOfflineAuthorizationExpiresAt,
                     GenerationId = currentState.GenerationId,
                     LastOkLocalAt = candidate.LastOkLocalAt,
                     LastOkServerAt = candidate.LastOkServerAt,
+                    OfflineAuthorizationAttested =
+                        currentSession.OfflineAuthorizationAttested,
                     PosSessionId = responsePosSessionId,
-                    ProtectedDeviceSecret = ProtectString(currentSession.DeviceToken),
-                    ProtectedSessionSecret = ProtectString(sessionToken),
+                    SessionToken = sessionToken,
                     SessionExpiresAt = response.Session.ExpiresAt,
                     ShopCode = currentSession.ShopCode,
                     ShopId = currentSession.ShopId,
@@ -236,18 +249,23 @@ namespace Win7POS.Wpf.Pos.Online
                     StaffDisplayName = currentSession.StaffDisplayName,
                     StaffId = currentSession.StaffId,
                     StaffRoleKey = currentSession.StaffRoleKey,
+                    TrustedStateFormatVersion = CurrentFormatVersion
                 };
 
-                SaveState(state);
+                EnsureFreshOnlineReceipt(refreshedCandidate, localReceiptAt);
+                SaveState(CreateStoredState(refreshedCandidate));
                 return TryReadState(out _, out refreshedSession);
             }
         }
 
-        private static void EnsureFreshLease(
+        private static void EnsureFreshOnlineReceipt(
             PosTrustedDeviceSession session,
             DateTimeOffset localReceiptAt)
         {
-            var decision = PosOfflineAuthorizationLeasePolicy.Evaluate(session, localReceiptAt);
+            var decision =
+                PosOfflineAuthorizationLeasePolicy.ValidateOnlineReceipt(
+                    session,
+                    localReceiptAt);
             if (!decision.Allowed)
             {
                 throw new InvalidDataException("Invalid POS authorization lease: " + decision.Code);
@@ -309,6 +327,8 @@ namespace Win7POS.Wpf.Pos.Online
                     File.ReadAllText(TrustedDeviceFilePath, Encoding.UTF8));
                 if (state == null ||
                     (state.FormatVersion != CurrentFormatVersion &&
+                     state.FormatVersion != PreviousFormatVersion &&
+                     state.FormatVersion != OlderFormatVersion &&
                      state.FormatVersion != LegacyFormatVersion) ||
                     string.IsNullOrWhiteSpace(state.ShopDeviceId) ||
                     string.IsNullOrWhiteSpace(state.PosSessionId) ||
@@ -321,6 +341,8 @@ namespace Win7POS.Wpf.Pos.Online
                 session = new PosTrustedDeviceSession
                 {
                     DeviceToken = UnprotectToString(state.ProtectedDeviceSecret),
+                    EffectiveOfflineAuthorizationExpiresAt =
+                        state.EffectiveOfflineAuthorizationExpiresAt,
                     GenerationId = state.GenerationId,
                     LastOkLocalAt = state.LastOkLocalAt,
                     LastOkServerAt = state.LastOkServerAt,
@@ -336,7 +358,12 @@ namespace Win7POS.Wpf.Pos.Online
                     StaffDisplayName = state.StaffDisplayName,
                     StaffId = state.StaffId,
                     StaffRoleKey = state.StaffRoleKey,
+                    TrustedStateFormatVersion = state.FormatVersion,
                 };
+                session.OfflineAuthorizationAttested =
+                    HasValidOfflineAuthorizationBinding(state, session);
+                if (!session.OfflineAuthorizationAttested)
+                    session.EffectiveOfflineAuthorizationExpiresAt = null;
                 return true;
             }
             catch
@@ -360,19 +387,153 @@ namespace Win7POS.Wpf.Pos.Online
                 string.Equals(expected.StaffId, current.StaffId, StringComparison.Ordinal) &&
                 expected.StaffCredentialVersion == current.StaffCredentialVersion &&
                 string.Equals(expected.DeviceToken, current.DeviceToken, StringComparison.Ordinal) &&
-                string.Equals(expected.SessionToken, current.SessionToken, StringComparison.Ordinal);
+                string.Equals(expected.SessionToken, current.SessionToken, StringComparison.Ordinal) &&
+                expected.OfflineAuthorizationAttested ==
+                    current.OfflineAuthorizationAttested &&
+                string.Equals(
+                    expected.EffectiveOfflineAuthorizationExpiresAt,
+                    current.EffectiveOfflineAuthorizationExpiresAt,
+                    StringComparison.Ordinal) &&
+                expected.TrustedStateFormatVersion ==
+                    current.TrustedStateFormatVersion;
         }
 
         private static string ComputeCredentialStamp(PosTrustedDeviceSession session)
         {
-            var material = string.Concat(
-                (session.DeviceToken ?? string.Empty).Length,
-                ":",
-                session.DeviceToken ?? string.Empty,
-                "|",
-                (session.SessionToken ?? string.Empty).Length,
-                ":",
-                session.SessionToken ?? string.Empty);
+            var material = new StringBuilder();
+            AppendBoundedValue(material, ComputeSecretStamp(session));
+            AppendBoundedValue(
+                material,
+                session.OfflineAuthorizationAttested ? "1" : "0");
+            AppendBoundedValue(
+                material,
+                session.EffectiveOfflineAuthorizationExpiresAt);
+            AppendBoundedValue(
+                material,
+                session.TrustedStateFormatVersion.ToString());
+            return ComputeSha256(material.ToString());
+        }
+
+        private static StoredTrustedDeviceState CreateStoredState(
+            PosTrustedDeviceSession session)
+        {
+            var state = new StoredTrustedDeviceState
+            {
+                FormatVersion = CurrentFormatVersion,
+                GenerationId = session.GenerationId,
+                LastOkLocalAt = session.LastOkLocalAt,
+                LastOkServerAt = session.LastOkServerAt,
+                PosSessionId = session.PosSessionId,
+                ProtectedDeviceSecret = ProtectString(session.DeviceToken),
+                ProtectedSessionSecret = ProtectString(session.SessionToken),
+                SessionExpiresAt = session.SessionExpiresAt,
+                ShopCode = session.ShopCode,
+                ShopId = session.ShopId,
+                ShopName = session.ShopName,
+                ShopDeviceId = session.ShopDeviceId,
+                StaffCode = session.StaffCode,
+                StaffCredentialVersion = session.StaffCredentialVersion,
+                StaffDisplayName = session.StaffDisplayName,
+                StaffId = session.StaffId,
+                StaffRoleKey = session.StaffRoleKey,
+            };
+
+            if (session.OfflineAuthorizationAttested)
+            {
+                state.EffectiveOfflineAuthorizationExpiresAt =
+                    session.EffectiveOfflineAuthorizationExpiresAt;
+                state.ProtectedOfflineAuthorizationBinding = ProtectString(
+                    ComputeOfflineAuthorizationBinding(session));
+            }
+            return state;
+        }
+
+        private static bool HasValidOfflineAuthorizationBinding(
+            StoredTrustedDeviceState state,
+            PosTrustedDeviceSession session)
+        {
+            if (state.FormatVersion != CurrentFormatVersion ||
+                string.IsNullOrWhiteSpace(
+                    state.EffectiveOfflineAuthorizationExpiresAt) ||
+                string.IsNullOrWhiteSpace(
+                    state.ProtectedOfflineAuthorizationBinding))
+            {
+                return false;
+            }
+
+            var expected = ComputeOfflineAuthorizationBinding(session);
+            var actual = UnprotectToString(
+                state.ProtectedOfflineAuthorizationBinding);
+            return FixedTimeEquals(expected, actual);
+        }
+
+        private static string ComputeOfflineAuthorizationBinding(
+            PosTrustedDeviceSession session)
+        {
+            var material = new StringBuilder();
+            AppendBoundedValue(material, CurrentFormatVersion.ToString());
+            AppendBoundedValue(material, session.GenerationId);
+            AppendBoundedValue(material, session.LastOkServerAt);
+            AppendBoundedValue(material, session.LastOkLocalAt);
+            AppendBoundedValue(material, session.PosSessionId);
+            AppendBoundedValue(material, session.SessionExpiresAt);
+            AppendBoundedValue(material, session.ShopId);
+            AppendBoundedValue(material, session.ShopCode);
+            AppendBoundedValue(material, session.ShopDeviceId);
+            AppendBoundedValue(material, session.StaffId);
+            AppendBoundedValue(material, session.StaffCode);
+            AppendBoundedValue(
+                material,
+                session.StaffCredentialVersion.ToString());
+            AppendBoundedValue(
+                material,
+                session.EffectiveOfflineAuthorizationExpiresAt);
+            AppendBoundedValue(material, ComputeSecretStamp(session));
+            // The repository has no trustworthy persisted monotonic boot clock on
+            // Windows 7. Keep offline authority process-scoped so a restart cannot
+            // reset the in-memory server-time high-water and replay this binding.
+            AppendBoundedValue(material, ProcessAuthorizationScope);
+            return ComputeSha256(material.ToString());
+        }
+
+        private static string CreateProcessAuthorizationScope()
+        {
+            var bytes = new byte[32];
+            try
+            {
+                using (var random = RandomNumberGenerator.Create())
+                {
+                    random.GetBytes(bytes);
+                }
+                return Convert.ToBase64String(bytes);
+            }
+            finally
+            {
+                Array.Clear(bytes, 0, bytes.Length);
+            }
+        }
+
+        private static string ComputeSecretStamp(PosTrustedDeviceSession session)
+        {
+            var material = new StringBuilder();
+            AppendBoundedValue(material, session.DeviceToken);
+            AppendBoundedValue(material, session.SessionToken);
+            return ComputeSha256(material.ToString());
+        }
+
+        private static void AppendBoundedValue(
+            StringBuilder builder,
+            string value)
+        {
+            value = value ?? string.Empty;
+            builder.Append(value.Length);
+            builder.Append(':');
+            builder.Append(value);
+            builder.Append('|');
+        }
+
+        private static string ComputeSha256(string material)
+        {
             using (var sha = SHA256.Create())
             {
                 return Convert.ToBase64String(
@@ -490,6 +651,16 @@ namespace Win7POS.Wpf.Pos.Online
 
             [DataMember(Name = "protectedSessionSecret")]
             public string ProtectedSessionSecret { get; set; }
+
+            [DataMember(
+                Name = "effectiveOfflineAuthorizationExpiresAt",
+                EmitDefaultValue = false)]
+            public string EffectiveOfflineAuthorizationExpiresAt { get; set; }
+
+            [DataMember(
+                Name = "protectedOfflineAuthorizationBinding",
+                EmitDefaultValue = false)]
+            public string ProtectedOfflineAuthorizationBinding { get; set; }
 
             [DataMember(Name = "sessionExpiresAt")]
             public string SessionExpiresAt { get; set; }

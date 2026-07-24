@@ -334,6 +334,11 @@ namespace Win7POS.Core.Online
         [DataMember(Name = "device")]
         public PosTrustedDeviceResponse Device { get; set; }
 
+        [DataMember(
+            Name = "effectiveOfflineAuthorizationExpiresAt",
+            EmitDefaultValue = false)]
+        public string EffectiveOfflineAuthorizationExpiresAt { get; set; }
+
         [DataMember(Name = "ok")]
         public bool Ok { get; set; }
 
