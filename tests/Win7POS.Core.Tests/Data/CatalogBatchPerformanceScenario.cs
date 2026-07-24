@@ -414,6 +414,8 @@ public static class CatalogBatchPerformanceScenario
                     Rows = rows,
                     ScopeSqlQueryCount = runDiagnostics?.ScopeSqlQueryCount ?? 0,
                     ContextSqlCommandCount = runDiagnostics?.ContextSqlCommandCount ?? 0,
+                    RelinkStageSqlCommandCount =
+                        runDiagnostics?.RelinkStageSqlCommandCount ?? 0,
                     WorkingSetBytes = process.WorkingSet64
                 });
             }
@@ -834,6 +836,7 @@ public sealed class CatalogBatchPerformanceSample
     public double ApplyElapsedMilliseconds { get; set; }
     public long AuthoritativeStageRowsAfter { get; set; }
     public long ContextSqlCommandCount { get; set; }
+    public long RelinkStageSqlCommandCount { get; set; }
     public double CpuMilliseconds { get; set; }
     public long DatabaseBytes { get; set; }
     public double DispatcherMaxDelayMilliseconds { get; set; }
@@ -876,6 +879,7 @@ public sealed class CatalogBatchPerformanceSample
             $"cpu_ms={CpuMilliseconds:F3} requests={LogicalRequestCount} " +
             $"scope_sql_before={LegacyScopeSqlQueryEstimate} scope_sql_after={ScopeSqlQueryCount} " +
             $"context_sql_commands={ContextSqlCommandCount} " +
+            $"relink_stage_sql_commands={RelinkStageSqlCommandCount} " +
             $"remote_price_apply_fallback_pages={RemotePriceApplyFallbackPageCount} " +
             $"remote_price_apply_prepared_commands={RemotePriceApplyPreparedCommandCount} " +
             $"remote_price_apply_set_based_pages={RemotePriceApplySetBasedPageCount} " +

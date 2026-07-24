@@ -146,11 +146,17 @@ jobs:
           $commandCounts = @($measuredLines | ForEach-Object {
             [long]([regex]::Match($_, "remote_price_apply_sql_commands=([0-9]+)").Groups[1].Value)
           } | Select-Object -Unique)
+          $relinkStageCommandCounts = @($measuredLines | ForEach-Object {
+            [long]([regex]::Match($_, "relink_stage_sql_commands=([0-9]+)").Groups[1].Value)
+          } | Select-Object -Unique)
           if ($statementCounts.Count -ne 1 -or $statementCounts[0] -ge 158144) {
             throw "net48/x86 set-based statement reduction invalid: values=$($statementCounts -join ','). Evidence: $evidencePath"
           }
           if ($commandCounts.Count -ne 1) {
             throw "net48/x86 SQL command count is not deterministic: values=$($commandCounts -join ','). Evidence: $evidencePath"
+          }
+          if ($relinkStageCommandCounts.Count -ne 1 -or $relinkStageCommandCounts[0] -ne 20) {
+            throw "net48/x86 relink staging is not page-bounded: values=$($relinkStageCommandCounts -join ','). Evidence: $evidencePath"
           }
 
           $peakWorkingSet = ($measuredLines | ForEach-Object {
@@ -180,7 +186,7 @@ jobs:
           } else {
             [double]::PositiveInfinity
           }
-          $summary = "measured=$measuredCount warmups=$warmupCount p50_ms=$p50 p90_ms=$p90 p95_ms=$p95 max_ms=$maximum sql_commands=$($commandCounts[0]) sql_statements=$($statementCounts[0]) peak_working_set_bytes=$peakWorkingSet peak_private_bytes=$peakPrivateBytes dispatcher_median_ms=$medianDelay dispatcher_max_ms=$maximumDelay"
+          $summary = "measured=$measuredCount warmups=$warmupCount p50_ms=$p50 p90_ms=$p90 p95_ms=$p95 max_ms=$maximum relink_stage_sql_commands=$($relinkStageCommandCounts[0]) sql_commands=$($commandCounts[0]) sql_statements=$($statementCounts[0]) peak_working_set_bytes=$peakWorkingSet peak_private_bytes=$peakPrivateBytes dispatcher_median_ms=$medianDelay dispatcher_max_ms=$maximumDelay"
           $summary | Add-Content -LiteralPath $evidencePath -Encoding utf8
           Write-Host "net48/x86 19,763 summary: $summary"
           Write-Host "net48/x86 dispatcher delays (ms): values=[$delaySummary], stable_samples=$stableSampleCount/$measuredCount"
@@ -232,6 +238,9 @@ jobs:
             throw "100,000-row net48 probe did not execute as x86. Evidence: $net48Evidence"
           }
           $x86Text = $net48 -join "`n"
+          if ($x86Text -notmatch "relink_stage_sql_commands=100") {
+            throw "100,000-row net48 relink staging is not bounded to one command per page. Evidence: $net48Evidence"
+          }
           $peakWorkingSet = [long]([regex]::Match($x86Text, "peak_working_set_bytes=([0-9]+)").Groups[1].Value)
           $peakPrivateBytes = [long]([regex]::Match($x86Text, "peak_private_bytes=([0-9]+)").Groups[1].Value)
           $x86MemoryLimit = 96MB
@@ -262,6 +271,7 @@ jobs:
             $_ -match "pending=0" -and
             $_ -match "completeness=Verified" -and
             $_ -match "context_sql_commands=0" -and
+            $_ -match "relink_stage_sql_commands=0" -and
             $_ -match "remote_price_apply_sql_statements=0"
           }).Count
           if ($exactCount -ne 20) {

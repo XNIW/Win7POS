@@ -23,6 +23,7 @@ namespace Win7POS.Data.Repositories
     /// </summary>
     public sealed class RemoteCatalogBatchRepository
     {
+        private const int RelinkStageRowsPerCommand = 1000;
         private readonly SqliteConnectionFactory _factory;
 
         public RemoteCatalogBatchRepository(SqliteConnectionFactory factory)
@@ -494,12 +495,13 @@ AND NOT EXISTS (
                         }
                     }
 
-                    result.ProductReferencesRelinked += await RelinkRemoteProductReferencesAsync(
+                    var relinkResult = await RelinkRemoteProductReferencesAsync(
                         conn,
                         tx,
                         relinkProductRemoteIds,
                         relinkCategoryRemoteIds,
                         relinkSupplierRemoteIds).ConfigureAwait(false);
+                    result.ProductReferencesRelinked += relinkResult.RowsAffected;
 
                     var prices = batch.Prices ?? Array.Empty<RemoteCatalogPriceWrite>();
                     var setBasedPrices = await RemotePriceHistoryRepository
@@ -575,6 +577,7 @@ AND NOT EXISTS (
                         appliedCategoryTombstoneIds,
                         appliedSupplierTombstoneIds);
                     tx.Commit();
+                    runContext.RecordRelinkStageCommands(relinkResult.StageCommandCount);
                     runContext.RecordRemotePriceApply(pageRemotePriceApply);
                     runContext.CommitPageState(pageState);
                     runContext.RecordPageApplied();
@@ -1430,7 +1433,7 @@ WHERE singleton_id = 1 AND active = 1;",
                 tx);
         }
 
-        private static Task<int> RelinkRemoteProductReferencesAsync(
+        private static Task<RemoteCatalogRelinkResult> RelinkRemoteProductReferencesAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             IReadOnlyCollection<string> productRemoteIds,
@@ -1441,7 +1444,7 @@ WHERE singleton_id = 1 AND active = 1;",
                 (categoryRemoteIds?.Count ?? 0) == 0 &&
                 (supplierRemoteIds?.Count ?? 0) == 0)
             {
-                return Task.FromResult(0);
+                return Task.FromResult(new RemoteCatalogRelinkResult());
             }
 
             return RelinkRemoteProductReferencesCoreAsync(
@@ -1452,7 +1455,7 @@ WHERE singleton_id = 1 AND active = 1;",
                 supplierRemoteIds ?? Array.Empty<string>());
         }
 
-        private static async Task<int> RelinkRemoteProductReferencesCoreAsync(
+        private static async Task<RemoteCatalogRelinkResult> RelinkRemoteProductReferencesCoreAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
             IReadOnlyCollection<string> productRemoteIds,
@@ -1478,23 +1481,11 @@ DELETE FROM temp_catalog_relink_supplier_ids;
 DELETE FROM temp_catalog_relink_barcodes;",
                 transaction: tx).ConfigureAwait(false);
 
-            await FillTempRelinkIdsAsync(
+            var stageCommandCount = await FillTempRelinkIdsAsync(
                 conn,
                 tx,
-                "temp_catalog_relink_product_ids",
-                "remote_product_id",
-                productRemoteIds).ConfigureAwait(false);
-            await FillTempRelinkIdsAsync(
-                conn,
-                tx,
-                "temp_catalog_relink_category_ids",
-                "remote_category_id",
-                categoryRemoteIds).ConfigureAwait(false);
-            await FillTempRelinkIdsAsync(
-                conn,
-                tx,
-                "temp_catalog_relink_supplier_ids",
-                "remote_supplier_id",
+                productRemoteIds,
+                categoryRemoteIds,
                 supplierRemoteIds).ConfigureAwait(false);
 
             await conn.ExecuteAsync(@"
@@ -1518,7 +1509,7 @@ JOIN temp_catalog_relink_product_ids target
 WHERE COALESCE(p.is_active, 1) = 1;",
                 transaction: tx).ConfigureAwait(false);
 
-            return await conn.ExecuteAsync(@"
+            var rowsAffected = await conn.ExecuteAsync(@"
 UPDATE product_meta
 SET category_id = (
       SELECT c.id
@@ -1577,31 +1568,96 @@ WHERE barcode IN (
   FROM temp_catalog_relink_barcodes
 );",
                 transaction: tx).ConfigureAwait(false);
+            return new RemoteCatalogRelinkResult
+            {
+                RowsAffected = rowsAffected,
+                StageCommandCount = stageCommandCount
+            };
         }
 
-        private static async Task FillTempRelinkIdsAsync(
+        private static async Task<int> FillTempRelinkIdsAsync(
             SqliteConnection conn,
             SqliteTransaction tx,
-            string tableName,
-            string columnName,
-            IEnumerable<string> values)
+            IEnumerable<string> productRemoteIds,
+            IEnumerable<string> categoryRemoteIds,
+            IEnumerable<string> supplierRemoteIds)
         {
+            var productIds = NormalizeRelinkIds(productRemoteIds);
+            var categoryIds = NormalizeRelinkIds(categoryRemoteIds);
+            var supplierIds = NormalizeRelinkIds(supplierRemoteIds);
+            var rowCount = Math.Max(productIds.Length, Math.Max(categoryIds.Length, supplierIds.Length));
+            if (rowCount == 0)
+            {
+                return 0;
+            }
+
             using var command = conn.CreateCommand();
             command.Transaction = tx;
-            command.CommandText =
-                "INSERT OR IGNORE INTO " + tableName + "(" + columnName + ") VALUES(@value);";
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = "@value";
-            command.Parameters.Add(parameter);
+            command.CommandText = @"
+INSERT OR IGNORE INTO temp_catalog_relink_product_ids(remote_product_id)
+SELECT CAST(value AS TEXT)
+FROM json_each(@productIdsJson);
+
+INSERT OR IGNORE INTO temp_catalog_relink_category_ids(remote_category_id)
+SELECT CAST(value AS TEXT)
+FROM json_each(@categoryIdsJson);
+
+INSERT OR IGNORE INTO temp_catalog_relink_supplier_ids(remote_supplier_id)
+SELECT CAST(value AS TEXT)
+FROM json_each(@supplierIdsJson);";
+            command.Parameters.Add("@productIdsJson", SqliteType.Text).Value = "[]";
+            command.Parameters.Add("@categoryIdsJson", SqliteType.Text).Value = "[]";
+            command.Parameters.Add("@supplierIdsJson", SqliteType.Text).Value = "[]";
             command.Prepare();
-            foreach (var value in (values ?? Enumerable.Empty<string>())
+
+            var commandCount = 0;
+            for (var offset = 0; offset < rowCount; offset += RelinkStageRowsPerCommand)
+            {
+                command.Parameters["@productIdsJson"].Value =
+                    BuildRelinkIdsJson(productIds, offset, RelinkStageRowsPerCommand);
+                command.Parameters["@categoryIdsJson"].Value =
+                    BuildRelinkIdsJson(categoryIds, offset, RelinkStageRowsPerCommand);
+                command.Parameters["@supplierIdsJson"].Value =
+                    BuildRelinkIdsJson(supplierIds, offset, RelinkStageRowsPerCommand);
+                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                commandCount += 1;
+            }
+            return commandCount;
+        }
+
+        private static string[] NormalizeRelinkIds(IEnumerable<string> values)
+        {
+            return (values ?? Enumerable.Empty<string>())
                 .Select(item => (item ?? string.Empty).Trim())
                 .Where(item => item.Length > 0)
-                .Distinct(StringComparer.Ordinal))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        private static string BuildRelinkIdsJson(
+            IReadOnlyList<string> values,
+            int offset,
+            int maximumCount)
+        {
+            var count = Math.Min(maximumCount, Math.Max(0, values.Count - offset));
+            var json = new StringBuilder(Math.Max(2, count * 40));
+            json.Append('[');
+            for (var index = 0; index < count; index += 1)
             {
-                parameter.Value = value;
-                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                if (index > 0)
+                {
+                    json.Append(',');
+                }
+                AppendJsonString(json, values[offset + index]);
             }
+            json.Append(']');
+            return json.ToString();
+        }
+
+        private sealed class RemoteCatalogRelinkResult
+        {
+            internal int RowsAffected { get; set; }
+            internal int StageCommandCount { get; set; }
         }
 
         private static string NormalizeBarcode(string value)
@@ -2024,6 +2080,11 @@ SELECT EXISTS (
             Diagnostics.RemotePriceApply.MergeFrom(pageDiagnostics);
         }
 
+        internal void RecordRelinkStageCommands(int commandCount)
+        {
+            Diagnostics.RelinkStageSqlCommandCount += commandCount;
+        }
+
         public void Dispose()
         {
             if (_disposed)
@@ -2259,6 +2320,7 @@ FROM staged;";
         public int ProductIdentityQueryCount { get; internal set; }
         public long ProductIdentityRowsLoaded { get; internal set; }
         public int ReferenceMapRefreshQueryCount { get; internal set; }
+        public long RelinkStageSqlCommandCount { get; internal set; }
         public RemotePriceApplyDiagnostics RemotePriceApply { get; } =
             new RemotePriceApplyDiagnostics();
         public int ScopeSqlQueryCount { get; internal set; }

@@ -98,6 +98,7 @@ $initializer = Read-Text "src/Win7POS.Data/DbInitializer.cs"
 $mainWindow = Read-Text "src/Win7POS.Wpf/MainWindow.xaml.cs"
 $catalogExactnessTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogExactnessTests.cs"
 $batchRepositoryTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogBatchRepositoryTests.cs"
+$runContextPerformanceTests = Read-Text "tests/Win7POS.Core.Tests/Data/CatalogRunContextPerformanceTests.cs"
 $localProductWriterTests = Read-Text "tests/Win7POS.Core.Tests/Data/LocalProductWriterTests.cs"
 $remoteCatalogProductWriterTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogProductWriterTests.cs"
 $referenceTombstoneTests = Read-Text "tests/Win7POS.Core.Tests/Data/RemoteCatalogReferenceTombstoneTests.cs"
@@ -846,20 +847,26 @@ if ($initializer -notmatch "remote_catalog_product_references" -or
 }
 $relinkMethod = [regex]::Match(
     $batchRepository,
-    'private static Task<int> RelinkRemoteProductReferencesAsync[\s\S]*?private static string NormalizeBarcode').Value
+    'private static Task<RemoteCatalogRelinkResult> RelinkRemoteProductReferencesAsync[\s\S]*?private static string NormalizeBarcode').Value
 if ($relinkMethod -notmatch "temp_catalog_relink_product_ids" -or
     $relinkMethod -notmatch "temp_catalog_relink_category_ids" -or
     $relinkMethod -notmatch "temp_catalog_relink_supplier_ids" -or
     $relinkMethod -notmatch "temp_catalog_relink_barcodes" -or
+    $relinkMethod -notmatch "json_each\(@productIdsJson\)" -or
+    $relinkMethod -notmatch "json_each\(@categoryIdsJson\)" -or
+    $relinkMethod -notmatch "json_each\(@supplierIdsJson\)" -or
+    $batchRepository -notmatch "RelinkStageRowsPerCommand\s*=\s*1000" -or
     $relinkMethod -notmatch "WHERE barcode IN\s*\(\s*SELECT barcode\s*FROM temp_catalog_relink_barcodes" -or
     $relinkMethod -match "UPDATE product_meta[\s\S]{0,3000}WHERE EXISTS" -or
     $initializer -notmatch "idx_remote_product_refs_category" -or
     $initializer -notmatch "idx_remote_product_refs_supplier" -or
     $batchRepositoryTests -notmatch "product_meta_relink_touch_log" -or
-    $batchRepositoryTests -notmatch "WHERE barcode = 'UNRELATED-REF'") {
+    $batchRepositoryTests -notmatch "WHERE barcode = 'UNRELATED-REF'" -or
+    $runContextPerformanceTests -notmatch "RelinkStagesThousandIdsWithOneBoundedJsonCommand" -or
+    $runContextPerformanceTests -notmatch "Assert\.AreEqual\(1L,\s*run\.Diagnostics\.RelinkStageSqlCommandCount\)") {
     Fail "reference relink must target only page-affected products through indexed temporary sets"
 } else {
-    Pass "reference relink targets only page-affected products and preserves unrelated rows"
+    Pass "reference relink uses bounded JSON staging, targets page-affected products and preserves unrelated rows"
 }
 $referenceCleanup = [regex]::Match(
     $batchRepository,

@@ -56,6 +56,7 @@ public sealed class CatalogRunContextPerformanceTests
         Assert.AreEqual(18, run.Diagnostics.LegacyScopeSqlQueryEstimate);
         Assert.AreEqual(1L, run.Diagnostics.ProductIdentityRowsLoaded);
         Assert.AreEqual(3L, run.Diagnostics.StagedProductIdentityCount);
+        Assert.AreEqual(3L, run.Diagnostics.RelinkStageSqlCommandCount);
 
         using var verify = db.Factory.Open();
         Assert.AreEqual(2L, await verify.ExecuteScalarAsync<long>(
@@ -67,6 +68,43 @@ JOIN categories c ON c.id = m.category_id
 JOIN suppliers s ON s.id = m.supplier_id
 WHERE c.remote_category_id = 'category-run'
   AND s.remote_supplier_id = 'supplier-run';"));
+    }
+
+    [TestMethod]
+    public async Task RelinkStagesThousandIdsWithOneBoundedJsonCommand()
+    {
+        using var db = TestDb.Create();
+        using var run = new RemoteCatalogBatchRepository(db.Factory).CreateRunContext();
+        var products = Enumerable.Range(1, 1000)
+            .Select(index => Product(
+                "product-bounded-" + index,
+                "BOUNDED-" + index.ToString("D4"),
+                index))
+            .ToArray();
+
+        var result = await run.ApplyAsync(new RemoteCatalogBatch
+        {
+            Categories = new[]
+            {
+                new RemoteCatalogCategoryWrite
+                {
+                    RemoteCategoryId = "category-run",
+                    Name = "Run Category"
+                }
+            },
+            Suppliers = new[]
+            {
+                new RemoteCatalogSupplierWrite
+                {
+                    RemoteSupplierId = "supplier-run",
+                    Name = "Run Supplier"
+                }
+            },
+            Products = products
+        });
+
+        Assert.AreEqual(1000, result.ProductsApplied);
+        Assert.AreEqual(1L, run.Diagnostics.RelinkStageSqlCommandCount);
     }
 
     [TestMethod]
