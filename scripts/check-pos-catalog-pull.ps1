@@ -169,9 +169,12 @@ if ($batchRepository -notmatch "temp_catalog_page_product_identities" -or
     $batchRepository -notmatch "LoadPageProductIdentitiesAsync" -or
     $batchRepository -notmatch "LoadPagePendingStockAsync" -or
     $batchRepository -notmatch "PreparedCommandCount" -or
-    $batchRepository -notmatch "ProductIdentityStageRowsPerCommand" -or
-    $batchRepository -notmatch "ProductStageRowsPerCommand" -or
-    $batchRepository -notmatch "json_each\(@rowsJson\)" -or
+    $batchRepository -notmatch "ProductIdentityStageRowsPerChunk" -or
+    $batchRepository -notmatch "ProductIdentityStageChunkCount" -or
+    $batchRepository -notmatch "ProductStageRowsPerChunk" -or
+    $batchRepository -notmatch "ProductStageChunkCount" -or
+    $batchRepository -notmatch "JsonChunkParameterName" -or
+    $batchRepository -notmatch "FROM\s+json_each\(" -or
     $batchRepository -notmatch "BuildProductIdentityRowsJson" -or
     $batchRepository -notmatch "BuildProductRowsJson") {
     Fail "catalog run context must use page-scoped identity/pending-stock queries and prepared commands"

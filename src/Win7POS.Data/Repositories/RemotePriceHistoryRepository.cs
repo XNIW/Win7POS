@@ -12,7 +12,7 @@ namespace Win7POS.Data.Repositories
     internal sealed class RemotePriceHistoryRepository
     {
         private const int PendingRemotePriceReplayBatchSize = 2000;
-        private const int RemotePriceStageRowsPerCommand = 100;
+        private const int RemotePriceStageRowsPerChunk = 100;
         private readonly SqliteConnectionFactory _factory;
 
         internal RemotePriceHistoryRepository(SqliteConnectionFactory factory)
@@ -356,9 +356,15 @@ WHERE ownership.remote_price_id IS NULL
         {
             using var command = conn.CreateCommand();
             command.Transaction = tx;
-            command.CommandText = @"
-DELETE FROM temp_catalog_page_remote_prices
-WHERE @clearExisting = 1;
+            var chunkCount =
+                (rows.Count + RemotePriceStageRowsPerChunk - 1) /
+                RemotePriceStageRowsPerChunk;
+            var commandText = new StringBuilder(@"
+DELETE FROM temp_catalog_page_remote_prices;
+");
+            for (var chunk = 0; chunk < chunkCount; chunk += 1)
+            {
+                commandText.Append(@"
 WITH staged AS (
   SELECT
     CAST(json_extract(value, '$[0]') AS INTEGER) AS ordinal,
@@ -368,7 +374,9 @@ WITH staged AS (
     CAST(json_extract(value, '$[4]') AS INTEGER) AS price,
     CAST(json_extract(value, '$[5]') AS TEXT) AS effective_at,
     CAST(json_extract(value, '$[6]') AS TEXT) AS source
-  FROM json_each(@rowsJson)
+  FROM json_each(@rowsJson");
+                commandText.Append(chunk.ToString(CultureInfo.InvariantCulture));
+                commandText.Append(@")
 )
 INSERT INTO temp_catalog_page_remote_prices(
   ordinal,
@@ -386,22 +394,25 @@ SELECT
   price,
   effective_at,
   source
-FROM staged;";
-            command.Parameters.Add("@clearExisting", SqliteType.Integer).Value = 1;
-            command.Parameters.Add("@rowsJson", SqliteType.Text).Value = "[]";
+FROM staged;
+");
+            }
+            command.CommandText = commandText.ToString();
+            for (var chunk = 0; chunk < chunkCount; chunk += 1)
+            {
+                var offset = chunk * RemotePriceStageRowsPerChunk;
+                var rowCount = Math.Min(
+                    RemotePriceStageRowsPerChunk,
+                    rows.Count - offset);
+                command.Parameters.Add(
+                    "@rowsJson" + chunk.ToString(CultureInfo.InvariantCulture),
+                    SqliteType.Text).Value =
+                        BuildRemotePriceStageRowsJson(rows, offset, rowCount);
+            }
             command.Prepare();
             diagnostics?.RecordPreparedCommand();
-            for (var offset = 0; offset < rows.Count; offset += RemotePriceStageRowsPerCommand)
-            {
-                var rowCount = Math.Min(
-                    RemotePriceStageRowsPerCommand,
-                    rows.Count - offset);
-                command.Parameters["@clearExisting"].Value = offset == 0 ? 1 : 0;
-                command.Parameters["@rowsJson"].Value =
-                    BuildRemotePriceStageRowsJson(rows, offset, rowCount);
-                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
-                RecordSqlCommand(diagnostics, statementCount: 2);
-            }
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+            RecordSqlCommand(diagnostics, statementCount: 1 + chunkCount);
         }
 
         private static string BuildRemotePriceStageRowsJson(

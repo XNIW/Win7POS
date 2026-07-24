@@ -23,7 +23,7 @@ namespace Win7POS.Data.Repositories
     /// </summary>
     public sealed class RemoteCatalogBatchRepository
     {
-        private const int AuthoritativeStageRowsPerCommand = 100;
+        private const int AuthoritativeStageRowsPerChunk = 200;
         private const int RelinkStageRowsPerCommand = 1000;
         private readonly SqliteConnectionFactory _factory;
 
@@ -883,7 +883,14 @@ WHERE shop_id = @ShopId
 
             using var command = conn.CreateCommand();
             command.Transaction = tx;
-            command.CommandText = @"
+            var rows = occurrences.ToArray();
+            var chunkCount =
+                (rows.Length + AuthoritativeStageRowsPerChunk - 1) /
+                AuthoritativeStageRowsPerChunk;
+            var commandText = new StringBuilder(chunkCount * 1400);
+            for (var chunk = 0; chunk < chunkCount; chunk += 1)
+            {
+                commandText.Append(@"
 WITH incoming AS (
   SELECT
     CAST(json_extract(value, '$[0]') AS TEXT) AS entity_kind,
@@ -893,7 +900,9 @@ WITH incoming AS (
     CAST(json_extract(value, '$[4]') AS TEXT) AS supplier_remote_id,
     CAST(json_extract(value, '$[5]') AS TEXT) AS product_remote_id,
     CAST(json_extract(value, '$[6]') AS INTEGER) AS occurrence_count
-  FROM json_each(@rowsJson)
+  FROM json_each(@rowsJson");
+                commandText.Append(chunk.ToString(CultureInfo.InvariantCulture));
+                commandText.Append(@")
 )
 INSERT INTO catalog_authoritative_id_stage(
   scope_id,
@@ -919,23 +928,26 @@ SELECT
   occurrence_count,
   NULL,
   @stagedAt
-FROM incoming;";
+FROM incoming;
+");
+            }
+            command.CommandText = commandText.ToString();
             AddParameter(command, "@scopeId", identity.ScopeId);
             AddParameter(command, "@pageNumber", identity.PageNumber);
             AddParameter(command, "@stagedAt", stagedAt);
-            AddParameter(command, "@rowsJson", "[]");
-            command.Prepare();
-
-            var rows = occurrences.ToArray();
-            for (var offset = 0; offset < rows.Length; offset += AuthoritativeStageRowsPerCommand)
+            for (var chunk = 0; chunk < chunkCount; chunk += 1)
             {
+                var offset = chunk * AuthoritativeStageRowsPerChunk;
                 var rowCount = Math.Min(
-                    AuthoritativeStageRowsPerCommand,
+                    AuthoritativeStageRowsPerChunk,
                     rows.Length - offset);
-                command.Parameters["@rowsJson"].Value =
-                    BuildAuthoritativeStageRowsJson(rows, offset, rowCount);
-                await command.ExecuteNonQueryAsync().ConfigureAwait(false);
+                AddParameter(
+                    command,
+                    "@rowsJson" + chunk.ToString(CultureInfo.InvariantCulture),
+                    BuildAuthoritativeStageRowsJson(rows, offset, rowCount));
             }
+            command.Prepare();
+            await command.ExecuteNonQueryAsync().ConfigureAwait(false);
         }
 
         private static string BuildAuthoritativeStageRowsJson(
@@ -1738,8 +1750,10 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
     /// </summary>
     public sealed class RemoteCatalogApplyRunContext : IDisposable
     {
-        private const int ProductIdentityStageRowsPerCommand = 500;
-        private const int ProductStageRowsPerCommand = 100;
+        private const int ProductIdentityStageRowsPerChunk = 200;
+        private const int ProductIdentityStageChunkCount = 10;
+        private const int ProductStageRowsPerChunk = 100;
+        private const int ProductStageChunkCount = 10;
         private readonly RemoteCatalogBatchRepository _repository;
         private readonly SemaphoreSlim _singleFlight = new SemaphoreSlim(1, 1);
         private readonly SqliteCommand _stagePageProduct;
@@ -1943,29 +1957,28 @@ ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
                 AddIdentity(identities, string.Empty, tombstone.RemoteProductId);
             }
 
-            if (identities.Count == 0)
+            if (identities.Count >
+                ProductIdentityStageRowsPerChunk * ProductIdentityStageChunkCount)
             {
-                _stagePageProduct.Parameters["@clearExisting"].Value = 1;
-                _stagePageProduct.Parameters["@rowsJson"].Value = "[]";
-                await _stagePageProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
-                Diagnostics.ContextSqlCommandCount += 1;
+                throw new InvalidDataException(
+                    "Catalog page product identity staging exceeds the bounded command capacity.");
             }
-            else
+
+            SetEmptyJsonChunks(_stagePageProduct, ProductIdentityStageChunkCount);
+            var identityChunkCount =
+                (identities.Count + ProductIdentityStageRowsPerChunk - 1) /
+                ProductIdentityStageRowsPerChunk;
+            for (var chunk = 0; chunk < identityChunkCount; chunk += 1)
             {
-                for (var offset = 0;
-                    offset < identities.Count;
-                    offset += ProductIdentityStageRowsPerCommand)
-                {
-                    var rowCount = Math.Min(
-                        ProductIdentityStageRowsPerCommand,
-                        identities.Count - offset);
-                    _stagePageProduct.Parameters["@clearExisting"].Value = offset == 0 ? 1 : 0;
-                    _stagePageProduct.Parameters["@rowsJson"].Value =
-                        BuildProductIdentityRowsJson(identities, offset, rowCount);
-                    await _stagePageProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
-                    Diagnostics.ContextSqlCommandCount += 1;
-                }
+                var offset = chunk * ProductIdentityStageRowsPerChunk;
+                var rowCount = Math.Min(
+                    ProductIdentityStageRowsPerChunk,
+                    identities.Count - offset);
+                _stagePageProduct.Parameters[JsonChunkParameterName(chunk)].Value =
+                    BuildProductIdentityRowsJson(identities, offset, rowCount);
             }
+            await _stagePageProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
+            Diagnostics.ContextSqlCommandCount += 1;
             Diagnostics.StagedProductIdentityCount += identities.Count;
         }
 
@@ -2056,25 +2069,25 @@ SELECT EXISTS (
         {
             var rows = products ??
                 Array.Empty<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite>();
-            if (rows.Count == 0)
+            if (rows.Count > ProductStageRowsPerChunk * ProductStageChunkCount)
             {
-                _stagePageSetProduct.Parameters["@clearExisting"].Value = 1;
-                _stagePageSetProduct.Parameters["@rowsJson"].Value = "[]";
-                await _stagePageSetProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
-                Diagnostics.ContextSqlCommandCount += 1;
+                throw new InvalidDataException(
+                    "Catalog page product staging exceeds the bounded command capacity.");
             }
-            else
+
+            SetEmptyJsonChunks(_stagePageSetProduct, ProductStageChunkCount);
+            var productChunkCount =
+                (rows.Count + ProductStageRowsPerChunk - 1) /
+                ProductStageRowsPerChunk;
+            for (var chunk = 0; chunk < productChunkCount; chunk += 1)
             {
-                for (var offset = 0; offset < rows.Count; offset += ProductStageRowsPerCommand)
-                {
-                    var rowCount = Math.Min(ProductStageRowsPerCommand, rows.Count - offset);
-                    _stagePageSetProduct.Parameters["@clearExisting"].Value = offset == 0 ? 1 : 0;
-                    _stagePageSetProduct.Parameters["@rowsJson"].Value =
-                        BuildProductRowsJson(rows, offset, rowCount);
-                    await _stagePageSetProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
-                    Diagnostics.ContextSqlCommandCount += 1;
-                }
+                var offset = chunk * ProductStageRowsPerChunk;
+                var rowCount = Math.Min(ProductStageRowsPerChunk, rows.Count - offset);
+                _stagePageSetProduct.Parameters[JsonChunkParameterName(chunk)].Value =
+                    BuildProductRowsJson(rows, offset, rowCount);
             }
+            await _stagePageSetProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
+            Diagnostics.ContextSqlCommandCount += 1;
         }
 
         internal void CommitPageState(RemoteCatalogPageState pageState)
@@ -2139,20 +2152,29 @@ SELECT EXISTS (
         private static SqliteCommand CreateProductIdentityStageCommand(SqliteConnection connection)
         {
             var command = connection.CreateCommand();
-            command.CommandText = @"
-DELETE FROM temp_catalog_page_product_identities
-WHERE @clearExisting = 1;
+            var commandText = new StringBuilder(@"
+DELETE FROM temp_catalog_page_product_identities;
+");
+            for (var chunk = 0; chunk < ProductIdentityStageChunkCount; chunk += 1)
+            {
+                commandText.Append(@"
 WITH staged AS (
   SELECT
     CAST(json_extract(value, '$[0]') AS TEXT) AS barcode,
     CAST(json_extract(value, '$[1]') AS TEXT) AS remote_product_id
-  FROM json_each(@rowsJson)
+  FROM json_each(");
+                commandText.Append(JsonChunkParameterName(chunk));
+                commandText.Append(@")
 )
 INSERT OR IGNORE INTO temp_catalog_page_product_identities(barcode, remote_product_id)
 SELECT barcode, remote_product_id
-FROM staged;";
-            command.Parameters.Add("@clearExisting", SqliteType.Integer).Value = 1;
-            command.Parameters.Add("@rowsJson", SqliteType.Text).Value = "[]";
+FROM staged;
+");
+                command.Parameters.Add(
+                    JsonChunkParameterName(chunk),
+                    SqliteType.Text).Value = "[]";
+            }
+            command.CommandText = commandText.ToString();
             command.Prepare();
             return command;
         }
@@ -2160,9 +2182,12 @@ FROM staged;";
         private static SqliteCommand CreateProductStageCommand(SqliteConnection connection)
         {
             var command = connection.CreateCommand();
-            command.CommandText = @"
-DELETE FROM temp_catalog_page_products
-WHERE @clearExisting = 1;
+            var commandText = new StringBuilder(@"
+DELETE FROM temp_catalog_page_products;
+");
+            for (var chunk = 0; chunk < ProductStageChunkCount; chunk += 1)
+            {
+                commandText.Append(@"
 WITH staged AS (
   SELECT
     CAST(json_extract(value, '$[0]') AS INTEGER) AS ordinal,
@@ -2180,7 +2205,9 @@ WITH staged AS (
     CAST(json_extract(value, '$[12]') AS INTEGER) AS stock_quantity,
     CAST(json_extract(value, '$[13]') AS TEXT) AS remote_category_id,
     CAST(json_extract(value, '$[14]') AS TEXT) AS remote_supplier_id
-  FROM json_each(@rowsJson)
+  FROM json_each(");
+                commandText.Append(JsonChunkParameterName(chunk));
+                commandText.Append(@")
 )
 INSERT INTO temp_catalog_page_products(
   ordinal,
@@ -2214,11 +2241,28 @@ SELECT
   stock_quantity,
   remote_category_id,
   remote_supplier_id
-FROM staged;";
-            command.Parameters.Add("@clearExisting", SqliteType.Integer).Value = 1;
-            command.Parameters.Add("@rowsJson", SqliteType.Text).Value = "[]";
+FROM staged;
+");
+                command.Parameters.Add(
+                    JsonChunkParameterName(chunk),
+                    SqliteType.Text).Value = "[]";
+            }
+            command.CommandText = commandText.ToString();
             command.Prepare();
             return command;
+        }
+
+        private static string JsonChunkParameterName(int chunk)
+        {
+            return "@rowsJson" + chunk.ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static void SetEmptyJsonChunks(SqliteCommand command, int chunkCount)
+        {
+            for (var chunk = 0; chunk < chunkCount; chunk += 1)
+            {
+                command.Parameters[JsonChunkParameterName(chunk)].Value = "[]";
+            }
         }
 
         private static string BuildProductIdentityRowsJson(
