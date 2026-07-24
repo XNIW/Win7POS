@@ -1957,28 +1957,34 @@ ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
                 AddIdentity(identities, string.Empty, tombstone.RemoteProductId);
             }
 
-            if (identities.Count >
-                ProductIdentityStageRowsPerChunk * ProductIdentityStageChunkCount)
+            var identityGroupCapacity =
+                ProductIdentityStageRowsPerChunk * ProductIdentityStageChunkCount;
+            var identityGroupCount = Math.Max(
+                1,
+                (identities.Count + identityGroupCapacity - 1) / identityGroupCapacity);
+            for (var group = 0; group < identityGroupCount; group += 1)
             {
-                throw new InvalidDataException(
-                    "Catalog page product identity staging exceeds the bounded command capacity.");
+                _stagePageProduct.Parameters["@clearExisting"].Value = group == 0 ? 1 : 0;
+                SetEmptyJsonChunks(_stagePageProduct, ProductIdentityStageChunkCount);
+                var groupOffset = group * identityGroupCapacity;
+                var groupRows = Math.Min(
+                    identityGroupCapacity,
+                    Math.Max(0, identities.Count - groupOffset));
+                var chunkCount =
+                    (groupRows + ProductIdentityStageRowsPerChunk - 1) /
+                    ProductIdentityStageRowsPerChunk;
+                for (var chunk = 0; chunk < chunkCount; chunk += 1)
+                {
+                    var offset = groupOffset + (chunk * ProductIdentityStageRowsPerChunk);
+                    var rowCount = Math.Min(
+                        ProductIdentityStageRowsPerChunk,
+                        identities.Count - offset);
+                    _stagePageProduct.Parameters[JsonChunkParameterName(chunk)].Value =
+                        BuildProductIdentityRowsJson(identities, offset, rowCount);
+                }
+                await _stagePageProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
+                Diagnostics.ContextSqlCommandCount += 1;
             }
-
-            SetEmptyJsonChunks(_stagePageProduct, ProductIdentityStageChunkCount);
-            var identityChunkCount =
-                (identities.Count + ProductIdentityStageRowsPerChunk - 1) /
-                ProductIdentityStageRowsPerChunk;
-            for (var chunk = 0; chunk < identityChunkCount; chunk += 1)
-            {
-                var offset = chunk * ProductIdentityStageRowsPerChunk;
-                var rowCount = Math.Min(
-                    ProductIdentityStageRowsPerChunk,
-                    identities.Count - offset);
-                _stagePageProduct.Parameters[JsonChunkParameterName(chunk)].Value =
-                    BuildProductIdentityRowsJson(identities, offset, rowCount);
-            }
-            await _stagePageProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
-            Diagnostics.ContextSqlCommandCount += 1;
             Diagnostics.StagedProductIdentityCount += identities.Count;
         }
 
@@ -2069,25 +2075,31 @@ SELECT EXISTS (
         {
             var rows = products ??
                 Array.Empty<RemoteCatalogProductWriter.RemoteCatalogSetProductWrite>();
-            if (rows.Count > ProductStageRowsPerChunk * ProductStageChunkCount)
+            var productGroupCapacity = ProductStageRowsPerChunk * ProductStageChunkCount;
+            var productGroupCount = Math.Max(
+                1,
+                (rows.Count + productGroupCapacity - 1) / productGroupCapacity);
+            for (var group = 0; group < productGroupCount; group += 1)
             {
-                throw new InvalidDataException(
-                    "Catalog page product staging exceeds the bounded command capacity.");
+                _stagePageSetProduct.Parameters["@clearExisting"].Value = group == 0 ? 1 : 0;
+                SetEmptyJsonChunks(_stagePageSetProduct, ProductStageChunkCount);
+                var groupOffset = group * productGroupCapacity;
+                var groupRows = Math.Min(
+                    productGroupCapacity,
+                    Math.Max(0, rows.Count - groupOffset));
+                var chunkCount =
+                    (groupRows + ProductStageRowsPerChunk - 1) /
+                    ProductStageRowsPerChunk;
+                for (var chunk = 0; chunk < chunkCount; chunk += 1)
+                {
+                    var offset = groupOffset + (chunk * ProductStageRowsPerChunk);
+                    var rowCount = Math.Min(ProductStageRowsPerChunk, rows.Count - offset);
+                    _stagePageSetProduct.Parameters[JsonChunkParameterName(chunk)].Value =
+                        BuildProductRowsJson(rows, offset, rowCount);
+                }
+                await _stagePageSetProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
+                Diagnostics.ContextSqlCommandCount += 1;
             }
-
-            SetEmptyJsonChunks(_stagePageSetProduct, ProductStageChunkCount);
-            var productChunkCount =
-                (rows.Count + ProductStageRowsPerChunk - 1) /
-                ProductStageRowsPerChunk;
-            for (var chunk = 0; chunk < productChunkCount; chunk += 1)
-            {
-                var offset = chunk * ProductStageRowsPerChunk;
-                var rowCount = Math.Min(ProductStageRowsPerChunk, rows.Count - offset);
-                _stagePageSetProduct.Parameters[JsonChunkParameterName(chunk)].Value =
-                    BuildProductRowsJson(rows, offset, rowCount);
-            }
-            await _stagePageSetProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
-            Diagnostics.ContextSqlCommandCount += 1;
         }
 
         internal void CommitPageState(RemoteCatalogPageState pageState)
@@ -2153,8 +2165,10 @@ SELECT EXISTS (
         {
             var command = connection.CreateCommand();
             var commandText = new StringBuilder(@"
-DELETE FROM temp_catalog_page_product_identities;
+DELETE FROM temp_catalog_page_product_identities
+WHERE @clearExisting = 1;
 ");
+            command.Parameters.Add("@clearExisting", SqliteType.Integer).Value = 1;
             for (var chunk = 0; chunk < ProductIdentityStageChunkCount; chunk += 1)
             {
                 commandText.Append(@"
@@ -2183,8 +2197,10 @@ FROM staged;
         {
             var command = connection.CreateCommand();
             var commandText = new StringBuilder(@"
-DELETE FROM temp_catalog_page_products;
+DELETE FROM temp_catalog_page_products
+WHERE @clearExisting = 1;
 ");
+            command.Parameters.Add("@clearExisting", SqliteType.Integer).Value = 1;
             for (var chunk = 0; chunk < ProductStageChunkCount; chunk += 1)
             {
                 commandText.Append(@"
