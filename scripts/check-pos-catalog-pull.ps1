@@ -165,6 +165,30 @@ if ($service -notmatch "using\s+var\s+catalogApplyRun[\s\S]{0,180}CreateRunConte
 } else {
     Pass "catalog sync reuses one apply context across pages"
 }
+$atomicCommitIndex = $batchRepository.IndexOf("public async Task CommitAtomicFullRefreshAsync")
+$physicalAtomicCommitIndex = if ($atomicCommitIndex -ge 0) {
+    $batchRepository.IndexOf("_atomicTransaction.Commit();", $atomicCommitIndex)
+} else {
+    -1
+}
+$atomicDiagnosticsIndex = if ($atomicCommitIndex -ge 0) {
+    $batchRepository.IndexOf("RecordRemotePriceApply(_atomicRemotePriceApply);", $atomicCommitIndex)
+} else {
+    -1
+}
+if ($service -notmatch "StageAuthoritativePagesAtomicallyAsync" -or
+    $service -notmatch "BeginAtomicFullRefreshAsync" -or
+    $service -notmatch "CommitAtomicFullRefreshAsync" -or
+    $batchRepository -notmatch "class\s+RemoteCatalogAuthoritativeStageRunContext" -or
+    $batchRepository -notmatch "RecordUncommittedAtomicPage" -or
+    $physicalAtomicCommitIndex -lt $atomicCommitIndex -or
+    $atomicDiagnosticsIndex -lt $physicalAtomicCommitIndex -or
+    $batchRepositoryTests -notmatch "AtomicFullRefreshFailureRollsBackEveryAppliedPage" -or
+    $batchRepositoryTests -notmatch "AtomicAuthoritativeStageFailureRollsBackEveryPage") {
+    Fail "authoritative staging and full-refresh promotion must be run-atomic with post-commit diagnostics and rollback coverage"
+} else {
+    Pass "authoritative staging and full-refresh promotion are run-atomic with post-commit diagnostics and rollback coverage"
+}
 if ($batchRepository -notmatch "temp_catalog_page_product_identities" -or
     $batchRepository -notmatch "LoadPageProductIdentitiesAsync" -or
     $batchRepository -notmatch "LoadPagePendingStockAsync" -or
@@ -211,17 +235,19 @@ if (-not $hardCapMatch.Success -or [int]$hardCapMatch.Groups[1].Value -lt 100) {
     Fail "authoritative catalog hard ceiling is missing or too low for 100,000-row lanes"
 } else { Pass "authoritative catalog hard ceiling supports 100,000-row lanes" }
 if ($service -notmatch "effectiveMaxPages" -or
-    $service -notmatch "firstPageBudget\.PageBudget" -or
+    $service -notmatch "firstPageBudget" -or
     $paginationPolicy -notmatch "CalculatePageBudget" -or
     $paginationPolicy -notmatch "Math\.Max\(" -or
+    $service -notmatch "effectiveMaxPages\s*=\s*MaxAuthoritativeCatalogPullPages" -or
     $service -notmatch "for\s*\(var page = 1; page <= effectiveMaxPages; page\+\+\)") {
-    Fail "server-selected full_refresh does not use an authoritative lane-derived budget"
+    Fail "server-selected full_refresh does not validate the lane-derived budget before using the hard ceiling"
 } else {
-    Pass "server-selected full_refresh uses the authoritative lane-derived budget"
+    Pass "server-selected full_refresh validates the lane-derived budget and remains hard-ceiling bounded"
 }
 if ($paginationPolicy -notmatch "ExpandFullPageBudgetForTombstoneContinuation" -or
     $paginationPolicy -notmatch "!cumulative\.HasAnyTombstones" -or
-    $service -notmatch "ExpandFullPageBudgetForTombstoneContinuation" -or
+    $service -notmatch "effectiveMaxPages\s*=\s*MaxAuthoritativeCatalogPullPages" -or
+    $service -notmatch "StageAuthoritativePagesAtomicallyAsync" -or
     $paginationTests -notmatch "FullHasMore_TombstonesCanContinueBeyondActiveSummaryBudget") {
     Fail "full tombstone chains must drain beyond the active-only summary budget within the hard ceiling"
 } else {
@@ -263,7 +289,7 @@ $networkIndex = $service.IndexOf("new PosAdminWebClient")
 if ($capturedSessionCheckIndex -lt 0 -or $bindingIndex -lt 0 -or $networkIndex -lt 0 -or $capturedSessionCheckIndex -gt $bindingIndex -or $capturedSessionCheckIndex -gt $networkIndex -or $shopState -notmatch "catalog_session_shop_changed") { Fail "captured catalog session must be revalidated inside the transition barrier before bind/network" } else { Pass "captured catalog session is revalidated before bind/network" }
 if ($shopState -notmatch "pos\.catalog\.bound_shop_id" -or $shopState -notmatch "pos\.catalog\.bound_shop_code" -or $shopState -notmatch "Catalog state shop binding mismatch") { Fail "persistent catalog shop binding missing" } else { Pass "persistent catalog shop binding present" }
 if ($service -notmatch "stagedResponseShopError[\s\S]*response_shop_mismatch[\s\S]*ApplyCatalogAsync") { Fail "catalog response shop must be validated before local apply" } else { Pass "catalog response shop validated before local apply" }
-if ($service -notmatch "StageAuthoritativePageAsync" -or
+if ($service -notmatch "StageAuthoritativePagesAtomicallyAsync" -or
     $batchRepository -notmatch "catalog_authoritative_id_stage" -or
     $batchRepository -notmatch "category_remote_id" -or
     $batchRepository -notmatch "supplier_remote_id" -or
@@ -309,10 +335,13 @@ if ($service -notmatch "IsCatalogCursorRejectionCode" -or
     Pass "expired/rejected cursors probe a controlled non-destructive full-refresh boundary"
 }
 $catalogApplyIndex = $service.IndexOf("var applyStats = await ApplyCatalogAsync(")
-$ambiguityGuardIndex = $service.IndexOf("var paginationSafety = CatalogPaginationSafetyPolicy.EvaluateTerminalPage(")
+$ambiguityGuardIndex = $service.IndexOf(
+    "CatalogPaginationSafetyPolicy.EvaluateTerminalPage(",
+    $compatibilityIndex)
 $compatibilityIndex = $service.IndexOf("var compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull")
 $responseShopIndex = $service.IndexOf("var stagedResponseShopError = OutboxShopBinding.GetMismatchCode(")
 $stageAppendIndex = $service.IndexOf("fullStage.AppendAsync(")
+$authoritativeStageIndex = $service.IndexOf("StageAuthoritativePagesAtomicallyAsync(")
 $promotionMarkerIndex = $service.IndexOf("Only a completely drained and protocol-validated full chain")
 $promotionResetIndex = if ($promotionMarkerIndex -ge 0) {
     $service.IndexOf("RequestFullRepairWhileBarrierHeldAsync(", $promotionMarkerIndex)
@@ -324,7 +353,9 @@ if ($catalogApplyIndex -lt 0 -or
     $ambiguityGuardIndex -le $compatibilityIndex -or
     $responseShopIndex -le $ambiguityGuardIndex -or
     $stageAppendIndex -lt $responseShopIndex -or
+    $authoritativeStageIndex -lt $stageAppendIndex -or
     $promotionMarkerIndex -lt $stageAppendIndex -or
+    $promotionMarkerIndex -lt $authoritativeStageIndex -or
     $promotionResetIndex -lt $promotionMarkerIndex -or
     $stagedApplyIndex -lt $promotionResetIndex -or
     $service -notmatch "var\s+requestCursor\s*=\s*networkCursor" -or
@@ -356,7 +387,7 @@ if ($fullStage -notmatch "MaximumPageBytes\s*=\s*8\s*\*\s*1024\s*\*\s*1024" -or
 }
 $ambiguityFailureBlock = [regex]::Match(
     $service,
-    'if \(!paginationSafety\.Allowed\)[\s\S]*?(?=\r?\n\s*if \(page == 1 && pageIsFullRefresh\))').Value
+    'if \(!stagedPaginationSafety\.Allowed\)[\s\S]*?(?=\r?\n\s*receivedFullLanes\s*=\s*evidence\.LaneCounts)').Value
 if ($paginationPolicy -notmatch "server_catalog_pagination_ambiguous" -or
     $ambiguityFailureBlock -notmatch "StoreCatalogFailureAsync" -or
     $ambiguityFailureBlock -notmatch "BootstrapStatusFailedRetryable" -or
@@ -526,7 +557,7 @@ $compatibilityIndex = $service.IndexOf(
     "ValidateCatalogPull(result.Value)",
     [System.StringComparison]::Ordinal)
 $evidenceIndex = $service.IndexOf(
-    ".StageAuthoritativePageAsync(",
+    ".StageAuthoritativePagesAtomicallyAsync(",
     [System.StringComparison]::Ordinal)
 $terminalIndex = $service.IndexOf(
     "CatalogPaginationSafetyPolicy.EvaluateTerminalPage(",

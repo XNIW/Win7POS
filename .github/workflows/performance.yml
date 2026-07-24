@@ -123,7 +123,9 @@ jobs:
           $exactCount = @($measuredLines | Where-Object {
             $_ -match "products=19763" -and
             $_ -match "prices=19763" -and
-            $_ -match "pending=0"
+            $_ -match "pending=0" -and
+            $_ -match "preflight_stage_transactions=1" -and
+            $_ -match "apply_transactions=1"
           }).Count
           if ($verifiedCount -ne $measuredCount -or $exactCount -ne $measuredCount) {
             throw "net48/x86 exactness invalid: verified=$verifiedCount/$measuredCount exact=$exactCount/$measuredCount. Evidence: $evidencePath"
@@ -200,7 +202,7 @@ jobs:
           } else {
             [double]::PositiveInfinity
           }
-          $summary = "measured=$measuredCount warmups=$warmupCount p50_ms=$p50 p90_ms=$p90 p95_ms=$p95 max_ms=$maximum context_sql_commands=$($contextCommandCounts[0]) relink_stage_sql_commands=$($relinkStageCommandCounts[0]) sql_commands=$($commandCounts[0]) sql_statements=$($statementCounts[0]) max_gen2=$maximumGen2 peak_working_set_bytes=$peakWorkingSet peak_private_bytes=$peakPrivateBytes dispatcher_median_ms=$medianDelay dispatcher_max_ms=$maximumDelay"
+          $summary = "measured=$measuredCount warmups=$warmupCount p50_ms=$p50 p90_ms=$p90 p95_ms=$p95 max_ms=$maximum preflight_stage_transactions=1 apply_transactions=1 context_sql_commands=$($contextCommandCounts[0]) relink_stage_sql_commands=$($relinkStageCommandCounts[0]) sql_commands=$($commandCounts[0]) sql_statements=$($statementCounts[0]) max_gen2=$maximumGen2 peak_working_set_bytes=$peakWorkingSet peak_private_bytes=$peakPrivateBytes dispatcher_median_ms=$medianDelay dispatcher_max_ms=$maximumDelay"
           $summary | Add-Content -LiteralPath $evidencePath -Encoding utf8
           Write-Host "net48/x86 19,763 summary: $summary"
           Write-Host "net48/x86 dispatcher delays (ms): values=[$delaySummary], stable_samples=$stableSampleCount/$measuredCount"
@@ -254,6 +256,10 @@ jobs:
           $x86Text = $net48 -join "`n"
           if ($x86Text -notmatch "relink_stage_sql_commands=100") {
             throw "100,000-row net48 relink staging is not bounded to one command per page. Evidence: $net48Evidence"
+          }
+          if ($x86Text -notmatch "preflight_stage_transactions=1" -or
+              $x86Text -notmatch "apply_transactions=1") {
+            throw "100,000-row net48 full refresh did not retain one preflight and one apply transaction. Evidence: $net48Evidence"
           }
           if ($x86Text -notmatch "context_sql_commands=503" -or
               $x86Text -notmatch "remote_price_apply_sql_commands=700" -or

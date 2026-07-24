@@ -210,36 +210,43 @@ public static class CatalogBatchPerformanceScenario
                 {
                     var repository = new RemoteCatalogBatchRepository(factory);
                     var preflightStartedAt = stopwatch.Elapsed.TotalMilliseconds;
-                    for (var offset = 0; offset < rows; offset += pageSize)
-                    {
-                        var count = Math.Min(pageSize, rows - offset);
-                        var pageNumber = (offset / pageSize) + 1;
-                        var stagedEvidence = await repository.StageAuthoritativePageAsync(
-                            new RemoteCatalogBatch
+                    var fullPageCount = (rows + pageSize - 1) / pageSize;
+                    var stagedEvidence = await repository
+                        .StageAuthoritativePagesAtomicallyAsync(
+                            fullPageCount,
+                            (pageNumber, _) =>
                             {
-                                AuthoritativeFullRefresh = true,
-                                AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+                                var offset = (pageNumber - 1) * pageSize;
+                                var count = Math.Min(pageSize, rows - offset);
+                                return Task.FromResult(new RemoteCatalogBatch
                                 {
-                                    FullRunId = fullRunId,
-                                    HasMore = offset + count < rows,
-                                    PageNumber = pageNumber
-                                },
-                                Categories = offset == 0
-                                    ? categoryWrites
-                                    : Array.Empty<RemoteCatalogCategoryWrite>(),
-                                Suppliers = offset == 0
-                                    ? supplierWrites
-                                    : Array.Empty<RemoteCatalogSupplierWrite>(),
-                                Products = BuildProductsRange(offset, count),
-                                Prices = BuildPricesRange(offset, count)
+                                    AuthoritativeFullRefresh = true,
+                                    AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+                                    {
+                                        FullRunId = fullRunId,
+                                        HasMore = offset + count < rows,
+                                        PageNumber = pageNumber
+                                    },
+                                    Categories = offset == 0
+                                        ? categoryWrites
+                                        : Array.Empty<RemoteCatalogCategoryWrite>(),
+                                    Suppliers = offset == 0
+                                        ? supplierWrites
+                                        : Array.Empty<RemoteCatalogSupplierWrite>(),
+                                    Products = BuildProductsRange(offset, count),
+                                    Prices = BuildPricesRange(offset, count)
+                                });
                             },
-                            commitFence: CreateBenchmarkFence(fullBinding!)).ConfigureAwait(false);
-                        if (stagedEvidence.ConflictCode.Length > 0)
-                        {
-                            throw new InvalidOperationException(
-                                "Synthetic authoritative preflight staging failed: " +
-                                stagedEvidence.ConflictCode);
-                        }
+                            commitFence: CreateBenchmarkFence(fullBinding!))
+                        .ConfigureAwait(false);
+                    var stagedConflict = stagedEvidence
+                        .Select(item => item.ConflictCode)
+                        .FirstOrDefault(code => code.Length > 0);
+                    if (!string.IsNullOrEmpty(stagedConflict))
+                    {
+                        throw new InvalidOperationException(
+                            "Synthetic authoritative preflight staging failed: " +
+                            stagedConflict);
                     }
                     var reconciler = new CatalogFullRefreshReconciler(factory);
                     var preflightCode = await reconciler.ValidateStagedPreflightAsync(
@@ -274,6 +281,7 @@ public static class CatalogBatchPerformanceScenario
                     }
                     applyStartedAtMilliseconds = stopwatch.Elapsed.TotalMilliseconds;
                     using var run = repository.CreateRunContext();
+                    await run.BeginAtomicFullRefreshAsync().ConfigureAwait(false);
                     for (var offset = 0; offset < rows; offset += pageSize)
                     {
                         var count = Math.Min(pageSize, rows - offset);
@@ -299,6 +307,7 @@ public static class CatalogBatchPerformanceScenario
                         }, commitFence: CreateBenchmarkFence(fullBinding!));
                         logicalRequestCount++;
                     }
+                    await run.CommitAtomicFullRefreshAsync().ConfigureAwait(false);
                     runDiagnostics = run.Diagnostics;
                 }
                 else
@@ -375,6 +384,9 @@ public static class CatalogBatchPerformanceScenario
                 {
                     AllocatedBytes = allocatedBytes,
                     ApplyElapsedMilliseconds = applyElapsedMilliseconds,
+                    ApplyTransactionCount =
+                        runDiagnostics?.CommittedTransactionCount ?? 0,
+                    AuthoritativeStageTransactionCount = streamFullPages ? 1 : 0,
                     AuthoritativeStageRowsAfter = authoritativeStageRowsAfter,
                     CpuMilliseconds = (process.TotalProcessorTime - cpuBefore).TotalMilliseconds,
                     DatabaseBytes = new FileInfo(dbPath).Length,
@@ -835,6 +847,8 @@ public sealed class CatalogBatchPerformanceSample
 {
     public long AllocatedBytes { get; set; }
     public double ApplyElapsedMilliseconds { get; set; }
+    public long ApplyTransactionCount { get; set; }
+    public long AuthoritativeStageTransactionCount { get; set; }
     public long AuthoritativeStageRowsAfter { get; set; }
     public long ContextSqlCommandCount { get; set; }
     public long RelinkStageSqlCommandCount { get; set; }
@@ -877,6 +891,8 @@ public sealed class CatalogBatchPerformanceSample
             $"elapsed_ms={ElapsedMilliseconds:F3} rows_per_sec={Rows / (ElapsedMilliseconds / 1000d):F2} " +
             $"apply_ms={ApplyElapsedMilliseconds:F3} reconcile_ms={ReconcileElapsedMilliseconds:F3} " +
             $"preflight_stage_ms={PreflightStageElapsedMilliseconds:F3} " +
+            $"preflight_stage_transactions={AuthoritativeStageTransactionCount} " +
+            $"apply_transactions={ApplyTransactionCount} " +
             $"cpu_ms={CpuMilliseconds:F3} requests={LogicalRequestCount} " +
             $"scope_sql_before={LegacyScopeSqlQueryEstimate} scope_sql_after={ScopeSqlQueryCount} " +
             $"context_sql_commands={ContextSqlCommandCount} " +

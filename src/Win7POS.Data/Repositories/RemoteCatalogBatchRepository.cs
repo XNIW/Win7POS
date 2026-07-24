@@ -95,25 +95,90 @@ namespace Win7POS.Data.Repositories
             }
         }
 
+        public async Task<IReadOnlyList<CatalogAuthoritativeStageEvidence>>
+            StageAuthoritativePagesAtomicallyAsync(
+                int pageCount,
+                Func<int, CancellationToken, Task<RemoteCatalogBatch>> loadPageAsync,
+                CancellationToken cancellationToken = default,
+                RemoteCatalogCommitFence commitFence = null)
+        {
+            if (pageCount <= 0) throw new ArgumentOutOfRangeException(nameof(pageCount));
+            if (loadPageAsync == null) throw new ArgumentNullException(nameof(loadPageAsync));
+
+            using var run = await BeginAuthoritativeStageRunAsync(cancellationToken)
+                .ConfigureAwait(false);
+            var evidence = new List<CatalogAuthoritativeStageEvidence>(pageCount);
+            for (var pageNumber = 1; pageNumber <= pageCount; pageNumber += 1)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var batch = await loadPageAsync(pageNumber, cancellationToken)
+                    .ConfigureAwait(false);
+                if (batch == null)
+                {
+                    throw new InvalidDataException(
+                        "Authoritative catalog stage page loader returned no batch.");
+                }
+
+                if (batch.AuthoritativeStagePage?.PageNumber != pageNumber)
+                {
+                    throw new InvalidDataException(
+                        "Authoritative catalog stage page loader returned an unexpected page.");
+                }
+
+                evidence.Add(await run.StagePageAsync(
+                    batch,
+                    commitFence,
+                    cancellationToken).ConfigureAwait(false));
+            }
+
+            await run.CommitAsync(cancellationToken).ConfigureAwait(false);
+            return evidence;
+        }
+
+        public async Task<RemoteCatalogAuthoritativeStageRunContext>
+            BeginAuthoritativeStageRunAsync(
+                CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                return new RemoteCatalogAuthoritativeStageRunContext(_factory);
+            }
+            catch
+            {
+                CatalogMutationGate.Instance.Release();
+                throw;
+            }
+        }
+
         internal async Task<RemoteCatalogBatchApplyResult> ApplyWithinRunAsync(
             RemoteCatalogApplyRunContext runContext,
             RemoteCatalogBatch batch,
             CancellationToken cancellationToken,
-            RemoteCatalogCommitFence commitFence)
+            RemoteCatalogCommitFence commitFence,
+            SqliteTransaction runTransaction = null)
         {
             if (runContext == null) throw new ArgumentNullException(nameof(runContext));
             if (batch == null) throw new ArgumentNullException(nameof(batch));
             ValidateBatchContent(batch);
             ValidateAuthoritativeStage(batch, commitFence, required: false);
 
+            var ownsTransaction = runTransaction == null;
             cancellationToken.ThrowIfCancellationRequested();
-            await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (ownsTransaction)
+            {
+                await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var conn = runContext.Connection;
-                using var tx = conn.BeginTransaction(deferred: false);
-                runContext.BindTransaction(tx);
+                var tx = runTransaction ?? conn.BeginTransaction(deferred: false);
+                if (ownsTransaction)
+                {
+                    runContext.BindTransaction(tx);
+                }
                 try
                 {
                     await RequireCommitFenceAsync(conn, tx, commitFence).ConfigureAwait(false);
@@ -585,26 +650,47 @@ AND NOT EXISTS (
                     pageState.RemoveTombstonedReferences(
                         appliedCategoryTombstoneIds,
                         appliedSupplierTombstoneIds);
-                    tx.Commit();
-                    runContext.RecordRelinkStageCommands(relinkResult.StageCommandCount);
-                    runContext.RecordRemotePriceApply(pageRemotePriceApply);
-                    runContext.CommitPageState(pageState);
-                    runContext.RecordPageApplied();
+                    if (ownsTransaction)
+                    {
+                        tx.Commit();
+                        runContext.RecordCommittedTransaction();
+                        runContext.RecordRelinkStageCommands(relinkResult.StageCommandCount);
+                        runContext.RecordRemotePriceApply(pageRemotePriceApply);
+                        runContext.CommitPageState(pageState);
+                        runContext.RecordPageApplied();
+                    }
+                    else
+                    {
+                        runContext.RecordUncommittedAtomicPage(
+                            relinkResult.StageCommandCount,
+                            pageRemotePriceApply,
+                            pageState);
+                    }
                     return result;
                 }
                 catch
                 {
-                    try { tx.Rollback(); } catch { }
+                    if (ownsTransaction)
+                    {
+                        try { tx.Rollback(); } catch { }
+                    }
                     throw;
                 }
                 finally
                 {
-                    runContext.BindTransaction(null);
+                    if (ownsTransaction)
+                    {
+                        runContext.BindTransaction(null);
+                        tx.Dispose();
+                    }
                 }
             }
             finally
             {
-                CatalogMutationGate.Instance.Release();
+                if (ownsTransaction)
+                {
+                    CatalogMutationGate.Instance.Release();
+                }
             }
         }
 
@@ -1834,11 +1920,96 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
                 await _command.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
         }
+
+        public sealed class RemoteCatalogAuthoritativeStageRunContext : IDisposable
+        {
+            private readonly SqliteConnection _connection;
+            private readonly SqliteTransaction _transaction;
+            private bool _committed;
+            private bool _disposed;
+
+            internal RemoteCatalogAuthoritativeStageRunContext(
+                SqliteConnectionFactory factory)
+            {
+                if (factory == null) throw new ArgumentNullException(nameof(factory));
+                _connection = factory.Open();
+                try
+                {
+                    _transaction = _connection.BeginTransaction(deferred: false);
+                }
+                catch
+                {
+                    _connection.Dispose();
+                    throw;
+                }
+            }
+
+            public async Task<CatalogAuthoritativeStageEvidence> StagePageAsync(
+                RemoteCatalogBatch batch,
+                RemoteCatalogCommitFence commitFence,
+                CancellationToken cancellationToken = default)
+            {
+                EnsureActive();
+                cancellationToken.ThrowIfCancellationRequested();
+                ValidateBatchContent(batch);
+                ValidateAuthoritativeStage(batch, commitFence, required: true);
+                await RequireCommitFenceAsync(
+                    _connection,
+                    _transaction,
+                    commitFence).ConfigureAwait(false);
+                await ReplaceAuthoritativeStagePageAsync(
+                    _connection,
+                    _transaction,
+                    batch,
+                    commitFence).ConfigureAwait(false);
+                return await LoadAuthoritativeStageEvidenceAsync(
+                    _connection,
+                    _transaction,
+                    batch.AuthoritativeStagePage,
+                    commitFence).ConfigureAwait(false);
+            }
+
+            public Task CommitAsync(CancellationToken cancellationToken = default)
+            {
+                EnsureActive();
+                cancellationToken.ThrowIfCancellationRequested();
+                _transaction.Commit();
+                _committed = true;
+                return Task.CompletedTask;
+            }
+
+            public void Dispose()
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                if (!_committed)
+                {
+                    try { _transaction.Rollback(); } catch { }
+                }
+                _transaction.Dispose();
+                _connection.Dispose();
+                CatalogMutationGate.Instance.Release();
+            }
+
+            private void EnsureActive()
+            {
+                if (_disposed)
+                    throw new ObjectDisposedException(nameof(RemoteCatalogAuthoritativeStageRunContext));
+                if (_committed)
+                    throw new InvalidOperationException(
+                        "The authoritative catalog stage run is already committed.");
+            }
+        }
     }
 
     /// <summary>
     /// Holds the SQLite connection, prepared statements and small reference maps for one
-    /// catalog sync run. Each page still owns an independent transaction and commit fence.
+    /// catalog sync run. Delta pages keep independent transactions; a fully downloaded and
+    /// validated authoritative refresh may opt into one rollback-safe run transaction.
     /// </summary>
     public sealed class RemoteCatalogApplyRunContext : IDisposable
     {
@@ -1850,6 +2021,12 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
         private readonly SemaphoreSlim _singleFlight = new SemaphoreSlim(1, 1);
         private readonly SqliteCommand _stagePageProduct;
         private readonly SqliteCommand _stagePageSetProduct;
+        private SqliteTransaction _atomicTransaction;
+        private RemotePriceApplyDiagnostics _atomicRemotePriceApply =
+            new RemotePriceApplyDiagnostics();
+        private long _atomicRelinkStageCommandCount;
+        private int _atomicPageCount;
+        private bool _atomicMutationGateHeld;
         private Dictionary<string, int> _categoryIdsByRemoteId =
             new Dictionary<string, int>(StringComparer.Ordinal);
         private Dictionary<string, int> _supplierIdsByRemoteId =
@@ -1952,11 +2129,116 @@ CREATE INDEX IF NOT EXISTS temp_catalog_page_remote_prices_product_id_idx
             try
             {
                 EnsureNotDisposed();
+                if (_atomicTransaction != null &&
+                    (!batch.AuthoritativeFullRefresh ||
+                     !batch.ReuseValidatedAuthoritativeStagePage))
+                {
+                    throw new InvalidDataException(
+                        "Atomic catalog full refresh pages require validated authoritative stage reuse.");
+                }
                 return await _repository.ApplyWithinRunAsync(
                     this,
                     batch,
                     cancellationToken,
-                    commitFence).ConfigureAwait(false);
+                    commitFence,
+                    _atomicTransaction).ConfigureAwait(false);
+            }
+            catch
+            {
+                if (_atomicTransaction != null)
+                {
+                    AbortAtomicFullRefresh();
+                }
+                throw;
+            }
+            finally
+            {
+                _singleFlight.Release();
+            }
+        }
+
+        public async Task BeginAtomicFullRefreshAsync(
+            CancellationToken cancellationToken = default)
+        {
+            EnsureNotDisposed();
+            cancellationToken.ThrowIfCancellationRequested();
+            await _singleFlight.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                EnsureNotDisposed();
+                if (_atomicTransaction != null)
+                {
+                    throw new InvalidOperationException(
+                        "An atomic catalog full refresh is already active.");
+                }
+
+                await CatalogMutationGate.Instance
+                    .WaitAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                _atomicMutationGateHeld = true;
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    _atomicTransaction = Connection.BeginTransaction(deferred: false);
+                    BindTransaction(_atomicTransaction);
+                    _atomicRemotePriceApply = new RemotePriceApplyDiagnostics();
+                    _atomicRelinkStageCommandCount = 0;
+                    _atomicPageCount = 0;
+                }
+                catch
+                {
+                    ReleaseAtomicMutationGate();
+                    throw;
+                }
+            }
+            finally
+            {
+                _singleFlight.Release();
+            }
+        }
+
+        public async Task CommitAtomicFullRefreshAsync(
+            CancellationToken cancellationToken = default)
+        {
+            EnsureNotDisposed();
+            await _singleFlight.WaitAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                EnsureNotDisposed();
+                if (_atomicTransaction == null)
+                {
+                    throw new InvalidOperationException(
+                        "No atomic catalog full refresh is active.");
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                try
+                {
+                    _atomicTransaction.Commit();
+                }
+                catch
+                {
+                    AbortAtomicFullRefresh();
+                    throw;
+                }
+
+                BindTransaction(null);
+                _atomicTransaction.Dispose();
+                _atomicTransaction = null;
+                ReleaseAtomicMutationGate();
+                RecordCommittedTransaction();
+                RecordRelinkStageCommands((int)_atomicRelinkStageCommandCount);
+                RecordRemotePriceApply(_atomicRemotePriceApply);
+                Diagnostics.PagesApplied += _atomicPageCount;
+                ResetAtomicDiagnostics();
+            }
+            catch
+            {
+                if (_atomicTransaction != null)
+                {
+                    AbortAtomicFullRefresh();
+                }
+                throw;
             }
             finally
             {
@@ -2217,6 +2499,28 @@ SELECT EXISTS (
             Diagnostics.RelinkStageSqlCommandCount += commandCount;
         }
 
+        internal void RecordCommittedTransaction()
+        {
+            Diagnostics.CommittedTransactionCount += 1;
+        }
+
+        internal void RecordUncommittedAtomicPage(
+            int relinkStageCommandCount,
+            RemotePriceApplyDiagnostics remotePriceApply,
+            RemoteCatalogPageState pageState)
+        {
+            if (_atomicTransaction == null)
+            {
+                throw new InvalidOperationException(
+                    "Atomic catalog page diagnostics require an active transaction.");
+            }
+
+            _atomicRelinkStageCommandCount += relinkStageCommandCount;
+            _atomicRemotePriceApply.MergeFrom(remotePriceApply);
+            _atomicPageCount += 1;
+            CommitPageState(pageState);
+        }
+
         public void Dispose()
         {
             if (_disposed)
@@ -2225,6 +2529,7 @@ SELECT EXISTS (
             }
 
             _disposed = true;
+            AbortAtomicFullRefresh();
             BindTransaction(null);
             _stagePageSetProduct.Dispose();
             _stagePageProduct.Dispose();
@@ -2232,6 +2537,38 @@ SELECT EXISTS (
             ProductCommands.Dispose();
             Connection.Dispose();
             _singleFlight.Dispose();
+        }
+
+        private void AbortAtomicFullRefresh()
+        {
+            if (_atomicTransaction != null)
+            {
+                try { _atomicTransaction.Rollback(); } catch { }
+                BindTransaction(null);
+                _atomicTransaction.Dispose();
+                _atomicTransaction = null;
+            }
+
+            ResetAtomicDiagnostics();
+            ReleaseAtomicMutationGate();
+        }
+
+        private void ReleaseAtomicMutationGate()
+        {
+            if (!_atomicMutationGateHeld)
+            {
+                return;
+            }
+
+            _atomicMutationGateHeld = false;
+            CatalogMutationGate.Instance.Release();
+        }
+
+        private void ResetAtomicDiagnostics()
+        {
+            _atomicRemotePriceApply = new RemotePriceApplyDiagnostics();
+            _atomicRelinkStageCommandCount = 0;
+            _atomicPageCount = 0;
         }
 
         private static void AddIdentity(
@@ -2478,6 +2815,7 @@ FROM staged;
 
     public sealed class CatalogApplyRunDiagnostics
     {
+        public long CommittedTransactionCount { get; internal set; }
         public long ContextSqlCommandCount { get; internal set; }
         public int LegacyScopeSqlQueryEstimate => PagesApplied * 6;
         public int PagesApplied { get; internal set; }

@@ -67,12 +67,18 @@ WHERE scope_id IN (
         stage.Fence.ExpectedPreviousMode = repairedBinding.Mode;
 
         batch.ReuseValidatedAuthoritativeStagePage = true;
-        var applied = await repository.ApplyAsync(
+        using var run = repository.CreateRunContext();
+        await run.BeginAtomicFullRefreshAsync();
+        var applied = await run.ApplyAsync(
             batch,
             CancellationToken.None,
             stage.Fence);
+        Assert.AreEqual(0, run.Diagnostics.PagesApplied);
+        await run.CommitAtomicFullRefreshAsync();
 
         Assert.AreEqual(1, applied.ProductsApplied);
+        Assert.AreEqual(1, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(1L, run.Diagnostics.CommittedTransactionCount);
         using var verify = db.Factory.Open();
         Assert.AreEqual(2L, await verify.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1)
@@ -121,6 +127,121 @@ WHERE remote_product_id = 'product-validated-reuse'
 SELECT COUNT(1)
 FROM products
 WHERE remote_product_id = 'product-must-not-apply';"));
+    }
+
+    [TestMethod]
+    public async Task AtomicFullRefreshFailureRollsBackEveryAppliedPage()
+    {
+        using var db = TestDb.Create();
+        var stage = await CreateAuthoritativeStageAsync(db, "atomic-rollback");
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        var pages = new[]
+        {
+            new RemoteCatalogBatch
+            {
+                AuthoritativeFullRefresh = true,
+                AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+                {
+                    FullRunId = stage.FullRunId,
+                    HasMore = true,
+                    PageNumber = 1
+                },
+                Products = new[] { Product("product-atomic-good", "ATOMIC-001", 1) }
+            },
+            new RemoteCatalogBatch
+            {
+                AuthoritativeFullRefresh = true,
+                AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+                {
+                    FullRunId = stage.FullRunId,
+                    HasMore = false,
+                    PageNumber = 2
+                },
+                Products = new[] { Product("product-atomic-invalid", "DISC:ATOMIC", 1) }
+            }
+        };
+        await repository.StageAuthoritativePagesAtomicallyAsync(
+            pages.Length,
+            (pageNumber, _) => Task.FromResult(pages[pageNumber - 1]),
+            commitFence: stage.Fence);
+
+        var generation = new OnlineSyncGeneration(
+            stage.Fence.GenerationId,
+            stage.Fence.PosSessionId,
+            stage.Fence.ShopDeviceId,
+            stage.ShopId,
+            stage.ShopCode);
+        var state = new CatalogShopStateRepository(db.Factory);
+        await state.RequestFullRepairAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Fence.ExpectedEpoch,
+            generation);
+        var repairedBinding = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            generation);
+        stage.Fence.ExpectedEpoch = repairedBinding.Epoch;
+        stage.Fence.ExpectedPreviousCursor = repairedBinding.Cursor;
+        stage.Fence.ExpectedPreviousMode = repairedBinding.Mode;
+        foreach (var page in pages)
+        {
+            page.ReuseValidatedAuthoritativeStagePage = true;
+        }
+
+        using var run = repository.CreateRunContext();
+        await run.BeginAtomicFullRefreshAsync();
+        var first = await run.ApplyAsync(pages[0], commitFence: stage.Fence);
+        Assert.AreEqual(1, first.ProductsApplied);
+        Assert.AreEqual(0, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(0L, run.Diagnostics.CommittedTransactionCount);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => run.ApplyAsync(pages[1], commitFence: stage.Fence));
+
+        Assert.AreEqual(0, run.Diagnostics.PagesApplied);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(0L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM products
+WHERE remote_product_id IN ('product-atomic-good', 'product-atomic-invalid');"));
+    }
+
+    [TestMethod]
+    public async Task AtomicAuthoritativeStageFailureRollsBackEveryPage()
+    {
+        using var db = TestDb.Create();
+        var stage = await CreateAuthoritativeStageAsync(db, "stage-atomic-rollback");
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+
+        await Assert.ThrowsExactlyAsync<InvalidDataException>(
+            () => repository.StageAuthoritativePagesAtomicallyAsync(
+                2,
+                (pageNumber, _) => Task.FromResult(new RemoteCatalogBatch
+                {
+                    AuthoritativeFullRefresh = true,
+                    AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+                    {
+                        FullRunId = stage.FullRunId,
+                        HasMore = pageNumber == 1,
+                        PageNumber = pageNumber == 1 ? 1 : 99
+                    },
+                    Products = new[]
+                    {
+                        Product(
+                            "product-stage-atomic-" + pageNumber,
+                            "STAGE-ATOMIC-" + pageNumber,
+                            1)
+                    }
+                }),
+                commitFence: stage.Fence));
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM catalog_authoritative_id_stage staged
+JOIN catalog_authoritative_stage_scope scope USING(scope_id)
+WHERE scope.full_run_id = @fullRunId;",
+            new { fullRunId = stage.FullRunId }));
     }
 
     [TestMethod]

@@ -8,12 +8,21 @@ Runtime under test: `net48`, x86, Windows, SQLite DELETE journal with `synchrono
 
 ## Change
 
-The page transaction, commit fence, validation, price-history semantics, and
-authoritative reconciliation remain unchanged. A full refresh now adopts the
-already validated authoritative stage into the post-repair epoch and verifies
-the exact page marker before applying it. It no longer deletes and reinserts
-the same durable stage rows a second time during apply. Missing or ambiguous
-stage scope/page evidence fails closed inside the page transaction.
+The commit fence, validation, price-history semantics, and authoritative
+reconciliation remain unchanged. A full refresh now adopts the already
+validated authoritative stage into the post-repair epoch and verifies the
+exact page marker before applying it. It no longer deletes and reinserts the
+same durable stage rows a second time during apply. Missing or ambiguous stage
+scope/page evidence fails closed inside the transaction.
+
+The complete downloaded response chain is replayed a page at a time into one
+authoritative-stage transaction before the repair epoch is changed. The
+validated full refresh is then promoted in one apply transaction. A staging or
+apply failure rolls back the whole run, diagnostics and the catalog revision
+are published only after the physical commit, and delta pages retain their
+independent transaction boundary. The durable response provider still loads
+one page at a time, so neither transaction requires a complete in-memory
+catalog materialization.
 
 Page-scoped identities,
 set-based product rows, remote price rows, and reference relink identities are
@@ -42,15 +51,17 @@ by 20 measured full-refresh samples on the same host with 19,763 products,
 19,763 prices, and page size 1,000.
 
 - Exactness: 20/20 `Verified`; products 19,763; prices 19,763; pending 0
-- p50: 3,730.046 ms
-- p90: 3,865.859 ms
-- p95: 3,912.935 ms
-- Maximum: 3,916.935 ms
-- Peak working set: 57,651,200 bytes
-- Peak private bytes: 41,181,184 bytes
-- Dispatcher median maximum delay: 19.592 ms
-- Dispatcher maximum delay: 21.933 ms
+- p50: 2,809.491 ms
+- p90: 2,957.192 ms
+- p95: 2,959.802 ms
+- Maximum: 2,986.320 ms
+- Peak working set: 57,319,424 bytes
+- Peak private bytes: 40,742,912 bytes
+- Dispatcher median maximum delay: 12.886 ms
+- Dispatcher maximum delay: 24.475 ms
 - Maximum Gen2 collections: 1
+- Authoritative-stage transactions: 1 per sample
+- Full-refresh apply transactions: 1 per sample
 - Context SQL commands: 103 per sample
 - Relink identity staging commands: 20 per sample
 - Remote-price SQL commands: 140 per sample
@@ -58,7 +69,7 @@ by 20 measured full-refresh samples on the same host with 19,763 products,
 
 Measured elapsed times in milliseconds:
 
-`3565.088, 3853.925, 3728.876, 3287.201, 3695.743, 3776.209, 3714.041, 3790.225, 3767.159, 3916.935, 3636.871, 3737.191, 3809.263, 3731.216, 3559.237, 3620.461, 3912.935, 3714.607, 3865.859, 3705.587`
+`2986.320, 2839.148, 2887.972, 2806.450, 2855.924, 2957.192, 2950.150, 2796.912, 2749.696, 2669.628, 2693.933, 2792.431, 2746.406, 2553.900, 2797.595, 2959.802, 2880.606, 2898.200, 2810.900, 2808.082`
 
 These measurements executed the rebuilt net48/x86 benchmark apphost directly.
 The exact-head GitHub workflow remains authoritative for the remote 15-second
@@ -66,22 +77,23 @@ release gate.
 
 ## Bounded-path checks
 
-- Delta 10: 56.888 ms; 8 context commands; 1 relink staging command;
+- Delta 10: 54.854 ms; 8 context commands; 1 relink staging command;
   7 price commands / 9 statements
-- Delta 100: 58.506 ms; 8 context commands; 1 relink staging command;
+- Delta 100: 73.154 ms; 8 context commands; 1 relink staging command;
   7 price commands / 9 statements
-- Delta 1,000: 91.676 ms; 8 context commands; 1 relink staging command;
+- Delta 1,000: 153.235 ms; 8 context commands; 1 relink staging command;
   7 price commands / 18 statements
-- No-change: 20/20 exact; zero context/price writes; p95 0.005 ms
+- No-change: 20/20 exact; zero context/price writes; p95 0.037 ms
 - 100,000 net48/x86: `Verified`; products/prices 100,000; pending 0;
   authoritative staging rows after cleanup 0; 100 relink staging commands;
-  503 context commands; 700 price commands / 1,800 statements;
-  Gen2 collections 8; peak working set 57,958,400 bytes;
-  peak private bytes 40,656,896 bytes; dispatcher maximum 22.231 ms
+  1 stage transaction; 1 apply transaction; 503 context commands;
+  700 price commands / 1,800 statements; Gen2 collections 11;
+  peak working set 58,228,736 bytes; peak private bytes 41,324,544 bytes;
+  dispatcher maximum 21.812 ms
 
 ## Regression evidence
 
-- Core/Data: 616 passed, 0 failed, 0 skipped
+- Core/Data: 618 passed, 0 failed, 0 skipped
 - Canonical gates: 44/44
 - WPF Release net48/x86: 0 warnings, 0 errors
 - CLI self-test: PASS
@@ -94,3 +106,6 @@ than 15 catalog-context commands and exactly 7 remote-price commands / 18
 statements. A dedicated regression also requires 1,000 relink identities to use
 one bounded JSON staging command. The prior per-row, large-object, and
 multi-round-trip staging implementations fail these bounds.
+
+Dedicated rollback regressions also prove that a failure in the authoritative
+stage or on any full-refresh apply page leaves no partial run committed.

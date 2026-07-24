@@ -48,6 +48,7 @@ public sealed class CatalogRunContextPerformanceTests
         Assert.AreEqual(1, second.ProductsApplied);
         Assert.AreEqual(1, third.ProductsApplied);
         Assert.AreEqual(3, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(3L, run.Diagnostics.CommittedTransactionCount);
         Assert.AreEqual(8, run.Diagnostics.PreparedCommandCount);
         Assert.AreEqual(2, run.Diagnostics.ReferenceMapRefreshQueryCount);
         Assert.AreEqual(3, run.Diagnostics.ProductIdentityQueryCount);
@@ -133,6 +134,7 @@ WHERE c.remote_category_id = 'category-run'
         Assert.AreEqual(2, first.PricesApplied);
         Assert.AreEqual(1, second.PricesApplied);
         Assert.AreEqual(2, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(2L, run.Diagnostics.CommittedTransactionCount);
         Assert.AreEqual(14L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
         Assert.AreEqual(18L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
         Assert.AreEqual(0L, run.Diagnostics.RemotePriceApply.FallbackPageCount);
@@ -181,6 +183,7 @@ END;");
                 }));
 
             Assert.AreEqual(0, failedRun.Diagnostics.PagesApplied);
+            Assert.AreEqual(0L, failedRun.Diagnostics.CommittedTransactionCount);
             Assert.AreEqual(0L, failedRun.Diagnostics.RemotePriceApply.SqlCommandCount);
             Assert.AreEqual(0L, failedRun.Diagnostics.RemotePriceApply.SqlStatementCount);
         }
@@ -196,6 +199,7 @@ END;");
 
         Assert.AreEqual(1, committed.PricesApplied);
         Assert.AreEqual(1, run.Diagnostics.PagesApplied);
+        Assert.AreEqual(1L, run.Diagnostics.CommittedTransactionCount);
         Assert.AreEqual(7L, run.Diagnostics.RemotePriceApply.SqlCommandCount);
         Assert.AreEqual(9L, run.Diagnostics.RemotePriceApply.SqlStatementCount);
         Assert.AreEqual(0L, run.Diagnostics.RemotePriceApply.FallbackPageCount);
