@@ -167,10 +167,14 @@ if ($service -notmatch "using\s+var\s+catalogApplyRun[\s\S]{0,180}CreateRunConte
 if ($batchRepository -notmatch "temp_catalog_page_product_identities" -or
     $batchRepository -notmatch "LoadPageProductIdentitiesAsync" -or
     $batchRepository -notmatch "LoadPagePendingStockAsync" -or
-    $batchRepository -notmatch "PreparedCommandCount") {
+    $batchRepository -notmatch "PreparedCommandCount" -or
+    $batchRepository -notmatch "ProductIdentityStageRowsPerCommand" -or
+    $batchRepository -notmatch "ProductStageRowsPerCommand" -or
+    $batchRepository -notmatch "WITH staged\(slot, barcode, remote_product_id\)" -or
+    $batchRepository -notmatch "WHERE slot < @rowCount") {
     Fail "catalog run context must use page-scoped identity/pending-stock queries and prepared commands"
 } else {
-    Pass "catalog run context uses page-scoped queries and prepared commands"
+    Pass "catalog run context uses page-scoped queries and bounded multi-row staging commands"
 }
 if ($batchRepository -notmatch "UpsertRemoteInTransactionAsync" -or
     $batchRepository -notmatch "RemoteCatalogProductWriter\s*\.\s*UpsertProductAndMetaInTransactionCoreAsync" -or

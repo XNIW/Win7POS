@@ -59,6 +59,27 @@ public sealed class CatalogBatchPerformanceTests
     }
 
     [TestMethod]
+    public async Task BatchFullPathUsesBoundedProductStageCommandsForThousandRowPage()
+    {
+        const int rows = 1_000;
+        var samples = await CatalogBatchPerformanceScenario.RunAsync(
+            "batch-paged-full",
+            rows,
+            iterations: 1,
+            pageSize: rows);
+
+        var sample = samples.Single();
+        Assert.AreEqual((long)rows, sample.ProductCount);
+        Assert.AreEqual((long)rows, sample.PriceCount);
+        Assert.AreEqual(0L, sample.PendingPriceCount);
+        Assert.AreEqual("Verified", sample.ExactnessStatus);
+        Assert.AreEqual(0L, sample.AuthoritativeStageRowsAfter);
+        Assert.IsTrue(
+            sample.ContextSqlCommandCount <= 40L,
+            $"Expected at most 40 run-context SQL commands, observed {sample.ContextSqlCommandCount}.");
+    }
+
+    [TestMethod]
     public async Task BatchNoChangeSkipsApplyWithoutPriceHistoryWrites()
     {
         const int rows = 200;
