@@ -3,11 +3,13 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using Win7POS.Core.Models;
+using Win7POS.Core.Pos;
 using Win7POS.Core.Receipt;
 using Win7POS.Data;
 using Win7POS.Data.Online;
@@ -59,6 +61,178 @@ public sealed class SaleTransactionWriterTests
             direct.Outbox.PayloadHash,
             ignoreCase: true);
         Assert.AreEqual("pending", direct.Outbox.Status);
+    }
+
+    [TestMethod]
+    public async Task AuthorizedSale_PreCommitRevocation_RollsBackSaleStockAndOutbox()
+    {
+        using var db = TestDb.Create();
+        const string barcode = "F6-AUTH-ROLLBACK";
+        await SaveShopAsync(db.Factory);
+        await SeedStockAsync(db.Factory, barcode, 5);
+        var sale = NewOrdinarySale("F6-AUTH-ROLLBACK");
+        sale.OperatorId = 42;
+        var guard = new TestAuthorizationCommitGuard(throwOnDemand: 3);
+
+        await Assert.ThrowsExactlyAsync<TestAuthorizationRevokedException>(
+            () => new SaleRepository(db.Factory).InsertAuthorizedSaleAsync(
+                sale,
+                new[] { NewLine(barcode, 2, 100) },
+                guard.Guard));
+
+        using var connection = db.Factory.Open();
+        Assert.AreEqual(3, guard.DemandCount);
+        Assert.AreEqual(
+            SqliteConnectionFactory.DurableCommitSafetyBudget,
+            guard.MinimumRemaining);
+        Assert.AreEqual(
+            0L,
+            await CountAsync(
+                connection,
+                "SELECT COUNT(1) FROM sales WHERE code = 'F6-AUTH-ROLLBACK';"));
+        Assert.AreEqual(
+            0L,
+            await CountAsync(connection, "SELECT COUNT(1) FROM sales_sync_outbox;"));
+        Assert.AreEqual(
+            0L,
+            await CountAsync(
+                connection,
+                "SELECT COUNT(1) FROM local_stock_movements;"));
+        Assert.AreEqual(
+            5L,
+            await CountAsync(
+                connection,
+                "SELECT stock_qty FROM product_meta WHERE barcode = @barcode;",
+                new { barcode }));
+    }
+
+    [TestMethod]
+    public async Task AuthorizedSale_SharedReaderCannotCarryValidatedCommitPastExactExpiry()
+    {
+        using var db = TestDb.Create();
+        const string barcode = "F6-AUTH-BLOCKED-READER";
+        const string saleCode = "F6-AUTH-BLOCKED-READER";
+        await SaveShopAsync(db.Factory);
+        await SeedStockAsync(db.Factory, barcode, 5);
+
+        using var readerConnection = db.Factory.Open();
+        using var readerTransaction =
+            readerConnection.BeginTransaction(deferred: true);
+        Assert.AreEqual(
+            0L,
+            await CountAsync(
+                readerConnection,
+                "SELECT COUNT(1) FROM sales;",
+                tx: readerTransaction));
+        using var pendingProbe = new SqliteConnection(
+            "Data Source=" + db.Factory.DbPath +
+            ";Default Timeout=1;Pooling=False");
+        pendingProbe.Open();
+
+        var sale = NewOrdinarySale(saleCode);
+        sale.OperatorId = 42;
+        var guard = new ExpiringTestAuthorizationCommitGuard();
+        var saleStarted = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var saleTask = Task.Run(async () =>
+        {
+            saleStarted.TrySetResult(true);
+            return await new SaleRepository(db.Factory)
+                .InsertAuthorizedSaleAsync(
+                    sale,
+                    new[] { NewLine(barcode, 2, 100) },
+                    guard.Guard);
+        });
+        await saleStarted.Task;
+        Assert.IsTrue(
+            await WaitForPendingExclusiveLockAsync(pendingProbe),
+            "The authorized writer never reached its pre-validation EXCLUSIVE fence.");
+        Assert.IsFalse(
+            saleTask.IsCompleted,
+            "The authorized writer did not remain blocked by the SHARED reader.");
+        Assert.AreEqual(
+            0,
+            guard.DemandCount,
+            "Authorization was evaluated before the blocking reader drained.");
+
+        guard.Expire();
+        readerTransaction.Dispose();
+
+        await Assert.ThrowsExactlyAsync<TestAuthorizationRevokedException>(
+            () => saleTask);
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(
+            "normal",
+            await verify.ExecuteScalarAsync<string>(
+                "PRAGMA main.locking_mode;"));
+        Assert.AreEqual(
+            0L,
+            await CountAsync(
+                verify,
+                "SELECT COUNT(1) FROM sales WHERE code = @saleCode;",
+                new { saleCode }));
+        Assert.AreEqual(
+            0L,
+            await CountAsync(verify, "SELECT COUNT(1) FROM sale_lines;"));
+        Assert.AreEqual(
+            0L,
+            await CountAsync(
+                verify,
+                "SELECT COUNT(1) FROM local_stock_movements;"));
+        Assert.AreEqual(
+            0L,
+            await CountAsync(
+                verify,
+                "SELECT COUNT(1) FROM sales_sync_outbox;"));
+        Assert.AreEqual(
+            5L,
+            await CountAsync(
+                verify,
+                "SELECT stock_qty FROM product_meta WHERE barcode = @barcode;",
+                new { barcode }));
+    }
+
+    [TestMethod]
+    public async Task ExactSaleRetry_ReturnsOriginalIdWithoutDuplicateSideEffects()
+    {
+        using var db = TestDb.Create();
+        const string barcode = "F6-IDEMPOTENT";
+        await SaveShopAsync(db.Factory);
+        await SeedStockAsync(db.Factory, barcode, 5);
+        var repository = new SaleRepository(db.Factory);
+
+        var firstId = await repository.InsertSaleAsync(
+            NewOrdinarySale("F6-IDEMPOTENT"),
+            new[] { NewLine(barcode, 2, 100) });
+        var retryId = await repository.InsertSaleAsync(
+            NewOrdinarySale("F6-IDEMPOTENT"),
+            new[] { NewLine(barcode, 2, 100) });
+
+        Assert.AreEqual(firstId, retryId);
+        using var connection = db.Factory.Open();
+        Assert.AreEqual(
+            1L,
+            await CountAsync(
+                connection,
+                "SELECT COUNT(1) FROM sales WHERE code = 'F6-IDEMPOTENT';"));
+        Assert.AreEqual(
+            1L,
+            await CountAsync(connection, "SELECT COUNT(1) FROM sales_sync_outbox;"));
+        Assert.AreEqual(
+            1L,
+            await CountAsync(connection, "SELECT COUNT(1) FROM local_stock_movements;"));
+        Assert.AreEqual(
+            3L,
+            await CountAsync(
+                connection,
+                "SELECT stock_qty FROM product_meta WHERE barcode = @barcode;",
+                new { barcode }));
+
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => repository.InsertSaleAsync(
+                NewOrdinarySale("F6-IDEMPOTENT", total: 300),
+                new[] { NewLine(barcode, 3, 100) }));
     }
 
     [TestMethod]
@@ -629,6 +803,32 @@ WHERE id = @saleId;", new { saleId });
         return await conn.ExecuteScalarAsync<long>(sql, parameters, tx);
     }
 
+    private static async Task<bool> WaitForPendingExclusiveLockAsync(
+        SqliteConnection connection)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(4);
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText =
+                    "SELECT COUNT(1) FROM sales;";
+                command.CommandTimeout = 1;
+                command.ExecuteScalar();
+            }
+            catch (SqliteException ex)
+                when (ex.SqliteErrorCode == 5)
+            {
+                return true;
+            }
+
+            await Task.Delay(20);
+        }
+
+        return false;
+    }
+
     private static void AssertFullSaleSnapshotEqual(
         FullSaleSnapshot expected,
         FullSaleSnapshot actual)
@@ -896,6 +1096,89 @@ WHERE id = @saleId;", new { saleId });
             SqliteTransaction tx,
             long saleId) =>
             _repository.EnsureClientSaleIdAsync(conn, tx, saleId);
+    }
+
+    private sealed class TestAuthorizationCommitGuard
+    {
+        private readonly int _throwOnDemand;
+
+        public TestAuthorizationCommitGuard(int throwOnDemand)
+        {
+            _throwOnDemand = throwOnDemand;
+            Guard = new SaleAuthorizationCommitGuard(
+                authorizationEpoch: 1,
+                generationFingerprint: new string('a', 64),
+                generationId: "f6-auth-generation",
+                operatorId: 42,
+                shopCode: SaleTransactionWriterTests.ShopCode,
+                shopDeviceId: "f6-device",
+                shopId: SaleTransactionWriterTests.ShopId,
+                staffCredentialVersion: 1,
+                staffId: "f6-staff",
+                demandStillValid: DemandStillValid,
+                commitIfStillValid: (minimumRemaining, commit) =>
+                {
+                    MinimumRemaining = minimumRemaining;
+                    DemandStillValid();
+                    commit();
+                });
+        }
+
+        public int DemandCount { get; private set; }
+        public SaleAuthorizationCommitGuard Guard { get; }
+        public TimeSpan MinimumRemaining { get; private set; }
+
+        private void DemandStillValid()
+        {
+            DemandCount++;
+            if (DemandCount == _throwOnDemand)
+                throw new TestAuthorizationRevokedException();
+        }
+    }
+
+    private sealed class ExpiringTestAuthorizationCommitGuard
+    {
+        private int _demandCount;
+        private int _expired;
+
+        public ExpiringTestAuthorizationCommitGuard()
+        {
+            Guard = new SaleAuthorizationCommitGuard(
+                authorizationEpoch: 1,
+                generationFingerprint: new string('b', 64),
+                generationId: "f6-expiring-generation",
+                operatorId: 42,
+                shopCode: SaleTransactionWriterTests.ShopCode,
+                shopDeviceId: "f6-device",
+                shopId: SaleTransactionWriterTests.ShopId,
+                staffCredentialVersion: 1,
+                staffId: "f6-staff",
+                demandStillValid: DemandStillValid,
+                commitIfStillValid: (minimumRemaining, commit) =>
+                {
+                    DemandStillValid();
+                    commit();
+                });
+        }
+
+        public int DemandCount => Volatile.Read(ref _demandCount);
+        public SaleAuthorizationCommitGuard Guard { get; }
+
+        public void Expire()
+        {
+            Volatile.Write(ref _expired, 1);
+        }
+
+        private void DemandStillValid()
+        {
+            Interlocked.Increment(ref _demandCount);
+            if (Volatile.Read(ref _expired) != 0)
+                throw new TestAuthorizationRevokedException();
+        }
+    }
+
+    private sealed class TestAuthorizationRevokedException : Exception
+    {
     }
 
     private sealed class FullSaleSnapshot

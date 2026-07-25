@@ -793,6 +793,10 @@ namespace Win7POS.Wpf.Pos
             IsPaymentCommitInProgress = true;
             try
             {
+                var authorizedOperatorSession =
+                    _operatorSession as OperatorSession ??
+                    throw new InvalidOperationException(
+                        "La sessione operatore non è autorizzata alla vendita.");
                 if (vm.AutoPrintFiscalBoleta && vm.CashAmountMinor > 0)
                 {
                     vm.NextBoletaNumber = await _service
@@ -805,12 +809,11 @@ namespace Win7POS.Wpf.Pos
                     CashAmountMinor = vm.CashAmountMinor,
                     CardAmountMinor = vm.CardAmountMinor
                 };
-                var operatorId = _operatorSession?.CurrentUser?.Id;
                 var result = await _service.CompleteSaleAsync(
                     payment,
+                    authorizedOperatorSession,
                     vm.SaleCode,
                     vm.CreatedAtMs,
-                    operatorId,
                     draft.ShopInfo).ConfigureAwait(true);
                 var completedCart = _lastCustomerCartSnapshot;
                 ApplySnapshot(result.Snapshot);

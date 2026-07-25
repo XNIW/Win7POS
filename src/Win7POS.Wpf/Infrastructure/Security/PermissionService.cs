@@ -9,42 +9,71 @@ namespace Win7POS.Wpf.Infrastructure.Security
     public sealed class PermissionService : IPermissionService
     {
         private readonly IOperatorSession _session;
+        private readonly OperatorSession _operatorSession;
 
         public PermissionService(IOperatorSession session)
         {
             _session = session ?? throw new ArgumentNullException(nameof(session));
+            _operatorSession = session as OperatorSession;
         }
 
         public bool Has(string permissionCode)
         {
             if (string.IsNullOrEmpty(permissionCode)) return false;
-            if (!_session.EnsureAuthorizationValid()) return false;
-            var user = _session.CurrentUser;
-            if (user == null) return false;
-            if (user.IsAdmin) return true;
-            var codes = user.PermissionCodes;
-            return codes != null && ((IEnumerable<string>)codes).Any(p => string.Equals(p, permissionCode, StringComparison.Ordinal));
+            return TryGetAuthorizationBoundUser(out var user) &&
+                HasPermission(user, permissionCode);
         }
 
         public void Demand(string permissionCode, string operationText)
         {
-            if (!_session.EnsureAuthorizationValid())
+            if (!TryGetAuthorizationBoundUser(out var user))
             {
+                var code = _session.LastAuthorizationFailureCode;
                 throw new PosAuthorizationLeaseException(
-                    _session.LastAuthorizationFailureCode,
+                    string.IsNullOrWhiteSpace(code)
+                        ? "sync_generation_inactive"
+                        : code,
                     PosLocalization.T("access.login.authorizationExpired"));
             }
 
-            if (!Has(permissionCode))
+            if (!HasPermission(user, permissionCode))
                 throw new InvalidOperationException("Permesso negato: " + (operationText ?? permissionCode));
         }
 
         public bool CanOverride(string permissionCode)
         {
-            if (!_session.EnsureAuthorizationValid()) return false;
-            var user = _session.CurrentUser;
-            if (user == null) return false;
-            return user.CanOverride && Has(PermissionCodes.SecurityOverride);
+            return TryGetAuthorizationBoundUser(out var user) &&
+                user.CanOverride &&
+                HasPermission(user, PermissionCodes.SecurityOverride);
+        }
+
+        private bool TryGetAuthorizationBoundUser(
+            out UserAccount user)
+        {
+            user = null;
+            return _operatorSession != null &&
+                _operatorSession.TryGetAuthorizationBoundUser(
+                    out user);
+        }
+
+        private static bool HasPermission(
+            UserAccount user,
+            string permissionCode)
+        {
+            if (user == null ||
+                string.IsNullOrWhiteSpace(permissionCode))
+            {
+                return false;
+            }
+            if (user.IsAdmin)
+                return true;
+            var codes = user.PermissionCodes;
+            return codes != null &&
+                ((IEnumerable<string>)codes).Any(
+                    permission => string.Equals(
+                        permission,
+                        permissionCode,
+                        StringComparison.Ordinal));
         }
     }
 
@@ -57,5 +86,13 @@ namespace Win7POS.Wpf.Infrastructure.Security
         }
 
         public string Code { get; }
+        internal long OperatorAuthorityVersion { get; private set; } =
+            long.MinValue;
+
+        internal void BindOperatorAuthorityVersion(long version)
+        {
+            if (OperatorAuthorityVersion == long.MinValue)
+                OperatorAuthorityVersion = version;
+        }
     }
 }

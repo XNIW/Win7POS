@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Win7POS.Core.Online;
@@ -122,6 +123,27 @@ namespace Win7POS.Wpf.Pos.Online
                 }
 
                 var response = result.Value;
+                PosAuthoritativeReceiptClock authoritativeReceiptClock;
+                try
+                {
+                    authoritativeReceiptClock =
+                        _trustedDeviceStore.CaptureOnlineReceiptClock(
+                            !string.IsNullOrWhiteSpace(
+                                response.EffectiveOfflineAuthorizationExpiresAt));
+                }
+                catch (InvalidDataException ex)
+                {
+                    _logger.LogWarning(
+                        "POS online bootstrap could not capture the authoritative receipt clock.",
+                        ex);
+                    return PosOnlineBootstrapResult.Failure(
+                        "trusted_time_continuity_lost",
+                        PosLocalization.T("onlineFirstLogin.localRequestError"),
+                        false,
+                        result.ClientRequestId,
+                        result.ServerRequestId,
+                        result.CfRay);
+                }
                 try
                 {
                     ReceiptShopMetadataPolicy.EnsureValidRemoteShop(response?.Shop);
@@ -220,11 +242,24 @@ namespace Win7POS.Wpf.Pos.Online
 
                 progress?.Report(PosCatalogPullProgress.ForPhase("access_verified"));
                 var activatedGenerationId = OnlineSyncGeneration.CreateGenerationId();
+                if (authenticatedTransition.ExpectedCurrentState.Exists &&
+                    authenticatedTransition.ExpectedCurrentState.Active &&
+                    _trustedDeviceStore.TryGetReusableGenerationId(
+                        response,
+                        authenticatedTransition.ExpectedCurrentState.Fingerprint,
+                        out var reusableGenerationId))
+                {
+                    // An exact response retry (for example after a lost local
+                    // acknowledgement) must retain the original generation so
+                    // the process monotonic high-water cannot be reset.
+                    activatedGenerationId = reusableGenerationId;
+                }
                 try
                 {
                     var generation = await _syncHost.ActivateAuthenticatedTrustAsync(
                             response,
                             activatedGenerationId,
+                            authoritativeReceiptClock,
                             authenticatedTransition,
                             async () =>
                             {

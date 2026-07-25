@@ -4,4 +4,9 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Win7POS.Core.Tests" />
+    <InternalsVisibleTo Include="Win7POS.Wpf" />
+  </ItemGroup>
+
 </Project>
