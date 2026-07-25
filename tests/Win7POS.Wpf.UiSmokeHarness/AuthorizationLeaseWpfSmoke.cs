@@ -3033,7 +3033,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 PosOfflineAuthorizationLeasePolicy.Evaluate(
                     legacySession,
                     DateTimeOffset.UtcNow),
-                "offline_attestation_required",
+                formatVersion == 1
+                    ? "local_receipt_time_invalid"
+                    : "offline_attestation_required",
                 "legacy v" + formatVersion + " state authorized offline");
         }
 
