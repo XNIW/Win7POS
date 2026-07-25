@@ -1410,6 +1410,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             saleRaceStore.SaveFirstLogin(
                                 switchedGenerationResponse,
                                 "qa-auth-sale-race-generation-target");
+                            Require(
+                                saleRaceStore.TryRead(
+                                    out var switchedGenerationSession),
+                                "generation-race target session was not persisted");
+                            saleRaceWall = ParseUtc(
+                                    switchedGenerationSession.LastOkLocalAt,
+                                    "generation-race target local receipt")
+                                .AddMilliseconds(50);
                         }
                     }
                 });
