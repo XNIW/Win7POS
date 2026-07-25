@@ -1413,7 +1413,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         }
                     }
                 });
-            var generationRaceDenied = false;
+            var generationRaceDenialCode = string.Empty;
             try
             {
                 await workflow.CompleteSaleAsync(
@@ -1424,10 +1424,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             catch (PosAuthorizationLeaseException ex)
             {
-                generationRaceDenied = string.Equals(
-                    ex.Code,
-                    "sync_generation_inactive",
-                    StringComparison.Ordinal);
+                generationRaceDenialCode = ex.Code ?? string.Empty;
             }
             finally
             {
@@ -1435,8 +1432,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     .SetAuthorizationUseTestHookForTesting(null);
             }
             Require(
-                generationRaceDenied &&
-                Volatile.Read(ref generationDemandCount) == 4 &&
+                string.Equals(
+                    generationRaceDenialCode,
+                    "sync_generation_inactive",
+                    StringComparison.Ordinal),
+                "in-transaction generation switch denial code was " +
+                (string.IsNullOrWhiteSpace(generationRaceDenialCode)
+                    ? "<none>"
+                    : generationRaceDenialCode));
+            Require(
+                Volatile.Read(ref generationDemandCount) == 4,
+                "in-transaction generation switch demand count was " +
+                Volatile.Read(ref generationDemandCount).ToString(
+                    CultureInfo.InvariantCulture));
+            Require(
                 CountSaleRows(factory) == raceSalesBefore &&
                 CountSalesOutboxRows(factory) == raceOutboxBefore,
                 "in-transaction generation switch reached sale or outbox");
