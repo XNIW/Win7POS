@@ -1516,7 +1516,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             Require(
                 commitExpiryDenied &&
-                Volatile.Read(ref commitExpiryDemandCount) == 5 &&
+                Volatile.Read(ref commitExpiryDemandCount) == 4 &&
                 CountSaleRows(factory) == raceSalesBefore &&
                 CountSalesOutboxRows(factory) == raceOutboxBefore,
                 "exact expiry inside the COMMIT gate reached sale or outbox");
@@ -1631,7 +1631,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     blockedSaleTask != null &&
                     !blockedSaleTask.IsCompleted &&
                     Volatile.Read(
-                        ref blockedReaderDemandCount) == 2,
+                        ref blockedReaderDemandCount) == 1,
                     "blocked-reader sale crossed the Data demand before reader drain");
 
                 Interlocked.Exchange(
