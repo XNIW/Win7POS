@@ -511,15 +511,18 @@ if ($physicalQaIsFailClosed) {
 $trustedSeedIsFailClosed =
     $uiSmoke -match 'HasArg\(args,\s*"--seed-trusted-session"\)' -and
     $uiSmoke -match 'EnsureSyntheticTrustedSessionSeedPath\(\s*dataDir\s*,' -and
-    $uiSmoke -match 'Path\.IsPathRooted\(dataDir\)' -and
+    $uiSmoke -match 'EnsureQaPath\(' -and
+    $uiSmoke -match 'Path\.IsPathRooted\(path\)' -and
     $uiSmoke -match '"Win7POS-QA"' -and
     $uiSmoke -match 'DriveType\.Fixed' -and
     $uiSmoke -match 'existingAncestor' -and
     $uiSmoke -match 'FileAttributes\.ReparsePoint' -and
-    $uiSmoke -match 'Directory\.EnumerateFileSystemEntries\(\s*fullPath\s*\)\.Any\(\)' -and
-    $uiSmoke -match 'allowPreparedRestartProbe' -and
-    $uiSmoke -match '"authorization-lease-restart-prepare\.txt"' -and
-    $uiSmoke -match '"PASS authorization lease restart prepare"' -and
+    $uiSmoke -match 'requireEmpty\s*&&\s*entries\.Length\s*>\s*0' -and
+    $uiSmoke -match '"Found:\s*"' -and
+    $uiSmoke -match 'requirePreparedState\s*&&\s*entries\.Length\s*==\s*0' -and
+    $uiSmoke -match 'Restart verification must reuse prepared state without --seed-trusted-session' -and
+    $uiSmoke -match 'EnsureAuthorizationLeaseDiagnosticsPath' -and
+    $uiSmoke -match 'diagnostics must be outside WIN7POS_DATA_DIR' -and
     $uiSmoke -match 'SearchOption\.AllDirectories' -and
     $uiSmoke -match 'PosOnlineContract\.OfflineAuthorizationMaxAgeSeconds'
 $trustedSeedGuardIndex = $uiSmoke.IndexOf(
@@ -532,7 +535,7 @@ $trustedSeedIsFailClosed = $trustedSeedIsFailClosed -and
     $trustedSeedGuardIndex -ge 0 -and
     $seedDirectoryCreateIndex -gt $trustedSeedGuardIndex
 if ($trustedSeedIsFailClosed) {
-    Pass "synthetic trusted-session seed is explicit and restricted to a new or prepared restart Win7POS-QA directory"
+    Pass "synthetic trusted-session seed is explicit, empty-root-only and isolated from restart diagnostics"
 } else {
     Fail "synthetic trusted-session seed must fail closed outside a new or prepared restart Win7POS-QA directory"
 }

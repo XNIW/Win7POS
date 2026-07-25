@@ -110,7 +110,11 @@ Require-Pattern "only the non-shipping UI harness receives WPF internal test acc
 Require-Pattern "authorization lease dynamic smoke is wired into the UI harness" $uiHarness '--authorization-lease-smoke[\s\S]*AuthorizationLeaseWpfSmoke\.RunAsync'
 Require-Pattern "authorization lease restart prepare and verify are separate harness modes" $uiHarness '--authorization-lease-restart-prepare[\s\S]*--authorization-lease-restart-verify[\s\S]*PrepareRestartProbeAsync[\s\S]*VerifyRestartProbeAsync'
 Require-Pattern "clock capacity is exercised in a separate process harness" $uiHarness '--authorization-lease-clock-capacity-smoke[\s\S]*RunClockCapacityAsync'
-Require-Pattern "authorization lease dynamic smoke is restricted to an empty QA data root" $uiHarness 'restrictedSeed\s*=\s*physicalPrinterQa[\s\S]{0,300}--authorization-lease-smoke[\s\S]{0,700}EnsureSyntheticTrustedSessionSeedPath'
+Require-Pattern "seeded authorization modes require an explicit trusted-session seed" $uiHarness 'authorizationLeaseModeRequiresSeed[\s\S]{0,500}!seedTrustedSession[\s\S]{0,300}requires --seed-trusted-session'
+Require-Pattern "restart verification explicitly forbids reseeding prepared state" $uiHarness 'authorizationLeaseRestartVerify\s*&&\s*seedTrustedSession[\s\S]{0,300}without --seed-trusted-session'
+Require-Pattern "authorization artifacts and unhandled errors use diagnostics outside the data root" $uiHarness 'EnsureAuthorizationLeaseDiagnosticsPath[\s\S]*harnessErrorPath[\s\S]*artifactDirectory\s*=\s*authorizationLeaseMode\s*\?\s*diagnosticsDir\s*:\s*dataDir'
+Require-Pattern "seeded QA data rejects non-empty roots with entry names" $uiHarness 'requireEmpty\s*&&\s*entries\.Length\s*>\s*0[\s\S]{0,500}Found:[\s\S]{0,500}string\.Join'
+Require-Pattern "persistent restart state is validated without the empty-directory seed guard" $uiHarness 'requirePreparedState\s*&&\s*entries\.Length\s*==\s*0[\s\S]{0,250}non-empty prepared QA data directory'
 Require-Pattern "wrong PIN dynamic regression leaves the generation uncommitted" $authorizationSmoke 'LoginAsync\(username,\s*WrongPin\)[\s\S]{0,900}sync_generation_inactive'
 Require-Pattern "epoch and generation changes are denied dynamically" $authorizationSmoke 'InvalidateAuthorizationState\(\)[\s\S]{0,900}sync_generation_changed[\s\S]{0,1500}qa-auth-generation-2[\s\S]{0,900}sync_generation_changed'
 Require-Pattern "successful PIN primes a monotonic authorization high-water" $authorizationSmoke 'LoginAsync\(username,\s*CorrectPin\)[\s\S]{0,1400}successful PIN did not prime[\s\S]{0,3200}clock_rollback'
@@ -125,7 +129,7 @@ Require-Pattern "dynamic smoke advances trusted time across the asynchronous gen
 Require-Pattern "dynamic smoke counts local activation delay from the authenticated receipt" $authorizationSmoke 'capturedBeforeActivation[\s\S]*activationDelayTicks\s*=\s*\(activationDelayExpiry\s*-\s*activationDelayServerAt\)\.Ticks[\s\S]*SaveFirstLogin[\s\S]*offline_lease_expired[\s\S]*expired local activation persisted'
 Require-Pattern "dynamic smoke anchors trusted time at first-login receipt before the first offline login" $authorizationSmoke 'firstUseStore[\s\S]*SaveFirstLogin[\s\S]*firstUseTicks\s*=\s*\(firstUseExpiry\s*-\s*firstUseServerAt\)\.Ticks[\s\S]*LoginResult\.AuthorizationExpired[\s\S]*frozen wall clock allowed the first offline login'
 Require-Pattern "dynamic smoke proves retry and heartbeat cannot reset the receipt clock" $authorizationSmoke 'qa-auth-retry-clock[\s\S]*lost-response retry reset the trusted receipt clock[\s\S]*qa-auth-heartbeat-clock[\s\S]*non-advancing heartbeat reset the trusted receipt clock'
-Require-Pattern "dynamic smoke advances receipt time between preflights" $authorizationSmoke 'beforePreflightWait[\s\S]*firstUseTicks\s*=\s*\(firstUseExpiry\s*-\s*firstUseServerAt\)\.Ticks[\s\S]*betweenPreflightsGuard\.PreflightAsync[\s\S]*time between preflights did not advance'
+Require-Pattern "independent retry, heartbeat and preflight clocks never move backwards" $authorizationSmoke 'retryClockTicks\s*=\s*0[\s\S]*retryClockTicks\s*=\s*TimeSpan\.FromSeconds\(2\)\.Ticks[\s\S]*retryClockTicks\s*=\s*\(firstUseExpiry\s*-\s*firstUseServerAt\)\.Ticks[\s\S]*heartbeatClockTicks\s*=\s*0[\s\S]*heartbeatClockTicks\s*=\s*TimeSpan\.FromSeconds\(2\)\.Ticks[\s\S]*heartbeatClockTicks\s*=\s*\(firstUseExpiry\s*-\s*firstUseServerAt\)\.Ticks[\s\S]*betweenPreflightsTicks\s*=\s*0[\s\S]*betweenPreflightsTicks\s*=\s*\(firstUseExpiry\s*-\s*firstUseServerAt\)\.Ticks'
 Require-Pattern "dynamic smoke rejects heartbeat-mutated response replay across generations and clearing" $authorizationSmoke 'qa-cross-generation-g1[\s\S]*qa-cross-generation-heartbeat-token[\s\S]*qa-cross-generation-g2[\s\S]*qa-cross-generation-g3-clear[\s\S]*qa-cross-generation-g3-try-clear[\s\S]*offline_lease_expired'
 Require-Pattern "dynamic smoke proves fresh recovery and failed-save non-publication" $authorizationSmoke 'qa-cross-generation-fresh-recovery[\s\S]*qa-cross-generation-failed-save[\s\S]*qa-cross-generation-save-failure-control[\s\S]*failed SaveState published'
 Require-Pattern "isolated clock smoke fills sixteen scopes, denies the seventeenth and reuses the first" $authorizationSmoke 'RunClockCapacityAsync[\s\S]*index\s*<\s*16[\s\S]*qa-clock-capacity-16[\s\S]*qa-clock-capacity-generation-00-reuse[\s\S]*saturation evicted'
@@ -133,9 +137,36 @@ Require-Pattern "dynamic smoke rejects monotonic regression across preflight tok
 Require-Pattern "unauthorized sink probe reaches the real sale and publication tables if the guard regresses" $authorizationSmoke 'InsertUnauthorizedSaleAndOutbox[\s\S]*INSERT INTO sales\([\s\S]*INSERT INTO sales_sync_outbox\('
 Require-Pattern "cross-process restart denies offline authorization before sale persistence" $authorizationSmoke 'PrepareRestartProbeAsync[\s\S]*VerifyRestartProbeAsync[\s\S]*offline_attestation_required[\s\S]*deniedBeforeSink[\s\S]*unauthorizedSaleSinkRows=0[\s\S]*freshOnlineRecovery=True'
 Require-Pattern "Windows runner executes prepare and verify in distinct processes" $authorizationSmokeRunner 'authorization-lease-restart-prepare[\s\S]*authorization-lease-restart-verify[\s\S]*prepareInstance[\s\S]*verifyInstance[\s\S]*offlineAttestationAfterRestart'
+Require-Pattern "Windows runner separates run-scoped data and diagnostics directories" $authorizationSmokeRunner 'AuthorizationLease\.[\s\S]*main-data[\s\S]*main-diagnostics[\s\S]*restart-data[\s\S]*restart-diagnostics[\s\S]*capacity-data[\s\S]*capacity-diagnostics'
+Require-Pattern "Windows runner rejects nested diagnostics before creating either process output stream" $authorizationSmokeRunner 'diagnostics must be outside WIN7POS_DATA_DIR[\s\S]*New-Item\s+-ItemType\s+Directory\s+-Path\s+\$DiagnosticsDirectory'
+Require-Pattern "Windows runner redirects process output and result artifacts only to diagnostics" $authorizationSmokeRunner 'Join-Path\s+\$DiagnosticsDirectory\s+\(\$ArtifactName\s*\+\s*"\.stdout\.txt"\)[\s\S]*Join-Path\s+\$DiagnosticsDirectory\s+\(\$ArtifactName\s*\+\s*"\.stderr\.txt"\)[\s\S]*Join-Path\s+\$DiagnosticsDirectory\s+\$ArtifactName'
+Require-Pattern "Windows runner lists unexpected seeded data entries before process start" $authorizationSmokeRunner 'Get-ChildItem\s+-LiteralPath\s+\$DataDirectory\s+-Force[\s\S]{0,500}Found:\s+\$entryNames[\s\S]*Start-Process'
+Require-Pattern "Windows runner cleans the unique run root only in finally" $authorizationSmokeRunner 'try\s*\{[\s\S]*finally\s*\{[\s\S]*\^AuthorizationLease\\\.\[0-9a-f\]\{32\}\$[\s\S]*Remove-Item\s+-LiteralPath\s+\$runRoot\s+-Recurse\s+-Force'
+$mainHarnessInvocation = [regex]::Match(
+    $authorizationSmokeRunner,
+    '\$smoke\s*=\s*Invoke-AuthorizationHarness[\s\S]*?(?=\r?\n\s*\$prepare\s*=)').Value
+$prepareHarnessInvocation = [regex]::Match(
+    $authorizationSmokeRunner,
+    '\$prepare\s*=\s*Invoke-AuthorizationHarness[\s\S]*?(?=\r?\n\s*\$verify\s*=)').Value
+$verifyHarnessInvocation = [regex]::Match(
+    $authorizationSmokeRunner,
+    '\$verify\s*=\s*Invoke-AuthorizationHarness[\s\S]*?(?=\r?\n\s*\$capacity\s*=)').Value
+$capacityHarnessInvocation = [regex]::Match(
+    $authorizationSmokeRunner,
+    '\$capacity\s*=\s*Invoke-AuthorizationHarness[\s\S]*?(?=\r?\n\s*if\s*\()').Value
+if ($mainHarnessInvocation -match '-SeedTrustedSession' -and
+    $prepareHarnessInvocation -match '-SeedTrustedSession' -and
+    $verifyHarnessInvocation -match '-RequirePreparedData' -and
+    $verifyHarnessInvocation -notmatch '-SeedTrustedSession' -and
+    $capacityHarnessInvocation -match '-SeedTrustedSession') {
+    Pass "harness invocation matrix seeds main/prepare/capacity once and never restart verify"
+}
+else {
+    Fail "harness invocation matrix must seed main/prepare/capacity and reuse restart data without reseeding verify"
+}
 Require-Pattern "Windows runner executes and validates the isolated bounded clock map" $authorizationSmokeRunner 'authorization-lease-clock-capacity-smoke[\s\S]*trustedClockCapacityFailClosed[\s\S]*trustedClockCapacityNoEviction[\s\S]*trustedClockDomainMismatchDenied[\s\S]*trustedClockInvalidKeyDenied'
 Require-Pattern "Windows runner requires monotonic expiry and zero sink rows" $authorizationSmokeRunner 'frozenClockMonotonicExpiry[\s\S]*frozenClockUnauthorizedSaleSinkRows[\s\S]*frozenClockUnauthorizedPublicationOutboxRows[\s\S]*monotonicCounterRegressionDenied[\s\S]*monotonicProviderFailureDenied[\s\S]*monotonicElapsedOverflowDenied[\s\S]*preflightDelayExpiryDenied[\s\S]*activationDelayCountedFromReceipt[\s\S]*firstUseReceiptClockExpiryDenied[\s\S]*firstUseUnauthorizedSaleSinkRows[\s\S]*firstUseUnauthorizedPublicationOutboxRows[\s\S]*firstLoginRetryClockNotReset[\s\S]*heartbeatClockNotReset[\s\S]*betweenPreflightsExpiryDenied[\s\S]*crossPreflightRegressionDenied'
-Require-Pattern "Windows runner requires in-transaction rollback, retry and concurrency proofs" $authorizationSmokeRunner 'saleRevocationRaceSinkRows[\s\S]*saleGenerationRaceSinkRows[\s\S]*saleExactRetryIdempotent[\s\S]*concurrentAuthorizedSalesRows[\s\S]*concurrentAuthorizedSalesOutboxRows'
+Require-Pattern "Windows runner requires distinct checkpoint counts, rollback, retry and concurrency proofs" $authorizationSmokeRunner 'saleRevocationDemandCount[\s\S]*saleGenerationDemandCount[\s\S]*saleCommitExpiryDemandCount[\s\S]*saleCommitBlockedReaderDemandCount[\s\S]*saleExactRetryIdempotent[\s\S]*concurrentAuthorizedSalesRows[\s\S]*concurrentAuthorizedSalesOutboxRows'
 Require-Pattern "bootstrap captures the authenticated receipt before local activation" $bootstrap 'var\s+response\s*=\s*result\.Value[\s\S]{0,900}CaptureOnlineReceiptClock[\s\S]*ActivateAuthenticatedTrustAsync\([\s\S]{0,300}authoritativeReceiptClock'
 Require-Pattern "cancelled operator switch rejects durable authority changes dynamically" $authorizationSmoke 'IsSessionBoundToCurrentTrustedIdentityAsync[\s\S]*users\.UpdateAsync[\s\S]*durable authority change left the cached operator session bound[\s\S]*durableAuthorityChangeDenied=True'
 Require-Pattern "authorization lease smoke has an explicit zero-hardware boundary" $authorizationSmoke 'hardwareEffects=0'

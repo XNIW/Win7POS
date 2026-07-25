@@ -25,50 +25,138 @@ function Invoke-AuthorizationHarness {
         [Parameter(Mandatory = $true)]
         [string]$DataDirectory,
         [Parameter(Mandatory = $true)]
+        [string]$DiagnosticsDirectory,
+        [Parameter(Mandatory = $true)]
         [string]$Mode,
         [Parameter(Mandatory = $true)]
-        [string]$ArtifactName
+        [string]$ArtifactName,
+        [switch]$SeedTrustedSession,
+        [switch]$RequirePreparedData
     )
 
-    New-Item -ItemType Directory -Path $DataDirectory -Force | Out-Null
+    $DataDirectory = [System.IO.Path]::GetFullPath($DataDirectory)
+        .TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar)
+    $DiagnosticsDirectory =
+        [System.IO.Path]::GetFullPath($DiagnosticsDirectory)
+            .TrimEnd(
+                [System.IO.Path]::DirectorySeparatorChar,
+                [System.IO.Path]::AltDirectorySeparatorChar)
+    $dataWithSeparator =
+        $DataDirectory + [System.IO.Path]::DirectorySeparatorChar
+    $diagnosticsWithSeparator =
+        $DiagnosticsDirectory +
+        [System.IO.Path]::DirectorySeparatorChar
+    if ([string]::Equals(
+            $DataDirectory,
+            $DiagnosticsDirectory,
+            [StringComparison]::OrdinalIgnoreCase) -or
+        $DiagnosticsDirectory.StartsWith(
+            $dataWithSeparator,
+            [StringComparison]::OrdinalIgnoreCase) -or
+        $DataDirectory.StartsWith(
+            $diagnosticsWithSeparator,
+            [StringComparison]::OrdinalIgnoreCase)) {
+        throw "Authorization lease diagnostics must be outside WIN7POS_DATA_DIR."
+    }
+
+    New-Item -ItemType Directory -Path $DiagnosticsDirectory -Force | Out-Null
+    if ($SeedTrustedSession) {
+        New-Item -ItemType Directory -Path $DataDirectory -Force | Out-Null
+        $unexpectedEntries = @(
+            Get-ChildItem -LiteralPath $DataDirectory -Force |
+                Sort-Object -Property Name
+        )
+        if ($unexpectedEntries.Count -gt 0) {
+            $entryNames = ($unexpectedEntries | ForEach-Object { $_.Name }) -join ", "
+            throw "--seed-trusted-session requires a new or empty QA data directory. Found: $entryNames"
+        }
+    }
+    elseif ($RequirePreparedData) {
+        if (-not (Test-Path -LiteralPath $DataDirectory -PathType Container)) {
+            throw "Restart verification requires the prepared restart data directory: $DataDirectory"
+        }
+        $preparedEntries = @(Get-ChildItem -LiteralPath $DataDirectory -Force)
+        if ($preparedEntries.Count -eq 0) {
+            throw "Restart verification requires a non-empty prepared restart data directory."
+        }
+    }
+    else {
+        New-Item -ItemType Directory -Path $DataDirectory -Force | Out-Null
+    }
+
     $quotedDataDirectory = '"' + $DataDirectory.Replace('"', '\"') + '"'
-    $standardOutputPath = $DataDirectory + "." + $ArtifactName + ".stdout.txt"
-    $standardErrorPath = $DataDirectory + "." + $ArtifactName + ".stderr.txt"
+    $quotedDiagnosticsDirectory =
+        '"' + $DiagnosticsDirectory.Replace('"', '\"') + '"'
+    $arguments = @(
+        "--data-dir",
+        $quotedDataDirectory,
+        "--diagnostics-dir",
+        $quotedDiagnosticsDirectory,
+        $Mode
+    )
+    if ($SeedTrustedSession) {
+        $arguments += "--seed-trusted-session"
+    }
+    $standardOutputPath =
+        Join-Path $DiagnosticsDirectory ($ArtifactName + ".stdout.txt")
+    $standardErrorPath =
+        Join-Path $DiagnosticsDirectory ($ArtifactName + ".stderr.txt")
     $process = Start-Process `
         -FilePath $harnessExe `
-        -ArgumentList @("--data-dir", $quotedDataDirectory, $Mode) `
+        -ArgumentList $arguments `
         -RedirectStandardOutput $standardOutputPath `
         -RedirectStandardError $standardErrorPath `
         -PassThru `
         -WindowStyle Hidden
-    $artifact = Join-Path $DataDirectory $ArtifactName
+    $artifact = Join-Path $DiagnosticsDirectory $ArtifactName
+    $harnessErrorPath = Join-Path $DiagnosticsDirectory "harness-error.txt"
     if (-not $process.WaitForExit(180000)) {
         Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-        throw "Authorization lease smoke mode $Mode exceeded its 180-second timeout. Artifact: $artifact"
-    }
-    if ($process.ExitCode -ne 0) {
-        $harnessErrorPath = Join-Path $DataDirectory "harness-error.txt"
-        $harnessError = if (Test-Path -LiteralPath $harnessErrorPath -PathType Leaf) {
-            [System.IO.File]::ReadAllText($harnessErrorPath).Trim()
+        [void]$process.WaitForExit(10000)
+        $standardOutput = if (Test-Path -LiteralPath $standardOutputPath -PathType Leaf) {
+            [System.IO.File]::ReadAllText($standardOutputPath).Trim()
         } else {
-            "harness-error.txt was not produced"
+            "stdout was not produced"
         }
         $standardError = if (Test-Path -LiteralPath $standardErrorPath -PathType Leaf) {
             [System.IO.File]::ReadAllText($standardErrorPath).Trim()
         } else {
             "stderr was not produced"
         }
-        throw "Authorization lease smoke mode $Mode failed with exit code $($process.ExitCode). Harness error: $harnessError. Stderr: $standardError. Artifact: $artifact"
+        $harnessError = if (Test-Path -LiteralPath $harnessErrorPath -PathType Leaf) {
+            [System.IO.File]::ReadAllText($harnessErrorPath).Trim()
+        } else {
+            "harness-error.txt was not produced"
+        }
+        throw "Authorization lease smoke mode $Mode exceeded its 180-second timeout. Harness error: $harnessError. Stdout: $standardOutput. Stderr: $standardError. Artifact: $artifact"
+    }
+    if ($process.ExitCode -ne 0) {
+        $harnessError = if (Test-Path -LiteralPath $harnessErrorPath -PathType Leaf) {
+            [System.IO.File]::ReadAllText($harnessErrorPath).Trim()
+        } else {
+            "harness-error.txt was not produced"
+        }
+        $standardOutput = if (Test-Path -LiteralPath $standardOutputPath -PathType Leaf) {
+            [System.IO.File]::ReadAllText($standardOutputPath).Trim()
+        } else {
+            "stdout was not produced"
+        }
+        $standardError = if (Test-Path -LiteralPath $standardErrorPath -PathType Leaf) {
+            [System.IO.File]::ReadAllText($standardErrorPath).Trim()
+        } else {
+            "stderr was not produced"
+        }
+        throw "Authorization lease smoke mode $Mode failed with exit code $($process.ExitCode). Harness error: $harnessError. Stdout: $standardOutput. Stderr: $standardError. Artifact: $artifact"
     }
     if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
         throw "Authorization lease smoke mode $Mode did not produce its result artifact: $artifact"
     }
-    Remove-Item -LiteralPath $standardOutputPath -Force -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath $standardErrorPath -Force -ErrorAction SilentlyContinue
 
     $result = [System.IO.File]::ReadAllText($artifact).Trim()
     if (-not $result.StartsWith("PASS", [StringComparison]::Ordinal)) {
-        throw "Authorization lease smoke mode $Mode did not report PASS. Artifact: $artifact"
+        throw "Authorization lease smoke mode $Mode did not report PASS. Result: $result. Artifact: $artifact"
     }
 
     return [pscustomobject]@{
@@ -100,29 +188,40 @@ if (-not $qaRoot.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Refusing to create authorization lease smoke data outside the system temp directory."
 }
 
-$dataDir = [System.IO.Path]::GetFullPath(
+$runRoot = [System.IO.Path]::GetFullPath(
     (Join-Path $qaRoot ("AuthorizationLease." + [Guid]::NewGuid().ToString("N"))))
-$restartDataDir = [System.IO.Path]::GetFullPath(
-    (Join-Path $qaRoot ("AuthorizationLeaseRestart." + [Guid]::NewGuid().ToString("N"))))
-$capacityDataDir = [System.IO.Path]::GetFullPath(
-    (Join-Path $qaRoot ("AuthorizationLeaseClockCapacity." + [Guid]::NewGuid().ToString("N"))))
+$mainDataDir = Join-Path $runRoot "main-data"
+$mainDiagnosticsDir = Join-Path $runRoot "main-diagnostics"
+$restartDataDir = Join-Path $runRoot "restart-data"
+$restartDiagnosticsDir = Join-Path $runRoot "restart-diagnostics"
+$capacityDataDir = Join-Path $runRoot "capacity-data"
+$capacityDiagnosticsDir = Join-Path $runRoot "capacity-diagnostics"
 
-$smoke = Invoke-AuthorizationHarness `
-    -DataDirectory $dataDir `
-    -Mode "--authorization-lease-smoke" `
-    -ArtifactName "authorization-lease-smoke.txt"
-$prepare = Invoke-AuthorizationHarness `
-    -DataDirectory $restartDataDir `
-    -Mode "--authorization-lease-restart-prepare" `
-    -ArtifactName "authorization-lease-restart-prepare.txt"
-$verify = Invoke-AuthorizationHarness `
-    -DataDirectory $restartDataDir `
-    -Mode "--authorization-lease-restart-verify" `
-    -ArtifactName "authorization-lease-restart-verify.txt"
-$capacity = Invoke-AuthorizationHarness `
-    -DataDirectory $capacityDataDir `
-    -Mode "--authorization-lease-clock-capacity-smoke" `
-    -ArtifactName "authorization-lease-clock-capacity.txt"
+try {
+    $smoke = Invoke-AuthorizationHarness `
+        -DataDirectory $mainDataDir `
+        -DiagnosticsDirectory $mainDiagnosticsDir `
+        -Mode "--authorization-lease-smoke" `
+        -ArtifactName "authorization-lease-smoke.txt" `
+        -SeedTrustedSession
+    $prepare = Invoke-AuthorizationHarness `
+        -DataDirectory $restartDataDir `
+        -DiagnosticsDirectory $restartDiagnosticsDir `
+        -Mode "--authorization-lease-restart-prepare" `
+        -ArtifactName "authorization-lease-restart-prepare.txt" `
+        -SeedTrustedSession
+    $verify = Invoke-AuthorizationHarness `
+        -DataDirectory $restartDataDir `
+        -DiagnosticsDirectory $restartDiagnosticsDir `
+        -Mode "--authorization-lease-restart-verify" `
+        -ArtifactName "authorization-lease-restart-verify.txt" `
+        -RequirePreparedData
+    $capacity = Invoke-AuthorizationHarness `
+        -DataDirectory $capacityDataDir `
+        -DiagnosticsDirectory $capacityDiagnosticsDir `
+        -Mode "--authorization-lease-clock-capacity-smoke" `
+        -ArtifactName "authorization-lease-clock-capacity.txt" `
+        -SeedTrustedSession
 
 if ((Read-ResultValue -Text $smoke.Result -Name "frozenClockMonotonicExpiry") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "frozenClockUnauthorizedSaleSinkRows") -ne "0" -or
@@ -172,14 +271,18 @@ if ((Read-ResultValue -Text $smoke.Result -Name "saleExpiryRaceSinkRows") -ne "0
     (Read-ResultValue -Text $smoke.Result -Name "saleExpiryRaceOutboxRows") -ne "0" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleRevocationRaceSinkRows") -ne "0" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleRevocationRaceOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleRevocationDemandCount") -ne "4" -or
     (Read-ResultValue -Text $smoke.Result -Name "denialCallbacksAfterGateRelease") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleGenerationRaceSinkRows") -ne "0" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleGenerationRaceOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleGenerationDemandCount") -ne "4" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleCommitExpiryRaceSinkRows") -ne "0" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleCommitExpiryRaceOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleCommitExpiryDemandCount") -ne "5" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleCommitBlockedReaderExpiryDenied") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleCommitBlockedReaderSinkRows") -ne "0" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleCommitBlockedReaderOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleCommitBlockedReaderDemandCount") -ne "2" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleCommitFenceReleased") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleCommitRevocationLinearized") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleExactRetryIdempotent") -ne "True" -or
@@ -211,11 +314,28 @@ if ((Read-ResultValue -Text $verify.Result -Name "offlineAttestationAfterRestart
     throw "Authorization lease restart regression did not prove fail-closed authorization and online recovery."
 }
 
-Write-Host $smoke.Result
-Write-Host $prepare.Result
-Write-Host $verify.Result
-Write-Host $capacity.Result
-Write-Host "AUTHORIZATION_LEASE_ARTIFACT=$($smoke.Artifact)"
-Write-Host "AUTHORIZATION_LEASE_RESTART_PREPARE_ARTIFACT=$($prepare.Artifact)"
-Write-Host "AUTHORIZATION_LEASE_RESTART_VERIFY_ARTIFACT=$($verify.Artifact)"
-Write-Host "AUTHORIZATION_LEASE_CLOCK_CAPACITY_ARTIFACT=$($capacity.Artifact)"
+    Write-Host $smoke.Result
+    Write-Host $prepare.Result
+    Write-Host $verify.Result
+    Write-Host $capacity.Result
+    Write-Host "AUTHORIZATION_LEASE_DATA_DIAGNOSTICS_SEPARATED=True"
+    Write-Host "AUTHORIZATION_LEASE_RESTART_SEEDED_ONCE=True"
+    Write-Host "AUTHORIZATION_LEASE_DIAGNOSTICS_COLLECTED=True"
+}
+finally {
+    $qaRootWithSeparator =
+        $qaRoot.TrimEnd(
+            [System.IO.Path]::DirectorySeparatorChar,
+            [System.IO.Path]::AltDirectorySeparatorChar) +
+        [System.IO.Path]::DirectorySeparatorChar
+    $runRootName = [System.IO.Path]::GetFileName($runRoot)
+    if (-not $runRoot.StartsWith(
+            $qaRootWithSeparator,
+            [StringComparison]::OrdinalIgnoreCase) -or
+        $runRootName -notmatch '^AuthorizationLease\.[0-9a-f]{32}$') {
+        throw "Refusing to clean an invalid authorization lease run root: $runRoot"
+    }
+    if (Test-Path -LiteralPath $runRoot -PathType Container) {
+        Remove-Item -LiteralPath $runRoot -Recurse -Force
+    }
+}

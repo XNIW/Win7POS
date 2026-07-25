@@ -685,50 +685,63 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 CountSalesOutboxRows(factory) == firstUseOutboxBefore,
                 "expired first-use authority reached the sale or outbox sink");
 
-            firstUseTicks = 0;
-            firstUseStore.SaveFirstLogin(
+            long retryClockTicks = 0;
+            var retryClockStore = new PosTrustedDeviceStore(
+                () => retryClockTicks,
+                TimeSpan.TicksPerSecond,
+                "qa-retry-clock");
+            retryClockStore.Clear();
+            retryClockStore.SaveFirstLogin(
                 firstUseResponse,
                 "qa-auth-retry-clock");
-            firstUseTicks = TimeSpan.FromSeconds(2).Ticks;
+            retryClockTicks = TimeSpan.FromSeconds(2).Ticks;
             var reusedRetryGenerationId = string.Empty;
             Require(
-                firstUseStore.TryRead(out var firstRetrySession) &&
+                retryClockStore.TryRead(out var firstRetrySession) &&
                 PosOnlineSyncSupervisorHost.TryCreateGeneration(
                     firstRetrySession,
                     out var firstRetryGeneration) &&
-                firstUseStore.TryGetReusableGenerationId(
+                retryClockStore.TryGetReusableGenerationId(
                     firstUseResponse,
                     firstRetryGeneration.Fingerprint,
                     out reusedRetryGenerationId),
                 "production retry generation was not reusable");
-            firstUseStore.SaveFirstLogin(
+            retryClockStore.SaveFirstLogin(
                 firstUseResponse,
                 reusedRetryGenerationId);
             Require(
-                firstUseStore.TryRead(out var retryClockSession),
+                retryClockStore.TryRead(out var retryClockSession),
                 "retry-clock trusted session was not persisted");
             var retryClockWall = ParseUtc(
                 retryClockSession.LastOkLocalAt,
                 "retry-clock local receipt");
-            firstUseTicks = (firstUseExpiry - firstUseServerAt).Ticks;
+            retryClockTicks =
+                (firstUseExpiry - firstUseServerAt).Ticks;
             RequireDenied(
                 (await new PosOfflineAuthorizationLeaseGuard(
-                        firstUseStore,
+                        retryClockStore,
                         () => retryClockWall,
-                        () => firstUseTicks,
+                        () => retryClockTicks,
                         TimeSpan.TicksPerSecond)
                     .PreflightAsync().ConfigureAwait(true)).Decision,
                 "offline_lease_expired",
                 "lost-response retry reset the trusted receipt clock");
 
-            firstUseTicks = TimeSpan.FromSeconds(2).Ticks;
-            firstUseStore.SaveFirstLogin(
+            long heartbeatClockTicks = 0;
+            var heartbeatClockStore = new PosTrustedDeviceStore(
+                () => heartbeatClockTicks,
+                TimeSpan.TicksPerSecond,
+                "qa-heartbeat-clock");
+            heartbeatClockStore.Clear();
+            heartbeatClockStore.SaveFirstLogin(
                 firstUseResponse,
                 "qa-auth-heartbeat-clock");
             Require(
-                firstUseStore.TryRead(out var heartbeatClockSession),
+                heartbeatClockStore.TryRead(
+                    out var heartbeatClockSession),
                 "heartbeat-clock trusted session was not persisted");
-            firstUseTicks = TimeSpan.FromSeconds(2).Ticks;
+            heartbeatClockTicks =
+                TimeSpan.FromSeconds(2).Ticks;
             var staleHeartbeat = new PosHeartbeatResponse
             {
                 Ok = true,
@@ -744,7 +757,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
             };
             Require(
-                firstUseStore.TrySaveHeartbeat(
+                heartbeatClockStore.TrySaveHeartbeat(
                     heartbeatClockSession.GenerationId,
                     heartbeatClockSession,
                     staleHeartbeat,
@@ -764,7 +777,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
             };
             Require(
-                firstUseStore.TrySaveHeartbeat(
+                heartbeatClockStore.TrySaveHeartbeat(
                     staleHeartbeatRefreshed.GenerationId,
                     staleHeartbeatRefreshed,
                     nonAdvancingHeartbeat,
@@ -773,45 +786,53 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var heartbeatClockWall = ParseUtc(
                 heartbeatClockRefreshed.LastOkLocalAt,
                 "heartbeat-clock local receipt");
-            firstUseTicks = (firstUseExpiry - firstUseServerAt).Ticks;
+            heartbeatClockTicks =
+                (firstUseExpiry - firstUseServerAt).Ticks;
             RequireDenied(
                 (await new PosOfflineAuthorizationLeaseGuard(
-                        firstUseStore,
+                        heartbeatClockStore,
                         () => heartbeatClockWall,
-                        () => firstUseTicks,
+                        () => heartbeatClockTicks,
                         TimeSpan.TicksPerSecond)
                     .PreflightAsync().ConfigureAwait(true)).Decision,
                 "offline_lease_expired",
                 "non-advancing heartbeat reset the trusted receipt clock");
 
-            firstUseTicks = TimeSpan.FromSeconds(2).Ticks;
-            firstUseStore.SaveFirstLogin(
+            long betweenPreflightsTicks = 0;
+            var betweenPreflightsStore = new PosTrustedDeviceStore(
+                () => betweenPreflightsTicks,
+                TimeSpan.TicksPerSecond,
+                "qa-between-preflights-clock");
+            betweenPreflightsStore.Clear();
+            betweenPreflightsStore.SaveFirstLogin(
                 firstUseResponse,
                 "qa-auth-between-preflights");
             Require(
-                firstUseStore.TryRead(out var betweenPreflightsSession),
+                betweenPreflightsStore.TryRead(
+                    out var betweenPreflightsSession),
                 "between-preflights trusted session was not persisted");
             var betweenPreflightsWall = ParseUtc(
                 betweenPreflightsSession.LastOkLocalAt,
                 "between-preflights local receipt");
             var betweenPreflightsGuard = new PosOfflineAuthorizationLeaseGuard(
-                firstUseStore,
+                betweenPreflightsStore,
                 () => betweenPreflightsWall,
-                () => firstUseTicks,
+                () => betweenPreflightsTicks,
                 TimeSpan.TicksPerSecond);
             var beforePreflightWait = await betweenPreflightsGuard
                 .PreflightAsync().ConfigureAwait(true);
             Require(
                 beforePreflightWait.Decision.Allowed,
                 "preflight-wait control was denied before expiry");
-            firstUseTicks = (firstUseExpiry - firstUseServerAt).Ticks;
+            betweenPreflightsTicks =
+                (firstUseExpiry - firstUseServerAt).Ticks;
             RequireDenied(
                 (await betweenPreflightsGuard.PreflightAsync()
                     .ConfigureAwait(true)).Decision,
                 "offline_lease_expired",
                 "time between preflights did not advance the trusted receipt clock");
 
-            firstUseStore.Clear();
+            betweenPreflightsStore.Clear();
             await VerifyCrossGenerationReplayContinuityAsync(
                     factory,
                     users,
@@ -1339,7 +1360,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 factory,
                 "sync_generation_inactive",
                 requireUnattributed: false);
-            var revocationRaceDenied = false;
+            var revocationRaceDenialCode = string.Empty;
             try
             {
                 await workflow.CompleteSaleAsync(
@@ -1350,10 +1371,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             catch (PosAuthorizationLeaseException ex)
             {
-                revocationRaceDenied = string.Equals(
-                    ex.Code,
-                    "sync_generation_inactive",
-                    StringComparison.Ordinal);
+                revocationRaceDenialCode =
+                    ex.Code ?? string.Empty;
             }
             finally
             {
@@ -1363,17 +1382,40 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     .SetAuthorizationUseTestHookForTesting(null);
             }
             Require(
-                revocationRaceDenied &&
+                string.Equals(
+                    revocationRaceDenialCode,
+                    "sync_generation_inactive",
+                    StringComparison.Ordinal),
+                "pre-COMMIT revocation denial code was " +
+                (string.IsNullOrWhiteSpace(
+                    revocationRaceDenialCode)
+                    ? "<none>"
+                    : revocationRaceDenialCode));
+            Require(
+                Volatile.Read(ref revocationDemandCount) == 4,
+                "pre-COMMIT revocation demand count was " +
+                Volatile.Read(ref revocationDemandCount).ToString(
+                    CultureInfo.InvariantCulture));
+            var revocationSaleRows = CountSaleRows(factory);
+            var revocationOutboxRows =
+                CountSalesOutboxRows(factory);
+            Require(
+                revocationSaleRows == raceSalesBefore &&
+                revocationOutboxRows == raceOutboxBefore,
+                "pre-COMMIT revocation persisted rows: sales=" +
+                revocationSaleRows.ToString(
+                    CultureInfo.InvariantCulture) +
+                "; outbox=" +
+                revocationOutboxRows.ToString(
+                    CultureInfo.InvariantCulture));
+            Require(
                 denialCallbackObservedReleasedGates &&
-                Volatile.Read(ref revocationDemandCount) == 4 &&
-                CountSaleRows(factory) == raceSalesBefore &&
-                CountSalesOutboxRows(factory) == raceOutboxBefore &&
                 await WaitForAuthorizationAuditIncrementAsync(
                     factory,
                     "sync_generation_inactive",
                     revocationAuditBefore,
                     requireUnattributed: false).ConfigureAwait(true),
-                "pre-COMMIT revocation did not roll back sale and outbox");
+                "pre-COMMIT revocation callback or audit evidence was missing");
 
             var generationRaceResponse =
                 BuildResponse(includeOfflineAttestation: true);
@@ -1453,10 +1495,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "in-transaction generation switch demand count was " +
                 Volatile.Read(ref generationDemandCount).ToString(
                     CultureInfo.InvariantCulture));
+            var generationSaleRows = CountSaleRows(factory);
+            var generationOutboxRows =
+                CountSalesOutboxRows(factory);
             Require(
-                CountSaleRows(factory) == raceSalesBefore &&
-                CountSalesOutboxRows(factory) == raceOutboxBefore,
-                "in-transaction generation switch reached sale or outbox");
+                generationSaleRows == raceSalesBefore &&
+                generationOutboxRows == raceOutboxBefore,
+                "in-transaction generation switch persisted rows: sales=" +
+                generationSaleRows.ToString(
+                    CultureInfo.InvariantCulture) +
+                "; outbox=" +
+                generationOutboxRows.ToString(
+                    CultureInfo.InvariantCulture));
 
             var commitExpiryResponse =
                 BuildResponse(includeOfflineAttestation: true);
@@ -1542,10 +1592,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "exact expiry inside the COMMIT gate demand count was " +
                 Volatile.Read(ref commitExpiryDemandCount).ToString(
                     CultureInfo.InvariantCulture));
+            var commitExpirySaleRows = CountSaleRows(factory);
+            var commitExpiryOutboxRows =
+                CountSalesOutboxRows(factory);
             Require(
-                CountSaleRows(factory) == raceSalesBefore &&
-                CountSalesOutboxRows(factory) == raceOutboxBefore,
-                "exact expiry inside the COMMIT gate reached sale or outbox");
+                commitExpirySaleRows == raceSalesBefore &&
+                commitExpiryOutboxRows == raceOutboxBefore,
+                "exact expiry inside the COMMIT gate persisted rows: sales=" +
+                commitExpirySaleRows.ToString(
+                    CultureInfo.InvariantCulture) +
+                "; outbox=" +
+                commitExpiryOutboxRows.ToString(
+                    CultureInfo.InvariantCulture));
 
             var blockedReaderResponse =
                 BuildResponse(includeOfflineAttestation: true);
@@ -1655,10 +1713,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "blocked-reader sale never reached the EXCLUSIVE fence");
                 Require(
                     blockedSaleTask != null &&
-                    !blockedSaleTask.IsCompleted &&
+                    !blockedSaleTask.IsCompleted,
+                    "blocked-reader sale did not remain pending during reader drain");
+                Require(
                     Volatile.Read(
                         ref blockedReaderDemandCount) == 2,
-                    "blocked-reader sale crossed the Data demand before reader drain");
+                    "reader-drain demand count was " +
+                    Volatile.Read(
+                        ref blockedReaderDemandCount).ToString(
+                            CultureInfo.InvariantCulture));
 
                 Interlocked.Exchange(
                     ref saleRaceTicks,
@@ -1697,16 +1760,38 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 (string.IsNullOrWhiteSpace(blockedReaderDenialCode)
                     ? "<none>"
                     : blockedReaderDenialCode));
+            var blockedSalesAfter = CountSaleRows(factory);
+            var blockedLinesAfter = CountSaleLineRows(factory);
+            var blockedMovementsAfter =
+                CountLocalStockMovementRows(factory);
+            var blockedOutboxAfter =
+                CountSalesOutboxRows(factory);
+            var blockedStockAfter =
+                CountTotalStockQuantity(factory);
             Require(
-                CountSaleRows(factory) == blockedSalesBefore &&
-                CountSaleLineRows(factory) == blockedLinesBefore &&
-                CountLocalStockMovementRows(factory) ==
+                blockedSalesAfter == blockedSalesBefore &&
+                blockedLinesAfter == blockedLinesBefore &&
+                blockedMovementsAfter ==
                     blockedMovementsBefore &&
-                CountSalesOutboxRows(factory) ==
+                blockedOutboxAfter ==
                     blockedOutboxBefore &&
-                CountTotalStockQuantity(factory) ==
+                blockedStockAfter ==
                     blockedStockBefore,
-                "reader-delayed expiry reached a durable sale sink");
+                "reader-delayed expiry persisted rows: sales=" +
+                blockedSalesAfter.ToString(
+                    CultureInfo.InvariantCulture) +
+                "; lines=" +
+                blockedLinesAfter.ToString(
+                    CultureInfo.InvariantCulture) +
+                "; movements=" +
+                blockedMovementsAfter.ToString(
+                    CultureInfo.InvariantCulture) +
+                "; outbox=" +
+                blockedOutboxAfter.ToString(
+                    CultureInfo.InvariantCulture) +
+                "; stock=" +
+                blockedStockAfter.ToString(
+                    CultureInfo.InvariantCulture));
             pendingReaderProbe.Dispose();
             blockedReaderConnection.Dispose();
 
@@ -2351,14 +2436,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "saleExpiryRaceOutboxRows=0" + Environment.NewLine +
                 "saleRevocationRaceSinkRows=0" + Environment.NewLine +
                 "saleRevocationRaceOutboxRows=0" + Environment.NewLine +
+                "saleRevocationDemandCount=4" + Environment.NewLine +
                 "denialCallbacksAfterGateRelease=True" + Environment.NewLine +
                 "saleGenerationRaceSinkRows=0" + Environment.NewLine +
                 "saleGenerationRaceOutboxRows=0" + Environment.NewLine +
+                "saleGenerationDemandCount=4" + Environment.NewLine +
                 "saleCommitExpiryRaceSinkRows=0" + Environment.NewLine +
                 "saleCommitExpiryRaceOutboxRows=0" + Environment.NewLine +
+                "saleCommitExpiryDemandCount=5" + Environment.NewLine +
                 "saleCommitBlockedReaderExpiryDenied=True" + Environment.NewLine +
                 "saleCommitBlockedReaderSinkRows=0" + Environment.NewLine +
                 "saleCommitBlockedReaderOutboxRows=0" + Environment.NewLine +
+                "saleCommitBlockedReaderDemandCount=2" + Environment.NewLine +
                 "saleCommitFenceReleased=True" + Environment.NewLine +
                 "saleCommitRevocationLinearized=True" + Environment.NewLine +
                 "saleRaceAuditPersisted=True" + Environment.NewLine +

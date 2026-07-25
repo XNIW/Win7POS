@@ -77,31 +77,99 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HasArg(args, "--authorization-lease-restart-verify");
             var authorizationLeaseClockCapacity =
                 HasArg(args, "--authorization-lease-clock-capacity-smoke");
-            var restrictedSeed = physicalPrinterQa ||
-                                 HasArg(args, "--authorization-lease-smoke") ||
-                                 authorizationLeaseRestartPrepare ||
-                                 authorizationLeaseRestartVerify ||
-                                 authorizationLeaseClockCapacity ||
-                                 HasArg(args, "--offline-sales-sandbox") ||
-                                 (HasArg(args, "--seed") && HasArg(args, "--seed-trusted-session"));
+            var authorizationLeaseSmoke =
+                HasArg(args, "--authorization-lease-smoke");
+            var authorizationLeaseMode =
+                authorizationLeaseSmoke ||
+                authorizationLeaseRestartPrepare ||
+                authorizationLeaseRestartVerify ||
+                authorizationLeaseClockCapacity;
+            var seedTrustedSession =
+                HasArg(args, "--seed-trusted-session");
+            var authorizationLeaseModeRequiresSeed =
+                authorizationLeaseSmoke ||
+                authorizationLeaseRestartPrepare ||
+                authorizationLeaseClockCapacity;
+            var diagnosticsDir = ValueAfter(args, "--diagnostics-dir");
+            if (authorizationLeaseMode)
+            {
+                if (string.IsNullOrWhiteSpace(diagnosticsDir))
+                {
+                    throw new InvalidOperationException(
+                        "Authorization lease modes require --diagnostics-dir.");
+                }
+                diagnosticsDir = EnsureAuthorizationLeaseDiagnosticsPath(
+                    diagnosticsDir,
+                    dataDir);
+                Directory.CreateDirectory(diagnosticsDir);
+            }
+            else
+            {
+                diagnosticsDir = dataDir;
+            }
+
+            var harnessErrorPath =
+                Path.Combine(diagnosticsDir, "harness-error.txt");
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            {
+                var detail = e.ExceptionObject is Exception exception
+                    ? exception.ToString()
+                    : Convert.ToString(
+                        e.ExceptionObject,
+                        CultureInfo.InvariantCulture);
+                try
+                {
+                    File.WriteAllText(
+                        harnessErrorPath,
+                        detail ?? "Unhandled non-Exception object.");
+                }
+                catch { }
+            };
+
+            if (authorizationLeaseModeRequiresSeed && !seedTrustedSession)
+            {
+                throw new InvalidOperationException(
+                    "This authorization lease mode requires --seed-trusted-session.");
+            }
+            if (authorizationLeaseRestartVerify && seedTrustedSession)
+            {
+                throw new InvalidOperationException(
+                    "Restart verification must reuse prepared state without --seed-trusted-session.");
+            }
+
+            var restrictedQaData = physicalPrinterQa ||
+                                   authorizationLeaseMode ||
+                                   HasArg(args, "--offline-sales-sandbox") ||
+                                   (HasArg(args, "--seed") &&
+                                    seedTrustedSession);
+            var requireEmptyQaData =
+                physicalPrinterQa ||
+                HasArg(args, "--offline-sales-sandbox") ||
+                (HasArg(args, "--seed") && seedTrustedSession) ||
+                (authorizationLeaseModeRequiresSeed &&
+                 seedTrustedSession);
             var verifyOfflineSalesSandboxSafety =
                 HasArg(args, "--verify-offline-sales-sandbox-safety");
-            if (restrictedSeed)
+            if (restrictedQaData)
             {
                 dataDir = EnsureSyntheticTrustedSessionSeedPath(
                     dataDir,
+                    requireEmptyQaData,
                     authorizationLeaseRestartVerify);
             }
 
             Directory.CreateDirectory(dataDir);
-            if (restrictedSeed)
+            if (restrictedQaData)
             {
                 dataDir = EnsureSyntheticTrustedSessionSeedPath(
                     dataDir,
+                    requireEmptyQaData,
                     authorizationLeaseRestartVerify);
             }
+            var artifactDirectory =
+                authorizationLeaseMode ? diagnosticsDir : dataDir;
             var automatedRun = HasArg(args, "--seed") ||
-                               HasArg(args, "--authorization-lease-smoke") ||
+                               authorizationLeaseSmoke ||
                                authorizationLeaseRestartPrepare ||
                                authorizationLeaseRestartVerify ||
                                authorizationLeaseClockCapacity ||
@@ -124,28 +192,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
             Environment.SetEnvironmentVariable("WIN7POS_DATA_DIR", dataDir);
             Environment.SetEnvironmentVariable("WIN7POS_SAFE_START", "1");
 
-            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
-            {
-                var detail = e.ExceptionObject is Exception exception
-                    ? exception.ToString()
-                    : Convert.ToString(
-                        e.ExceptionObject,
-                        CultureInfo.InvariantCulture);
-                try
-                {
-                    File.WriteAllText(
-                        Path.Combine(dataDir, "harness-error.txt"),
-                        detail ?? "Unhandled non-Exception object.");
-                }
-                catch { }
-            };
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             AddApplicationResources(app);
             app.DispatcherUnhandledException += (_, e) =>
             {
                 e.Handled = true;
-                var detail = e.Exception.GetType().Name + ": " + e.Exception.Message;
-                try { File.WriteAllText(Path.Combine(dataDir, "harness-error.txt"), detail); }
+                var detail = e.Exception.ToString();
+                try { File.WriteAllText(harnessErrorPath, detail); }
                 catch { }
                 if (!automatedRun)
                     MessageBox.Show(detail, "Win7POS UI Smoke Harness - unhandled");
@@ -162,7 +215,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             .ConfigureAwait(true);
                         File.WriteAllText(
                             Path.Combine(
-                                dataDir,
+                                artifactDirectory,
                                 "authorization-lease-restart-prepare.txt"),
                             result,
                             Encoding.UTF8);
@@ -180,7 +233,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             .ConfigureAwait(true);
                         File.WriteAllText(
                             Path.Combine(
-                                dataDir,
+                                artifactDirectory,
                                 "authorization-lease-restart-verify.txt"),
                             result,
                             Encoding.UTF8);
@@ -198,7 +251,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             .ConfigureAwait(true);
                         File.WriteAllText(
                             Path.Combine(
-                                dataDir,
+                                artifactDirectory,
                                 "authorization-lease-clock-capacity.txt"),
                             result,
                             Encoding.UTF8);
@@ -209,12 +262,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         return;
                     }
 
-                    if (HasArg(args, "--authorization-lease-smoke"))
+                    if (authorizationLeaseSmoke)
                     {
                         var result = await AuthorizationLeaseWpfSmoke.RunAsync()
                             .ConfigureAwait(true);
                         File.WriteAllText(
-                            Path.Combine(dataDir, "authorization-lease-smoke.txt"),
+                            Path.Combine(
+                                artifactDirectory,
+                                "authorization-lease-smoke.txt"),
                             result,
                             Encoding.UTF8);
                         app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
@@ -259,7 +314,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                     if (HasArg(args, "--offline-sales-sandbox"))
                     {
-                        EnsureSyntheticTrustedSessionSeedPath(dataDir);
+                        EnsureSyntheticTrustedSessionSeedPath(
+                            dataDir,
+                            requireEmpty: true,
+                            requirePreparedState: false);
                         await QaFixture.SeedOfflineSalesSandboxAsync().ConfigureAwait(true);
                         QaFixture.SeedTrustedDeviceSession(QaOfflineShopName);
                         QaFixture.VerifyTrustedDeviceSession(QaOfflineShopName);
@@ -273,14 +331,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                     if (HasArg(args, "--seed"))
                     {
-                        var seedTrustedSession = HasArg(args, "--seed-trusted-session");
-                        if (seedTrustedSession)
+                        var seedFixtureTrustedSession =
+                            HasArg(args, "--seed-trusted-session");
+                        if (seedFixtureTrustedSession)
                         {
-                            EnsureSyntheticTrustedSessionSeedPath(dataDir);
+                            EnsureSyntheticTrustedSessionSeedPath(
+                                dataDir,
+                                requireEmpty: true,
+                                requirePreparedState: false);
                         }
 
                         await QaFixture.SeedAsync().ConfigureAwait(true);
-                        if (seedTrustedSession)
+                        if (seedFixtureTrustedSession)
                         {
                             QaFixture.SeedTrustedDeviceSession();
                         }
@@ -382,7 +444,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 catch (Exception ex)
                 {
                     var detail = ex.GetType().Name + ": " + ex.Message;
-                    try { File.WriteAllText(Path.Combine(dataDir, "harness-error.txt"), ex.ToString()); }
+                    try { File.WriteAllText(harnessErrorPath, ex.ToString()); }
                     catch { }
                     if (!automatedRun)
                         MessageBox.Show(detail, "Win7POS UI Smoke Harness - startup");
@@ -394,15 +456,64 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
         private static string EnsureSyntheticTrustedSessionSeedPath(
             string dataDir,
-            bool allowPreparedRestartProbe)
+            bool requireEmpty,
+            bool requirePreparedState)
         {
-            if (string.IsNullOrWhiteSpace(dataDir) || !Path.IsPathRooted(dataDir))
+            return EnsureQaPath(
+                dataDir,
+                "Synthetic trusted-session QA data",
+                requireEmpty,
+                requirePreparedState);
+        }
+
+        private static string EnsureAuthorizationLeaseDiagnosticsPath(
+            string diagnosticsDir,
+            string dataDir)
+        {
+            var fullDataPath = Path.GetFullPath(dataDir)
+                .TrimEnd(
+                    Path.DirectorySeparatorChar,
+                    Path.AltDirectorySeparatorChar);
+            var fullDiagnosticsPath = EnsureQaPath(
+                diagnosticsDir,
+                "Authorization lease diagnostics",
+                requireEmpty: false,
+                requirePreparedState: false);
+            var dataWithTerminator =
+                fullDataPath + Path.DirectorySeparatorChar;
+            var diagnosticsWithTerminator =
+                fullDiagnosticsPath + Path.DirectorySeparatorChar;
+            if (string.Equals(
+                    fullDataPath,
+                    fullDiagnosticsPath,
+                    StringComparison.OrdinalIgnoreCase) ||
+                fullDiagnosticsPath.StartsWith(
+                    dataWithTerminator,
+                    StringComparison.OrdinalIgnoreCase) ||
+                fullDataPath.StartsWith(
+                    diagnosticsWithTerminator,
+                    StringComparison.OrdinalIgnoreCase))
             {
                 throw new InvalidOperationException(
-                    "--seed-trusted-session requires an absolute QA data directory.");
+                    "Authorization lease diagnostics must be outside WIN7POS_DATA_DIR.");
             }
 
-            var fullPath = Path.GetFullPath(dataDir)
+            return fullDiagnosticsPath;
+        }
+
+        private static string EnsureQaPath(
+            string path,
+            string label,
+            bool requireEmpty,
+            bool requirePreparedState)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Path.IsPathRooted(path))
+            {
+                throw new InvalidOperationException(
+                    label + " requires an absolute QA directory.");
+            }
+
+            var fullPath = Path.GetFullPath(path)
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             var driveRoot = Path.GetPathRoot(fullPath);
             if (string.IsNullOrWhiteSpace(driveRoot) ||
@@ -412,14 +523,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 driveRoot[2] != Path.DirectorySeparatorChar)
             {
                 throw new InvalidOperationException(
-                    "Synthetic trusted-session seed requires a local drive-letter path.");
+                    label + " requires a local drive-letter path.");
             }
 
             var drive = new DriveInfo(driveRoot);
             if (!drive.IsReady || drive.DriveType != DriveType.Fixed)
             {
                 throw new InvalidOperationException(
-                    "Synthetic trusted-session seed requires a ready local fixed drive.");
+                    label + " requires a ready local fixed drive.");
             }
 
             var qaSegment = Path.DirectorySeparatorChar + "Win7POS-QA" + Path.DirectorySeparatorChar;
@@ -427,7 +538,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             if (pathWithTerminator.IndexOf(qaSegment, StringComparison.OrdinalIgnoreCase) < 0)
             {
                 throw new InvalidOperationException(
-                    "--seed-trusted-session is restricted to a Win7POS-QA directory.");
+                    label + " is restricted to a Win7POS-QA directory.");
             }
 
             var existingAncestor = fullPath;
@@ -436,14 +547,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 if (File.Exists(existingAncestor))
                 {
                     throw new InvalidOperationException(
-                        "Synthetic trusted-session seed path has a non-directory ancestor.");
+                        label + " path has a non-directory ancestor.");
                 }
 
                 existingAncestor = Path.GetDirectoryName(existingAncestor);
                 if (string.IsNullOrWhiteSpace(existingAncestor))
                 {
                     throw new InvalidOperationException(
-                        "Synthetic trusted-session seed path has no local directory ancestor.");
+                        label + " path has no local directory ancestor.");
                 }
             }
 
@@ -454,7 +565,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 if ((ancestor.Attributes & FileAttributes.ReparsePoint) != 0)
                 {
                     throw new InvalidOperationException(
-                        "Synthetic trusted-session seed does not allow a reparse-point ancestor.");
+                        label + " does not allow a reparse-point ancestor.");
                 }
             }
 
@@ -462,32 +573,31 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 (new DirectoryInfo(fullPath).Attributes & FileAttributes.ReparsePoint) != 0)
             {
                 throw new InvalidOperationException(
-                    "Synthetic trusted-session seed does not allow a reparse-point data directory.");
+                    label + " does not allow a reparse-point directory.");
             }
 
-            if (Directory.Exists(fullPath) &&
-                Directory.EnumerateFileSystemEntries(fullPath).Any())
+            var entries = Directory.Exists(fullPath)
+                ? Directory.EnumerateFileSystemEntries(fullPath)
+                    .ToArray()
+                : Array.Empty<string>();
+            if (requireEmpty && entries.Length > 0)
             {
-                if (!allowPreparedRestartProbe)
-                {
-                    throw new InvalidOperationException(
-                        "--seed-trusted-session requires a new or empty QA data directory.");
-                }
-
-                var prepareArtifact = Path.Combine(
-                    fullPath,
-                    "authorization-lease-restart-prepare.txt");
-                if (!File.Exists(prepareArtifact) ||
-                    !File.ReadAllText(prepareArtifact)
-                        .TrimStart('\uFEFF')
-                        .StartsWith(
-                            "PASS authorization lease restart prepare",
-                            StringComparison.Ordinal))
-                {
-                    throw new InvalidOperationException(
-                        "Restart verification requires the successful prepare artifact.");
-                }
-
+                var entryNames = entries
+                    .Select(Path.GetFileName)
+                    .OrderBy(
+                        name => name,
+                        StringComparer.OrdinalIgnoreCase);
+                throw new InvalidOperationException(
+                    "--seed-trusted-session requires a new or empty QA data directory. " +
+                    "Found: " + string.Join(", ", entryNames));
+            }
+            if (requirePreparedState && entries.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    "Restart verification requires a non-empty prepared QA data directory.");
+            }
+            if (Directory.Exists(fullPath))
+            {
                 foreach (var entry in Directory.EnumerateFileSystemEntries(
                              fullPath,
                              "*",
@@ -497,7 +607,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                          FileAttributes.ReparsePoint) != 0)
                     {
                         throw new InvalidOperationException(
-                            "Restart verification does not allow reparse-point state.");
+                            label + " does not allow reparse-point state.");
                     }
                 }
             }
