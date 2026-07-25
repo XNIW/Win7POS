@@ -2637,6 +2637,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 () => headroomWall,
                 () => clockTicks,
                 TimeSpan.TicksPerSecond);
+            var headroomFirstPreflight = await headroomGuard
+                .PreflightAsync()
+                .ConfigureAwait(true);
+            var headroomSecondPreflight = await headroomGuard
+                .PreflightAsync()
+                .ConfigureAwait(true);
+            var headroomAuthentication = await headroomGuard
+                .CommitAuthenticationAsync(
+                    headroomFirstPreflight,
+                    headroomSecondPreflight)
+                .ConfigureAwait(true);
+            Require(
+                headroomAuthentication.Decision.Allowed,
+                "durability-headroom control authentication was denied");
             var headroomDecision =
                 headroomGuard.EvaluateAuthorizationUse(
                     out _,
