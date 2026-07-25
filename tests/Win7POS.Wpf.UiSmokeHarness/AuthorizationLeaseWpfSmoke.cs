@@ -721,7 +721,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "offline_lease_expired",
                 "lost-response retry reset the trusted receipt clock");
 
-            firstUseTicks = 0;
+            firstUseTicks = TimeSpan.FromSeconds(2).Ticks;
             firstUseStore.SaveFirstLogin(
                 firstUseResponse,
                 "qa-auth-heartbeat-clock");
