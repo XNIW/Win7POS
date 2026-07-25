@@ -1510,7 +1510,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             commitExpiryElapsedTicks);
                     }
                 });
-            var commitExpiryDenied = false;
+            var commitExpiryDenialCode = string.Empty;
             try
             {
                 await workflow.CompleteSaleAsync(
@@ -1521,10 +1521,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             catch (PosAuthorizationLeaseException ex)
             {
-                commitExpiryDenied = string.Equals(
-                    ex.Code,
-                    "offline_lease_expired",
-                    StringComparison.Ordinal);
+                commitExpiryDenialCode = ex.Code ?? string.Empty;
             }
             finally
             {
@@ -1532,8 +1529,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     .SetAuthorizationUseTestHookForTesting(null);
             }
             Require(
-                commitExpiryDenied &&
-                Volatile.Read(ref commitExpiryDemandCount) == 4 &&
+                string.Equals(
+                    commitExpiryDenialCode,
+                    "offline_lease_expired",
+                    StringComparison.Ordinal),
+                "exact expiry inside the COMMIT gate denial code was " +
+                (string.IsNullOrWhiteSpace(commitExpiryDenialCode)
+                    ? "<none>"
+                    : commitExpiryDenialCode));
+            Require(
+                Volatile.Read(ref commitExpiryDemandCount) == 4,
+                "exact expiry inside the COMMIT gate demand count was " +
+                Volatile.Read(ref commitExpiryDemandCount).ToString(
+                    CultureInfo.InvariantCulture));
+            Require(
                 CountSaleRows(factory) == raceSalesBefore &&
                 CountSalesOutboxRows(factory) == raceOutboxBefore,
                 "exact expiry inside the COMMIT gate reached sale or outbox");
@@ -1618,7 +1627,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             demand);
                     }
                 });
-            var blockedReaderDenied = false;
+            var blockedReaderDenialCode = string.Empty;
             var blockedSaleStarted =
                 new TaskCompletionSource<bool>(
                     TaskCreationOptions
@@ -1660,10 +1669,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             catch (PosAuthorizationLeaseException ex)
             {
-                blockedReaderDenied = string.Equals(
-                    ex.Code,
-                    "offline_lease_expired",
-                    StringComparison.Ordinal);
+                blockedReaderDenialCode = ex.Code ?? string.Empty;
             }
             finally
             {
@@ -1683,7 +1689,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "sale commit fence did not restore NORMAL locking mode");
             }
             Require(
-                blockedReaderDenied &&
+                string.Equals(
+                    blockedReaderDenialCode,
+                    "offline_lease_expired",
+                    StringComparison.Ordinal),
+                "reader-delayed expiry denial code was " +
+                (string.IsNullOrWhiteSpace(blockedReaderDenialCode)
+                    ? "<none>"
+                    : blockedReaderDenialCode));
+            Require(
                 CountSaleRows(factory) == blockedSalesBefore &&
                 CountSaleLineRows(factory) == blockedLinesBefore &&
                 CountLocalStockMovementRows(factory) ==
