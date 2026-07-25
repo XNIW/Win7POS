@@ -120,6 +120,21 @@ namespace Win7POS.Wpf.UiSmokeHarness
             Environment.SetEnvironmentVariable("WIN7POS_DATA_DIR", dataDir);
             Environment.SetEnvironmentVariable("WIN7POS_SAFE_START", "1");
 
+            AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+            {
+                var detail = e.ExceptionObject is Exception exception
+                    ? exception.ToString()
+                    : Convert.ToString(
+                        e.ExceptionObject,
+                        CultureInfo.InvariantCulture);
+                try
+                {
+                    File.WriteAllText(
+                        Path.Combine(dataDir, "harness-error.txt"),
+                        detail ?? "Unhandled non-Exception object.");
+                }
+                catch { }
+            };
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             AddApplicationResources(app);
             app.DispatcherUnhandledException += (_, e) =>

@@ -32,9 +32,13 @@ function Invoke-AuthorizationHarness {
 
     New-Item -ItemType Directory -Path $DataDirectory -Force | Out-Null
     $quotedDataDirectory = '"' + $DataDirectory.Replace('"', '\"') + '"'
+    $standardOutputPath = Join-Path $DataDirectory ($ArtifactName + ".stdout.txt")
+    $standardErrorPath = Join-Path $DataDirectory ($ArtifactName + ".stderr.txt")
     $process = Start-Process `
         -FilePath $harnessExe `
         -ArgumentList @("--data-dir", $quotedDataDirectory, $Mode) `
+        -RedirectStandardOutput $standardOutputPath `
+        -RedirectStandardError $standardErrorPath `
         -PassThru `
         -WindowStyle Hidden
     $artifact = Join-Path $DataDirectory $ArtifactName
@@ -49,7 +53,12 @@ function Invoke-AuthorizationHarness {
         } else {
             "harness-error.txt was not produced"
         }
-        throw "Authorization lease smoke mode $Mode failed with exit code $($process.ExitCode). Harness error: $harnessError. Artifact: $artifact"
+        $standardError = if (Test-Path -LiteralPath $standardErrorPath -PathType Leaf) {
+            [System.IO.File]::ReadAllText($standardErrorPath).Trim()
+        } else {
+            "stderr was not produced"
+        }
+        throw "Authorization lease smoke mode $Mode failed with exit code $($process.ExitCode). Harness error: $harnessError. Stderr: $standardError. Artifact: $artifact"
     }
     if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
         throw "Authorization lease smoke mode $Mode did not produce its result artifact: $artifact"
