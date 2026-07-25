@@ -2528,13 +2528,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 () => DateTimeOffset.UtcNow,
                 () => clockTicks,
                 TimeSpan.TicksPerSecond);
+            var freshPreflight = await freshGuard
+                .PreflightAsync()
+                .ConfigureAwait(true);
             Require(
                 clockStore.TryRead(out var recoveredSession) &&
                 string.Equals(
                     recoveredSession.GenerationId,
                     "qa-cross-generation-fresh-recovery",
                     StringComparison.Ordinal) &&
-                freshGuard.Evaluate().Allowed,
+                freshPreflight.Decision.Allowed,
                 "fresh authoritative response did not recover authorization");
 
             clockStore.Clear();
