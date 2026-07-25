@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
@@ -21,13 +22,16 @@ namespace Win7POS.Wpf.Pos.Online
         private const int MaximumTrustedDeviceStateBytes = 64 * 1024;
         private const int MaximumBindingValueCharacters = 16 * 1024;
         private const int MaximumBindingMaterialCharacters = 128 * 1024;
+        private const int MaximumProcessClockScopes = 16;
+        private const int MaximumMonotonicClockDomainCharacters = 128;
         private static readonly object StateGate = new object();
         private static readonly string ProcessAuthorizationScope =
             CreateProcessAuthorizationScope();
         private static readonly string DefaultMonotonicClockDomain =
             "system-stopwatch";
-        private static ProcessAuthorizationClockAnchor
-            _processAuthorizationClockAnchor;
+        private static ProcessAuthorizationClockState
+            _processAuthorizationClockState =
+                ProcessAuthorizationClockState.CreateEmpty();
         private readonly Func<long> _monotonicTimestamp;
         private readonly long _monotonicFrequency;
         private readonly string _monotonicClockDomain;
@@ -48,8 +52,13 @@ namespace Win7POS.Wpf.Pos.Online
             _monotonicTimestamp = monotonicTimestamp ??
                 throw new ArgumentNullException(nameof(monotonicTimestamp));
             _monotonicFrequency = monotonicFrequency;
+            var rawMonotonicClockDomain =
+                monotonicClockDomain ?? string.Empty;
             _monotonicClockDomain =
-                (monotonicClockDomain ?? string.Empty).Trim();
+                rawMonotonicClockDomain.Length <=
+                    MaximumMonotonicClockDomainCharacters
+                    ? rawMonotonicClockDomain.Trim()
+                    : string.Empty;
         }
 
         public string TrustedDeviceFilePath => Path.Combine(AppPaths.DataDirectory, "pos-trusted-device.json");
@@ -273,12 +282,13 @@ namespace Win7POS.Wpf.Pos.Online
 
             lock (StateGate)
             {
-                ProcessAuthorizationClockAnchor preparedClockAnchor = null;
+                var preparedClockState =
+                    _processAuthorizationClockState.WithoutActiveAnchor();
                 if (candidate.OfflineAuthorizationAttested &&
-                    !TryPrepareProcessAuthorizationClockAnchor(
+                    !TryPrepareProcessAuthorizationClockState(
                         candidate,
                         receiptTimestamp,
-                        out preparedClockAnchor,
+                        out preparedClockState,
                         out var clockFailureCode))
                 {
                     throw new InvalidDataException(
@@ -286,7 +296,7 @@ namespace Win7POS.Wpf.Pos.Online
                         clockFailureCode);
                 }
                 SaveState(state);
-                _processAuthorizationClockAnchor = preparedClockAnchor;
+                _processAuthorizationClockState = preparedClockState;
             }
         }
 
@@ -391,18 +401,19 @@ namespace Win7POS.Wpf.Pos.Online
                 };
 
                 EnsureFreshOnlineReceipt(refreshedCandidate, localReceiptAt);
-                ProcessAuthorizationClockAnchor preparedClockAnchor = null;
+                var preparedClockState =
+                    _processAuthorizationClockState.WithoutActiveAnchor();
                 if (refreshedCandidate.OfflineAuthorizationAttested &&
-                    !TryPrepareProcessAuthorizationClockAnchor(
+                    !TryPrepareProcessAuthorizationClockState(
                         refreshedCandidate,
                         receiptTimestamp,
-                        out preparedClockAnchor,
+                        out preparedClockState,
                         out _))
                 {
                     return false;
                 }
                 SaveState(CreateStoredState(refreshedCandidate));
-                _processAuthorizationClockAnchor = preparedClockAnchor;
+                _processAuthorizationClockState = preparedClockState;
                 return TryReadState(out _, out refreshedSession);
             }
         }
@@ -426,7 +437,8 @@ namespace Win7POS.Wpf.Pos.Online
             lock (StateGate)
             {
                 DeleteStateBestEffort();
-                _processAuthorizationClockAnchor = null;
+                _processAuthorizationClockState =
+                    _processAuthorizationClockState.WithoutActiveAnchor();
             }
         }
 
@@ -444,7 +456,8 @@ namespace Win7POS.Wpf.Pos.Online
                 }
 
                 var cleared = DeleteStateBestEffort();
-                _processAuthorizationClockAnchor = null;
+                _processAuthorizationClockState =
+                    _processAuthorizationClockState.WithoutActiveAnchor();
                 return cleared;
             }
         }
@@ -459,7 +472,8 @@ namespace Win7POS.Wpf.Pos.Online
 
             lock (StateGate)
             {
-                var anchor = _processAuthorizationClockAnchor;
+                var anchor =
+                    _processAuthorizationClockState.ActiveAnchor;
                 if (anchor == null ||
                     !string.Equals(
                         anchor.GenerationFingerprint,
@@ -484,10 +498,10 @@ namespace Win7POS.Wpf.Pos.Online
             }
         }
 
-        private bool TryPrepareProcessAuthorizationClockAnchor(
+        private bool TryPrepareProcessAuthorizationClockState(
             PosTrustedDeviceSession session,
             long receiptTimestamp,
-            out ProcessAuthorizationClockAnchor prepared,
+            out ProcessAuthorizationClockState prepared,
             out string failureCode)
         {
             prepared = null;
@@ -496,6 +510,8 @@ namespace Win7POS.Wpf.Pos.Online
                 !session.OfflineAuthorizationAttested ||
                 _monotonicFrequency <= 0 ||
                 string.IsNullOrWhiteSpace(_monotonicClockDomain) ||
+                _monotonicClockDomain.Length >
+                    MaximumMonotonicClockDomainCharacters ||
                 !TryParseUtc(session.LastOkServerAt, out var serverAnchor) ||
                 !TryParseUtc(session.LastOkLocalAt, out var localReceiptAt) ||
                 !TryCreateGenerationFingerprint(
@@ -512,23 +528,40 @@ namespace Win7POS.Wpf.Pos.Online
                 return false;
             }
 
-            var existing = _processAuthorizationClockAnchor;
-            if (existing != null &&
-                string.Equals(
-                    existing.GenerationFingerprint,
-                    generationFingerprint,
-                    StringComparison.Ordinal))
+            var currentState = _processAuthorizationClockState;
+            var activeAnchor = currentState.ActiveAnchor;
+            if (activeAnchor != null &&
+                (!string.Equals(
+                    activeAnchor.ClockDomain,
+                    _monotonicClockDomain,
+                    StringComparison.Ordinal) ||
+                 activeAnchor.Frequency != _monotonicFrequency))
+            {
+                return false;
+            }
+
+            var clockKey = new ProcessClockKey(
+                _monotonicClockDomain,
+                _monotonicFrequency);
+            var nextHighWaters =
+                new Dictionary<
+                    ProcessClockKey,
+                    ProcessTrustedTimeHighWater>(
+                        currentState.HighWaters);
+            if (nextHighWaters.TryGetValue(
+                    clockKey,
+                    out var existingHighWater))
             {
                 if (!string.Equals(
-                        existing.ClockDomain,
+                        existingHighWater.ClockDomain,
                         _monotonicClockDomain,
                         StringComparison.Ordinal) ||
-                    existing.Frequency != _monotonicFrequency ||
+                    existingHighWater.Frequency != _monotonicFrequency ||
                     !TryAdvanceServerAnchor(
-                        existing.ServerAnchor,
-                        existing.MonotonicTimestamp,
+                        existingHighWater.ServerAnchor,
+                        existingHighWater.MonotonicTimestamp,
                         currentTimestamp,
-                        existing.Frequency,
+                        existingHighWater.Frequency,
                         out var existingTrustedNow))
                 {
                     return false;
@@ -536,6 +569,10 @@ namespace Win7POS.Wpf.Pos.Online
 
                 if (existingTrustedNow > serverAnchor)
                     serverAnchor = existingTrustedNow;
+            }
+            else if (nextHighWaters.Count >= MaximumProcessClockScopes)
+            {
+                return false;
             }
 
             var decision = PosOfflineAuthorizationLeasePolicy.Evaluate(
@@ -549,12 +586,24 @@ namespace Win7POS.Wpf.Pos.Online
                 return false;
             }
 
-            prepared = new ProcessAuthorizationClockAnchor(
-                generationFingerprint,
-                decision.EstimatedServerNow.Value,
-                currentTimestamp,
-                _monotonicFrequency,
-                _monotonicClockDomain);
+            if (!decision.EstimatedServerNow.HasValue)
+                return false;
+
+            var trustedServerNow = decision.EstimatedServerNow.Value;
+            nextHighWaters[clockKey] =
+                new ProcessTrustedTimeHighWater(
+                    trustedServerNow,
+                    currentTimestamp,
+                    _monotonicFrequency,
+                    _monotonicClockDomain);
+            prepared = new ProcessAuthorizationClockState(
+                nextHighWaters,
+                new ProcessAuthorizationClockAnchor(
+                    generationFingerprint,
+                    trustedServerNow,
+                    currentTimestamp,
+                    _monotonicFrequency,
+                    _monotonicClockDomain));
             return true;
         }
 
@@ -935,6 +984,105 @@ namespace Win7POS.Wpf.Pos.Online
             finally
             {
                 Array.Clear(bytes, 0, bytes.Length);
+            }
+        }
+
+        private sealed class ProcessClockKey :
+            IEquatable<ProcessClockKey>
+        {
+            public ProcessClockKey(
+                string clockDomain,
+                long frequency)
+            {
+                ClockDomain = clockDomain ?? string.Empty;
+                Frequency = frequency;
+            }
+
+            public string ClockDomain { get; }
+            public long Frequency { get; }
+
+            public bool Equals(ProcessClockKey other)
+            {
+                return other != null &&
+                    Frequency == other.Frequency &&
+                    string.Equals(
+                        ClockDomain,
+                        other.ClockDomain,
+                        StringComparison.Ordinal);
+            }
+
+            public override bool Equals(object obj)
+            {
+                return Equals(obj as ProcessClockKey);
+            }
+
+            public override int GetHashCode()
+            {
+                unchecked
+                {
+                    var hash = 17;
+                    hash = (hash * 31) +
+                        StringComparer.Ordinal.GetHashCode(ClockDomain);
+                    hash = (hash * 31) + Frequency.GetHashCode();
+                    return hash;
+                }
+            }
+        }
+
+        private sealed class ProcessTrustedTimeHighWater
+        {
+            public ProcessTrustedTimeHighWater(
+                DateTimeOffset serverAnchor,
+                long monotonicTimestamp,
+                long frequency,
+                string clockDomain)
+            {
+                ServerAnchor = serverAnchor;
+                MonotonicTimestamp = monotonicTimestamp;
+                Frequency = frequency;
+                ClockDomain = clockDomain ?? string.Empty;
+            }
+
+            public DateTimeOffset ServerAnchor { get; }
+            public long MonotonicTimestamp { get; }
+            public long Frequency { get; }
+            public string ClockDomain { get; }
+        }
+
+        private sealed class ProcessAuthorizationClockState
+        {
+            public ProcessAuthorizationClockState(
+                Dictionary<
+                    ProcessClockKey,
+                    ProcessTrustedTimeHighWater> highWaters,
+                ProcessAuthorizationClockAnchor activeAnchor)
+            {
+                HighWaters = highWaters ??
+                    throw new ArgumentNullException(nameof(highWaters));
+                ActiveAnchor = activeAnchor;
+            }
+
+            public Dictionary<
+                ProcessClockKey,
+                ProcessTrustedTimeHighWater> HighWaters { get; }
+            public ProcessAuthorizationClockAnchor ActiveAnchor { get; }
+
+            public static ProcessAuthorizationClockState CreateEmpty()
+            {
+                return new ProcessAuthorizationClockState(
+                    new Dictionary<
+                        ProcessClockKey,
+                        ProcessTrustedTimeHighWater>(),
+                    null);
+            }
+
+            public ProcessAuthorizationClockState WithoutActiveAnchor()
+            {
+                return ActiveAnchor == null
+                    ? this
+                    : new ProcessAuthorizationClockState(
+                        HighWaters,
+                        null);
             }
         }
 

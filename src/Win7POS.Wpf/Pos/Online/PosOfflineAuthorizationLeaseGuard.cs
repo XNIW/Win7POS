@@ -746,7 +746,14 @@ namespace Win7POS.Wpf.Pos.Online
 
         public PosOfflineAuthorizationLeaseDecision Evaluate()
         {
-            if (_monotonicFrequency <= 0)
+            return Evaluate(TimeSpan.Zero);
+        }
+
+        public PosOfflineAuthorizationLeaseDecision Evaluate(
+            TimeSpan minimumRemaining)
+        {
+            if (_monotonicFrequency <= 0 ||
+                minimumRemaining < TimeSpan.Zero)
             {
                 return PosOfflineAuthorizationLeaseDecision.Deny(
                     "trusted_time_continuity_lost");
@@ -774,11 +781,32 @@ namespace Win7POS.Wpf.Pos.Online
                 var monotonicTrustedServerNow =
                     _trustedServerAnchor.AddTicks(
                         decimal.ToInt64(elapsedTimeSpanTicks));
+                var localNow = _utcNow();
+                var currentDecision =
+                    PosOfflineAuthorizationLeasePolicy.Evaluate(
+                        _frozenSession,
+                        localNow,
+                        _wallEstimatedServerHighWater,
+                        monotonicTrustedServerNow);
+                if (!currentDecision.Allowed ||
+                    minimumRemaining == TimeSpan.Zero)
+                {
+                    return currentDecision;
+                }
+                if (!currentDecision.EstimatedServerNow.HasValue)
+                {
+                    return PosOfflineAuthorizationLeaseDecision.Deny(
+                        "trusted_time_continuity_lost");
+                }
+
+                var requiredTrustedServerNow =
+                    currentDecision.EstimatedServerNow.Value.Add(
+                        minimumRemaining);
                 return PosOfflineAuthorizationLeasePolicy.Evaluate(
                     _frozenSession,
-                    _utcNow(),
+                    localNow,
                     _wallEstimatedServerHighWater,
-                    monotonicTrustedServerNow);
+                    requiredTrustedServerNow);
             }
             catch (ArgumentOutOfRangeException)
             {

@@ -561,9 +561,12 @@ namespace Win7POS.Wpf.Infrastructure.Security
             long expectedAuthorizationEpoch,
             OnlineSyncGeneration expectedGeneration,
             PosAuthorizationCommitExpiryGuard commitExpiryGuard,
-            long expectedOperatorAuthorityVersion)
+            long expectedOperatorAuthorityVersion,
+            TimeSpan minimumRemaining)
         {
-            DemandCommitExpiryStillValid(commitExpiryGuard);
+            DemandCommitExpiryStillValid(
+                commitExpiryGuard,
+                minimumRemaining);
             if (expectedGeneration == null ||
                 !PosOnlineSyncRevocationLatch.IsAuthorizationEpochCurrent(
                     expectedAuthorizationEpoch) ||
@@ -679,6 +682,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
             OnlineSyncGeneration expectedGeneration,
             PosAuthorizationCommitExpiryGuard commitExpiryGuard,
             long expectedOperatorAuthorityVersion,
+            TimeSpan minimumRemaining,
             int demandCount,
             Action commit)
         {
@@ -692,7 +696,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 expectedAuthorizationEpoch,
                 expectedGeneration,
                 commitExpiryGuard,
-                expectedOperatorAuthorityVersion);
+                expectedOperatorAuthorityVersion,
+                minimumRemaining);
             var committed = PosOnlineSyncRevocationLatch
                 .CommitIfAuthorizationCurrent(
                     expectedAuthorizationEpoch,
@@ -703,7 +708,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
                             "inside_commit_gate",
                             demandCount);
                         DemandCommitExpiryStillValid(
-                            commitExpiryGuard);
+                            commitExpiryGuard,
+                            minimumRemaining);
                         DemandOperatorAuthorityStillCurrent(
                             expectedOperatorId,
                             permissionCode,
@@ -745,9 +751,10 @@ namespace Win7POS.Wpf.Infrastructure.Security
         }
 
         private static void DemandCommitExpiryStillValid(
-            PosAuthorizationCommitExpiryGuard commitExpiryGuard)
+            PosAuthorizationCommitExpiryGuard commitExpiryGuard,
+            TimeSpan minimumRemaining)
         {
-            var decision = commitExpiryGuard?.Evaluate() ??
+            var decision = commitExpiryGuard?.Evaluate(minimumRemaining) ??
                 PosOfflineAuthorizationLeaseDecision.Deny(
                     "trusted_time_continuity_lost");
             if (!decision.Allowed)
@@ -834,7 +841,8 @@ namespace Win7POS.Wpf.Infrastructure.Security
                         AuthorizationEpoch,
                         _generation,
                         _commitExpiryGuard,
-                        OperatorAuthorityVersion);
+                        OperatorAuthorityVersion,
+                        TimeSpan.Zero);
                 }
                 catch (PosAuthorizationLeaseException ex)
                 {
@@ -844,7 +852,9 @@ namespace Win7POS.Wpf.Infrastructure.Security
                 }
             }
 
-            private void CommitIfStillValid(Action commit)
+            private void CommitIfStillValid(
+                TimeSpan minimumRemaining,
+                Action commit)
             {
                 if (_latchLease == null)
                 {
@@ -865,6 +875,7 @@ namespace Win7POS.Wpf.Infrastructure.Security
                         _generation,
                         _commitExpiryGuard,
                         OperatorAuthorityVersion,
+                        minimumRemaining,
                         demandCount,
                         commit);
                 }

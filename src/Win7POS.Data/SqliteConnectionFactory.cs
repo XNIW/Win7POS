@@ -9,11 +9,14 @@ namespace Win7POS.Data
     public sealed class SqliteConnectionFactory
     {
         internal const string ExpectedJournalMode = "delete";
+        internal const string ExpectedLockingMode = "normal";
         internal const long ExpectedSynchronous = 2;
         internal const long ExpectedForeignKeys = 1;
         internal const long ExpectedBusyTimeoutMilliseconds = 5000;
         internal const long ExpectedTempStore = 1;
         internal const long ExpectedCacheSizeKiB = -2048;
+        internal static readonly TimeSpan DurableCommitSafetyBudget =
+            TimeSpan.FromSeconds(10);
 
         private static readonly object MaintenanceSync = new object();
         private static readonly SemaphoreSlim MaintenanceGate = new SemaphoreSlim(1, 1);
@@ -55,6 +58,7 @@ namespace Win7POS.Data
             }
             catch
             {
+                ClearConnectionPoolBestEffort(conn);
                 connectionLease.Release();
                 conn.Dispose();
                 throw;
@@ -75,6 +79,7 @@ namespace Win7POS.Data
             }
             catch
             {
+                ClearConnectionPoolBestEffort(conn);
                 connectionLease.Release();
                 conn.Dispose();
                 throw;
@@ -179,6 +184,10 @@ namespace Win7POS.Data
                 throw new InvalidOperationException("SQLite runtime policy cannot be verified on a closed connection.");
 
             VerifyPolicyValue("journal_mode", ExpectedJournalMode, ReadPragmaString(connection, "journal_mode"));
+            VerifyPolicyValue(
+                "locking_mode",
+                ExpectedLockingMode,
+                ReadPragmaString(connection, "main.locking_mode"));
             VerifyPolicyValue("synchronous", ExpectedSynchronous, ReadPragmaLong(connection, "synchronous"));
             VerifyPolicyValue("foreign_keys", ExpectedForeignKeys, ReadPragmaLong(connection, "foreign_keys"));
             VerifyPolicyValue(
@@ -193,6 +202,7 @@ namespace Win7POS.Data
         {
             // These are connection-local settings and must be established again when a
             // pooled physical connection is handed out.
+            EnsureNormalLockingMode(connection);
             ExecutePragma(connection, "foreign_keys=ON");
             ExecutePragma(connection, "busy_timeout=" + ExpectedBusyTimeoutMilliseconds);
             ExecutePragma(connection, "temp_store=FILE");
@@ -206,6 +216,10 @@ namespace Win7POS.Data
             SqliteConnection connection,
             CancellationToken cancellationToken)
         {
+            await EnsureNormalLockingModeAsync(
+                    connection,
+                    cancellationToken)
+                .ConfigureAwait(false);
             await ExecutePragmaAsync(connection, "foreign_keys=ON", cancellationToken).ConfigureAwait(false);
             await ExecutePragmaAsync(
                     connection,
@@ -246,6 +260,14 @@ namespace Win7POS.Data
                 ExpectedJournalMode,
                 await ReadPragmaStringAsync(connection, "journal_mode", cancellationToken).ConfigureAwait(false));
             VerifyPolicyValue(
+                "locking_mode",
+                ExpectedLockingMode,
+                await ReadPragmaStringAsync(
+                        connection,
+                        "main.locking_mode",
+                        cancellationToken)
+                    .ConfigureAwait(false));
+            VerifyPolicyValue(
                 "synchronous",
                 ExpectedSynchronous,
                 await ReadPragmaLongAsync(connection, "synchronous", cancellationToken).ConfigureAwait(false));
@@ -272,6 +294,213 @@ namespace Win7POS.Data
             using (var command = connection.CreateCommand())
             {
                 command.CommandText = "PRAGMA " + pragma + ";";
+                command.ExecuteNonQuery();
+            }
+        }
+
+        internal static IDisposable AcquireExclusiveCommitFence(
+            SqliteConnection connection)
+        {
+            if (connection == null)
+                throw new ArgumentNullException(nameof(connection));
+            if (connection.State != ConnectionState.Open)
+            {
+                throw new InvalidOperationException(
+                    "The SQLite commit fence requires an open connection.");
+            }
+
+            VerifyRuntimePolicy(connection);
+
+            var transactionBegan = false;
+            try
+            {
+                VerifyPolicyValue(
+                    "locking_mode",
+                    "exclusive",
+                    SetLockingMode(connection, "EXCLUSIVE"));
+                ExecuteSql(connection, "BEGIN EXCLUSIVE;");
+                transactionBegan = true;
+                ExecuteSql(connection, "COMMIT;");
+                transactionBegan = false;
+                VerifyPolicyValue(
+                    "locking_mode",
+                    "exclusive",
+                    ReadPragmaString(
+                        connection,
+                        "main.locking_mode"));
+                return new ExclusiveCommitFence(connection);
+            }
+            catch
+            {
+                if (transactionBegan)
+                {
+                    try
+                    {
+                        ExecuteSql(connection, "ROLLBACK;");
+                    }
+                    catch
+                    {
+                        // Preserve the acquisition failure. Cleanup below
+                        // clears the provider pool if NORMAL cannot be proven.
+                    }
+                }
+                TryRestoreNormalLockingMode(connection);
+                throw;
+            }
+        }
+
+        private static void EnsureNormalLockingMode(
+            SqliteConnection connection)
+        {
+            VerifyPolicyValue(
+                "locking_mode",
+                ExpectedLockingMode,
+                SetLockingMode(connection, "NORMAL"));
+            TouchMainDatabase(connection);
+            VerifyPolicyValue(
+                "locking_mode",
+                ExpectedLockingMode,
+                ReadPragmaString(connection, "main.locking_mode"));
+        }
+
+        private static async Task EnsureNormalLockingModeAsync(
+            SqliteConnection connection,
+            CancellationToken cancellationToken)
+        {
+            VerifyPolicyValue(
+                "locking_mode",
+                ExpectedLockingMode,
+                await SetLockingModeAsync(
+                        connection,
+                        "NORMAL",
+                        cancellationToken)
+                    .ConfigureAwait(false));
+            await TouchMainDatabaseAsync(connection, cancellationToken)
+                .ConfigureAwait(false);
+            VerifyPolicyValue(
+                "locking_mode",
+                ExpectedLockingMode,
+                await ReadPragmaStringAsync(
+                        connection,
+                        "main.locking_mode",
+                        cancellationToken)
+                    .ConfigureAwait(false));
+        }
+
+        private static bool TryRestoreNormalLockingMode(
+            SqliteConnection connection)
+        {
+            try
+            {
+                if (connection.State != ConnectionState.Open)
+                    throw new InvalidOperationException(
+                        "The SQLite connection closed before commit-fence cleanup.");
+                EnsureNormalLockingMode(connection);
+                return true;
+            }
+            catch
+            {
+                try
+                {
+                    SqliteConnection.ClearPool(connection);
+                }
+                catch
+                {
+                    try
+                    {
+                        SqliteConnection.ClearAllPools();
+                    }
+                    catch
+                    {
+                        // Preserve the original fence failure. The owning
+                        // connection is disposed immediately after this lease.
+                    }
+                }
+                return false;
+            }
+        }
+
+        private static void ClearConnectionPoolBestEffort(
+            SqliteConnection connection)
+        {
+            try
+            {
+                SqliteConnection.ClearPool(connection);
+            }
+            catch
+            {
+                try
+                {
+                    SqliteConnection.ClearAllPools();
+                }
+                catch
+                {
+                    // Preserve the original Open/runtime-policy failure.
+                }
+            }
+        }
+
+        private static string SetLockingMode(
+            SqliteConnection connection,
+            string lockingMode)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText =
+                    "PRAGMA main.locking_mode=" + lockingMode + ";";
+                return Convert.ToString(command.ExecuteScalar()) ??
+                    string.Empty;
+            }
+        }
+
+        private static async Task<string> SetLockingModeAsync(
+            SqliteConnection connection,
+            string lockingMode,
+            CancellationToken cancellationToken)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText =
+                    "PRAGMA main.locking_mode=" + lockingMode + ";";
+                var value = await command
+                    .ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                return Convert.ToString(value) ?? string.Empty;
+            }
+        }
+
+        private static void TouchMainDatabase(
+            SqliteConnection connection)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText =
+                    "SELECT 1 FROM main.sqlite_schema LIMIT 1;";
+                command.ExecuteScalar();
+            }
+        }
+
+        private static async Task TouchMainDatabaseAsync(
+            SqliteConnection connection,
+            CancellationToken cancellationToken)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText =
+                    "SELECT 1 FROM main.sqlite_schema LIMIT 1;";
+                await command
+                    .ExecuteScalarAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+        }
+
+        private static void ExecuteSql(
+            SqliteConnection connection,
+            string sql)
+        {
+            using (var command = connection.CreateCommand())
+            {
+                command.CommandText = sql;
                 command.ExecuteNonQuery();
             }
         }
@@ -470,6 +699,27 @@ namespace Win7POS.Data
             public bool Entered { get; set; }
             public MaintenanceContext Previous { get; set; }
             public string Token { get; set; } = string.Empty;
+        }
+
+        private sealed class ExclusiveCommitFence : IDisposable
+        {
+            private SqliteConnection _connection;
+
+            public ExclusiveCommitFence(
+                SqliteConnection connection)
+            {
+                _connection = connection ??
+                    throw new ArgumentNullException(nameof(connection));
+            }
+
+            public void Dispose()
+            {
+                var connection = Interlocked.Exchange(
+                    ref _connection,
+                    null);
+                if (connection != null)
+                    TryRestoreNormalLockingMode(connection);
+            }
         }
 
     }

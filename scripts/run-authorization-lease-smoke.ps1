@@ -87,6 +87,8 @@ $dataDir = [System.IO.Path]::GetFullPath(
     (Join-Path $qaRoot ("AuthorizationLease." + [Guid]::NewGuid().ToString("N"))))
 $restartDataDir = [System.IO.Path]::GetFullPath(
     (Join-Path $qaRoot ("AuthorizationLeaseRestart." + [Guid]::NewGuid().ToString("N"))))
+$capacityDataDir = [System.IO.Path]::GetFullPath(
+    (Join-Path $qaRoot ("AuthorizationLeaseClockCapacity." + [Guid]::NewGuid().ToString("N"))))
 
 $smoke = Invoke-AuthorizationHarness `
     -DataDirectory $dataDir `
@@ -100,6 +102,10 @@ $verify = Invoke-AuthorizationHarness `
     -DataDirectory $restartDataDir `
     -Mode "--authorization-lease-restart-verify" `
     -ArtifactName "authorization-lease-restart-verify.txt"
+$capacity = Invoke-AuthorizationHarness `
+    -DataDirectory $capacityDataDir `
+    -Mode "--authorization-lease-clock-capacity-smoke" `
+    -ArtifactName "authorization-lease-clock-capacity.txt"
 
 if ((Read-ResultValue -Text $smoke.Result -Name "frozenClockMonotonicExpiry") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "frozenClockUnauthorizedSaleSinkRows") -ne "0" -or
@@ -117,9 +123,26 @@ if ((Read-ResultValue -Text $smoke.Result -Name "frozenClockMonotonicExpiry") -n
     (Read-ResultValue -Text $smoke.Result -Name "heartbeatClockNotReset") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "staleHeartbeatClockNotReset") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "betweenPreflightsExpiryDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "crossGenerationReplayG2Denied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "crossGenerationReplayG3AfterClearDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "crossGenerationReplayG3AfterTryClearDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "crossGenerationReplaySinkRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "crossGenerationReplayLineRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "crossGenerationReplayStockMovementRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "crossGenerationReplayOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "crossGenerationFreshResponseRecovers") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "trustedClockSaveFailureNotPublished") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleCommitDurabilityHeadroomDenied") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "crossPreflightRegressionDenied") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "oversizedTrustedStateDenied") -ne "True") {
     throw "Authorization lease smoke did not prove monotonic expiry and fail-closed continuity."
+}
+
+if ((Read-ResultValue -Text $capacity.Result -Name "trustedClockCapacityFailClosed") -ne "True" -or
+    (Read-ResultValue -Text $capacity.Result -Name "trustedClockCapacityNoEviction") -ne "True" -or
+    (Read-ResultValue -Text $capacity.Result -Name "trustedClockDomainMismatchDenied") -ne "True" -or
+    (Read-ResultValue -Text $capacity.Result -Name "trustedClockInvalidKeyDenied") -ne "True") {
+    throw "Authorization lease clock-capacity smoke did not prove bounded fail-closed continuity."
 }
 
 if ((Read-ResultValue -Text $smoke.Result -Name "saleExpiryRaceSinkRows") -ne "0" -or
@@ -137,6 +160,10 @@ if ((Read-ResultValue -Text $smoke.Result -Name "saleExpiryRaceSinkRows") -ne "0
     (Read-ResultValue -Text $smoke.Result -Name "saleGenerationRaceOutboxRows") -ne "0" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleCommitExpiryRaceSinkRows") -ne "0" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleCommitExpiryRaceOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleCommitBlockedReaderExpiryDenied") -ne "True" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleCommitBlockedReaderSinkRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleCommitBlockedReaderOutboxRows") -ne "0" -or
+    (Read-ResultValue -Text $smoke.Result -Name "saleCommitFenceReleased") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleCommitRevocationLinearized") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleExactRetryIdempotent") -ne "True" -or
     (Read-ResultValue -Text $smoke.Result -Name "saleAmbiguousCommitRetryIdempotent") -ne "True" -or
@@ -170,6 +197,8 @@ if ((Read-ResultValue -Text $verify.Result -Name "offlineAttestationAfterRestart
 Write-Host $smoke.Result
 Write-Host $prepare.Result
 Write-Host $verify.Result
+Write-Host $capacity.Result
 Write-Host "AUTHORIZATION_LEASE_ARTIFACT=$($smoke.Artifact)"
 Write-Host "AUTHORIZATION_LEASE_RESTART_PREPARE_ARTIFACT=$($prepare.Artifact)"
 Write-Host "AUTHORIZATION_LEASE_RESTART_VERIFY_ARTIFACT=$($verify.Artifact)"
+Write-Host "AUTHORIZATION_LEASE_CLOCK_CAPACITY_ARTIFACT=$($capacity.Artifact)"

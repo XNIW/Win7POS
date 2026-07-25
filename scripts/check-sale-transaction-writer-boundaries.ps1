@@ -163,7 +163,9 @@ $required = @(
     "src/Win7POS.Data/Repositories/SaleStockMovementWriter.cs",
     "src/Win7POS.Data/Repositories/SaleReversalWriter.cs",
     "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs",
-    "tests/Win7POS.Core.Tests/Data/SaleTransactionWriterTests.cs"
+    "src/Win7POS.Data/SqliteConnectionFactory.cs",
+    "tests/Win7POS.Core.Tests/Data/SaleTransactionWriterTests.cs",
+    "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs"
 )
 
 foreach ($path in $required) {
@@ -181,7 +183,9 @@ $writer = Read-Text "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs"
 $stockWriter = Read-Text "src/Win7POS.Data/Repositories/SaleStockMovementWriter.cs"
 $reversalWriter = Read-Text "src/Win7POS.Data/Repositories/SaleReversalWriter.cs"
 $salesOutbox = Read-Text "src/Win7POS.Data/Repositories/SalesSyncOutboxRepository.cs"
+$connectionFactory = Read-Text "src/Win7POS.Data/SqliteConnectionFactory.cs"
 $tests = Read-Text "tests/Win7POS.Core.Tests/Data/SaleTransactionWriterTests.cs"
+$connectionPolicyTests = Read-Text "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs"
 
 $collaboratorMarkers = @(
     "private readonly SaleReadRepository _reads",
@@ -261,6 +265,7 @@ if ($saleWriters.Count -ne 1) {
         [pscustomobject]@{ Name = "sale receipt validation"; Pattern = "SalesReceiptContentPolicy\.EnsureValid\(sale\s*,\s*lines\)" },
         [pscustomobject]@{ Name = "receipt snapshot validation"; Pattern = "ReceiptDocumentPolicy\.EnsureValidSnapshotJson\(sale\.ReceiptShopSnapshotJson\)" },
         [pscustomobject]@{ Name = "connection open"; Pattern = "_factory\.OpenAsync\(\)" },
+        [pscustomobject]@{ Name = "authorized exclusive commit fence"; Pattern = "AcquireExclusiveCommitFence\(conn\)" },
         [pscustomobject]@{ Name = "transaction begin"; Pattern = "conn\.BeginTransaction\(\)" },
         [pscustomobject]@{ Name = "default-kind guard"; Pattern = "if \(sale\.Kind == 0\)" },
         [pscustomobject]@{ Name = "default sale kind"; Pattern = "sale\.Kind\s*=\s*\(int\)SaleKind\.Sale" },
@@ -272,11 +277,12 @@ if ($saleWriters.Count -ne 1) {
         [pscustomobject]@{ Name = "sale line"; Pattern = "InsertSaleLineAsync\(conn\s*,\s*tx\s*,\s*l\.line\)" },
         [pscustomobject]@{ Name = "stock movements"; Pattern = "ApplyLocalStockMovementsAsync\(conn\s*,\s*tx\s*,\s*sale\s*,\s*lines\)" },
         [pscustomobject]@{ Name = "outbox enqueue"; Pattern = "EnqueueSalesSyncOutboxAsync\(conn\s*,\s*tx\s*,\s*saleId\s*,\s*sale\.ClientSaleId\)" },
-        [pscustomobject]@{ Name = "authorized commit"; Pattern = "authorizationCommitGuard\.CommitIfStillValid\(\s*commitTransaction\)" }
+        [pscustomobject]@{ Name = "authorized commit"; Pattern = "authorizationCommitGuard\.CommitIfStillValid\([\s\S]{0,180}DurableCommitSafetyBudget[\s\S]{0,120}commitTransaction" }
     )
     if ($saleWriter -notmatch "catch\s*\{[\s\S]*if \(!transactionCommitted\)[\s\S]*tx\.Rollback\(\)[\s\S]*throw;\s*\}" -or
         $saleWriter -notmatch "if \(sale\.Kind == \(int\)SaleKind\.Sale\)" -or
-        $saleWriter -notmatch "_reversalWriter\s*\.\s*ValidateReversalBoundaryAsync") {
+        $saleWriter -notmatch "_reversalWriter\s*\.\s*ValidateReversalBoundaryAsync" -or
+        $saleWriter -notmatch "authorizationCommitGuard\s*==\s*null[\s\S]{0,180}AcquireExclusiveCommitFence") {
         Fail "F6 full-sale writer must retain sale-safe/reversal validation and rollback"
     } else {
         Pass "F6 full-sale writer retains sale-safe/reversal validation and rollback"
@@ -290,6 +296,29 @@ if ($saleWriters.Count -ne 1) {
     } else {
         Pass "F6 full-sale header write uses the active transaction"
     }
+}
+
+if ($connectionFactory -notmatch "ExpectedLockingMode\s*=\s*`"normal`"" -or
+    $connectionFactory -notmatch "DurableCommitSafetyBudget\s*=[\s\S]{0,120}TimeSpan\.FromSeconds\(10\)" -or
+    $connectionFactory -notmatch "AcquireExclusiveCommitFence\([\s\S]{0,1600}BEGIN EXCLUSIVE;[\s\S]{0,500}COMMIT;" -or
+    $connectionFactory -notmatch "TryRestoreNormalLockingMode[\s\S]*SetLockingMode\(connection,\s*`"NORMAL`"\)[\s\S]*TouchMainDatabase[\s\S]*main\.sqlite_schema" -or
+    $connectionFactory -notmatch "ClearPool\(connection\)[\s\S]{0,220}ClearAllPools\(\)") {
+    Fail "SQLite commit fence must drain readers, retain a separate headroom budget, restore NORMAL and quarantine poisoned pools"
+} else {
+    Pass "SQLite commit fence drains readers and safely restores pooled connections"
+}
+
+$readerExpiryTests = @(
+    Get-MethodSlices $tests "public" "AuthorizedSale_SharedReaderCannotCarryValidatedCommitPastExactExpiry")
+$connectionFenceTests = @(
+    Get-MethodSlices $connectionPolicyTests "public" "ExclusiveCommitFence_DrainsSharedReader_PreservesProviderTransaction_AndRestoresNormalMode")
+if ($readerExpiryTests.Count -ne 1 -or
+    $connectionFenceTests.Count -ne 1 -or
+    $readerExpiryTests[0] -notmatch "BeginTransaction\(deferred:\s*true\)[\s\S]*WaitForPendingExclusiveLockAsync[\s\S]*guard\.Expire\(\)[\s\S]*SELECT COUNT\(1\) FROM sale_lines[\s\S]*local_stock_movements[\s\S]*sales_sync_outbox" -or
+    $connectionFenceTests[0] -notmatch "AcquireExclusiveCommitFence[\s\S]*WaitForSqliteBusyAsync[\s\S]*PRAGMA main\.locking_mode[\s\S]*readerBlockedBeforeProviderTransaction[\s\S]*BeginTransaction\(\)[\s\S]*readerBlockedAfterProviderCommit") {
+    Fail "reader-held expiry and provider transaction fence regressions are incomplete"
+} else {
+    Pass "reader-held expiry and provider transaction fence regressions are present"
 }
 
 $pdfWriters = @(Get-MethodSlices $writer "internal" "MarkPdfPrintedAsync")

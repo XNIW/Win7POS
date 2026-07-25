@@ -10,7 +10,7 @@ namespace Win7POS.Core.Pos
     public sealed class SaleAuthorizationCommitGuard
     {
         private readonly Action _demandStillValid;
-        private readonly Action<Action> _commitIfStillValid;
+        private readonly Action<TimeSpan, Action> _commitIfStillValid;
 
         internal SaleAuthorizationCommitGuard(
             long authorizationEpoch,
@@ -23,7 +23,7 @@ namespace Win7POS.Core.Pos
             int staffCredentialVersion,
             string staffId,
             Action demandStillValid,
-            Action<Action> commitIfStillValid)
+            Action<TimeSpan, Action> commitIfStillValid)
         {
             AuthorizationEpoch = authorizationEpoch;
             GenerationFingerprint = generationFingerprint;
@@ -57,9 +57,21 @@ namespace Win7POS.Core.Pos
 
         public void CommitIfStillValid(Action commit)
         {
+            CommitIfStillValid(TimeSpan.Zero, commit);
+        }
+
+        public void CommitIfStillValid(
+            TimeSpan minimumRemaining,
+            Action commit)
+        {
+            if (minimumRemaining < TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(minimumRemaining));
+            }
             if (commit == null)
                 throw new ArgumentNullException(nameof(commit));
-            _commitIfStillValid(commit);
+            _commitIfStillValid(minimumRemaining, commit);
         }
     }
 }

@@ -41,6 +41,7 @@ $operatorSessionContract = Read-Text "src/Win7POS.Wpf/Infrastructure/Security/IO
 $session = Read-Text "src/Win7POS.Wpf/Infrastructure/Security/OperatorSession.cs"
 $saleRepository = Read-Text "src/Win7POS.Data/Repositories/SaleRepository.cs"
 $saleWriter = Read-Text "src/Win7POS.Data/Repositories/SaleTransactionWriter.cs"
+$connectionFactory = Read-Text "src/Win7POS.Data/SqliteConnectionFactory.cs"
 $workflow = Read-Text "src/Win7POS.Wpf/Pos/PosWorkflowService.cs"
 $dataProject = Read-Text "src/Win7POS.Data/Win7POS.Data.csproj"
 $userRepo = Read-Text "src/Win7POS.Data/Repositories/UserRepository.cs"
@@ -61,6 +62,8 @@ $wpfProject = Read-Text "src/Win7POS.Wpf/Win7POS.Wpf.csproj"
 $uiHarness = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $authorizationSmoke = Read-Text "tests/Win7POS.Wpf.UiSmokeHarness/AuthorizationLeaseWpfSmoke.cs"
 $authorizationSmokeRunner = Read-Text "scripts/run-authorization-lease-smoke.ps1"
+$saleWriterTests = Read-Text "tests/Win7POS.Core.Tests/Data/SaleTransactionWriterTests.cs"
+$connectionPolicyTests = Read-Text "tests/Win7POS.Core.Tests/Data/SqliteConnectionPolicyTests.cs"
 
 Require-Pattern "offline lease maximum is the 12-hour POS session contract" $contract 'OfflineAuthorizationMaxAgeSeconds\s*=\s*12\s*\*\s*60\s*\*\s*60'
 Require-Pattern "policy fails closed on missing legacy receipt timestamp" $policy 'local_receipt_time_invalid'
@@ -82,9 +85,31 @@ else {
 Require-Pattern "trusted store persists server and local receipt clocks" $store 'LastOkLocalAt\s*=\s*candidate\.LastOkLocalAt[\s\S]*LastOkServerAt\s*=\s*candidate\.LastOkServerAt'
 Require-Pattern "trusted state reads and writes are byte-bounded" $store 'MaximumTrustedDeviceStateBytes\s*=\s*64\s*\*\s*1024[\s\S]*TryReadBoundedUtf8[\s\S]*GetByteCount\(serialized\)'
 Require-Pattern "exact first-login retry reuses its active generation" ($store + $bootstrap) 'TryGetReusableGenerationId[\s\S]*IsExactFirstLoginResponse[\s\S]*ExpectedCurrentState\.Fingerprint[\s\S]*activatedGenerationId\s*=\s*reusableGenerationId'
+Require-Pattern "process trusted time is bounded and keyed only by clock domain and frequency" $store 'MaximumProcessClockScopes\s*=\s*16[\s\S]*MaximumMonotonicClockDomainCharacters\s*=\s*128[\s\S]*class\s+ProcessClockKey[\s\S]*ClockDomain[\s\S]*Frequency[\s\S]*class\s+ProcessTrustedTimeHighWater'
+Require-Pattern "active generation anchor is separated from the process clock high-water" $store 'class\s+ProcessAuthorizationClockState[\s\S]*HighWaters[\s\S]*ActiveAnchor[\s\S]*WithoutActiveAnchor'
+Require-Pattern "clock-state preparation clones before capacity checks and never evicts" $store 'TryPrepareProcessAuthorizationClockState[\s\S]*new\s+Dictionary<[\s\S]*currentState\.HighWaters[\s\S]*TryGetValue\([\s\S]*existingHighWater[\s\S]*Count\s*>=\s*MaximumProcessClockScopes[\s\S]*new\s+ProcessTrustedTimeHighWater[\s\S]*new\s+ProcessAuthorizationClockState'
+Require-Pattern "clock-state preparation rejects active domain or frequency mismatch" $store 'activeAnchor\s*!=\s*null[\s\S]{0,500}activeAnchor\.ClockDomain[\s\S]{0,260}activeAnchor\.Frequency\s*!=\s*_monotonicFrequency[\s\S]{0,120}return\s+false'
+Require-Pattern "Clear and TryClear remove only the active authorization anchor" $store 'public\s+void\s+Clear\(\)[\s\S]{0,350}WithoutActiveAnchor\(\)[\s\S]*public\s+bool\s+TryClear\([\s\S]{0,600}WithoutActiveAnchor\(\)'
+$clockPublishCount = [regex]::Matches(
+    $store,
+    'SaveState\([\s\S]{0,180}_processAuthorizationClockState\s*=\s*preparedClockState').Count
+if ($clockPublishCount -ne 2) {
+    Fail "first login and heartbeat must publish prepared clock state only after SaveState; observed=$clockPublishCount"
+} else {
+    Pass "first login and heartbeat publish prepared clock state only after SaveState"
+}
+$clockResetCount = [regex]::Matches(
+    $store,
+    'ProcessAuthorizationClockState\.CreateEmpty\(\)').Count
+if ($clockResetCount -ne 1) {
+    Fail "process trusted-time high-water must have no runtime or test reset path; observed initializers=$clockResetCount"
+} else {
+    Pass "process trusted-time high-water has no reset path after initialization"
+}
 Require-Pattern "only the non-shipping UI harness receives WPF internal test access" $wpfProject 'InternalsVisibleToAttribute[\s\S]{0,180}Win7POS\.Wpf\.UiSmokeHarness'
 Require-Pattern "authorization lease dynamic smoke is wired into the UI harness" $uiHarness '--authorization-lease-smoke[\s\S]*AuthorizationLeaseWpfSmoke\.RunAsync'
 Require-Pattern "authorization lease restart prepare and verify are separate harness modes" $uiHarness '--authorization-lease-restart-prepare[\s\S]*--authorization-lease-restart-verify[\s\S]*PrepareRestartProbeAsync[\s\S]*VerifyRestartProbeAsync'
+Require-Pattern "clock capacity is exercised in a separate process harness" $uiHarness '--authorization-lease-clock-capacity-smoke[\s\S]*RunClockCapacityAsync'
 Require-Pattern "authorization lease dynamic smoke is restricted to an empty QA data root" $uiHarness 'restrictedSeed\s*=\s*physicalPrinterQa[\s\S]{0,300}--authorization-lease-smoke[\s\S]{0,700}EnsureSyntheticTrustedSessionSeedPath'
 Require-Pattern "wrong PIN dynamic regression leaves the generation uncommitted" $authorizationSmoke 'LoginAsync\(username,\s*WrongPin\)[\s\S]{0,900}sync_generation_inactive'
 Require-Pattern "epoch and generation changes are denied dynamically" $authorizationSmoke 'InvalidateAuthorizationState\(\)[\s\S]{0,900}sync_generation_changed[\s\S]{0,1500}qa-auth-generation-2[\s\S]{0,900}sync_generation_changed'
@@ -101,10 +126,14 @@ Require-Pattern "dynamic smoke counts local activation delay from the authentica
 Require-Pattern "dynamic smoke anchors trusted time at first-login receipt before the first offline login" $authorizationSmoke 'firstUseStore[\s\S]*SaveFirstLogin[\s\S]*firstUseTicks\s*=\s*\(firstUseExpiry\s*-\s*firstUseServerAt\)\.Ticks[\s\S]*LoginResult\.AuthorizationExpired[\s\S]*frozen wall clock allowed the first offline login'
 Require-Pattern "dynamic smoke proves retry and heartbeat cannot reset the receipt clock" $authorizationSmoke 'qa-auth-retry-clock[\s\S]*lost-response retry reset the trusted receipt clock[\s\S]*qa-auth-heartbeat-clock[\s\S]*non-advancing heartbeat reset the trusted receipt clock'
 Require-Pattern "dynamic smoke advances receipt time between preflights" $authorizationSmoke 'beforePreflightWait[\s\S]*firstUseTicks\s*=\s*\(firstUseExpiry\s*-\s*firstUseServerAt\)\.Ticks[\s\S]*betweenPreflightsGuard\.PreflightAsync[\s\S]*time between preflights did not advance'
+Require-Pattern "dynamic smoke rejects heartbeat-mutated response replay across generations and clearing" $authorizationSmoke 'qa-cross-generation-g1[\s\S]*qa-cross-generation-heartbeat-token[\s\S]*qa-cross-generation-g2[\s\S]*qa-cross-generation-g3-clear[\s\S]*qa-cross-generation-g3-try-clear[\s\S]*offline_lease_expired'
+Require-Pattern "dynamic smoke proves fresh recovery and failed-save non-publication" $authorizationSmoke 'qa-cross-generation-fresh-recovery[\s\S]*qa-cross-generation-failed-save[\s\S]*qa-cross-generation-save-failure-control[\s\S]*failed SaveState published'
+Require-Pattern "isolated clock smoke fills sixteen scopes, denies the seventeenth and reuses the first" $authorizationSmoke 'RunClockCapacityAsync[\s\S]*index\s*<\s*16[\s\S]*qa-clock-capacity-16[\s\S]*qa-clock-capacity-generation-00-reuse[\s\S]*saturation evicted'
 Require-Pattern "dynamic smoke rejects monotonic regression across preflight tokens" $authorizationSmoke 'orderedFirst[\s\S]*crossPreflightTicks\s*=\s*90[\s\S]*regressedSecond[\s\S]*crossPreflightTicks\s*=\s*100[\s\S]*trusted_time_continuity_lost'
 Require-Pattern "unauthorized sink probe reaches the real sale and publication tables if the guard regresses" $authorizationSmoke 'InsertUnauthorizedSaleAndOutbox[\s\S]*INSERT INTO sales\([\s\S]*INSERT INTO sales_sync_outbox\('
 Require-Pattern "cross-process restart denies offline authorization before sale persistence" $authorizationSmoke 'PrepareRestartProbeAsync[\s\S]*VerifyRestartProbeAsync[\s\S]*offline_attestation_required[\s\S]*deniedBeforeSink[\s\S]*unauthorizedSaleSinkRows=0[\s\S]*freshOnlineRecovery=True'
 Require-Pattern "Windows runner executes prepare and verify in distinct processes" $authorizationSmokeRunner 'authorization-lease-restart-prepare[\s\S]*authorization-lease-restart-verify[\s\S]*prepareInstance[\s\S]*verifyInstance[\s\S]*offlineAttestationAfterRestart'
+Require-Pattern "Windows runner executes and validates the isolated bounded clock map" $authorizationSmokeRunner 'authorization-lease-clock-capacity-smoke[\s\S]*trustedClockCapacityFailClosed[\s\S]*trustedClockCapacityNoEviction[\s\S]*trustedClockDomainMismatchDenied[\s\S]*trustedClockInvalidKeyDenied'
 Require-Pattern "Windows runner requires monotonic expiry and zero sink rows" $authorizationSmokeRunner 'frozenClockMonotonicExpiry[\s\S]*frozenClockUnauthorizedSaleSinkRows[\s\S]*frozenClockUnauthorizedPublicationOutboxRows[\s\S]*monotonicCounterRegressionDenied[\s\S]*monotonicProviderFailureDenied[\s\S]*monotonicElapsedOverflowDenied[\s\S]*preflightDelayExpiryDenied[\s\S]*activationDelayCountedFromReceipt[\s\S]*firstUseReceiptClockExpiryDenied[\s\S]*firstUseUnauthorizedSaleSinkRows[\s\S]*firstUseUnauthorizedPublicationOutboxRows[\s\S]*firstLoginRetryClockNotReset[\s\S]*heartbeatClockNotReset[\s\S]*betweenPreflightsExpiryDenied[\s\S]*crossPreflightRegressionDenied'
 Require-Pattern "Windows runner requires in-transaction rollback, retry and concurrency proofs" $authorizationSmokeRunner 'saleRevocationRaceSinkRows[\s\S]*saleGenerationRaceSinkRows[\s\S]*saleExactRetryIdempotent[\s\S]*concurrentAuthorizedSalesRows[\s\S]*concurrentAuthorizedSalesOutboxRows'
 Require-Pattern "bootstrap captures the authenticated receipt before local activation" $bootstrap 'var\s+response\s*=\s*result\.Value[\s\S]{0,900}CaptureOnlineReceiptClock[\s\S]*ActivateAuthenticatedTrustAsync\([\s\S]{0,300}authoritativeReceiptClock'
@@ -201,8 +230,16 @@ if ($workflow -match '\.PayCashAsync\(') {
 else {
     Pass "workflow cannot reach the legacy PayCashAsync sale boundary"
 }
-Require-Pattern "sale writer rechecks before insert and atomically commits through the capability" $saleWriter 'authorizationCommitGuard\?\.DemandStillValid\(\)[\s\S]*INSERT INTO sales\([\s\S]*authorizationCommitGuard\.CommitIfStillValid\(\s*commitTransaction\)'
+Require-Pattern "sale writer drains readers before its provider transaction and guarded durable commit" $saleWriter 'OpenAsync\(\)[\s\S]{0,300}AcquireExclusiveCommitFence\(conn\)[\s\S]{0,180}conn\.BeginTransaction\(\)[\s\S]*authorizationCommitGuard\?\.DemandStillValid\(\)[\s\S]*INSERT INTO sales\([\s\S]*authorizationCommitGuard\.CommitIfStillValid\([\s\S]{0,180}DurableCommitSafetyBudget[\s\S]{0,120}commitTransaction'
 Require-Pattern "writer preserves ambiguous COMMIT failures for exact replay" $saleWriter 'transactionCommitted\s*=\s*false[\s\S]*tx\.Commit\(\)[\s\S]*transactionCommitted\s*=\s*true[\s\S]*if \(!transactionCommitted\)[\s\S]*tx\.Rollback\(\)'
+Require-Pattern "exact replay keeps a zero-headroom guarded commit" $saleWriter 'replaySaleId\.HasValue[\s\S]{0,700}authorizationCommitGuard\.CommitIfStillValid\(\s*\(\)\s*=>\s*CommitExactSaleReplay'
+Require-Pattern "SQLite factory establishes a bounded EXCLUSIVE commit fence" $connectionFactory 'ExpectedLockingMode\s*=\s*"normal"[\s\S]*DurableCommitSafetyBudget\s*=[\s\S]{0,120}TimeSpan\.FromSeconds\(10\)[\s\S]*AcquireExclusiveCommitFence[\s\S]*SetLockingMode\(connection,\s*"EXCLUSIVE"\)[\s\S]*BEGIN EXCLUSIVE;[\s\S]*COMMIT;'
+Require-Pattern "SQLite fence restores NORMAL through a real main-database access" $connectionFactory 'EnsureNormalLockingMode\([\s\S]{0,600}SetLockingMode\(connection,\s*"NORMAL"\)[\s\S]{0,300}TouchMainDatabase\(connection\)[\s\S]*SELECT 1 FROM main\.sqlite_schema'
+Require-Pattern "SQLite fence quarantines a pooled connection when cleanup cannot be proven" $connectionFactory 'TryRestoreNormalLockingMode[\s\S]{0,800}ClearPool\(connection\)[\s\S]{0,180}ClearAllPools\(\)'
+Require-Pattern "runtime policy reasserts NORMAL locking on sync and async pooled opens" $connectionFactory 'ApplyAndVerifyRuntimePolicy\([\s\S]{0,500}EnsureNormalLockingMode\(connection\)[\s\S]*ApplyAndVerifyRuntimePolicyAsync\([\s\S]{0,500}EnsureNormalLockingModeAsync'
+Require-Pattern "commit capability propagates explicit nonnegative durability headroom" $authorizationCommitGuard 'Action<TimeSpan,\s*Action>[\s\S]*CommitIfStillValid\(Action commit\)[\s\S]*TimeSpan\.Zero[\s\S]*CommitIfStillValid\(\s*TimeSpan minimumRemaining[\s\S]*minimumRemaining\s*<\s*TimeSpan\.Zero'
+Require-Pattern "operator session applies the same headroom before and inside the revocation latch" $session 'CommitAuthorizationUseStillValid\([\s\S]*TimeSpan minimumRemaining[\s\S]*DemandAuthorizationUseStillValid\([\s\S]{0,500}minimumRemaining[\s\S]*CommitIfAuthorizationCurrent\([\s\S]{0,800}DemandCommitExpiryStillValid\([\s\S]{0,180}minimumRemaining'
+Require-Pattern "commit expiry proof budgets from the effective trusted-now snapshot" $guard 'Evaluate\(\s*TimeSpan minimumRemaining\)[\s\S]*var localNow\s*=\s*_utcNow\(\)[\s\S]*currentDecision[\s\S]*EstimatedServerNow\.Value\.Add\([\s\S]{0,160}minimumRemaining[\s\S]*requiredTrustedServerNow'
 Require-Pattern "commit authority prevalidates outside the latch and rechecks pure expiry and authority inside it" $session 'CommitAuthorizationUseStillValid\([\s\S]{0,1200}DemandAuthorizationUseStillValid\([\s\S]{0,600}CommitIfAuthorizationCurrent\([\s\S]{0,700}inside_commit_gate[\s\S]{0,300}DemandCommitExpiryStillValid\([\s\S]{0,300}DemandOperatorAuthorityStillCurrent'
 Require-Pattern "commit expiry proof freezes the lease and uses the injected monotonic domain without locks" $guard 'class\s+PosAuthorizationCommitExpiryGuard[\s\S]*_frozenSession[\s\S]*_anchorTimestamp[\s\S]*_monotonicTimestamp\(\)[\s\S]*currentTimestamp\s*<\s*_anchorTimestamp[\s\S]*PosOfflineAuthorizationLeasePolicy\.Evaluate\('
 Require-Pattern "operator replacement and logout share the commit linearization gate" ($revocationLatch + $session) 'ChangeOperatorAuthority\([\s\S]{0,500}lock \(Gate\)[\s\S]{0,300}mutation\(\)[\s\S]*LogoutInternal[\s\S]{0,500}invalidateAuthorization:\s*true'
@@ -227,7 +264,7 @@ else {
     Pass "permission service never reads a replaceable operator after authorization validation"
 }
 Require-Pattern "denied authorization use binds its operator version and releases the global gate before returning" $session 'catch \(PosAuthorizationLeaseException ex\)[\s\S]{0,180}BindOperatorAuthorityVersion\([\s\S]{0,120}latchLease\.Dispose\(\)[\s\S]{0,120}throw;'
-Require-Pattern "authorization-use exceptions preserve the authority version through every later demand" ($permission + $session) 'OperatorAuthorityVersion[\s\S]{0,300}BindOperatorAuthorityVersion[\s\S]*AuthorizationUseLease\([\s\S]{0,500}operatorAuthorityVersion[\s\S]*DemandStillValid\([\s\S]{0,900}BindOperatorAuthorityVersion\([\s\S]*CommitIfStillValid\([\s\S]{0,1000}BindOperatorAuthorityVersion\('
+Require-Pattern "authorization-use exceptions preserve the authority version through every later demand" ($permission + $session) 'OperatorAuthorityVersion[\s\S]{0,300}BindOperatorAuthorityVersion[\s\S]*AuthorizationUseLease\([\s\S]{0,500}operatorAuthorityVersion[\s\S]*DemandStillValid\([\s\S]{0,900}BindOperatorAuthorityVersion\([\s\S]*CommitIfStillValid\([\s\S]{0,1500}BindOperatorAuthorityVersion\('
 Require-Pattern "stale authorization denial conditionally clears only its matching operator authority" $session 'HandleAuthorizationUseDenied\([\s\S]{0,160}expectedOperatorAuthorityVersion[\s\S]{0,500}TryChangeOperatorAuthorityIf\([\s\S]{0,250}Interlocked\.Read\([\s\S]{0,160}expectedOperatorAuthorityVersion'
 Require-Pattern "stale authorization denial remains audited without attribution to replacement authority" $session 'if \(!invalidated\)[\s\S]{0,180}LogAuthorizationDenied\(normalizedCode,\s*null\)[\s\S]{0,80}return;'
 Require-Pattern "conditional operator-authority replacement is atomic with authorization invalidation" $revocationLatch 'TryChangeOperatorAuthorityIf\([\s\S]{0,700}lock \(Gate\)[\s\S]{0,180}!isExpectedAuthority\(\)[\s\S]{0,180}_authorizationEpoch\+\+[\s\S]{0,120}mutation\(\)'
@@ -236,7 +273,11 @@ Require-Pattern "every authorization denial carries its operator version and is 
 Require-Pattern "real sink smoke revokes and switches generation at the pre-COMMIT guard" $authorizationSmoke 'SetAuthorizationUseTestHookForTesting[\s\S]*demand == 5[\s\S]*InvalidateAuthorizationState[\s\S]*generation-target[\s\S]*generationDemandCount'
 Require-Pattern "begin and writer denial callbacks run only after workflow and authorization-use gates release" ($authorizationSmoke + $authorizationSmokeRunner) 'throwingBeginDenialSubscriber[\s\S]*beginDenialCallbackObservedReleasedGates[\s\S]*throwingDenialSubscriber[\s\S]*denialCallbackObservedReleasedGates[\s\S]*denialCallbacksAfterGateRelease'
 Require-Pattern "real sink smoke denies exact expiry inside the COMMIT gate" ($authorizationSmoke + $authorizationSmokeRunner) 'inside_commit_gate[\s\S]*commitExpiryElapsedTicks[\s\S]*saleCommitExpiryRaceSinkRows[\s\S]*saleCommitExpiryRaceOutboxRows'
+Require-Pattern "real sink smoke drains a SHARED reader before expiry validation and restores the fence" ($authorizationSmoke + $authorizationSmokeRunner) 'BeginTransaction\(\s*deferred:\s*true\)[\s\S]*WaitForPendingExclusiveLockAsync[\s\S]*blockedReaderDemandCount[\s\S]*blockedReaderElapsedTicks[\s\S]*saleCommitBlockedReaderExpiryDenied[\s\S]*saleCommitBlockedReaderSinkRows[\s\S]*saleCommitBlockedReaderOutboxRows[\s\S]*saleCommitFenceReleased'
+Require-Pattern "headroom smoke enforces budget plus one, exact budget and below-budget boundaries" $authorizationSmoke 'remainingTicks\s*>\s*budget\.Ticks\s*\+\s*1[\s\S]*remainingTicks\s*-[\s\S]*budget\.Ticks\s*-[\s\S]*1[\s\S]*Evaluate\(budget\)\.Allowed[\s\S]*clockTicks\+\+[\s\S]*offline_lease_expired[\s\S]*clockTicks\+\+[\s\S]*offline_lease_expired'
 Require-Pattern "real sink smoke proves in-gate revocation cannot return before COMMIT" ($authorizationSmoke + $authorizationSmokeRunner) 'inside_commit_gate[\s\S]*postValidationRevocation[\s\S]*revocationReturned[\s\S]*saleCommitRevocationLinearized'
+Require-Pattern "Core/Data regression blocks authorization before writes while a SHARED reader drains" $saleWriterTests 'AuthorizedSale_SharedReaderCannotCarryValidatedCommitPastExactExpiry[\s\S]*BeginTransaction\(deferred:\s*true\)[\s\S]*WaitForPendingExclusiveLockAsync[\s\S]*guard\.Expire\(\)[\s\S]*sale_lines[\s\S]*local_stock_movements[\s\S]*sales_sync_outbox'
+Require-Pattern "provider regression preserves managed transactions and restores NORMAL locking" $connectionPolicyTests 'ExclusiveCommitFence_DrainsSharedReader_PreservesProviderTransaction_AndRestoresNormalMode[\s\S]*AcquireExclusiveCommitFence[\s\S]*locking_mode[\s\S]*BeginTransaction\(\)[\s\S]*AssertConnectionPolicy'
 Require-Pattern "workflow retains and reuses one pending identity after an ambiguous COMMIT" $workflow 'PendingSaleAttempt\s+_pendingSaleAttempt[\s\S]*MatchesContent\([\s\S]*MatchesAuthority\([\s\S]*ApplyIdentity\(sale\)[\s\S]*InsertAuthorizedSaleAsync\([\s\S]*ReferenceEquals\([\s\S]*_pendingSaleAttempt\s*=\s*null'
 Require-Pattern "pending identity binds the complete authority" $workflow 'class\s+PendingSaleAttempt[\s\S]*AuthorizationEpoch[\s\S]*GenerationFingerprint[\s\S]*GenerationId[\s\S]*OperatorId[\s\S]*ShopCode[\s\S]*ShopDeviceId[\s\S]*ShopId[\s\S]*StaffCredentialVersion[\s\S]*StaffId[\s\S]*MatchesAuthority\('
 Require-Pattern "pending identity fails closed on content or authority mismatch" $workflow '_pendingSaleAttempt\s*!=\s*null[\s\S]{0,500}!_pendingSaleAttempt\.MatchesContent\([\s\S]{0,300}!_pendingSaleAttempt\.MatchesAuthority\([\s\S]{0,300}richiesta la riconciliazione'

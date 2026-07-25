@@ -47,6 +47,9 @@ namespace Win7POS.Data.Repositories
             ReceiptDocumentPolicy.EnsureValidSnapshotJson(sale.ReceiptShopSnapshotJson);
             ValidateAuthorizationBinding(sale, authorizationCommitGuard);
             using var conn = await _factory.OpenAsync().ConfigureAwait(false);
+            using var commitFence = authorizationCommitGuard == null
+                ? null
+                : SqliteConnectionFactory.AcquireExclusiveCommitFence(conn);
             using var tx = conn.BeginTransaction();
             var transactionCommitted = false;
             Action commitTransaction = () =>
@@ -117,6 +120,8 @@ SELECT last_insert_rowid();", sale, tx).ConfigureAwait(false);
                 else
                 {
                     authorizationCommitGuard.CommitIfStillValid(
+                        SqliteConnectionFactory
+                            .DurableCommitSafetyBudget,
                         commitTransaction);
                 }
                 return saleId;

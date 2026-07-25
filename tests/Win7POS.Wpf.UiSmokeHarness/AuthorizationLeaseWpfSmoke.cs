@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 using Dapper;
+using Microsoft.Data.Sqlite;
 using Win7POS.Core.Online;
 using Win7POS.Core.Receipt;
 using Win7POS.Core.Security;
@@ -810,6 +811,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "offline_lease_expired",
                 "time between preflights did not advance the trusted receipt clock");
 
+            firstUseStore.Clear();
+            await VerifyCrossGenerationReplayContinuityAsync(
+                    factory,
+                    users,
+                    security,
+                    username)
+                .ConfigureAwait(true);
+            store.Clear();
             store.SaveFirstLogin(response, "qa-auth-cross-preflight-regression");
             Require(
                 store.TryRead(out var crossPreflightSession),
@@ -846,7 +855,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             await SeedCatalogSaleSafetyAsync(factory).ConfigureAwait(true);
             long saleRaceTicks = 0;
             var saleRaceStore = new PosTrustedDeviceStore(
-                () => saleRaceTicks,
+                () => Interlocked.Read(ref saleRaceTicks),
                 TimeSpan.TicksPerSecond,
                 "qa-sale-race-clock");
             saleRaceStore.Clear();
@@ -865,7 +874,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var saleRaceGuard = new PosOfflineAuthorizationLeaseGuard(
                 saleRaceStore,
                 () => saleRaceWall,
-                () => saleRaceTicks,
+                () => Interlocked.Read(ref saleRaceTicks),
                 TimeSpan.TicksPerSecond);
             var saleRaceOperator =
                 new OperatorSession(users, security, saleRaceGuard);
@@ -1232,8 +1241,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var saleRaceExpiry = ParseUtc(
                     saleRaceResponse.EffectiveOfflineAuthorizationExpiresAt,
                     "sale-race authoritative expiry");
-                saleRaceTicks =
-                    (saleRaceExpiry - saleRaceServerAt).Ticks;
+                Interlocked.Exchange(
+                    ref saleRaceTicks,
+                    (saleRaceExpiry - saleRaceServerAt).Ticks);
             }
             finally
             {
@@ -1442,7 +1452,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             saleRaceWall = ParseUtc(
                 commitExpirySession.LastOkLocalAt,
                 "commit-expiry local receipt");
-            var commitExpiryAnchorTicks = saleRaceTicks;
+            var commitExpiryAnchorTicks =
+                Interlocked.Read(ref saleRaceTicks);
             var commitExpiryElapsedTicks =
                 (ParseUtc(
                     commitExpirySession
@@ -1476,9 +1487,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             "inside_commit_gate",
                             StringComparison.Ordinal))
                     {
-                        saleRaceTicks =
+                        Interlocked.Exchange(
+                            ref saleRaceTicks,
                             commitExpiryAnchorTicks +
-                            commitExpiryElapsedTicks;
+                            commitExpiryElapsedTicks);
                     }
                 });
             var commitExpiryDenied = false;
@@ -1509,8 +1521,174 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 CountSalesOutboxRows(factory) == raceOutboxBefore,
                 "exact expiry inside the COMMIT gate reached sale or outbox");
 
+            var blockedReaderResponse =
+                BuildResponse(includeOfflineAttestation: true);
+            var blockedReaderServerAt = ParseUtc(
+                    commitExpirySession
+                        .EffectiveOfflineAuthorizationExpiresAt,
+                    "blocked-reader trusted-time floor")
+                .AddTicks(commitExpiryElapsedTicks)
+                .AddMinutes(1);
+            ConfigureAuthoritativeWindow(
+                blockedReaderResponse,
+                blockedReaderServerAt,
+                TimeSpan.FromMinutes(1));
+            saleRaceStore.SaveFirstLogin(
+                blockedReaderResponse,
+                "qa-auth-sale-blocked-reader-expiry");
+            Require(
+                saleRaceStore.TryRead(
+                    out var blockedReaderSession),
+                "blocked-reader trusted session was not persisted");
+            saleRaceWall = ParseUtc(
+                blockedReaderSession.LastOkLocalAt,
+                "blocked-reader local receipt");
+            var blockedReaderAnchorTicks =
+                Interlocked.Read(ref saleRaceTicks);
+            var blockedReaderElapsedTicks =
+                (ParseUtc(
+                    blockedReaderSession
+                        .EffectiveOfflineAuthorizationExpiresAt,
+                    "blocked-reader authoritative expiry") -
+                 ParseUtc(
+                    blockedReaderSession.LastOkServerAt,
+                    "blocked-reader server receipt")).Ticks;
+            Require(
+                blockedReaderElapsedTicks >
+                    SqliteConnectionFactory
+                        .DurableCommitSafetyBudget.Ticks,
+                "blocked-reader authorization window lacked commit headroom");
+            Require(
+                await saleRaceOperator.LoginAsync(username, CorrectPin)
+                    .ConfigureAwait(true) == LoginResult.Success,
+                "blocked-reader login did not authenticate");
+
+            var blockedWorkflow = new PosWorkflowService();
+            await blockedWorkflow.InitializeAsync()
+                .ConfigureAwait(true);
+            await blockedWorkflow.AddManualPriceAsync(100)
+                .ConfigureAwait(true);
+            var blockedSalesBefore = CountSaleRows(factory);
+            var blockedLinesBefore = CountSaleLineRows(factory);
+            var blockedMovementsBefore =
+                CountLocalStockMovementRows(factory);
+            var blockedOutboxBefore =
+                CountSalesOutboxRows(factory);
+            var blockedStockBefore =
+                CountTotalStockQuantity(factory);
+            using var blockedReaderConnection = factory.Open();
+            using var blockedReaderTransaction =
+                blockedReaderConnection.BeginTransaction(
+                    deferred: true);
+            blockedReaderConnection.ExecuteScalar<long>(
+                "SELECT COUNT(1) FROM sales;",
+                transaction: blockedReaderTransaction);
+            using var pendingReaderProbe = new SqliteConnection(
+                "Data Source=" + factory.DbPath +
+                ";Default Timeout=1;Pooling=False");
+            pendingReaderProbe.Open();
+            var blockedReaderDemandCount = 0;
+            saleRaceOperator.SetAuthorizationUseTestHookForTesting(
+                (checkpoint, demand) =>
+                {
+                    if (string.Equals(
+                            checkpoint,
+                            "before_demand",
+                            StringComparison.Ordinal))
+                    {
+                        Volatile.Write(
+                            ref blockedReaderDemandCount,
+                            demand);
+                    }
+                });
+            var blockedReaderDenied = false;
+            var blockedSaleStarted =
+                new TaskCompletionSource<bool>(
+                    TaskCreationOptions
+                        .RunContinuationsAsynchronously);
+            Task<PosSaleResult> blockedSaleTask = null;
+            try
+            {
+                blockedSaleTask = Task.Run(async () =>
+                {
+                    blockedSaleStarted.TrySetResult(true);
+                    return await blockedWorkflow.CompleteSaleAsync(
+                            new PosPaymentInfo
+                            {
+                                CashAmountMinor = 100
+                            },
+                            saleRaceOperator,
+                            "QA-AUTH-BLOCKED-READER-001")
+                        .ConfigureAwait(false);
+                });
+                await blockedSaleStarted.Task.ConfigureAwait(true);
+                Require(
+                    await WaitForPendingExclusiveLockAsync(
+                            pendingReaderProbe)
+                        .ConfigureAwait(true),
+                    "blocked-reader sale never reached the EXCLUSIVE fence");
+                Require(
+                    blockedSaleTask != null &&
+                    !blockedSaleTask.IsCompleted &&
+                    Volatile.Read(
+                        ref blockedReaderDemandCount) == 2,
+                    "blocked-reader sale crossed the Data demand before reader drain");
+
+                Interlocked.Exchange(
+                    ref saleRaceTicks,
+                    blockedReaderAnchorTicks +
+                    blockedReaderElapsedTicks);
+                blockedReaderTransaction.Dispose();
+                await blockedSaleTask.ConfigureAwait(true);
+            }
+            catch (PosAuthorizationLeaseException ex)
+            {
+                blockedReaderDenied = string.Equals(
+                    ex.Code,
+                    "offline_lease_expired",
+                    StringComparison.Ordinal);
+            }
+            finally
+            {
+                blockedReaderTransaction.Dispose();
+                saleRaceOperator
+                    .SetAuthorizationUseTestHookForTesting(null);
+            }
+
+            using (var fenceReleaseProbe = factory.Open())
+            {
+                Require(
+                    string.Equals(
+                        fenceReleaseProbe.ExecuteScalar<string>(
+                            "PRAGMA main.locking_mode;"),
+                        "normal",
+                        StringComparison.OrdinalIgnoreCase),
+                    "sale commit fence did not restore NORMAL locking mode");
+            }
+            Require(
+                blockedReaderDenied &&
+                CountSaleRows(factory) == blockedSalesBefore &&
+                CountSaleLineRows(factory) == blockedLinesBefore &&
+                CountLocalStockMovementRows(factory) ==
+                    blockedMovementsBefore &&
+                CountSalesOutboxRows(factory) ==
+                    blockedOutboxBefore &&
+                CountTotalStockQuantity(factory) ==
+                    blockedStockBefore,
+                "reader-delayed expiry reached a durable sale sink");
+
             var linearizationResponse =
                 BuildResponse(includeOfflineAttestation: true);
+            var linearizationServerAt =
+                ParseUtc(
+                    blockedReaderSession
+                        .EffectiveOfflineAuthorizationExpiresAt,
+                    "linearization trusted-time floor")
+                .AddMinutes(1);
+            ConfigureAuthoritativeWindow(
+                linearizationResponse,
+                linearizationServerAt,
+                TimeSpan.FromHours(4));
             saleRaceStore.SaveFirstLogin(
                 linearizationResponse,
                 "qa-auth-sale-commit-linearization");
@@ -1591,6 +1769,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             var retryRaceResponse =
                 BuildResponse(includeOfflineAttestation: true);
+            var retryRaceServerAt =
+                linearizationServerAt.AddMinutes(1);
+            ConfigureAuthoritativeWindow(
+                retryRaceResponse,
+                retryRaceServerAt,
+                TimeSpan.FromHours(4));
             saleRaceStore.SaveFirstLogin(
                 retryRaceResponse,
                 "qa-auth-sale-race-retry");
@@ -1879,6 +2063,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "ambiguous authority setup did not preserve one durable sale");
             var authorityReplacementResponse =
                 BuildResponse(includeOfflineAttestation: true);
+            ConfigureAuthoritativeWindow(
+                authorityReplacementResponse,
+                retryRaceServerAt.AddMinutes(1),
+                TimeSpan.FromHours(4));
             saleRaceStore.SaveFirstLogin(
                 authorityReplacementResponse,
                 "qa-auth-sale-pending-authority-replacement");
@@ -2109,6 +2297,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "firstLoginRetryClockNotReset=True" + Environment.NewLine +
                 "heartbeatClockNotReset=True" + Environment.NewLine +
                 "betweenPreflightsExpiryDenied=True" + Environment.NewLine +
+                "crossGenerationReplayG2Denied=True" + Environment.NewLine +
+                "crossGenerationReplayG3AfterClearDenied=True" + Environment.NewLine +
+                "crossGenerationReplayG3AfterTryClearDenied=True" + Environment.NewLine +
+                "crossGenerationReplaySinkRows=0" + Environment.NewLine +
+                "crossGenerationReplayLineRows=0" + Environment.NewLine +
+                "crossGenerationReplayStockMovementRows=0" + Environment.NewLine +
+                "crossGenerationReplayOutboxRows=0" + Environment.NewLine +
+                "crossGenerationFreshResponseRecovers=True" + Environment.NewLine +
+                "trustedClockSaveFailureNotPublished=True" + Environment.NewLine +
+                "saleCommitDurabilityHeadroomDenied=True" + Environment.NewLine +
                 "crossPreflightRegressionDenied=True" + Environment.NewLine +
                 "loginRevocationRaceDenied=True" + Environment.NewLine +
                 "staleLoginCleanupDoesNotClearNewAuthority=True" + Environment.NewLine +
@@ -2125,6 +2323,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "saleGenerationRaceOutboxRows=0" + Environment.NewLine +
                 "saleCommitExpiryRaceSinkRows=0" + Environment.NewLine +
                 "saleCommitExpiryRaceOutboxRows=0" + Environment.NewLine +
+                "saleCommitBlockedReaderExpiryDenied=True" + Environment.NewLine +
+                "saleCommitBlockedReaderSinkRows=0" + Environment.NewLine +
+                "saleCommitBlockedReaderOutboxRows=0" + Environment.NewLine +
+                "saleCommitFenceReleased=True" + Environment.NewLine +
                 "saleCommitRevocationLinearized=True" + Environment.NewLine +
                 "saleRaceAuditPersisted=True" + Environment.NewLine +
                 "saleRaceAuthorizedRetryRows=1" + Environment.NewLine +
@@ -2135,6 +2337,525 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "concurrentAuthorizedSalesRows=2" + Environment.NewLine +
                 "concurrentAuthorizedSalesOutboxRows=2" + Environment.NewLine +
                 "hardwareEffects=0" + Environment.NewLine;
+        }
+
+        private static async Task VerifyCrossGenerationReplayContinuityAsync(
+            SqliteConnectionFactory factory,
+            UserRepository users,
+            SecurityRepository security,
+            string username)
+        {
+            long clockTicks = 0;
+            var clockStore = new PosTrustedDeviceStore(
+                () => clockTicks,
+                TimeSpan.TicksPerSecond,
+                "qa-cross-generation-clock");
+            clockStore.Clear();
+
+            var originalResponse =
+                BuildResponse(includeOfflineAttestation: true);
+            var serverAt = ParseUtc(
+                originalResponse.ServerTime,
+                "cross-generation server receipt");
+            var expiry = serverAt.AddSeconds(5);
+            originalResponse.EffectiveOfflineAuthorizationExpiresAt =
+                expiry.ToString("O", CultureInfo.InvariantCulture);
+            originalResponse.Session.ExpiresAt =
+                expiry.ToString("O", CultureInfo.InvariantCulture);
+            clockStore.SaveFirstLogin(
+                originalResponse,
+                "qa-cross-generation-g1");
+            Require(
+                clockStore.TryRead(out var generationOne),
+                "cross-generation G1 was not persisted");
+
+            clockTicks = TimeSpan.FromSeconds(2).Ticks;
+            var heartbeat = new PosHeartbeatResponse
+            {
+                Ok = true,
+                ServerTime = serverAt.AddSeconds(2).ToString(
+                    "O",
+                    CultureInfo.InvariantCulture),
+                Session = new PosSessionResponse
+                {
+                    ExpiresAt = serverAt.AddMinutes(1).ToString(
+                        "O",
+                        CultureInfo.InvariantCulture),
+                    HeartbeatAfterSeconds = 300,
+                    PosSessionId =
+                        originalResponse.Session.PosSessionId,
+                    SessionToken =
+                        "qa-cross-generation-heartbeat-token"
+                }
+            };
+            Require(
+                clockStore.TrySaveHeartbeat(
+                    generationOne.GenerationId,
+                    generationOne,
+                    heartbeat,
+                    out var heartbeatSession),
+                "cross-generation heartbeat did not commit");
+            Require(
+                PosOnlineSyncSupervisorHost.TryCreateGeneration(
+                    heartbeatSession,
+                    out var heartbeatGeneration) &&
+                !clockStore.TryGetReusableGenerationId(
+                    originalResponse,
+                    heartbeatGeneration.Fingerprint,
+                    out _),
+                "heartbeat-mutated response remained an exact generation retry");
+
+            clockTicks = TimeSpan.FromSeconds(10).Ticks;
+            var expiredGuard = new PosOfflineAuthorizationLeaseGuard(
+                clockStore,
+                () => ParseUtc(
+                    heartbeatSession.LastOkLocalAt,
+                    "cross-generation heartbeat local receipt"),
+                () => clockTicks,
+                TimeSpan.TicksPerSecond);
+            RequireDenied(
+                expiredGuard.EvaluateAuthorizationUse(
+                    out _,
+                    out var expiredCommitGuard),
+                "offline_lease_expired",
+                "G1 did not observe the process trusted-time high-water");
+            Require(
+                expiredCommitGuard == null,
+                "expired G1 issued a commit-expiry guard");
+
+            var g2Denied = SaveFirstLoginDenied(
+                clockStore,
+                originalResponse,
+                "qa-cross-generation-g2",
+                "offline_lease_expired");
+            Require(
+                g2Denied &&
+                clockStore.TryRead(out var afterG2) &&
+                string.Equals(
+                    afterG2.GenerationId,
+                    generationOne.GenerationId,
+                    StringComparison.Ordinal) &&
+                string.Equals(
+                    afterG2.SessionToken,
+                    heartbeat.Session.SessionToken,
+                    StringComparison.Ordinal),
+                "G2 replay replaced the active heartbeat generation");
+
+            var salesBefore = CountSaleRows(factory);
+            var linesBefore = CountSaleLineRows(factory);
+            var movementsBefore =
+                CountLocalStockMovementRows(factory);
+            var outboxBefore = CountSalesOutboxRows(factory);
+            var replayOperator = new OperatorSession(
+                users,
+                security,
+                expiredGuard);
+            replayOperator.SetUserForTesting(new UserAccount
+            {
+                Id = 900004,
+                Username = username,
+                DisplayName = "QA Cross-generation Cashier",
+                IsActive = true,
+                RoleCode = "cashier",
+                RoleName = "Cashier",
+                PermissionCodes =
+                    new List<string> { PermissionCodes.PosPay }
+            });
+            var replayDeniedBeforeSink = false;
+            try
+            {
+                new PermissionService(replayOperator).Demand(
+                    PermissionCodes.PosPay,
+                    "qa cross-generation replay sale sink");
+                InsertUnauthorizedSaleAndOutbox(
+                    factory,
+                    "cross-generation-replay");
+            }
+            catch (PosAuthorizationLeaseException ex)
+            {
+                replayDeniedBeforeSink = string.Equals(
+                    ex.Code,
+                    "offline_lease_expired",
+                    StringComparison.Ordinal);
+            }
+            Require(
+                replayDeniedBeforeSink,
+                "cross-generation replay reached the payment boundary");
+
+            clockStore.Clear();
+            Require(
+                SaveFirstLoginDenied(
+                    clockStore,
+                    originalResponse,
+                    "qa-cross-generation-g3-clear",
+                    "offline_lease_expired"),
+                "Clear erased the process trusted-time high-water");
+
+            var freshResponse =
+                BuildResponse(includeOfflineAttestation: true);
+            freshResponse.ServerTime = serverAt.AddSeconds(10)
+                .ToString("O", CultureInfo.InvariantCulture);
+            freshResponse.EffectiveOfflineAuthorizationExpiresAt =
+                serverAt.AddMinutes(1)
+                    .ToString("O", CultureInfo.InvariantCulture);
+            freshResponse.Session.ExpiresAt =
+                serverAt.AddMinutes(2)
+                    .ToString("O", CultureInfo.InvariantCulture);
+            freshResponse.TrustedDeviceToken =
+                "qa-cross-generation-fresh-device-token";
+            freshResponse.Session.SessionToken =
+                "qa-cross-generation-fresh-session-token";
+            clockStore.SaveFirstLogin(
+                freshResponse,
+                "qa-cross-generation-fresh-for-try-clear");
+            Require(
+                clockStore.TryRead(out var freshForTryClear) &&
+                clockStore.TryClear(freshForTryClear.GenerationId),
+                "TryClear control state was not cleared");
+            Require(
+                SaveFirstLoginDenied(
+                    clockStore,
+                    originalResponse,
+                    "qa-cross-generation-g3-try-clear",
+                    "offline_lease_expired"),
+                "TryClear erased the process trusted-time high-water");
+
+            clockStore.SaveFirstLogin(
+                freshResponse,
+                "qa-cross-generation-fresh-recovery");
+            var freshGuard = new PosOfflineAuthorizationLeaseGuard(
+                clockStore,
+                () => DateTimeOffset.UtcNow,
+                () => clockTicks,
+                TimeSpan.TicksPerSecond);
+            Require(
+                clockStore.TryRead(out var recoveredSession) &&
+                string.Equals(
+                    recoveredSession.GenerationId,
+                    "qa-cross-generation-fresh-recovery",
+                    StringComparison.Ordinal) &&
+                freshGuard.Evaluate().Allowed,
+                "fresh authoritative response did not recover authorization");
+
+            clockStore.Clear();
+            var failedResponse =
+                BuildResponse(includeOfflineAttestation: true);
+            failedResponse.ServerTime = serverAt.AddSeconds(20)
+                .ToString("O", CultureInfo.InvariantCulture);
+            failedResponse.EffectiveOfflineAuthorizationExpiresAt =
+                serverAt.AddMinutes(2)
+                    .ToString("O", CultureInfo.InvariantCulture);
+            failedResponse.Session.ExpiresAt =
+                serverAt.AddMinutes(3)
+                    .ToString("O", CultureInfo.InvariantCulture);
+            var trustedStatePath = clockStore.TrustedDeviceFilePath;
+            Directory.CreateDirectory(trustedStatePath);
+            var saveFailed = false;
+            try
+            {
+                clockStore.SaveFirstLogin(
+                    failedResponse,
+                    "qa-cross-generation-failed-save");
+            }
+            catch (IOException)
+            {
+                saveFailed = true;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                saveFailed = true;
+            }
+            finally
+            {
+                if (Directory.Exists(trustedStatePath))
+                    Directory.Delete(trustedStatePath, true);
+                var trustedDirectory =
+                    Path.GetDirectoryName(trustedStatePath);
+                var trustedFileName =
+                    Path.GetFileName(trustedStatePath);
+                if (!string.IsNullOrWhiteSpace(trustedDirectory) &&
+                    Directory.Exists(trustedDirectory))
+                {
+                    foreach (var tempPath in Directory.GetFiles(
+                        trustedDirectory,
+                        trustedFileName + ".*.tmp"))
+                    {
+                        File.Delete(tempPath);
+                    }
+                }
+            }
+            Require(
+                saveFailed && !clockStore.HasStoredState(),
+                "trusted-state SaveState failure was not reproduced");
+
+            var saveFailureControl =
+                BuildResponse(includeOfflineAttestation: true);
+            saveFailureControl.ServerTime = serverAt.AddSeconds(15)
+                .ToString("O", CultureInfo.InvariantCulture);
+            saveFailureControl.EffectiveOfflineAuthorizationExpiresAt =
+                serverAt.AddSeconds(18)
+                    .ToString("O", CultureInfo.InvariantCulture);
+            saveFailureControl.Session.ExpiresAt =
+                serverAt.AddSeconds(40)
+                    .ToString("O", CultureInfo.InvariantCulture);
+            clockStore.SaveFirstLogin(
+                saveFailureControl,
+                "qa-cross-generation-save-failure-control");
+            Require(
+                clockStore.TryRead(out var saveFailureSession) &&
+                string.Equals(
+                    saveFailureSession.GenerationId,
+                    "qa-cross-generation-save-failure-control",
+                    StringComparison.Ordinal),
+                "failed SaveState published its candidate trusted-time high-water");
+
+            clockStore.Clear();
+            var headroomResponse =
+                BuildResponse(includeOfflineAttestation: true);
+            headroomResponse.ServerTime = serverAt.AddSeconds(30)
+                .ToString("O", CultureInfo.InvariantCulture);
+            headroomResponse.EffectiveOfflineAuthorizationExpiresAt =
+                serverAt.AddSeconds(120)
+                    .ToString("O", CultureInfo.InvariantCulture);
+            headroomResponse.Session.ExpiresAt =
+                serverAt.AddSeconds(180)
+                    .ToString("O", CultureInfo.InvariantCulture);
+            clockStore.SaveFirstLogin(
+                headroomResponse,
+                "qa-cross-generation-headroom");
+            Require(
+                clockStore.TryRead(out var headroomSession),
+                "durability-headroom control state was not persisted");
+            var headroomWall = ParseUtc(
+                headroomSession.LastOkLocalAt,
+                "durability-headroom local receipt");
+            var headroomGuard = new PosOfflineAuthorizationLeaseGuard(
+                clockStore,
+                () => headroomWall,
+                () => clockTicks,
+                TimeSpan.TicksPerSecond);
+            var headroomDecision =
+                headroomGuard.EvaluateAuthorizationUse(
+                    out _,
+                    out var commitHeadroomGuard);
+            var budget =
+                SqliteConnectionFactory.DurableCommitSafetyBudget;
+            Require(
+                headroomDecision.Allowed &&
+                headroomDecision.EffectiveExpiresAt.HasValue &&
+                headroomDecision.EstimatedServerNow.HasValue &&
+                commitHeadroomGuard != null,
+                "durability-headroom control guard was not issued");
+            var remainingTicks =
+                (headroomDecision.EffectiveExpiresAt.Value -
+                 headroomDecision.EstimatedServerNow.Value).Ticks;
+            Require(
+                remainingTicks > budget.Ticks + 1,
+                "durability-headroom control window was too small");
+            var headroomAnchorTicks = clockTicks;
+            clockTicks = headroomAnchorTicks +
+                remainingTicks -
+                budget.Ticks -
+                1;
+            Require(
+                commitHeadroomGuard.Evaluate(budget).Allowed,
+                "budget plus one tick was denied");
+            clockTicks++;
+            RequireDenied(
+                commitHeadroomGuard.Evaluate(budget),
+                "offline_lease_expired",
+                "remaining time equal to the durability budget was allowed");
+            clockTicks++;
+            RequireDenied(
+                commitHeadroomGuard.Evaluate(budget),
+                "offline_lease_expired",
+                "remaining time below the durability budget was allowed");
+
+            Require(
+                CountSaleRows(factory) == salesBefore &&
+                CountSaleLineRows(factory) == linesBefore &&
+                CountLocalStockMovementRows(factory) ==
+                    movementsBefore &&
+                CountSalesOutboxRows(factory) == outboxBefore,
+                "cross-generation replay changed a durable sale sink");
+            clockStore.Clear();
+            await Task.CompletedTask;
+        }
+
+        private static bool SaveFirstLoginDenied(
+            PosTrustedDeviceStore store,
+            PosFirstLoginResponse response,
+            string generationId,
+            string expectedCode)
+        {
+            try
+            {
+                store.SaveFirstLogin(response, generationId);
+                return false;
+            }
+            catch (InvalidDataException ex)
+            {
+                return ex.Message.IndexOf(
+                    expectedCode,
+                    StringComparison.Ordinal) >= 0;
+            }
+        }
+
+        public static Task<string> RunClockCapacityAsync()
+        {
+            var serverAt = DateTimeOffset.UtcNow;
+            var controlResponse = BuildClockCapacityResponse(
+                serverAt,
+                "control");
+
+            var invalidFrequencyStore = new PosTrustedDeviceStore(
+                () => 0L,
+                0,
+                "qa-clock-capacity-invalid-frequency");
+            Require(
+                SaveFirstLoginDenied(
+                    invalidFrequencyStore,
+                    controlResponse,
+                    "qa-clock-capacity-invalid-frequency",
+                    "trusted_time_continuity_lost"),
+                "invalid process clock frequency did not fail closed");
+
+            var invalidDomainStore = new PosTrustedDeviceStore(
+                () => 0L,
+                TimeSpan.TicksPerSecond,
+                new string('x', 129));
+            Require(
+                SaveFirstLoginDenied(
+                    invalidDomainStore,
+                    controlResponse,
+                    "qa-clock-capacity-invalid-domain",
+                    "trusted_time_continuity_lost"),
+                "invalid process clock domain did not fail closed");
+
+            long firstClockTicks = 0;
+            var firstStore = new PosTrustedDeviceStore(
+                () => firstClockTicks,
+                TimeSpan.TicksPerSecond,
+                "qa-clock-capacity-00");
+            firstStore.Clear();
+            firstStore.SaveFirstLogin(
+                BuildClockCapacityResponse(serverAt, "00"),
+                "qa-clock-capacity-generation-00");
+
+            var mismatchedStore = new PosTrustedDeviceStore(
+                () => 0L,
+                TimeSpan.TicksPerSecond,
+                "qa-clock-capacity-mismatch");
+            Require(
+                SaveFirstLoginDenied(
+                    mismatchedStore,
+                    BuildClockCapacityResponse(
+                        serverAt.AddSeconds(1),
+                        "mismatch"),
+                    "qa-clock-capacity-mismatch",
+                    "trusted_time_continuity_lost"),
+                "active process clock domain mismatch did not fail closed");
+            firstStore.Clear();
+
+            for (var index = 1; index < 16; index++)
+            {
+                long scopeTicks = 0;
+                var scopeStore = new PosTrustedDeviceStore(
+                    () => scopeTicks,
+                    TimeSpan.TicksPerSecond,
+                    "qa-clock-capacity-" +
+                        index.ToString(
+                            "D2",
+                            CultureInfo.InvariantCulture));
+                scopeStore.SaveFirstLogin(
+                    BuildClockCapacityResponse(
+                        serverAt.AddSeconds(index),
+                        index.ToString(
+                            "D2",
+                            CultureInfo.InvariantCulture)),
+                    "qa-clock-capacity-generation-" +
+                        index.ToString(
+                            "D2",
+                            CultureInfo.InvariantCulture));
+                scopeStore.Clear();
+            }
+
+            var saturatedStore = new PosTrustedDeviceStore(
+                () => 0L,
+                TimeSpan.TicksPerSecond,
+                "qa-clock-capacity-16");
+            Require(
+                SaveFirstLoginDenied(
+                    saturatedStore,
+                    BuildClockCapacityResponse(
+                        serverAt.AddSeconds(16),
+                        "16"),
+                    "qa-clock-capacity-generation-16",
+                    "trusted_time_continuity_lost") &&
+                !saturatedStore.HasStoredState(),
+                "the seventeenth process clock scope did not fail closed");
+
+            firstClockTicks = TimeSpan.FromMinutes(6).Ticks;
+            Require(
+                SaveFirstLoginDenied(
+                    firstStore,
+                    BuildClockCapacityResponse(
+                        serverAt,
+                        "00-stale-replay"),
+                    "qa-clock-capacity-generation-00-stale-replay",
+                    "offline_lease_expired") &&
+                !firstStore.HasStoredState(),
+                "process clock saturation evicted the first scope");
+
+            firstStore.SaveFirstLogin(
+                BuildClockCapacityResponse(
+                    serverAt.AddMinutes(7),
+                    "00-reuse"),
+                "qa-clock-capacity-generation-00-reuse");
+            Require(
+                firstStore.TryRead(out var reusedFirstScope) &&
+                string.Equals(
+                    reusedFirstScope.GenerationId,
+                    "qa-clock-capacity-generation-00-reuse",
+                    StringComparison.Ordinal),
+                "process clock saturation evicted the first scope");
+            firstStore.Clear();
+
+            return Task.FromResult(
+                "PASS authorization lease clock capacity smoke" +
+                Environment.NewLine +
+                "trustedClockCapacityFailClosed=True" +
+                Environment.NewLine +
+                "trustedClockCapacityNoEviction=True" +
+                Environment.NewLine +
+                "trustedClockDomainMismatchDenied=True" +
+                Environment.NewLine +
+                "trustedClockInvalidKeyDenied=True" +
+                Environment.NewLine);
+        }
+
+        private static PosFirstLoginResponse BuildClockCapacityResponse(
+            DateTimeOffset serverAt,
+            string suffix)
+        {
+            var response =
+                BuildResponse(includeOfflineAttestation: true);
+            response.ServerTime = serverAt.ToString(
+                "O",
+                CultureInfo.InvariantCulture);
+            response.EffectiveOfflineAuthorizationExpiresAt =
+                serverAt.AddMinutes(5).ToString(
+                    "O",
+                    CultureInfo.InvariantCulture);
+            response.Session.ExpiresAt =
+                serverAt.AddMinutes(10).ToString(
+                    "O",
+                    CultureInfo.InvariantCulture);
+            response.TrustedDeviceToken =
+                "qa-clock-capacity-device-" + suffix;
+            response.Session.SessionToken =
+                "qa-clock-capacity-session-" + suffix;
+            return response;
         }
 
         public static async Task<string> PrepareRestartProbeAsync()
@@ -2390,6 +3111,57 @@ namespace Win7POS.Wpf.UiSmokeHarness
             };
         }
 
+        private static void ConfigureAuthoritativeWindow(
+            PosFirstLoginResponse response,
+            DateTimeOffset serverAt,
+            TimeSpan duration)
+        {
+            if (response?.Session == null)
+                throw new ArgumentNullException(nameof(response));
+            if (duration <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(duration));
+
+            response.ServerTime = serverAt.ToString(
+                "O",
+                CultureInfo.InvariantCulture);
+            var expiresAt = serverAt.Add(duration).ToString(
+                "O",
+                CultureInfo.InvariantCulture);
+            response.EffectiveOfflineAuthorizationExpiresAt =
+                expiresAt;
+            response.Session.ExpiresAt = expiresAt;
+        }
+
+        private static async Task<bool>
+            WaitForPendingExclusiveLockAsync(
+                SqliteConnection connection)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(4);
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    using (var command =
+                        connection.CreateCommand())
+                    {
+                        command.CommandText =
+                            "SELECT COUNT(1) FROM sales;";
+                        command.CommandTimeout = 1;
+                        command.ExecuteScalar();
+                    }
+                }
+                catch (SqliteException ex)
+                    when (ex.SqliteErrorCode == 5)
+                {
+                    return true;
+                }
+
+                await Task.Delay(20).ConfigureAwait(false);
+            }
+
+            return false;
+        }
+
         private static async Task SeedCatalogSaleSafetyAsync(
             SqliteConnectionFactory factory)
         {
@@ -2560,6 +3332,37 @@ VALUES(
             {
                 return connection.ExecuteScalar<long>(
                     "SELECT COUNT(1) FROM sales;");
+            }
+        }
+
+        private static long CountSaleLineRows(
+            SqliteConnectionFactory factory)
+        {
+            using (var connection = factory.Open())
+            {
+                return connection.ExecuteScalar<long>(
+                    "SELECT COUNT(1) FROM sale_lines;");
+            }
+        }
+
+        private static long CountLocalStockMovementRows(
+            SqliteConnectionFactory factory)
+        {
+            using (var connection = factory.Open())
+            {
+                return connection.ExecuteScalar<long>(
+                    "SELECT COUNT(1) FROM local_stock_movements;");
+            }
+        }
+
+        private static long CountTotalStockQuantity(
+            SqliteConnectionFactory factory)
+        {
+            using (var connection = factory.Open())
+            {
+                return connection.ExecuteScalar<long>(
+                    "SELECT COALESCE(SUM(stock_qty), 0) " +
+                    "FROM product_meta;");
             }
         }
 

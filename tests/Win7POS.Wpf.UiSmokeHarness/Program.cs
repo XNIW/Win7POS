@@ -75,10 +75,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HasArg(args, "--authorization-lease-restart-prepare");
             var authorizationLeaseRestartVerify =
                 HasArg(args, "--authorization-lease-restart-verify");
+            var authorizationLeaseClockCapacity =
+                HasArg(args, "--authorization-lease-clock-capacity-smoke");
             var restrictedSeed = physicalPrinterQa ||
                                  HasArg(args, "--authorization-lease-smoke") ||
                                  authorizationLeaseRestartPrepare ||
                                  authorizationLeaseRestartVerify ||
+                                 authorizationLeaseClockCapacity ||
                                  HasArg(args, "--offline-sales-sandbox") ||
                                  (HasArg(args, "--seed") && HasArg(args, "--seed-trusted-session"));
             var verifyOfflineSalesSandboxSafety =
@@ -97,6 +100,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                HasArg(args, "--authorization-lease-smoke") ||
                                authorizationLeaseRestartPrepare ||
                                authorizationLeaseRestartVerify ||
+                               authorizationLeaseClockCapacity ||
                                HasArg(args, "--product-paging-dispatcher-smoke") ||
                                HasArg(args, "--bounded-logging-smoke") ||
                                HasArg(args, "--supplier-excel-wpf-viewmodel-smoke") ||
@@ -159,6 +163,24 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             Path.Combine(
                                 dataDir,
                                 "authorization-lease-restart-verify.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(
+                            result.StartsWith("PASS", StringComparison.Ordinal)
+                                ? 0
+                                : 1);
+                        return;
+                    }
+
+                    if (authorizationLeaseClockCapacity)
+                    {
+                        var result = await AuthorizationLeaseWpfSmoke
+                            .RunClockCapacityAsync()
+                            .ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(
+                                dataDir,
+                                "authorization-lease-clock-capacity.txt"),
                             result,
                             Encoding.UTF8);
                         app.Shutdown(
