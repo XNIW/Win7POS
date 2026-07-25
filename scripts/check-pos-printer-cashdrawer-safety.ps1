@@ -510,16 +510,20 @@ if ($physicalQaIsFailClosed) {
 
 $trustedSeedIsFailClosed =
     $uiSmoke -match 'HasArg\(args,\s*"--seed-trusted-session"\)' -and
-    $uiSmoke -match 'EnsureSyntheticTrustedSessionSeedPath\(dataDir\)' -and
+    $uiSmoke -match 'EnsureSyntheticTrustedSessionSeedPath\(\s*dataDir\s*,' -and
     $uiSmoke -match 'Path\.IsPathRooted\(dataDir\)' -and
     $uiSmoke -match '"Win7POS-QA"' -and
     $uiSmoke -match 'DriveType\.Fixed' -and
     $uiSmoke -match 'existingAncestor' -and
     $uiSmoke -match 'FileAttributes\.ReparsePoint' -and
-    $uiSmoke -match 'Directory\.EnumerateFileSystemEntries\(fullPath\)\.Any\(\)' -and
+    $uiSmoke -match 'Directory\.EnumerateFileSystemEntries\(\s*fullPath\s*\)\.Any\(\)' -and
+    $uiSmoke -match 'allowPreparedRestartProbe' -and
+    $uiSmoke -match '"authorization-lease-restart-prepare\.txt"' -and
+    $uiSmoke -match '"PASS authorization lease restart prepare"' -and
+    $uiSmoke -match 'SearchOption\.AllDirectories' -and
     $uiSmoke -match 'PosOnlineContract\.OfflineAuthorizationMaxAgeSeconds'
 $trustedSeedGuardIndex = $uiSmoke.IndexOf(
-    'dataDir = EnsureSyntheticTrustedSessionSeedPath(dataDir);',
+    'dataDir = EnsureSyntheticTrustedSessionSeedPath(',
     [System.StringComparison]::Ordinal)
 $seedDirectoryCreateIndex = $uiSmoke.IndexOf(
     'Directory.CreateDirectory(dataDir);',
@@ -528,9 +532,9 @@ $trustedSeedIsFailClosed = $trustedSeedIsFailClosed -and
     $trustedSeedGuardIndex -ge 0 -and
     $seedDirectoryCreateIndex -gt $trustedSeedGuardIndex
 if ($trustedSeedIsFailClosed) {
-    Pass "synthetic trusted-session seed is explicit and restricted to a new Win7POS-QA directory"
+    Pass "synthetic trusted-session seed is explicit and restricted to a new or prepared restart Win7POS-QA directory"
 } else {
-    Fail "synthetic trusted-session seed must be explicit and fail closed outside a new Win7POS-QA directory"
+    Fail "synthetic trusted-session seed must fail closed outside a new or prepared restart Win7POS-QA directory"
 }
 
 $offlineQaIsFailClosed =
