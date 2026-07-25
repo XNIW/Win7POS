@@ -1310,7 +1310,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         Volatile.Write(
                             ref revocationDemandCount,
                             demand);
-                        if (demand == 5)
+                        if (demand == 4)
                         {
                             PosOnlineSyncRevocationLatch
                                 .InvalidateAuthorizationState();
@@ -1365,7 +1365,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             Require(
                 revocationRaceDenied &&
                 denialCallbackObservedReleasedGates &&
-                Volatile.Read(ref revocationDemandCount) == 5 &&
+                Volatile.Read(ref revocationDemandCount) == 4 &&
                 CountSaleRows(factory) == raceSalesBefore &&
                 CountSalesOutboxRows(factory) == raceOutboxBefore &&
                 await WaitForAuthorizationAuditIncrementAsync(
@@ -1405,7 +1405,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         Volatile.Write(
                             ref generationDemandCount,
                             demand);
-                        if (demand == 5)
+                        if (demand == 4)
                         {
                             saleRaceStore.SaveFirstLogin(
                                 switchedGenerationResponse,
@@ -1436,7 +1436,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             Require(
                 generationRaceDenied &&
-                Volatile.Read(ref generationDemandCount) == 5 &&
+                Volatile.Read(ref generationDemandCount) == 4 &&
                 CountSaleRows(factory) == raceSalesBefore &&
                 CountSalesOutboxRows(factory) == raceOutboxBefore,
                 "in-transaction generation switch reached sale or outbox");
