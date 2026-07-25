@@ -88,13 +88,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HasArg(args, "--verify-offline-sales-sandbox-safety");
             if (restrictedSeed)
             {
-                dataDir = EnsureSyntheticTrustedSessionSeedPath(dataDir);
+                dataDir = EnsureSyntheticTrustedSessionSeedPath(
+                    dataDir,
+                    authorizationLeaseRestartVerify);
             }
 
             Directory.CreateDirectory(dataDir);
             if (restrictedSeed)
             {
-                dataDir = EnsureSyntheticTrustedSessionSeedPath(dataDir);
+                dataDir = EnsureSyntheticTrustedSessionSeedPath(
+                    dataDir,
+                    authorizationLeaseRestartVerify);
             }
             var automatedRun = HasArg(args, "--seed") ||
                                HasArg(args, "--authorization-lease-smoke") ||
@@ -388,7 +392,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             app.Run();
         }
 
-        private static string EnsureSyntheticTrustedSessionSeedPath(string dataDir)
+        private static string EnsureSyntheticTrustedSessionSeedPath(
+            string dataDir,
+            bool allowPreparedRestartProbe)
         {
             if (string.IsNullOrWhiteSpace(dataDir) || !Path.IsPathRooted(dataDir))
             {
@@ -459,10 +465,41 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "Synthetic trusted-session seed does not allow a reparse-point data directory.");
             }
 
-            if (Directory.Exists(fullPath) && Directory.EnumerateFileSystemEntries(fullPath).Any())
+            if (Directory.Exists(fullPath) &&
+                Directory.EnumerateFileSystemEntries(fullPath).Any())
             {
-                throw new InvalidOperationException(
-                    "--seed-trusted-session requires a new or empty QA data directory.");
+                if (!allowPreparedRestartProbe)
+                {
+                    throw new InvalidOperationException(
+                        "--seed-trusted-session requires a new or empty QA data directory.");
+                }
+
+                var prepareArtifact = Path.Combine(
+                    fullPath,
+                    "authorization-lease-restart-prepare.txt");
+                if (!File.Exists(prepareArtifact) ||
+                    !File.ReadAllText(prepareArtifact)
+                        .TrimStart('\uFEFF')
+                        .StartsWith(
+                            "PASS authorization lease restart prepare",
+                            StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException(
+                        "Restart verification requires the successful prepare artifact.");
+                }
+
+                foreach (var entry in Directory.EnumerateFileSystemEntries(
+                             fullPath,
+                             "*",
+                             SearchOption.AllDirectories))
+                {
+                    if ((File.GetAttributes(entry) &
+                         FileAttributes.ReparsePoint) != 0)
+                    {
+                        throw new InvalidOperationException(
+                            "Restart verification does not allow reparse-point state.");
+                    }
+                }
             }
 
             return fullPath;
