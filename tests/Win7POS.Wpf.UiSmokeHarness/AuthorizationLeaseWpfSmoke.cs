@@ -1707,6 +1707,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 CountTotalStockQuantity(factory) ==
                     blockedStockBefore,
                 "reader-delayed expiry reached a durable sale sink");
+            pendingReaderProbe.Dispose();
+            blockedReaderConnection.Dispose();
 
             var linearizationResponse =
                 BuildResponse(includeOfflineAttestation: true);
