@@ -1538,7 +1538,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     ? "<none>"
                     : commitExpiryDenialCode));
             Require(
-                Volatile.Read(ref commitExpiryDemandCount) == 4,
+                Volatile.Read(ref commitExpiryDemandCount) == 5,
                 "exact expiry inside the COMMIT gate demand count was " +
                 Volatile.Read(ref commitExpiryDemandCount).ToString(
                     CultureInfo.InvariantCulture));
