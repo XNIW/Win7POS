@@ -34,13 +34,12 @@ function Invoke-AuthorizationHarness {
         [switch]$RequirePreparedData
     )
 
-    $DataDirectory = [System.IO.Path]::GetFullPath($DataDirectory)
-        .TrimEnd(
+    $DataDirectory = (
+        [System.IO.Path]::GetFullPath($DataDirectory)).TrimEnd(
             [System.IO.Path]::DirectorySeparatorChar,
             [System.IO.Path]::AltDirectorySeparatorChar)
     $DiagnosticsDirectory =
-        [System.IO.Path]::GetFullPath($DiagnosticsDirectory)
-            .TrimEnd(
+        ([System.IO.Path]::GetFullPath($DiagnosticsDirectory)).TrimEnd(
                 [System.IO.Path]::DirectorySeparatorChar,
                 [System.IO.Path]::AltDirectorySeparatorChar)
     $dataWithSeparator =
