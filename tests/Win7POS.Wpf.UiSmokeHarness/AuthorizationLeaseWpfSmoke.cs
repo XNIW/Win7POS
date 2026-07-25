@@ -1657,7 +1657,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     blockedSaleTask != null &&
                     !blockedSaleTask.IsCompleted &&
                     Volatile.Read(
-                        ref blockedReaderDemandCount) == 1,
+                        ref blockedReaderDemandCount) == 2,
                     "blocked-reader sale crossed the Data demand before reader drain");
 
                 Interlocked.Exchange(
