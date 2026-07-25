@@ -363,7 +363,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 catch (Exception ex)
                 {
                     var detail = ex.GetType().Name + ": " + ex.Message;
-                    try { File.WriteAllText(Path.Combine(dataDir, "harness-error.txt"), detail); }
+                    try { File.WriteAllText(Path.Combine(dataDir, "harness-error.txt"), ex.ToString()); }
                     catch { }
                     if (!automatedRun)
                         MessageBox.Show(detail, "Win7POS UI Smoke Harness - startup");
