@@ -43,7 +43,13 @@ function Invoke-AuthorizationHarness {
         throw "Authorization lease smoke mode $Mode exceeded its 180-second timeout. Artifact: $artifact"
     }
     if ($process.ExitCode -ne 0) {
-        throw "Authorization lease smoke mode $Mode failed with exit code $($process.ExitCode). Artifact: $artifact"
+        $harnessErrorPath = Join-Path $DataDirectory "harness-error.txt"
+        $harnessError = if (Test-Path -LiteralPath $harnessErrorPath -PathType Leaf) {
+            [System.IO.File]::ReadAllText($harnessErrorPath).Trim()
+        } else {
+            "harness-error.txt was not produced"
+        }
+        throw "Authorization lease smoke mode $Mode failed with exit code $($process.ExitCode). Harness error: $harnessError. Artifact: $artifact"
     }
     if (-not (Test-Path -LiteralPath $artifact -PathType Leaf)) {
         throw "Authorization lease smoke mode $Mode did not produce its result artifact: $artifact"
