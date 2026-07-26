@@ -975,3 +975,33 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   source-provenance/recovery reconciliation manifest and verified backup for the
   eight remote-only Supabase staging migrations. No token, credential or
   production data was recorded.
+
+## 2026-07-25 - TASK-139 final review closeout (DONE)
+
+- Repository: `XNIW/Win7POS`, branch `main`.
+- SHA codice verificata:
+  `1b947f3776e8af71450418cfae66e407da92682b`; coincideva con `main`,
+  `origin/main` e GitHub `main` al preflight ed è antenata del successivo
+  commit documentale.
+- Final review approvata esplicitamente dall'utente: stato TASK-139 `DONE`,
+  P0/P1/P2 aperti `0/0/0`.
+- Workflow esistenti riusati sull'esatta SHA:
+  - CI `30179709588`: `SUCCESS`, inclusi required gates `44/44`, Release
+    build, Core/Data, CLI selftest, WPF `net48/x86`, UI harness, authorization
+    lease runtime, logging `100k` e paging `100k`;
+  - targeted authorization smoke `30179377746`: `SUCCESS`, inclusi dynamic
+    admission, restart, clock/capacity, `hardwareEffects=0` e assenza di
+    sale/outbox non autorizzate;
+  - Security Supply Chain `30179709582`: `SUCCESS`;
+  - Release Pack `30179709584`: `SUCCESS`;
+  - candidate CI `30179448464`: `SUCCESS`.
+- Candidate/worktree TASK-139 revisionati: le lane consegnate sono antenate di
+  `main`; l'esperimento locale `33c8e268` di catalog remote-failure è fuori
+  dallo scope finale accettato offline-authorization lease/bridge, è stato
+  superseduto e non è stato integrato. Nessuna modifica utile accettata resta
+  fuori `main`.
+- Windows 7 fisico, signing, staging autenticato, printer/scanner/camera e
+  periferiche restano evidence esterna opzionale/non bloccante.
+- Nessun nuovo scan Codex Security, rerun manuale CodeQL/Supply Chain, full
+  suite, deploy o mutazione production è stato avviato nel closeout.
+- Report: `docs/reports/2026-07-25_TASK-139_FINAL_REVIEW_CLOSEOUT.md`.

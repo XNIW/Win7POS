@@ -1,8 +1,15 @@
 # Win7POS ASUS Runtime Validation — 2026-07-14
 
-Stato handoff: `PARTIAL_CLOSURE_EXTERNAL_VALIDATION_REQUIRED`
+Stato handoff: `DONE`
 
-Definition of Done globale: `NOT_MET`
+Definition of Done TASK-139 software: `MET`
+
+Supersessione finale: il contenuto seguente conserva l'evidence storica del
+`2026-07-14`. Il closeout del `2026-07-25` verifica la SHA codice
+`1b947f3776e8af71450418cfae66e407da92682b` su `main` e chiude TASK-139
+`DONE`; Windows 7 fisico, staging autenticato, signing e periferiche restano
+evidence esterna opzionale/non bloccante. Report autorevole:
+`docs/reports/2026-07-25_TASK-139_FINAL_REVIEW_CLOSEOUT.md`.
 
 Ultimo snapshot documentale: `2026-07-14T22:43:21-04:00`.
 
@@ -709,9 +716,14 @@ $uninstaller = (Get-ChildItem 'C:\Program Files (x86)\Win7POS' -Filter 'unins*.e
 Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT','/NORESTART' -Wait -WindowStyle Hidden
 ```
 
-## Esito
+## Esito storico e supersessione
 
-La closure software locale è sostanziale ma la missione globale non è `DONE`.
-Restano obbligatori: conteggi staging esatti e `Verified` su dati reali, UI
-autenticata/DPI, Windows 7 SP1, install/uninstall elevati e hardware fisico. Il
-branch non deve essere unito a `main` sulla sola base dei proxy locali.
+Al `2026-07-14` la closure software locale era sostanziale, mentre staging,
+Windows 7 SP1, install/uninstall elevati e hardware fisico restavano esterni.
+Quella classificazione non è più lo stato corrente TASK-139: la final
+integration è su `main`, i gate software e i runtime harness richiesti sono
+verdi e la review finale è stata approvata dall'utente il `2026-07-25`.
+
+Stato corrente TASK-139: `DONE`. Le righe `BLOCKED_EXTERNAL` della matrice
+rimangono una checklist per eventuale certificazione fisica, non un blocker
+software né una condizione per riaprire il task.

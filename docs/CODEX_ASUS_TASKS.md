@@ -18,13 +18,14 @@ dated reports under `docs/reports/`.
 | ASUS-W7POS-009 | Done | Support POS Admin staff role mapping | `9bf33c9` | `pos_admin`, `staff_admin`, and `shop_owner_staff` map to local admin; manager remains manager; Core tests pass. |
 | ASUS-W7POS-010 | Done | E2E review of POS Admin staff role | Validated at `9bf33c9` and revalidated in ASUS-W7POS-011 | Redacted POS Admin staff online/offline smoke pass; admin areas open; switch negative case not run because the smoke data dir had only one local POS Admin operator. |
 | ASUS-W7POS-011 | Done | Final review and closeout | This final closeout commit | Tasks 001-010 closed, final report created, gates/release drop/smoke/log scan complete, logging redaction bug fixed. |
-| ASUS-W7POS-012 | Pending external runtime | Shop-scoped sync, offline authorization lease, reversal line binding/economics and 30-test runtime matrix | `dc162aeff484b576ef21565338cf3d5d492285d4` | `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-2026-07-14.md`; item-only proportional reversal economics, immutable-history fail-closed and Mac static/build/test gates pass; runtime remains `EXTERNAL_TEST_PENDING_CODEX_ASUS`. |
+| ASUS-W7POS-012 | Done | Shop-scoped sync, offline authorization lease, reversal line binding/economics and runtime matrix | `1b947f3776e8af71450418cfae66e407da92682b` | `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-2026-07-14.md`; software/runtime harness chiusi dalla final integration TASK-139 e dai workflow esatti; test su Windows 7/periferiche restano evidence esterna opzionale e non bloccante. |
 
 ## External Hardware Pending
 
 - Windows 7 SP1 physical machine smoke.
 - Real Xprinter/spooler test.
 - Real barcode scanner test.
-- Shop-scoped sync 30-test runtime/staging matrix from ASUS-W7POS-012.
+- Scenari autenticati staging della matrice ASUS-W7POS-012.
 
-These items require hardware and are not software blockers for the Asus closeout.
+These items require external environments or hardware and are not software
+blockers for the Asus/TASK-139 closeout.
