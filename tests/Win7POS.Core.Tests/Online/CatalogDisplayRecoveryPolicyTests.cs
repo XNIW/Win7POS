@@ -209,11 +209,23 @@ public sealed class CatalogDisplayRecoveryPolicyTests
         var remoteId = Response("Product", "", "BAR-1");
         remoteId.Catalog.Products[0].ProductId = "product\t1";
         var id = PosOnlineCompatibilityValidator.AssessCatalogPull(remoteId);
+        var formatBarcode = PosOnlineCompatibilityValidator.AssessCatalogPull(Response(
+            productName: "\u202E",
+            secondName: new string('s', 513),
+            barcode: "BAR\u202E-1"));
 
         Assert.IsFalse(barcode.CanContinue);
         Assert.AreEqual("catalog_product_row_invalid", barcode.BlockingCode);
         Assert.IsFalse(id.CanContinue);
         Assert.AreEqual("catalog_product_row_invalid", id.BlockingCode);
+        Assert.IsFalse(formatBarcode.CanContinue);
+        Assert.AreEqual("catalog_product_row_invalid", formatBarcode.BlockingCode);
+
+        var directMapper = RemoteCatalogBatchMapper.BuildRemoteCatalogBatch(
+            Response("\u202E", new string('s', 513), "BAR\u202E-1"),
+            authoritativeFullRefresh: false,
+            stagePage: null);
+        Assert.AreEqual(string.Empty, directMapper.Products[0].Name);
     }
 
     [TestMethod]

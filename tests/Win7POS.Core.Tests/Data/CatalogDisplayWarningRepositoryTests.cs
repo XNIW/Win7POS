@@ -45,11 +45,55 @@ public sealed class CatalogDisplayWarningRepositoryTests
         Assert.IsTrue(await repository.TryMarkDisplayedAsync("revision-1"));
         Assert.IsFalse(await repository.TryMarkDisplayedAsync("revision-1"));
 
+        // A clean delta can omit the already-recovered row. Keep the warning for
+        // the same revision so the advisory is neither lost nor re-displayed.
+        await repository.StoreSuccessfulSyncAsync(new CatalogWarningSummary(), "revision-1", generation: null);
+        var sameRevision = await repository.LoadAsync();
+        Assert.IsTrue(sameRevision.WarningCount > 0);
+        Assert.AreEqual("revision-1", sameRevision.DisplayedRevision);
+        Assert.IsFalse(await repository.TryMarkDisplayedAsync("revision-1"));
+
         await repository.StoreSuccessfulSyncAsync(new CatalogWarningSummary(), "revision-2", generation: null);
         var clean = await repository.LoadAsync();
         Assert.AreEqual(0, clean.WarningCount);
         Assert.AreEqual("revision-1", await ReadSettingAsync(db.Factory, CatalogDisplayWarningRepository.LastWarningRevisionKey));
         Assert.AreEqual(0L, await CountRawValuesAsync(db.Factory, "private name", "private-barcode"));
+    }
+
+    [TestMethod]
+    public async Task SuccessfulWarningSync_StaleGenerationCannotPartiallyOverwriteWarningState()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogDisplayWarningRepository(db.Factory);
+        var active = Generation("warning-active");
+        var stale = Generation("warning-stale");
+        var generations = new OnlineSyncGenerationRepository(db.Factory);
+        await generations.ActivateAndRecoverAsync(active, 1);
+
+        var response = new PosCatalogPullResponse
+        {
+            Catalog = new PosCatalogPayload
+            {
+                Products = new[]
+                {
+                    new PosCatalogProductResponse
+                    {
+                        ProductName = "warning\nname",
+                        Barcode = "warning-barcode"
+                    }
+                }
+            }
+        };
+        var summary = CatalogDisplayRecoveryPolicy.Recover(response).WarningSummary;
+        await repository.StoreSuccessfulSyncAsync(summary, "revision-active", active);
+        var committed = await repository.LoadAsync();
+
+        await repository.StoreSuccessfulSyncAsync(new CatalogWarningSummary(), "revision-stale", stale);
+        var afterStaleAttempt = await repository.LoadAsync();
+
+        Assert.AreEqual(committed.WarningCount, afterStaleAttempt.WarningCount);
+        Assert.AreEqual(committed.ProductsAffected, afterStaleAttempt.ProductsAffected);
+        Assert.AreEqual("revision-active", afterStaleAttempt.Revision);
     }
 
     [TestMethod]
@@ -123,6 +167,16 @@ public sealed class CatalogDisplayWarningRepositoryTests
     {
         using var conn = factory.Open();
         return await conn.ExecuteScalarAsync<long>("SELECT COUNT(1) FROM product_price_history;");
+    }
+
+    private static OnlineSyncGeneration Generation(string suffix)
+    {
+        return new OnlineSyncGeneration(
+            "generation-" + suffix,
+            "session-" + suffix,
+            "device-" + suffix,
+            "shop-" + suffix,
+            "SHOP-" + suffix);
     }
 
     private sealed class TestDb : IDisposable

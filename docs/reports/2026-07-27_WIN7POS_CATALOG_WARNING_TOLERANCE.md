@@ -15,3 +15,15 @@ invariants remain fail-closed.
 The canonical values flow through validation, mapping, authoritative staging,
 SQLite persistence and idempotency comparisons. A completed run with display
 warnings remains sale-safe and records only aggregate diagnostics.
+
+## Independent pre-PR review
+
+The frozen feature was reviewed independently against `origin/main`. The
+review raised one P1 (an invisible identity-format character reaching a display
+fallback) and two P2 items (same-revision warning retention and transactional
+warning state). All three were corrected and then re-reviewed. Final open
+findings: P0=0, P1=0, P2=0, P3=0.
+
+The follow-up uses identity-specific validation for barcode and remote IDs,
+guards the mapper fallback for direct callers, and persists/reads the aggregate
+warning state atomically under the active sync-generation fence.

@@ -133,7 +133,7 @@ namespace Win7POS.Data.Online
             foreach (var row in catalog.Categories ?? Array.Empty<PosCatalogCategoryResponse>())
             {
                 if (row == null ||
-                    !RemoteCatalogContentPolicy.IsRequiredText(row.CategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredIdentityText(row.CategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
                     (validateDisplayText &&
                      !RemoteCatalogContentPolicy.IsRequiredText(row.Name, RemoteCatalogContentPolicy.NameMaximumLength)) ||
                     !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.UpdatedAt))
@@ -152,7 +152,7 @@ namespace Win7POS.Data.Online
             foreach (var row in catalog.Suppliers ?? Array.Empty<PosCatalogSupplierResponse>())
             {
                 if (row == null ||
-                    !RemoteCatalogContentPolicy.IsRequiredText(row.SupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredIdentityText(row.SupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
                     (validateDisplayText &&
                      !RemoteCatalogContentPolicy.IsRequiredText(row.Name, RemoteCatalogContentPolicy.NameMaximumLength)) ||
                     !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.UpdatedAt))
@@ -171,8 +171,8 @@ namespace Win7POS.Data.Online
             foreach (var row in catalog.Products ?? Array.Empty<PosCatalogProductResponse>())
             {
                 if (row == null ||
-                    !RemoteCatalogContentPolicy.IsRequiredText(row.ProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
-                    !RemoteCatalogContentPolicy.IsRequiredText(row.Barcode, RemoteCatalogContentPolicy.BarcodeMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredIdentityText(row.ProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredIdentityText(row.Barcode, RemoteCatalogContentPolicy.BarcodeMaximumLength) ||
                     (validateDisplayText &&
                      !RemoteCatalogContentPolicy.IsOptionalText(row.ProductName, RemoteCatalogContentPolicy.NameMaximumLength)) ||
                     (validateDisplayText &&
@@ -182,8 +182,8 @@ namespace Win7POS.Data.Online
                     !IsPositiveFinite(row.RetailPrice, long.MaxValue) ||
                     !IsOptionalNonNegativeFinite(row.PurchasePrice, int.MaxValue) ||
                     !IsOptionalNonNegativeFinite(row.StockQuantity, int.MaxValue) ||
-                    !RemoteCatalogContentPolicy.IsOptionalText(row.CategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
-                    !RemoteCatalogContentPolicy.IsOptionalText(row.SupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength))
+                    !RemoteCatalogContentPolicy.IsOptionalIdentityText(row.CategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsOptionalIdentityText(row.SupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength))
                 {
                     return "catalog_product_row_invalid";
                 }
@@ -199,8 +199,8 @@ namespace Win7POS.Data.Online
             foreach (var row in catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>())
             {
                 if (row == null ||
-                    !RemoteCatalogContentPolicy.IsRequiredText(row.PriceId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
-                    !RemoteCatalogContentPolicy.IsRequiredText(row.ProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredIdentityText(row.PriceId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredIdentityText(row.ProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
                     !RemoteCatalogContentPolicy.IsRequiredText(row.Type, RemoteCatalogContentPolicy.TypeMaximumLength) ||
                     !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.EffectiveAt) ||
                     !RemoteCatalogContentPolicy.IsOptionalText(row.Source, RemoteCatalogContentPolicy.SourceMaximumLength) ||
@@ -216,7 +216,7 @@ namespace Win7POS.Data.Online
             foreach (var row in catalog.Tombstones?.Products ?? Array.Empty<PosCatalogProductTombstoneResponse>())
             {
                 if (row == null ||
-                    !RemoteCatalogContentPolicy.IsRequiredText(row.ProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredIdentityText(row.ProductId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
                     !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.DeletedAt) ||
                     !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.UpdatedAt))
                 {
@@ -227,7 +227,7 @@ namespace Win7POS.Data.Online
             foreach (var row in catalog.Tombstones?.Categories ?? Array.Empty<PosCatalogCategoryTombstoneResponse>())
             {
                 if (row == null ||
-                    !RemoteCatalogContentPolicy.IsRequiredText(row.CategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredIdentityText(row.CategoryId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
                     !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.DeletedAt) ||
                     !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.UpdatedAt))
                 {
@@ -238,7 +238,7 @@ namespace Win7POS.Data.Online
             foreach (var row in catalog.Tombstones?.Suppliers ?? Array.Empty<PosCatalogSupplierTombstoneResponse>())
             {
                 if (row == null ||
-                    !RemoteCatalogContentPolicy.IsRequiredText(row.SupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
+                    !RemoteCatalogContentPolicy.IsRequiredIdentityText(row.SupplierId, RemoteCatalogContentPolicy.RemoteIdMaximumLength) ||
                     !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.DeletedAt) ||
                     !RemoteCatalogContentPolicy.IsOptionalTimestamp(row.UpdatedAt))
                 {
