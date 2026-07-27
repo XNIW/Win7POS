@@ -1,6 +1,6 @@
 # Win7POS staging bootstrap acceptance unblock — 2026-07-27
 
-Status: `READY_FOR_PR`.
+Status: `CODEX_MAC_HANDOFF_READY`.
 
 This is an evidence and design record for the bootstrap unblock. It is not a
 catalog acceptance closeout and does not transition `ASUS-W7POS-013` to `DONE`.
@@ -77,7 +77,19 @@ diagnostics-matrix smoke all passed. An independent re-review found no
 remaining P0, P1 or P2 issues. The smoke invocation uses the `x86` harness
 with its required isolated `--data-dir`; it makes no network request.
 
-No further staging request has been made. The sole newly authorized acceptance
-may run only after this code is independently reviewed, normally merged and
-validated from exact `main`. If it fails, its report will contain the bounded
-stage/root facts needed for a precise handoff and no retry will be attempted.
+The code was normally merged as PR #48 at `39733f45a3982aa69dee7777a86bc88ed2cd6fbe`.
+The sole authorized follow-up acceptance ran once at `2026-07-27T19:31:27Z`.
+It reached staging and completed first login, device trust and trusted-session
+persistence, then failed during catalog pull with `HTTP 503`,
+`failureStage=catalog_pull`, and `rootCode=http_5xx`. It is retryable from a
+transport perspective, but no retry is authorized by this task.
+
+Read-only audit correlation records `pos.auth.first_login.success` and
+`pos.device.trusted` at `2026-07-27T19:31:27Z`; it contains no catalog success
+or catalog failure audit event. The redacted acceptance evidence is
+`C:\Dev\_codex-evidence\win7pos-staging-acceptance-20260727-193121`.
+The server/edge catalog-pull owner handoff is
+`docs/HANDOFFS/2026-07-27_WIN7POS_STAGING_BOOTSTRAP_FAILURE.md` and the
+matching external Mac prompt is stored next to the frozen evidence. No secret,
+response body, complete technical identifier, production system or catalog data
+is included in either handoff.
