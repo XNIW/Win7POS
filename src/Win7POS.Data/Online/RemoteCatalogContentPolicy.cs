@@ -26,6 +26,21 @@ namespace Win7POS.Data.Online
             return !string.IsNullOrWhiteSpace(value) && IsSafeText(value, maximumLength);
         }
 
+        /// <summary>
+        /// Identity values must not contain invisible formatting controls. Unlike
+        /// display text, these values are never canonicalized or recovered, so a
+        /// bidi/format character must remain a fail-closed transport error.
+        /// </summary>
+        public static bool IsOptionalIdentityText(string value, int maximumLength)
+        {
+            return string.IsNullOrEmpty(value) || IsSafeIdentityText(value, maximumLength);
+        }
+
+        public static bool IsRequiredIdentityText(string value, int maximumLength)
+        {
+            return !string.IsNullOrWhiteSpace(value) && IsSafeIdentityText(value, maximumLength);
+        }
+
         public static bool IsOptionalCanonicalText(string value, int maximumLength)
         {
             return string.IsNullOrEmpty(value) ||
@@ -117,6 +132,24 @@ namespace Win7POS.Data.Online
                 }
 
                 if (char.IsLowSurrogate(current))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static bool IsSafeIdentityText(string value, int maximumLength)
+        {
+            if (!IsSafeText(value, maximumLength))
+            {
+                return false;
+            }
+
+            for (var index = 0; index < value.Length; index++)
+            {
+                if (char.GetUnicodeCategory(value[index]) == UnicodeCategory.Format)
                 {
                     return false;
                 }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Win7POS.Core.Online;
+using Win7POS.Data.Online;
 
 namespace Win7POS.Data.Repositories
 {
@@ -18,6 +19,10 @@ namespace Win7POS.Data.Repositories
             CatalogAuthoritativeStagePage stagePage)
         {
             if (response == null) throw new ArgumentNullException(nameof(response));
+            // Direct/offline callers use the same idempotent Core recovery as the
+            // production pull. Production has already assessed the response, so
+            // this second pass is a no-op there.
+            response = CatalogDisplayRecoveryPolicy.Recover(response).RecoveredResponse ?? response;
             var catalog = response.Catalog ?? new PosCatalogPayload();
             var products = catalog.Products ?? Array.Empty<PosCatalogProductResponse>();
             var priceRows = catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>();
@@ -51,7 +56,10 @@ namespace Win7POS.Data.Repositories
                         ArticleCode = Normalize(row.ItemNumber),
                         Barcode = Normalize(row.Barcode),
                         CategoryName = NameFor(categories, row.CategoryId),
-                        Name = FirstNonEmpty(row.ProductName, row.SecondProductName, row.Barcode),
+                        Name = FirstNonEmpty(
+                            row.ProductName,
+                            row.SecondProductName,
+                            SafeBarcodeDisplayFallback(row.Barcode)),
                         PurchasePrice = ToInt(row.PurchasePrice),
                         RemoteCategoryId = Normalize(row.CategoryId),
                         RemoteProductId = Normalize(row.ProductId),
@@ -157,6 +165,18 @@ namespace Win7POS.Data.Repositories
             }
 
             return string.Empty;
+        }
+
+        // Mapper callers include offline diagnostics. Do not let an unvalidated
+        // identity value become receipt-visible text in that path; production has
+        // already failed the payload closed before it reaches this fallback.
+        private static string SafeBarcodeDisplayFallback(string barcode)
+        {
+            return RemoteCatalogContentPolicy.IsRequiredIdentityText(
+                barcode,
+                RemoteCatalogContentPolicy.BarcodeMaximumLength)
+                ? barcode
+                : string.Empty;
         }
 
         private static string NameFor(IReadOnlyDictionary<string, string> rows, string id)

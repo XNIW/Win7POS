@@ -11,6 +11,26 @@ namespace Win7POS.Core.Tests.Data;
 public sealed class CatalogFullResponseStageRepositoryTests
 {
     [TestMethod]
+    public async Task FullRefreshStage_StoresOnlyTheRecoveredDisplayText()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogFullResponseStageRepository(db.Factory);
+        var generation = Guid.NewGuid().ToString("N");
+        var response = Response("cursor-1", false, "P-WARNING");
+        response.Catalog.Products[0].ProductName = "Full\nrefresh product";
+        var assessment = CatalogDisplayRecoveryPolicy.Recover(response);
+
+        await repository.BeginAsync(generation);
+        await repository.AppendAsync(generation, 1, assessment.RecoveredResponse, 0);
+        var staged = await repository.LoadPageAsync(generation, 1);
+
+        Assert.IsTrue(assessment.CanContinue);
+        Assert.IsTrue(assessment.WarningSummary.WarningCount > 0);
+        Assert.AreEqual("Full refresh product", staged.Catalog.Products.Single().ProductName);
+        Assert.AreEqual(1, staged.Catalog.Products.Length);
+    }
+
+    [TestMethod]
     public async Task Stage_RoundTripsPagesAndPreservesLiveSettings()
     {
         using var db = TestDb.Create();

@@ -96,6 +96,8 @@ namespace Win7POS.Wpf.Pos.Online
                 CatalogShopStateRepository.CommittedRevisionKey).ConfigureAwait(false);
             var catalogState = new CatalogShopStateRepository(_factory);
             var catalogExactness = await catalogState.LoadExactnessAsync().ConfigureAwait(false);
+            var catalogDisplayWarnings = await new CatalogDisplayWarningRepository(_factory)
+                .LoadAsync().ConfigureAwait(false);
             var catalogSaleSafety = await catalogState
                 .EvaluateSaleSafetyForOfficialShopAsync()
                 .ConfigureAwait(false);
@@ -136,6 +138,9 @@ namespace Win7POS.Wpf.Pos.Online
                     catalogSaleSafety),
                 CatalogCompletenessText = CatalogCompletenessText(catalogExactness),
                 CatalogCountsText = CatalogCountsText(catalogExactness),
+                CatalogDisplayWarningCount = catalogDisplayWarnings.WarningCount,
+                CatalogDisplayWarningText = CatalogDisplayWarningText(catalogDisplayWarnings),
+                CatalogDisplayWarningRevision = catalogDisplayWarnings.Revision ?? string.Empty,
                 CatalogCursorFingerprint = RedactedFingerprint(catalogCursor),
                 CatalogDurationMilliseconds = ParseNonNegativeLong(catalogDuration),
                 CatalogErrorCode = SafeCode(lastCatalogError),
@@ -513,7 +518,8 @@ namespace Win7POS.Wpf.Pos.Online
             if (catalogSaleSafety != null &&
                 catalogSaleSafety.IsSaleSafe &&
                 !string.IsNullOrWhiteSpace(catalogSaleSafeAt) &&
-                string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase))
+                (string.Equals(status, "completed", StringComparison.OrdinalIgnoreCase) ||
+                 string.Equals(status, "completed_with_warnings", StringComparison.OrdinalIgnoreCase)))
             {
                 return T("sync.catalogBootstrap") + ": " + T("sync.catalogSaleSafe") +
                     " | " + T("sync.lastCatalog") + ": " + FormatIso(catalogSaleSafeAt);
@@ -641,6 +647,25 @@ namespace Win7POS.Wpf.Pos.Online
                 T("sync.products") + " " + (exactness?.ActiveProducts ?? 0).ToString(CultureInfo.InvariantCulture) +
                 " | " + T("sync.categories") + " " + (exactness?.ActiveCategories ?? 0).ToString(CultureInfo.InvariantCulture) +
                 " | " + T("sync.suppliers") + " " + (exactness?.ActiveSuppliers ?? 0).ToString(CultureInfo.InvariantCulture);
+        }
+
+        private static string CatalogDisplayWarningText(CatalogDisplayWarningSnapshot warnings)
+        {
+            if (warnings == null || warnings.WarningCount <= 0)
+            {
+                return T("sync.catalogWarningsNone");
+            }
+
+            return PosLocalization.F(
+                "sync.catalogWarnings",
+                warnings.WarningCount,
+                warnings.ProductsAffected,
+                warnings.CategoriesAffected,
+                warnings.SuppliersAffected,
+                warnings.NormalizedCount,
+                warnings.RemovedControlCount,
+                warnings.ReplacementCharacterCount,
+                warnings.FallbackCount);
         }
 
         private static string CatalogSyncModeText(string syncMode)
@@ -888,6 +913,9 @@ namespace Win7POS.Wpf.Pos.Online
         public string CatalogBootstrapText { get; set; } = string.Empty;
         public string CatalogCompletenessText { get; set; } = string.Empty;
         public string CatalogCountsText { get; set; } = string.Empty;
+        public int CatalogDisplayWarningCount { get; set; }
+        public string CatalogDisplayWarningRevision { get; set; } = string.Empty;
+        public string CatalogDisplayWarningText { get; set; } = string.Empty;
         public string CatalogCursorFingerprint { get; set; } = string.Empty;
         public long CatalogDurationMilliseconds { get; set; }
         public string CatalogErrorAtText { get; set; } = string.Empty;

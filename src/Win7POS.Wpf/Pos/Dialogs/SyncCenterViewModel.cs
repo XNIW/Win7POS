@@ -12,6 +12,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         private PosSyncStatusSnapshot _snapshot;
         private string _catalogCountsText = string.Empty;
+        private string _catalogDisplayWarningText = string.Empty;
         private string _catalogCursorText = string.Empty;
         private string _catalogFullRatioText = string.Empty;
         private string _catalogErrorText = string.Empty;
@@ -36,6 +37,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
         private string _salesQueueText = string.Empty;
 
         public string CatalogCountsText { get => _catalogCountsText; private set => Set(ref _catalogCountsText, value); }
+        public string CatalogDisplayWarningText { get => _catalogDisplayWarningText; private set => Set(ref _catalogDisplayWarningText, value); }
         public string CatalogCursorText { get => _catalogCursorText; private set => Set(ref _catalogCursorText, value); }
         public string CatalogFullRatioText { get => _catalogFullRatioText; private set => Set(ref _catalogFullRatioText, value); }
         public string CatalogErrorText { get => _catalogErrorText; private set => Set(ref _catalogErrorText, value); }
@@ -98,6 +100,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
                 PosLocalization.T("sync.center.revision." + status.CatalogRevisionMatchCode));
             CatalogVerificationText = status.CatalogCompletenessText;
             CatalogCountsText = status.CatalogCountsText;
+            CatalogDisplayWarningText = status.CatalogDisplayWarningText;
             CatalogRepairReasonText = status.CatalogRepairText + " | " +
                 Field("sync.center.fullReason", status.CatalogLastFullReasonCode);
             SalesQueueText = QueueText(

@@ -153,6 +153,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HasArg(args, "--verify-offline-sales-sandbox-safety");
             var runtimeObservabilitySmoke =
                 HasArg(args, "--runtime-observability-smoke");
+            var catalogDisplayWarningSmoke =
+                HasArg(args, "--catalog-display-warning-smoke");
             var stagingAcceptance = HasArg(args, "--staging-acceptance");
             var stagingProfile = ValueAfter(args, "--profile");
             var acceptanceOutput = ValueAfter(args, "--acceptance-output");
@@ -200,6 +202,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                HasArg(args, "--capture-ux-artifacts") ||
                                HasArg(args, "--capture-settings-audit") ||
                                runtimeObservabilitySmoke ||
+                               catalogDisplayWarningSmoke ||
                                stagingAcceptance ||
                                verifyOfflineSalesSandboxSafety ||
                                HasArg(args, "--lifecycle");
@@ -379,6 +382,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     {
                         var result = RunShellWindowStateCheck();
                         File.WriteAllText(Path.Combine(dataDir, "shell-window-state.txt"), result);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
+                    if (catalogDisplayWarningSmoke)
+                    {
+                        var result = await CatalogDisplayWarningWpfSmoke.RunAsync()
+                            .ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(dataDir, "catalog-display-warning-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
                         app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
                         return;
                     }

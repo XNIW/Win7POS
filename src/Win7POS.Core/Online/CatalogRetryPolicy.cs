@@ -5,7 +5,8 @@ namespace Win7POS.Core.Online
     /// <summary>
     /// Catalog contract and exactness failures are deterministic for a catalog
     /// revision. They remain sale-blocking, but must not create periodic traffic
-    /// until an explicit new revision/event is observed.
+    /// until an explicit new revision/event is observed. Recovered display-only
+    /// data-quality warnings are successful outcomes and never enter this policy.
     /// </summary>
     public static class CatalogRetryPolicy
     {

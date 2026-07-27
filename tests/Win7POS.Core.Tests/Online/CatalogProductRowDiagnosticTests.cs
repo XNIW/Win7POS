@@ -69,7 +69,7 @@ public sealed class CatalogProductRowDiagnosticTests
     }
 
     [TestMethod]
-    public void UnsafeProductName_IsClassifiedWithoutRenderingName()
+    public void RecoverableProductName_IsNotClassifiedAsABlockingRow()
     {
         var result = CatalogProductRowDiagnostic.Describe(56, new PosCatalogProductResponse
         {
@@ -79,7 +79,7 @@ public sealed class CatalogProductRowDiagnosticTests
             RetailPrice = 100
         });
 
-        Assert.AreEqual("invalid_product_name_text", result.Reason);
+        Assert.AreEqual("valid", result.Reason);
         Assert.AreEqual(30, result.ProductNameLength);
     }
 }
