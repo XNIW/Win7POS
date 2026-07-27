@@ -13,7 +13,11 @@ namespace Win7POS.Core.Online
             bool denied,
             string clientRequestId,
             string serverRequestId,
-            string cfRay)
+            string cfRay,
+            int? httpStatus,
+            long elapsedMilliseconds,
+            string responseContentType,
+            long? responseLength)
         {
             Success = success;
             Value = value;
@@ -23,22 +27,36 @@ namespace Win7POS.Core.Online
             ClientRequestId = clientRequestId;
             ServerRequestId = serverRequestId;
             CfRay = cfRay;
+            HttpStatus = httpStatus;
+            ElapsedMilliseconds = Math.Max(0L, elapsedMilliseconds);
+            ResponseContentType = responseContentType;
+            ResponseLength = responseLength.HasValue && responseLength.Value >= 0
+                ? responseLength
+                : null;
         }
 
         public string CfRay { get; }
         public string ClientRequestId { get; }
         public bool Denied { get; }
+        public long ElapsedMilliseconds { get; }
+        public int? HttpStatus { get; }
         public string Code { get; }
         public string Message { get; }
         public string ServerRequestId { get; }
         public bool Success { get; }
         public T Value { get; }
+        public string ResponseContentType { get; }
+        public long? ResponseLength { get; }
 
         public static PosOnlineResult<T> Ok(
             T value,
             string clientRequestId = null,
             string serverRequestId = null,
-            string cfRay = null)
+            string cfRay = null,
+            int? httpStatus = null,
+            long elapsedMilliseconds = 0,
+            string responseContentType = null,
+            long? responseLength = null)
         {
             return new PosOnlineResult<T>(
                 true,
@@ -48,7 +66,11 @@ namespace Win7POS.Core.Online
                 false,
                 clientRequestId,
                 serverRequestId,
-                cfRay);
+                cfRay,
+                httpStatus,
+                elapsedMilliseconds,
+                responseContentType,
+                responseLength);
         }
 
         public static PosOnlineResult<T> Failure(
@@ -57,7 +79,11 @@ namespace Win7POS.Core.Online
             bool denied,
             string clientRequestId = null,
             string serverRequestId = null,
-            string cfRay = null)
+            string cfRay = null,
+            int? httpStatus = null,
+            long elapsedMilliseconds = 0,
+            string responseContentType = null,
+            long? responseLength = null)
         {
             return new PosOnlineResult<T>(
                 false,
@@ -67,7 +93,11 @@ namespace Win7POS.Core.Online
                 denied,
                 clientRequestId,
                 serverRequestId,
-                cfRay);
+                cfRay,
+                httpStatus,
+                elapsedMilliseconds,
+                responseContentType,
+                responseLength);
         }
     }
 

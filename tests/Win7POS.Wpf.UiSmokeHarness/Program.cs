@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -150,6 +151,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                  seedTrustedSession);
             var verifyOfflineSalesSandboxSafety =
                 HasArg(args, "--verify-offline-sales-sandbox-safety");
+            var runtimeObservabilitySmoke =
+                HasArg(args, "--runtime-observability-smoke");
             if (restrictedQaData)
             {
                 dataDir = EnsureSyntheticTrustedSessionSeedPath(
@@ -186,6 +189,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                physicalPrinterQa ||
                                HasArg(args, "--capture-ux-artifacts") ||
                                HasArg(args, "--capture-settings-audit") ||
+                               runtimeObservabilitySmoke ||
                                verifyOfflineSalesSandboxSafety ||
                                HasArg(args, "--lifecycle");
 
@@ -362,6 +366,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var launcher = new HarnessWindow();
                     app.MainWindow = launcher;
                     launcher.Show();
+                    if (runtimeObservabilitySmoke)
+                    {
+                        var outputDirectory = ValueAfter(args, "--output-dir");
+                        if (string.IsNullOrWhiteSpace(outputDirectory))
+                            outputDirectory = dataDir;
+                        var result = await launcher.RunRuntimeObservabilitySmokeAsync(outputDirectory)
+                            .ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(outputDirectory, "runtime-observability-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
                     if (physicalPrinterQa)
                     {
                         if (!HasArg(args, "--no-drawer"))
@@ -1123,6 +1141,302 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     passed ? "PASS" : "FAIL",
                     passed,
                     string.IsNullOrWhiteSpace(_receiptAlignmentFailure) ? "none" : _receiptAlignmentFailure);
+            }
+
+            private static async Task<PosOnlineResult<PosCatalogPullResponse>>
+                RunLoopbackCatalogFailureAsync()
+            {
+                var random = new Random();
+                HttpListener listener = null;
+                Uri baseUri = null;
+                for (var attempt = 0; attempt < 16 && listener == null; attempt++)
+                {
+                    var port = random.Next(21000, 42000);
+                    var candidate = new HttpListener();
+                    candidate.Prefixes.Add("http://127.0.0.1:" + port.ToString(CultureInfo.InvariantCulture) + "/");
+                    try
+                    {
+                        candidate.Start();
+                        listener = candidate;
+                        baseUri = new Uri(candidate.Prefixes.First());
+                    }
+                    catch (HttpListenerException)
+                    {
+                        candidate.Close();
+                    }
+                }
+
+                if (listener == null || baseUri == null)
+                    throw new InvalidOperationException("Local runtime-observability fake endpoint could not start.");
+
+                using (listener)
+                {
+                    var serveResponse = Task.Run(async () =>
+                    {
+                        var context = await listener.GetContextAsync().ConfigureAwait(false);
+                        try
+                        {
+                            if (!string.Equals(
+                                context.Request.Url?.AbsolutePath,
+                                "/api/pos/catalog/pull",
+                                StringComparison.OrdinalIgnoreCase))
+                            {
+                                context.Response.StatusCode = (int)HttpStatusCode.NotFound;
+                                return;
+                            }
+
+                            var payload = Encoding.UTF8.GetBytes(
+                                "{\"ok\":false,\"code\":\"db_failure\",\"message\":\"synthetic server failure\"}");
+                            context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
+                            context.Response.ContentType = "application/json";
+                            context.Response.Headers["X-Request-Id"] = "qa-server-500";
+                            context.Response.Headers["CF-Ray"] = "qa-ray-500";
+                            context.Response.ContentLength64 = payload.Length;
+                            await context.Response.OutputStream.WriteAsync(payload, 0, payload.Length)
+                                .ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            context.Response.Close();
+                        }
+                    });
+
+                    using (var client = new PosAdminWebClient(new PosAdminWebOptions(baseUri)))
+                    {
+                        var result = await client.CatalogPullAsync(
+                            new PosCatalogPullRequest(),
+                            CancellationToken.None).ConfigureAwait(true);
+                        await serveResponse.ConfigureAwait(true);
+                        return result;
+                    }
+                }
+            }
+
+            public async Task<string> RunRuntimeObservabilitySmokeAsync(string outputDirectory)
+            {
+                if (_running)
+                    throw new InvalidOperationException("Runtime observability smoke is already running.");
+
+                _running = true;
+                IsEnabled = false;
+                Directory.CreateDirectory(outputDirectory);
+                var previousLanguage = PosLocalization.Current.CurrentLanguage;
+                var dialog = new PosOnlineFirstLoginDialog
+                {
+                    Owner = this,
+                    Width = 900,
+                    Height = 650,
+                    MaxWidth = 1024,
+                    MaxHeight = 768
+                };
+                EventHandler renderedHandler = null;
+                var rendered = new TaskCompletionSource<bool>();
+                renderedHandler = (_, __) =>
+                {
+                    dialog.ContentRendered -= renderedHandler;
+                    rendered.TrySetResult(true);
+                };
+                dialog.ContentRendered += renderedHandler;
+
+                try
+                {
+                    PosLocalization.Current.SetLanguage("it");
+                    dialog.Show();
+                    await rendered.Task.ConfigureAwait(true);
+                    await WaitForDialogInitializationAsync(dialog).ConfigureAwait(true);
+
+                    var transportResult = await RunLoopbackCatalogFailureAsync().ConfigureAwait(true);
+                    if (transportResult.Success || transportResult.Denied ||
+                        transportResult.Code != "db_failure" ||
+                        transportResult.HttpStatus != 500 ||
+                        transportResult.ServerRequestId != "qa-server-500" ||
+                        transportResult.CfRay != "qa-ray-500")
+                    {
+                        throw new InvalidOperationException("Loopback HTTP 500 diagnostic did not propagate safely.");
+                    }
+
+                    var diagnostic = new PosRuntimeDiagnostic(
+                        operation: "catalog.pull",
+                        stage: "server_response",
+                        code: "db_failure",
+                        httpStatus: 500,
+                        retryable: true,
+                        authenticationDenied: false,
+                        attemptNumber: 3,
+                        pageNumber: 1,
+                        pagesProcessed: 0,
+                        rowsReceived: 0,
+                        rowsApplied: 0,
+                        hasMore: false,
+                        catalogSaleSafe: false,
+                        clientRequestId: transportResult.ClientRequestId,
+                        serverRequestId: transportResult.ServerRequestId,
+                        cfRay: transportResult.CfRay,
+                        localIncidentId: "inc-qa-observability",
+                        occurredAtUtc: new DateTimeOffset(2026, 7, 26, 12, 0, 0, TimeSpan.Zero),
+                        elapsedMilliseconds: 42,
+                        exceptionType: string.Empty,
+                        safeSummary: "Synthetic HTTP 500 diagnostic.");
+                    var showFailure = typeof(PosOnlineFirstLoginDialog).GetMethod(
+                        "ShowCatalogFailure",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                    var beginBusy = typeof(PosOnlineFirstLoginDialog).GetMethod(
+                        "BeginBusySetup",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                    if (showFailure == null || beginBusy == null)
+                        throw new InvalidOperationException("Catalog failure presentation methods were not found.");
+                    beginBusy.Invoke(dialog, new object[] { "Preparing synthetic catalog download..." });
+                    await Task.Delay(100).ConfigureAwait(true);
+                    await Dispatcher.InvokeAsync(
+                        () => { },
+                        System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                    if (RequireNamed<TextBox>(dialog, "ShopCodeBox").Visibility != Visibility.Collapsed ||
+                        RequireNamed<TextBox>(dialog, "StaffCodeBox").Visibility != Visibility.Collapsed ||
+                        RequireNamed<PasswordBox>(dialog, "CredentialBox").Visibility != Visibility.Collapsed)
+                    {
+                        throw new InvalidOperationException("Preparation state did not collapse the login fields.");
+                    }
+                    showFailure.Invoke(dialog, new object[] { diagnostic, "fallback" });
+                    await Dispatcher.InvokeAsync(
+                        () => { },
+                        System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+
+                    var phaseTitle = RequireNamed<TextBlock>(dialog, "SetupPhaseTitleText");
+                    var phaseText = RequireNamed<TextBlock>(dialog, "SetupPhaseText");
+                    var statusText = RequireNamed<TextBlock>(dialog, "StatusText");
+                    var details = RequireNamed<TextBlock>(dialog, "TechnicalDetailsText");
+                    var expander = RequireNamed<Expander>(dialog, "TechnicalDetailsExpander");
+                    var copyButton = RequireNamed<Button>(dialog, "CopyDiagnosticsButton");
+                    var retryButton = RequireNamed<Button>(dialog, "RetryDownloadButton");
+                    var contentScroller = RequireNamed<ScrollViewer>(dialog, "DialogContentScroller");
+                    var copyWithinViewport = IsRenderedWithin(
+                        copyButton,
+                        dialog.Content as FrameworkElement);
+                    var expectedCatalogFailure =
+                        expander.Visibility == Visibility.Visible && !expander.IsExpanded &&
+                        copyButton.Visibility == Visibility.Visible && copyWithinViewport &&
+                        phaseTitle.Text == PosLocalization.T("onlineFirstLogin.phaseCatalogUnavailable") &&
+                        phaseText.Text == PosLocalization.T("onlineFirstLogin.catalogBlockedSafety") &&
+                        statusText.Text == PosLocalization.T("onlineFirstLogin.catalogBlockedSummary") &&
+                        details.Text.IndexOf("db_failure", StringComparison.Ordinal) >= 0 &&
+                        details.Text.IndexOf("HTTP: 500", StringComparison.Ordinal) >= 0 &&
+                        details.Text.IndexOf("qa-server-500", StringComparison.Ordinal) >= 0;
+                    if (!expectedCatalogFailure)
+                    {
+                        throw new InvalidOperationException(
+                            "Catalog failure dialog did not render the expected safe state: width=" +
+                            dialog.ActualWidth.ToString(CultureInfo.InvariantCulture) +
+                            " height=" + dialog.ActualHeight.ToString(CultureInfo.InvariantCulture) +
+                            " expander=" + expander.Visibility +
+                            " expanded=" + expander.IsExpanded +
+                            " copy=" + copyButton.Visibility +
+                            " copyWithin=" + copyWithinViewport +
+                            " phase=" + phaseTitle.Text +
+                            " detailsDbFailure=" +
+                            (details.Text.IndexOf("db_failure", StringComparison.Ordinal) >= 0));
+                    }
+
+                    SaveVisual(
+                        dialog.Content as FrameworkElement,
+                        Path.Combine(outputDirectory, "runtime-observability-failure-closed-1024x768.png"));
+                    expander.IsExpanded = true;
+                    contentScroller.ScrollToEnd();
+                    await Dispatcher.InvokeAsync(
+                        () => { },
+                        System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                    if (!IsRenderedWithin(expander, dialog.Content as FrameworkElement))
+                        throw new InvalidOperationException("Expanded technical details exceeded the smoke viewport.");
+                    SaveVisual(
+                        dialog.Content as FrameworkElement,
+                        Path.Combine(outputDirectory, "runtime-observability-failure-open-1024x768.png"));
+
+                    copyButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                    var copied = Clipboard.GetText();
+                    if (copied.IndexOf("db_failure", StringComparison.Ordinal) < 0 ||
+                        copied.IndexOf("qa-server-500", StringComparison.Ordinal) < 0 ||
+                        copied.IndexOf("Synthetic HTTP 500 diagnostic", StringComparison.Ordinal) >= 0 ||
+                        copied.IndexOf(string.Concat("response ", "body"), StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        throw new InvalidOperationException("Copied diagnostic was incomplete or unsafe.");
+                    }
+
+                    var keepPreparation = typeof(PosOnlineFirstLoginDialog).GetMethod(
+                        "EndBusyKeepPreparation",
+                        BindingFlags.Instance | BindingFlags.NonPublic);
+                    if (keepPreparation == null)
+                        throw new InvalidOperationException("Retry state methods were not found.");
+                    keepPreparation.Invoke(dialog, new object[] { true });
+                    if (retryButton.Visibility != Visibility.Visible || !retryButton.IsEnabled)
+                        throw new InvalidOperationException("Retry control was not available after catalog failure.");
+                    beginBusy.Invoke(dialog, new object[] { "Retrying synthetic catalog download..." });
+                    if (retryButton.IsEnabled)
+                        throw new InvalidOperationException("Retry control remained enabled while busy.");
+                    SaveVisual(
+                        dialog.Content as FrameworkElement,
+                        Path.Combine(outputDirectory, "runtime-observability-retry-busy-1024x768.png"));
+
+                    return "PASS: loopbackHttp500=True; failureClosed=True; detailsClosed=True; detailsOpen=True; copySafe=True; retryBusyDisabled=True; viewport=1024x768";
+                }
+                finally
+                {
+                    dialog.ContentRendered -= renderedHandler;
+                    if (dialog.IsVisible)
+                        dialog.Close();
+                    PosLocalization.Current.SetLanguage(previousLanguage);
+                    IsEnabled = true;
+                    _running = false;
+                }
+            }
+
+            private static T RequireNamed<T>(Window dialog, string name)
+                where T : class
+            {
+                var control = dialog.FindName(name) as T;
+                if (control == null)
+                    throw new InvalidOperationException("Required smoke control was not found: " + name);
+                return control;
+            }
+
+            private static bool IsRenderedWithin(FrameworkElement control, FrameworkElement root)
+            {
+                if (control == null || root == null || control.ActualWidth <= 0 || control.ActualHeight <= 0)
+                    return false;
+
+                var topLeft = control.TranslatePoint(new Point(0, 0), root);
+                return topLeft.X >= 0 && topLeft.Y >= 0 &&
+                       topLeft.X + control.ActualWidth <= root.ActualWidth &&
+                       topLeft.Y + control.ActualHeight <= root.ActualHeight;
+            }
+
+            private static async Task WaitForDialogInitializationAsync(
+                PosOnlineFirstLoginDialog dialog)
+            {
+                var initializingField = typeof(PosOnlineFirstLoginDialog).GetField(
+                    "_initializing",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+                if (initializingField == null)
+                    throw new InvalidOperationException("Dialog initialization state was not found.");
+
+                var observedInitializing = false;
+                var consecutiveReadyObservations = 0;
+                for (var attempt = 0; attempt < 100; attempt++)
+                {
+                    var initializing = initializingField.GetValue(dialog) is bool value && value;
+                    observedInitializing |= initializing;
+                    if (!initializing)
+                    {
+                        consecutiveReadyObservations++;
+                        if (observedInitializing || consecutiveReadyObservations >= 20)
+                            return;
+                    }
+                    else
+                    {
+                        consecutiveReadyObservations = 0;
+                    }
+                    await Task.Delay(50).ConfigureAwait(true);
+                }
+
+                throw new InvalidOperationException("Dialog initialization did not complete within the smoke timeout.");
             }
 
             public async Task<string> CaptureUxArtifactsAsync(string outputDirectory)

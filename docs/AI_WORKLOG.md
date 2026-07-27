@@ -1005,3 +1005,13 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Nessun nuovo scan Codex Security, rerun manuale CodeQL/Supply Chain, full
   suite, deploy o mutazione production è stato avviato nel closeout.
 - Report: `docs/reports/2026-07-25_TASK-139_FINAL_REVIEW_CLOSEOUT.md`.
+
+## 2026-07-26 - Runtime observability catalog failure (in delivery)
+
+- Implementata diagnostica strutturata e sanitizzata per login/catalog pull,
+  con stato fail-closed, correlation ID bounded e pannello tecnico WPF copiabile.
+- Verifica locale completata: focused 16/16, Core/Data 642/642, gate 44/44,
+  WPF e UiSmokeHarness `net48/x86` senza warning/errori; smoke loopback HTTP
+  500/db_failure a 1024x768 PASS senza credenziali, staging o backend.
+- Report: `docs/reports/2026-07-26_WIN7POS_RUNTIME_OBSERVABILITY.md`; commit,
+  PR, CI e merge saranno registrati dopo le rispettive operazioni verificabili.

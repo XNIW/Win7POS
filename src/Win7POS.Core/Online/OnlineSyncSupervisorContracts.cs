@@ -144,7 +144,8 @@ namespace Win7POS.Core.Online
             bool terminal = false,
             int catalogPagesProcessed = 0,
             int catalogRowsApplied = 0,
-            bool catalogSaleSafe = false)
+            bool catalogSaleSafe = false,
+            PosRuntimeDiagnostic catalogDiagnostic = null)
         {
             if (nextRetryAt.HasValue && nextRetryAt.Value < 0)
                 throw new ArgumentOutOfRangeException(nameof(nextRetryAt));
@@ -167,6 +168,7 @@ namespace Win7POS.Core.Online
             CatalogPagesProcessed = catalogPagesProcessed;
             CatalogRowsApplied = catalogRowsApplied;
             CatalogSaleSafe = catalogSaleSafe;
+            CatalogDiagnostic = catalogDiagnostic;
         }
 
         public bool AuthenticationDenied { get; }
@@ -174,6 +176,7 @@ namespace Win7POS.Core.Online
         public int CatalogPagesProcessed { get; }
         public int CatalogRowsApplied { get; }
         public bool CatalogSaleSafe { get; }
+        public PosRuntimeDiagnostic CatalogDiagnostic { get; }
         public string Code { get; }
         public bool HasImmediateMore { get; }
         public long? NextRetryAt { get; }
@@ -183,12 +186,15 @@ namespace Win7POS.Core.Online
         public bool Success { get; }
         public bool Terminal { get; }
 
-        public static OnlineSyncLaneOutcome AuthDenied(string code = "auth_denied")
+        public static OnlineSyncLaneOutcome AuthDenied(
+            string code = "auth_denied",
+            PosRuntimeDiagnostic catalogDiagnostic = null)
         {
             return new OnlineSyncLaneOutcome(
                 success: false,
                 code: code,
-                authenticationDenied: true);
+                authenticationDenied: true,
+                catalogDiagnostic: catalogDiagnostic);
         }
 
         private static string NormalizeCode(string value)

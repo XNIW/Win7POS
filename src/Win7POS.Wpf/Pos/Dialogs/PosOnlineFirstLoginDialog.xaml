@@ -10,8 +10,9 @@
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
-        SizeToContent="WidthAndHeight"
+        SizeToContent="Width"
         MinWidth="560"
+        MinHeight="720"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
     <Grid Background="#F1EDF7">
@@ -23,7 +24,8 @@
 
         <TextBlock Grid.Row="0" Text="{loc:Loc access.login.title}" Style="{StaticResource DialogTitleStyle}"/>
 
-        <Border Grid.Row="1" Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="16">
+        <ScrollViewer x:Name="DialogContentScroller" Grid.Row="1" MaxHeight="600" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <Border Background="#FCFBFE" BorderBrush="#E4DBEF" BorderThickness="1" CornerRadius="10" Padding="16">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
@@ -156,11 +158,27 @@
                             </Border>
                         </StackPanel>
                     </Border>
+                    <Expander x:Name="TechnicalDetailsExpander"
+                              Margin="0,8,0,0"
+                              Visibility="Collapsed"
+                              Header="{loc:Loc onlineFirstLogin.technicalDetails}"
+                              AutomationProperties.Name="{loc:Loc onlineFirstLogin.technicalDetails}">
+                        <Border Margin="0,6,0,0" Padding="8" Background="#FAF8FC" BorderBrush="#ECE4F2" BorderThickness="1" CornerRadius="8">
+                            <TextBlock x:Name="TechnicalDetailsText" FontFamily="Consolas" FontSize="11" Foreground="#514A5E" TextWrapping="Wrap"/>
+                        </Border>
+                    </Expander>
                 </StackPanel>
             </Grid>
         </Border>
+        </ScrollViewer>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="{StaticResource DialogFooterMargin}">
+            <Button x:Name="CopyDiagnosticsButton" MinWidth="128" Height="42" Margin="0,0,10,0" Click="OnCopyDiagnosticsClick" Style="{StaticResource DialogCancelButtonStyle}" Visibility="Collapsed" AutomationProperties.Name="{loc:Loc onlineFirstLogin.copyDiagnostics}">
+                <StackPanel Style="{StaticResource IconButtonContent}">
+                    <Path Data="{StaticResource IconDuplicate}" Style="{StaticResource ButtonIconPathStyle}"/>
+                    <TextBlock Text="{loc:Loc onlineFirstLogin.copyDiagnostics}" Margin="8,0,0,0"/>
+                </StackPanel>
+            </Button>
             <Button x:Name="RetryDownloadButton" MinWidth="100" Height="42" Margin="0,0,10,0" Click="OnRetryDownloadClick" Style="{StaticResource DialogActionButtonStyle}" Visibility="Collapsed">
                 <StackPanel Style="{StaticResource IconButtonContent}">
                     <Path Data="{StaticResource IconSync}" Style="{StaticResource ButtonIconPathStyle}"/>

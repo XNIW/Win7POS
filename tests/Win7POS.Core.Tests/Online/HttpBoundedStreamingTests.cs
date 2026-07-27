@@ -118,6 +118,98 @@ public sealed class HttpBoundedStreamingTests
     }
 
     [TestMethod]
+    public async Task HttpFailure_PropagatesStatusAndCorrelationHeadersWithoutBodyLogging()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(
+                "{\"ok\":false,\"code\":\"db_failure\",\"message\":\"server unavailable\"}")));
+        var handler = new StubHandler(_ =>
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = content
+            };
+            response.Headers.TryAddWithoutValidation("X-Request-Id", "server-500");
+            response.Headers.TryAddWithoutValidation("CF-Ray", "ray-500");
+            return response;
+        });
+        using var client = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            handler);
+
+        var result = await client.CatalogPullAsync(new PosCatalogPullRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("db_failure", result.Code);
+        Assert.AreEqual(500, result.HttpStatus);
+        Assert.AreEqual("server-500", result.ServerRequestId);
+        Assert.AreEqual("ray-500", result.CfRay);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.ClientRequestId));
+        Assert.IsTrue(result.ElapsedMilliseconds >= 0);
+    }
+
+    [TestMethod]
+    public async Task UnauthorizedResponse_IsMarkedDeniedAndIsNotRetryableByTheCaller()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(
+                "{\"ok\":false,\"code\":\"denied\",\"message\":\"not authorized\"}")));
+        using var client = CreateClient(HttpStatusCode.Unauthorized, content);
+
+        var result = await client.CatalogPullAsync(new PosCatalogPullRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.IsTrue(result.Denied);
+        Assert.AreEqual(401, result.HttpStatus.GetValueOrDefault());
+        Assert.AreEqual("denied", result.Code);
+    }
+
+    [TestMethod]
+    public async Task NetworkFailure_IsClassifiedWithoutAnHttpResponse()
+    {
+        using var client = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            new StubHandler(_ => throw new HttpRequestException("synthetic network failure")));
+
+        var result = await client.CatalogPullAsync(new PosCatalogPullRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.IsFalse(result.Denied);
+        Assert.AreEqual("network_error", result.Code);
+        Assert.IsNull(result.HttpStatus);
+    }
+
+    [TestMethod]
+    public async Task TransportTimeout_IsNotReportedAsAnApplicationFailure()
+    {
+        using var client = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            new StubHandler(_ => throw new TaskCanceledException("synthetic transport timeout")));
+
+        var result = await client.CatalogPullAsync(new PosCatalogPullRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.IsFalse(result.Denied);
+        Assert.AreEqual("timeout", result.Code);
+        Assert.IsNull(result.HttpStatus);
+    }
+
+    [TestMethod]
+    public async Task InvalidJson_IsClassifiedAsInvalidResponseWithoutRetainingTheBody()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes("not-json-response")));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.CatalogPullAsync(new PosCatalogPullRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("invalid_response", result.Code);
+        Assert.AreEqual(200, result.HttpStatus.GetValueOrDefault());
+        Assert.IsFalse(result.Message.Contains("not-json-response", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public async Task CallerCancellationInterruptsAnInFlightBodyRead()
     {
         using var blockingStream = new BlockingReadStream();
