@@ -53,10 +53,11 @@ disabilitato durante l'azione. Le evidence esterne al repository sono in
 ## Tracciabilita e limiti esterni
 
 - Base SHA: `24d6e0d5f82b5c32e48b42d31333459dbc7d4c6b`.
-- Feature SHA: registrato nell'aggiornamento documentale immediatamente
-  successivo al commit della feature.
-- PR e risultato CI: registrati nello stesso aggiornamento, sulla SHA esatta
-  della PR.
+- Feature SHA: `1c64baac673afbcfa4be21ffbd14df03742ce3c2`.
+- PR: [#42](https://github.com/XNIW/Win7POS/pull/42), contro `main`.
+- CI: i workflow richiesti vengono verificati sulla SHA esatta della testa PR
+  prima del merge; il risultato finale e' riportato nella PR e nel handoff di
+  consegna.
 - Windows 7 fisico: `EXTERNAL_PENDING`; questo smoke e' WPF locale su host
   Windows, non una certificazione su hardware/OS Windows 7 fisico.
 - Nessuna modifica e' stata fatta a Admin Web, Supabase o staging.

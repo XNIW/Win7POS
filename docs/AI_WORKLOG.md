@@ -1013,5 +1013,6 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Verifica locale completata: focused 16/16, Core/Data 642/642, gate 44/44,
   WPF e UiSmokeHarness `net48/x86` senza warning/errori; smoke loopback HTTP
   500/db_failure a 1024x768 PASS senza credenziali, staging o backend.
-- Report: `docs/reports/2026-07-26_WIN7POS_RUNTIME_OBSERVABILITY.md`; commit,
-  PR, CI e merge saranno registrati dopo le rispettive operazioni verificabili.
+- Feature commit: `1c64baac673afbcfa4be21ffbd14df03742ce3c2`; PR #42 aperta verso
+  `main`. Report: `docs/reports/2026-07-26_WIN7POS_RUNTIME_OBSERVABILITY.md`.
+  CI e merge saranno verificati sulla testa finale della PR.
