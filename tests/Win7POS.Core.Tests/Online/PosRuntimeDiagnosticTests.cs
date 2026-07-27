@@ -41,7 +41,8 @@ public sealed class PosRuntimeDiagnosticTests
         StringAssert.Contains(text, "Rows applied: 0");
         StringAssert.Contains(text, "Sale safe: no");
         StringAssert.Contains(text, "Retryable: yes");
-        StringAssert.Contains(text, "Support ID: server-500");
+        StringAssert.Contains(text, "Support ID: sha256:");
+        Assert.IsFalse(text.Contains("server-500", StringComparison.Ordinal));
         Assert.IsFalse(text.Contains("token", StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(text.Contains("password", StringComparison.OrdinalIgnoreCase));
     }
@@ -81,7 +82,8 @@ public sealed class PosRuntimeDiagnosticTests
         Assert.IsNull(diagnostic.PageNumber);
         Assert.AreEqual(0, diagnostic.PagesProcessed);
         Assert.AreEqual(0, diagnostic.RowsApplied);
-        Assert.AreEqual("idwithspacesandseparators", diagnostic.ClientRequestId);
+        Assert.IsTrue(diagnostic.ClientRequestId.StartsWith("sha256:", StringComparison.Ordinal));
+        Assert.IsFalse(diagnostic.ClientRequestId.Contains("spaces", StringComparison.Ordinal));
     }
 
     [TestMethod]
@@ -122,5 +124,6 @@ public sealed class PosRuntimeDiagnosticTests
         Assert.IsFalse(diagnostic.LocalIncidentId.Contains('\r'));
         Assert.IsFalse(supportText.Contains(string.Concat("token", "="), StringComparison.OrdinalIgnoreCase));
         Assert.IsFalse(supportText.Contains("/", StringComparison.Ordinal));
+        Assert.IsTrue(diagnostic.ClientRequestId.StartsWith("sha256:", StringComparison.Ordinal));
     }
 }

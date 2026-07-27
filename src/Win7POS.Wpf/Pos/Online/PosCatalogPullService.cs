@@ -2344,17 +2344,8 @@ namespace Win7POS.Wpf.Pos.Online
 
         private static string SafeId(string value)
         {
-            var normalized = (value ?? string.Empty).Trim();
-            if (normalized.Length == 0)
-            {
-                return "none";
-            }
-
-            var safe = new string(normalized
-                .Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' || ch == '.' || ch == ':')
-                .Take(80)
-                .ToArray());
-            return safe.Length == 0 ? "none" : safe;
+            var redacted = PosTechnicalIdentifier.Redact(value);
+            return string.IsNullOrWhiteSpace(redacted) ? "none" : redacted;
         }
 
         private static IReadOnlyDictionary<string, string> BuildCategoryMap(

@@ -270,12 +270,20 @@ namespace Win7POS.Data.Online
                                     httpStatus,
                                     requestStopwatch.ElapsedMilliseconds,
                                     responseContentType,
-                                    responseLength);
+                                    responseLength,
+                                    requestReachedServer: true,
+                                    retryable: PosBootstrapDiagnosticsPolicy.IsRetryable(
+                                        "response_too_large",
+                                        httpStatus,
+                                        authenticationDenied));
                             }
 
                             var error = errorRead.Value;
+                            var normalizedErrorCode = NormalizeErrorCode(error?.Code);
                             return PosOnlineResult<TResponse>.Failure(
-                                NormalizeErrorCode(error?.Code),
+                                string.IsNullOrWhiteSpace(normalizedErrorCode)
+                                    ? GetHttpFailureCode(httpStatus)
+                                    : normalizedErrorCode,
                                 string.IsNullOrWhiteSpace(error?.Message)
                                     ? "Autorizzazione POS online non riuscita."
                                     : NormalizeErrorMessage(error.Message),
@@ -286,7 +294,12 @@ namespace Win7POS.Data.Online
                                 httpStatus,
                                 requestStopwatch.ElapsedMilliseconds,
                                 responseContentType,
-                                responseLength);
+                                responseLength,
+                                requestReachedServer: true,
+                                retryable: PosBootstrapDiagnosticsPolicy.IsRetryable(
+                                    normalizedErrorCode,
+                                    httpStatus,
+                                    authenticationDenied));
                         }
 
                         var responseRead = await ReadJsonAsync<TResponse>(
@@ -305,7 +318,12 @@ namespace Win7POS.Data.Online
                                     httpStatus,
                                     requestStopwatch.ElapsedMilliseconds,
                                     responseContentType,
-                                    responseLength);
+                                    responseLength,
+                                    requestReachedServer: true,
+                                    retryable: PosBootstrapDiagnosticsPolicy.IsRetryable(
+                                        "response_too_large",
+                                        httpStatus,
+                                        false));
                         }
 
                         if (responseRead.Value == null)
@@ -317,10 +335,12 @@ namespace Win7POS.Data.Online
                                 clientRequestId,
                                 serverRequestId,
                                 cfRay,
-                                httpStatus,
-                                requestStopwatch.ElapsedMilliseconds,
-                                responseContentType,
-                                responseLength);
+                                    httpStatus,
+                                    requestStopwatch.ElapsedMilliseconds,
+                                    responseContentType,
+                                    responseLength,
+                                    requestReachedServer: true,
+                                    retryable: false);
                         }
 
                         return PosOnlineResult<TResponse>.Ok(
@@ -346,34 +366,47 @@ namespace Win7POS.Data.Online
                     "Admin Web POS non ha risposto entro il timeout.",
                     false,
                     clientRequestId,
-                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds);
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds,
+                    requestReachedServer: false,
+                    retryable: true,
+                    exceptionType: "OperationCanceledException");
             }
-            catch (HttpRequestException)
+            catch (HttpRequestException ex)
             {
+                var rootCode = ClassifyHttpRequestFailure(ex);
                 return PosOnlineResult<TResponse>.Failure(
-                    "network_error",
+                    rootCode,
                     "Admin Web POS non e raggiungibile.",
                     false,
                     clientRequestId,
-                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds);
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds,
+                    requestReachedServer: false,
+                    retryable: PosBootstrapDiagnosticsPolicy.IsRetryable(rootCode, null, false),
+                    exceptionType: SafeExceptionType(ex));
             }
-            catch (IOException)
+            catch (IOException ex)
             {
                 return PosOnlineResult<TResponse>.Failure(
                     "io_error",
                     "Errore locale durante la richiesta POS online.",
                     false,
                     clientRequestId,
-                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds);
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds,
+                    requestReachedServer: false,
+                    retryable: true,
+                    exceptionType: SafeExceptionType(ex));
             }
-            catch (InvalidOperationException)
+            catch (InvalidOperationException ex)
             {
                 return PosOnlineResult<TResponse>.Failure(
                     "invalid_operation",
                     "Configurazione Admin Web POS non valida.",
                     false,
                     clientRequestId,
-                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds);
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds,
+                    requestReachedServer: false,
+                    retryable: false,
+                    exceptionType: SafeExceptionType(ex));
             }
             }
         }
@@ -467,6 +500,65 @@ namespace Win7POS.Data.Online
             }
 
             return builder.ToString();
+        }
+
+        private static string GetHttpFailureCode(int httpStatus)
+        {
+            switch (httpStatus)
+            {
+                case 401:
+                    return "http_401";
+                case 403:
+                    return "http_403";
+                case 409:
+                    return "http_409";
+                default:
+                    return httpStatus >= 500 && httpStatus <= 599
+                        ? "http_5xx"
+                        : "http_" + httpStatus.ToString();
+            }
+        }
+
+        private static string ClassifyHttpRequestFailure(HttpRequestException exception)
+        {
+            var webException = exception?.InnerException as WebException;
+            if (webException != null)
+            {
+                switch (webException.Status)
+                {
+                    case WebExceptionStatus.NameResolutionFailure:
+                        return "dns";
+                    case WebExceptionStatus.TrustFailure:
+                    case WebExceptionStatus.SecureChannelFailure:
+                        return "tls";
+                }
+            }
+
+            return exception?.InnerException is System.Security.Authentication.AuthenticationException
+                ? "tls"
+                : "network_error";
+        }
+
+        private static string SafeExceptionType(Exception exception)
+        {
+            if (exception is HttpRequestException)
+            {
+                return "HttpRequestException";
+            }
+            if (exception is IOException)
+            {
+                return "IOException";
+            }
+            if (exception is InvalidOperationException)
+            {
+                return "InvalidOperationException";
+            }
+            if (exception is OperationCanceledException)
+            {
+                return "OperationCanceledException";
+            }
+
+            return string.Empty;
         }
 
         private static string NormalizeErrorMessage(string value)

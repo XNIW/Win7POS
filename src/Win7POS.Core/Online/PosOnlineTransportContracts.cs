@@ -17,7 +17,10 @@ namespace Win7POS.Core.Online
             int? httpStatus,
             long elapsedMilliseconds,
             string responseContentType,
-            long? responseLength)
+            long? responseLength,
+            bool requestReachedServer,
+            bool retryable,
+            string exceptionType)
         {
             Success = success;
             Value = value;
@@ -33,6 +36,9 @@ namespace Win7POS.Core.Online
             ResponseLength = responseLength.HasValue && responseLength.Value >= 0
                 ? responseLength
                 : null;
+            RequestReachedServer = requestReachedServer;
+            Retryable = retryable && !denied;
+            ExceptionType = NormalizeExceptionType(exceptionType);
         }
 
         public string CfRay { get; }
@@ -47,6 +53,13 @@ namespace Win7POS.Core.Online
         public T Value { get; }
         public string ResponseContentType { get; }
         public long? ResponseLength { get; }
+        /// <summary>
+        /// True only after this client received an HTTP response. It does not imply
+        /// that the application endpoint accepted the request.
+        /// </summary>
+        public bool RequestReachedServer { get; }
+        public bool Retryable { get; }
+        public string ExceptionType { get; }
 
         public static PosOnlineResult<T> Ok(
             T value,
@@ -70,7 +83,10 @@ namespace Win7POS.Core.Online
                 httpStatus,
                 elapsedMilliseconds,
                 responseContentType,
-                responseLength);
+                responseLength,
+                true,
+                false,
+                null);
         }
 
         public static PosOnlineResult<T> Failure(
@@ -83,7 +99,10 @@ namespace Win7POS.Core.Online
             int? httpStatus = null,
             long elapsedMilliseconds = 0,
             string responseContentType = null,
-            long? responseLength = null)
+            long? responseLength = null,
+            bool requestReachedServer = false,
+            bool retryable = false,
+            string exceptionType = null)
         {
             return new PosOnlineResult<T>(
                 false,
@@ -97,7 +116,35 @@ namespace Win7POS.Core.Online
                 httpStatus,
                 elapsedMilliseconds,
                 responseContentType,
-                responseLength);
+                responseLength,
+                requestReachedServer,
+                retryable,
+                exceptionType);
+        }
+
+        private static string NormalizeExceptionType(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var source = value.Trim();
+            var builder = new System.Text.StringBuilder(Math.Min(source.Length, 120));
+            foreach (var character in source)
+            {
+                if (builder.Length >= 120)
+                {
+                    break;
+                }
+
+                if (char.IsLetterOrDigit(character) || character == '.' || character == '_')
+                {
+                    builder.Append(character);
+                }
+            }
+
+            return builder.ToString();
         }
     }
 

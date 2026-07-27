@@ -71,17 +71,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     Credential = profile.Credential,
                     Device = new PosFirstLoginDevice
                     {
-                        AppVersion = typeof(StagingAcceptanceWpfHarness)
-                            .Assembly.GetName().Version?.ToString(),
-                        DeviceIdentifier = PosDeviceIdentity.GetOrCreateDeviceIdentifier(),
-                        DisplayName = PosDeviceIdentity.GetStableDisplayName()
+                        AppVersion = GetProductionAppVersion(),
+                        DeviceIdentifier = profile.DeviceIdentifier,
+                        DisplayName = profile.DeviceDisplayName
                     },
                     ShopCode = profile.ShopCode,
                     StaffCode = profile.StaffCode
                 };
 
                 PosOnlineBootstrapResult bootstrap;
-                using (var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10)))
+                using (var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(6)))
                 {
                     bootstrap = await new PosOnlineBootstrapService(
                             factory,
@@ -96,8 +95,23 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
                 request.Credential = string.Empty;
 
-                report.HttpSuccess = bootstrap != null && bootstrap.Success;
+                report.HttpSuccess = bootstrap != null && bootstrap.HttpStatus.HasValue &&
+                    bootstrap.HttpStatus.Value >= 200 && bootstrap.HttpStatus.Value <= 299;
                 report.BootstrapCode = SafeCode(bootstrap?.Code);
+                report.FailureStage = SafeCode(bootstrap?.FailureStage);
+                report.RootCode = SafeCode(bootstrap?.RootCode);
+                report.HttpStatus = bootstrap?.HttpStatus;
+                report.AuthenticationDenied = bootstrap != null && bootstrap.AuthenticationDenied;
+                report.Retryable = bootstrap != null && bootstrap.Retryable;
+                report.DeviceApprovalState = SafeCode(bootstrap?.DeviceApprovalState);
+                report.ClientRequestId = RedactTechnicalIdentifier(bootstrap?.ClientRequestId);
+                report.ServerRequestId = RedactTechnicalIdentifier(bootstrap?.ServerRequestId);
+                report.CfRay = RedactTechnicalIdentifier(bootstrap?.CfRay);
+                report.ExceptionType = SafeCode(bootstrap?.ExceptionType);
+                report.RequestReachedServer = bootstrap != null && bootstrap.RequestReachedServer;
+                report.FirstLoginSucceeded = bootstrap != null && bootstrap.FirstLoginSucceeded;
+                report.TrustedSessionPersisted = bootstrap != null && bootstrap.TrustedSessionPersisted;
+                report.CatalogStarted = bootstrap != null && bootstrap.CatalogStarted;
                 report.CatalogDrained = bootstrap != null &&
                     bootstrap.CatalogCompleted &&
                     !bootstrap.RequiresRetry;
@@ -108,7 +122,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                 if (bootstrap == null || !bootstrap.CanOpenPos)
                 {
-                    throw new AcceptanceFailure("bootstrap_" + SafeCode(bootstrap?.Code));
+                    throw new AcceptanceFailure(
+                        "bootstrap_" + SafeCode(bootstrap?.FailureStage) + "_" +
+                        SafeCode(bootstrap?.RootCode));
                 }
 
                 var users = new UserRepository(factory);
@@ -117,6 +133,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     profile.StaffCode).ConfigureAwait(true);
                 if (string.IsNullOrWhiteSpace(username))
                 {
+                    RecordHarnessFailure(
+                        report,
+                        "operator_mirror",
+                        "remote_staff_mirror_missing");
                     throw new AcceptanceFailure("remote_staff_mirror_missing");
                 }
 
@@ -129,6 +149,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     operatorSession.IsLoggedIn;
                 if (!report.PosUnlocked)
                 {
+                    RecordHarnessFailure(
+                        report,
+                        "local_operator_login",
+                        "local_operator_login_" + SafeCode(loginResult.ToString()));
                     throw new AcceptanceFailure("local_operator_login_" +
                         SafeCode(loginResult.ToString()));
                 }
@@ -173,6 +197,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     !report.ExactnessVerified || !report.LocalProductsPositive ||
                     !report.PreviousDiagnosticCleared)
                 {
+                    RecordHarnessFailure(
+                        report,
+                        "catalog_pull",
+                        "catalog_acceptance_verification_failed");
                     throw new AcceptanceFailure("catalog_acceptance_verification_failed");
                 }
 
@@ -180,12 +208,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     outputDirectory).ConfigureAwait(true);
                 if (!report.ProductListPopulated)
                 {
+                    RecordHarnessFailure(
+                        report,
+                        "catalog_pull",
+                        "product_list_not_populated");
                     throw new AcceptanceFailure("product_list_not_populated");
                 }
 
                 report.LogRedactionPassed = LogsDoNotContainProfileValues(profile);
                 if (!report.LogRedactionPassed)
                 {
+                    RecordHarnessFailure(
+                        report,
+                        "local_operator_login",
+                        "secret_log_redaction_failed");
                     throw new AcceptanceFailure("secret_log_redaction_failed");
                 }
 
@@ -194,10 +230,26 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
             catch (AcceptanceFailure failure)
             {
+                if (string.IsNullOrWhiteSpace(report.FailureStage) ||
+                    string.Equals(report.FailureStage, "completed", StringComparison.Ordinal))
+                {
+                    RecordHarnessFailure(
+                        report,
+                        report.ProfileValidated ? "request_build" : "profile_validation",
+                        failure.Code);
+                }
                 report.Code = SafeCode(failure.Code);
             }
             catch (Exception)
             {
+                if (string.IsNullOrWhiteSpace(report.FailureStage) ||
+                    string.Equals(report.FailureStage, "completed", StringComparison.Ordinal))
+                {
+                    RecordHarnessFailure(
+                        report,
+                        report.ProfileValidated ? "request_build" : "profile_validation",
+                        "unexpected_harness_failure");
+                }
                 report.Code = "unexpected_harness_failure";
             }
             finally
@@ -219,6 +271,79 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return new OperatorSession(
                 new UserRepository(factory),
                 new SecurityRepository(factory));
+        }
+
+        private static void RecordHarnessFailure(
+            AcceptanceReport report,
+            string failureStage,
+            string rootCode)
+        {
+            if (report == null)
+            {
+                return;
+            }
+
+            report.FailureStage = SafeCode(failureStage);
+            report.RootCode = SafeCode(rootCode);
+        }
+
+        internal static string GetProductionAppVersion()
+        {
+            return PosApplicationVersion.GetCurrent();
+        }
+
+        internal static string RunOfflineContractSmoke()
+        {
+            var appVersion = GetProductionAppVersion();
+            Version parsed;
+            var sameProductionAssembly = typeof(PosOnlineBootstrapService).Assembly ==
+                typeof(StagingAcceptanceWpfHarness).Assembly;
+            var versionValid = !string.IsNullOrWhiteSpace(appVersion) &&
+                Version.TryParse(appVersion, out parsed);
+            return versionValid && !sameProductionAssembly
+                ? "PASS appVersion=production_wpf stableDevice=profile_v2"
+                : "FAIL appVersion_contract";
+        }
+
+        internal static string RunOfflineDiagnosticsMatrixSmoke()
+        {
+            var cases = new[]
+            {
+                new { Code = "http_401", Status = (int?)401, Reached = true, Stage = "server_response" },
+                new { Code = "device_pending", Status = (int?)403, Reached = true, Stage = "device_pending_approval" },
+                new { Code = "device_revoked", Status = (int?)403, Reached = true, Stage = "device_denied" },
+                new { Code = "unsupported_app_version", Status = (int?)409, Reached = true, Stage = "first_login_contract" },
+                new { Code = "http_5xx", Status = (int?)500, Reached = true, Stage = "server_response" },
+                new { Code = "timeout", Status = (int?)null, Reached = false, Stage = "timeout" },
+                new { Code = "tls", Status = (int?)null, Reached = false, Stage = "tls" },
+                new { Code = "network_error", Status = (int?)null, Reached = false, Stage = "network" },
+                new { Code = "invalid_response", Status = (int?)200, Reached = true, Stage = "invalid_response" }
+            };
+            foreach (var item in cases)
+            {
+                if (!string.Equals(
+                        PosBootstrapDiagnosticsPolicy.GetFailureStage(
+                            item.Code,
+                            item.Status,
+                            item.Reached),
+                        item.Stage,
+                        StringComparison.Ordinal))
+                {
+                    return "FAIL diagnostics_matrix";
+                }
+            }
+
+            var report = new AcceptanceReport
+            {
+                FailureStage = "completed",
+                RootCode = "success"
+            };
+            RecordHarnessFailure(report, "local_operator_login", "operator_login_failed");
+            var localOperatorTyped = report.FailureStage == "local_operator_login" &&
+                report.RootCode == "operator_login_failed";
+            return localOperatorTyped
+                ? "PASS diagnostics=typed localOperator=typed redaction=required"
+                : "FAIL local_operator_diagnostic";
         }
 
         private static async Task<bool> CaptureReadOnlyProductsUiAsync(
@@ -478,6 +603,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return code;
         }
 
+        private static string RedactTechnicalIdentifier(string value)
+        {
+            return PosTechnicalIdentifier.Redact(value);
+        }
+
         private static void Clear(byte[] value)
         {
             if (value != null)
@@ -505,6 +635,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "credential")]
             public string Credential { get; set; }
 
+            [DataMember(Name = "deviceDisplayName")]
+            public string DeviceDisplayName { get; set; }
+
+            [DataMember(Name = "deviceIdentifier")]
+            public string DeviceIdentifier { get; set; }
+
             [DataMember(Name = "expiresAt")]
             public string ExpiresAt { get; set; }
 
@@ -524,7 +660,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             internal bool IsValid()
             {
                 var uri = BaseUri;
-                if (ProfileVersion != 1 || uri == null ||
+                if (ProfileVersion != 2 || uri == null ||
                     !string.Equals(uri.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase) ||
                     !uri.IsDefaultPort ||
                     !string.Equals(uri.Host, AllowedStagingHost, StringComparison.OrdinalIgnoreCase) ||
@@ -534,7 +670,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     uri.AbsolutePath != "/" ||
                     string.IsNullOrWhiteSpace(ShopCode) ||
                     string.IsNullOrWhiteSpace(StaffCode) ||
-                    string.IsNullOrWhiteSpace(Credential))
+                    string.IsNullOrWhiteSpace(Credential) ||
+                    !IsQaCode(ShopCode) ||
+                    !IsQaCode(StaffCode) ||
+                    !IsQaDeviceIdentifier(DeviceIdentifier) ||
+                    !IsQaDeviceDisplayName(DeviceDisplayName))
                 {
                     return false;
                 }
@@ -553,23 +693,88 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 BaseUrl = null;
                 Credential = null;
+                DeviceDisplayName = null;
+                DeviceIdentifier = null;
                 ExpiresAt = null;
                 ShopCode = null;
                 StaffCode = null;
+            }
+
+            private static bool IsQaCode(string value)
+            {
+                if (string.IsNullOrWhiteSpace(value) || value.Trim().Length > 64)
+                {
+                    return false;
+                }
+
+                foreach (var character in value.Trim())
+                {
+                    if (!char.IsLetterOrDigit(character) && character != '.' &&
+                        character != '_' && character != '-')
+                    {
+                        return false;
+                    }
+                }
+
+                return char.IsLetterOrDigit(value.Trim()[0]);
+            }
+
+            private static bool IsQaDeviceIdentifier(string value)
+            {
+                if (string.IsNullOrWhiteSpace(value) ||
+                    !value.StartsWith("win7pos:", StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+
+                Guid parsed;
+                return Guid.TryParse(value.Substring("win7pos:".Length), out parsed);
+            }
+
+            private static bool IsQaDeviceDisplayName(string value)
+            {
+                if (string.IsNullOrWhiteSpace(value) || value.Length > 32 ||
+                    !value.StartsWith("CASSA-", StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                foreach (var character in value)
+                {
+                    if (!((character >= 'A' && character <= 'Z') ||
+                          (character >= '0' && character <= '9') || character == '-'))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
             }
         }
 
         [DataContract]
         private sealed class AcceptanceReport
         {
+            [DataMember(Name = "authenticationDenied")]
+            public bool AuthenticationDenied { get; set; }
+
             [DataMember(Name = "bootstrapCode")]
             public string BootstrapCode { get; set; }
+
+            [DataMember(Name = "catalogStarted")]
+            public bool CatalogStarted { get; set; }
 
             [DataMember(Name = "catalogDrained")]
             public bool CatalogDrained { get; set; }
 
             [DataMember(Name = "catalogPages")]
             public int CatalogPages { get; set; }
+
+            [DataMember(Name = "cfRay")]
+            public string CfRay { get; set; }
+
+            [DataMember(Name = "clientRequestId")]
+            public string ClientRequestId { get; set; }
 
             [DataMember(Name = "code")]
             public string Code { get; set; }
@@ -586,8 +791,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "exactnessVerified")]
             public bool ExactnessVerified { get; set; }
 
+            [DataMember(Name = "exceptionType")]
+            public string ExceptionType { get; set; }
+
+            [DataMember(Name = "failureStage")]
+            public string FailureStage { get; set; }
+
+            [DataMember(Name = "firstLoginSucceeded")]
+            public bool FirstLoginSucceeded { get; set; }
+
             [DataMember(Name = "httpSuccess")]
             public bool HttpSuccess { get; set; }
+
+            [DataMember(Name = "httpStatus")]
+            public int? HttpStatus { get; set; }
 
             [DataMember(Name = "localActiveCategories")]
             public long LocalActiveCategories { get; set; }
@@ -637,11 +854,29 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "profileValidated")]
             public bool ProfileValidated { get; set; }
 
+            [DataMember(Name = "requestReachedServer")]
+            public bool RequestReachedServer { get; set; }
+
+            [DataMember(Name = "retryable")]
+            public bool Retryable { get; set; }
+
+            [DataMember(Name = "rootCode")]
+            public string RootCode { get; set; }
+
             [DataMember(Name = "saleSafe")]
             public bool SaleSafe { get; set; }
 
+            [DataMember(Name = "deviceApprovalState")]
+            public string DeviceApprovalState { get; set; }
+
+            [DataMember(Name = "serverRequestId")]
+            public string ServerRequestId { get; set; }
+
             [DataMember(Name = "startedAtUtc")]
             public string StartedAtUtc { get; set; }
+
+            [DataMember(Name = "trustedSessionPersisted")]
+            public bool TrustedSessionPersisted { get; set; }
         }
     }
 }
