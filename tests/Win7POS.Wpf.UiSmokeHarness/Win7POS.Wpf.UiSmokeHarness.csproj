@@ -18,4 +18,9 @@
     <ProjectReference Include="..\..\src\Win7POS.Data\Win7POS.Data.csproj" />
     <ProjectReference Include="..\..\src\Win7POS.Wpf\Win7POS.Wpf.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.Security" />
+  </ItemGroup>
 </Project>

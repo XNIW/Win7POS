@@ -842,7 +842,7 @@ WHERE scope_id = @ScopeId
                 "product",
                 batch.Products,
                 row => row?.RemoteProductId,
-                ProductStageFingerprint,
+                RemoteCatalogBatchMapper.ProductStageFingerprint,
                 row => row?.RemoteCategoryId,
                 row => row?.RemoteSupplierId);
             AddStageOccurrences(
@@ -1220,20 +1220,6 @@ FROM incoming;
         }
 
         private const string InvalidStageFingerprint = "invalid";
-
-        private static string ProductStageFingerprint(RemoteCatalogProductWrite row)
-        {
-            if (row == null ||
-                string.IsNullOrWhiteSpace(row.RemoteProductId) ||
-                string.IsNullOrWhiteSpace(row.Barcode) ||
-                string.IsNullOrWhiteSpace(row.Name) ||
-                row.UnitPrice <= 0 ||
-                ProductIdentityPolicy.IsReservedBarcode(row.Barcode.Trim()))
-            {
-                return InvalidStageFingerprint;
-            }
-            return "barcode:" + NormalizeBarcode(row.Barcode).ToUpperInvariant();
-        }
 
         private static string CategoryStageFingerprint(RemoteCatalogCategoryWrite row)
         {

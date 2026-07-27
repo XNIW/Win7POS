@@ -1016,3 +1016,20 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Feature commit: `1c64baac673afbcfa4be21ffbd14df03742ce3c2`; PR #42 aperta verso
   `main`. Report: `docs/reports/2026-07-26_WIN7POS_RUNTIME_OBSERVABILITY.md`.
   CI e merge saranno verificati sulla testa finale della PR.
+
+## 2026-07-27 - ASUS catalog_product_row_invalid offline automation (in delivery)
+
+- Evidence congelata in `C:\Dev\_codex-evidence\win7pos-catalog-row-invalid-20260727`:
+  due pagine full-response persistite, entrambe senza lane prodotti. La failure
+  `catalog_product_row_invalid` avviene prima dello staging della risposta
+  successiva; il payload/riga non e quindi ricostruibile offline. Ownership
+  resta `UNKNOWN`, senza ipotesi di bug client o server non dimostrata.
+- Aggiunti analyzer CLI offline/redatto, diagnostica bounded pre-stage per le
+  prossime failure, soppressione retry deterministic per revision e mapper
+  catalogo condiviso fra pull production/analyzer. Il POS rimane fail-closed.
+- La patch dialog ASUS usa `SizeToContent=WidthAndHeight` e `MinHeight=650`
+  (invece di 720): UiSmokeHarness loopback passa a 1024x768 con errore chiuso/
+  aperto, footer raggiungibile e artefatti EN/ES/IT/ZH; nessuna chiamata staging.
+- Aggiunto vault QA DPAPI CurrentUser con ACL current-user/SYSTEM, self-test
+  sintetico, harness staging test-only e report/screenshot redatti. Il profilo
+  reale non e stato creato o letto e l'acceptance staging non e stata eseguita.

@@ -153,6 +153,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HasArg(args, "--verify-offline-sales-sandbox-safety");
             var runtimeObservabilitySmoke =
                 HasArg(args, "--runtime-observability-smoke");
+            var stagingAcceptance = HasArg(args, "--staging-acceptance");
+            var stagingProfile = ValueAfter(args, "--profile");
+            var acceptanceOutput = ValueAfter(args, "--acceptance-output");
+            if (stagingAcceptance &&
+                (string.IsNullOrWhiteSpace(stagingProfile) ||
+                 string.IsNullOrWhiteSpace(acceptanceOutput)))
+            {
+                throw new InvalidOperationException(
+                    "--staging-acceptance requires --profile and --acceptance-output.");
+            }
             if (restrictedQaData)
             {
                 dataDir = EnsureSyntheticTrustedSessionSeedPath(
@@ -190,6 +200,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                HasArg(args, "--capture-ux-artifacts") ||
                                HasArg(args, "--capture-settings-audit") ||
                                runtimeObservabilitySmoke ||
+                               stagingAcceptance ||
                                verifyOfflineSalesSandboxSafety ||
                                HasArg(args, "--lifecycle");
 
@@ -212,6 +223,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 try
                 {
+                    if (stagingAcceptance)
+                    {
+                        var passed = await StagingAcceptanceWpfHarness
+                            .RunAsync(stagingProfile, acceptanceOutput)
+                            .ConfigureAwait(true);
+                        app.Shutdown(passed ? 0 : 1);
+                        return;
+                    }
+
                     if (authorizationLeaseRestartPrepare)
                     {
                         var result = await AuthorizationLeaseWpfSmoke
@@ -1309,9 +1329,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var copyButton = RequireNamed<Button>(dialog, "CopyDiagnosticsButton");
                     var retryButton = RequireNamed<Button>(dialog, "RetryDownloadButton");
                     var contentScroller = RequireNamed<ScrollViewer>(dialog, "DialogContentScroller");
+                    var dialogCard = RequireOverlayCard(dialog);
                     var copyWithinViewport = IsRenderedWithin(
                         copyButton,
-                        dialog.Content as FrameworkElement);
+                        dialogCard);
                     var expectedCatalogFailure =
                         expander.Visibility == Visibility.Visible && !expander.IsExpanded &&
                         copyButton.Visibility == Visibility.Visible && copyWithinViewport &&
@@ -1337,17 +1358,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
 
                     SaveVisual(
-                        dialog.Content as FrameworkElement,
+                        dialogCard,
                         Path.Combine(outputDirectory, "runtime-observability-failure-closed-1024x768.png"));
                     expander.IsExpanded = true;
                     contentScroller.ScrollToEnd();
                     await Dispatcher.InvokeAsync(
                         () => { },
                         System.Windows.Threading.DispatcherPriority.ApplicationIdle);
-                    if (!IsRenderedWithin(expander, dialog.Content as FrameworkElement))
+                    if (!IsRenderedWithin(expander, dialogCard))
                         throw new InvalidOperationException("Expanded technical details exceeded the smoke viewport.");
                     SaveVisual(
-                        dialog.Content as FrameworkElement,
+                        dialogCard,
                         Path.Combine(outputDirectory, "runtime-observability-failure-open-1024x768.png"));
 
                     copyButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -1372,10 +1393,59 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (retryButton.IsEnabled)
                         throw new InvalidOperationException("Retry control remained enabled while busy.");
                     SaveVisual(
-                        dialog.Content as FrameworkElement,
+                        dialogCard,
                         Path.Combine(outputDirectory, "runtime-observability-retry-busy-1024x768.png"));
 
-                    return "PASS: loopbackHttp500=True; failureClosed=True; detailsClosed=True; detailsOpen=True; copySafe=True; retryBusyDisabled=True; viewport=1024x768";
+                    foreach (var language in new[] { "en", "es", "it", "zh" })
+                    {
+                        PosLocalization.Current.SetLanguage(language);
+                        showFailure.Invoke(dialog, new object[] { diagnostic, "fallback" });
+                        keepPreparation.Invoke(dialog, new object[] { true });
+                        expander.IsExpanded = false;
+                        contentScroller.ScrollToTop();
+                        await Dispatcher.InvokeAsync(
+                            () => { },
+                            System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                        if (dialogCard.ActualWidth > 1024 || dialogCard.ActualHeight > 768 ||
+                            !IsRenderedWithin(copyButton, dialogCard) ||
+                            !IsRenderedWithin(retryButton, dialogCard))
+                        {
+                            throw new InvalidOperationException(
+                                "Localized closed failure layout exceeded the 1024x768 viewport: language=" + language +
+                                " card=" + BoundsIn(dialogCard, dialogCard) +
+                                " copy=" + BoundsIn(copyButton, dialogCard) +
+                                " retry=" + BoundsIn(retryButton, dialogCard));
+                        }
+                        SaveVisual(
+                            dialogCard,
+                            Path.Combine(
+                                outputDirectory,
+                                "runtime-observability-layout-" + language + "-closed-1024x768.png"));
+
+                        expander.IsExpanded = true;
+                        contentScroller.ScrollToEnd();
+                        await Dispatcher.InvokeAsync(
+                            () => { },
+                            System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                        if (!IsRenderedWithin(expander, dialogCard) ||
+                            !IsRenderedWithin(copyButton, dialogCard) ||
+                            !IsRenderedWithin(retryButton, dialogCard))
+                        {
+                            throw new InvalidOperationException(
+                                "Localized open failure layout exceeded the 1024x768 viewport: language=" + language +
+                                " card=" + BoundsIn(dialogCard, dialogCard) +
+                                " details=" + BoundsIn(expander, dialogCard) +
+                                " copy=" + BoundsIn(copyButton, dialogCard) +
+                                " retry=" + BoundsIn(retryButton, dialogCard));
+                        }
+                        SaveVisual(
+                            dialogCard,
+                            Path.Combine(
+                                outputDirectory,
+                                "runtime-observability-layout-" + language + "-open-1024x768.png"));
+                    }
+
+                    return "PASS: loopbackHttp500=True; failureClosed=True; detailsClosed=True; detailsOpen=True; copySafe=True; retryBusyDisabled=True; languages=en,es,it,zh; viewport=1024x768";
                 }
                 finally
                 {
@@ -1397,6 +1467,21 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 return control;
             }
 
+            private static FrameworkElement RequireOverlayCard(Window dialog)
+            {
+                if (dialog.Content is Panel overlayHost)
+                {
+                    foreach (UIElement child in overlayHost.Children)
+                    {
+                        if (child is Border card)
+                        {
+                            return card;
+                        }
+                    }
+                }
+                throw new InvalidOperationException("Dialog overlay card was not found.");
+            }
+
             private static bool IsRenderedWithin(FrameworkElement control, FrameworkElement root)
             {
                 if (control == null || root == null || control.ActualWidth <= 0 || control.ActualHeight <= 0)
@@ -1406,6 +1491,21 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 return topLeft.X >= 0 && topLeft.Y >= 0 &&
                        topLeft.X + control.ActualWidth <= root.ActualWidth &&
                        topLeft.Y + control.ActualHeight <= root.ActualHeight;
+            }
+
+            private static string BoundsIn(FrameworkElement control, FrameworkElement root)
+            {
+                if (control == null || root == null)
+                {
+                    return "missing";
+                }
+                var point = control.TranslatePoint(new Point(0, 0), root);
+                return "x=" + point.X.ToString("F0", CultureInfo.InvariantCulture) +
+                    ",y=" + point.Y.ToString("F0", CultureInfo.InvariantCulture) +
+                    ",w=" + control.ActualWidth.ToString("F0", CultureInfo.InvariantCulture) +
+                    ",h=" + control.ActualHeight.ToString("F0", CultureInfo.InvariantCulture) +
+                    ",rootw=" + root.ActualWidth.ToString("F0", CultureInfo.InvariantCulture) +
+                    ",rooth=" + root.ActualHeight.ToString("F0", CultureInfo.InvariantCulture);
             }
 
             private static async Task WaitForDialogInitializationAsync(

@@ -578,6 +578,25 @@ namespace Win7POS.Wpf.Pos.Online
                         var compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull(result.Value);
                         if (!string.IsNullOrWhiteSpace(compatibilityError))
                         {
+                            if (string.Equals(
+                                compatibilityError,
+                                "catalog_product_row_invalid",
+                                StringComparison.OrdinalIgnoreCase))
+                            {
+                                var invalidProduct = CatalogProductRowDiagnostic.FindFirstInvalid(
+                                    result.Value.Catalog?.Products);
+                                _logger.LogWarning(
+                                    "Catalog product row rejected before full-response staging: category=catalog.pull" +
+                                    " page=" + page.ToString() +
+                                    " lane=products" +
+                                    " row=" + invalidProduct.Row.ToString() +
+                                    " reason=" + SafeCode(invalidProduct.Reason) +
+                                    " productIdLength=" + invalidProduct.ProductIdLength.ToString() +
+                                    " barcodeLength=" + invalidProduct.BarcodeLength.ToString() +
+                                    " productNameLength=" + invalidProduct.ProductNameLength.ToString() +
+                                    " secondProductNameLength=" + invalidProduct.SecondProductNameLength.ToString() +
+                                    " priceClass=" + SafeCode(invalidProduct.PriceClass));
+                            }
                             await StoreCatalogFailureAsync(compatibilityError).ConfigureAwait(false);
                             await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
                                 .ConfigureAwait(false);
@@ -1151,7 +1170,7 @@ namespace Win7POS.Wpf.Pos.Online
                                     var stagedResponse = await fullStage.LoadPageAsync(
                                         fullStageGeneration,
                                         stagedPageNumber).ConfigureAwait(false);
-                                    return BuildRemoteCatalogBatch(
+                                    return RemoteCatalogBatchMapper.BuildRemoteCatalogBatch(
                                         stagedResponse,
                                         true,
                                         new CatalogAuthoritativeStagePage
@@ -1747,7 +1766,7 @@ namespace Win7POS.Wpf.Pos.Online
                 (catalog.Tombstones?.Products?.Length ?? 0) +
                 (catalog.Tombstones?.Categories?.Length ?? 0) +
                 (catalog.Tombstones?.Suppliers?.Length ?? 0);
-            var batch = BuildRemoteCatalogBatch(
+            var batch = RemoteCatalogBatchMapper.BuildRemoteCatalogBatch(
                 response,
                 authoritativeFullRefresh,
                 string.IsNullOrWhiteSpace(fullRunId)
@@ -1802,96 +1821,6 @@ namespace Win7POS.Wpf.Pos.Online
                 TombstonesApplied = applied.TombstonesApplied,
                 TombstonesReceived = tombstones,
                 UpdatedProducts = products.Length
-            };
-        }
-
-        private static RemoteCatalogBatch BuildRemoteCatalogBatch(
-            PosCatalogPullResponse response,
-            bool authoritativeFullRefresh,
-            CatalogAuthoritativeStagePage stagePage)
-        {
-            if (response == null) throw new ArgumentNullException(nameof(response));
-            var catalog = response.Catalog ?? new PosCatalogPayload();
-            var products = catalog.Products ?? Array.Empty<PosCatalogProductResponse>();
-            var priceRows = catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>();
-            var categories = BuildCategoryMap(catalog.Categories);
-            var suppliers = BuildSupplierMap(catalog.Suppliers);
-            return new RemoteCatalogBatch
-            {
-                AuthoritativeFullRefresh = authoritativeFullRefresh,
-                AuthoritativeStagePage = stagePage,
-                ReuseValidatedAuthoritativeStagePage =
-                    authoritativeFullRefresh && stagePage != null,
-                Categories = (catalog.Categories ?? Array.Empty<PosCatalogCategoryResponse>())
-                    .Select(row => row == null ? null : new RemoteCatalogCategoryWrite
-                    {
-                        RemoteCategoryId = Normalize(row.CategoryId),
-                        Name = Normalize(row.Name),
-                        RemoteUpdatedAt = Normalize(row.UpdatedAt)
-                    })
-                    .ToArray(),
-                Suppliers = (catalog.Suppliers ?? Array.Empty<PosCatalogSupplierResponse>())
-                    .Select(row => row == null ? null : new RemoteCatalogSupplierWrite
-                    {
-                        RemoteSupplierId = Normalize(row.SupplierId),
-                        Name = Normalize(row.Name),
-                        RemoteUpdatedAt = Normalize(row.UpdatedAt)
-                    })
-                    .ToArray(),
-                Products = products
-                    .Select(row => row == null ? null : new RemoteCatalogProductWrite
-                    {
-                        ArticleCode = Normalize(row.ItemNumber),
-                        Barcode = Normalize(row.Barcode),
-                        CategoryName = NameFor(categories, row.CategoryId),
-                        Name = FirstNonEmpty(row.ProductName, row.SecondProductName, row.Barcode),
-                        PurchasePrice = ToInt(row.PurchasePrice),
-                        RemoteCategoryId = Normalize(row.CategoryId),
-                        RemoteProductId = Normalize(row.ProductId),
-                        RemoteSupplierId = Normalize(row.SupplierId),
-                        SecondName = Normalize(row.SecondProductName),
-                        StockQuantity = ToInt(row.StockQuantity),
-                        SupplierName = NameFor(suppliers, row.SupplierId),
-                        UnitPrice = ToLong(row.RetailPrice)
-                    })
-                    .ToArray(),
-                Prices = priceRows
-                    .Select(row => row == null ? null : new RemoteCatalogPriceWrite
-                    {
-                        EffectiveAt = Normalize(row.EffectiveAt),
-                        Price = row.Price < 0 || double.IsNaN(row.Price) || double.IsInfinity(row.Price)
-                            ? -1
-                            : ToInt(row.Price),
-                        RemotePriceId = Normalize(row.PriceId),
-                        RemoteProductId = Normalize(row.ProductId),
-                        Source = Normalize(row.Source),
-                        Type = Normalize(row.Type)
-                    })
-                    .ToArray(),
-                ProductTombstones = (catalog.Tombstones?.Products ?? Array.Empty<PosCatalogProductTombstoneResponse>())
-                    .Select(row => row == null ? null : new RemoteCatalogProductTombstoneWrite
-                    {
-                        RemoteProductId = Normalize(row.ProductId),
-                        RemoteDeletedAt = Normalize(row.DeletedAt),
-                        RemoteUpdatedAt = Normalize(row.UpdatedAt)
-                    })
-                    .ToArray(),
-                CategoryTombstones = (catalog.Tombstones?.Categories ?? Array.Empty<PosCatalogCategoryTombstoneResponse>())
-                    .Select(row => row == null ? null : new RemoteCatalogCategoryTombstoneWrite
-                    {
-                        RemoteCategoryId = Normalize(row.CategoryId),
-                        RemoteDeletedAt = Normalize(row.DeletedAt),
-                        RemoteUpdatedAt = Normalize(row.UpdatedAt)
-                    })
-                    .ToArray(),
-                SupplierTombstones = (catalog.Tombstones?.Suppliers ?? Array.Empty<PosCatalogSupplierTombstoneResponse>())
-                    .Select(row => row == null ? null : new RemoteCatalogSupplierTombstoneWrite
-                    {
-                        RemoteSupplierId = Normalize(row.SupplierId),
-                        RemoteDeletedAt = Normalize(row.DeletedAt),
-                        RemoteUpdatedAt = Normalize(row.UpdatedAt)
-                    })
-                    .ToArray()
             };
         }
 

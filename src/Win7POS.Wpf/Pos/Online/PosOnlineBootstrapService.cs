@@ -436,7 +436,9 @@ namespace Win7POS.Wpf.Pos.Online
                             ? PosLocalization.T("onlineFirstLogin.catalogAuthDenied")
                             : PosLocalization.T("onlineFirstLogin.catalogIncomplete"),
                         catalogOutcome.AuthDenied,
-                        !catalogOutcome.AuthDenied,
+                        CatalogRetryPolicy.ShouldOfferManualRetry(
+                            catalogOutcome.StatusCode,
+                            catalogOutcome.AuthDenied),
                         catalogOutcome,
                         result.ClientRequestId,
                         result.ServerRequestId,
