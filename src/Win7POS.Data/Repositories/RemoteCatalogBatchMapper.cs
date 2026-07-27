@@ -18,6 +18,10 @@ namespace Win7POS.Data.Repositories
             CatalogAuthoritativeStagePage stagePage)
         {
             if (response == null) throw new ArgumentNullException(nameof(response));
+            // Direct/offline callers use the same idempotent Core recovery as the
+            // production pull. Production has already assessed the response, so
+            // this second pass is a no-op there.
+            response = CatalogDisplayRecoveryPolicy.Recover(response).RecoveredResponse ?? response;
             var catalog = response.Catalog ?? new PosCatalogPayload();
             var products = catalog.Products ?? Array.Empty<PosCatalogProductResponse>();
             var priceRows = catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>();

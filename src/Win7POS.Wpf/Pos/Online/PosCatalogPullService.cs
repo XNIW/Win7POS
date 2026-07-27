@@ -35,6 +35,7 @@ namespace Win7POS.Wpf.Pos.Online
         private const string CatalogInitialCompletedAtSettingKey = "pos.catalog.initial_completed_at";
         private const string CatalogSaleSafeAtSettingKey = "pos.catalog.sale_safe_at";
         private const string BootstrapStatusCompleted = "completed";
+        private const string BootstrapStatusCompletedWithWarnings = "completed_with_warnings";
         private const string BootstrapStatusFailedAuthDenied = "failed_auth_denied";
         private const string BootstrapStatusFailedRetryable = "failed_retryable";
         private const string BootstrapStatusInProgress = "in_progress";
@@ -351,6 +352,7 @@ namespace Win7POS.Wpf.Pos.Online
                     var syncTimer = Stopwatch.StartNew();
                     var effectiveMaxPages = maxPages;
                     var totalStats = new CatalogApplyStats();
+                    var displayWarnings = new CatalogWarningSummary();
                     PosCatalogPullResponse lastResponse = null;
                     PosOnlineResult<PosCatalogPullResponse> lastResult = null;
                     var pagesProcessed = 0;
@@ -575,7 +577,9 @@ namespace Win7POS.Wpf.Pos.Online
                                 diagnostic: diagnostic);
                         }
 
-                        var compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull(result.Value);
+                        var compatibilityAssessment = PosOnlineCompatibilityValidator.AssessCatalogPull(result.Value);
+                        var compatibilityError = compatibilityAssessment.BlockingCode;
+                        var response = compatibilityAssessment.RecoveredResponse ?? result.Value;
                         if (!string.IsNullOrWhiteSpace(compatibilityError))
                         {
                             if (string.Equals(
@@ -584,7 +588,7 @@ namespace Win7POS.Wpf.Pos.Online
                                 StringComparison.OrdinalIgnoreCase))
                             {
                                 var invalidProduct = CatalogProductRowDiagnostic.FindFirstInvalid(
-                                    result.Value.Catalog?.Products);
+                                    response.Catalog?.Products);
                                 _logger.LogWarning(
                                     "Catalog product row rejected before full-response staging: category=catalog.pull" +
                                     " page=" + page.ToString() +
@@ -612,9 +616,10 @@ namespace Win7POS.Wpf.Pos.Online
                                 false,
                                 pagesProcessed);
                         }
+                        displayWarnings.Add(compatibilityAssessment.WarningSummary);
 
                         var pageIsFullRefresh = string.Equals(
-                            result.Value.SyncMode,
+                            response.SyncMode,
                             "full_refresh",
                             StringComparison.OrdinalIgnoreCase);
                         var fullSnapshotExpected = pageIsFullRefresh ||
@@ -623,7 +628,7 @@ namespace Win7POS.Wpf.Pos.Online
                         var paginationSafety = fullSnapshotExpected
                             ? null
                             : CatalogPaginationSafetyPolicy.EvaluateTerminalPage(
-                                result.Value,
+                                response,
                                 CatalogPullPageLimit,
                                 fullSnapshotExpected: false,
                                 receivedBeforePage: receivedFullLanes,
@@ -638,7 +643,7 @@ namespace Win7POS.Wpf.Pos.Online
                                 SafeCode(paginationSafety.Code) +
                                 " page=" + page.ToString() +
                                 " limit=" + CatalogPullPageLimit.ToString() +
-                                " hasMore=" + result.Value.HasMore.ToString());
+                                " hasMore=" + response.HasMore.ToString());
                             return PosCatalogPullOutcome.Failure(
                                 paginationSafety.Code,
                                 false,
@@ -649,7 +654,7 @@ namespace Win7POS.Wpf.Pos.Online
                         if (page == 1 && pageIsFullRefresh)
                         {
                             firstPageBudget = CatalogPaginationSafetyPolicy.CalculatePageBudget(
-                                result.Value.CatalogSummary,
+                                response.CatalogSummary,
                                 CatalogPullPageLimit,
                                 LegacyFullCatalogPullPages,
                                 MaxAuthoritativeCatalogPullPages);
@@ -669,8 +674,8 @@ namespace Win7POS.Wpf.Pos.Online
                         var stagedResponseShopError = OutboxShopBinding.GetMismatchCode(
                             trustedSession.ShopId,
                             trustedSession.ShopCode,
-                            result.Value.Shop?.ShopId,
-                            result.Value.Shop?.ShopCode);
+                            response.Shop?.ShopId,
+                            response.Shop?.ShopCode);
                         if (!string.IsNullOrWhiteSpace(stagedResponseShopError))
                         {
                             await StoreCatalogFailureAsync("response_shop_mismatch").ConfigureAwait(false);
@@ -696,16 +701,16 @@ namespace Win7POS.Wpf.Pos.Online
                             snapshotSummary = null;
                         }
 
-                        var responseCatalogVersion = Normalize(result.Value.CatalogVersion);
+                        var responseCatalogVersion = Normalize(response.CatalogVersion);
                         var responseSummaryFingerprint = CatalogSummaryFingerprint(
-                            result.Value.CatalogSummary);
+                            response.CatalogSummary);
                         if (page == 1 && persistedDeltaChain.HasState)
                         {
                             var crossRunPinError = persistedDeltaChain.GetSnapshotMismatchCode(
                                 responseCatalogVersion,
                                 responseSummaryFingerprint,
-                                result.Value.CatalogSummary != null,
-                                result.Value.SyncMode);
+                                response.CatalogSummary != null,
+                                response.SyncMode);
                             if (!string.IsNullOrWhiteSpace(crossRunPinError))
                             {
                                 await catalogState.RequestFullRepairWhileBarrierHeldAsync(
@@ -750,7 +755,7 @@ namespace Win7POS.Wpf.Pos.Online
                                 pagesProcessed);
                         }
 
-                        if (snapshotSummaryPinned && result.Value.CatalogSummary == null)
+                        if (snapshotSummaryPinned && response.CatalogSummary == null)
                         {
                             const string summaryMissingCode = "catalog_summary_missing_mid_pull";
                             if (!pageIsFullRefresh && !fullRefresh)
@@ -771,16 +776,16 @@ namespace Win7POS.Wpf.Pos.Online
                                 pagesProcessed);
                         }
 
-                        if (result.Value.CatalogSummary != null)
+                        if (response.CatalogSummary != null)
                         {
                             if (!snapshotSummaryPinned)
                             {
-                                snapshotSummary = result.Value.CatalogSummary;
+                                snapshotSummary = response.CatalogSummary;
                                 snapshotSummaryFingerprint = responseSummaryFingerprint;
                                 snapshotSummaryPinned = true;
                             }
                             else if ((snapshotSummary != null &&
-                                     !CatalogSummariesEqual(snapshotSummary, result.Value.CatalogSummary)) ||
+                                     !CatalogSummariesEqual(snapshotSummary, response.CatalogSummary)) ||
                                      (snapshotSummary == null &&
                                       !string.Equals(
                                           snapshotSummaryFingerprint,
@@ -807,7 +812,7 @@ namespace Win7POS.Wpf.Pos.Online
                             }
                         }
 
-                        var responseCursor = Normalize(result.Value.SyncCursor);
+                        var responseCursor = Normalize(response.SyncCursor);
                         var responseCursorFingerprint = CatalogShopStateRepository.FingerprintValue(
                             responseCursor);
                         var sameCursor = string.Equals(
@@ -815,9 +820,9 @@ namespace Win7POS.Wpf.Pos.Online
                             Normalize(requestCursor),
                             StringComparison.Ordinal);
                         var allowsDeltaNoOpCursor =
-                            !result.Value.HasMore &&
-                            !CatalogHasMutations(result.Value.Catalog) &&
-                            string.Equals(result.Value.SyncMode, "delta", StringComparison.OrdinalIgnoreCase) &&
+                            !response.HasMore &&
+                            !CatalogHasMutations(response.Catalog) &&
+                            string.Equals(response.SyncMode, "delta", StringComparison.OrdinalIgnoreCase) &&
                             sameCursor;
                         var responseCursorAlreadySeen = responseCursorFingerprint.Length > 0 &&
                             seenCursorFingerprints.Contains(responseCursorFingerprint);
@@ -842,7 +847,7 @@ namespace Win7POS.Wpf.Pos.Online
                             return PosCatalogPullOutcome.Failure(
                                 cursorProgressCode,
                                 false,
-                                result.Value.HasMore,
+                                response.HasMore,
                                 pagesProcessed);
                         }
 
@@ -864,7 +869,7 @@ namespace Win7POS.Wpf.Pos.Online
                             return PosCatalogPullOutcome.Failure(
                                 cursorLimitCode,
                                 false,
-                                result.Value.HasMore,
+                                response.HasMore,
                                 pagesProcessed);
                         }
 
@@ -963,17 +968,17 @@ namespace Win7POS.Wpf.Pos.Online
                             fullStageBytes = await fullStage.AppendAsync(
                                 fullStageGeneration,
                                 page,
-                                result.Value,
+                                response,
                                 fullStageBytes).ConfigureAwait(false);
                             receivedFullLanes = receivedFullLanes.Add(
-                                CatalogPaginationLaneCounts.FromPayload(result.Value.Catalog));
-                            networkCursor = result.Value.SyncCursor;
-                            lastResponse = result.Value;
+                                CatalogPaginationLaneCounts.FromPayload(response.Catalog));
+                            networkCursor = response.SyncCursor;
+                            lastResponse = response;
                             lastResult = result;
                             pagesProcessed = page;
                             progress?.Report(PosCatalogPullProgress.ForCatalogPage(
                                 page,
-                                result.Value.HasMore,
+                                response.HasMore,
                                 ToSafeProgressCount(receivedFullLanes.Products),
                                 ToSafeProgressCount(receivedFullLanes.Categories),
                                 ToSafeProgressCount(receivedFullLanes.Suppliers),
@@ -990,9 +995,9 @@ namespace Win7POS.Wpf.Pos.Online
                                 ", maxPages=" + effectiveMaxPages.ToString() +
                                 ", limit=" + CatalogPullPageLimit.ToString() +
                                 ", bytes=" + fullStageBytes.ToString() +
-                                ", hasMore=" + result.Value.HasMore.ToString() +
-                                ", catalogVersion=" + SafeId(result.Value.CatalogVersion));
-                            if (!result.Value.HasMore)
+                                ", hasMore=" + response.HasMore.ToString() +
+                                ", catalogVersion=" + SafeId(response.CatalogVersion));
+                            if (!response.HasMore)
                             {
                                 break;
                             }
@@ -1002,7 +1007,7 @@ namespace Win7POS.Wpf.Pos.Online
 
                         var applyStats = await ApplyCatalogAsync(
                             catalogApplyRun,
-                            result.Value,
+                            response,
                             fullRefresh,
                             null,
                             0,
@@ -1028,7 +1033,7 @@ namespace Win7POS.Wpf.Pos.Online
                             return PosCatalogPullOutcome.Failure(
                                 skippedRowsCode,
                                 false,
-                                result.Value.HasMore,
+                                response.HasMore,
                                 pagesProcessed);
                         }
 
@@ -1038,13 +1043,13 @@ namespace Win7POS.Wpf.Pos.Online
                             {
                                 CatalogVersion = snapshotCatalogVersion,
                                 CursorFingerprints = seenCursorFingerprints.ToArray(),
-                                HasMore = result.Value.HasMore,
+                                HasMore = response.HasMore,
                                 SummaryFingerprint = snapshotSummaryFingerprint,
                                 SummaryPinned = snapshotSummaryPinned,
                                 SyncMode = "delta"
                             };
                         await StoreCatalogDiagnosticsAsync(
-                            result.Value,
+                            response,
                             applyStats,
                             trustedSession,
                             binding.Epoch,
@@ -1054,16 +1059,16 @@ namespace Win7POS.Wpf.Pos.Online
                             committedMode,
                             generation).ConfigureAwait(false);
 
-                        networkCursor = result.Value.SyncCursor;
-                        committedCursor = result.Value.SyncCursor;
-                        committedMode = result.Value.SyncMode;
+                        networkCursor = response.SyncCursor;
+                        committedCursor = response.SyncCursor;
+                        committedMode = response.SyncMode;
 
-                        lastResponse = result.Value;
+                        lastResponse = response;
                         lastResult = result;
                         pagesProcessed = page;
                         progress?.Report(PosCatalogPullProgress.ForCatalogPage(
                             page,
-                            result.Value.HasMore,
+                            response.HasMore,
                             totalStats.UpdatedProducts,
                             totalStats.CategoryRowsReceived,
                             totalStats.SupplierRowsReceived,
@@ -1080,10 +1085,10 @@ namespace Win7POS.Wpf.Pos.Online
                             ", prices=" + applyStats.PriceRowsApplied.ToString() +
                             ", queuedPrices=" + applyStats.PriceRowsQueued.ToString() +
                             ", pendingPricesApplied=" + applyStats.PendingPriceRowsApplied.ToString() +
-                            ", hasMore=" + result.Value.HasMore.ToString() +
-                            ", catalogVersion=" + SafeId(result.Value.CatalogVersion));
+                            ", hasMore=" + response.HasMore.ToString() +
+                            ", catalogVersion=" + SafeId(response.CatalogVersion));
 
-                        if (!result.Value.HasMore)
+                        if (!response.HasMore)
                         {
                             break;
                         }
@@ -1536,7 +1541,25 @@ namespace Win7POS.Wpf.Pos.Online
                         committedMode,
                         capturedImportAckGeneration,
                         generation).ConfigureAwait(false);
-                    await StoreCatalogBootstrapStatusAsync(BootstrapStatusCompleted)
+                    try
+                    {
+                        await new CatalogDisplayWarningRepository(_factory)
+                            .StoreSuccessfulSyncAsync(
+                                displayWarnings,
+                                FirstNonEmpty(snapshotCatalogVersion, lastResponse.CatalogVersion),
+                                generation).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Display-quality telemetry is explicitly non-blocking once
+                        // the exact catalog and sale-safety state have committed.
+                        _logger.LogWarning(
+                            "Catalog display warning summary persistence deferred: category=catalog.pull",
+                            ex);
+                    }
+                    await StoreCatalogBootstrapStatusAsync(displayWarnings.HasWarnings
+                            ? BootstrapStatusCompletedWithWarnings
+                            : BootstrapStatusCompleted)
                         .ConfigureAwait(false);
                     if (fullRefresh && fullStageStarted)
                     {
@@ -1573,6 +1596,11 @@ namespace Win7POS.Wpf.Pos.Online
                         ", queuedPrices=" + totalStats.PriceRowsQueued.ToString() +
                         ", pendingPricesApplied=" + totalStats.PendingPriceRowsApplied.ToString() +
                         ", pages=" + pagesProcessed.ToString() +
+                        ", displayWarnings=" + displayWarnings.WarningCount.ToString() +
+                        ", normalizedDisplayText=" + displayWarnings.NormalizedCount.ToString() +
+                        ", removedDisplayControls=" + displayWarnings.RemovedControlCount.ToString() +
+                        ", replacementCharacters=" + displayWarnings.ReplacementCharacterCount.ToString() +
+                        ", displayFallbacks=" + displayWarnings.FallbackCount.ToString() +
                         ", limit=" + CatalogPullPageLimit.ToString() +
                         ", hasMore=" + lastResponse.HasMore.ToString() +
                         ", catalogVersion=" + (lastResponse.CatalogVersion ?? string.Empty) +
@@ -1585,7 +1613,8 @@ namespace Win7POS.Wpf.Pos.Online
                         totalStats.UpdatedProducts,
                         totalStats.PriceRowsApplied,
                         totalStats.PriceRowsQueued,
-                        totalStats.PendingPriceRowsApplied);
+                        totalStats.PendingPriceRowsApplied,
+                        displayWarningCount: displayWarnings.WarningCount);
                     }
                     finally
                     {
@@ -2474,11 +2503,13 @@ namespace Win7POS.Wpf.Pos.Online
             int pricesApplied,
             int pricesQueued,
             int pendingPricesApplied,
+            int displayWarningCount,
             PosRuntimeDiagnostic diagnostic)
         {
             AuthDenied = authDenied;
             CatalogSaleSafe = catalogSaleSafe;
             Completed = completed;
+            DisplayWarningCount = Math.Max(0, displayWarningCount);
             HasMore = hasMore;
             PagesProcessed = pagesProcessed;
             PendingPricesApplied = pendingPricesApplied;
@@ -2492,6 +2523,7 @@ namespace Win7POS.Wpf.Pos.Online
         public bool AuthDenied { get; }
         public bool CatalogSaleSafe { get; }
         public bool Completed { get; }
+        public int DisplayWarningCount { get; }
         public PosRuntimeDiagnostic Diagnostic { get; }
         public bool HasMore { get; }
         public int PagesProcessed { get; }
@@ -2507,6 +2539,7 @@ namespace Win7POS.Wpf.Pos.Online
             int pricesApplied = 0,
             int pricesQueued = 0,
             int pendingPricesApplied = 0,
+            int displayWarningCount = 0,
             PosRuntimeDiagnostic diagnostic = null)
         {
             return new PosCatalogPullOutcome(
@@ -2520,6 +2553,7 @@ namespace Win7POS.Wpf.Pos.Online
                 pricesApplied,
                 pricesQueued,
                 pendingPricesApplied,
+                displayWarningCount,
                 diagnostic);
         }
 
@@ -2545,6 +2579,7 @@ namespace Win7POS.Wpf.Pos.Online
                 pricesApplied,
                 pricesQueued,
                 pendingPricesApplied,
+                0,
                 diagnostic);
         }
     }

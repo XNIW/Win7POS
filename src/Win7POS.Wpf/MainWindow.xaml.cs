@@ -1161,6 +1161,7 @@ namespace Win7POS.Wpf
                         status.CatalogBootstrapText + "\n" +
                         status.CatalogReadinessText + "\n" +
                         status.CatalogVersionText + "\n" +
+                        status.CatalogDisplayWarningText + "\n" +
                         status.PendingSalesText + "\n" +
                         status.PolicyText + "\n" +
                         status.SalesAttentionText + "\n" +
@@ -1174,6 +1175,8 @@ namespace Win7POS.Wpf
                     SyncStatusPill.Background = StatusBrush(status.ConnectivityState, status.RequiresAttention);
                 }
 
+                await ShowCatalogDisplayWarningOnceAsync(factory, status).ConfigureAwait(true);
+
                 await RefreshShellTitleAsync(factory).ConfigureAwait(true);
             }
             catch (Exception ex)
@@ -1184,6 +1187,39 @@ namespace Win7POS.Wpf
                     SyncStatusText.Text = PosLocalization.Current.Text("shell.syncUnavailable");
                 }
             }
+        }
+
+        private async Task ShowCatalogDisplayWarningOnceAsync(
+            SqliteConnectionFactory factory,
+            PosSyncStatusSnapshot status)
+        {
+            if (status == null ||
+                !status.CatalogSaleSafe ||
+                status.CatalogDisplayWarningCount <= 0 ||
+                string.IsNullOrWhiteSpace(status.CatalogDisplayWarningRevision))
+            {
+                return;
+            }
+
+            var pos = GetPosViewModel();
+            if (pos == null)
+            {
+                return;
+            }
+
+            var warnings = new CatalogDisplayWarningRepository(factory);
+            if (!await warnings.TryMarkDisplayedAsync(status.CatalogDisplayWarningRevision)
+                    .ConfigureAwait(true))
+            {
+                return;
+            }
+
+            pos.SetStatus(
+                PosLocalization.Current.Format(
+                    "pos.status.catalogWarningsAvailable",
+                    status.CatalogDisplayWarningCount),
+                PosNoticeSeverity.Warning,
+                showDetails: true);
         }
 
         private static Brush StatusBrush(string connectivityState, bool requiresAttention)
@@ -2017,9 +2053,15 @@ namespace Win7POS.Wpf
             }
 
             PosViewControl = new PosView();
+            PosViewControl.CatalogWarningDetailsRequested += ShowCatalogWarningDetails;
             PosTabHost.Children.Insert(0, PosViewControl);
             _customerDisplayManager?.Attach(GetPosViewModel());
             return PosViewControl;
+        }
+
+        private void ShowCatalogWarningDetails()
+        {
+            ShowSyncCenterDialog();
         }
 
         private void SuspendPosViewForRecovery()

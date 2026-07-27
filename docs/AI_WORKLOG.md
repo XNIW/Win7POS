@@ -1047,3 +1047,17 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   `docs/HANDOFFS/2026-07-27_WIN7POS_CATALOG_PRODUCT_ROW_INVALID.md` e il prompt
   Mac esterno nell'evidence root. Gate statici `44/44` e build WPF `net48/x86`
   PASS; test `net10.0` demandati alla CI per SDK 10 non installato localmente.
+
+## 2026-07-27 - WIN7POS-CATALOG-TOLERANCE-001 (EXECUTION)
+
+- Creato worktree isolato `codex/asus-catalog-warning-tolerance-20260727` da
+  `e1dcbe7`; il precedente worktree interrotto era pulito e la sua patch binaria
+  esportata era vuota.
+- Aggiunta recovery Core su copia del payload per soli display text catalogo,
+  con warning aggregati redatti e mapper/staging che consumano esclusivamente il
+  valore recuperato. Barcode, ID, item number, prezzi, manifest e exactness non
+  sono normalizzati permissivamente.
+- Vendorizzato byte per byte il fixture comune Admin/Android/iOS (Git blob
+  `63e527a`, SHA-256 `1cec15e9…36ae9a6`) e aggiunto il fixture consumer
+  Win7POS. Stato `EXECUTION`: review, merge e staging acceptance restano da
+  completare prima di una transizione a `DONE`.

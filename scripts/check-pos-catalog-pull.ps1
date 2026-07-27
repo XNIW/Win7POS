@@ -341,7 +341,7 @@ $catalogApplyIndex = $service.IndexOf("var applyStats = await ApplyCatalogAsync(
 $ambiguityGuardIndex = $service.IndexOf(
     "CatalogPaginationSafetyPolicy.EvaluateTerminalPage(",
     $compatibilityIndex)
-$compatibilityIndex = $service.IndexOf("var compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull")
+$compatibilityIndex = $service.IndexOf("var compatibilityAssessment = PosOnlineCompatibilityValidator.AssessCatalogPull")
 $responseShopIndex = $service.IndexOf("var stagedResponseShopError = OutboxShopBinding.GetMismatchCode(")
 $stageAppendIndex = $service.IndexOf("fullStage.AppendAsync(")
 $authoritativeStageIndex = $service.IndexOf("StageAuthoritativePagesAtomicallyAsync(")
@@ -362,7 +362,7 @@ if ($catalogApplyIndex -lt 0 -or
     $promotionResetIndex -lt $promotionMarkerIndex -or
     $stagedApplyIndex -lt $promotionResetIndex -or
     $service -notmatch "var\s+requestCursor\s*=\s*networkCursor" -or
-    $service -notmatch "networkCursor\s*=\s*result\.Value\.SyncCursor") {
+    $service -notmatch "networkCursor\s*=\s*response\.SyncCursor") {
     Fail "full_refresh must validate every response, advance the network cursor, stage the drained chain, then reset/apply"
 } else {
     Pass "full_refresh validates and stages the drained cursor chain before reset/apply"
@@ -466,7 +466,7 @@ if ($service -notmatch "snapshotSummary" -or
     Pass "multi-page pull pins catalog summary"
 }
 if ($shopState -notmatch "SummaryPinned\s*&&\s*!summaryPresent[\s\S]{0,200}catalog_summary_missing_across_runs" -or
-    $service -notmatch "snapshotSummaryPinned\s*&&\s*result\.Value\.CatalogSummary\s*==\s*null" -or
+    $service -notmatch "snapshotSummaryPinned\s*&&\s*response\.CatalogSummary\s*==\s*null" -or
     $service -notmatch 'const string summaryMissingCode\s*=\s*"catalog_summary_missing_mid_pull"[\s\S]{0,700}RequestFullRepairWhileBarrierHeldAsync' -or
     $catalogExactnessTests -notmatch "catalog_summary_missing_across_runs") {
     Fail "a pinned catalog summary may disappear without forcing repair"
@@ -523,7 +523,7 @@ if ($service -notmatch "LoadDeltaChainAsync" -or
 } else {
     Pass "resumable delta pulls reject partial/corrupt checkpoints before network apply"
 }
-if ($service -notmatch "ValidateCatalogPull" -or $compatibility -notmatch "catalog_schema_not_supported" -or $compatibility -notmatch "catalog_capability_not_supported" -or $compatibility -notmatch "policy_contract_not_supported") { Fail "catalog schema/policy/capability fail-closed validation missing" } else { Pass "catalog schema, policy and capabilities fail closed" }
+if ($service -notmatch "AssessCatalogPull" -or $compatibility -notmatch "ValidateCatalogPull" -or $compatibility -notmatch "catalog_schema_not_supported" -or $compatibility -notmatch "catalog_capability_not_supported" -or $compatibility -notmatch "policy_contract_not_supported") { Fail "catalog schema/policy/capability fail-closed validation missing" } else { Pass "catalog schema, policy and capabilities fail closed" }
 if ($compatibility -notmatch "ValidateCatalogVersion\(response\.CatalogVersion\)" -or
     $compatibility -notmatch "IsRequiredCanonicalText" -or
     $compatibility -notmatch "CatalogVersionMaximumLength" -or
@@ -551,13 +551,13 @@ if ($compatibility -notmatch "ValidateCatalogRows" -or
     $compatibility -notmatch "catalog_category_row_invalid" -or
     $compatibility -notmatch "catalog_supplier_row_invalid" -or
     $compatibility -notmatch "catalog_product_tombstone_invalid" -or
-    $compatibility.IndexOf("ValidateCatalogRows(response.Catalog)") -gt $compatibility.IndexOf("ValidateCatalogSummary(response.CatalogSummary)")) {
+    $compatibility.IndexOf("ValidateCatalogRows(response.Catalog, validateDisplayText)") -gt $compatibility.IndexOf("ValidateCatalogSummary(response.CatalogSummary)")) {
     Fail "catalog payload rows must be validated fail-closed before apply/summary verification"
 } else {
     Pass "catalog products, references, prices and tombstones are validated before apply"
 }
 $compatibilityIndex = $service.IndexOf(
-    "ValidateCatalogPull(result.Value)",
+    "AssessCatalogPull(result.Value)",
     [System.StringComparison]::Ordinal)
 $evidenceIndex = $service.IndexOf(
     ".StageAuthoritativePagesAtomicallyAsync(",

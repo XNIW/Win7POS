@@ -32,8 +32,12 @@ namespace Win7POS.Data.Online
             for (var index = 0; index < products.Length; index++)
             {
                 var product = products[index];
+                var recovered = CatalogDisplayRecoveryPolicy.Recover(new PosCatalogPullResponse
+                {
+                    Catalog = new PosCatalogPayload { Products = new[] { product } }
+                }).RecoveredResponse;
                 var rowCode = PosOnlineCompatibilityValidator.ValidateCatalogRows(
-                    new PosCatalogPayload { Products = new[] { product } });
+                    recovered?.Catalog);
                 if (!string.IsNullOrWhiteSpace(rowCode))
                 {
                     return Describe(index + 1, product);
@@ -51,6 +55,10 @@ namespace Win7POS.Data.Online
             int row,
             PosCatalogProductResponse value)
         {
+            value = CatalogDisplayRecoveryPolicy.Recover(new PosCatalogPullResponse
+            {
+                Catalog = new PosCatalogPayload { Products = new[] { value } }
+            }).RecoveredResponse?.Catalog?.Products?[0];
             var result = new CatalogProductRowDiagnostic
             {
                 BarcodeLength = Length(value?.Barcode),
