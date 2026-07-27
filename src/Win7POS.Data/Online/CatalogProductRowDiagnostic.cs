@@ -12,12 +12,18 @@ namespace Win7POS.Data.Online
     public sealed class CatalogProductRowDiagnostic
     {
         public int BarcodeLength { get; private set; }
+        public int CategoryIdLength { get; private set; }
+        public int ItemNumberLength { get; private set; }
         public int ProductIdLength { get; private set; }
         public int ProductNameLength { get; private set; }
+        public string PurchasePriceClass { get; private set; } = string.Empty;
         public int Row { get; private set; }
         public string PriceClass { get; private set; } = string.Empty;
         public string Reason { get; private set; } = string.Empty;
         public int SecondProductNameLength { get; private set; }
+        public string StockQuantityClass { get; private set; } = string.Empty;
+        public int SupplierIdLength { get; private set; }
+        public int UpdatedAtLength { get; private set; }
 
         public static CatalogProductRowDiagnostic FindFirstInvalid(
             PosCatalogProductResponse[] rows)
@@ -48,29 +54,85 @@ namespace Win7POS.Data.Online
             var result = new CatalogProductRowDiagnostic
             {
                 BarcodeLength = Length(value?.Barcode),
+                CategoryIdLength = Length(value?.CategoryId),
+                ItemNumberLength = Length(value?.ItemNumber),
                 ProductIdLength = Length(value?.ProductId),
                 ProductNameLength = Length(value?.ProductName),
+                PurchasePriceClass = DescribeOptionalNonNegativeFinite(value?.PurchasePrice, int.MaxValue),
                 Row = Math.Max(0, row),
                 SecondProductNameLength = Length(value?.SecondProductName),
-                PriceClass = DescribePrice(value?.RetailPrice)
+                PriceClass = DescribePrice(value?.RetailPrice),
+                StockQuantityClass = DescribeOptionalNonNegativeFinite(value?.StockQuantity, int.MaxValue),
+                SupplierIdLength = Length(value?.SupplierId),
+                UpdatedAtLength = Length(value?.UpdatedAt)
             };
             if (value == null) return result.WithReason("null_product");
-            if (string.IsNullOrWhiteSpace(value.ProductId)) return result.WithReason("missing_remote_product_id");
-            if (string.IsNullOrWhiteSpace(value.Barcode)) return result.WithReason("blank_barcode");
+            if (!RemoteCatalogContentPolicy.IsRequiredText(
+                    value.ProductId,
+                    RemoteCatalogContentPolicy.RemoteIdMaximumLength))
+            {
+                return result.WithReason(string.IsNullOrWhiteSpace(value.ProductId)
+                    ? "missing_remote_product_id"
+                    : "invalid_remote_product_id_text");
+            }
+            if (!RemoteCatalogContentPolicy.IsRequiredText(
+                    value.Barcode,
+                    RemoteCatalogContentPolicy.BarcodeMaximumLength))
+            {
+                return result.WithReason(string.IsNullOrWhiteSpace(value.Barcode)
+                    ? "blank_barcode"
+                    : "invalid_barcode_text");
+            }
+            if (!RemoteCatalogContentPolicy.IsOptionalText(
+                    value.ProductName,
+                    RemoteCatalogContentPolicy.NameMaximumLength))
+            {
+                return result.WithReason("invalid_product_name_text");
+            }
+            if (!RemoteCatalogContentPolicy.IsOptionalText(
+                    value.SecondProductName,
+                    RemoteCatalogContentPolicy.NameMaximumLength))
+            {
+                return result.WithReason("invalid_second_product_name_text");
+            }
+            if (!RemoteCatalogContentPolicy.IsOptionalText(
+                    value.ItemNumber,
+                    RemoteCatalogContentPolicy.ItemNumberMaximumLength))
+            {
+                return result.WithReason("invalid_item_number_text");
+            }
+            if (!RemoteCatalogContentPolicy.IsOptionalTimestamp(value.UpdatedAt))
+            {
+                return result.WithReason("invalid_updated_at");
+            }
             if (double.IsNaN(value.RetailPrice.GetValueOrDefault()) ||
                 double.IsInfinity(value.RetailPrice.GetValueOrDefault()))
             {
                 return result.WithReason("nonfinite_retail_price");
             }
             if (!value.RetailPrice.HasValue || value.RetailPrice.Value <= 0)
-                return result.WithReason("nonpositive_unit_price_after_conversion");
-            if (value.RetailPrice.Value >= long.MaxValue)
-                return result.WithReason("conversion_overflow");
-            if (ProductIdentityPolicy.IsReservedBarcode(value.Barcode.Trim()))
+                return result.WithReason("nonpositive_retail_price");
+            if (value.RetailPrice.Value > long.MaxValue)
+                return result.WithReason("retail_price_out_of_range");
+            if (!IsOptionalNonNegativeFinite(value.PurchasePrice, int.MaxValue))
             {
-                return result.WithReason(value.Barcode.Trim().StartsWith("DISC:", StringComparison.Ordinal)
-                    ? "reserved_disc_barcode"
-                    : "reserved_manual_barcode");
+                return result.WithReason("invalid_purchase_price");
+            }
+            if (!IsOptionalNonNegativeFinite(value.StockQuantity, int.MaxValue))
+            {
+                return result.WithReason("invalid_stock_quantity");
+            }
+            if (!RemoteCatalogContentPolicy.IsOptionalText(
+                    value.CategoryId,
+                    RemoteCatalogContentPolicy.RemoteIdMaximumLength))
+            {
+                return result.WithReason("invalid_category_id_text");
+            }
+            if (!RemoteCatalogContentPolicy.IsOptionalText(
+                    value.SupplierId,
+                    RemoteCatalogContentPolicy.RemoteIdMaximumLength))
+            {
+                return result.WithReason("invalid_supplier_id_text");
             }
             return result.WithReason(string.IsNullOrEmpty(
                 PosOnlineCompatibilityValidator.ValidateCatalogRows(
@@ -93,6 +155,24 @@ namespace Win7POS.Data.Online
             if (price.Value >= long.MaxValue) return "conversion_saturates_long_max";
             if (RemoteCatalogBatchMapper.ToLong(price) <= 0) return "positive_rounds_to_zero";
             return "positive_converts_to_long";
+        }
+
+        private static bool IsOptionalNonNegativeFinite(double? value, double maximum)
+        {
+            return !value.HasValue ||
+                (!double.IsNaN(value.Value) &&
+                 !double.IsInfinity(value.Value) &&
+                 value.Value >= 0 &&
+                 value.Value <= maximum);
+        }
+
+        private static string DescribeOptionalNonNegativeFinite(double? value, double maximum)
+        {
+            if (!value.HasValue) return "missing";
+            if (double.IsNaN(value.Value) || double.IsInfinity(value.Value)) return "nonfinite";
+            if (value.Value < 0) return "negative";
+            if (value.Value > maximum) return "out_of_range";
+            return "nonnegative_in_range";
         }
 
         private static int Length(string value)

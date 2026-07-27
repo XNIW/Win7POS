@@ -1033,3 +1033,17 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - Aggiunto vault QA DPAPI CurrentUser con ACL current-user/SYSTEM, self-test
   sintetico, harness staging test-only e report/screenshot redatti. Il profilo
   reale non e stato creato o letto e l'acceptance staging non e stata eseguita.
+
+## 2026-07-27 - ASUS catalog product server ownership confirmed
+
+- Un singolo login manuale sulla build diagnostica ha identificato la prima
+  riga non conforme: pagina 3, lane products, riga 56,
+  `invalid_product_name_text`. Il nome ha lunghezza 38 (limite 512); la causa e
+  quindi un carattere di controllo o Unicode malformato nel payload staging.
+- DTO deserializzato, mapping non eseguito e pagina non staged: ownership
+  server/data-contract confermata. Il POS resta fail-closed e non normalizza,
+  salta o inventa il prodotto.
+- Creato l'handoff redatto
+  `docs/HANDOFFS/2026-07-27_WIN7POS_CATALOG_PRODUCT_ROW_INVALID.md` e il prompt
+  Mac esterno nell'evidence root. Gate statici `44/44` e build WPF `net48/x86`
+  PASS; test `net10.0` demandati alla CI per SDK 10 non installato localmente.

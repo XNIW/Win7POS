@@ -595,7 +595,13 @@ namespace Win7POS.Wpf.Pos.Online
                                     " barcodeLength=" + invalidProduct.BarcodeLength.ToString() +
                                     " productNameLength=" + invalidProduct.ProductNameLength.ToString() +
                                     " secondProductNameLength=" + invalidProduct.SecondProductNameLength.ToString() +
-                                    " priceClass=" + SafeCode(invalidProduct.PriceClass));
+                                    " itemNumberLength=" + invalidProduct.ItemNumberLength.ToString() +
+                                    " categoryIdLength=" + invalidProduct.CategoryIdLength.ToString() +
+                                    " supplierIdLength=" + invalidProduct.SupplierIdLength.ToString() +
+                                    " updatedAtLength=" + invalidProduct.UpdatedAtLength.ToString() +
+                                    " priceClass=" + SafeCode(invalidProduct.PriceClass) +
+                                    " purchasePriceClass=" + SafeCode(invalidProduct.PurchasePriceClass) +
+                                    " stockQuantityClass=" + SafeCode(invalidProduct.StockQuantityClass));
                             }
                             await StoreCatalogFailureAsync(compatibilityError).ConfigureAwait(false);
                             await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)

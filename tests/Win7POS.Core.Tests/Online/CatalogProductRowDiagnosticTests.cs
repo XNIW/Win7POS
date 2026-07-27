@@ -37,4 +37,49 @@ public sealed class CatalogProductRowDiagnosticTests
         Assert.AreEqual("nonfinite_retail_price", result.Reason);
         Assert.AreEqual("nonfinite", result.PriceClass);
     }
+
+    [TestMethod]
+    public void InvalidUpdatedAt_IsClassifiedWithoutRenderingTimestamp()
+    {
+        var result = CatalogProductRowDiagnostic.Describe(56, new PosCatalogProductResponse
+        {
+            ProductId = "remote-product",
+            Barcode = "safe-barcode",
+            RetailPrice = 100,
+            UpdatedAt = "not-a-timestamp"
+        });
+
+        Assert.AreEqual("invalid_updated_at", result.Reason);
+        Assert.AreEqual(15, result.UpdatedAtLength);
+    }
+
+    [TestMethod]
+    public void InvalidPurchasePrice_IsClassifiedWithoutRenderingPrice()
+    {
+        var result = CatalogProductRowDiagnostic.Describe(56, new PosCatalogProductResponse
+        {
+            ProductId = "remote-product",
+            Barcode = "safe-barcode",
+            RetailPrice = 100,
+            PurchasePrice = -1
+        });
+
+        Assert.AreEqual("invalid_purchase_price", result.Reason);
+        Assert.AreEqual("negative", result.PurchasePriceClass);
+    }
+
+    [TestMethod]
+    public void UnsafeProductName_IsClassifiedWithoutRenderingName()
+    {
+        var result = CatalogProductRowDiagnostic.Describe(56, new PosCatalogProductResponse
+        {
+            ProductId = "remote-product",
+            Barcode = "safe-barcode",
+            ProductName = "sanitized fixture\nwith control",
+            RetailPrice = 100
+        });
+
+        Assert.AreEqual("invalid_product_name_text", result.Reason);
+        Assert.AreEqual(30, result.ProductNameLength);
+    }
 }
