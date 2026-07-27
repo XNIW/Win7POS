@@ -143,6 +143,13 @@ namespace Win7POS.Wpf.Pos.Dialogs
             text.AppendLine("catalog.full_reason=" + SafeCode(_snapshot.CatalogLastFullReasonCode));
             text.AppendLine("catalog.full_ratio_percent=" + SafeCode(_snapshot.CatalogFullRatioPercent));
             text.AppendLine("catalog.error=" + SafeCode(_snapshot.CatalogErrorCode));
+            text.AppendLine("catalog.error_stage=" + SafeCode(_snapshot.CatalogErrorStage));
+            text.AppendLine("catalog.http_status=" + SafeCode(_snapshot.CatalogErrorHttpStatus));
+            text.AppendLine("catalog.error_at=" + SafeCode(_snapshot.CatalogErrorAtText));
+            text.AppendLine("catalog.support_id=" + SafeCode(_snapshot.CatalogErrorSupportId));
+            text.AppendLine("catalog.error_pages_processed=" + _snapshot.CatalogErrorPagesProcessed.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("catalog.error_rows_applied=" + _snapshot.CatalogErrorRowsApplied.ToString(CultureInfo.InvariantCulture));
+            text.AppendLine("catalog.error_retryable=" + _snapshot.CatalogErrorRetryable.ToString(CultureInfo.InvariantCulture));
             text.AppendLine("catalog.observed_revision_fingerprint=" + SafeCode(_snapshot.CatalogObservedRevisionFingerprint));
             text.AppendLine("catalog.committed_revision_fingerprint=" + SafeCode(_snapshot.CatalogCommittedRevisionFingerprint));
             text.AppendLine("catalog.revision_status=" + SafeCode(_snapshot.CatalogRevisionMatchCode));

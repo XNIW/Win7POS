@@ -19,6 +19,13 @@ namespace Win7POS.Wpf.Pos.Online
         private const string LastCatalogSyncSettingKey = "pos.catalog.last_sync_at";
         private const string LastCatalogSyncCursorSettingKey = "pos.catalog.last_sync_cursor";
         private const string LastCatalogErrorSettingKey = "pos.catalog.last_error";
+        private const string LastCatalogErrorAtSettingKey = "pos.catalog.last_error_at";
+        private const string LastCatalogErrorStageSettingKey = "pos.catalog.last_error_stage";
+        private const string LastCatalogHttpStatusSettingKey = "pos.catalog.last_http_status";
+        private const string LastCatalogIncidentIdSettingKey = "pos.catalog.last_incident_id";
+        private const string LastCatalogPagesProcessedSettingKey = "pos.catalog.last_pages_processed";
+        private const string LastCatalogRowsAppliedSettingKey = "pos.catalog.last_rows_applied";
+        private const string LastCatalogRetryableSettingKey = "pos.catalog.last_retryable";
         private const string LastCatalogUpdatedProductsSettingKey = "pos.catalog.last_updated_products";
         private const string LastCatalogTombstonesReceivedSettingKey = "pos.catalog.last_tombstones_received";
         private const string LastCatalogTombstonesAppliedSettingKey = "pos.catalog.last_tombstones_applied";
@@ -246,6 +253,7 @@ namespace Win7POS.Wpf.Pos.Online
             OnlineSyncGeneration generation = null,
             OnlineSyncLaneExecutionContext executionContext = null)
         {
+            var incidentId = PosRuntimeDiagnostic.CreateLocalIncidentId();
             if (options == null ||
                 trustedSession == null ||
                 string.IsNullOrWhiteSpace(trustedSession.DeviceToken) ||
@@ -351,6 +359,10 @@ namespace Win7POS.Wpf.Pos.Online
                     var fullLaneConflictCode = string.Empty;
                     var fullStage = new CatalogFullResponseStageRepository(_factory);
                     var fullStageGeneration = Guid.NewGuid().ToString("N");
+                    _logger.LogInfo(
+                        "Catalog pull started: category=catalog.pull operation=catalog.pull stage=request" +
+                        " incidentId=" + SafeId(incidentId) +
+                        " bootstrap=" + BoolText(bootstrapRun));
                     // This implementation does not resume response bodies across process
                     // lifetimes. Remove any abandoned scratch generation before either a
                     // delta or full pull so a crash cannot leave large non-authoritative
@@ -459,12 +471,14 @@ namespace Win7POS.Wpf.Pos.Online
                             // TASK-027 scanner marker: SyncCursor is loaded from persistent shop-bound state.
                             SyncCursor = requestCursor,
                         };
-                        var result = await CatalogPullWithRetryAsync(
+                        var catalogAttempt = await CatalogPullWithRetryAsync(
                             client,
                             request,
                             executionContext,
                             cancellationToken)
                             .ConfigureAwait(false);
+                        var result = catalogAttempt.Result;
+                        var attemptNumber = catalogAttempt.AttemptNumber;
                         var resultCode = result.Value != null && !result.Value.Ok
                             ? FirstNonEmpty(result.Value.Code, "catalog_response_not_ok")
                             : result.Code;
@@ -480,12 +494,14 @@ namespace Win7POS.Wpf.Pos.Online
                             // authoritative-budget evidence has passed.
                             requestCursor = string.Empty;
                             request.SyncCursor = requestCursor;
-                            result = await CatalogPullWithRetryAsync(
+                            catalogAttempt = await CatalogPullWithRetryAsync(
                                 client,
                                 request,
                                 executionContext,
                                 cancellationToken)
                                 .ConfigureAwait(false);
+                            result = catalogAttempt.Result;
+                            attemptNumber = catalogAttempt.AttemptNumber;
                             resultCode = result.Value != null && !result.Value.Ok
                                 ? FirstNonEmpty(result.Value.Code, "catalog_response_not_ok")
                                 : result.Code;
@@ -495,6 +511,16 @@ namespace Win7POS.Wpf.Pos.Online
                         {
                             var authenticationDenied = result.Denied ||
                                 SharedAuthStopPolicy.IsAuthenticationDenied(resultCode);
+                            var diagnostic = CreateCatalogFailureDiagnostic(
+                                result,
+                                resultCode,
+                                authenticationDenied,
+                                attemptNumber,
+                                page,
+                                pagesProcessed,
+                                totalStats,
+                                incidentId,
+                                syncTimer.ElapsedMilliseconds);
                             if (authenticationDenied && clearStoredStateOnDenied)
                             {
                                 _store.Clear();
@@ -522,8 +548,22 @@ namespace Win7POS.Wpf.Pos.Online
                                     .ConfigureAwait(false);
                             }
 
+                            await StoreCatalogRuntimeDiagnosticAsync(diagnostic).ConfigureAwait(false);
+
                             _logger.LogWarning(
-                                "Catalog pull skipped: category=catalog.pull code=" + SafeCode(resultCode) +
+                                "Catalog pull summary: category=catalog.pull result=failure operation=" + diagnostic.Operation +
+                                " stage=" + diagnostic.Stage +
+                                " code=" + diagnostic.Code +
+                                " httpStatus=" + (diagnostic.HttpStatus?.ToString() ?? "none") +
+                                " contentType=" + SafeId(result.ResponseContentType) +
+                                " responseLength=" + (result.ResponseLength?.ToString() ?? "none") +
+                                " attempt=" + diagnostic.AttemptNumber.ToString() +
+                                " page=" + (diagnostic.PageNumber?.ToString() ?? "none") +
+                                " pagesProcessed=" + diagnostic.PagesProcessed.ToString() +
+                                " rowsApplied=" + diagnostic.RowsApplied.ToString() +
+                                " saleSafe=" + BoolText(diagnostic.CatalogSaleSafe) +
+                                " retryable=" + BoolText(diagnostic.Retryable) +
+                                " incidentId=" + SafeId(diagnostic.LocalIncidentId) +
                                 " clientRequestId=" + SafeId(result.ClientRequestId) +
                                 " serverRequestId=" + SafeId(result.ServerRequestId) +
                                 " cfRay=" + SafeId(result.CfRay));
@@ -531,7 +571,8 @@ namespace Win7POS.Wpf.Pos.Online
                                 SafeCode(resultCode),
                                 authenticationDenied,
                                 false,
-                                pagesProcessed);
+                                pagesProcessed,
+                                diagnostic: diagnostic);
                         }
 
                         var compatibilityError = PosOnlineCompatibilityValidator.ValidateCatalogPull(result.Value);
@@ -1510,6 +1551,7 @@ namespace Win7POS.Wpf.Pos.Online
                         ", limit=" + CatalogPullPageLimit.ToString() +
                         ", hasMore=" + lastResponse.HasMore.ToString() +
                         ", catalogVersion=" + (lastResponse.CatalogVersion ?? string.Empty) +
+                        " incidentId=" + SafeId(incidentId) +
                         " clientRequestId=" + SafeId(lastResult?.ClientRequestId) +
                         " serverRequestId=" + SafeId(lastResult?.ServerRequestId) +
                         " cfRay=" + SafeId(lastResult?.CfRay));
@@ -1566,7 +1608,7 @@ namespace Win7POS.Wpf.Pos.Online
             }
         }
 
-        private async Task<PosOnlineResult<PosCatalogPullResponse>> CatalogPullWithRetryAsync(
+        private async Task<CatalogPullAttempt> CatalogPullWithRetryAsync(
             PosAdminWebClient client,
             PosCatalogPullRequest request,
             OnlineSyncLaneExecutionContext executionContext,
@@ -1620,16 +1662,33 @@ namespace Win7POS.Wpf.Pos.Online
                     !IsRetryableCatalogPullCode(result.Code) ||
                     attempt == MaxCatalogPullAttempts)
                 {
-                    return result;
+                    return new CatalogPullAttempt(result, attempt);
                 }
 
                 await Task.Delay(CatalogPullBackoff(attempt), cancellationToken).ConfigureAwait(false);
             }
 
-            return PosOnlineResult<PosCatalogPullResponse>.Failure(
-                "retry_exhausted",
-                "Catalog pull retry exhausted.",
-                false);
+            return new CatalogPullAttempt(
+                PosOnlineResult<PosCatalogPullResponse>.Failure(
+                    "retry_exhausted",
+                    "Catalog pull retry exhausted.",
+                    false),
+                MaxCatalogPullAttempts);
+        }
+
+        private sealed class CatalogPullAttempt
+        {
+            public CatalogPullAttempt(PosOnlineResult<PosCatalogPullResponse> result, int attemptNumber)
+            {
+                Result = result ?? PosOnlineResult<PosCatalogPullResponse>.Failure(
+                    "catalog_request_missing",
+                    "Catalog request result missing.",
+                    false);
+                AttemptNumber = Math.Max(0, attemptNumber);
+            }
+
+            public int AttemptNumber { get; }
+            public PosOnlineResult<PosCatalogPullResponse> Result { get; }
         }
 
         private sealed class CatalogApplyStats
@@ -1893,6 +1952,99 @@ namespace Win7POS.Wpf.Pos.Online
                 _diagnosticGeneration).ConfigureAwait(false);
         }
 
+        private async Task StoreCatalogRuntimeDiagnosticAsync(PosRuntimeDiagnostic diagnostic)
+        {
+            if (diagnostic == null)
+            {
+                return;
+            }
+
+            try
+            {
+                var settings = new SettingsRepository(_factory);
+                await settings.SetStringIfGenerationCurrentAsync(
+                    LastCatalogErrorAtSettingKey,
+                    diagnostic.OccurredAtUtc.ToString("o", CultureInfo.InvariantCulture),
+                    _diagnosticGeneration).ConfigureAwait(false);
+                await settings.SetStringIfGenerationCurrentAsync(
+                    LastCatalogErrorStageSettingKey,
+                    diagnostic.Stage,
+                    _diagnosticGeneration).ConfigureAwait(false);
+                await settings.SetStringIfGenerationCurrentAsync(
+                    LastCatalogHttpStatusSettingKey,
+                    diagnostic.HttpStatus.HasValue
+                        ? diagnostic.HttpStatus.Value.ToString(CultureInfo.InvariantCulture)
+                        : string.Empty,
+                    _diagnosticGeneration).ConfigureAwait(false);
+                await settings.SetStringIfGenerationCurrentAsync(
+                    LastCatalogIncidentIdSettingKey,
+                    diagnostic.SupportId,
+                    _diagnosticGeneration).ConfigureAwait(false);
+                await settings.SetIntIfGenerationCurrentAsync(
+                    LastCatalogPagesProcessedSettingKey,
+                    diagnostic.PagesProcessed,
+                    _diagnosticGeneration).ConfigureAwait(false);
+                await settings.SetIntIfGenerationCurrentAsync(
+                    LastCatalogRowsAppliedSettingKey,
+                    diagnostic.RowsApplied,
+                    _diagnosticGeneration).ConfigureAwait(false);
+                await settings.SetBoolIfGenerationCurrentAsync(
+                    LastCatalogRetryableSettingKey,
+                    diagnostic.Retryable,
+                    _diagnosticGeneration).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    "Catalog diagnostic persistence deferred: category=catalog.pull incidentId=" +
+                    SafeId(diagnostic.LocalIncidentId),
+                    ex);
+            }
+        }
+
+        private async Task ClearCatalogRuntimeDiagnosticAsync(
+            SettingsRepository settings,
+            OnlineSyncGeneration generation)
+        {
+            try
+            {
+                await settings.SetStringIfGenerationCurrentAsync(
+                    LastCatalogErrorAtSettingKey,
+                    string.Empty,
+                    generation).ConfigureAwait(false);
+                await settings.SetStringIfGenerationCurrentAsync(
+                    LastCatalogErrorStageSettingKey,
+                    string.Empty,
+                    generation).ConfigureAwait(false);
+                await settings.SetStringIfGenerationCurrentAsync(
+                    LastCatalogHttpStatusSettingKey,
+                    string.Empty,
+                    generation).ConfigureAwait(false);
+                await settings.SetStringIfGenerationCurrentAsync(
+                    LastCatalogIncidentIdSettingKey,
+                    string.Empty,
+                    generation).ConfigureAwait(false);
+                await settings.SetIntIfGenerationCurrentAsync(
+                    LastCatalogPagesProcessedSettingKey,
+                    0,
+                    generation).ConfigureAwait(false);
+                await settings.SetIntIfGenerationCurrentAsync(
+                    LastCatalogRowsAppliedSettingKey,
+                    0,
+                    generation).ConfigureAwait(false);
+                await settings.SetBoolIfGenerationCurrentAsync(
+                    LastCatalogRetryableSettingKey,
+                    false,
+                    generation).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(
+                    "Catalog diagnostic clear deferred: category=catalog.pull",
+                    ex);
+            }
+        }
+
         private async Task StoreCatalogFailureForGenerationAsync(
             PosTrustedDeviceSession trustedSession,
             long expectedEpoch,
@@ -2001,6 +2153,7 @@ namespace Win7POS.Wpf.Pos.Online
                 LastCatalogErrorSettingKey,
                 string.Empty,
                 generation).ConfigureAwait(false);
+            await ClearCatalogRuntimeDiagnosticAsync(settings, generation).ConfigureAwait(false);
             await settings.SetIntIfGenerationCurrentAsync(
                 LastCatalogUpdatedProductsSettingKey,
                 stats?.UpdatedProducts ?? 0,
@@ -2117,6 +2270,88 @@ namespace Win7POS.Wpf.Pos.Online
                 string.Equals(code, "db_failure", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static PosRuntimeDiagnostic CreateCatalogFailureDiagnostic(
+            PosOnlineResult<PosCatalogPullResponse> result,
+            string code,
+            bool authenticationDenied,
+            int attemptNumber,
+            int pageNumber,
+            int pagesProcessed,
+            CatalogApplyStats stats,
+            string incidentId,
+            long elapsedMilliseconds)
+        {
+            var normalizedCode = SafeCode(code);
+            var stage = authenticationDenied
+                ? "authentication"
+                : result?.HttpStatus.HasValue == true
+                    ? "server_response"
+                    : IsDeserializationCode(normalizedCode)
+                        ? "deserialization"
+                        : IsNetworkCode(normalizedCode)
+                            ? "network"
+                            : "request";
+            var rowsReceived = (stats?.UpdatedProducts ?? 0) +
+                (stats?.CategoryRowsReceived ?? 0) +
+                (stats?.SupplierRowsReceived ?? 0) +
+                (stats?.PriceRowsReceived ?? 0) +
+                (stats?.TombstonesReceived ?? 0);
+            var rowsApplied = (stats?.UpdatedProducts ?? 0) +
+                (stats?.PriceRowsApplied ?? 0) +
+                (stats?.PendingPriceRowsApplied ?? 0) +
+                (stats?.TombstonesApplied ?? 0);
+            var summary = stage == "server_response"
+                ? "Server response stopped the catalog pull."
+                : stage == "network"
+                    ? "Network request did not complete the catalog pull."
+                    : stage == "deserialization"
+                        ? "Catalog response could not be read safely."
+                        : stage == "authentication"
+                            ? "Catalog authorization is no longer valid."
+                            : "Catalog pull did not complete.";
+
+            return new PosRuntimeDiagnostic(
+                "catalog.pull",
+                stage,
+                normalizedCode,
+                result?.HttpStatus,
+                !authenticationDenied && IsRetryableCatalogPullCode(normalizedCode),
+                authenticationDenied,
+                attemptNumber,
+                pageNumber,
+                pagesProcessed,
+                rowsReceived,
+                rowsApplied,
+                false,
+                false,
+                result?.ClientRequestId,
+                result?.ServerRequestId,
+                result?.CfRay,
+                incidentId,
+                DateTimeOffset.UtcNow,
+                elapsedMilliseconds,
+                string.Empty,
+                summary);
+        }
+
+        private static bool IsDeserializationCode(string code)
+        {
+            return string.Equals(code, "invalid_response", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(code, "response_too_large", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsNetworkCode(string code)
+        {
+            return string.Equals(code, "timeout", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(code, "network_error", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(code, "io_error", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string BoolText(bool value)
+        {
+            return value ? "yes" : "no";
+        }
+
         private static bool IsCatalogCursorRejectionCode(string code)
         {
             var normalized = Normalize(code);
@@ -2151,7 +2386,11 @@ namespace Win7POS.Wpf.Pos.Online
                 return "none";
             }
 
-            return normalized.Length > 80 ? normalized.Substring(0, 80) : normalized;
+            var safe = new string(normalized
+                .Where(ch => char.IsLetterOrDigit(ch) || ch == '_' || ch == '-' || ch == '.' || ch == ':')
+                .Take(80)
+                .ToArray());
+            return safe.Length == 0 ? "none" : safe;
         }
 
         private static IReadOnlyDictionary<string, string> BuildCategoryMap(
@@ -2299,7 +2538,8 @@ namespace Win7POS.Wpf.Pos.Online
             int productsApplied,
             int pricesApplied,
             int pricesQueued,
-            int pendingPricesApplied)
+            int pendingPricesApplied,
+            PosRuntimeDiagnostic diagnostic)
         {
             AuthDenied = authDenied;
             CatalogSaleSafe = catalogSaleSafe;
@@ -2311,11 +2551,13 @@ namespace Win7POS.Wpf.Pos.Online
             PricesQueued = pricesQueued;
             ProductsApplied = productsApplied;
             StatusCode = string.IsNullOrWhiteSpace(statusCode) ? "failure" : statusCode;
+            Diagnostic = diagnostic;
         }
 
         public bool AuthDenied { get; }
         public bool CatalogSaleSafe { get; }
         public bool Completed { get; }
+        public PosRuntimeDiagnostic Diagnostic { get; }
         public bool HasMore { get; }
         public int PagesProcessed { get; }
         public int PendingPricesApplied { get; }
@@ -2329,7 +2571,8 @@ namespace Win7POS.Wpf.Pos.Online
             int productsApplied = 0,
             int pricesApplied = 0,
             int pricesQueued = 0,
-            int pendingPricesApplied = 0)
+            int pendingPricesApplied = 0,
+            PosRuntimeDiagnostic diagnostic = null)
         {
             return new PosCatalogPullOutcome(
                 true,
@@ -2341,7 +2584,8 @@ namespace Win7POS.Wpf.Pos.Online
                 productsApplied,
                 pricesApplied,
                 pricesQueued,
-                pendingPricesApplied);
+                pendingPricesApplied,
+                diagnostic);
         }
 
         public static PosCatalogPullOutcome Failure(
@@ -2352,7 +2596,8 @@ namespace Win7POS.Wpf.Pos.Online
             int productsApplied = 0,
             int pricesApplied = 0,
             int pricesQueued = 0,
-            int pendingPricesApplied = 0)
+            int pendingPricesApplied = 0,
+            PosRuntimeDiagnostic diagnostic = null)
         {
             return new PosCatalogPullOutcome(
                 false,
@@ -2364,7 +2609,8 @@ namespace Win7POS.Wpf.Pos.Online
                 productsApplied,
                 pricesApplied,
                 pricesQueued,
-                pendingPricesApplied);
+                pendingPricesApplied,
+                diagnostic);
         }
     }
 }

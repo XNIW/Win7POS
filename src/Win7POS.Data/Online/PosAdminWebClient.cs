@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -217,6 +218,7 @@ namespace Win7POS.Data.Online
             if (_disposed) throw new ObjectDisposedException(nameof(PosAdminWebClient));
 
             var clientRequestId = CreateClientRequestId(relativePath);
+            var requestStopwatch = Stopwatch.StartNew();
             using (var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
             {
             try
@@ -241,6 +243,11 @@ namespace Win7POS.Data.Online
                     {
                         var serverRequestId = FirstHeaderValue(response, "X-Request-Id");
                         var cfRay = FirstHeaderValue(response, "CF-Ray");
+                        var httpStatus = (int)response.StatusCode;
+                        var responseContentType = TrimTechnicalId(
+                            response.Content?.Headers?.ContentType?.MediaType,
+                            80);
+                        var responseLength = response.Content?.Headers?.ContentLength;
                         var authenticationDenied =
                             response.StatusCode == HttpStatusCode.Unauthorized ||
                             response.StatusCode == HttpStatusCode.Forbidden;
@@ -259,7 +266,11 @@ namespace Win7POS.Data.Online
                                     authenticationDenied,
                                     clientRequestId,
                                     serverRequestId,
-                                    cfRay);
+                                    cfRay,
+                                    httpStatus,
+                                    requestStopwatch.ElapsedMilliseconds,
+                                    responseContentType,
+                                    responseLength);
                             }
 
                             var error = errorRead.Value;
@@ -271,7 +282,11 @@ namespace Win7POS.Data.Online
                                 authenticationDenied,
                                 clientRequestId,
                                 FirstNonEmpty(serverRequestId, error?.RequestId),
-                                cfRay);
+                                cfRay,
+                                httpStatus,
+                                requestStopwatch.ElapsedMilliseconds,
+                                responseContentType,
+                                responseLength);
                         }
 
                         var responseRead = await ReadJsonAsync<TResponse>(
@@ -283,10 +298,14 @@ namespace Win7POS.Data.Online
                             return PosOnlineResult<TResponse>.Failure(
                                 "response_too_large",
                                 "Risposta Admin Web POS troppo grande.",
-                                false,
-                                clientRequestId,
-                                serverRequestId,
-                                cfRay);
+                                    false,
+                                    clientRequestId,
+                                    serverRequestId,
+                                    cfRay,
+                                    httpStatus,
+                                    requestStopwatch.ElapsedMilliseconds,
+                                    responseContentType,
+                                    responseLength);
                         }
 
                         if (responseRead.Value == null)
@@ -297,14 +316,22 @@ namespace Win7POS.Data.Online
                                 false,
                                 clientRequestId,
                                 serverRequestId,
-                                cfRay);
+                                cfRay,
+                                httpStatus,
+                                requestStopwatch.ElapsedMilliseconds,
+                                responseContentType,
+                                responseLength);
                         }
 
                         return PosOnlineResult<TResponse>.Ok(
                             responseRead.Value,
                             clientRequestId,
                             serverRequestId,
-                            cfRay);
+                            cfRay,
+                            httpStatus,
+                            requestStopwatch.ElapsedMilliseconds,
+                            responseContentType,
+                            responseLength);
                     }
                 }
             }
@@ -318,7 +345,8 @@ namespace Win7POS.Data.Online
                     "timeout",
                     "Admin Web POS non ha risposto entro il timeout.",
                     false,
-                    clientRequestId);
+                    clientRequestId,
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds);
             }
             catch (HttpRequestException)
             {
@@ -326,7 +354,8 @@ namespace Win7POS.Data.Online
                     "network_error",
                     "Admin Web POS non e raggiungibile.",
                     false,
-                    clientRequestId);
+                    clientRequestId,
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds);
             }
             catch (IOException)
             {
@@ -334,7 +363,8 @@ namespace Win7POS.Data.Online
                     "io_error",
                     "Errore locale durante la richiesta POS online.",
                     false,
-                    clientRequestId);
+                    clientRequestId,
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds);
             }
             catch (InvalidOperationException)
             {
@@ -342,7 +372,8 @@ namespace Win7POS.Data.Online
                     "invalid_operation",
                     "Configurazione Admin Web POS non valida.",
                     false,
-                    clientRequestId);
+                    clientRequestId,
+                    elapsedMilliseconds: requestStopwatch.ElapsedMilliseconds);
             }
             }
         }

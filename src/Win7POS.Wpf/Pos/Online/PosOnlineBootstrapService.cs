@@ -398,13 +398,15 @@ namespace Win7POS.Wpf.Pos.Online
                         catalogSaleSafe
                         ? PosCatalogPullOutcome.CompletedOk(
                             catalogLane.CatalogPagesProcessed,
-                            productsApplied: catalogLane.CatalogRowsApplied)
+                            productsApplied: catalogLane.CatalogRowsApplied,
+                            diagnostic: catalogLane.CatalogDiagnostic)
                         : PosCatalogPullOutcome.Failure(
                             catalogLane.Code,
                             catalogLane.AuthenticationDenied,
                             catalogLane.CatalogHasMore,
                             catalogLane.CatalogPagesProcessed,
-                            productsApplied: catalogLane.CatalogRowsApplied);
+                            productsApplied: catalogLane.CatalogRowsApplied,
+                            diagnostic: catalogLane.CatalogDiagnostic);
                     if (catalogOutcome.Completed && catalogOutcome.CatalogSaleSafe)
                     {
                         progress?.Report(PosCatalogPullProgress.ForPhase("finalizing"));
@@ -422,7 +424,10 @@ namespace Win7POS.Wpf.Pos.Online
                             SafeAuditValue(catalogOutcome.StatusCode) +
                             ", pages=" + catalogOutcome.PagesProcessed.ToString() +
                             ", hasMore=" + catalogOutcome.HasMore.ToString() +
-                            ", authDenied=" + catalogOutcome.AuthDenied.ToString());
+                            ", authDenied=" + catalogOutcome.AuthDenied.ToString() +
+                            ", stage=" + SafeAuditValue(catalogOutcome.Diagnostic?.Stage) +
+                            ", httpStatus=" + (catalogOutcome.Diagnostic?.HttpStatus?.ToString() ?? "none") +
+                            ", incidentId=" + SafeAuditValue(catalogOutcome.Diagnostic?.LocalIncidentId));
                     }
 
                     return PosOnlineBootstrapResult.CatalogIncomplete(
@@ -561,7 +566,8 @@ namespace Win7POS.Wpf.Pos.Online
             bool requiresRetry,
             string clientRequestId,
             string serverRequestId,
-            string cfRay)
+            string cfRay,
+            PosRuntimeDiagnostic diagnostic)
         {
             CanOpenPos = canOpenPos;
             CatalogCompleted = catalogCompleted;
@@ -576,6 +582,7 @@ namespace Win7POS.Wpf.Pos.Online
             RequiresRetry = requiresRetry;
             ServerRequestId = serverRequestId ?? string.Empty;
             Success = success;
+            Diagnostic = diagnostic;
         }
 
         public bool CanOpenPos { get; }
@@ -587,6 +594,7 @@ namespace Win7POS.Wpf.Pos.Online
         public string ClientRequestId { get; }
         public string Code { get; }
         public bool Denied { get; }
+        public PosRuntimeDiagnostic Diagnostic { get; }
         public string Message { get; }
         public bool RequiresRetry { get; }
         public string ServerRequestId { get; }
@@ -611,7 +619,8 @@ namespace Win7POS.Wpf.Pos.Online
                 false,
                 clientRequestId,
                 serverRequestId,
-                cfRay);
+                cfRay,
+                catalogOutcome?.Diagnostic);
         }
 
         public static PosOnlineBootstrapResult Failure(
@@ -620,7 +629,8 @@ namespace Win7POS.Wpf.Pos.Online
             bool denied,
             string clientRequestId = null,
             string serverRequestId = null,
-            string cfRay = null)
+            string cfRay = null,
+            PosRuntimeDiagnostic diagnostic = null)
         {
             return new PosOnlineBootstrapResult(
                 false,
@@ -637,7 +647,8 @@ namespace Win7POS.Wpf.Pos.Online
                 false,
                 clientRequestId,
                 serverRequestId,
-                cfRay);
+                cfRay,
+                diagnostic);
         }
 
         public static PosOnlineBootstrapResult CatalogIncomplete(
@@ -667,9 +678,10 @@ namespace Win7POS.Wpf.Pos.Online
                 status,
                 false,
                 requiresRetry && !denied,
-                clientRequestId,
-                serverRequestId,
-                cfRay);
+                catalogOutcome?.Diagnostic?.ClientRequestId ?? clientRequestId,
+                catalogOutcome?.Diagnostic?.ServerRequestId ?? serverRequestId,
+                catalogOutcome?.Diagnostic?.CfRay ?? cfRay,
+                catalogOutcome?.Diagnostic);
         }
     }
 }

@@ -1121,7 +1121,7 @@ namespace Win7POS.Wpf.Pos.Online
                         bootstrapRun: forceFullRepair,
                         cancellationToken).ConfigureAwait(false);
                 return outcome.AuthDenied
-                    ? OnlineSyncLaneOutcome.AuthDenied(outcome.StatusCode)
+                    ? OnlineSyncLaneOutcome.AuthDenied(outcome.StatusCode, outcome.Diagnostic)
                     : new OnlineSyncLaneOutcome(
                         outcome.Completed || outcome.HasMore,
                         outcome.StatusCode,
@@ -1133,7 +1133,8 @@ namespace Win7POS.Wpf.Pos.Online
                             StringComparison.OrdinalIgnoreCase),
                         catalogPagesProcessed: outcome.PagesProcessed,
                         catalogRowsApplied: SumCatalogRows(outcome),
-                        catalogSaleSafe: outcome.CatalogSaleSafe);
+                        catalogSaleSafe: outcome.CatalogSaleSafe,
+                        catalogDiagnostic: outcome.Diagnostic);
             }
             finally
             {

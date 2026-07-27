@@ -14,6 +14,13 @@ namespace Win7POS.Wpf.Pos.Online
     {
         private const string LastCatalogSyncSettingKey = "pos.catalog.last_sync_at";
         private const string LastCatalogErrorSettingKey = "pos.catalog.last_error";
+        private const string LastCatalogErrorAtSettingKey = "pos.catalog.last_error_at";
+        private const string LastCatalogErrorStageSettingKey = "pos.catalog.last_error_stage";
+        private const string LastCatalogHttpStatusSettingKey = "pos.catalog.last_http_status";
+        private const string LastCatalogIncidentIdSettingKey = "pos.catalog.last_incident_id";
+        private const string LastCatalogPagesProcessedSettingKey = "pos.catalog.last_pages_processed";
+        private const string LastCatalogRowsAppliedSettingKey = "pos.catalog.last_rows_applied";
+        private const string LastCatalogRetryableSettingKey = "pos.catalog.last_retryable";
         private const string LastCatalogHasMoreSettingKey = "pos.catalog.last_has_more";
         private const string LastCatalogVersionSettingKey = "pos.catalog.last_catalog_version";
         private const string CatalogBootstrapStatusSettingKey = "pos.catalog.bootstrap_status";
@@ -62,6 +69,13 @@ namespace Win7POS.Wpf.Pos.Online
 
             var lastCatalog = await settings.GetStringAsync(LastCatalogSyncSettingKey).ConfigureAwait(false);
             var lastCatalogError = await settings.GetStringAsync(LastCatalogErrorSettingKey).ConfigureAwait(false);
+            var lastCatalogErrorAt = await settings.GetStringAsync(LastCatalogErrorAtSettingKey).ConfigureAwait(false);
+            var lastCatalogErrorStage = await settings.GetStringAsync(LastCatalogErrorStageSettingKey).ConfigureAwait(false);
+            var lastCatalogHttpStatus = await settings.GetStringAsync(LastCatalogHttpStatusSettingKey).ConfigureAwait(false);
+            var lastCatalogIncidentId = await settings.GetStringAsync(LastCatalogIncidentIdSettingKey).ConfigureAwait(false);
+            var lastCatalogPagesProcessed = await settings.GetStringAsync(LastCatalogPagesProcessedSettingKey).ConfigureAwait(false);
+            var lastCatalogRowsApplied = await settings.GetStringAsync(LastCatalogRowsAppliedSettingKey).ConfigureAwait(false);
+            var lastCatalogRetryable = await settings.GetBoolAsync(LastCatalogRetryableSettingKey).ConfigureAwait(false) == true;
             var lastCatalogHasMore = await settings.GetBoolAsync(LastCatalogHasMoreSettingKey).ConfigureAwait(false) == true;
             var lastCatalogVersion = await settings.GetStringAsync(LastCatalogVersionSettingKey).ConfigureAwait(false);
             var catalogBootstrapStatus = await settings.GetStringAsync(CatalogBootstrapStatusSettingKey).ConfigureAwait(false);
@@ -125,7 +139,16 @@ namespace Win7POS.Wpf.Pos.Online
                 CatalogCursorFingerprint = RedactedFingerprint(catalogCursor),
                 CatalogDurationMilliseconds = ParseNonNegativeLong(catalogDuration),
                 CatalogErrorCode = SafeCode(lastCatalogError),
-                CatalogErrorText = T("sync.lastCatalogError") + ": " + SafeCode(lastCatalogError),
+                CatalogErrorAtText = FormatIso(lastCatalogErrorAt),
+                CatalogErrorHttpStatus = SafeNumber(lastCatalogHttpStatus),
+                CatalogErrorStage = SafeCode(lastCatalogErrorStage),
+                CatalogErrorSupportId = SafeCode(lastCatalogIncidentId),
+                CatalogErrorText = CatalogDiagnosticText(
+                    lastCatalogError,
+                    lastCatalogErrorStage,
+                    lastCatalogHttpStatus,
+                    lastCatalogIncidentId,
+                    lastCatalogRetryable),
                 CatalogHasError = !string.IsNullOrWhiteSpace(lastCatalogError),
                 CatalogObservedRevisionFingerprint = RedactedFingerprint(catalogObservedRevision),
                 CatalogCommittedRevisionFingerprint = RedactedFingerprint(catalogCommittedRevision),
@@ -136,6 +159,9 @@ namespace Win7POS.Wpf.Pos.Online
                 CatalogLastSuccessText = FormatIso(FirstNonEmpty(catalogLastSuccess, lastCatalog)),
                 CatalogLastTriggerCode = SafeCode(catalogLastTrigger),
                 CatalogPages = ParseNonNegativeLong(catalogPages),
+                CatalogErrorPagesProcessed = ParseNonNegativeLong(lastCatalogPagesProcessed),
+                CatalogErrorRowsApplied = ParseNonNegativeLong(lastCatalogRowsApplied),
+                CatalogErrorRetryable = lastCatalogRetryable,
                 CatalogRepairRequired = catalogExactness.RepairRequired || catalogExactness.Status != CatalogCompletenessStatus.Verified,
                 CatalogRepairText = CatalogRepairText(catalogExactness, catalogSaleSafety),
                 CatalogReadinessText = CatalogReadinessText(
@@ -520,6 +546,34 @@ namespace Win7POS.Wpf.Pos.Online
             return T("sync.catalogBootstrap") + ": " + status;
         }
 
+        private static string CatalogDiagnosticText(
+            string code,
+            string stage,
+            string httpStatus,
+            string supportId,
+            bool retryable)
+        {
+            var text = T("sync.lastCatalogError") + ": " + SafeCode(code);
+            if (!string.IsNullOrWhiteSpace(stage))
+            {
+                text += " | stage=" + SafeCode(stage);
+            }
+
+            var status = SafeNumber(httpStatus);
+            if (!string.Equals(status, "0", StringComparison.Ordinal))
+            {
+                text += " | HTTP=" + status;
+            }
+
+            if (!string.IsNullOrWhiteSpace(supportId))
+            {
+                text += " | supportId=" + SafeCode(supportId);
+            }
+
+            text += " | retry=" + (retryable ? "yes" : "no");
+            return text;
+        }
+
         private static string CatalogReadinessText(
             string catalogSaleSafeAt,
             string bootstrapStatus,
@@ -836,7 +890,14 @@ namespace Win7POS.Wpf.Pos.Online
         public string CatalogCountsText { get; set; } = string.Empty;
         public string CatalogCursorFingerprint { get; set; } = string.Empty;
         public long CatalogDurationMilliseconds { get; set; }
+        public string CatalogErrorAtText { get; set; } = string.Empty;
         public string CatalogErrorCode { get; set; } = string.Empty;
+        public string CatalogErrorHttpStatus { get; set; } = string.Empty;
+        public long CatalogErrorPagesProcessed { get; set; }
+        public bool CatalogErrorRetryable { get; set; }
+        public long CatalogErrorRowsApplied { get; set; }
+        public string CatalogErrorStage { get; set; } = string.Empty;
+        public string CatalogErrorSupportId { get; set; } = string.Empty;
         public string CatalogErrorText { get; set; } = string.Empty;
         public bool CatalogHasError { get; set; }
         public string CatalogObservedRevisionFingerprint { get; set; } = string.Empty;
