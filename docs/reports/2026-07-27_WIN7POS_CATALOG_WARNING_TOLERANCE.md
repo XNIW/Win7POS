@@ -34,8 +34,12 @@ PR #45 merged normally at `de295018b1846581f015f3e0051b1a1894a452f7` after
 the build, CodeQL and dependency/supply-chain checks passed. A clean-main
 solution build and the local synthetic warning acceptance both pass.
 
-Real allowlisted staging acceptance has not run: the required DPAPI profile
-`C:\ProgramData\Win7POS\QaSecrets\asus-staging.dpapi` is absent. The
-acceptance launcher exits with its explicit profile-missing code before it
-creates or changes acceptance data. `DONE` remains prohibited until the profile
-is securely initialized and the one real staging run passes.
+The required DPAPI profile was securely initialized and one real allowlisted
+staging acceptance was executed. The profile and ACL checks passed, but the
+bootstrap returned `bootstrap_failure` before catalog pull: HTTP success is
+false, catalog pages and local catalog counts are zero, and the POS did not
+unlock. The redacted profile-value scan of the acceptance log passed.
+
+No second staging run was performed. `DONE` remains prohibited until the
+staging-side failure or credential-field mapping is clarified and a newly
+authorized acceptance run passes.

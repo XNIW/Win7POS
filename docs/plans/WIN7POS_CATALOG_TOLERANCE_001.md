@@ -44,7 +44,8 @@ is run on Windows 7 SP1 hardware.
 - PR #45 merged normally at `de295018b1846581f015f3e0051b1a1894a452f7`.
 - Required CI, CodeQL and supply-chain checks passed; final independent review
   has P0=0, P1=0, P2=0, P3=0.
-- The post-merge local synthetic warning acceptance passes. Real allowlisted
-  staging acceptance is pending because the local DPAPI profile
-  `asus-staging.dpapi` is absent; it must be initialized only through the
-  hidden-input QA credential script before the single real run.
+- The post-merge local synthetic warning acceptance passes. The DPAPI profile
+  was initialized through the approved protected path and one real allowlisted
+  staging acceptance was executed. Bootstrap failed before catalog pull with
+  the redacted code `bootstrap_failure`; no second run is permitted until the
+  staging-side cause or credential-field mapping is clarified.

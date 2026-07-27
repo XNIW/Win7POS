@@ -1063,5 +1063,6 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 - PR #45 e' stata unita normalmente a `de29501` dopo CI, CodeQL e supply-chain
   verdi; la review indipendente finale ha P0/P1/P2/P3 aperti = 0. Build del
   main pulito e smoke warning sintetico passano. Acceptance reale resta
-  bloccata solo dal profilo DPAPI `asus-staging` assente, senza richiesta o
-  registrazione di credenziali in chat.
+  in `REVIEW`: profilo DPAPI inizializzato e una sola acceptance staging eseguita,
+  ma bootstrap `failure` prima del catalog pull. Il controllo redatto conferma
+  che i valori profilo non sono nel log; non e' stato eseguito un secondo run.
