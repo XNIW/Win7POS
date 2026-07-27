@@ -225,6 +225,12 @@ internal static class Program
                 return;
             }
 
+            if (CatalogRowInvalidAnalyzer.TryParse(args, out var catalogRowInvalidAnalyzerParams))
+            {
+                CatalogRowInvalidAnalyzer.Run(catalogRowInvalidAnalyzerParams);
+                return;
+            }
+
             if (TryParseSupplierExcelPerfSelfTestArgs(args, out var supplierExcelPerfParams))
             {
                 await RunSupplierExcelPerfSelfTestAsync(supplierExcelPerfParams).ConfigureAwait(false);
@@ -289,6 +295,7 @@ internal static class Program
         Console.WriteLine("  --catalog-import-outbox-selftest");
         Console.WriteLine("  --catalog-import-reconciliation-selftest");
         Console.WriteLine("  --catalog-import-sync-http-harness [--base-url <AdminWebUrl>] [--session-json <path>] [--keepdb]");
+        Console.WriteLine("  --catalog-row-invalid-analyzer --db <frozen-pos.db> --evidence-dir <local-evidence-dir>");
         Console.WriteLine("  --sqlite-integrity-selftest");
         Console.WriteLine("  --db-restore-guard-selftest");
         Console.WriteLine("  --supplier-excel-drive-smoke <folder>");

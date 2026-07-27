@@ -28,6 +28,7 @@ $required = @(
     "src/Win7POS.Core/Online/CatalogFullLaneEvidenceTracker.cs",
     "src/Win7POS.Core/Online/CatalogPaginationSafetyPolicy.cs",
     "src/Win7POS.Data/Repositories/RemoteCatalogBatchRepository.cs",
+    "src/Win7POS.Data/Repositories/RemoteCatalogBatchMapper.cs",
     "src/Win7POS.Data/Repositories/CatalogMutationGate.cs",
     "src/Win7POS.Data/Repositories/LocalProductWriter.cs",
     "src/Win7POS.Data/Repositories/ProductIdentityPolicy.cs",
@@ -83,6 +84,7 @@ $statusReader = Read-Text "src/Win7POS.Wpf/Pos/Online/PosSyncStatusReader.cs"
 $repository = Read-Text "src/Win7POS.Data/Repositories/ProductRepository.cs"
 $catalogMutationGate = Read-Text "src/Win7POS.Data/Repositories/CatalogMutationGate.cs"
 $localProductWriter = Read-Text "src/Win7POS.Data/Repositories/LocalProductWriter.cs"
+$batchMapper = Read-Text "src/Win7POS.Data/Repositories/RemoteCatalogBatchMapper.cs"
 $productIdentityPolicy = Read-Text "src/Win7POS.Data/Repositories/ProductIdentityPolicy.cs"
 $productMetaReference = Read-Text "src/Win7POS.Data/Repositories/ProductMetaReference.cs"
 $productMetaResolver = Read-Text "src/Win7POS.Data/Repositories/ProductMetaResolver.cs"
@@ -305,7 +307,8 @@ if ($batchRepository -notmatch "AddStageOccurrences" -or
 } else {
     Pass "authoritative staging preserves invalid/duplicate evidence"
 }
-if ($service -notmatch "ReuseValidatedAuthoritativeStagePage\s*=\s*authoritativeFullRefresh\s*&&\s*stagePage\s*!=\s*null" -or
+if ($service -notmatch "RemoteCatalogBatchMapper\.BuildRemoteCatalogBatch" -or
+    $batchMapper -notmatch "ReuseValidatedAuthoritativeStagePage\s*=\s*authoritativeFullRefresh\s*&&\s*stagePage\s*!=\s*null" -or
     $batchRepository -notmatch "RequireValidatedAuthoritativeStagePageAsync" -or
     $batchRepository -notmatch "Validated authoritative catalog stage scope is missing or ambiguous" -or
     $batchRepository -notmatch "UPDATE catalog_authoritative_stage_scope[\s\S]{0,180}SET transition_epoch" -or
@@ -702,7 +705,7 @@ if ($client -notmatch 'DataMember\(Name = "tombstones"') { Fail "tombstones wire
 if ($remoteCatalogProductWriter -notmatch "remote_product_id") { Fail "remote product id column missing in remote product writer" } else { Pass "remote product id used in remote product writer" }
 if ($remotePriceHistoryRepository -notmatch "remote_catalog_pending_prices" -or $remotePriceHistoryRepository -notmatch "QueuePendingRemotePriceAsync" -or $remotePriceHistoryRepository -notmatch "ApplyPendingRemotePricesAsync") { Fail "pending remote price replay missing" } else { Pass "pending remote price replay present" }
 if ($remotePriceHistoryRepository -notmatch "PendingRemotePriceReplayBatchSize" -or $remotePriceHistoryRepository -notmatch "while\s*\(true\)" -or $remotePriceHistoryRepository -notmatch "canonical" -or $remotePriceHistoryRepository -notmatch "GROUP BY remote_product_id") { Fail "pending remote price replay must drain all resolvable batches against a canonical remote product per remote_product_id" } else { Pass "pending remote price replay drains all resolvable batches against canonical remote product" }
-if ($remotePriceHistoryRepository -notmatch "remote_price_id" -or $initializer -notmatch "remote_price_id" -or $service -notmatch "RemotePriceId\s*=\s*Normalize\(row\.PriceId\)" -or $batchRepository -notmatch "price\.RemotePriceId") { Fail "remote priceId idempotency missing" } else { Pass "remote priceId idempotency present" }
+if ($remotePriceHistoryRepository -notmatch "remote_price_id" -or $initializer -notmatch "remote_price_id" -or $batchMapper -notmatch "RemotePriceId\s*=\s*Normalize\(row\.PriceId\)" -or $batchRepository -notmatch "price\.RemotePriceId") { Fail "remote priceId idempotency missing" } else { Pass "remote priceId idempotency present" }
 if ($repository -notmatch "private readonly RemotePriceHistoryRepository _remotePriceHistory" -or
     $repository -notmatch "_remotePriceHistory\.UpsertRemotePriceHistoryAsync" -or
     $repository -notmatch "_remotePriceHistory\.UpsertOrQueueRemotePriceHistoryAsync" -or
@@ -848,7 +851,7 @@ if ($initializer -notmatch "remote_catalog_price_evidence_quarantine" -or
     $remotePriceHistoryRepository -notmatch "PrepareAuthoritativeRemotePriceRepairAsync" -or
     $remotePriceHistoryRepository -notmatch "StoreRemotePriceOwnershipAsync" -or
     $batchRepository -notmatch "AuthoritativeFullRefresh" -or
-    $service -notmatch "AuthoritativeFullRefresh\s*=\s*authoritativeFullRefresh" -or
+    $batchMapper -notmatch "AuthoritativeFullRefresh\s*=\s*authoritativeFullRefresh" -or
     $catalogImportOutbox -notmatch "EnsureAssignedRemotePriceOwnershipAsync" -or
     $catalogImportOutbox -notmatch "RemotePriceHistoryRepository\s*\.\s*StoreRemotePriceOwnershipAsync") {
     Fail "remote price ownership must be atomic for pull/import writers and legacy evidence must be quarantined only on authoritative full refresh"

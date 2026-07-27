@@ -1127,10 +1127,12 @@ namespace Win7POS.Wpf.Pos.Online
                         outcome.StatusCode,
                         offline: IsOffline(outcome.StatusCode),
                         catalogHasMore: outcome.HasMore,
-                        terminal: string.Equals(
-                            outcome.StatusCode,
-                            CatalogPaginationSafetyPolicy.AmbiguousEndCode,
-                            StringComparison.OrdinalIgnoreCase),
+                        terminal: CatalogRetryPolicy.IsDeterministicRevisionFailure(
+                                      outcome.StatusCode) ||
+                                  string.Equals(
+                                      outcome.StatusCode,
+                                      CatalogPaginationSafetyPolicy.AmbiguousEndCode,
+                                      StringComparison.OrdinalIgnoreCase),
                         catalogPagesProcessed: outcome.PagesProcessed,
                         catalogRowsApplied: SumCatalogRows(outcome),
                         catalogSaleSafe: outcome.CatalogSaleSafe,

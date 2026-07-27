@@ -10,9 +10,9 @@
         DialogBackground="#F1EDF7"
         DialogBorderBrush="#D9CEE8"
         WindowStartupLocation="CenterOwner"
-        SizeToContent="Width"
+        SizeToContent="WidthAndHeight"
         MinWidth="560"
-        MinHeight="720"
+        MinHeight="650"
         ResizeMode="NoResize"
         ShowInTaskbar="False">
     <Grid Background="#F1EDF7">
