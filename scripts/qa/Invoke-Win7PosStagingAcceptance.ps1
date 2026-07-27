@@ -14,7 +14,7 @@ if (-not $profileState.Exists) {
     exit 2
 }
 if (-not $profileState.Valid) {
-    throw 'QA credential profile is corrupt, expired, has an invalid staging hostname, or has unsafe ACLs.'
+    throw 'QA credential profile is corrupt, expired, has an invalid staging hostname, has an invalid stable device identity, or has unsafe ACLs.'
 }
 
 $fullDataDirectory = [System.IO.Path]::GetFullPath($DataDirectory)

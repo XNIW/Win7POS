@@ -52,6 +52,22 @@ public sealed class HttpBoundedStreamingTests
     }
 
     [TestMethod]
+    public async Task FirstLoginSuccessWithoutAnApplicationCode_RemainsAValidTransportSuccess()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes("{\"ok\":true}")));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.FirstLoginAsync(new PosFirstLoginRequest(), CancellationToken.None);
+
+        Assert.IsTrue(result.Success);
+        Assert.IsNotNull(result.Value);
+        Assert.IsTrue(result.Value.Ok);
+        Assert.IsTrue(result.RequestReachedServer);
+        Assert.AreEqual(200, result.HttpStatus.GetValueOrDefault());
+    }
+
+    [TestMethod]
     public async Task ExcessiveDeclaredContentLengthIsRejectedBeforeBodyRead()
     {
         var content = new StreamingOnlyContent(() => new MemoryStream(Array.Empty<byte>()));
@@ -146,6 +162,8 @@ public sealed class HttpBoundedStreamingTests
         Assert.AreEqual("ray-500", result.CfRay);
         Assert.IsFalse(string.IsNullOrWhiteSpace(result.ClientRequestId));
         Assert.IsTrue(result.ElapsedMilliseconds >= 0);
+        Assert.IsTrue(result.RequestReachedServer);
+        Assert.IsTrue(result.Retryable);
     }
 
     [TestMethod]
@@ -165,6 +183,24 @@ public sealed class HttpBoundedStreamingTests
     }
 
     [TestMethod]
+    public async Task EmptyErrorCode_IsClassifiedFromTheHttpStatus()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes("{\"ok\":false}")));
+        using var client = CreateClient(HttpStatusCode.Forbidden, content);
+
+        var result = await client.FirstLoginAsync(new PosFirstLoginRequest(), CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.IsTrue(result.Denied);
+        Assert.AreEqual("http_403", result.Code);
+        Assert.AreEqual(403, result.HttpStatus.GetValueOrDefault());
+        Assert.IsTrue(result.RequestReachedServer);
+        Assert.IsFalse(result.Retryable);
+        Assert.AreEqual(string.Empty, result.ExceptionType);
+    }
+
+    [TestMethod]
     public async Task NetworkFailure_IsClassifiedWithoutAnHttpResponse()
     {
         using var client = new PosAdminWebClient(
@@ -177,6 +213,44 @@ public sealed class HttpBoundedStreamingTests
         Assert.IsFalse(result.Denied);
         Assert.AreEqual("network_error", result.Code);
         Assert.IsNull(result.HttpStatus);
+        Assert.IsFalse(result.RequestReachedServer);
+        Assert.IsTrue(result.Retryable);
+        Assert.AreEqual("HttpRequestException", result.ExceptionType);
+    }
+
+    [TestMethod]
+    public async Task TransportFailure_DistinguishesDnsAndTlsWithoutReadingABody()
+    {
+        using var dnsClient = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            new StubHandler(_ => throw new HttpRequestException(
+                "synthetic",
+                new WebException("synthetic", WebExceptionStatus.NameResolutionFailure))));
+        using var tlsClient = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            new StubHandler(_ => throw new HttpRequestException(
+                "synthetic",
+                new WebException("synthetic", WebExceptionStatus.TrustFailure))));
+        using var secureChannelClient = new PosAdminWebClient(
+            new PosAdminWebOptions(new Uri("https://streaming.example.invalid/")),
+            new StubHandler(_ => throw new HttpRequestException(
+                "synthetic",
+                new WebException("synthetic", WebExceptionStatus.SecureChannelFailure))));
+
+        var dns = await dnsClient.FirstLoginAsync(new PosFirstLoginRequest(), CancellationToken.None);
+        var tls = await tlsClient.FirstLoginAsync(new PosFirstLoginRequest(), CancellationToken.None);
+        var secureChannel = await secureChannelClient.FirstLoginAsync(
+            new PosFirstLoginRequest(),
+            CancellationToken.None);
+
+        Assert.AreEqual("dns", dns.Code);
+        Assert.IsFalse(dns.RequestReachedServer);
+        Assert.IsTrue(dns.Retryable);
+        Assert.AreEqual("tls", tls.Code);
+        Assert.IsFalse(tls.RequestReachedServer);
+        Assert.IsTrue(tls.Retryable);
+        Assert.AreEqual("tls", secureChannel.Code);
+        Assert.IsFalse(secureChannel.RequestReachedServer);
     }
 
     [TestMethod]
@@ -192,6 +266,9 @@ public sealed class HttpBoundedStreamingTests
         Assert.IsFalse(result.Denied);
         Assert.AreEqual("timeout", result.Code);
         Assert.IsNull(result.HttpStatus);
+        Assert.IsFalse(result.RequestReachedServer);
+        Assert.IsTrue(result.Retryable);
+        Assert.AreEqual("OperationCanceledException", result.ExceptionType);
     }
 
     [TestMethod]

@@ -155,6 +155,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HasArg(args, "--runtime-observability-smoke");
             var catalogDisplayWarningSmoke =
                 HasArg(args, "--catalog-display-warning-smoke");
+            var bootstrapContractSmoke =
+                HasArg(args, "--bootstrap-contract-smoke");
+            var bootstrapDiagnosticsMatrixSmoke =
+                HasArg(args, "--bootstrap-diagnostics-matrix-smoke");
             var stagingAcceptance = HasArg(args, "--staging-acceptance");
             var stagingProfile = ValueAfter(args, "--profile");
             var acceptanceOutput = ValueAfter(args, "--acceptance-output");
@@ -203,6 +207,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                HasArg(args, "--capture-settings-audit") ||
                                runtimeObservabilitySmoke ||
                                catalogDisplayWarningSmoke ||
+                               bootstrapContractSmoke ||
+                               bootstrapDiagnosticsMatrixSmoke ||
                                stagingAcceptance ||
                                verifyOfflineSalesSandboxSafety ||
                                HasArg(args, "--lifecycle");
@@ -226,6 +232,28 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 try
                 {
+                    if (bootstrapContractSmoke)
+                    {
+                        var result = StagingAcceptanceWpfHarness.RunOfflineContractSmoke();
+                        File.WriteAllText(
+                            Path.Combine(artifactDirectory, "bootstrap-contract-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
+                    if (bootstrapDiagnosticsMatrixSmoke)
+                    {
+                        var result = StagingAcceptanceWpfHarness.RunOfflineDiagnosticsMatrixSmoke();
+                        File.WriteAllText(
+                            Path.Combine(artifactDirectory, "bootstrap-diagnostics-matrix-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
                     if (stagingAcceptance)
                     {
                         var passed = await StagingAcceptanceWpfHarness

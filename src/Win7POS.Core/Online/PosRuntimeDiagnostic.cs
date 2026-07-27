@@ -138,7 +138,7 @@ namespace Win7POS.Core.Online
 
         private static string NormalizeId(string value)
         {
-            return NormalizeAscii(value, 100, allowDot: true, allowColon: true);
+            return PosTechnicalIdentifier.Redact(value);
         }
 
         private static string NormalizeAscii(string value, int maximumLength, bool allowDot, bool allowColon)
@@ -185,11 +185,28 @@ namespace Win7POS.Core.Online
             switch ((stage ?? string.Empty).Trim())
             {
                 case "validation":
+                case "profile_validation":
+                case "request_build":
+                case "dns":
+                case "tls":
                 case "network":
+                case "timeout":
                 case "request":
                 case "server_response":
+                case "invalid_response":
                 case "deserialization":
                 case "authentication":
+                case "first_login_contract":
+                case "device_pending_approval":
+                case "device_denied":
+                case "staff_denied":
+                case "session_creation":
+                case "trusted_session_persistence":
+                case "shop_transition":
+                case "operator_mirror":
+                case "catalog_start":
+                case "catalog_pull":
+                case "local_operator_login":
                 case "lease":
                 case "catalog_manifest":
                 case "catalog_page":

@@ -1334,14 +1334,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
         private static string GetAppVersion()
         {
-            try
-            {
-                return Assembly.GetExecutingAssembly().GetName().Version?.ToString();
-            }
-            catch
-            {
-                return null;
-            }
+            return PosApplicationVersion.GetCurrent();
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
@@ -1872,9 +1865,9 @@ namespace Win7POS.Wpf.Pos.Dialogs
             var details =
                 "result=" + normalizedResult +
                 " code=" + SafeAuditValue(result?.Code) +
-                " clientRequestId=" + SafeAuditValue(result?.ClientRequestId) +
-                " serverRequestId=" + SafeAuditValue(result?.ServerRequestId) +
-                " cfRay=" + SafeAuditValue(result?.CfRay) +
+                " clientRequestId=" + PosTechnicalIdentifier.Redact(result?.ClientRequestId) +
+                " serverRequestId=" + PosTechnicalIdentifier.Redact(result?.ServerRequestId) +
+                " cfRay=" + PosTechnicalIdentifier.Redact(result?.CfRay) +
                 " catalogStatus=" + SafeAuditValue(result?.CatalogStatus) +
                 " catalogSaleSafe=" + BoolText(result != null && result.CatalogSaleSafe) +
                 " requiresRetry=" + BoolText(result != null && result.RequiresRetry) +
