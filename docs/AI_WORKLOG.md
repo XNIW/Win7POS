@@ -1048,7 +1048,7 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   Mac esterno nell'evidence root. Gate statici `44/44` e build WPF `net48/x86`
   PASS; test `net10.0` demandati alla CI per SDK 10 non installato localmente.
 
-## 2026-07-27 - WIN7POS-CATALOG-TOLERANCE-001 (EXECUTION)
+## 2026-07-27 - WIN7POS-CATALOG-TOLERANCE-001 (REVIEW)
 
 - Creato worktree isolato `codex/asus-catalog-warning-tolerance-20260727` da
   `e1dcbe7`; il precedente worktree interrotto era pulito e la sua patch binaria
@@ -1059,5 +1059,9 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   sono normalizzati permissivamente.
 - Vendorizzato byte per byte il fixture comune Admin/Android/iOS (Git blob
   `63e527a`, SHA-256 `1cec15e9…36ae9a6`) e aggiunto il fixture consumer
-  Win7POS. Stato `EXECUTION`: review, merge e staging acceptance restano da
-  completare prima di una transizione a `DONE`.
+  Win7POS.
+- PR #45 e' stata unita normalmente a `de29501` dopo CI, CodeQL e supply-chain
+  verdi; la review indipendente finale ha P0/P1/P2/P3 aperti = 0. Build del
+  main pulito e smoke warning sintetico passano. Acceptance reale resta
+  bloccata solo dal profilo DPAPI `asus-staging` assente, senza richiesta o
+  registrazione di credenziali in chat.

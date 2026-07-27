@@ -1,6 +1,6 @@
 # Win7POS catalog warning tolerance — 2026-07-27
 
-Status: `EXECUTION`.
+Status: `REVIEW`.
 
 This report will become the closeout record after the feature has passed local
 validation, independent review, normal merge and real staging acceptance.
@@ -27,3 +27,15 @@ findings: P0=0, P1=0, P2=0, P3=0.
 The follow-up uses identity-specific validation for barcode and remote IDs,
 guards the mapper fallback for direct callers, and persists/reads the aggregate
 warning state atomically under the active sync-generation fence.
+
+## Post-merge verification
+
+PR #45 merged normally at `de295018b1846581f015f3e0051b1a1894a452f7` after
+the build, CodeQL and dependency/supply-chain checks passed. A clean-main
+solution build and the local synthetic warning acceptance both pass.
+
+Real allowlisted staging acceptance has not run: the required DPAPI profile
+`C:\ProgramData\Win7POS\QaSecrets\asus-staging.dpapi` is absent. The
+acceptance launcher exits with its explicit profile-missing code before it
+creates or changes acceptance data. `DONE` remains prohibited until the profile
+is securely initialized and the one real staging run passes.

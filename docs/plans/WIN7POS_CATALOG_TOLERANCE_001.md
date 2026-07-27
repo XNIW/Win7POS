@@ -4,7 +4,7 @@
 
 - Tracking key: `WIN7POS-CATALOG-TOLERANCE-001`
 - Local task ID: `ASUS-W7POS-013` (next free Win7POS ASUS task ID)
-- Status: `EXECUTION`
+- Status: `REVIEW`
 - Base: `e1dcbe7757d06b9e2ec30102d8654ea5e12412c6`
 
 ## Scope
@@ -38,3 +38,13 @@ fallback and records only an aggregate warning.
 P0/P1/P2 findings, normal PR merge, required CI and one real DPAPI staging
 acceptance. Windows 7 physical validation remains `EXTERNAL_PENDING` unless it
 is run on Windows 7 SP1 hardware.
+
+## Post-merge review state
+
+- PR #45 merged normally at `de295018b1846581f015f3e0051b1a1894a452f7`.
+- Required CI, CodeQL and supply-chain checks passed; final independent review
+  has P0=0, P1=0, P2=0, P3=0.
+- The post-merge local synthetic warning acceptance passes. Real allowlisted
+  staging acceptance is pending because the local DPAPI profile
+  `asus-staging.dpapi` is absent; it must be initialized only through the
+  hidden-input QA credential script before the single real run.
