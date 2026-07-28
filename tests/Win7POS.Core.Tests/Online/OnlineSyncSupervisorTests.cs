@@ -341,13 +341,14 @@ public sealed class OnlineSyncSupervisorTests
     {
         var allRunnersEntered = NewSignal();
         var twoRequestsStarted = NewSignal();
+        var laneCount = Enum.GetValues<OnlineSyncLane>().Length;
         var runners = 0;
         var requests = 0;
         using var supervisor = new OnlineSyncSupervisor(
             Generation("generation-stop"),
             async (context, _, cancellationToken) =>
             {
-                if (Interlocked.Increment(ref runners) == 4)
+                if (Interlocked.Increment(ref runners) == laneCount)
                     allRunnersEntered.TrySetResult(true);
                 return await context.ExecuteRequestAsync(async requestCancellationToken =>
                 {
