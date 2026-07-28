@@ -335,6 +335,22 @@ namespace Win7POS.Data.Online
                             response.Content,
                             MaxResponseBodyBytes,
                             requestToken).ConfigureAwait(false);
+                        if (responseRead.Truncated)
+                        {
+                            return PosOnlineResult<TResponse>.Failure(
+                                "io_error",
+                                "Risposta Admin Web POS interrotta durante la lettura.",
+                                false,
+                                clientRequestId,
+                                serverRequestId,
+                                cfRay,
+                                httpStatus,
+                                requestStopwatch.ElapsedMilliseconds,
+                                responseContentType,
+                                responseLength,
+                                requestReachedServer: true,
+                                retryable: true);
+                        }
                         if (responseRead.TooLarge)
                         {
                             return PosOnlineResult<TResponse>.Failure(
@@ -643,7 +659,11 @@ namespace Win7POS.Data.Online
             }
 
             using (var stream = await content.ReadAsStreamAsync().ConfigureAwait(false))
-            using (var bounded = new BoundedCountingReadStream(stream, maxBytes, cancellationToken))
+            using (var bounded = new BoundedCountingReadStream(
+                stream,
+                maxBytes,
+                contentLength,
+                cancellationToken))
             using (var cancellationRegistration = cancellationToken.Register(
                 state => ((Stream)state).Dispose(),
                 stream))
@@ -656,9 +676,14 @@ namespace Win7POS.Data.Online
                         var serializer = new DataContractJsonSerializer(typeof(T));
                         var value = serializer.ReadObject(bounded) as T;
                         bounded.DrainToEnd();
-                        return value == null
-                            ? BoundedJsonReadResult<T>.Invalid()
-                            : BoundedJsonReadResult<T>.Success(value);
+                        if (bounded.LooksLikeTruncatedJsonResponse)
+                        {
+                            return BoundedJsonReadResult<T>.TruncatedBody();
+                        }
+                        return value == null ||
+                            !bounded.HasCompleteJsonObject
+                                ? BoundedJsonReadResult<T>.Invalid()
+                                : BoundedJsonReadResult<T>.Success(value);
                     }).ConfigureAwait(false);
                 }
                 catch (Exception) when (cancellationToken.IsCancellationRequested)
@@ -672,34 +697,46 @@ namespace Win7POS.Data.Online
                 }
                 catch (SerializationException)
                 {
-                    return BoundedJsonReadResult<T>.Invalid();
+                    return bounded.LooksLikeTruncatedJsonResponse
+                        ? BoundedJsonReadResult<T>.TruncatedBody()
+                        : BoundedJsonReadResult<T>.Invalid();
                 }
                 catch (System.Xml.XmlException)
                 {
-                    return BoundedJsonReadResult<T>.Invalid();
+                    return bounded.LooksLikeTruncatedJsonResponse
+                        ? BoundedJsonReadResult<T>.TruncatedBody()
+                        : BoundedJsonReadResult<T>.Invalid();
                 }
             }
         }
 
         private sealed class BoundedJsonReadResult<T> where T : class
         {
-            private BoundedJsonReadResult(T value, bool tooLarge)
+            private BoundedJsonReadResult(
+                T value,
+                bool tooLarge,
+                bool truncated)
             {
                 Value = value;
                 TooLarge = tooLarge;
+                Truncated = truncated;
             }
 
             internal T Value { get; }
             internal bool TooLarge { get; }
+            internal bool Truncated { get; }
 
             internal static BoundedJsonReadResult<T> Invalid() =>
-                new BoundedJsonReadResult<T>(null, false);
+                new BoundedJsonReadResult<T>(null, false, false);
 
             internal static BoundedJsonReadResult<T> Oversized() =>
-                new BoundedJsonReadResult<T>(null, true);
+                new BoundedJsonReadResult<T>(null, true, false);
+
+            internal static BoundedJsonReadResult<T> TruncatedBody() =>
+                new BoundedJsonReadResult<T>(null, false, true);
 
             internal static BoundedJsonReadResult<T> Success(T value) =>
-                new BoundedJsonReadResult<T>(value, false);
+                new BoundedJsonReadResult<T>(value, false, false);
         }
 
         private sealed class ResponseBodyTooLargeException : IOException
@@ -784,16 +821,29 @@ namespace Win7POS.Data.Online
         {
             private readonly Stream _inner;
             private readonly long _maxBytes;
+            private readonly long? _expectedBytes;
             private readonly CancellationToken _cancellationToken;
             private long _bytesRead;
+            private bool _reachedEnd;
+            private bool _jsonEscape;
+            private bool _jsonInString;
+            private bool _jsonObjectCompleted;
+            private bool _jsonObjectStarted;
+            private bool _jsonTrailingContent;
+            private int _jsonDepth;
 
             internal BoundedCountingReadStream(
                 Stream inner,
                 long maxBytes,
+                long? expectedBytes,
                 CancellationToken cancellationToken)
             {
                 _inner = inner ?? throw new ArgumentNullException(nameof(inner));
                 _maxBytes = maxBytes;
+                _expectedBytes = expectedBytes.HasValue &&
+                    expectedBytes.Value >= 0
+                        ? expectedBytes
+                        : null;
                 _cancellationToken = cancellationToken;
             }
 
@@ -807,6 +857,19 @@ namespace Win7POS.Data.Online
                 set => throw new NotSupportedException();
             }
 
+            internal bool HasCompleteJsonObject =>
+                _reachedEnd &&
+                _jsonObjectStarted &&
+                _jsonObjectCompleted &&
+                !_jsonTrailingContent;
+
+            internal bool LooksLikeTruncatedJsonResponse =>
+                _reachedEnd &&
+                ((_expectedBytes.HasValue &&
+                  _bytesRead < _expectedBytes.Value) ||
+                 (_jsonObjectStarted &&
+                  !_jsonObjectCompleted));
+
             public override void Flush()
             {
             }
@@ -818,6 +881,10 @@ namespace Win7POS.Data.Online
                 {
                     var extra = _inner.Read(buffer, offset, Math.Min(count, 1));
                     if (extra > 0) throw new ResponseBodyTooLargeException();
+                    if (count > 0)
+                    {
+                        _reachedEnd = true;
+                    }
                     return 0;
                 }
 
@@ -825,6 +892,11 @@ namespace Win7POS.Data.Online
                 var read = _inner.Read(buffer, offset, allowed);
                 _bytesRead += read;
                 if (_bytesRead > _maxBytes) throw new ResponseBodyTooLargeException();
+                if (read == 0 && allowed > 0)
+                {
+                    _reachedEnd = true;
+                }
+                ObserveRead(buffer, offset, read);
                 return read;
             }
 
@@ -842,8 +914,12 @@ namespace Win7POS.Data.Online
                         buffer,
                         offset,
                         Math.Min(count, 1),
-                        cancellationToken).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
                     if (extra > 0) throw new ResponseBodyTooLargeException();
+                    if (count > 0)
+                    {
+                        _reachedEnd = true;
+                    }
                     return 0;
                 }
 
@@ -855,6 +931,11 @@ namespace Win7POS.Data.Online
                     cancellationToken).ConfigureAwait(false);
                 _bytesRead += read;
                 if (_bytesRead > _maxBytes) throw new ResponseBodyTooLargeException();
+                if (read == 0 && allowed > 0)
+                {
+                    _reachedEnd = true;
+                }
+                ObserveRead(buffer, offset, read);
                 return read;
             }
 
@@ -864,6 +945,89 @@ namespace Win7POS.Data.Online
                 while (Read(buffer, 0, buffer.Length) > 0)
                 {
                 }
+            }
+
+            private void ObserveRead(byte[] buffer, int offset, int count)
+            {
+                if (count == 0)
+                {
+                    return;
+                }
+
+                for (var index = offset; index < offset + count; index += 1)
+                {
+                    var value = buffer[index];
+                    if (!_jsonObjectStarted)
+                    {
+                        if (IsJsonWhitespace(value))
+                        {
+                            continue;
+                        }
+                        if (value == (byte)'{')
+                        {
+                            _jsonObjectStarted = true;
+                            _jsonDepth = 1;
+                        }
+                        continue;
+                    }
+
+                    if (_jsonObjectCompleted)
+                    {
+                        if (!IsJsonWhitespace(value))
+                        {
+                            _jsonTrailingContent = true;
+                        }
+                        continue;
+                    }
+
+                    if (_jsonInString)
+                    {
+                        if (_jsonEscape)
+                        {
+                            _jsonEscape = false;
+                        }
+                        else if (value == (byte)'\\')
+                        {
+                            _jsonEscape = true;
+                        }
+                        else if (value == (byte)'"')
+                        {
+                            _jsonInString = false;
+                        }
+                        continue;
+                    }
+
+                    if (value == (byte)'"')
+                    {
+                        _jsonInString = true;
+                        continue;
+                    }
+                    if (value == (byte)'{' || value == (byte)'[')
+                    {
+                        _jsonDepth += 1;
+                        continue;
+                    }
+                    if (value == (byte)'}' || value == (byte)']')
+                    {
+                        _jsonDepth -= 1;
+                        if (_jsonDepth == 0)
+                        {
+                            _jsonObjectCompleted = true;
+                        }
+                        else if (_jsonDepth < 0)
+                        {
+                            _jsonTrailingContent = true;
+                        }
+                    }
+                }
+            }
+
+            private static bool IsJsonWhitespace(byte value)
+            {
+                return value == (byte)' ' ||
+                    value == (byte)'\t' ||
+                    value == (byte)'\r' ||
+                    value == (byte)'\n';
             }
 
             public override long Seek(long offset, SeekOrigin origin) =>
