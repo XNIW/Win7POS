@@ -330,7 +330,9 @@ WHERE barcode = @oldBarcode;",
                             updateChanges.Add(
                                 PosArticleMutationFields.CategoryId,
                                 references.Category.Id.HasValue
-                                    ? references.Category.RemoteId
+                                    ? ReferenceIntentValue(
+                                        references.Category,
+                                        category: true)
                                     : null);
                         }
                         if (current.SupplierId != references.Supplier.Id)
@@ -338,7 +340,9 @@ WHERE barcode = @oldBarcode;",
                             updateChanges.Add(
                                 PosArticleMutationFields.SupplierId,
                                 references.Supplier.Id.HasValue
-                                    ? references.Supplier.RemoteId
+                                    ? ReferenceIntentValue(
+                                        references.Supplier,
+                                        category: false)
                                     : null);
                         }
 
@@ -756,18 +760,33 @@ WHERE mutation_id = @mutationId;",
             IDictionary<string, object> changes,
             ResolvedArticleReferences references)
         {
-            if (references.Category.Id.HasValue &&
-                !string.IsNullOrWhiteSpace(references.Category.RemoteId))
+            if (references.Category.Requested &&
+                references.Category.Id.HasValue)
             {
                 changes[PosArticleMutationFields.CategoryId] =
-                    references.Category.RemoteId;
+                    ReferenceIntentValue(references.Category, category: true);
             }
-            if (references.Supplier.Id.HasValue &&
-                !string.IsNullOrWhiteSpace(references.Supplier.RemoteId))
+            if (references.Supplier.Requested &&
+                references.Supplier.Id.HasValue)
             {
                 changes[PosArticleMutationFields.SupplierId] =
-                    references.Supplier.RemoteId;
+                    ReferenceIntentValue(references.Supplier, category: false);
             }
+        }
+
+        private static string ReferenceIntentValue(
+            ResolvedArticleReference reference,
+            bool category)
+        {
+            if (reference == null || !reference.Id.HasValue)
+                return null;
+            if (!string.IsNullOrWhiteSpace(reference.RemoteId))
+                return reference.RemoteId.Trim();
+            return category
+                ? ArticleMutationReferenceDependency.Category(
+                    reference.Id.Value)
+                : ArticleMutationReferenceDependency.Supplier(
+                    reference.Id.Value);
         }
 
         private static string MissingReferenceForChanges(
@@ -783,7 +802,7 @@ WHERE mutation_id = @mutationId;",
                 references.Supplier.Id.HasValue &&
                 string.IsNullOrWhiteSpace(references.Supplier.RemoteId);
             return missingCategory || missingSupplier
-                ? "dependency_missing_remote_reference"
+                ? ArticleMutationReferenceDependency.Code
                 : null;
         }
 
@@ -820,12 +839,20 @@ WHERE mutation_id = @mutationId;",
                     "remote_category_id",
                     category).ConfigureAwait(false)
             };
-            if ((result.Supplier.Id.HasValue &&
+            result.Supplier.Requested =
+                (supplierId.HasValue && supplierId.Value > 0) ||
+                !string.IsNullOrWhiteSpace(supplierName);
+            result.Category.Requested =
+                (categoryId.HasValue && categoryId.Value > 0) ||
+                !string.IsNullOrWhiteSpace(categoryName);
+            if ((result.Supplier.Requested &&
+                 result.Supplier.Id.HasValue &&
                  string.IsNullOrWhiteSpace(result.Supplier.RemoteId)) ||
-                (result.Category.Id.HasValue &&
+                (result.Category.Requested &&
+                 result.Category.Id.HasValue &&
                  string.IsNullOrWhiteSpace(result.Category.RemoteId)))
             {
-                result.DependencyCode = "dependency_missing_remote_reference";
+                result.DependencyCode = ArticleMutationReferenceDependency.Code;
             }
             return result;
         }
@@ -1044,6 +1071,7 @@ VALUES(
             public int? Id { get; set; }
             public string Name { get; set; }
             public string RemoteId { get; set; }
+            public bool Requested { get; set; }
         }
 
         private sealed class ProductStateRow

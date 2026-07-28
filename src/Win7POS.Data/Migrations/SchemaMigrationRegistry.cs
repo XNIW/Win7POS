@@ -183,7 +183,7 @@ alter-sql=" + DbInitializer.ArticleMutationAlterSql + @"
 schema-sql=" + DbInitializer.ArticleMutationSchemaSql + @"
 ledgerless-baseline=" + DbInitializer.PostArticleMutationLedgerlessKnownSchemaSql + @"
 postcondition=current-structural-schema",
-                    "d14708a900419985f3ee34ef93bc77b4627f172562b9fdee451bb8b5b4c11923",
+                    "a881c8100282eef1352df3db13a249eaa200be0ee3fa023b93bfb46ae28197e6",
                     "1.0.0",
                     "Additive tables and nullable columns; downgrade requires restoring the verified backup.",
                     true,

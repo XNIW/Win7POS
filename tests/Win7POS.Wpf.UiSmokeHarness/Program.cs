@@ -1795,6 +1795,20 @@ VALUES(
                 await SubmitProductViewModelAsync(blocked)
                     .ConfigureAwait(true);
 
+                using (var staleConnection = factory.Open())
+                {
+                    await staleConnection.ExecuteAsync(@"
+UPDATE products
+SET remote_base_revision = @revision
+WHERE id = @id;",
+                            new
+                            {
+                                id = remoteLocalId,
+                                revision = "2026-07-28T10:00:01.000001Z"
+                            })
+                        .ConfigureAwait(true);
+                }
+
                 var claim = await new ArticleMutationOutboxRepository(factory)
                     .ClaimBatchAsync("generation-ui-article")
                     .ConfigureAwait(true);

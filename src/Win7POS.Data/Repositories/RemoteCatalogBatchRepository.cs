@@ -1677,7 +1677,13 @@ SELECT p.barcode
 FROM products p
 JOIN temp_catalog_relink_product_ids target
   ON target.remote_product_id = p.remote_product_id
-WHERE COALESCE(p.is_active, 1) = 1;",
+WHERE COALESCE(p.is_active, 1) = 1
+  AND NOT EXISTS (
+    SELECT 1
+    FROM article_mutation_outbox mutation
+    WHERE mutation.local_product_id = p.id
+      AND mutation.state <> 'completed'
+  );",
                 transaction: tx).ConfigureAwait(false);
 
             var rowsAffected = await conn.ExecuteAsync(@"

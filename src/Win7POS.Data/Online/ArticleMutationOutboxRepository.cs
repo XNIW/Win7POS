@@ -24,6 +24,46 @@ namespace Win7POS.Data.Online
         public const string Completed = "completed";
     }
 
+    internal static class ArticleMutationReferenceDependency
+    {
+        internal const string Code = "dependency_missing_remote_reference";
+        private const string CategoryPrefix = "00000000-0000-4000-a001-";
+        private const string SupplierPrefix = "00000000-0000-4000-a002-";
+
+        internal static string Category(int id)
+        {
+            return CategoryPrefix + id.ToString("x12", CultureInfo.InvariantCulture);
+        }
+
+        internal static string Supplier(int id)
+        {
+            return SupplierPrefix + id.ToString("x12", CultureInfo.InvariantCulture);
+        }
+
+        internal static bool TryParseCategory(string value, out int id)
+        {
+            return TryParse(value, CategoryPrefix, out id);
+        }
+
+        internal static bool TryParseSupplier(string value, out int id)
+        {
+            return TryParse(value, SupplierPrefix, out id);
+        }
+
+        private static bool TryParse(string value, string prefix, out int id)
+        {
+            id = 0;
+            var normalized = (value ?? string.Empty).Trim();
+            return normalized.StartsWith(prefix, StringComparison.Ordinal) &&
+                int.TryParse(
+                    normalized.Substring(prefix.Length),
+                    NumberStyles.AllowHexSpecifier,
+                    CultureInfo.InvariantCulture,
+                    out id) &&
+                id > 0;
+        }
+    }
+
     public sealed class ArticleMutationEnqueueRequest
     {
         public long LocalProductId { get; set; }
@@ -177,8 +217,11 @@ WHERE client_product_id = @clientProductId
                 request.MutationKind,
                 PosArticleMutationKinds.ProductDuplicate,
                 StringComparison.Ordinal);
+            var dependencyMissing = !string.IsNullOrWhiteSpace(
+                request.DependencyCode);
             var canSeal =
-                isCreate ||
+                !dependencyMissing &&
+                (isCreate ||
                 (isDuplicate &&
                  !hasEarlierDependency &&
                  !string.IsNullOrWhiteSpace(targetRemoteId) &&
@@ -186,11 +229,46 @@ WHERE client_product_id = @clientProductId
                 (!isDuplicate &&
                  !hasEarlierDependency &&
                  !string.IsNullOrWhiteSpace(targetRemoteId) &&
-                 !string.IsNullOrWhiteSpace(targetBaseRevision));
+                 !string.IsNullOrWhiteSpace(targetBaseRevision)));
 
             PosArticleMutationIntent localIntent;
             PosArticleMutationIntent sealedIntent = null;
-            if (canSeal)
+            if (dependencyMissing && !hasEarlierDependency)
+            {
+                // A reference dependency is a complete immutable product
+                // intent whose local reference placeholders are never
+                // wire-eligible. Keep its target/base identity now, then seal
+                // only after every placeholder resolves to an Admin UUID.
+                localIntent = PosArticleMutationIntentPolicy.Create(
+                    isCreate ? null : targetBaseRevision,
+                    request.Changes,
+                    product.ClientProductId,
+                    createdAt,
+                    request.FieldMask,
+                    idempotencyKey,
+                    localSequence,
+                    mutationId,
+                    request.MutationKind,
+                    occurredAt,
+                    isCreate ? null : targetRemoteId);
+            }
+            else if (dependencyMissing)
+            {
+                // Work already queued for this product must receive the
+                // revision assigned by its predecessor ACK. Persist only the
+                // immutable local change here; materialization will chain it.
+                localIntent = PosArticleMutationIntentPolicy.CreateUnresolved(
+                    request.Changes,
+                    product.ClientProductId,
+                    createdAt,
+                    request.FieldMask,
+                    idempotencyKey,
+                    localSequence,
+                    mutationId,
+                    request.MutationKind,
+                    occurredAt);
+            }
+            else if (canSeal)
             {
                 sealedIntent = PosArticleMutationIntentPolicy.Create(
                     isCreate ? null : targetBaseRevision,
@@ -229,14 +307,16 @@ WHERE client_product_id = @clientProductId
             var payloadHash = sealedIntent == null
                 ? null
                 : PosArticleMutationPayloadHash.Compute(sealedIntent);
-            var state = !string.IsNullOrWhiteSpace(request.DependencyCode)
-                ? ArticleMutationOutboxStates.FailedBlocked
-                : canSeal
+            var state = canSeal
                     ? ArticleMutationOutboxStates.Pending
                     : ArticleMutationOutboxStates.WaitingDependency;
-            var nowText = DateTimeOffset.UtcNow.ToString(
+            var now = DateTimeOffset.UtcNow;
+            var nowText = now.ToString(
                 "yyyy-MM-dd'T'HH:mm:ss.fff'Z'",
                 CultureInfo.InvariantCulture);
+            var nextAttemptAt = dependencyMissing
+                ? now.AddSeconds(30).ToUnixTimeMilliseconds()
+                : 0L;
 
             await connection.ExecuteAsync(@"
 INSERT INTO article_mutation_outbox(
@@ -280,7 +360,7 @@ VALUES(
   @OccurredAt,
   @State,
   0,
-  0,
+  @NextAttemptAt,
   @LastTypedCode,
   @LocalPriceHistoryId,
   @LocalStockAdjustmentId,
@@ -291,10 +371,12 @@ VALUES(
                     MutationId = mutationId,
                     IdempotencyKey = idempotencyKey,
                     ClientProductId = product.ClientProductId,
-                    RemoteProductId = sealedIntent?.RemoteProductId,
+                    RemoteProductId = sealedIntent?.RemoteProductId ??
+                        (isDuplicate ? targetRemoteId : null),
                     request.MutationKind,
                     LocalSequence = localSequence,
-                    BaseRevision = sealedIntent?.BaseRevision,
+                    BaseRevision = sealedIntent?.BaseRevision ??
+                        (isDuplicate ? targetBaseRevision : null),
                     FieldMaskJson = WriteStringArray(localIntent.FieldMask),
                     IntentJson = intentJson,
                     IntentHash = intentHash,
@@ -303,6 +385,7 @@ VALUES(
                     CreatedAt = localIntent.CreatedAt,
                     OccurredAt = localIntent.OccurredAt,
                     State = state,
+                    NextAttemptAt = nextAttemptAt,
                     LastTypedCode = NormalizeCode(request.DependencyCode),
                     request.LocalPriceHistoryId,
                     request.LocalStockAdjustmentId,
@@ -322,8 +405,21 @@ VALUES(
         }
 
         public async Task<int> RecoverInterruptedAsync(
-            TimeSpan? minimumClaimAge = null)
+            TimeSpan? minimumClaimAge = null,
+            string activeClaimOwnerId = null)
         {
+            activeClaimOwnerId =
+                string.IsNullOrWhiteSpace(activeClaimOwnerId)
+                    ? null
+                    : activeClaimOwnerId.Trim();
+            if (activeClaimOwnerId != null &&
+                !PosArticleMutationIntentPolicy.IsSafeId(
+                    activeClaimOwnerId))
+            {
+                throw new ArgumentException(
+                    "Active claim owner ID is invalid.",
+                    nameof(activeClaimOwnerId));
+            }
             using (var connection = _factory.Open())
             using (var transaction = connection.BeginTransaction())
             {
@@ -333,6 +429,34 @@ VALUES(
                     var nowText = FormatTimestamp(now);
                     var cutoffText = FormatTimestamp(
                         now.Subtract(minimumClaimAge ?? TimeSpan.Zero));
+                    var activeClaimTokenPrefix = activeClaimOwnerId == null
+                        ? null
+                        : "claim-" + activeClaimOwnerId + "-";
+                    var interruptedMutationIds =
+                        (await connection.QueryAsync<string>(@"
+SELECT mutation_id
+FROM article_mutation_outbox
+WHERE state = 'in_progress'
+  AND updated_at <= @cutoffAt
+  AND (
+    @activeClaimTokenPrefix IS NULL
+    OR claim_token IS NULL
+    OR substr(
+         claim_token,
+         1,
+         length(@activeClaimTokenPrefix)) <> @activeClaimTokenPrefix
+  );",
+                            new
+                            {
+                                activeClaimTokenPrefix,
+                                cutoffAt = cutoffText
+                            },
+                            transaction).ConfigureAwait(false)).ToArray();
+                    if (interruptedMutationIds.Length == 0)
+                    {
+                        transaction.Commit();
+                        return 0;
+                    }
                     var recovered = await connection.ExecuteAsync(@"
 UPDATE article_mutation_outbox
 SET state = 'retry_wait',
@@ -342,25 +466,30 @@ SET state = 'retry_wait',
     claim_token = NULL,
     updated_at = @updatedAt
 WHERE state = 'in_progress'
-  AND updated_at <= @cutoffAt;",
+  AND mutation_id IN @mutationIds;",
                         new
                         {
+                            mutationIds = interruptedMutationIds,
                             nextAttemptAt = now.ToUnixTimeMilliseconds(),
-                            updatedAt = nowText,
-                            cutoffAt = cutoffText
+                            updatedAt = nowText
                         },
                         transaction).ConfigureAwait(false);
+                    if (recovered != interruptedMutationIds.Length)
+                    {
+                        throw new InvalidOperationException(
+                            "Interrupted article mutation recovery lost its claim fence.");
+                    }
                     await connection.ExecuteAsync(@"
 UPDATE article_mutation_attempts
 SET completed_at = @completedAt,
     outcome = 'client_interrupted'
 WHERE completed_at IS NULL
-  AND mutation_id IN (
-    SELECT mutation_id
-    FROM article_mutation_outbox
-    WHERE last_typed_code = 'client_interrupted'
-  );",
-                        new { completedAt = nowText },
+  AND mutation_id IN @mutationIds;",
+                        new
+                        {
+                            completedAt = nowText,
+                            mutationIds = interruptedMutationIds
+                        },
                         transaction).ConfigureAwait(false);
                     transaction.Commit();
                     return recovered;
@@ -375,11 +504,22 @@ WHERE completed_at IS NULL
 
         public async Task<ArticleMutationClaim> ClaimBatchAsync(
             string generationId,
-            int maximumCount = PosArticleMutationContract.MaximumBatchCount)
+            int maximumCount = PosArticleMutationContract.MaximumBatchCount,
+            string claimOwnerId = null)
         {
             generationId = (generationId ?? string.Empty).Trim();
             if (!PosArticleMutationIntentPolicy.IsSafeId(generationId))
                 throw new ArgumentException("A safe generation ID is required.");
+            claimOwnerId = string.IsNullOrWhiteSpace(claimOwnerId)
+                ? null
+                : claimOwnerId.Trim();
+            if (claimOwnerId != null &&
+                !PosArticleMutationIntentPolicy.IsSafeId(claimOwnerId))
+            {
+                throw new ArgumentException(
+                    "A safe claim owner ID is required.",
+                    nameof(claimOwnerId));
+            }
             if (maximumCount < 1 ||
                 maximumCount > PosArticleMutationContract.MaximumBatchCount)
             {
@@ -392,6 +532,10 @@ WHERE completed_at IS NULL
                 try
                 {
                     var now = DateTimeOffset.UtcNow;
+                    await MaterializeReadyReferenceDependenciesAsync(
+                        connection,
+                        transaction,
+                        now).ConfigureAwait(false);
                     var candidates = (await connection.QueryAsync<ArticleMutationOutboxRow>(@"
 SELECT id AS Id,
        local_product_id AS LocalProductId,
@@ -432,7 +576,8 @@ LIMIT 100;",
                     {
                         if (!products.Add(candidate.ClientProductId))
                             continue;
-                        if (await HasStaleBaseAsync(
+                        if (candidate.AttemptCount == 0 &&
+                            await HasStaleBaseAsync(
                                 connection,
                                 transaction,
                                 candidate).ConfigureAwait(false))
@@ -458,7 +603,11 @@ LIMIT 100;",
                         };
                     }
 
-                    var claimToken = "claim-" + Guid.NewGuid().ToString("N");
+                    var claimToken = "claim-" +
+                        (claimOwnerId == null
+                            ? string.Empty
+                            : claimOwnerId + "-") +
+                        Guid.NewGuid().ToString("N");
                     var requests = new List<PosArticleMutationRequest>(selected.Count);
                     foreach (var item in selected)
                     {
@@ -601,8 +750,10 @@ SELECT id AS Id,
        mutation_kind AS MutationKind,
        local_sequence AS LocalSequence,
        base_revision AS BaseRevision,
+       field_mask_json AS FieldMaskJson,
        state AS State,
        attempt_count AS AttemptCount,
+       local_price_history_id AS LocalPriceHistoryId,
        claim_generation_id AS ClaimGenerationId,
        claim_token AS ClaimToken
 FROM article_mutation_outbox
@@ -815,9 +966,19 @@ WHERE candidate.state IN ('pending', 'retry_wait')
                 var nextRetryAt = await connection.ExecuteScalarAsync<long?>(@"
 SELECT MIN(next_attempt_at)
 FROM article_mutation_outbox
-WHERE state IN ('pending', 'retry_wait')
+WHERE (
+    state IN ('pending', 'retry_wait')
+    OR (
+      state = 'waiting_dependency'
+      AND last_typed_code = @dependencyCode
+    )
+  )
   AND next_attempt_at > @now;",
-                    new { now }).ConfigureAwait(false);
+                    new
+                    {
+                        now,
+                        dependencyCode = ArticleMutationReferenceDependency.Code
+                    }).ConfigureAwait(false);
                 return new OutboxDrainState(remainingDue, nextRetryAt);
             }
         }
@@ -883,6 +1044,152 @@ WHERE id = @localProductId
                 throw new InvalidDataException(
                     "Article mutation ACK could not update the stable local product.");
 
+            if (IsPriceMutation(row.MutationKind))
+            {
+                var remotePriceId = (ack.PriceHistoryId ?? string.Empty).Trim();
+                if (!row.LocalPriceHistoryId.HasValue ||
+                    remotePriceId.Length == 0)
+                {
+                    throw new InvalidDataException(
+                        "Price mutation ACK is missing durable price identity.");
+                }
+                var localPrice =
+                    await connection.QueryFirstOrDefaultAsync<PriceHistoryBindingRow>(@"
+SELECT id AS Id,
+       timestamp AS Timestamp,
+       type AS Type,
+       new_price AS NewPrice,
+       source AS Source,
+       remote_price_id AS RemotePriceId,
+       article_mutation_id AS ArticleMutationId
+FROM product_price_history
+WHERE id = @localPriceHistoryId
+  AND article_mutation_id = @mutationId
+LIMIT 1;",
+                        new
+                        {
+                            localPriceHistoryId =
+                                row.LocalPriceHistoryId.Value,
+                            mutationId = row.MutationId
+                        },
+                        transaction).ConfigureAwait(false);
+                if (localPrice == null ||
+                    (!string.IsNullOrWhiteSpace(localPrice.RemotePriceId) &&
+                     !string.Equals(
+                         localPrice.RemotePriceId,
+                         remotePriceId,
+                         StringComparison.Ordinal)))
+                {
+                    throw new InvalidDataException(
+                        "Price mutation ACK conflicts with its local history identity.");
+                }
+
+                var pulledPrice =
+                    await connection.QueryFirstOrDefaultAsync<PriceHistoryBindingRow>(@"
+SELECT id AS Id,
+       timestamp AS Timestamp,
+       type AS Type,
+       new_price AS NewPrice,
+       source AS Source,
+       remote_price_id AS RemotePriceId,
+       article_mutation_id AS ArticleMutationId
+FROM product_price_history
+WHERE remote_price_id = @remotePriceId
+LIMIT 1;",
+                        new { remotePriceId },
+                        transaction).ConfigureAwait(false);
+                if (pulledPrice != null &&
+                    pulledPrice.Id != localPrice.Id)
+                {
+                    if (pulledPrice.ArticleMutationId != null ||
+                        !string.Equals(
+                            pulledPrice.Type,
+                            localPrice.Type,
+                            StringComparison.OrdinalIgnoreCase) ||
+                        pulledPrice.NewPrice != localPrice.NewPrice ||
+                        !string.Equals(
+                            pulledPrice.Source,
+                            "pos_article_mutation_v1",
+                            StringComparison.Ordinal))
+                    {
+                        throw new InvalidDataException(
+                            "Price mutation ACK conflicts with pulled price evidence.");
+                    }
+                    var removed = await connection.ExecuteAsync(@"
+DELETE FROM product_price_history
+WHERE id = @id
+  AND remote_price_id = @remotePriceId
+  AND article_mutation_id IS NULL;",
+                        new
+                        {
+                            id = pulledPrice.Id,
+                            remotePriceId
+                        },
+                        transaction).ConfigureAwait(false);
+                    if (removed != 1)
+                    {
+                        throw new InvalidDataException(
+                            "Price mutation ACK could not merge pulled price evidence.");
+                    }
+                }
+                var priceRows = await connection.ExecuteAsync(@"
+UPDATE product_price_history
+SET remote_price_id = @remotePriceId,
+    timestamp = COALESCE(@pulledTimestamp, timestamp),
+    type = COALESCE(@pulledType, type),
+    source = COALESCE(@pulledSource, source)
+WHERE id = @localPriceHistoryId
+  AND article_mutation_id = @mutationId
+  AND (
+    remote_price_id IS NULL
+    OR remote_price_id = @remotePriceId
+  );",
+                    new
+                    {
+                        remotePriceId,
+                        pulledTimestamp = pulledPrice != null &&
+                            pulledPrice.Id != localPrice.Id
+                                ? pulledPrice.Timestamp
+                                : null,
+                        pulledType = pulledPrice != null &&
+                            pulledPrice.Id != localPrice.Id
+                                ? pulledPrice.Type
+                                : null,
+                        pulledSource = pulledPrice != null &&
+                            pulledPrice.Id != localPrice.Id
+                                ? pulledPrice.Source
+                                : null,
+                        localPriceHistoryId = row.LocalPriceHistoryId.Value,
+                        mutationId = row.MutationId
+                    },
+                    transaction).ConfigureAwait(false);
+                if (priceRows != 1)
+                {
+                    throw new InvalidDataException(
+                        "Price mutation ACK could not bind its local history row.");
+                }
+                var matchingOwnership = await connection.ExecuteScalarAsync<long>(@"
+INSERT OR IGNORE INTO remote_catalog_price_ownership(
+  remote_price_id,
+  remote_product_id)
+VALUES(@remotePriceId, @remoteProductId);
+SELECT COUNT(1)
+FROM remote_catalog_price_ownership
+WHERE remote_price_id = @remotePriceId
+  AND remote_product_id = @remoteProductId;",
+                    new
+                    {
+                        remotePriceId,
+                        remoteProductId = ack.RemoteProductId
+                    },
+                    transaction).ConfigureAwait(false);
+                if (matchingOwnership != 1)
+                {
+                    throw new InvalidDataException(
+                        "Price mutation ACK conflicts with remote price ownership.");
+                }
+            }
+
             await connection.ExecuteAsync(@"
 UPDATE article_mutation_outbox
 SET state = 'completed',
@@ -922,6 +1229,11 @@ WHERE id = @id;",
                     updatedAt = FormatTimestamp(now)
                 },
                 transaction).ConfigureAwait(false);
+            await ResolveCoveredBlockedMutationsAsync(
+                connection,
+                transaction,
+                row,
+                now).ConfigureAwait(false);
             await CompleteAttemptAsync(
                 connection,
                 transaction,
@@ -929,12 +1241,31 @@ WHERE id = @id;",
                 request.AttemptToken,
                 result.DeliveryStatus,
                 now).ConfigureAwait(false);
+            await FreezeNextDependencyTargetAsync(
+                connection,
+                transaction,
+                row,
+                ack.RemoteProductId,
+                ack.AuthoritativeRevision,
+                now).ConfigureAwait(false);
             await MaterializeNextDependencyAsync(
                 connection,
                 transaction,
                 row.LocalProductId,
                 row.ClientProductId,
                 now).ConfigureAwait(false);
+        }
+
+        private static bool IsPriceMutation(string mutationKind)
+        {
+            return string.Equals(
+                    mutationKind,
+                    PosArticleMutationKinds.ProductRetailPriceChange,
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    mutationKind,
+                    PosArticleMutationKinds.ProductPurchasePriceChange,
+                    StringComparison.Ordinal);
         }
 
         private static async Task ApplyFailureAsync(
@@ -957,11 +1288,39 @@ WHERE id = @id;",
                 : disposition == PosArticleMutationLocalDisposition.AuthStop
                     ? now.AddMinutes(1)
                     : now;
+            if (disposition == PosArticleMutationLocalDisposition.FailedBlocked &&
+                string.Equals(
+                    result.DeliveryStatus,
+                    PosArticleMutationStatusPolicy.FailedConflict,
+                    StringComparison.Ordinal) &&
+                PosArticleMutationIntentPolicy.IsProductRevision(
+                    result.Ack.AuthoritativeRevision))
+            {
+                var identityRows = await connection.ExecuteAsync(@"
+UPDATE products
+SET remote_base_revision = @authoritativeRevision
+WHERE id = @localProductId
+  AND client_product_id = @clientProductId;",
+                    new
+                    {
+                        authoritativeRevision =
+                            result.Ack.AuthoritativeRevision,
+                        localProductId = row.LocalProductId,
+                        clientProductId = row.ClientProductId
+                    },
+                    transaction).ConfigureAwait(false);
+                if (identityRows != 1)
+                {
+                    throw new InvalidDataException(
+                        "Conflict ACK could not update the stable local product revision.");
+                }
+            }
             await connection.ExecuteAsync(@"
 UPDATE article_mutation_outbox
 SET state = @state,
     next_attempt_at = @nextAttemptAt,
     last_typed_code = @deliveryStatus,
+    authoritative_revision = @authoritativeRevision,
     catalog_revision = @catalogRevision,
     ack_status = @ackStatus,
     ack_code = @ackCode,
@@ -980,6 +1339,8 @@ WHERE id = @id;",
                     state,
                     nextAttemptAt = next.ToUnixTimeMilliseconds(),
                     deliveryStatus = result.DeliveryStatus,
+                    authoritativeRevision =
+                        result.Ack.AuthoritativeRevision,
                     catalogRevision = result.Ack.CatalogRevision,
                     ackStatus = result.Ack.Status,
                     ackCode = result.Ack.Code,
@@ -998,6 +1359,65 @@ WHERE id = @id;",
                 request.AttemptToken,
                 result.DeliveryStatus,
                 now).ConfigureAwait(false);
+            if (string.Equals(
+                    state,
+                    ArticleMutationOutboxStates.FailedBlocked,
+                    StringComparison.Ordinal) &&
+                await FreezeNextDependencyFromCurrentProductAsync(
+                    connection,
+                    transaction,
+                    row,
+                    now).ConfigureAwait(false))
+            {
+                await MaterializeNextDependencyAsync(
+                    connection,
+                    transaction,
+                    row.LocalProductId,
+                    row.ClientProductId,
+                    now).ConfigureAwait(false);
+            }
+        }
+
+        private static async Task MaterializeReadyReferenceDependenciesAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            DateTimeOffset now)
+        {
+            var targets = (await connection.QueryAsync<DependencyTargetRow>(@"
+SELECT candidate.local_product_id AS LocalProductId,
+       candidate.client_product_id AS ClientProductId
+FROM article_mutation_outbox candidate
+WHERE candidate.state = 'waiting_dependency'
+  AND candidate.last_typed_code = @dependencyCode
+  AND candidate.next_attempt_at <= @now
+  AND NOT EXISTS (
+    SELECT 1
+    FROM article_mutation_outbox earlier
+    WHERE earlier.client_product_id = candidate.client_product_id
+      AND earlier.local_sequence < candidate.local_sequence
+      AND earlier.state IN (
+        'waiting_dependency',
+        'pending',
+        'in_progress',
+        'retry_wait'))
+ORDER BY candidate.next_attempt_at ASC,
+         candidate.id ASC
+LIMIT 100;",
+                new
+                {
+                    dependencyCode = ArticleMutationReferenceDependency.Code,
+                    now = now.ToUnixTimeMilliseconds()
+                },
+                transaction).ConfigureAwait(false)).ToArray();
+            foreach (var target in targets)
+            {
+                await MaterializeNextDependencyAsync(
+                    connection,
+                    transaction,
+                    target.LocalProductId,
+                    target.ClientProductId,
+                    now).ConfigureAwait(false);
+            }
         }
 
         private static async Task MaterializeNextDependencyAsync(
@@ -1007,7 +1427,9 @@ WHERE id = @id;",
             string clientProductId,
             DateTimeOffset now)
         {
-            var next = await connection.QueryFirstOrDefaultAsync<ArticleMutationOutboxRow>(@"
+            while (true)
+            {
+                var next = await connection.QueryFirstOrDefaultAsync<ArticleMutationOutboxRow>(@"
 SELECT id AS Id,
        local_product_id AS LocalProductId,
        mutation_id AS MutationId,
@@ -1015,7 +1437,11 @@ SELECT id AS Id,
        client_product_id AS ClientProductId,
        mutation_kind AS MutationKind,
        local_sequence AS LocalSequence,
+       remote_product_id AS RemoteProductId,
+       base_revision AS BaseRevision,
        intent_json AS IntentJson,
+       intent_hash AS IntentHash,
+       last_typed_code AS LastTypedCode,
        state AS State
 FROM article_mutation_outbox
 WHERE local_product_id = @localProductId
@@ -1023,11 +1449,76 @@ WHERE local_product_id = @localProductId
   AND state = 'waiting_dependency'
 ORDER BY local_sequence ASC
 LIMIT 1;",
-                new { localProductId, clientProductId },
-                transaction).ConfigureAwait(false);
-            if (next == null) return;
+                    new { localProductId, clientProductId },
+                    transaction).ConfigureAwait(false);
+                if (next == null) return;
 
-            var product = await connection.QueryFirstOrDefaultAsync<ProductMutationIdentityRow>(@"
+                PersistedCanonicalIntent unresolved;
+                IDictionary<string, object> changes;
+                try
+                {
+                    var computedIntentHash =
+                        PosArticleMutationPayloadHash.Compute(
+                            new UTF8Encoding(false, true).GetBytes(
+                                next.IntentJson ?? string.Empty));
+                    if (!string.Equals(
+                            computedIntentHash,
+                            next.IntentHash,
+                            StringComparison.Ordinal))
+                    {
+                        if (!await BlockDependencyAndFreezeSuccessorAsync(
+                            connection,
+                            transaction,
+                            next,
+                            "dependency_intent_hash_mismatch",
+                            now).ConfigureAwait(false))
+                        {
+                            return;
+                        }
+                        continue;
+                    }
+                    unresolved = DeserializePersistedIntent(next.IntentJson);
+                    changes = RebuildChanges(unresolved);
+                }
+                catch (InvalidDataException)
+                {
+                    if (!await BlockDependencyAndFreezeSuccessorAsync(
+                        connection,
+                        transaction,
+                        next,
+                        "dependency_intent_invalid",
+                        now).ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                    continue;
+                }
+
+                if (!await ResolveReferenceDependenciesAsync(
+                        connection,
+                        transaction,
+                        changes).ConfigureAwait(false))
+                {
+                    await connection.ExecuteAsync(@"
+UPDATE article_mutation_outbox
+SET next_attempt_at = @nextAttemptAt,
+    last_typed_code = @dependencyCode,
+    updated_at = @updatedAt
+WHERE id = @id
+  AND state = 'waiting_dependency';",
+                    new
+                    {
+                        id = next.Id,
+                        dependencyCode = ArticleMutationReferenceDependency.Code,
+                        nextAttemptAt = now.AddSeconds(30).ToUnixTimeMilliseconds(),
+                        updatedAt = FormatTimestamp(now)
+                    },
+                    transaction).ConfigureAwait(false);
+                    return;
+                }
+
+                var product =
+                    await connection.QueryFirstOrDefaultAsync<ProductMutationIdentityRow>(@"
 SELECT id AS Id,
        client_product_id AS ClientProductId,
        remote_product_id AS RemoteProductId,
@@ -1035,55 +1526,134 @@ SELECT id AS Id,
 FROM products
 WHERE id = @localProductId
 LIMIT 1;",
-                new { localProductId },
-                transaction).ConfigureAwait(false);
-            if (product == null ||
-                string.IsNullOrWhiteSpace(product.RemoteProductId) ||
-                string.IsNullOrWhiteSpace(product.RemoteBaseRevision))
-            {
-                return;
-            }
-
-            var unresolved = DeserializePersistedIntent(next.IntentJson);
-            var changes = RebuildChanges(unresolved);
-            PosArticleMutationIntent sealedIntent;
-            try
-            {
-                sealedIntent = PosArticleMutationIntentPolicy.Rehydrate(
-                    product.RemoteBaseRevision,
-                    changes,
-                    next.ClientProductId,
-                    unresolved.CreatedAt,
-                    unresolved.FieldMask,
-                    next.IdempotencyKey,
-                    next.LocalSequence,
-                    next.MutationId,
-                    next.MutationKind,
-                    unresolved.OccurredAt,
-                    product.RemoteProductId);
-            }
-            catch (ArgumentException)
-            {
-                await connection.ExecuteAsync(@"
-UPDATE article_mutation_outbox
-SET state = 'failed_blocked',
-    last_typed_code = 'dependency_materialization_invalid',
-    completed_at = @completedAt,
-    updated_at = @updatedAt
-WHERE id = @id;",
-                    new
+                        new { localProductId },
+                        transaction).ConfigureAwait(false);
+                if (product == null ||
+                    !string.Equals(
+                        product.ClientProductId,
+                        next.ClientProductId,
+                        StringComparison.Ordinal))
+                {
+                    if (!await BlockDependencyAndFreezeSuccessorAsync(
+                        connection,
+                        transaction,
+                        next,
+                        "dependency_product_identity_missing",
+                        now).ConfigureAwait(false))
                     {
-                        id = next.Id,
-                        completedAt = FormatTimestamp(now),
-                        updatedAt = FormatTimestamp(now)
-                    },
-                    transaction).ConfigureAwait(false);
-                return;
-            }
+                        return;
+                    }
+                    continue;
+                }
 
-            var canonical = PosArticleMutationCanonicalWriter.Write(sealedIntent);
-            var payloadHash = PosArticleMutationPayloadHash.Compute(sealedIntent);
-            await connection.ExecuteAsync(@"
+                var isCreate = string.Equals(
+                    next.MutationKind,
+                    PosArticleMutationKinds.ProductCreate,
+                    StringComparison.Ordinal);
+                var isDuplicate = string.Equals(
+                    next.MutationKind,
+                    PosArticleMutationKinds.ProductDuplicate,
+                    StringComparison.Ordinal);
+                var hasFrozenBase =
+                    !isCreate &&
+                    !isDuplicate &&
+                    (!string.IsNullOrWhiteSpace(next.RemoteProductId) ||
+                     !string.IsNullOrWhiteSpace(next.BaseRevision) ||
+                     !string.IsNullOrWhiteSpace(unresolved.RemoteProductId) ||
+                     !string.IsNullOrWhiteSpace(unresolved.BaseRevision));
+                var hasPersistedTarget =
+                    !string.IsNullOrWhiteSpace(next.RemoteProductId) ||
+                    !string.IsNullOrWhiteSpace(next.BaseRevision);
+                var remoteProductId = isCreate
+                    ? null
+                    : isDuplicate
+                        ? next.RemoteProductId
+                        : hasFrozenBase
+                            ? hasPersistedTarget
+                                ? next.RemoteProductId
+                                : unresolved.RemoteProductId
+                            : product.RemoteProductId;
+                var baseRevision = isCreate
+                    ? null
+                    : isDuplicate
+                        ? next.BaseRevision
+                        : hasFrozenBase
+                            ? hasPersistedTarget
+                                ? next.BaseRevision
+                                : unresolved.BaseRevision
+                            : product.RemoteBaseRevision;
+                if (hasFrozenBase &&
+                    (!string.Equals(
+                         product.RemoteProductId,
+                         remoteProductId,
+                         StringComparison.Ordinal) ||
+                     !string.Equals(
+                         product.RemoteBaseRevision,
+                         baseRevision,
+                         StringComparison.Ordinal)))
+                {
+                    if (!await BlockDependencyAndFreezeSuccessorAsync(
+                        connection,
+                        transaction,
+                        next,
+                        "failed_conflict",
+                        now).ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                    continue;
+                }
+                if (!isCreate &&
+                    (string.IsNullOrWhiteSpace(remoteProductId) ||
+                     string.IsNullOrWhiteSpace(baseRevision)))
+                {
+                    if (!await BlockDependencyAndFreezeSuccessorAsync(
+                        connection,
+                        transaction,
+                        next,
+                        "dependency_target_identity_missing",
+                        now).ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                    continue;
+                }
+
+                PosArticleMutationIntent sealedIntent;
+                try
+                {
+                    sealedIntent = PosArticleMutationIntentPolicy.Rehydrate(
+                        baseRevision,
+                        changes,
+                        next.ClientProductId,
+                        unresolved.CreatedAt,
+                        unresolved.FieldMask,
+                        next.IdempotencyKey,
+                        next.LocalSequence,
+                        next.MutationId,
+                        next.MutationKind,
+                        unresolved.OccurredAt,
+                        remoteProductId);
+                }
+                catch (ArgumentException)
+                {
+                    if (!await BlockDependencyAndFreezeSuccessorAsync(
+                        connection,
+                        transaction,
+                        next,
+                        "dependency_materialization_invalid",
+                        now).ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                    continue;
+                }
+
+                var canonical =
+                    PosArticleMutationCanonicalWriter.Write(sealedIntent);
+                var payloadHash =
+                    PosArticleMutationPayloadHash.Compute(sealedIntent);
+                await connection.ExecuteAsync(@"
 UPDATE article_mutation_outbox
 SET remote_product_id = @remoteProductId,
     base_revision = @baseRevision,
@@ -1106,7 +1676,320 @@ WHERE id = @id
                     payloadHash,
                     updatedAt = FormatTimestamp(now)
                 },
+                    transaction).ConfigureAwait(false);
+                return;
+            }
+        }
+
+        private static async Task<bool>
+            FreezeNextDependencyFromCurrentProductAsync(
+                SqliteConnection connection,
+                SqliteTransaction transaction,
+                ArticleMutationOutboxRow row,
+                DateTimeOffset now)
+        {
+            var product =
+                await connection.QueryFirstOrDefaultAsync<ProductMutationIdentityRow>(@"
+SELECT id AS Id,
+       client_product_id AS ClientProductId,
+       remote_product_id AS RemoteProductId,
+       remote_base_revision AS RemoteBaseRevision
+FROM products
+WHERE id = @localProductId
+  AND client_product_id = @clientProductId
+LIMIT 1;",
+                    new
+                    {
+                        localProductId = row.LocalProductId,
+                        clientProductId = row.ClientProductId
+                    },
+                    transaction).ConfigureAwait(false);
+            if (product == null ||
+                !Guid.TryParse(product.RemoteProductId, out _) ||
+                !PosArticleMutationIntentPolicy.IsProductRevision(
+                    product.RemoteBaseRevision))
+            {
+                return false;
+            }
+
+            await FreezeNextDependencyTargetAsync(
+                connection,
+                transaction,
+                row,
+                product.RemoteProductId,
+                product.RemoteBaseRevision,
+                now).ConfigureAwait(false);
+            return true;
+        }
+
+        private static Task FreezeNextDependencyTargetAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            ArticleMutationOutboxRow row,
+            string remoteProductId,
+            string authoritativeRevision,
+            DateTimeOffset now)
+        {
+            return connection.ExecuteAsync(@"
+UPDATE article_mutation_outbox
+SET remote_product_id = @remoteProductId,
+    base_revision = @authoritativeRevision,
+    updated_at = @updatedAt
+WHERE id = (
+    SELECT successor.id
+    FROM article_mutation_outbox successor
+    WHERE successor.client_product_id = @clientProductId
+      AND successor.local_sequence > @localSequence
+      AND successor.state = 'waiting_dependency'
+      AND successor.mutation_kind NOT IN (
+        'product_create',
+        'product_duplicate')
+    ORDER BY successor.local_sequence ASC
+    LIMIT 1
+  )
+  AND state = 'waiting_dependency';",
+                new
+                {
+                    remoteProductId,
+                    authoritativeRevision,
+                    clientProductId = row.ClientProductId,
+                    localSequence = row.LocalSequence,
+                    updatedAt = FormatTimestamp(now)
+                },
+                transaction);
+        }
+
+        private static async Task ResolveCoveredBlockedMutationsAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            ArticleMutationOutboxRow current,
+            DateTimeOffset now)
+        {
+            if (!CanResolveBlockedKind(current.MutationKind))
+                return;
+
+            var currentMask = TryReadFieldMask(current.FieldMaskJson);
+            if (string.Equals(
+                    current.MutationKind,
+                    PosArticleMutationKinds.ProductUpdate,
+                    StringComparison.Ordinal) &&
+                currentMask == null)
+            {
+                return;
+            }
+
+            var candidates =
+                (await connection.QueryAsync<ArticleMutationOutboxRow>(@"
+SELECT id AS Id,
+       mutation_id AS MutationId,
+       mutation_kind AS MutationKind,
+       field_mask_json AS FieldMaskJson
+FROM article_mutation_outbox
+WHERE client_product_id = @clientProductId
+  AND local_sequence < @localSequence
+  AND state = 'failed_blocked'
+ORDER BY local_sequence ASC;",
+                    new
+                    {
+                        clientProductId = current.ClientProductId,
+                        localSequence = current.LocalSequence
+                    },
+                    transaction).ConfigureAwait(false)).ToArray();
+
+            var coveredIds = candidates
+                .Where(candidate => IsCoveredCorrection(
+                    candidate,
+                    current.MutationKind,
+                    currentMask))
+                .Select(candidate => candidate.Id)
+                .ToArray();
+            if (coveredIds.Length == 0)
+                return;
+
+            await connection.ExecuteAsync(@"
+UPDATE article_mutation_outbox
+SET state = 'completed',
+    resolution_code = 'superseded_by_correction',
+    resolved_at = @resolvedAt,
+    superseded_by_mutation_id = @supersededByMutationId,
+    updated_at = @updatedAt
+WHERE id IN @ids
+  AND state = 'failed_blocked';",
+                new
+                {
+                    ids = coveredIds,
+                    resolvedAt = FormatTimestamp(now),
+                    supersededByMutationId = current.MutationId,
+                    updatedAt = FormatTimestamp(now)
+                },
                 transaction).ConfigureAwait(false);
+        }
+
+        private static bool CanResolveBlockedKind(string mutationKind)
+        {
+            return string.Equals(
+                    mutationKind,
+                    PosArticleMutationKinds.ProductUpdate,
+                    StringComparison.Ordinal) ||
+                IsPriceMutation(mutationKind) ||
+                IsActivationMutation(mutationKind);
+        }
+
+        private static bool IsCoveredCorrection(
+            ArticleMutationOutboxRow blocked,
+            string currentKind,
+            ISet<string> currentMask)
+        {
+            if (string.Equals(
+                    currentKind,
+                    PosArticleMutationKinds.ProductUpdate,
+                    StringComparison.Ordinal))
+            {
+                if (!string.Equals(
+                        blocked.MutationKind,
+                        PosArticleMutationKinds.ProductUpdate,
+                        StringComparison.Ordinal))
+                {
+                    return false;
+                }
+                var blockedMask = TryReadFieldMask(blocked.FieldMaskJson);
+                return blockedMask != null &&
+                    blockedMask.All(currentMask.Contains);
+            }
+            if (IsPriceMutation(currentKind))
+            {
+                return string.Equals(
+                    blocked.MutationKind,
+                    currentKind,
+                    StringComparison.Ordinal);
+            }
+            return IsActivationMutation(currentKind) &&
+                IsActivationMutation(blocked.MutationKind);
+        }
+
+        private static bool IsActivationMutation(string mutationKind)
+        {
+            return string.Equals(
+                    mutationKind,
+                    PosArticleMutationKinds.ProductActivate,
+                    StringComparison.Ordinal) ||
+                string.Equals(
+                    mutationKind,
+                    PosArticleMutationKinds.ProductDeactivate,
+                    StringComparison.Ordinal);
+        }
+
+        private static ISet<string> TryReadFieldMask(string json)
+        {
+            try
+            {
+                var bytes = new UTF8Encoding(false, true).GetBytes(
+                    json ?? string.Empty);
+                using (var stream = new MemoryStream(bytes))
+                {
+                    var serializer = new DataContractJsonSerializer(
+                        typeof(string[]));
+                    var values = serializer.ReadObject(stream) as string[];
+                    if (values == null ||
+                        values.Any(string.IsNullOrWhiteSpace))
+                    {
+                        return null;
+                    }
+                    return new HashSet<string>(
+                        values,
+                        StringComparer.Ordinal);
+                }
+            }
+            catch (Exception ex) when (
+                ex is SerializationException ||
+                ex is System.Xml.XmlException ||
+                ex is EncoderFallbackException)
+            {
+                return null;
+            }
+        }
+
+        private static async Task<bool> ResolveReferenceDependenciesAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            IDictionary<string, object> changes)
+        {
+            if (changes == null) return true;
+            object value;
+            int localId;
+            if (changes.TryGetValue(
+                    PosArticleMutationFields.CategoryId,
+                    out value) &&
+                ArticleMutationReferenceDependency.TryParseCategory(
+                    value as string,
+                    out localId))
+            {
+                var remoteId = await connection.ExecuteScalarAsync<string>(@"
+SELECT remote_category_id
+FROM categories
+WHERE id = @id
+  AND COALESCE(is_active, 1) = 1
+LIMIT 1;",
+                    new { id = localId },
+                    transaction).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(remoteId)) return false;
+                changes[PosArticleMutationFields.CategoryId] = remoteId.Trim();
+            }
+            if (changes.TryGetValue(
+                    PosArticleMutationFields.SupplierId,
+                    out value) &&
+                ArticleMutationReferenceDependency.TryParseSupplier(
+                    value as string,
+                    out localId))
+            {
+                var remoteId = await connection.ExecuteScalarAsync<string>(@"
+SELECT remote_supplier_id
+FROM suppliers
+WHERE id = @id
+  AND COALESCE(is_active, 1) = 1
+LIMIT 1;",
+                    new { id = localId },
+                    transaction).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(remoteId)) return false;
+                changes[PosArticleMutationFields.SupplierId] = remoteId.Trim();
+            }
+            return true;
+        }
+
+        private static async Task<bool> BlockDependencyAndFreezeSuccessorAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            ArticleMutationOutboxRow row,
+            string code,
+            DateTimeOffset now)
+        {
+            var blocked = await connection.ExecuteAsync(@"
+UPDATE article_mutation_outbox
+SET state = 'failed_blocked',
+    last_typed_code = @code,
+    completed_at = @completedAt,
+    updated_at = @updatedAt
+WHERE id = @id
+  AND state = 'waiting_dependency';",
+                new
+                {
+                    id = row.Id,
+                    code,
+                    completedAt = FormatTimestamp(now),
+                    updatedAt = FormatTimestamp(now)
+                },
+                transaction).ConfigureAwait(false);
+            if (blocked != 1)
+            {
+                throw new InvalidOperationException(
+                    "dependency_block_transition_failed");
+            }
+
+            return await FreezeNextDependencyFromCurrentProductAsync(
+                connection,
+                transaction,
+                row,
+                now).ConfigureAwait(false);
         }
 
         private static async Task<bool> HasStaleBaseAsync(
@@ -1134,13 +2017,13 @@ WHERE id = @localProductId;",
             return !string.Equals(current, row.BaseRevision, StringComparison.Ordinal);
         }
 
-        private static Task BlockStaleBaseAsync(
+        private static async Task BlockStaleBaseAsync(
             SqliteConnection connection,
             SqliteTransaction transaction,
             ArticleMutationOutboxRow row,
             DateTimeOffset now)
         {
-            return connection.ExecuteAsync(@"
+            var blocked = await connection.ExecuteAsync(@"
 UPDATE article_mutation_outbox
 SET state = 'failed_blocked',
     last_typed_code = 'failed_conflict',
@@ -1154,7 +2037,26 @@ WHERE id = @id
                     completedAt = FormatTimestamp(now),
                     updatedAt = FormatTimestamp(now)
                 },
-                transaction);
+                transaction).ConfigureAwait(false);
+            if (blocked != 1)
+            {
+                throw new InvalidOperationException(
+                    "stale_base_block_transition_failed");
+            }
+            if (!await FreezeNextDependencyFromCurrentProductAsync(
+                    connection,
+                    transaction,
+                    row,
+                    now).ConfigureAwait(false))
+            {
+                return;
+            }
+            await MaterializeNextDependencyAsync(
+                connection,
+                transaction,
+                row.LocalProductId,
+                row.ClientProductId,
+                now).ConfigureAwait(false);
         }
 
         private static PosArticleMutationIntent ParseSealedIntent(
@@ -1473,13 +2375,17 @@ WHERE mutation_id = @mutationId
             public string MutationKind { get; set; }
             public long LocalSequence { get; set; }
             public string BaseRevision { get; set; }
+            public string FieldMaskJson { get; set; }
             public string IntentJson { get; set; }
+            public string IntentHash { get; set; }
             public string CanonicalPayloadJson { get; set; }
             public string PayloadHash { get; set; }
             public string State { get; set; }
             public int AttemptCount { get; set; }
             public string ClaimGenerationId { get; set; }
             public string ClaimToken { get; set; }
+            public string LastTypedCode { get; set; }
+            public long? LocalPriceHistoryId { get; set; }
         }
 
         private sealed class AttemptTokenRow
@@ -1488,10 +2394,27 @@ WHERE mutation_id = @mutationId
             public string AttemptToken { get; set; }
         }
 
+        private sealed class PriceHistoryBindingRow
+        {
+            public long Id { get; set; }
+            public string Timestamp { get; set; }
+            public string Type { get; set; }
+            public int NewPrice { get; set; }
+            public string Source { get; set; }
+            public string RemotePriceId { get; set; }
+            public string ArticleMutationId { get; set; }
+        }
+
         private sealed class StateCountRow
         {
             public string State { get; set; }
             public long Count { get; set; }
+        }
+
+        private sealed class DependencyTargetRow
+        {
+            public long LocalProductId { get; set; }
+            public string ClientProductId { get; set; }
         }
 
         [DataContract]

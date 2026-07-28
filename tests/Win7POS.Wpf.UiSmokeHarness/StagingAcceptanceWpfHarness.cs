@@ -11,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Win7POS.Core;
@@ -480,6 +481,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 window.Show();
                 window.UpdateLayout();
                 await Task.Delay(150).ConfigureAwait(true);
+                RedactVisibleProductRows(window);
+                window.UpdateLayout();
                 CaptureWindow(
                     window,
                     Path.Combine(outputDirectory, "staging-acceptance-products-readonly.png"));
@@ -489,6 +492,36 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 window.Close();
             }
+        }
+
+        private static void RedactVisibleProductRows(DependencyObject root)
+        {
+            if (root == null) return;
+            var textBlock = root as TextBlock;
+            if (textBlock != null && HasVisualAncestor<DataGridRow>(textBlock))
+            {
+                textBlock.SetCurrentValue(
+                    TextBlock.TextProperty,
+                    "[REDACTED]");
+            }
+            var count = VisualTreeHelper.GetChildrenCount(root);
+            for (var index = 0; index < count; index += 1)
+            {
+                RedactVisibleProductRows(
+                    VisualTreeHelper.GetChild(root, index));
+            }
+        }
+
+        private static bool HasVisualAncestor<T>(DependencyObject child)
+            where T : DependencyObject
+        {
+            var current = VisualTreeHelper.GetParent(child);
+            while (current != null)
+            {
+                if (current is T) return true;
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return false;
         }
 
         private static void CaptureWindow(Window window, string path)
@@ -691,12 +724,40 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "intent_json",
                 "payload_json"
             };
+            var requiredRedactedScreenshots = new[]
+            {
+                "staging-acceptance-products-readonly.png",
+                "article-mutation-product-editor-1024x768.png",
+                "article-mutation-sync-center-conflict-1024x768.png"
+            };
+            if (requiredRedactedScreenshots.Any(fileName =>
+                    !File.Exists(Path.Combine(outputDirectory, fileName))))
+            {
+                return false;
+            }
             foreach (var path in Directory.EnumerateFiles(
                 outputDirectory,
                 "*",
                 SearchOption.TopDirectoryOnly))
             {
                 var extension = Path.GetExtension(path);
+                if (string.Equals(
+                        extension,
+                        ".png",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    var pngInfo = new FileInfo(path);
+                    if (pngInfo.Length <= 0 || pngInfo.Length > 5 * 1024 * 1024)
+                        return false;
+                    var bytes = File.ReadAllBytes(path);
+                    if (ContainsUtf8Value(bytes, profile?.Credential) ||
+                        ContainsUtf8Value(bytes, trustedSession?.DeviceToken) ||
+                        ContainsUtf8Value(bytes, trustedSession?.SessionToken))
+                    {
+                        return false;
+                    }
+                    continue;
+                }
                 if (!string.Equals(extension, ".json", StringComparison.OrdinalIgnoreCase) &&
                     !string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase) &&
                     !string.Equals(extension, ".md", StringComparison.OrdinalIgnoreCase))
@@ -725,6 +786,32 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
             }
             return true;
+        }
+
+        private static bool ContainsUtf8Value(byte[] haystack, string value)
+        {
+            if (haystack == null || haystack.Length == 0 ||
+                string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+            var needle = Encoding.UTF8.GetBytes(value);
+            if (needle.Length < 4 || needle.Length > haystack.Length)
+                return false;
+            for (var start = 0;
+                start <= haystack.Length - needle.Length;
+                start += 1)
+            {
+                var match = true;
+                for (var index = 0; index < needle.Length; index += 1)
+                {
+                    if (haystack[start + index] == needle[index]) continue;
+                    match = false;
+                    break;
+                }
+                if (match) return true;
+            }
+            return false;
         }
 
         private static void WriteFirstLoginEvidence(

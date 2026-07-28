@@ -282,6 +282,57 @@ ORDER BY local_sequence;")).ToArray();
     }
 
     [TestMethod]
+    public async Task Recovery_PreservesActiveProcessAndImmediatelyRecoversPriorProcess()
+    {
+        using var db = TestDb.Create();
+        await new LocalArticleMutationWriter(db.Factory).CreateAsync(
+            NewCreate("ART-GENERATION-FENCE-001", "Generation fence"),
+            ProductWriteOrigin.LocalUserSave);
+        var outbox = new ArticleMutationOutboxRepository(db.Factory);
+        var claim = await outbox.ClaimBatchAsync(
+            "generation-reused-across-restart",
+            claimOwnerId: "process-active");
+        Assert.AreEqual(1, claim.Requests.Count);
+
+        Assert.AreEqual(
+            0,
+            await outbox.RecoverInterruptedAsync(
+                TimeSpan.Zero,
+                "process-active"));
+        using (var active = db.Factory.Open())
+        {
+            Assert.AreEqual(
+                ArticleMutationOutboxStates.InProgress,
+                await active.ExecuteScalarAsync<string>(
+                    "SELECT state FROM article_mutation_outbox;"));
+            Assert.AreEqual(
+                1L,
+                await active.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM article_mutation_attempts
+WHERE completed_at IS NULL;"));
+        }
+
+        Assert.AreEqual(
+            1,
+            await outbox.RecoverInterruptedAsync(
+                TimeSpan.Zero,
+                "process-after-restart"));
+        using var recovered = db.Factory.Open();
+        Assert.AreEqual(
+            ArticleMutationOutboxStates.RetryWait,
+            await recovered.ExecuteScalarAsync<string>(
+                "SELECT state FROM article_mutation_outbox;"));
+        Assert.AreEqual(
+            1L,
+            await recovered.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM article_mutation_attempts
+WHERE outcome = 'client_interrupted'
+  AND completed_at IS NOT NULL;"));
+    }
+
+    [TestMethod]
     public async Task ConcurrentClaims_CanIssueOnlyOneAttemptForAMutation()
     {
         using var db = TestDb.Create();
@@ -344,6 +395,63 @@ WHERE state = 'completed';"));
     }
 
     [TestMethod]
+    public async Task RetriedDelivery_ReplaysSealedPayloadAfterCatalogBaseAdvances()
+    {
+        using var db = TestDb.Create();
+        var productId = await SeedRemoteProductAsync(
+            db.Factory,
+            "ART-REPLAY-BASE-001");
+        await new LocalArticleMutationWriter(db.Factory).UpdateAsync(
+            NewUpdate(
+                productId,
+                "ART-REPLAY-BASE-001",
+                "Ambiguously delivered"),
+            ProductWriteOrigin.LocalUserSave);
+        var outbox = new ArticleMutationOutboxRepository(db.Factory);
+        var first = await outbox.ClaimBatchAsync("generation-first-delivery");
+        var original = first.Requests.Single();
+
+        await outbox.ReleaseClaimForTransportFailureAsync(
+            first,
+            "transport_response_lost",
+            authenticationDenied: false);
+        using (var connection = db.Factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+UPDATE products
+SET remote_base_revision = @advancedRevision
+WHERE id = @productId;
+UPDATE article_mutation_outbox
+SET next_attempt_at = 0;",
+                new
+                {
+                    advancedRevision = Revision(9),
+                    productId
+                });
+        }
+
+        var replay = await outbox.ClaimBatchAsync(
+            "generation-replayed-delivery");
+        var replayed = replay.Requests.Single();
+        Assert.AreEqual(
+            original.Intent.MutationId,
+            replayed.Intent.MutationId);
+        Assert.AreEqual(original.PayloadHash, replayed.PayloadHash);
+        Assert.AreEqual(
+            original.Intent.BaseRevision,
+            replayed.Intent.BaseRevision);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(
+            ArticleMutationOutboxStates.InProgress,
+            await verify.ExecuteScalarAsync<string>(
+                "SELECT state FROM article_mutation_outbox;"));
+        Assert.AreEqual(
+            2L,
+            await verify.ExecuteScalarAsync<long>(
+                "SELECT attempt_count FROM article_mutation_outbox;"));
+    }
+
+    [TestMethod]
     public async Task Duplicate_HasNewLocalClientAndMutationIdentityWithoutCopyingRemoteId()
     {
         using var db = TestDb.Create();
@@ -389,7 +497,7 @@ WHERE local_product_id = @productId
     }
 
     [TestMethod]
-    public async Task MissingRemoteReference_PersistsLocalEditAsVisibleBlockedMutation()
+    public async Task MissingRemoteReference_WaitsAndMaterializesWhenReferenceGetsRemoteId()
     {
         using var db = TestDb.Create();
         var productId = await SeedRemoteProductAsync(db.Factory, "ART-REF-001");
@@ -417,8 +525,393 @@ SELECT category_name FROM product_meta WHERE barcode = 'ART-REF-001';"));
         var blocked = await connection.QuerySingleAsync<(string State, string Code)>(@"
 SELECT state AS State, last_typed_code AS Code
 FROM article_mutation_outbox;");
-        Assert.AreEqual(ArticleMutationOutboxStates.FailedBlocked, blocked.State);
+        Assert.AreEqual(
+            ArticleMutationOutboxStates.WaitingDependency,
+            blocked.State);
         Assert.AreEqual("dependency_missing_remote_reference", blocked.Code);
+        Assert.IsTrue((await new ArticleMutationOutboxRepository(db.Factory)
+            .GetDrainStateAsync()).NextRetryAt.HasValue);
+
+        var categoryId = await connection.ExecuteScalarAsync<int>(@"
+SELECT category_id
+FROM product_meta
+WHERE barcode = 'ART-REF-001';");
+        var remoteCategoryId = Guid.NewGuid().ToString("D");
+        await connection.ExecuteAsync(@"
+UPDATE categories
+SET remote_category_id = @remoteCategoryId
+WHERE id = @categoryId;
+UPDATE article_mutation_outbox
+SET next_attempt_at = 0;",
+            new { categoryId, remoteCategoryId });
+
+        var claim = await new ArticleMutationOutboxRepository(db.Factory)
+            .ClaimBatchAsync("generation-reference-resolved");
+        Assert.AreEqual(1, claim.Requests.Count);
+        Assert.AreEqual(
+            remoteCategoryId,
+            claim.Requests.Single().Intent.Changes[
+                PosArticleMutationFields.CategoryId]);
+    }
+
+    [TestMethod]
+    public async Task MissingRemoteReference_BlocksIfRemoteBaseChangesWhileWaiting()
+    {
+        using var db = TestDb.Create();
+        var productId = await SeedRemoteProductAsync(
+            db.Factory,
+            "ART-REF-CONFLICT-001");
+        await new LocalArticleMutationWriter(db.Factory).UpdateAsync(
+            new LocalArticleUpdateRequest
+            {
+                ProductId = productId,
+                Barcode = "ART-REF-CONFLICT-001",
+                PrimaryName = "Remote product",
+                RetailPrice = 150,
+                PurchasePrice = 60,
+                CategoryName = "Waiting local category",
+                StockQuantity = 15,
+                StockReason = "count_correction"
+            },
+            ProductWriteOrigin.LocalUserSave);
+
+        using (var connection = db.Factory.Open())
+        {
+            var categoryId = await connection.ExecuteScalarAsync<int>(@"
+SELECT category_id
+FROM product_meta
+WHERE barcode = 'ART-REF-CONFLICT-001';");
+            await connection.ExecuteAsync(@"
+UPDATE categories
+SET remote_category_id = @remoteCategoryId
+WHERE id = @categoryId;
+UPDATE products
+SET remote_base_revision = @newRevision
+WHERE id = @productId;
+UPDATE article_mutation_outbox
+SET next_attempt_at = 0;",
+                new
+                {
+                    categoryId,
+                    newRevision = Revision(2),
+                    productId,
+                    remoteCategoryId = Guid.NewGuid().ToString("D")
+                });
+        }
+
+        var claim = await new ArticleMutationOutboxRepository(db.Factory)
+            .ClaimBatchAsync("generation-reference-conflict");
+
+        Assert.AreEqual(0, claim.Requests.Count);
+        using var verify = db.Factory.Open();
+        var blocked = await verify.QuerySingleAsync<(
+            string State,
+            string Code,
+            string CanonicalPayload,
+            string PayloadHash)>(@"
+SELECT state AS State,
+       last_typed_code AS Code,
+       canonical_payload_json AS CanonicalPayload,
+       payload_hash AS PayloadHash
+FROM article_mutation_outbox;");
+        Assert.AreEqual(
+            ArticleMutationOutboxStates.FailedBlocked,
+            blocked.State);
+        Assert.AreEqual("failed_conflict", blocked.Code);
+        Assert.IsNull(blocked.CanonicalPayload);
+        Assert.IsNull(blocked.PayloadHash);
+    }
+
+    [TestMethod]
+    public async Task LocalDependencyConflict_ReleasesLaterNonReferenceSuccessor()
+    {
+        using var db = TestDb.Create();
+        var productId = await SeedRemoteProductAsync(
+            db.Factory,
+            "ART-REF-LOCAL-TERMINAL-001");
+        var writer = new LocalArticleMutationWriter(db.Factory);
+        var waitingReference = NewUpdate(
+            productId,
+            "ART-REF-LOCAL-TERMINAL-001",
+            "Remote product");
+        waitingReference.CategoryName = "Waiting local category";
+        await writer.UpdateAsync(
+            waitingReference,
+            ProductWriteOrigin.LocalUserSave);
+        var laterSuccessor = NewUpdate(
+            productId,
+            "ART-REF-LOCAL-TERMINAL-001",
+            "Later safe successor");
+        laterSuccessor.CategoryName = "Waiting local category";
+        await writer.UpdateAsync(
+            laterSuccessor,
+            ProductWriteOrigin.LocalUserSave);
+
+        using (var connection = db.Factory.Open())
+        {
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    ArticleMutationOutboxStates.WaitingDependency,
+                    ArticleMutationOutboxStates.WaitingDependency
+                },
+                (await connection.QueryAsync<string>(@"
+SELECT state
+FROM article_mutation_outbox
+ORDER BY local_sequence;")).ToArray());
+            var categoryId = await connection.ExecuteScalarAsync<int>(@"
+SELECT category_id
+FROM product_meta
+WHERE barcode = 'ART-REF-LOCAL-TERMINAL-001';");
+            await connection.ExecuteAsync(@"
+UPDATE categories
+SET remote_category_id = @remoteCategoryId
+WHERE id = @categoryId;
+UPDATE products
+SET remote_base_revision = @newRevision
+WHERE id = @productId;
+UPDATE article_mutation_outbox
+SET next_attempt_at = 0;",
+                new
+                {
+                    categoryId,
+                    newRevision = Revision(2),
+                    productId,
+                    remoteCategoryId = Guid.NewGuid().ToString("D")
+                });
+        }
+
+        var claim = await new ArticleMutationOutboxRepository(db.Factory)
+            .ClaimBatchAsync("generation-local-terminal-successor");
+
+        using var verify = db.Factory.Open();
+        var snapshots = (await verify.QueryAsync<(
+            long Sequence,
+            string State,
+            string Code,
+            string BaseRevision)>(@"
+SELECT local_sequence AS Sequence,
+       state AS State,
+       last_typed_code AS Code,
+       base_revision AS BaseRevision
+FROM article_mutation_outbox
+ORDER BY local_sequence;")).ToArray();
+        var stateEvidence = string.Join(
+            ";",
+            snapshots.Select(row =>
+                row.Sequence + ":" + row.State + ":" + row.Code + ":" +
+                row.BaseRevision));
+        Assert.AreEqual(1, claim.Requests.Count, stateEvidence);
+        Assert.AreEqual(2L, claim.Requests.Single().Intent.LocalSequence);
+        Assert.AreEqual(
+            Revision(2),
+            claim.Requests.Single().Intent.BaseRevision);
+        Assert.AreEqual(
+            "Later safe successor",
+            claim.Requests.Single().Intent.Changes[
+                PosArticleMutationFields.PrimaryName]);
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                ArticleMutationOutboxStates.FailedBlocked,
+                ArticleMutationOutboxStates.InProgress
+            },
+            (await verify.QueryAsync<string>(@"
+SELECT state
+FROM article_mutation_outbox
+ORDER BY local_sequence;")).ToArray());
+        Assert.AreEqual(
+            PosArticleMutationStatusPolicy.FailedConflict,
+            await verify.ExecuteScalarAsync<string>(@"
+SELECT last_typed_code
+FROM article_mutation_outbox
+WHERE local_sequence = 1;"));
+    }
+
+    [TestMethod]
+    public async Task ChainedMissingReference_FreezesPredecessorAckUntilResolution()
+    {
+        using var happyDb = TestDb.Create();
+        var happyWriter = new LocalArticleMutationWriter(happyDb.Factory);
+        var happyCreate = await happyWriter.CreateAsync(
+            NewCreate("ART-CHAIN-REF-OK-001", "Created locally"),
+            ProductWriteOrigin.LocalUserSave);
+        var happyUpdate = NewUpdate(
+            happyCreate.ProductId,
+            "ART-CHAIN-REF-OK-001",
+            "Created with category");
+        happyUpdate.CategoryName = "Chained local category";
+        await happyWriter.UpdateAsync(
+            happyUpdate,
+            ProductWriteOrigin.LocalUserSave);
+        var happyOutbox =
+            new ArticleMutationOutboxRepository(happyDb.Factory);
+        var happyCreateClaim = await happyOutbox.ClaimBatchAsync(
+            "generation-chain-create");
+        var happyRemoteId = Guid.NewGuid().ToString("D");
+        await ApplySuccessAsync(
+            happyOutbox,
+            happyCreateClaim,
+            happyRemoteId,
+            Revision(1),
+            "1");
+        using (var connection = happyDb.Factory.Open())
+        {
+            var frozen = await connection.QuerySingleAsync<(
+                string RemoteProductId,
+                string BaseRevision,
+                string State)>(@"
+SELECT remote_product_id AS RemoteProductId,
+       base_revision AS BaseRevision,
+       state AS State
+FROM article_mutation_outbox
+WHERE local_sequence = 2;");
+            Assert.AreEqual(happyRemoteId, frozen.RemoteProductId);
+            Assert.AreEqual(Revision(1), frozen.BaseRevision);
+            Assert.AreEqual(
+                ArticleMutationOutboxStates.WaitingDependency,
+                frozen.State);
+            await ResolveOnlyCategoryAsync(
+                connection,
+                "ART-CHAIN-REF-OK-001");
+        }
+        var happyUpdateClaim = await happyOutbox.ClaimBatchAsync(
+            "generation-chain-reference-resolved");
+        Assert.AreEqual(
+            Revision(1),
+            happyUpdateClaim.Requests.Single().Intent.BaseRevision);
+
+        using var conflictDb = TestDb.Create();
+        var conflictWriter =
+            new LocalArticleMutationWriter(conflictDb.Factory);
+        var conflictCreate = await conflictWriter.CreateAsync(
+            NewCreate("ART-CHAIN-REF-CONFLICT-001", "Created locally"),
+            ProductWriteOrigin.LocalUserSave);
+        var conflictUpdate = NewUpdate(
+            conflictCreate.ProductId,
+            "ART-CHAIN-REF-CONFLICT-001",
+            "Created with delayed category");
+        conflictUpdate.CategoryName = "Delayed chained category";
+        await conflictWriter.UpdateAsync(
+            conflictUpdate,
+            ProductWriteOrigin.LocalUserSave);
+        var conflictOutbox =
+            new ArticleMutationOutboxRepository(conflictDb.Factory);
+        var conflictCreateClaim = await conflictOutbox.ClaimBatchAsync(
+            "generation-chain-conflict-create");
+        await ApplySuccessAsync(
+            conflictOutbox,
+            conflictCreateClaim,
+            Guid.NewGuid().ToString("D"),
+            Revision(2),
+            "2");
+        using (var connection = conflictDb.Factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+UPDATE products
+SET remote_base_revision = @advancedRevision
+WHERE id = @productId;",
+                new
+                {
+                    advancedRevision = Revision(3),
+                    productId = conflictCreate.ProductId
+                });
+            await ResolveOnlyCategoryAsync(
+                connection,
+                "ART-CHAIN-REF-CONFLICT-001");
+        }
+
+        var conflictClaim = await conflictOutbox.ClaimBatchAsync(
+            "generation-chain-reference-conflict");
+        Assert.AreEqual(0, conflictClaim.Requests.Count);
+        using var conflictVerify = conflictDb.Factory.Open();
+        Assert.AreEqual(
+            ArticleMutationOutboxStates.FailedBlocked,
+            await conflictVerify.ExecuteScalarAsync<string>(@"
+SELECT state
+FROM article_mutation_outbox
+WHERE local_sequence = 2;"));
+        Assert.AreEqual(
+            PosArticleMutationStatusPolicy.FailedConflict,
+            await conflictVerify.ExecuteScalarAsync<string>(@"
+SELECT last_typed_code
+FROM article_mutation_outbox
+WHERE local_sequence = 2;"));
+    }
+
+    [TestMethod]
+    public async Task PendingCreate_MaterializesReferenceAndRejectsCorruptIntentHash()
+    {
+        using var db = TestDb.Create();
+        var create = NewCreate("ART-REF-CREATE-001", "Reference create");
+        create.CategoryName = "Local create category";
+        await new LocalArticleMutationWriter(db.Factory).CreateAsync(
+            create,
+            ProductWriteOrigin.LocalUserSave);
+
+        using (var connection = db.Factory.Open())
+        {
+            Assert.AreEqual(
+                ArticleMutationOutboxStates.WaitingDependency,
+                await connection.ExecuteScalarAsync<string>(
+                    "SELECT state FROM article_mutation_outbox;"));
+            var categoryId = await connection.ExecuteScalarAsync<int>(@"
+SELECT category_id
+FROM product_meta
+WHERE barcode = 'ART-REF-CREATE-001';");
+            await connection.ExecuteAsync(@"
+UPDATE categories
+SET remote_category_id = @remoteCategoryId
+WHERE id = @categoryId;
+UPDATE article_mutation_outbox
+SET next_attempt_at = 0;",
+                new
+                {
+                    categoryId,
+                    remoteCategoryId = Guid.NewGuid().ToString("D")
+                });
+        }
+
+        var claim = await new ArticleMutationOutboxRepository(db.Factory)
+            .ClaimBatchAsync("generation-create-reference");
+        Assert.AreEqual(1, claim.Requests.Count);
+        Assert.AreEqual(
+            PosArticleMutationKinds.ProductCreate,
+            claim.Requests.Single().Intent.MutationKind);
+        Assert.IsTrue(
+            Guid.TryParse(
+                claim.Requests.Single().Intent.Changes[
+                    PosArticleMutationFields.CategoryId] as string,
+                out _));
+
+        using var corruptDb = TestDb.Create();
+        var corruptCreate = NewCreate(
+            "ART-REF-CORRUPT-001",
+            "Corrupt reference create");
+        corruptCreate.CategoryName = "Corrupt local category";
+        await new LocalArticleMutationWriter(corruptDb.Factory).CreateAsync(
+            corruptCreate,
+            ProductWriteOrigin.LocalUserSave);
+        using (var connection = corruptDb.Factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+UPDATE article_mutation_outbox
+SET intent_hash = 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+    next_attempt_at = 0;");
+        }
+        var corruptClaim =
+            await new ArticleMutationOutboxRepository(corruptDb.Factory)
+                .ClaimBatchAsync("generation-corrupt-reference");
+        Assert.AreEqual(0, corruptClaim.Requests.Count);
+        using var verify = corruptDb.Factory.Open();
+        Assert.AreEqual(
+            ArticleMutationOutboxStates.FailedBlocked,
+            await verify.ExecuteScalarAsync<string>(
+                "SELECT state FROM article_mutation_outbox;"));
+        Assert.AreEqual(
+            "dependency_intent_hash_mismatch",
+            await verify.ExecuteScalarAsync<string>(
+                "SELECT last_typed_code FROM article_mutation_outbox;"));
     }
 
     [TestMethod]
@@ -426,9 +919,34 @@ FROM article_mutation_outbox;");
     {
         using var db = TestDb.Create();
         var productId = await SeedRemoteProductAsync(db.Factory, "ART-OVERLAY-001");
+        var remoteReferences = await SeedVerifiedReferencesAsync(db.Factory);
+        var localReferences = await SeedVerifiedReferencesAsync(db.Factory);
+        using (var connection = db.Factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+UPDATE product_meta
+SET category_id = @categoryId,
+    category_name = 'Remote category',
+    supplier_id = @supplierId,
+    supplier_name = 'Remote supplier'
+WHERE barcode = 'ART-OVERLAY-001';",
+                new
+                {
+                    categoryId = remoteReferences.CategoryId,
+                    supplierId = remoteReferences.SupplierId
+                });
+        }
         var writer = new LocalArticleMutationWriter(db.Factory);
+        var pendingUpdate = NewUpdate(
+            productId,
+            "ART-OVERLAY-001",
+            "Pending local name");
+        pendingUpdate.CategoryId = localReferences.CategoryId;
+        pendingUpdate.CategoryName = "Remote category";
+        pendingUpdate.SupplierId = localReferences.SupplierId;
+        pendingUpdate.SupplierName = "Remote supplier";
         await writer.UpdateAsync(
-            NewUpdate(productId, "ART-OVERLAY-001", "Pending local name"),
+            pendingUpdate,
             ProductWriteOrigin.LocalUserSave);
         var remoteId = await ProductRemoteIdAsync(db.Factory, productId);
         var remoteRevision = Revision(9);
@@ -445,6 +963,10 @@ FROM article_mutation_outbox;");
                         UnitPrice = 999,
                         PurchasePrice = 444,
                         StockQuantity = 77,
+                        RemoteCategoryId =
+                            remoteReferences.CategoryRemoteId,
+                        RemoteSupplierId =
+                            remoteReferences.SupplierRemoteId,
                         RemoteProductId = remoteId,
                         RemoteUpdatedAt = remoteRevision
                     }
@@ -476,6 +998,55 @@ SELECT primary_name
 FROM article_product_remote_shadow
 WHERE remote_product_id = @remoteId;",
                     new { remoteId }));
+            Assert.AreEqual(
+                localReferences.CategoryId,
+                await connection.ExecuteScalarAsync<int>(@"
+SELECT category_id
+FROM product_meta
+WHERE barcode = 'ART-OVERLAY-001';"));
+            Assert.AreEqual(
+                localReferences.SupplierId,
+                await connection.ExecuteScalarAsync<int>(@"
+SELECT supplier_id
+FROM product_meta
+WHERE barcode = 'ART-OVERLAY-001';"));
+        }
+
+        var tombstoneRevision = Revision(10);
+        await new RemoteCatalogBatchRepository(db.Factory).ApplyAsync(
+            new RemoteCatalogBatch
+            {
+                ProductTombstones = new[]
+                {
+                    new RemoteCatalogProductTombstoneWrite
+                    {
+                        RemoteDeletedAt = tombstoneRevision,
+                        RemoteProductId = remoteId,
+                        RemoteUpdatedAt = tombstoneRevision
+                    }
+                }
+            },
+            CancellationToken.None);
+        using (var connection = db.Factory.Open())
+        {
+            var shadow = await connection.QuerySingleAsync<(
+                string PrimaryName,
+                long IsActive,
+                string Revision)>(@"
+SELECT primary_name AS PrimaryName,
+       is_active AS IsActive,
+       authoritative_revision AS Revision
+FROM article_product_remote_shadow
+WHERE remote_product_id = @remoteId;",
+                new { remoteId });
+            Assert.AreEqual("New remote canonical name", shadow.PrimaryName);
+            Assert.AreEqual(0L, shadow.IsActive);
+            Assert.AreEqual(tombstoneRevision, shadow.Revision);
+            Assert.AreEqual(
+                "Pending local name",
+                await connection.ExecuteScalarAsync<string>(
+                    "SELECT name FROM products WHERE id = @productId;",
+                    new { productId }));
         }
 
         var claim = await new ArticleMutationOutboxRepository(db.Factory)
@@ -490,6 +1061,361 @@ WHERE remote_product_id = @remoteId;",
             PosArticleMutationStatusPolicy.FailedConflict,
             await verify.ExecuteScalarAsync<string>(
                 "SELECT last_typed_code FROM article_mutation_outbox;"));
+    }
+
+    [TestMethod]
+    public async Task SuccessfulCorrection_ResolvesOnlyCoveredBlockedIntent()
+    {
+        using var coveredDb = TestDb.Create();
+        var coveredProductId = await SeedRemoteProductAsync(
+            coveredDb.Factory,
+            "ART-CORRECTION-001");
+        var coveredWriter =
+            new LocalArticleMutationWriter(coveredDb.Factory);
+        var firstCoveredUpdate = NewUpdate(
+            coveredProductId,
+            "ART-CORRECTION-001",
+            "First rejected name");
+        firstCoveredUpdate.ItemNumber = "ITEM-OLD";
+        firstCoveredUpdate.SecondaryName = "Old secondary";
+        await coveredWriter.UpdateAsync(
+            firstCoveredUpdate,
+            ProductWriteOrigin.LocalUserSave);
+        var coveredOutbox =
+            new ArticleMutationOutboxRepository(coveredDb.Factory);
+        var rejected = await coveredOutbox.ClaimBatchAsync(
+            "generation-correction-rejected");
+        await ApplyConflictAsync(
+            coveredOutbox,
+            rejected,
+            Revision(4),
+            "4");
+
+        var coveredCorrection = NewUpdate(
+            coveredProductId,
+            "ART-CORRECTION-001",
+            "Corrected name");
+        coveredCorrection.ItemNumber = "ITEM-OLD";
+        coveredCorrection.SecondaryName = "Old secondary";
+        await coveredWriter.UpdateAsync(
+            coveredCorrection,
+            ProductWriteOrigin.LocalUserSave);
+        var correction = await coveredOutbox.ClaimBatchAsync(
+            "generation-correction-applied");
+        var correctionMutationId =
+            correction.Requests.Single().Intent.MutationId;
+        await ApplySuccessAsync(
+            coveredOutbox,
+            correction,
+            await ProductRemoteIdAsync(
+                coveredDb.Factory,
+                coveredProductId),
+            Revision(5),
+            "5");
+
+        using (var connection = coveredDb.Factory.Open())
+        {
+            var resolved = await connection.QuerySingleAsync<(
+                string State,
+                string ResolutionCode,
+                string ResolvedAt,
+                string SupersededBy)>(@"
+SELECT state AS State,
+       resolution_code AS ResolutionCode,
+       resolved_at AS ResolvedAt,
+       superseded_by_mutation_id AS SupersededBy
+FROM article_mutation_outbox
+WHERE local_sequence = 1;");
+            Assert.AreEqual(
+                ArticleMutationOutboxStates.Completed,
+                resolved.State);
+            Assert.AreEqual(
+                "superseded_by_correction",
+                resolved.ResolutionCode);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(resolved.ResolvedAt));
+            Assert.AreEqual(
+                correctionMutationId,
+                resolved.SupersededBy);
+            Assert.AreEqual(0L, await coveredOutbox.CountUnresolvedAsync(
+                connection));
+        }
+
+        var coveredRemoteId = await ProductRemoteIdAsync(
+            coveredDb.Factory,
+            coveredProductId);
+        await new RemoteCatalogBatchRepository(coveredDb.Factory).ApplyAsync(
+            new RemoteCatalogBatch
+            {
+                Products = new[]
+                {
+                    new RemoteCatalogProductWrite
+                    {
+                        Barcode = "ART-CORRECTION-001",
+                        Name = "Canonical after correction",
+                        UnitPrice = 150,
+                        PurchasePrice = 60,
+                        StockQuantity = 15,
+                        RemoteProductId = coveredRemoteId,
+                        RemoteUpdatedAt = Revision(6)
+                    }
+                }
+            },
+            CancellationToken.None);
+        using (var connection = coveredDb.Factory.Open())
+        {
+            Assert.AreEqual(
+                "Canonical after correction",
+                await connection.ExecuteScalarAsync<string>(
+                    "SELECT name FROM products WHERE id = @id;",
+                    new { id = coveredProductId }));
+        }
+
+        using var unrelatedDb = TestDb.Create();
+        var unrelatedProductId = await SeedRemoteProductAsync(
+            unrelatedDb.Factory,
+            "ART-CORRECTION-UNRELATED-001");
+        var unrelatedWriter =
+            new LocalArticleMutationWriter(unrelatedDb.Factory);
+        var firstUnrelatedUpdate = NewUpdate(
+            unrelatedProductId,
+            "ART-CORRECTION-UNRELATED-001",
+            "Rejected name");
+        firstUnrelatedUpdate.ItemNumber = "ITEM-OLD";
+        firstUnrelatedUpdate.SecondaryName = "Old secondary";
+        await unrelatedWriter.UpdateAsync(
+            firstUnrelatedUpdate,
+            ProductWriteOrigin.LocalUserSave);
+        var unrelatedOutbox =
+            new ArticleMutationOutboxRepository(unrelatedDb.Factory);
+        await ApplyConflictAsync(
+            unrelatedOutbox,
+            await unrelatedOutbox.ClaimBatchAsync(
+                "generation-unrelated-rejected"),
+            Revision(7),
+            "7");
+        var itemOnly = NewUpdate(
+            unrelatedProductId,
+            "ART-CORRECTION-UNRELATED-001",
+            "Rejected name");
+        itemOnly.ItemNumber = "ITEM-CORRECTION-ONLY";
+        itemOnly.SecondaryName = "Old secondary";
+        await unrelatedWriter.UpdateAsync(
+            itemOnly,
+            ProductWriteOrigin.LocalUserSave);
+        var unrelatedCorrection = await unrelatedOutbox.ClaimBatchAsync(
+            "generation-unrelated-correction");
+        CollectionAssert.AreEqual(
+            new[] { PosArticleMutationFields.ItemNumber },
+            unrelatedCorrection.Requests.Single().Intent.FieldMask.ToArray());
+        await ApplySuccessAsync(
+            unrelatedOutbox,
+            unrelatedCorrection,
+            await ProductRemoteIdAsync(
+                unrelatedDb.Factory,
+                unrelatedProductId),
+            Revision(8),
+            "8");
+        using var unrelatedVerify = unrelatedDb.Factory.Open();
+        Assert.AreEqual(
+            ArticleMutationOutboxStates.FailedBlocked,
+            await unrelatedVerify.ExecuteScalarAsync<string>(@"
+SELECT state
+FROM article_mutation_outbox
+WHERE local_sequence = 1;"));
+        Assert.AreEqual(
+            1L,
+            await unrelatedOutbox.CountUnresolvedAsync(
+                unrelatedVerify));
+    }
+
+    [TestMethod]
+    public async Task TerminalFailure_ReleasesQueuedSuccessorsBeforeCorrection()
+    {
+        using var db = TestDb.Create();
+        var productId = await SeedRemoteProductAsync(
+            db.Factory,
+            "ART-TERMINAL-SUCCESSOR-001");
+        var writer = new LocalArticleMutationWriter(db.Factory);
+        await writer.UpdateAsync(
+            new LocalArticleUpdateRequest
+            {
+                ProductId = productId,
+                Barcode = "ART-TERMINAL-SUCCESSOR-001",
+                PrimaryName = "Rejected full edit",
+                ItemNumber = "ITEM-OLD",
+                SecondaryName = "Old secondary",
+                RetailPrice = 150,
+                PurchasePrice = 70,
+                StockQuantity = 18,
+                StockReason = "count_correction",
+                OccurredAt = DateTimeOffset.UtcNow
+            },
+            ProductWriteOrigin.LocalUserSave);
+        var outbox = new ArticleMutationOutboxRepository(db.Factory);
+        var productClaim = await outbox.ClaimBatchAsync(
+            "generation-terminal-product");
+        Assert.AreEqual(
+            PosArticleMutationKinds.ProductUpdate,
+            productClaim.Requests.Single().Intent.MutationKind);
+        await ApplyConflictAsync(
+            outbox,
+            productClaim,
+            Revision(4),
+            "4");
+
+        using (var connection = db.Factory.Open())
+        {
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    ArticleMutationOutboxStates.FailedBlocked,
+                    ArticleMutationOutboxStates.Pending,
+                    ArticleMutationOutboxStates.WaitingDependency
+                },
+                (await connection.QueryAsync<string>(@"
+SELECT state
+FROM article_mutation_outbox
+ORDER BY local_sequence;")).ToArray());
+        }
+
+        var priceClaim = await outbox.ClaimBatchAsync(
+            "generation-terminal-price");
+        Assert.AreEqual(
+            PosArticleMutationKinds.ProductPurchasePriceChange,
+            priceClaim.Requests.Single().Intent.MutationKind);
+        Assert.AreEqual(
+            Revision(4),
+            priceClaim.Requests.Single().Intent.BaseRevision);
+        await ApplySuccessAsync(
+            outbox,
+            priceClaim,
+            await ProductRemoteIdAsync(db.Factory, productId),
+            Revision(5),
+            "5",
+            priceHistoryId: Guid.NewGuid().ToString("D"));
+
+        var stockClaim = await outbox.ClaimBatchAsync(
+            "generation-terminal-stock");
+        Assert.AreEqual(
+            PosArticleMutationKinds.ProductManualStockAdjustment,
+            stockClaim.Requests.Single().Intent.MutationKind);
+        Assert.AreEqual(
+            Revision(5),
+            stockClaim.Requests.Single().Intent.BaseRevision);
+        await ApplySuccessAsync(
+            outbox,
+            stockClaim,
+            await ProductRemoteIdAsync(db.Factory, productId),
+            Revision(6),
+            "6",
+            stockMovementId: Guid.NewGuid().ToString("D"));
+
+        await writer.UpdateAsync(
+            new LocalArticleUpdateRequest
+            {
+                ProductId = productId,
+                Barcode = "ART-TERMINAL-SUCCESSOR-001",
+                PrimaryName = "Corrected full edit",
+                ItemNumber = "ITEM-OLD",
+                SecondaryName = "Old secondary",
+                RetailPrice = 150,
+                PurchasePrice = 70,
+                StockQuantity = 18,
+                StockReason = "count_correction",
+                OccurredAt = DateTimeOffset.UtcNow
+            },
+            ProductWriteOrigin.LocalUserSave);
+        var correction = await outbox.ClaimBatchAsync(
+            "generation-terminal-correction");
+        Assert.AreEqual(
+            PosArticleMutationKinds.ProductUpdate,
+            correction.Requests.Single().Intent.MutationKind);
+        await ApplySuccessAsync(
+            outbox,
+            correction,
+            await ProductRemoteIdAsync(db.Factory, productId),
+            Revision(7),
+            "7");
+        Assert.AreEqual(0L, await outbox.CountUnresolvedAsync());
+    }
+
+    [TestMethod]
+    public async Task ClaimTimeStaleBase_ReleasesQueuedSuccessor()
+    {
+        using var db = TestDb.Create();
+        var productId = await SeedRemoteProductAsync(
+            db.Factory,
+            "ART-STALE-SUCCESSOR-001");
+        await new LocalArticleMutationWriter(db.Factory).UpdateAsync(
+            new LocalArticleUpdateRequest
+            {
+                ProductId = productId,
+                Barcode = "ART-STALE-SUCCESSOR-001",
+                PrimaryName = "Locally edited",
+                ItemNumber = "ITEM-OLD",
+                SecondaryName = "Old secondary",
+                RetailPrice = 150,
+                PurchasePrice = 70,
+                StockQuantity = 15,
+                StockReason = "count_correction",
+                OccurredAt = DateTimeOffset.UtcNow
+            },
+            ProductWriteOrigin.LocalUserSave);
+        using (var connection = db.Factory.Open())
+        {
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    ArticleMutationOutboxStates.Pending,
+                    ArticleMutationOutboxStates.WaitingDependency
+                },
+                (await connection.QueryAsync<string>(@"
+SELECT state
+FROM article_mutation_outbox
+ORDER BY local_sequence;")).ToArray());
+            await connection.ExecuteAsync(@"
+UPDATE products
+SET remote_base_revision = @newRevision
+WHERE id = @productId;",
+                new
+                {
+                    newRevision = Revision(2),
+                    productId
+                });
+        }
+
+        var outbox = new ArticleMutationOutboxRepository(db.Factory);
+        var staleClaim = await outbox.ClaimBatchAsync(
+            "generation-stale-preflight");
+        Assert.AreEqual(0, staleClaim.Requests.Count);
+        using (var afterStale = db.Factory.Open())
+        {
+            CollectionAssert.AreEqual(
+                new[]
+                {
+                    ArticleMutationOutboxStates.FailedBlocked,
+                    ArticleMutationOutboxStates.Pending
+                },
+                (await afterStale.QueryAsync<string>(@"
+SELECT state
+FROM article_mutation_outbox
+ORDER BY local_sequence;")).ToArray());
+            Assert.AreEqual(
+                PosArticleMutationStatusPolicy.FailedConflict,
+                await afterStale.ExecuteScalarAsync<string>(@"
+SELECT last_typed_code
+FROM article_mutation_outbox
+WHERE local_sequence = 1;"));
+        }
+
+        var successorClaim = await outbox.ClaimBatchAsync(
+            "generation-stale-successor");
+        Assert.AreEqual(
+            PosArticleMutationKinds.ProductPurchasePriceChange,
+            successorClaim.Requests.Single().Intent.MutationKind);
+        Assert.AreEqual(
+            Revision(2),
+            successorClaim.Requests.Single().Intent.BaseRevision);
     }
 
     [TestMethod]
@@ -594,6 +1520,66 @@ WHERE id = @productId;",
         Assert.AreEqual(
             PosArticleMutationKinds.ProductPurchasePriceChange,
             priceClaim.Requests.Single().Intent.MutationKind);
+        var catalogBatch = new RemoteCatalogBatch
+        {
+            Products = new[]
+            {
+                new RemoteCatalogProductWrite
+                {
+                    Barcode = "ART-ECONOMIC-001",
+                    Name = "Remote product",
+                    UnitPrice = 150,
+                    PurchasePrice = 70,
+                    StockQuantity = 18,
+                    RemoteProductId = remoteId,
+                    RemoteUpdatedAt = Revision(7)
+                }
+            },
+            Prices = new[]
+            {
+                new RemoteCatalogPriceWrite
+                {
+                    EffectiveAt = "2026-07-28 12:00:00",
+                    Price = 70,
+                    RemotePriceId = priceHistoryId,
+                    RemoteProductId = remoteId,
+                    Source = "pos_article_mutation_v1",
+                    Type = "PURCHASE"
+                }
+            }
+        };
+
+        var pullBeforeAckBatch = new RemoteCatalogBatch
+        {
+            Prices = new[]
+            {
+                new RemoteCatalogPriceWrite
+                {
+                    EffectiveAt = null,
+                    Price = 70,
+                    RemotePriceId = priceHistoryId,
+                    RemoteProductId = remoteId,
+                    Source = "pos_article_mutation_v1",
+                    Type = "PURCHASE"
+                }
+            }
+        };
+        await new RemoteCatalogBatchRepository(db.Factory).ApplyAsync(
+            pullBeforeAckBatch,
+            CancellationToken.None);
+        using (var pulledBeforeAck = db.Factory.Open())
+        {
+            Assert.AreEqual(
+                2L,
+                await pulledBeforeAck.ExecuteScalarAsync<long>(
+                    "SELECT COUNT(1) FROM product_price_history;"));
+            Assert.IsNull(
+                await pulledBeforeAck.ExecuteScalarAsync<string>(@"
+SELECT remote_price_id
+FROM product_price_history
+WHERE article_mutation_id IS NOT NULL;"));
+        }
+
         await ApplySuccessAsync(
             outbox,
             priceClaim,
@@ -601,7 +1587,6 @@ WHERE id = @productId;",
             Revision(6),
             "6",
             priceHistoryId: priceHistoryId);
-
         var stockClaim = await outbox.ClaimBatchAsync(
             "generation-economic-stock");
         Assert.AreEqual(
@@ -616,22 +1601,7 @@ WHERE id = @productId;",
             stockMovementId: stockMovementId);
 
         await new RemoteCatalogBatchRepository(db.Factory).ApplyAsync(
-            new RemoteCatalogBatch
-            {
-                Products = new[]
-                {
-                    new RemoteCatalogProductWrite
-                    {
-                        Barcode = "ART-ECONOMIC-001",
-                        Name = "Remote product",
-                        UnitPrice = 150,
-                        PurchasePrice = 70,
-                        StockQuantity = 18,
-                        RemoteProductId = remoteId,
-                        RemoteUpdatedAt = Revision(7)
-                    }
-                }
-            },
+            catalogBatch,
             CancellationToken.None);
 
         using var connection = db.Factory.Open();
@@ -650,6 +1620,18 @@ SELECT remote_price_history_id
 FROM article_mutation_outbox
 WHERE mutation_kind = 'product_purchase_price_change';"));
         Assert.AreEqual(
+            priceHistoryId,
+            await connection.ExecuteScalarAsync<string>(@"
+SELECT remote_price_id
+FROM product_price_history
+WHERE article_mutation_id IS NOT NULL;"));
+        Assert.AreEqual(
+            "pos_article_mutation_v1",
+            await connection.ExecuteScalarAsync<string>(@"
+SELECT source
+FROM product_price_history
+WHERE article_mutation_id IS NOT NULL;"));
+        Assert.AreEqual(
             stockMovementId,
             await connection.ExecuteScalarAsync<string>(@"
 SELECT remote_stock_movement_id
@@ -661,6 +1643,129 @@ WHERE mutation_kind = 'product_manual_stock_adjustment';"));
 SELECT COUNT(1)
 FROM article_mutation_outbox
 WHERE state = 'completed';"));
+    }
+
+    [TestMethod]
+    public async Task PriceAck_MergesOnlyItsAuthoritativePulledRemoteEvent()
+    {
+        using var db = TestDb.Create();
+        var productId = await SeedRemoteProductAsync(
+            db.Factory,
+            "ART-PRICE-AMBIGUOUS-001");
+        await new LocalArticleMutationWriter(db.Factory).UpdateAsync(
+            new LocalArticleUpdateRequest
+            {
+                ProductId = productId,
+                Barcode = "ART-PRICE-AMBIGUOUS-001",
+                PrimaryName = "Remote product",
+                ItemNumber = "ITEM-OLD",
+                SecondaryName = "Old secondary",
+                RetailPrice = 150,
+                PurchasePrice = 70,
+                StockQuantity = 15,
+                StockReason = "count_correction",
+                OccurredAt = DateTimeOffset.UtcNow
+            },
+            ProductWriteOrigin.LocalUserSave);
+        var outbox = new ArticleMutationOutboxRepository(db.Factory);
+        var claim = await outbox.ClaimBatchAsync(
+            "generation-price-ambiguous");
+        await new LocalArticleMutationWriter(db.Factory).UpdateAsync(
+            new LocalArticleUpdateRequest
+            {
+                ProductId = productId,
+                Barcode = "ART-PRICE-AMBIGUOUS-NEW",
+                PrimaryName = "Remote product",
+                ItemNumber = "ITEM-OLD",
+                SecondaryName = "Old secondary",
+                RetailPrice = 150,
+                PurchasePrice = 70,
+                StockQuantity = 15,
+                StockReason = "count_correction",
+                OccurredAt = DateTimeOffset.UtcNow
+            },
+            ProductWriteOrigin.LocalUserSave);
+        var remoteId = await ProductRemoteIdAsync(db.Factory, productId);
+        var unrelatedRemotePriceId = Guid.NewGuid().ToString("D");
+        var ackRemotePriceId = Guid.NewGuid().ToString("D");
+
+        await new RemoteCatalogBatchRepository(db.Factory).ApplyAsync(
+            new RemoteCatalogBatch
+            {
+                Prices = new[]
+                {
+                    new RemoteCatalogPriceWrite
+                    {
+                        EffectiveAt = "2026-07-28 12:00:01",
+                        Price = 70,
+                        RemotePriceId = unrelatedRemotePriceId,
+                        RemoteProductId = remoteId,
+                        Source = "pos_article_mutation_v1",
+                        Type = "PURCHASE"
+                    },
+                    new RemoteCatalogPriceWrite
+                    {
+                        EffectiveAt = "2026-07-28 12:00:02",
+                        Price = 70,
+                        RemotePriceId = ackRemotePriceId,
+                        RemoteProductId = remoteId,
+                        Source = "pos_article_mutation_v1",
+                        Type = "PURCHASE"
+                    }
+                }
+            },
+            CancellationToken.None);
+        using (var beforeAck = db.Factory.Open())
+        {
+            Assert.AreEqual(
+                3L,
+                await beforeAck.ExecuteScalarAsync<long>(
+                    "SELECT COUNT(1) FROM product_price_history;"));
+            Assert.IsNull(
+                await beforeAck.ExecuteScalarAsync<string>(@"
+SELECT remote_price_id
+FROM product_price_history
+WHERE article_mutation_id IS NOT NULL;"));
+            Assert.AreEqual(
+                "ART-PRICE-AMBIGUOUS-001",
+                await beforeAck.ExecuteScalarAsync<string>(@"
+SELECT barcode
+FROM product_price_history
+WHERE article_mutation_id IS NOT NULL;"));
+            Assert.AreEqual(
+                2L,
+                await beforeAck.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM product_price_history
+WHERE article_mutation_id IS NULL
+  AND barcode = 'ART-PRICE-AMBIGUOUS-NEW';"));
+        }
+
+        await ApplySuccessAsync(
+            outbox,
+            claim,
+            remoteId,
+            Revision(8),
+            "8",
+            priceHistoryId: ackRemotePriceId);
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(
+            2L,
+            await verify.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM product_price_history;"));
+        Assert.AreEqual(
+            ackRemotePriceId,
+            await verify.ExecuteScalarAsync<string>(@"
+SELECT remote_price_id
+FROM product_price_history
+WHERE article_mutation_id IS NOT NULL;"));
+        Assert.AreEqual(
+            unrelatedRemotePriceId,
+            await verify.ExecuteScalarAsync<string>(@"
+SELECT remote_price_id
+FROM product_price_history
+WHERE article_mutation_id IS NULL;"));
     }
 
     private static LocalArticleCreateRequest NewCreate(string barcode, string name)
@@ -742,6 +1847,74 @@ WHERE state = 'completed';"));
                 StringComparison.Ordinal));
         Assert.IsTrue(validation.IsValid, validation.Code);
         await repository.ApplyValidatedResponseAsync(claim, validation);
+    }
+
+    private static async Task ApplyConflictAsync(
+        ArticleMutationOutboxRepository repository,
+        ArticleMutationClaim claim,
+        string authoritativeRevision,
+        string catalogRevision)
+    {
+        var request = claim.Requests.Single();
+        var result = new PosArticleMutationResult
+        {
+            DeliveryStatus = PosArticleMutationStatusPolicy.FailedConflict,
+            Ack = new PosArticleMutationAck
+            {
+                AttemptToken = request.AttemptToken,
+                AuthoritativeRevision = authoritativeRevision,
+                CatalogRevision = catalogRevision,
+                Code = PosArticleMutationStatusPolicy.FailedConflict,
+                IdempotencyKey = request.Intent.IdempotencyKey,
+                MutationId = request.Intent.MutationId,
+                PayloadHash = request.PayloadHash,
+                RemoteProductId = request.Intent.RemoteProductId,
+                Retryable = false,
+                SchemaVersion = PosArticleMutationContract.SchemaVersion,
+                ServerTimestamp = authoritativeRevision,
+                Status = PosArticleMutationStatusPolicy.FailedConflict,
+                Terminal = true
+            }
+        };
+        var validation = PosArticleMutationResponseValidator.Validate(
+            new PosArticleMutationResponse
+            {
+                Code = "success",
+                Ok = false,
+                Results = new[] { result },
+                SchemaVersion = PosArticleMutationContract.SchemaVersion,
+                ServerTime = authoritativeRevision
+            },
+            claim.Requests,
+            (_, attempt) => string.Equals(
+                attempt,
+                request.AttemptToken,
+                StringComparison.Ordinal));
+        Assert.IsTrue(validation.IsValid, validation.Code);
+        await repository.ApplyValidatedResponseAsync(claim, validation);
+    }
+
+    private static async Task ResolveOnlyCategoryAsync(
+        SqliteConnection connection,
+        string barcode)
+    {
+        var categoryId = await connection.ExecuteScalarAsync<int>(@"
+SELECT category_id
+FROM product_meta
+WHERE barcode = @barcode;",
+            new { barcode });
+        await connection.ExecuteAsync(@"
+UPDATE categories
+SET remote_category_id = @remoteCategoryId
+WHERE id = @categoryId;
+UPDATE article_mutation_outbox
+SET next_attempt_at = 0
+WHERE state = 'waiting_dependency';",
+            new
+            {
+                categoryId,
+                remoteCategoryId = Guid.NewGuid().ToString("D")
+            });
     }
 
     private static string Revision(int sequence)

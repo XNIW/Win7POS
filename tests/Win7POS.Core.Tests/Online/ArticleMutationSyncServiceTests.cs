@@ -85,6 +85,104 @@ WHERE local_product_id = @id;",
     }
 
     [TestMethod]
+    public async Task RestartImmediatelyRecoversYoungClaimAndSchedulesReplay()
+    {
+        using var db = TestDb.Create();
+        await CreateLocalProductAsync(db, "SYNC-YOUNG-CLAIM");
+        var interrupted = await new ArticleMutationOutboxRepository(db.Factory)
+            .ClaimBatchAsync("generation-before-restart");
+        Assert.AreEqual(1, interrupted.Requests.Count);
+        var sendCount = 0;
+        var service = new ArticleMutationSyncService(
+            db.Factory,
+            (_, envelope, _) =>
+            {
+                sendCount += 1;
+                return Task.FromResult(
+                    PosOnlineResult<PosArticleMutationResponse>.Ok(
+                        Response(
+                            envelope.Mutations,
+                            request => Applied(
+                                request,
+                                request.AttemptToken,
+                                PosArticleMutationStatusPolicy.Applied,
+                                Guid.NewGuid().ToString()))));
+            });
+
+        var result = await RunOnceAsync(db, service);
+
+        Assert.AreEqual(1, sendCount);
+        Assert.AreEqual(1, result.Acked);
+        using var connection = db.Factory.Open();
+        Assert.AreEqual(
+            ArticleMutationOutboxStates.Completed,
+            await connection.ExecuteScalarAsync<string>(
+                "SELECT state FROM article_mutation_outbox;"));
+        Assert.AreEqual(
+            2L,
+            await connection.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM article_mutation_attempts;"));
+        Assert.AreEqual(
+            1L,
+            await connection.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM article_mutation_attempts
+WHERE outcome = 'client_interrupted';"));
+    }
+
+    [TestMethod]
+    public async Task ConcurrentSameProcessDrains_DoNotRecoverOrDuplicateActiveSender()
+    {
+        using var db = TestDb.Create();
+        await CreateLocalProductAsync(db, "SYNC-SAME-PROCESS-FENCE");
+        var senderStarted = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseSender = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var sendCount = 0;
+        Func<
+            PosAdminWebOptions,
+            PosArticleMutationEnvelope,
+            CancellationToken,
+            Task<PosOnlineResult<PosArticleMutationResponse>>> sender =
+            async (_, envelope, _) =>
+            {
+                Interlocked.Increment(ref sendCount);
+                senderStarted.TrySetResult(true);
+                await releaseSender.Task;
+                return PosOnlineResult<PosArticleMutationResponse>.Ok(
+                    Response(
+                        envelope.Mutations,
+                        request => Applied(
+                            request,
+                            request.AttemptToken,
+                            PosArticleMutationStatusPolicy.Applied,
+                            Guid.NewGuid().ToString())));
+            };
+        var firstRun = RunOnceAsync(
+            db,
+            new ArticleMutationSyncService(db.Factory, sender));
+        await senderStarted.Task;
+
+        ArticleMutationSyncResult overlapping;
+        try
+        {
+            overlapping = await RunOnceAsync(
+                db,
+                new ArticleMutationSyncService(db.Factory, sender));
+            Assert.AreEqual(0, overlapping.Attempted);
+            Assert.AreEqual(1, Volatile.Read(ref sendCount));
+        }
+        finally
+        {
+            releaseSender.TrySetResult(true);
+        }
+        var completed = await firstRun;
+        Assert.AreEqual(1, completed.Acked);
+        Assert.AreEqual(1, Volatile.Read(ref sendCount));
+    }
+
+    [TestMethod]
     public async Task IncompleteResponse_AcknowledgesNothingInClaimedBatch()
     {
         using var db = TestDb.Create();
@@ -274,7 +372,7 @@ WHERE completed_at IS NULL;"));
 
         Assert.AreEqual(1, result.Blocked);
         Assert.AreEqual(0, result.Retried);
-        Assert.IsFalse(result.RequestCatalogNow);
+        Assert.IsTrue(result.RequestCatalogNow);
         using var connection = db.Factory.Open();
         Assert.AreEqual(
             ArticleMutationOutboxStates.FailedBlocked,
@@ -284,6 +382,10 @@ WHERE completed_at IS NULL;"));
             PosArticleMutationStatusPolicy.FailedConflict,
             await connection.ExecuteScalarAsync<string>(
                 "SELECT last_typed_code FROM article_mutation_outbox;"));
+        Assert.AreEqual(
+            "2026-07-28T12:00:01.123456Z",
+            await connection.ExecuteScalarAsync<string>(
+                "SELECT remote_base_revision FROM products;"));
         Assert.AreEqual(
             1L,
             (await new ArticleMutationOutboxRepository(db.Factory)
@@ -459,7 +561,12 @@ WHERE completed_at IS NULL;"));
             Ack = new PosArticleMutationAck
             {
                 AttemptToken = request.AttemptToken,
-                AuthoritativeRevision = null,
+                AuthoritativeRevision = string.Equals(
+                    code,
+                    PosArticleMutationStatusPolicy.FailedConflict,
+                    StringComparison.Ordinal)
+                    ? "2026-07-28T12:00:01.123456Z"
+                    : null,
                 CatalogRevision = "42",
                 Code = code,
                 IdempotencyKey = request.Intent.IdempotencyKey,

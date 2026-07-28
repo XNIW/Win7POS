@@ -222,8 +222,23 @@ namespace Win7POS.Core.Online
             }
             else
             {
-                if (ack.AuthoritativeRevision != null)
+                var isConflict = string.Equals(
+                    result.DeliveryStatus,
+                    PosArticleMutationStatusPolicy.FailedConflict,
+                    StringComparison.Ordinal);
+                if (isConflict)
+                {
+                    if (ack.AuthoritativeRevision != null &&
+                        !PosArticleMutationIntentPolicy.IsProductRevision(
+                            ack.AuthoritativeRevision))
+                    {
+                        return "article_mutation_failure_revision_invalid";
+                    }
+                }
+                else if (ack.AuthoritativeRevision != null)
+                {
                     return "article_mutation_failure_revision_invalid";
+                }
                 if (disposition == PosArticleMutationLocalDisposition.RetryWait)
                 {
                     if (ack.Terminal || !ack.Retryable)

@@ -14,6 +14,8 @@ namespace Win7POS.Data.Online
     /// </summary>
     public sealed class ArticleMutationSyncService
     {
+        private static readonly string ProcessClaimOwnerId =
+            "process-" + Guid.NewGuid().ToString("N");
         private readonly ArticleMutationOutboxRepository _outbox;
         private readonly Func<
             PosAdminWebOptions,
@@ -52,12 +54,19 @@ namespace Win7POS.Data.Online
             if (executionContext == null)
                 throw new ArgumentNullException(nameof(executionContext));
 
-            await _outbox.RecoverInterruptedAsync(TimeSpan.FromMinutes(2))
+            // The trusted sync generation can survive a process restart. The
+            // ephemeral process owner distinguishes an interrupted prior
+            // process from an active same-process sender.
+            await _outbox.RecoverInterruptedAsync(
+                    TimeSpan.Zero,
+                    ProcessClaimOwnerId)
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
             var claim = await _outbox.ClaimBatchAsync(
-                executionContext.Generation.GenerationId).ConfigureAwait(false);
+                executionContext.Generation.GenerationId,
+                PosArticleMutationContract.MaximumBatchCount,
+                ProcessClaimOwnerId).ConfigureAwait(false);
             if (claim.Requests.Count == 0)
             {
                 return await BuildEmptyResultAsync().ConfigureAwait(false);
@@ -209,7 +218,7 @@ namespace Win7POS.Data.Online
                             ? SyncFailureKind.RetryableRemote
                             : SyncFailureKind.None,
                 resultCode,
-                requestCatalogNow: acked > 0);
+                requestCatalogNow: acked > 0 || blocked > 0);
         }
 
         private async Task<ArticleMutationSyncResult> BuildEmptyResultAsync()

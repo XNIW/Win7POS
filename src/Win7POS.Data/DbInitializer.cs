@@ -726,8 +726,13 @@ CREATE TABLE IF NOT EXISTS article_mutation_outbox (
   claim_generation_id        TEXT NULL,
   claim_token                TEXT NULL,
   completed_at               TEXT NULL,
+  resolution_code            TEXT NULL,
+  resolved_at                TEXT NULL,
+  superseded_by_mutation_id  TEXT NULL,
   updated_at                 TEXT NOT NULL,
   FOREIGN KEY(local_product_id) REFERENCES products(id) ON DELETE RESTRICT,
+  FOREIGN KEY(superseded_by_mutation_id)
+    REFERENCES article_mutation_outbox(mutation_id) ON DELETE RESTRICT,
   CHECK(local_sequence >= 1),
   CHECK(state IN (
     'waiting_dependency',
@@ -808,6 +813,9 @@ ON article_mutation_outbox(remote_product_id)
 WHERE remote_product_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_article_mutation_local_product
 ON article_mutation_outbox(local_product_id, local_sequence);
+CREATE INDEX IF NOT EXISTS idx_article_mutation_superseded_by
+ON article_mutation_outbox(superseded_by_mutation_id)
+WHERE superseded_by_mutation_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_article_mutation_attempt_mutation
 ON article_mutation_attempts(mutation_id, id);
 CREATE INDEX IF NOT EXISTS idx_article_remote_shadow_local

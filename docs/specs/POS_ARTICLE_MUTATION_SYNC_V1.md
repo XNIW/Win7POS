@@ -35,7 +35,7 @@ Vendored byte-identical copies live under
 | Full Edit Save | `UpdateLocalArticleAsync` → `LocalArticleMutationWriter.UpdateAsync` | `product_update` for changed identity fields | exact field-mask and dependency tests |
 | Barcode/item-number Save | same update transaction | `product_update` with exact changed keys | contract/repository/loopback |
 | Primary/secondary name Save | same update transaction | `product_update` with exact changed keys | contract/repository/loopback |
-| Category/supplier Save | same update transaction | verified remote reference, or durable `dependency_missing_remote_reference` block | missing-reference tests |
+| Category/supplier Save | same update transaction | verified remote reference, or scheduled `dependency_missing_remote_reference` dependency | missing-reference tests |
 | Retail price Save | same update transaction plus one `product_price_history` row | `product_retail_price_change` | exactly-once history tests |
 | Purchase price Save | same update transaction plus one `product_price_history` row | `product_purchase_price_change` | exactly-once history tests |
 | Manual stock Confirm | same update transaction plus one `article_manual_stock_adjustments` row | `product_manual_stock_adjustment` with signed delta/reason | +5/-2 and sales-isolation tests |
@@ -103,6 +103,7 @@ Migration `0010-article-mutation-outbox` is additive. It adds:
 - `article_mutation_attempts`;
 - `article_manual_stock_adjustments`;
 - `article_product_remote_shadow`;
+- auditable correction resolution metadata on blocked outbox rows;
 - state/sequence/product/attempt indexes.
 
 Outbox states:
@@ -124,6 +125,10 @@ wire-eligible in a batch.
 Claims and attempts are durable. An abandoned `in_progress` claim is recovered
 without changing mutation/idempotency/hash. Transient failures retain the
 payload and schedule bounded exponential backoff with deterministic jitter.
+For a remotely identified product, a terminal predecessor releases the next
+queued semantic intent against the current authoritative base instead of
+leaving an unsweepable `waiting_dependency`; the terminal row remains visible
+until a covered correction succeeds.
 
 Backup naturally includes the SQLite tables. Restore, database replacement and
 shop transition refuse unresolved waiting/pending/in-progress/retry/blocked
@@ -163,10 +168,19 @@ Visible terminal blocks:
 - `target_not_found`;
 - `identity_conflict`;
 - `idempotency_payload_mismatch`;
-- `dependency_missing_remote_reference`.
+- invalid or corrupt dependency materialization.
 
-A correction is a new immutable mutation with a later sequence. There is no
-blind last-write-wins.
+`dependency_missing_remote_reference` remains scheduled in
+`waiting_dependency`; it is materialized after the local category or supplier
+receives its remote UUID.
+
+A correction is a new immutable mutation with a later sequence. When that
+mutation succeeds, it resolves only semantically covered earlier blocks:
+product-update masks must be a superset, price kinds must match, and activation
+mutations supersede earlier activation state. Stock deltas and create/duplicate
+intents are never auto-superseded. The earlier row and failure receipt remain
+auditable with `resolution_code`, `resolved_at`, and
+`superseded_by_mutation_id`; there is no blind last-write-wins.
 
 ## Pull protection and zero echo
 
@@ -178,6 +192,11 @@ while retaining the local overlay and authoritative revision.
 ACK/canonical reconciliation updates the base without creating article
 outbox rows. Remote price IDs, article mutation IDs and manual stock mutation
 IDs are unique, preventing duplicate local history or movement on replay/pull.
+If catalog pull observes a POS-origin price before its ACK, the pull row stays
+unattributed. The authoritative ACK merges only the row with its exact remote
+price ID into the mutation-owned local history; same-value events with other
+remote IDs remain separate evidence. Barcode is mutable snapshot evidence and
+does not override exact remote-price ownership during that merge.
 Authoritative full-refresh exactness and the unbounded 676-page drain remain
 unchanged.
 

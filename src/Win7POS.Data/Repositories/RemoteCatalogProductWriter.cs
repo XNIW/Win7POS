@@ -63,43 +63,29 @@ namespace Win7POS.Data.Repositories
             {
                 if (PosArticleMutationIntentPolicy.IsProductRevision(remoteUpdatedAt))
                 {
-                    var state = await conn.QueryFirstOrDefaultAsync<ProtectedShadowSource>(@"
-SELECT p.barcode AS Barcode,
-       p.name AS PrimaryName,
-       p.unitPrice AS RetailPrice,
-       COALESCE(m.article_code, '') AS ItemNumber,
-       COALESCE(m.name2, '') AS SecondaryName,
-       COALESCE(m.purchase_price, 0) AS PurchasePrice,
-       COALESCE(m.stock_qty, 0) AS StockQuantity,
-       reference.remote_category_id AS RemoteCategoryId,
-       reference.remote_supplier_id AS RemoteSupplierId
-FROM products p
-LEFT JOIN product_meta m ON m.barcode = p.barcode
-LEFT JOIN remote_catalog_product_references reference
-  ON reference.remote_product_id = p.remote_product_id
-WHERE p.id = @productId
-LIMIT 1;",
-                        new { productId = protectedProductId.Value },
+                    await conn.ExecuteAsync(@"
+UPDATE products
+SET remote_base_revision = @authoritativeRevision
+WHERE id = @productId
+  AND remote_product_id = @remoteProductId;
+
+UPDATE article_product_remote_shadow
+SET is_active = 0,
+    authoritative_revision = @authoritativeRevision,
+    updated_at = @updatedAt
+WHERE remote_product_id = @remoteProductId
+  AND (
+    local_product_id = @productId
+    OR local_product_id IS NULL
+  );",
+                        new
+                        {
+                            productId = protectedProductId.Value,
+                            remoteProductId = normalizedRemoteProductId,
+                            authoritativeRevision = remoteUpdatedAt,
+                            updatedAt = DateTimeOffset.UtcNow.ToString("O")
+                        },
                         tx).ConfigureAwait(false);
-                    if (state != null)
-                    {
-                        await UpsertRemoteShadowAsync(
-                            conn,
-                            tx,
-                            protectedProductId,
-                            normalizedRemoteProductId,
-                            state.Barcode,
-                            state.ItemNumber,
-                            state.PrimaryName,
-                            state.SecondaryName,
-                            state.RemoteCategoryId,
-                            state.RemoteSupplierId,
-                            state.RetailPrice,
-                            state.PurchasePrice,
-                            state.StockQuantity,
-                            false,
-                            remoteUpdatedAt).ConfigureAwait(false);
-                    }
                 }
                 return true;
             }
@@ -120,19 +106,6 @@ WHERE remote_product_id = @remoteProductId
                 tx).ConfigureAwait(false);
 
             return rows > 0;
-        }
-
-        private sealed class ProtectedShadowSource
-        {
-            public string Barcode { get; set; } = string.Empty;
-            public string PrimaryName { get; set; } = string.Empty;
-            public long RetailPrice { get; set; }
-            public string ItemNumber { get; set; } = string.Empty;
-            public string SecondaryName { get; set; } = string.Empty;
-            public int PurchasePrice { get; set; }
-            public int StockQuantity { get; set; }
-            public string RemoteCategoryId { get; set; } = string.Empty;
-            public string RemoteSupplierId { get; set; } = string.Empty;
         }
 
         internal async Task<long> UpsertProductAndMetaInTransactionAsync(

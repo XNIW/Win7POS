@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Dapper;
@@ -583,21 +584,6 @@ WHERE local_product_id = @id
                     .ConfigureAwait(true);
                 result.UiScreenshots = 2;
 
-                var cleanup = await BuildCleanupManifestAsync(
-                        factory,
-                        runId,
-                        localProductIds,
-                        directMutationIds)
-                    .ConfigureAwait(false);
-                WriteJson(
-                    Path.Combine(outputDirectory, "CLEANUP-MANIFEST.json"),
-                    cleanup);
-                WriteCleanupPrompt(
-                    Path.Combine(
-                        outputDirectory,
-                        "NEXT-CODEX-MAC-FINAL-CLEANUP.md"),
-                    cleanup);
-                result.CleanupManifestCreated = true;
                 result.Passed = true;
                 result.Code = "success";
             }
@@ -609,6 +595,33 @@ WHERE local_product_id = @id
             }
             finally
             {
+                try
+                {
+                    Directory.CreateDirectory(outputDirectory);
+                    var cleanup = await BuildCleanupManifestAsync(
+                            factory,
+                            runId,
+                            localProductIds,
+                            directMutationIds)
+                        .ConfigureAwait(false);
+                    WriteJson(
+                        Path.Combine(
+                            outputDirectory,
+                            "CLEANUP-MANIFEST.json"),
+                        cleanup);
+                    WriteCleanupPrompt(
+                        Path.Combine(
+                            outputDirectory,
+                            "NEXT-CODEX-MAC-FINAL-CLEANUP.md"),
+                        cleanup);
+                    result.CleanupManifestCreated = true;
+                }
+                catch (Exception cleanupFailure)
+                {
+                    result.Passed = false;
+                    result.Code = "cleanup_manifest_write_failed";
+                    result.ExceptionType = cleanupFailure.GetType().Name;
+                }
                 result.CompletedAtUtc = UtcNow();
                 result.ActiveHost = activeHost;
                 await WriteEvidenceAsync(factory, outputDirectory, result)
@@ -1371,6 +1384,8 @@ FROM (
                     editor.Show();
                     editor.UpdateLayout();
                     await Task.Delay(250).ConfigureAwait(true);
+                    RedactEditableValuesForEvidence(editor);
+                    editor.UpdateLayout();
                     CaptureWindow(
                         editor,
                         Path.Combine(
@@ -1435,6 +1450,41 @@ FROM (
             }
         }
 
+        private static void RedactEditableValuesForEvidence(
+            DependencyObject root)
+        {
+            if (root == null) return;
+            var textBox = root as TextBox;
+            if (textBox != null)
+            {
+                textBox.SetCurrentValue(
+                    TextBox.TextProperty,
+                    "[REDACTED]");
+            }
+            var comboBox = root as ComboBox;
+            if (comboBox != null)
+            {
+                if (comboBox.IsEditable)
+                {
+                    comboBox.SetCurrentValue(
+                        ComboBox.TextProperty,
+                        "[REDACTED]");
+                }
+                else
+                {
+                    comboBox.SetCurrentValue(
+                        ComboBox.SelectedIndexProperty,
+                        -1);
+                }
+            }
+            var count = VisualTreeHelper.GetChildrenCount(root);
+            for (var index = 0; index < count; index += 1)
+            {
+                RedactEditableValuesForEvidence(
+                    VisualTreeHelper.GetChild(root, index));
+            }
+        }
+
         private static async Task<CleanupManifest> BuildCleanupManifestAsync(
             SqliteConnectionFactory factory,
             string runId,
@@ -1444,10 +1494,23 @@ FROM (
             var products = new List<CleanupProduct>();
             using (var connection = factory.Open())
             {
-                foreach (var localProductId in localProductIds.Distinct())
+                var scopedLocalProductIds = new HashSet<long>(
+                    localProductIds ?? Array.Empty<long>());
+                if (IsSafeRunId(runId))
+                {
+                    var discovered = await connection.QueryAsync<long>(@"
+SELECT id
+FROM products
+WHERE substr(barcode, 1, length(@barcodePrefix)) = @barcodePrefix;",
+                        new { barcodePrefix = runId + "-" })
+                        .ConfigureAwait(false);
+                    scopedLocalProductIds.UnionWith(discovered);
+                }
+                foreach (var localProductId in scopedLocalProductIds.OrderBy(
+                    value => value))
                 {
                     var row = await connection
-                        .QueryFirstAsync<CleanupProductRow>(@"
+                        .QueryFirstOrDefaultAsync<CleanupProductRow>(@"
 SELECT id AS LocalProductId,
        barcode AS Barcode,
        client_product_id AS ClientProductId,
@@ -1456,6 +1519,7 @@ FROM products
 WHERE id = @localProductId;",
                             new { localProductId })
                         .ConfigureAwait(false);
+                    if (row == null) continue;
                     var mutationIds = (await connection.QueryAsync<string>(@"
 SELECT mutation_id
 FROM article_mutation_outbox
@@ -1475,7 +1539,10 @@ ORDER BY local_sequence;",
             return new CleanupManifest
             {
                 CreatedAtUtc = UtcNow(),
-                DirectMutationIds = directMutationIds.ToArray(),
+                DirectMutationIds = (directMutationIds ??
+                    Array.Empty<string>()).Distinct(StringComparer.Ordinal)
+                    .OrderBy(value => value, StringComparer.Ordinal)
+                    .ToArray(),
                 Products = products.ToArray(),
                 RunId = runId,
                 Scope = "synthetic_products_only"
