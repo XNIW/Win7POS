@@ -46,8 +46,6 @@ namespace Win7POS.Wpf.Pos.Online
         private const int MaxCatalogPullAttempts = 3;
         private const int CatalogPullPageLimit = 1000;
         private const int MaxBackgroundCatalogPullPages = 8;
-        private const int LegacyFullCatalogPullPages = 120;
-        private const int MaxAuthoritativeCatalogPullPages = 512;
 
         private readonly SqliteConnectionFactory _factory;
         private readonly FileLogger _logger;
@@ -166,9 +164,7 @@ namespace Win7POS.Wpf.Pos.Online
                 options,
                 trustedSession,
                 clearStoredStateOnDenied: false,
-                maxPages: forceFullRepair || bootstrapRun
-                    ? MaxAuthoritativeCatalogPullPages
-                    : MaxBackgroundCatalogPullPages,
+                maxPages: MaxBackgroundCatalogPullPages,
                 bootstrapRun: bootstrapRun,
                 cancellationToken,
                 progress,
@@ -197,7 +193,7 @@ namespace Win7POS.Wpf.Pos.Online
                 options,
                 trustedSession,
                 clearStoredStateOnDenied: true,
-                maxPages: LegacyFullCatalogPullPages,
+                maxPages: MaxBackgroundCatalogPullPages,
                 bootstrapRun: true,
                 cancellationToken,
                 progress).ConfigureAwait(false);
@@ -223,7 +219,7 @@ namespace Win7POS.Wpf.Pos.Online
                 options,
                 trustedSession,
                 clearStoredStateOnDenied: true,
-                maxPages: LegacyFullCatalogPullPages,
+                maxPages: MaxBackgroundCatalogPullPages,
                 bootstrapRun: true,
                 cancellationToken,
                 progress,
@@ -284,6 +280,7 @@ namespace Win7POS.Wpf.Pos.Online
             }
 
             var capturedEpoch = -1L;
+            var authoritativeRunObserved = false;
             try
             {
                 using (await new CatalogShopTransitionBarrier(_factory)
@@ -350,16 +347,19 @@ namespace Win7POS.Wpf.Pos.Online
                     using var catalogApplyRun = catalogBatchRepository.CreateRunContext();
                     var catalogReconciler = new CatalogFullRefreshReconciler(_factory);
                     var syncTimer = Stopwatch.StartNew();
-                    var effectiveMaxPages = maxPages;
+                    var deltaPageLimit = Math.Max(1L, maxPages);
                     var totalStats = new CatalogApplyStats();
                     var displayWarnings = new CatalogWarningSummary();
                     PosCatalogPullResponse lastResponse = null;
                     PosOnlineResult<PosCatalogPullResponse> lastResult = null;
-                    var pagesProcessed = 0;
+                    var pagesProcessed = 0L;
                     var fullRefresh = false;
                     var receivedFullLanes = new CatalogPaginationLaneCounts(0, 0, 0, 0);
                     var fullLaneConflictCode = string.Empty;
                     var fullStage = new CatalogFullResponseStageRepository(_factory);
+                    CatalogFullResponseStageResourceBudget fullStageResourceBudget = null;
+                    CatalogAuthoritativeStageEvidence authoritativeEvidence = null;
+                    CatalogExactnessResult exactness = null;
                     var fullStageGeneration = Guid.NewGuid().ToString("N");
                     _logger.LogInfo(
                         "Catalog pull started: category=catalog.pull operation=catalog.pull stage=request" +
@@ -401,7 +401,8 @@ namespace Win7POS.Wpf.Pos.Online
                     var fullStageStarted = false;
                     try
                     {
-                    CatalogPageBudgetDecision firstPageBudget = null;
+                    CatalogAuthoritativeDrainDecision authoritativeDrainPlan = null;
+                    CatalogAuthoritativeProgressBudget authoritativeProgressBudget = null;
                     var persistedDeltaChain = forceFullRepair
                         ? CatalogDeltaChainState.Empty()
                         : await catalogState.LoadDeltaChainAsync(
@@ -459,8 +460,27 @@ namespace Win7POS.Wpf.Pos.Online
                             CatalogShopStateRepository.FingerprintValue(binding.Cursor));
                     }
 
-                    for (var page = 1; page <= effectiveMaxPages; page++)
+                    var page = 1L;
+                    while (fullRefresh || page <= deltaPageLimit)
                     {
+                        if (fullRefresh &&
+                            authoritativeProgressBudget != null &&
+                            syncTimer.ElapsedMilliseconds >
+                            authoritativeProgressBudget.OverallTimeoutMilliseconds)
+                        {
+                            var timeoutCode =
+                                CatalogAuthoritativeDrainBudgetPolicy.ProgressTimeoutCode;
+                            await StoreCatalogFailureAsync(timeoutCode).ConfigureAwait(false);
+                            await StoreCatalogBootstrapStatusAsync(
+                                    BootstrapStatusFailedRetryable)
+                                .ConfigureAwait(false);
+                            return PosCatalogPullOutcome.Failure(
+                                timeoutCode,
+                                false,
+                                true,
+                                pagesProcessed);
+                        }
+
                         var requestCursor = networkCursor;
                         var request = new PosCatalogPullRequest
                         {
@@ -473,12 +493,57 @@ namespace Win7POS.Wpf.Pos.Online
                             // TASK-027 scanner marker: SyncCursor is loaded from persistent shop-bound state.
                             SyncCursor = requestCursor,
                         };
-                        var catalogAttempt = await CatalogPullWithRetryAsync(
-                            client,
-                            request,
-                            executionContext,
-                            cancellationToken)
-                            .ConfigureAwait(false);
+                        CatalogPullAttempt catalogAttempt;
+                        using (var pageProgressCts =
+                            authoritativeProgressBudget == null
+                                ? null
+                                : CancellationTokenSource.CreateLinkedTokenSource(
+                                    cancellationToken))
+                        {
+                            if (pageProgressCts != null)
+                            {
+                                var remainingOverall = Math.Max(
+                                    1L,
+                                    authoritativeProgressBudget
+                                        .OverallTimeoutMilliseconds -
+                                    syncTimer.ElapsedMilliseconds);
+                                var requestBudget = Math.Min(
+                                    authoritativeProgressBudget
+                                        .NoProgressTimeoutMilliseconds,
+                                    remainingOverall);
+                                pageProgressCts.CancelAfter(
+                                    TimeSpan.FromMilliseconds(requestBudget));
+                            }
+
+                            try
+                            {
+                                catalogAttempt = await CatalogPullWithRetryAsync(
+                                    client,
+                                    request,
+                                    executionContext,
+                                    pageProgressCts?.Token ?? cancellationToken)
+                                    .ConfigureAwait(false);
+                            }
+                            catch (OperationCanceledException) when (
+                                !cancellationToken.IsCancellationRequested &&
+                                pageProgressCts != null &&
+                                pageProgressCts.IsCancellationRequested)
+                            {
+                                var timeoutCode =
+                                    CatalogAuthoritativeDrainBudgetPolicy
+                                        .ProgressTimeoutCode;
+                                await StoreCatalogFailureAsync(timeoutCode)
+                                    .ConfigureAwait(false);
+                                await StoreCatalogBootstrapStatusAsync(
+                                        BootstrapStatusFailedRetryable)
+                                    .ConfigureAwait(false);
+                                return PosCatalogPullOutcome.Failure(
+                                    timeoutCode,
+                                    false,
+                                    true,
+                                    pagesProcessed);
+                            }
+                        }
                         var result = catalogAttempt.Result;
                         var attemptNumber = catalogAttempt.AttemptNumber;
                         var resultCode = result.Value != null && !result.Value.Ok
@@ -622,6 +687,8 @@ namespace Win7POS.Wpf.Pos.Online
                             response.SyncMode,
                             "full_refresh",
                             StringComparison.OrdinalIgnoreCase);
+                        authoritativeRunObserved =
+                            authoritativeRunObserved || pageIsFullRefresh;
                         var fullSnapshotExpected = pageIsFullRefresh ||
                             requiresFullBoundary ||
                             requestCursor.Length == 0;
@@ -653,20 +720,37 @@ namespace Win7POS.Wpf.Pos.Online
 
                         if (page == 1 && pageIsFullRefresh)
                         {
-                            firstPageBudget = CatalogPaginationSafetyPolicy.CalculatePageBudget(
-                                response.CatalogSummary,
-                                CatalogPullPageLimit,
-                                LegacyFullCatalogPullPages,
-                                MaxAuthoritativeCatalogPullPages);
-                            if (!firstPageBudget.Allowed)
+                            authoritativeDrainPlan =
+                                CatalogAuthoritativeDrainBudgetPolicy.Calculate(
+                                    response.CatalogSummary);
+                            if (!authoritativeDrainPlan.Allowed)
                             {
-                                await StoreCatalogFailureAsync(firstPageBudget.Code).ConfigureAwait(false);
+                                await StoreCatalogFailureAsync(authoritativeDrainPlan.Code)
+                                    .ConfigureAwait(false);
                                 await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
                                     .ConfigureAwait(false);
                                 return PosCatalogPullOutcome.Failure(
-                                    firstPageBudget.Code,
+                                    authoritativeDrainPlan.Code,
                                     false,
                                     false,
+                                    pagesProcessed);
+                            }
+
+                            authoritativeProgressBudget =
+                                CatalogAuthoritativeDrainBudgetPolicy
+                                    .CalculateProgressBudget(authoritativeDrainPlan);
+                            if (!authoritativeProgressBudget.Allowed)
+                            {
+                                await StoreCatalogFailureAsync(
+                                        authoritativeProgressBudget.Code)
+                                    .ConfigureAwait(false);
+                                await StoreCatalogBootstrapStatusAsync(
+                                        BootstrapStatusFailedRetryable)
+                                    .ConfigureAwait(false);
+                                return PosCatalogPullOutcome.Failure(
+                                    authoritativeProgressBudget.Code,
+                                    false,
+                                    response.HasMore,
                                     pagesProcessed);
                             }
                         }
@@ -824,7 +908,9 @@ namespace Win7POS.Wpf.Pos.Online
                             !CatalogHasMutations(response.Catalog) &&
                             string.Equals(response.SyncMode, "delta", StringComparison.OrdinalIgnoreCase) &&
                             sameCursor;
-                        var responseCursorAlreadySeen = responseCursorFingerprint.Length > 0 &&
+                        var authoritativeCursor = pageIsFullRefresh || fullRefresh;
+                        var responseCursorAlreadySeen = !authoritativeCursor &&
+                            responseCursorFingerprint.Length > 0 &&
                             seenCursorFingerprints.Contains(responseCursorFingerprint);
                         if (responseCursor.Length == 0 ||
                             (!allowsDeltaNoOpCursor &&
@@ -832,7 +918,9 @@ namespace Win7POS.Wpf.Pos.Online
                               responseCursorFingerprint.Length == 0 ||
                               responseCursorAlreadySeen)))
                         {
-                            const string cursorProgressCode = "catalog_cursor_not_progressing";
+                            var cursorProgressCode = authoritativeCursor
+                                ? CatalogAuthoritativeDrainBudgetPolicy.CursorRepeatedCode
+                                : "catalog_cursor_not_progressing";
                             if (!pageIsFullRefresh && !fullRefresh)
                             {
                                 await catalogState.RequestFullRepairWhileBarrierHeldAsync(
@@ -873,7 +961,7 @@ namespace Win7POS.Wpf.Pos.Online
                                 pagesProcessed);
                         }
 
-                        if (!allowsDeltaNoOpCursor)
+                        if (!authoritativeCursor && !allowsDeltaNoOpCursor)
                         {
                             seenCursorFingerprints.Add(responseCursorFingerprint);
                         }
@@ -906,10 +994,9 @@ namespace Win7POS.Wpf.Pos.Online
                                 // A server-selected full refresh must drain in this run. Keeping the
                                 // background delta cap here would restart from page one forever because
                                 // full-refresh cursors are intentionally not checkpointed mid-snapshot.
-                                // The exact distinct-lane and tombstone evidence is staged and replayed
-                                // atomically after the durable response chain is drained. Until then,
-                                // keep the fetch bounded by the independent authoritative hard ceiling.
-                                effectiveMaxPages = MaxAuthoritativeCatalogPullPages;
+                                // The first complete manifest already selected the sequential-lane
+                                // active budget above. Tombstone continuation may expand it only through
+                                // CatalogAuthoritativeDrainBudgetPolicy after bounded evidence is staged.
                             }
                             if (requiresFullBoundary && !fullRefresh)
                             {
@@ -961,17 +1048,170 @@ namespace Win7POS.Wpf.Pos.Online
                         {
                             if (!fullStageStarted)
                             {
+                                if (!fullStage.TryCreateResourceBudget(
+                                    out fullStageResourceBudget,
+                                    out var availableStageBytes,
+                                    out var requiredStageBytes))
+                                {
+                                    var resourceCode =
+                                        CatalogAuthoritativeDrainBudgetPolicy
+                                            .InsufficientDiskCode;
+                                    await StoreCatalogFailureAsync(resourceCode)
+                                        .ConfigureAwait(false);
+                                    await StoreCatalogBootstrapStatusAsync(
+                                            BootstrapStatusFailedRetryable)
+                                        .ConfigureAwait(false);
+                                    _logger.LogWarning(
+                                        "Catalog authoritative disk preflight rejected: category=catalog.pull" +
+                                        " code=" + resourceCode +
+                                        " availableBytes=" +
+                                        Math.Max(0L, availableStageBytes).ToString() +
+                                        " requiredBytes=" +
+                                        requiredStageBytes.ToString());
+                                    return PosCatalogPullOutcome.Failure(
+                                        resourceCode,
+                                        false,
+                                        response.HasMore,
+                                        pagesProcessed);
+                                }
                                 await fullStage.BeginAsync(fullStageGeneration).ConfigureAwait(false);
                                 fullStageStarted = true;
                             }
 
-                            fullStageBytes = await fullStage.AppendAsync(
-                                fullStageGeneration,
-                                page,
-                                response,
-                                fullStageBytes).ConfigureAwait(false);
-                            receivedFullLanes = receivedFullLanes.Add(
-                                CatalogPaginationLaneCounts.FromPayload(response.Catalog));
+                            try
+                            {
+                                fullStageBytes = await fullStage.AppendAsync(
+                                    fullStageGeneration,
+                                    page,
+                                    responseCursorFingerprint,
+                                    response,
+                                    fullStageBytes,
+                                    fullStageResourceBudget).ConfigureAwait(false);
+                            }
+                            catch (InvalidOperationException ex) when (
+                                string.Equals(
+                                    ex.Message,
+                                    "catalog_full_stage_page_too_large",
+                                    StringComparison.Ordinal) ||
+                                string.Equals(
+                                    ex.Message,
+                                    CatalogAuthoritativeDrainBudgetPolicy
+                                        .StageByteBudgetExceededCode,
+                                    StringComparison.Ordinal) ||
+                                string.Equals(
+                                    ex.Message,
+                                    CatalogAuthoritativeDrainBudgetPolicy
+                                        .InsufficientDiskCode,
+                                    StringComparison.Ordinal) ||
+                                string.Equals(
+                                    ex.Message,
+                                    CatalogAuthoritativeDrainBudgetPolicy
+                                        .NumericOverflowCode,
+                                    StringComparison.Ordinal) ||
+                                string.Equals(
+                                    ex.Message,
+                                    CatalogAuthoritativeDrainBudgetPolicy
+                                        .CursorRepeatedCode,
+                                    StringComparison.Ordinal))
+                            {
+                                var resourceCode = string.Equals(
+                                    ex.Message,
+                                    "catalog_full_stage_page_too_large",
+                                    StringComparison.Ordinal)
+                                    ? CatalogAuthoritativeDrainBudgetPolicy
+                                        .StageByteBudgetExceededCode
+                                    : ex.Message;
+                                await StoreCatalogFailureAsync(resourceCode)
+                                    .ConfigureAwait(false);
+                                await StoreCatalogBootstrapStatusAsync(
+                                        BootstrapStatusFailedRetryable)
+                                    .ConfigureAwait(false);
+                                _logger.LogWarning(
+                                    "Catalog authoritative stage resource ceiling reached: category=catalog.pull" +
+                                    " code=" + SafeCode(resourceCode) +
+                                    " page=" + page.ToString() +
+                                    " activeBudget=" +
+                                    (authoritativeDrainPlan?.ActivePageBudget ?? 0L).ToString() +
+                                    " stageBudgetBytes=" +
+                                    (fullStageResourceBudget?.MaximumStagedBytes ?? 0L).ToString() +
+                                    " stagedBytes=" + fullStageBytes.ToString());
+                                return PosCatalogPullOutcome.Failure(
+                                    resourceCode,
+                                    false,
+                                    response.HasMore,
+                                    pagesProcessed);
+                            }
+
+                            var receivedBeforeFullPage = receivedFullLanes;
+                            authoritativeEvidence = await catalogBatchRepository
+                                .StageAuthoritativePageAsync(
+                                    RemoteCatalogBatchMapper.BuildRemoteCatalogBatch(
+                                        response,
+                                        true,
+                                        new CatalogAuthoritativeStagePage
+                                        {
+                                            FullRunId = fullStageGeneration,
+                                            HasMore = response.HasMore,
+                                            PageNumber = page
+                                        }),
+                                    cancellationToken,
+                                    CreateCommitFence(
+                                        trustedSession,
+                                        binding.Epoch,
+                                        committedCursor,
+                                        committedMode,
+                                        generation),
+                                    loadCumulativeEvidence: !response.HasMore)
+                                .ConfigureAwait(false);
+                            if (authoritativeEvidence != null)
+                            {
+                                fullLaneConflictCode =
+                                    authoritativeEvidence.ConflictCode;
+                                if (fullLaneConflictCode.Length > 0)
+                                {
+                                    await StoreCatalogFailureAsync(
+                                            fullLaneConflictCode)
+                                        .ConfigureAwait(false);
+                                    await StoreCatalogBootstrapStatusAsync(
+                                            BootstrapStatusFailedRetryable)
+                                        .ConfigureAwait(false);
+                                    return PosCatalogPullOutcome.Failure(
+                                        fullLaneConflictCode,
+                                        false,
+                                        response.HasMore,
+                                        pagesProcessed);
+                                }
+                            }
+
+                            var cumulativeFullLaneCounts =
+                                authoritativeEvidence?.LaneCounts ??
+                                receivedBeforeFullPage.Add(
+                                    CatalogPaginationLaneCounts.FromPayload(
+                                        response.Catalog));
+                            var stagedPaginationSafety =
+                                CatalogPaginationSafetyPolicy.EvaluateTerminalPage(
+                                    response,
+                                    CatalogPullPageLimit,
+                                    fullSnapshotExpected: true,
+                                    receivedBeforePage: receivedBeforeFullPage,
+                                    cumulativeEvidence: cumulativeFullLaneCounts,
+                                    pageAfterContinuation: page > 1);
+                            if (!stagedPaginationSafety.Allowed)
+                            {
+                                await StoreCatalogFailureAsync(
+                                        stagedPaginationSafety.Code)
+                                    .ConfigureAwait(false);
+                                await StoreCatalogBootstrapStatusAsync(
+                                        BootstrapStatusFailedRetryable)
+                                    .ConfigureAwait(false);
+                                return PosCatalogPullOutcome.Failure(
+                                    stagedPaginationSafety.Code,
+                                    false,
+                                    response.HasMore,
+                                    pagesProcessed);
+                            }
+
+                            receivedFullLanes = cumulativeFullLaneCounts;
                             networkCursor = response.SyncCursor;
                             lastResponse = response;
                             lastResult = result;
@@ -979,27 +1219,58 @@ namespace Win7POS.Wpf.Pos.Online
                             progress?.Report(PosCatalogPullProgress.ForCatalogPage(
                                 page,
                                 response.HasMore,
-                                ToSafeProgressCount(receivedFullLanes.Products),
-                                ToSafeProgressCount(receivedFullLanes.Categories),
-                                ToSafeProgressCount(receivedFullLanes.Suppliers),
-                                ToSafeProgressCount(receivedFullLanes.Prices),
+                                receivedFullLanes.Products,
+                                receivedFullLanes.Categories,
+                                receivedFullLanes.Suppliers,
+                                receivedFullLanes.Prices,
                                 0,
                                 0,
-                                ToSafeProgressCount(
-                                    receivedFullLanes.ProductTombstones +
-                                    receivedFullLanes.CategoryTombstones +
+                                checked(
+                                    checked(receivedFullLanes.ProductTombstones +
+                                        receivedFullLanes.CategoryTombstones) +
                                     receivedFullLanes.SupplierTombstones),
                                 0));
                             _logger.LogInfo(
                                 "Catalog full page staged: category=catalog.pull page=" + page.ToString() +
-                                ", maxPages=" + effectiveMaxPages.ToString() +
-                                ", limit=" + CatalogPullPageLimit.ToString() +
-                                ", bytes=" + fullStageBytes.ToString() +
-                                ", hasMore=" + response.HasMore.ToString() +
-                                ", catalogVersion=" + SafeId(response.CatalogVersion));
+                                ", activeBudget=" +
+                                (authoritativeDrainPlan?.ActivePageBudget ?? 0L).ToString() +
+                                ", stageBudgetBytes=" +
+                                (fullStageResourceBudget?.MaximumStagedBytes ?? 0L).ToString() +
+                                ", categories=" + receivedFullLanes.Categories.ToString() +
+                                ", suppliers=" + receivedFullLanes.Suppliers.ToString() +
+                                ", products=" + receivedFullLanes.Products.ToString() +
+                                ", prices=" + receivedFullLanes.Prices.ToString() +
+                                ", tombstones=" +
+                                checked(
+                                    checked(receivedFullLanes.ProductTombstones +
+                                        receivedFullLanes.CategoryTombstones) +
+                                    receivedFullLanes.SupplierTombstones).ToString() +
+                                ", stagedBytes=" + fullStageBytes.ToString() +
+                                ", hasMore=" + response.HasMore.ToString());
                             if (!response.HasMore)
                             {
                                 break;
+                            }
+
+                            try
+                            {
+                                page = checked(page + 1L);
+                            }
+                            catch (OverflowException)
+                            {
+                                var overflowCode =
+                                    CatalogAuthoritativeDrainBudgetPolicy
+                                        .NumericOverflowCode;
+                                await StoreCatalogFailureAsync(overflowCode)
+                                    .ConfigureAwait(false);
+                                await StoreCatalogBootstrapStatusAsync(
+                                        BootstrapStatusFailedRetryable)
+                                    .ConfigureAwait(false);
+                                return PosCatalogPullOutcome.Failure(
+                                    overflowCode,
+                                    false,
+                                    true,
+                                    pagesProcessed);
                             }
 
                             continue;
@@ -1079,7 +1350,7 @@ namespace Win7POS.Wpf.Pos.Online
                             totalStats.TombstonesApplied));
                         _logger.LogInfo(
                             "Catalog pull page applied: category=catalog.pull page=" + page.ToString() +
-                            ", maxPages=" + effectiveMaxPages.ToString() +
+                            ", deltaPageLimit=" + deltaPageLimit.ToString() +
                             ", limit=" + CatalogPullPageLimit.ToString() +
                             ", products=" + applyStats.UpdatedProducts.ToString() +
                             ", prices=" + applyStats.PriceRowsApplied.ToString() +
@@ -1091,6 +1362,26 @@ namespace Win7POS.Wpf.Pos.Online
                         if (!response.HasMore)
                         {
                             break;
+                        }
+
+                        try
+                        {
+                            page = checked(page + 1L);
+                        }
+                        catch (OverflowException)
+                        {
+                            var overflowCode =
+                                CatalogAuthoritativeDrainBudgetPolicy.NumericOverflowCode;
+                            await StoreCatalogFailureAsync(overflowCode)
+                                .ConfigureAwait(false);
+                            await StoreCatalogBootstrapStatusAsync(
+                                    BootstrapStatusFailedRetryable)
+                                .ConfigureAwait(false);
+                            return PosCatalogPullOutcome.Failure(
+                                overflowCode,
+                                false,
+                                true,
+                                pagesProcessed);
                         }
                     }
 
@@ -1144,7 +1435,7 @@ namespace Win7POS.Wpf.Pos.Online
                             "Catalog pull stopped before draining all pages: category=catalog.pull code=" +
                             CatalogHasMoreNotDrainedCode +
                             " pages=" + pagesProcessed.ToString() +
-                            ", maxPages=" + effectiveMaxPages.ToString() +
+                            ", deltaPageLimit=" + deltaPageLimit.ToString() +
                             ", limit=" + CatalogPullPageLimit.ToString() +
                             ", cursorSaved=" + (!fullRefresh).ToString() + ".");
                         return PosCatalogPullOutcome.Failure(
@@ -1160,7 +1451,9 @@ namespace Win7POS.Wpf.Pos.Online
 
                     if (fullRefresh)
                     {
-                        if (!fullStageStarted || pagesProcessed <= 0)
+                        if (!fullStageStarted ||
+                            authoritativeEvidence == null ||
+                            pagesProcessed <= 0)
                         {
                             const string stageMissingCode = "catalog_full_stage_missing";
                             await StoreCatalogFailureAsync(stageMissingCode).ConfigureAwait(false);
@@ -1171,81 +1464,6 @@ namespace Win7POS.Wpf.Pos.Online
                                 false,
                                 false,
                                 pagesProcessed);
-                        }
-
-                        var authoritativeEvidence = await catalogBatchRepository
-                            .StageAuthoritativePagesAtomicallyAsync(
-                                pagesProcessed,
-                                async (stagedPageNumber, _) =>
-                                {
-                                    var stagedResponse = await fullStage.LoadPageAsync(
-                                        fullStageGeneration,
-                                        stagedPageNumber).ConfigureAwait(false);
-                                    return RemoteCatalogBatchMapper.BuildRemoteCatalogBatch(
-                                        stagedResponse,
-                                        true,
-                                        new CatalogAuthoritativeStagePage
-                                        {
-                                            FullRunId = fullStageGeneration,
-                                            HasMore = stagedResponse.HasMore,
-                                            PageNumber = stagedPageNumber
-                                        });
-                                },
-                                cancellationToken,
-                                CreateCommitFence(
-                                    trustedSession,
-                                    binding.Epoch,
-                                    committedCursor,
-                                    committedMode,
-                                    generation))
-                            .ConfigureAwait(false);
-                        receivedFullLanes = new CatalogPaginationLaneCounts(0, 0, 0, 0);
-                        for (var stagedPageNumber = 1;
-                             stagedPageNumber <= pagesProcessed;
-                             stagedPageNumber++)
-                        {
-                            var evidence = authoritativeEvidence[stagedPageNumber - 1];
-                            fullLaneConflictCode = evidence.ConflictCode;
-                            if (fullLaneConflictCode.Length > 0)
-                            {
-                                await StoreCatalogFailureAsync(fullLaneConflictCode)
-                                    .ConfigureAwait(false);
-                                await StoreCatalogBootstrapStatusAsync(
-                                        BootstrapStatusFailedRetryable)
-                                    .ConfigureAwait(false);
-                                return PosCatalogPullOutcome.Failure(
-                                    fullLaneConflictCode,
-                                    false,
-                                    false,
-                                    pagesProcessed);
-                            }
-
-                            var stagedResponse = await fullStage.LoadPageAsync(
-                                fullStageGeneration,
-                                stagedPageNumber).ConfigureAwait(false);
-                            var stagedPaginationSafety =
-                                CatalogPaginationSafetyPolicy.EvaluateTerminalPage(
-                                    stagedResponse,
-                                    CatalogPullPageLimit,
-                                    fullSnapshotExpected: true,
-                                    receivedBeforePage: receivedFullLanes,
-                                    cumulativeEvidence: evidence.LaneCounts,
-                                    pageAfterContinuation: stagedPageNumber > 1);
-                            if (!stagedPaginationSafety.Allowed)
-                            {
-                                await StoreCatalogFailureAsync(stagedPaginationSafety.Code)
-                                    .ConfigureAwait(false);
-                                await StoreCatalogBootstrapStatusAsync(
-                                        BootstrapStatusFailedRetryable)
-                                    .ConfigureAwait(false);
-                                return PosCatalogPullOutcome.Failure(
-                                    stagedPaginationSafety.Code,
-                                    false,
-                                    false,
-                                    pagesProcessed);
-                            }
-
-                            receivedFullLanes = evidence.LaneCounts;
                         }
 
                         var stagedPreflightCode = await catalogReconciler
@@ -1308,82 +1526,58 @@ namespace Win7POS.Wpf.Pos.Online
                         committedCursor = binding.Cursor;
                         committedMode = binding.Mode;
                         totalStats = new CatalogApplyStats();
-                        var stagedPageStats = new List<CatalogApplyStats>(pagesProcessed);
-                        await catalogApplyRun
-                            .BeginAtomicFullRefreshAsync(cancellationToken)
-                            .ConfigureAwait(false);
-                        for (var stagedPageNumber = 1;
-                             stagedPageNumber <= pagesProcessed;
-                             stagedPageNumber++)
-                        {
-                            cancellationToken.ThrowIfCancellationRequested();
-                            var stagedResponse = await fullStage.LoadPageAsync(
-                                fullStageGeneration,
-                                stagedPageNumber).ConfigureAwait(false);
-                            var stagedStats = await ApplyCatalogAsync(
-                                catalogApplyRun,
-                                stagedResponse,
-                                true,
-                                fullStageGeneration,
-                                stagedPageNumber,
-                                trustedSession,
-                                binding.Epoch,
-                                committedCursor,
-                                committedMode,
-                                generation,
-                                cancellationToken,
-                                publishRevision: false).ConfigureAwait(false);
-                            totalStats.Add(stagedStats);
-                            stagedPageStats.Add(stagedStats);
-                            if (stagedStats.RowsSkipped > 0)
-                            {
-                                const string stagedRowsCode = "catalog_rows_not_fully_applied";
-                                await StoreCatalogFailureAsync(stagedRowsCode).ConfigureAwait(false);
-                                await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
-                                    .ConfigureAwait(false);
-                                return PosCatalogPullOutcome.Failure(
-                                    stagedRowsCode,
-                                    false,
-                                    false,
-                                    stagedPageNumber,
-                                    totalStats.UpdatedProducts,
-                                    totalStats.PriceRowsApplied,
-                                    totalStats.PriceRowsQueued,
-                                    totalStats.PendingPriceRowsApplied);
-                            }
-                        }
-                        await catalogApplyRun
-                            .CommitAtomicFullRefreshAsync(cancellationToken)
-                            .ConfigureAwait(false);
-                        CatalogEvents.AdvanceRevision();
-                        for (var stagedPageNumber = 1;
-                             stagedPageNumber <= pagesProcessed;
-                             stagedPageNumber++)
-                        {
-                            var stagedResponse = await fullStage.LoadPageAsync(
-                                fullStageGeneration,
-                                stagedPageNumber).ConfigureAwait(false);
-                            await StoreCatalogDiagnosticsAsync(
-                                stagedResponse,
-                                stagedPageStats[stagedPageNumber - 1],
-                                trustedSession,
-                                binding.Epoch,
-                                null,
-                                true,
-                                committedCursor,
-                                committedMode,
-                                generation).ConfigureAwait(false);
-                        }
-                    }
-
-                    if (fullRefresh)
-                    {
-                        syncTimer.Stop();
-                        CatalogExactnessResult exactness;
                         try
                         {
+                            await catalogApplyRun
+                                .BeginAtomicFullRefreshAsync(cancellationToken)
+                                .ConfigureAwait(false);
+                            for (var stagedPageNumber = 1L;
+                                 stagedPageNumber <= pagesProcessed;
+                                 stagedPageNumber = checked(stagedPageNumber + 1L))
+                            {
+                                cancellationToken.ThrowIfCancellationRequested();
+                                var stagedResponse = await catalogApplyRun
+                                    .LoadFullStagePageAsync(
+                                    fullStageGeneration,
+                                    stagedPageNumber).ConfigureAwait(false);
+                                var stagedStats = await ApplyCatalogAsync(
+                                    catalogApplyRun,
+                                    stagedResponse,
+                                    true,
+                                    fullStageGeneration,
+                                    stagedPageNumber,
+                                    trustedSession,
+                                    binding.Epoch,
+                                    committedCursor,
+                                    committedMode,
+                                    generation,
+                                    cancellationToken,
+                                    publishRevision: false).ConfigureAwait(false);
+                                totalStats.Add(stagedStats);
+                                if (stagedStats.RowsSkipped > 0)
+                                {
+                                    const string stagedRowsCode = "catalog_rows_not_fully_applied";
+                                    await catalogApplyRun.AbortAtomicFullRefreshAsync()
+                                        .ConfigureAwait(false);
+                                    await StoreCatalogFailureAsync(stagedRowsCode).ConfigureAwait(false);
+                                    await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
+                                        .ConfigureAwait(false);
+                                    return PosCatalogPullOutcome.Failure(
+                                        stagedRowsCode,
+                                        false,
+                                        false,
+                                        stagedPageNumber,
+                                        totalStats.UpdatedProducts,
+                                        totalStats.PriceRowsApplied,
+                                        totalStats.PriceRowsQueued,
+                                        totalStats.PendingPriceRowsApplied);
+                                }
+                            }
+
+                            syncTimer.Stop();
                             exactness = await catalogReconciler
-                                .ReconcileAndVerifyStagedAsync(
+                                .ReconcileAndVerifyWithinAtomicApplyAsync(
+                                catalogApplyRun,
                                 fullStageGeneration,
                                 lastResponse.GeneratedAt,
                                 snapshotSummary,
@@ -1394,7 +1588,7 @@ namespace Win7POS.Wpf.Pos.Online
                                     HasMore = lastResponse.HasMore,
                                     Pages = pagesProcessed,
                                     PriceRowsReceived = totalStats.PriceRowsReceived,
-                                    PriceRowsAccepted = totalStats.PriceRowsApplied + totalStats.PriceRowsQueued,
+                                    PriceRowsAccepted = checked(totalStats.PriceRowsApplied + totalStats.PriceRowsQueued),
                                     InvalidPriceRows = totalStats.PriceRowsSkipped,
                                     DuplicatePriceRows = 0,
                                     ProductRowsReceived = totalStats.UpdatedProducts,
@@ -1411,47 +1605,95 @@ namespace Win7POS.Wpf.Pos.Online
                                     committedMode,
                                     generation),
                                 cancellationToken).ConfigureAwait(false);
-                        }
-                        finally
-                        {
-                            // Reconciliation owns a separate commit that can change active rows.
-                            // Invalidate UI cursors even when later exactness publication fails closed.
-                            CatalogEvents.AdvanceRevision();
-                        }
-                        await catalogState.StoreExactnessAsync(
-                            trustedSession.ShopId,
-                            trustedSession.ShopCode,
-                            exactness,
-                            binding.Epoch,
-                            committedCursor,
-                            committedMode,
-                            generation).ConfigureAwait(false);
+                            if (exactness.Status != CatalogCompletenessStatus.Verified ||
+                                exactness.RepairRequired)
+                            {
+                                await catalogApplyRun.AbortAtomicFullRefreshAsync()
+                                    .ConfigureAwait(false);
+                                var exactnessCode = SafeCode(exactness.Code);
+                                await catalogState.StoreExactnessAsync(
+                                    trustedSession.ShopId,
+                                    trustedSession.ShopCode,
+                                    exactness,
+                                    binding.Epoch,
+                                    committedCursor,
+                                    committedMode,
+                                    generation).ConfigureAwait(false);
+                                await StoreCatalogFailureAsync(exactnessCode).ConfigureAwait(false);
+                                await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
+                                    .ConfigureAwait(false);
+                                _logger.LogWarning(
+                                    "Catalog exactness rejected authoritative snapshot before live promotion: category=catalog.pull code=" +
+                                    exactnessCode +
+                                    " pages=" + pagesProcessed.ToString() +
+                                    " products=" + totalStats.UpdatedProducts.ToString() +
+                                    " categories=" + totalStats.CategoryRowsReceived.ToString() +
+                                    " suppliers=" + totalStats.SupplierRowsReceived.ToString() + ".");
+                                return PosCatalogPullOutcome.Failure(
+                                    exactnessCode,
+                                    false,
+                                    false,
+                                    pagesProcessed,
+                                    totalStats.UpdatedProducts,
+                                    totalStats.PriceRowsApplied,
+                                    totalStats.PriceRowsQueued,
+                                    totalStats.PendingPriceRowsApplied);
+                            }
 
-                        if (exactness.Status != CatalogCompletenessStatus.Verified ||
-                            exactness.RepairRequired)
-                        {
-                            var exactnessCode = SafeCode(exactness.Code);
-                            await StoreCatalogFailureAsync(exactnessCode).ConfigureAwait(false);
-                            await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
+                            await catalogApplyRun
+                                .CommitAtomicFullRefreshAsync(
+                                (connection, transaction) =>
+                                    catalogState.FinalizeVerifiedFullRefreshWithinTransactionAsync(
+                                        connection,
+                                        transaction,
+                                        trustedSession.ShopId,
+                                        trustedSession.ShopCode,
+                                        exactness,
+                                        lastResponse.SyncCursor,
+                                        lastResponse.GeneratedAt,
+                                        binding.Epoch,
+                                        committedCursor,
+                                        committedMode,
+                                        FirstNonEmpty(
+                                            snapshotCatalogVersion,
+                                            lastResponse.CatalogVersion),
+                                        capturedImportAckGeneration,
+                                        generation),
+                                cancellationToken)
                                 .ConfigureAwait(false);
-                            _logger.LogWarning(
-                                "Catalog exactness rejected authoritative snapshot: category=catalog.pull code=" +
-                                exactnessCode +
-                                " pages=" + pagesProcessed.ToString() +
-                                " products=" + totalStats.UpdatedProducts.ToString() +
-                                " categories=" + totalStats.CategoryRowsReceived.ToString() +
-                                " suppliers=" + totalStats.SupplierRowsReceived.ToString() + ".");
-                            return PosCatalogPullOutcome.Failure(
-                                exactnessCode,
-                                false,
-                                false,
-                                pagesProcessed,
-                                totalStats.UpdatedProducts,
-                                totalStats.PriceRowsApplied,
-                                totalStats.PriceRowsQueued,
-                                totalStats.PendingPriceRowsApplied);
+                            committedCursor = lastResponse.SyncCursor;
+                            committedMode = lastResponse.SyncMode;
                         }
+                        catch
+                        {
+                            await catalogApplyRun.AbortAtomicFullRefreshAsync()
+                                .ConfigureAwait(false);
+                            throw;
+                        }
+                        CatalogEvents.AdvanceRevision();
+                        try
+                        {
+                            await StoreCatalogDiagnosticsAsync(
+                                lastResponse,
+                                totalStats,
+                                trustedSession,
+                                binding.Epoch,
+                                null,
+                                true,
+                                committedCursor,
+                                committedMode,
+                                generation).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(
+                                "Catalog post-commit diagnostics deferred: category=catalog.pull",
+                                ex);
+                        }
+                    }
 
+                    if (fullRefresh)
+                    {
                     }
                     else
                     {
@@ -1482,65 +1724,49 @@ namespace Win7POS.Wpf.Pos.Online
                         }
                     }
 
-                    var activeRemoteProducts = await new ProductRepository(_factory)
-                        .CountActiveRemoteProductsAsync()
-                        .ConfigureAwait(false);
-                    if (activeRemoteProducts <= 0)
+                    if (!fullRefresh)
                     {
-                        var noProductsCode = fullRefresh
-                            ? "full_refresh_no_active_products"
-                            : "no_catalog_products";
-                        await catalogState.RequestFullRepairWhileBarrierHeldAsync(
-                            trustedSession.ShopId,
-                            trustedSession.ShopCode,
-                            binding.Epoch,
-                            generation).ConfigureAwait(false);
-                        await StoreCatalogFailureAsync(noProductsCode).ConfigureAwait(false);
-                        await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
+                        var activeRemoteProducts = await new ProductRepository(_factory)
+                            .CountActiveRemoteProductsAsync()
                             .ConfigureAwait(false);
-                        _logger.LogWarning(
-                            "Catalog pull completed without sale-safe product rows: category=catalog.pull code=" +
-                            noProductsCode + " pages=" + pagesProcessed.ToString());
-                        return PosCatalogPullOutcome.Failure(
-                            noProductsCode,
-                            false,
-                            false,
-                            pagesProcessed,
-                            totalStats.UpdatedProducts,
-                            totalStats.PriceRowsApplied,
-                            totalStats.PriceRowsQueued,
-                            totalStats.PendingPriceRowsApplied);
+                        if (activeRemoteProducts <= 0)
+                        {
+                            const string noProductsCode = "no_catalog_products";
+                            await catalogState.RequestFullRepairWhileBarrierHeldAsync(
+                                trustedSession.ShopId,
+                                trustedSession.ShopCode,
+                                binding.Epoch,
+                                generation).ConfigureAwait(false);
+                            await StoreCatalogFailureAsync(noProductsCode).ConfigureAwait(false);
+                            await StoreCatalogBootstrapStatusAsync(BootstrapStatusFailedRetryable)
+                                .ConfigureAwait(false);
+                            _logger.LogWarning(
+                                "Catalog pull completed without sale-safe product rows: category=catalog.pull code=" +
+                                noProductsCode + " pages=" + pagesProcessed.ToString());
+                            return PosCatalogPullOutcome.Failure(
+                                noProductsCode,
+                                false,
+                                false,
+                                pagesProcessed,
+                                totalStats.UpdatedProducts,
+                                totalStats.PriceRowsApplied,
+                                totalStats.PriceRowsQueued,
+                                totalStats.PendingPriceRowsApplied);
+                        }
                     }
 
-                    if (fullRefresh)
+                    if (!fullRefresh)
                     {
-                        if (!await StoreLastSyncAsync(
-                            lastResponse.SyncCursor,
+                        await StoreCatalogSaleSafeAsync(
                             lastResponse.GeneratedAt,
+                            FirstNonEmpty(snapshotCatalogVersion, lastResponse.CatalogVersion),
                             trustedSession,
                             binding.Epoch,
-                            lastResponse.SyncMode,
-                            authoritativeSnapshotCommitted: true,
-                            expectedPreviousCursor: committedCursor,
-                            expectedPreviousMode: committedMode,
-                            generation: generation).ConfigureAwait(false))
-                        {
-                            throw new InvalidOperationException("Catalog full cursor commit was rejected.");
-                        }
-
-                        committedCursor = lastResponse.SyncCursor;
-                        committedMode = lastResponse.SyncMode;
+                            committedCursor,
+                            committedMode,
+                            capturedImportAckGeneration,
+                            generation).ConfigureAwait(false);
                     }
-
-                    await StoreCatalogSaleSafeAsync(
-                        lastResponse.GeneratedAt,
-                        FirstNonEmpty(snapshotCatalogVersion, lastResponse.CatalogVersion),
-                        trustedSession,
-                        binding.Epoch,
-                        committedCursor,
-                        committedMode,
-                        capturedImportAckGeneration,
-                        generation).ConfigureAwait(false);
                     try
                     {
                         await new CatalogDisplayWarningRepository(_factory)
@@ -1557,10 +1783,19 @@ namespace Win7POS.Wpf.Pos.Online
                             "Catalog display warning summary persistence deferred: category=catalog.pull",
                             ex);
                     }
-                    await StoreCatalogBootstrapStatusAsync(displayWarnings.HasWarnings
-                            ? BootstrapStatusCompletedWithWarnings
-                            : BootstrapStatusCompleted)
-                        .ConfigureAwait(false);
+                    try
+                    {
+                        await StoreCatalogBootstrapStatusAsync(displayWarnings.HasWarnings
+                                ? BootstrapStatusCompletedWithWarnings
+                                : BootstrapStatusCompleted)
+                            .ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(
+                            "Catalog post-commit bootstrap status deferred: category=catalog.pull",
+                            ex);
+                    }
                     if (fullRefresh && fullStageStarted)
                     {
                         try
@@ -1603,7 +1838,9 @@ namespace Win7POS.Wpf.Pos.Online
                         ", displayFallbacks=" + displayWarnings.FallbackCount.ToString() +
                         ", limit=" + CatalogPullPageLimit.ToString() +
                         ", hasMore=" + lastResponse.HasMore.ToString() +
-                        ", catalogVersion=" + (lastResponse.CatalogVersion ?? string.Empty) +
+                        ", catalogVersionHash=" +
+                        CatalogShopStateRepository.FingerprintValue(
+                            lastResponse.CatalogVersion) +
                         " incidentId=" + SafeId(incidentId) +
                         " clientRequestId=" + SafeId(lastResult?.ClientRequestId) +
                         " serverRequestId=" + SafeId(lastResult?.ServerRequestId) +
@@ -1618,6 +1855,19 @@ namespace Win7POS.Wpf.Pos.Online
                     }
                     finally
                     {
+                        if (fullStageStarted)
+                        {
+                            try
+                            {
+                                await fullStage.ClearAsync(fullStageGeneration)
+                                    .ConfigureAwait(false);
+                            }
+                            catch (Exception)
+                            {
+                                _logger.LogWarning(
+                                    "Catalog failed full stage cleanup deferred: category=catalog.pull code=catalog_full_stage_cleanup_failed");
+                            }
+                        }
                         try
                         {
                             await catalogReconciler.ClearAuthoritativeStageAsync(
@@ -1648,6 +1898,28 @@ namespace Win7POS.Wpf.Pos.Online
 
                 _logger.LogWarning("Catalog pull timeout.");
                 return PosCatalogPullOutcome.Failure("timeout", false, false, 0);
+            }
+            catch (Exception ex) when (
+                authoritativeRunObserved &&
+                CatalogPersistenceFailureClassifier.IsSqliteFailure(ex))
+            {
+                var sqliteCode =
+                    CatalogAuthoritativeDrainBudgetPolicy.SqliteFailureCode;
+                await StoreCatalogFailureForGenerationAsync(
+                    trustedSession,
+                    capturedEpoch,
+                    sqliteCode,
+                    BootstrapStatusFailedRetryable).ConfigureAwait(false);
+
+                _logger.LogWarning(
+                    "Catalog authoritative SQLite operation failed: category=catalog.pull code=" +
+                    sqliteCode,
+                    ex);
+                return PosCatalogPullOutcome.Failure(
+                    sqliteCode,
+                    false,
+                    false,
+                    0);
             }
             catch (Exception ex)
             {
@@ -1747,17 +2019,17 @@ namespace Win7POS.Wpf.Pos.Online
 
         private sealed class CatalogApplyStats
         {
-            public int CategoryRowsReceived { get; set; }
-            public int PendingPriceRowsApplied { get; set; }
-            public int PriceRowsApplied { get; set; }
-            public int PriceRowsQueued { get; set; }
-            public int PriceRowsReceived { get; set; }
-            public int PriceRowsSkipped { get; set; }
-            public int RowsSkipped { get; set; }
-            public int SupplierRowsReceived { get; set; }
-            public int TombstonesApplied { get; set; }
-            public int TombstonesReceived { get; set; }
-            public int UpdatedProducts { get; set; }
+            public long CategoryRowsReceived { get; set; }
+            public long PendingPriceRowsApplied { get; set; }
+            public long PriceRowsApplied { get; set; }
+            public long PriceRowsQueued { get; set; }
+            public long PriceRowsReceived { get; set; }
+            public long PriceRowsSkipped { get; set; }
+            public long RowsSkipped { get; set; }
+            public long SupplierRowsReceived { get; set; }
+            public long TombstonesApplied { get; set; }
+            public long TombstonesReceived { get; set; }
+            public long UpdatedProducts { get; set; }
 
             public void Add(CatalogApplyStats stats)
             {
@@ -1766,17 +2038,17 @@ namespace Win7POS.Wpf.Pos.Online
                     return;
                 }
 
-                CategoryRowsReceived += stats.CategoryRowsReceived;
-                PendingPriceRowsApplied += stats.PendingPriceRowsApplied;
-                PriceRowsApplied += stats.PriceRowsApplied;
-                PriceRowsQueued += stats.PriceRowsQueued;
-                PriceRowsReceived += stats.PriceRowsReceived;
-                PriceRowsSkipped += stats.PriceRowsSkipped;
-                RowsSkipped += stats.RowsSkipped;
-                SupplierRowsReceived += stats.SupplierRowsReceived;
-                TombstonesApplied += stats.TombstonesApplied;
-                TombstonesReceived += stats.TombstonesReceived;
-                UpdatedProducts += stats.UpdatedProducts;
+                CategoryRowsReceived = checked(CategoryRowsReceived + stats.CategoryRowsReceived);
+                PendingPriceRowsApplied = checked(PendingPriceRowsApplied + stats.PendingPriceRowsApplied);
+                PriceRowsApplied = checked(PriceRowsApplied + stats.PriceRowsApplied);
+                PriceRowsQueued = checked(PriceRowsQueued + stats.PriceRowsQueued);
+                PriceRowsReceived = checked(PriceRowsReceived + stats.PriceRowsReceived);
+                PriceRowsSkipped = checked(PriceRowsSkipped + stats.PriceRowsSkipped);
+                RowsSkipped = checked(RowsSkipped + stats.RowsSkipped);
+                SupplierRowsReceived = checked(SupplierRowsReceived + stats.SupplierRowsReceived);
+                TombstonesApplied = checked(TombstonesApplied + stats.TombstonesApplied);
+                TombstonesReceived = checked(TombstonesReceived + stats.TombstonesReceived);
+                UpdatedProducts = checked(UpdatedProducts + stats.UpdatedProducts);
             }
         }
 
@@ -1785,7 +2057,7 @@ namespace Win7POS.Wpf.Pos.Online
             PosCatalogPullResponse response,
             bool authoritativeFullRefresh,
             string fullRunId,
-            int fullPageNumber,
+            long fullPageNumber,
             PosTrustedDeviceSession trustedSession,
             long expectedEpoch,
             string expectedPreviousCursor,
@@ -1797,10 +2069,10 @@ namespace Win7POS.Wpf.Pos.Online
             var catalog = response.Catalog;
             var products = catalog.Products ?? Array.Empty<PosCatalogProductResponse>();
             var priceRows = catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>();
-            var tombstones =
-                (catalog.Tombstones?.Products?.Length ?? 0) +
-                (catalog.Tombstones?.Categories?.Length ?? 0) +
-                (catalog.Tombstones?.Suppliers?.Length ?? 0);
+            var tombstones = checked(
+                checked((long)(catalog.Tombstones?.Products?.Length ?? 0) +
+                    (catalog.Tombstones?.Categories?.Length ?? 0)) +
+                (catalog.Tombstones?.Suppliers?.Length ?? 0));
             var batch = RemoteCatalogBatchMapper.BuildRemoteCatalogBatch(
                 response,
                 authoritativeFullRefresh,
@@ -1944,13 +2216,14 @@ namespace Win7POS.Wpf.Pos.Online
                     LastCatalogIncidentIdSettingKey,
                     diagnostic.SupportId,
                     _diagnosticGeneration).ConfigureAwait(false);
-                await settings.SetIntIfGenerationCurrentAsync(
+                await settings.SetStringIfGenerationCurrentAsync(
                     LastCatalogPagesProcessedSettingKey,
-                    diagnostic.PagesProcessed,
+                    diagnostic.PagesProcessed.ToString(
+                        CultureInfo.InvariantCulture),
                     _diagnosticGeneration).ConfigureAwait(false);
-                await settings.SetIntIfGenerationCurrentAsync(
+                await settings.SetStringIfGenerationCurrentAsync(
                     LastCatalogRowsAppliedSettingKey,
-                    diagnostic.RowsApplied,
+                    diagnostic.RowsApplied.ToString(CultureInfo.InvariantCulture),
                     _diagnosticGeneration).ConfigureAwait(false);
                 await settings.SetBoolIfGenerationCurrentAsync(
                     LastCatalogRetryableSettingKey,
@@ -1988,13 +2261,13 @@ namespace Win7POS.Wpf.Pos.Online
                     LastCatalogIncidentIdSettingKey,
                     string.Empty,
                     generation).ConfigureAwait(false);
-                await settings.SetIntIfGenerationCurrentAsync(
+                await settings.SetStringIfGenerationCurrentAsync(
                     LastCatalogPagesProcessedSettingKey,
-                    0,
+                    "0",
                     generation).ConfigureAwait(false);
-                await settings.SetIntIfGenerationCurrentAsync(
+                await settings.SetStringIfGenerationCurrentAsync(
                     LastCatalogRowsAppliedSettingKey,
-                    0,
+                    "0",
                     generation).ConfigureAwait(false);
                 await settings.SetBoolIfGenerationCurrentAsync(
                     LastCatalogRetryableSettingKey,
@@ -2118,17 +2391,17 @@ namespace Win7POS.Wpf.Pos.Online
                 string.Empty,
                 generation).ConfigureAwait(false);
             await ClearCatalogRuntimeDiagnosticAsync(settings, generation).ConfigureAwait(false);
-            await settings.SetIntIfGenerationCurrentAsync(
+            await settings.SetStringIfGenerationCurrentAsync(
                 LastCatalogUpdatedProductsSettingKey,
-                stats?.UpdatedProducts ?? 0,
+                (stats?.UpdatedProducts ?? 0).ToString(CultureInfo.InvariantCulture),
                 generation).ConfigureAwait(false);
-            await settings.SetIntIfGenerationCurrentAsync(
+            await settings.SetStringIfGenerationCurrentAsync(
                 LastCatalogTombstonesReceivedSettingKey,
-                stats?.TombstonesReceived ?? 0,
+                (stats?.TombstonesReceived ?? 0).ToString(CultureInfo.InvariantCulture),
                 generation).ConfigureAwait(false);
-            await settings.SetIntIfGenerationCurrentAsync(
+            await settings.SetStringIfGenerationCurrentAsync(
                 LastCatalogTombstonesAppliedSettingKey,
-                stats?.TombstonesApplied ?? 0,
+                (stats?.TombstonesApplied ?? 0).ToString(CultureInfo.InvariantCulture),
                 generation).ConfigureAwait(false);
             await settings.SetBoolIfGenerationCurrentAsync(
                 LastCatalogHasMoreSettingKey,
@@ -2143,12 +2416,6 @@ namespace Win7POS.Wpf.Pos.Online
         private static TimeSpan CatalogPullBackoff(int attempt)
         {
             return TimeSpan.FromMilliseconds(attempt <= 1 ? 250 : 750);
-        }
-
-        private static int ToSafeProgressCount(long value)
-        {
-            if (value <= 0) return 0;
-            return value >= int.MaxValue ? int.MaxValue : (int)value;
         }
 
         private static bool CatalogSummariesEqual(
@@ -2239,8 +2506,8 @@ namespace Win7POS.Wpf.Pos.Online
             string code,
             bool authenticationDenied,
             int attemptNumber,
-            int pageNumber,
-            int pagesProcessed,
+            long pageNumber,
+            long pagesProcessed,
             CatalogApplyStats stats,
             string incidentId,
             long elapsedMilliseconds)
@@ -2255,15 +2522,20 @@ namespace Win7POS.Wpf.Pos.Online
                         : IsNetworkCode(normalizedCode)
                             ? "network"
                             : "request";
-            var rowsReceived = (stats?.UpdatedProducts ?? 0) +
-                (stats?.CategoryRowsReceived ?? 0) +
-                (stats?.SupplierRowsReceived ?? 0) +
-                (stats?.PriceRowsReceived ?? 0) +
-                (stats?.TombstonesReceived ?? 0);
-            var rowsApplied = (stats?.UpdatedProducts ?? 0) +
-                (stats?.PriceRowsApplied ?? 0) +
-                (stats?.PendingPriceRowsApplied ?? 0) +
-                (stats?.TombstonesApplied ?? 0);
+            var rowsReceived = checked(
+                checked(
+                    checked(
+                        checked((stats?.UpdatedProducts ?? 0) +
+                            (stats?.CategoryRowsReceived ?? 0)) +
+                        (stats?.SupplierRowsReceived ?? 0)) +
+                    (stats?.PriceRowsReceived ?? 0)) +
+                (stats?.TombstonesReceived ?? 0));
+            var rowsApplied = checked(
+                checked(
+                    checked((stats?.UpdatedProducts ?? 0) +
+                        (stats?.PriceRowsApplied ?? 0)) +
+                    (stats?.PendingPriceRowsApplied ?? 0)) +
+                (stats?.TombstonesApplied ?? 0));
             var summary = stage == "server_response"
                 ? "Server response stopped the catalog pull."
                 : stage == "network"
@@ -2432,17 +2704,17 @@ namespace Win7POS.Wpf.Pos.Online
 
     public sealed class PosCatalogPullProgress
     {
-        public int CategoriesReceived { get; set; }
+        public long CategoriesReceived { get; set; }
         public bool HasMore { get; set; }
-        public int Page { get; set; }
-        public int PendingPricesApplied { get; set; }
+        public long Page { get; set; }
+        public long PendingPricesApplied { get; set; }
         public string Phase { get; set; } = string.Empty;
-        public int PricesApplied { get; set; }
-        public int PricesQueued { get; set; }
-        public int ProductsApplied { get; set; }
-        public int SuppliersReceived { get; set; }
-        public int TombstonesApplied { get; set; }
-        public int TombstonesReceived { get; set; }
+        public long PricesApplied { get; set; }
+        public long PricesQueued { get; set; }
+        public long ProductsApplied { get; set; }
+        public long SuppliersReceived { get; set; }
+        public long TombstonesApplied { get; set; }
+        public long TombstonesReceived { get; set; }
 
         public static PosCatalogPullProgress ForPhase(string phase)
         {
@@ -2453,16 +2725,16 @@ namespace Win7POS.Wpf.Pos.Online
         }
 
         public static PosCatalogPullProgress ForCatalogPage(
-            int page,
+            long page,
             bool hasMore,
-            int productsApplied,
-            int categoriesReceived,
-            int suppliersReceived,
-            int pricesApplied,
-            int pricesQueued,
-            int pendingPricesApplied,
-            int tombstonesReceived,
-            int tombstonesApplied)
+            long productsApplied,
+            long categoriesReceived,
+            long suppliersReceived,
+            long pricesApplied,
+            long pricesQueued,
+            long pendingPricesApplied,
+            long tombstonesReceived,
+            long tombstonesApplied)
         {
             return new PosCatalogPullProgress
             {
@@ -2488,13 +2760,13 @@ namespace Win7POS.Wpf.Pos.Online
             string statusCode,
             bool authDenied,
             bool hasMore,
-            int pagesProcessed,
+            long pagesProcessed,
             bool catalogSaleSafe,
-            int productsApplied,
-            int pricesApplied,
-            int pricesQueued,
-            int pendingPricesApplied,
-            int displayWarningCount,
+            long productsApplied,
+            long pricesApplied,
+            long pricesQueued,
+            long pendingPricesApplied,
+            long displayWarningCount,
             PosRuntimeDiagnostic diagnostic)
         {
             AuthDenied = authDenied;
@@ -2514,23 +2786,23 @@ namespace Win7POS.Wpf.Pos.Online
         public bool AuthDenied { get; }
         public bool CatalogSaleSafe { get; }
         public bool Completed { get; }
-        public int DisplayWarningCount { get; }
+        public long DisplayWarningCount { get; }
         public PosRuntimeDiagnostic Diagnostic { get; }
         public bool HasMore { get; }
-        public int PagesProcessed { get; }
-        public int PendingPricesApplied { get; }
-        public int PricesApplied { get; }
-        public int PricesQueued { get; }
-        public int ProductsApplied { get; }
+        public long PagesProcessed { get; }
+        public long PendingPricesApplied { get; }
+        public long PricesApplied { get; }
+        public long PricesQueued { get; }
+        public long ProductsApplied { get; }
         public string StatusCode { get; }
 
         public static PosCatalogPullOutcome CompletedOk(
-            int pagesProcessed,
-            int productsApplied = 0,
-            int pricesApplied = 0,
-            int pricesQueued = 0,
-            int pendingPricesApplied = 0,
-            int displayWarningCount = 0,
+            long pagesProcessed,
+            long productsApplied = 0,
+            long pricesApplied = 0,
+            long pricesQueued = 0,
+            long pendingPricesApplied = 0,
+            long displayWarningCount = 0,
             PosRuntimeDiagnostic diagnostic = null)
         {
             return new PosCatalogPullOutcome(
@@ -2552,11 +2824,11 @@ namespace Win7POS.Wpf.Pos.Online
             string statusCode,
             bool authDenied,
             bool hasMore,
-            int pagesProcessed,
-            int productsApplied = 0,
-            int pricesApplied = 0,
-            int pricesQueued = 0,
-            int pendingPricesApplied = 0,
+            long pagesProcessed,
+            long productsApplied = 0,
+            long pricesApplied = 0,
+            long pricesQueued = 0,
+            long pendingPricesApplied = 0,
             PosRuntimeDiagnostic diagnostic = null)
         {
             return new PosCatalogPullOutcome(

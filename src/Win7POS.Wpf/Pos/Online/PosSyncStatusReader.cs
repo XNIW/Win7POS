@@ -913,7 +913,7 @@ namespace Win7POS.Wpf.Pos.Online
         public string CatalogBootstrapText { get; set; } = string.Empty;
         public string CatalogCompletenessText { get; set; } = string.Empty;
         public string CatalogCountsText { get; set; } = string.Empty;
-        public int CatalogDisplayWarningCount { get; set; }
+        public long CatalogDisplayWarningCount { get; set; }
         public string CatalogDisplayWarningRevision { get; set; } = string.Empty;
         public string CatalogDisplayWarningText { get; set; } = string.Empty;
         public string CatalogCursorFingerprint { get; set; } = string.Empty;

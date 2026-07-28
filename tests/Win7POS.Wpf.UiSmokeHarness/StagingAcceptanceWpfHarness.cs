@@ -164,8 +164,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var settings = new SettingsRepository(factory);
                 var pages = await settings.GetStringAsync(
                     CatalogShopStateRepository.ExactnessPagesKey).ConfigureAwait(true);
-                var parsedPages = 0;
-                int.TryParse(
+                var parsedPages = 0L;
+                long.TryParse(
                     pages,
                     NumberStyles.Integer,
                     CultureInfo.InvariantCulture,
@@ -517,20 +517,29 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
 
                 var contents = File.ReadAllText(path);
-                if (Contains(contents, profile.Credential) ||
-                    Contains(contents, profile.ShopCode) ||
-                    Contains(contents, profile.StaffCode))
+                if (SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.Credential) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.ShopCode) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.StaffCode) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.BaseUrl) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.DeviceIdentifier) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.DeviceDisplayName))
                 {
                     return false;
                 }
             }
             return true;
-        }
-
-        private static bool Contains(string value, string token)
-        {
-            return !string.IsNullOrEmpty(token) &&
-                (value ?? string.Empty).IndexOf(token, StringComparison.Ordinal) >= 0;
         }
 
         private static void WriteReport(string outputDirectory, AcceptanceReport report)
@@ -768,7 +777,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             public bool CatalogDrained { get; set; }
 
             [DataMember(Name = "catalogPages")]
-            public int CatalogPages { get; set; }
+            public long CatalogPages { get; set; }
 
             [DataMember(Name = "cfRay")]
             public string CfRay { get; set; }

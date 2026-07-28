@@ -859,6 +859,69 @@ WHERE remote_product_id = 'product-must-stay';"));
     }
 
     [TestMethod]
+    public async Task AtomicApply_ExactnessRejectionRollsBackUncommittedLiveReplacement()
+    {
+        using var db = TestDb.Create();
+        await SeedCleanCatalogAsync(db);
+        await SeedUnrelatedRemoteProductAsync(db, "product-must-stay", "MUST-STAY");
+        var stage = await CreateAuthoritativeStageAsync(db, "atomic-exactness-rejection");
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        var batch = StageBatch(
+            stage.FullRunId,
+            1,
+            hasMore: false,
+            "product-atomic-new",
+            "ATOMIC-NEW",
+            "price-atomic-new");
+        await repository.StageAuthoritativePageAsync(
+            batch,
+            CancellationToken.None,
+            stage.Fence);
+
+        var state = new CatalogShopStateRepository(db.Factory);
+        await state.RequestFullRepairAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Fence.ExpectedEpoch,
+            stage.Generation);
+        var repairedBinding = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Generation);
+        stage.Fence.ExpectedEpoch = repairedBinding.Epoch;
+        stage.Fence.ExpectedPreviousCursor = repairedBinding.Cursor;
+        stage.Fence.ExpectedPreviousMode = repairedBinding.Mode;
+
+        batch.ReuseValidatedAuthoritativeStagePage = true;
+        using var run = repository.CreateRunContext();
+        await run.BeginAtomicFullRefreshAsync();
+        await run.ApplyAsync(batch, CancellationToken.None, stage.Fence);
+        var context = CompleteContext(products: 2, categories: 1, suppliers: 1, prices: 1);
+        var exactness = await new CatalogFullRefreshReconciler(db.Factory)
+            .ReconcileAndVerifyWithinAtomicApplyAsync(
+                run,
+                stage.FullRunId,
+                "2026-07-19T01:00:00Z",
+                Summary(products: 1, categories: 1, suppliers: 1, prices: 1),
+                context,
+                stage.Fence);
+
+        Assert.AreEqual(CatalogCompletenessStatus.Mismatch, exactness.Status);
+        Assert.AreEqual("catalog_product_row_evidence_mismatch", exactness.Code);
+        await run.AbortAtomicFullRefreshAsync();
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM products
+WHERE remote_product_id = 'product-atomic-new';"));
+        Assert.AreEqual(1L, await verify.ExecuteScalarAsync<long>(@"
+SELECT is_active
+FROM products
+WHERE remote_product_id = 'product-must-stay';"));
+    }
+
+    [TestMethod]
     public async Task StagedFullRefresh_MissingPageMarkerRejectsBeforeDeactivation()
     {
         using var db = TestDb.Create();

@@ -54,7 +54,8 @@ namespace Win7POS.Data.Repositories
         public async Task<CatalogAuthoritativeStageEvidence> StageAuthoritativePageAsync(
             RemoteCatalogBatch batch,
             CancellationToken cancellationToken = default,
-            RemoteCatalogCommitFence commitFence = null)
+            RemoteCatalogCommitFence commitFence = null,
+            bool loadCumulativeEvidence = true)
         {
             if (batch == null) throw new ArgumentNullException(nameof(batch));
             ValidateBatchContent(batch);
@@ -75,11 +76,13 @@ namespace Win7POS.Data.Repositories
                         tx,
                         batch,
                         commitFence).ConfigureAwait(false);
-                    var evidence = await LoadAuthoritativeStageEvidenceAsync(
-                        conn,
-                        tx,
-                        batch.AuthoritativeStagePage,
-                        commitFence).ConfigureAwait(false);
+                    var evidence = loadCumulativeEvidence
+                        ? await LoadAuthoritativeStageEvidenceAsync(
+                            conn,
+                            tx,
+                            batch.AuthoritativeStagePage,
+                            commitFence).ConfigureAwait(false)
+                        : null;
                     tx.Commit();
                     return evidence;
                 }
@@ -92,63 +95,6 @@ namespace Win7POS.Data.Repositories
             finally
             {
                 CatalogMutationGate.Instance.Release();
-            }
-        }
-
-        public async Task<IReadOnlyList<CatalogAuthoritativeStageEvidence>>
-            StageAuthoritativePagesAtomicallyAsync(
-                int pageCount,
-                Func<int, CancellationToken, Task<RemoteCatalogBatch>> loadPageAsync,
-                CancellationToken cancellationToken = default,
-                RemoteCatalogCommitFence commitFence = null)
-        {
-            if (pageCount <= 0) throw new ArgumentOutOfRangeException(nameof(pageCount));
-            if (loadPageAsync == null) throw new ArgumentNullException(nameof(loadPageAsync));
-
-            using var run = await BeginAuthoritativeStageRunAsync(cancellationToken)
-                .ConfigureAwait(false);
-            var evidence = new List<CatalogAuthoritativeStageEvidence>(pageCount);
-            for (var pageNumber = 1; pageNumber <= pageCount; pageNumber += 1)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var batch = await loadPageAsync(pageNumber, cancellationToken)
-                    .ConfigureAwait(false);
-                if (batch == null)
-                {
-                    throw new InvalidDataException(
-                        "Authoritative catalog stage page loader returned no batch.");
-                }
-
-                if (batch.AuthoritativeStagePage?.PageNumber != pageNumber)
-                {
-                    throw new InvalidDataException(
-                        "Authoritative catalog stage page loader returned an unexpected page.");
-                }
-
-                evidence.Add(await run.StagePageAsync(
-                    batch,
-                    commitFence,
-                    cancellationToken).ConfigureAwait(false));
-            }
-
-            await run.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return evidence;
-        }
-
-        public async Task<RemoteCatalogAuthoritativeStageRunContext>
-            BeginAuthoritativeStageRunAsync(
-                CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                return new RemoteCatalogAuthoritativeStageRunContext(_factory);
-            }
-            catch
-            {
-                CatalogMutationGate.Instance.Release();
-                throw;
             }
         }
 
@@ -227,7 +173,7 @@ namespace Win7POS.Data.Repositories
                             string.IsNullOrWhiteSpace(category.RemoteCategoryId) ||
                             string.IsNullOrWhiteSpace(category.Name))
                         {
-                            result.CategoriesSkipped += 1;
+                            result.CategoriesSkipped = checked(result.CategoriesSkipped + 1L);
                             continue;
                         }
 
@@ -238,11 +184,11 @@ namespace Win7POS.Data.Repositories
                             category.Name,
                             category.RemoteUpdatedAt).ConfigureAwait(false))
                         {
-                            result.CategoriesApplied += 1;
+                            result.CategoriesApplied = checked(result.CategoriesApplied + 1L);
                         }
                         else if (batch.AuthoritativeFullRefresh)
                         {
-                            result.CategoriesSkipped += 1;
+                            result.CategoriesSkipped = checked(result.CategoriesSkipped + 1L);
                         }
                     }
 
@@ -252,7 +198,7 @@ namespace Win7POS.Data.Repositories
                             string.IsNullOrWhiteSpace(supplier.RemoteSupplierId) ||
                             string.IsNullOrWhiteSpace(supplier.Name))
                         {
-                            result.SuppliersSkipped += 1;
+                            result.SuppliersSkipped = checked(result.SuppliersSkipped + 1L);
                             continue;
                         }
 
@@ -263,11 +209,11 @@ namespace Win7POS.Data.Repositories
                             supplier.Name,
                             supplier.RemoteUpdatedAt).ConfigureAwait(false))
                         {
-                            result.SuppliersApplied += 1;
+                            result.SuppliersApplied = checked(result.SuppliersApplied + 1L);
                         }
                         else if (batch.AuthoritativeFullRefresh)
                         {
-                            result.SuppliersSkipped += 1;
+                            result.SuppliersSkipped = checked(result.SuppliersSkipped + 1L);
                         }
                     }
 
@@ -349,7 +295,7 @@ namespace Win7POS.Data.Repositories
                             normalizedBarcode.Length == 0 ||
                             normalizedRemoteProductId.Length == 0)
                         {
-                            result.ProductsSkipped += 1;
+                            result.ProductsSkipped = checked(result.ProductsSkipped + 1L);
                             continue;
                         }
 
@@ -367,8 +313,8 @@ namespace Win7POS.Data.Repositories
                             // Replacing a different live remote identity would collapse two
                             // authoritative products, so fail this row closed and let the pull
                             // service request a full repair before advancing its cursor.
-                            result.ProductsSkipped += 1;
-                            result.ProductIdentityConflicts += 1;
+                            result.ProductsSkipped = checked(result.ProductsSkipped + 1L);
+                            result.ProductIdentityConflicts = checked(result.ProductIdentityConflicts + 1L);
                             continue;
                         }
 
@@ -480,7 +426,7 @@ namespace Win7POS.Data.Repositories
                         currentRemoteProductIds.Add(normalizedRemoteProductId);
                         activeBarcodeByRemoteId[normalizedRemoteProductId] = normalizedBarcode;
                         relinkProductRemoteIds.Add(normalizedRemoteProductId);
-                        result.ProductsApplied += 1;
+                        result.ProductsApplied = checked(result.ProductsApplied + 1L);
                     }
 
                     await runContext.StageCleanProductsAsync(cleanProducts).ConfigureAwait(false);
@@ -495,14 +441,14 @@ namespace Win7POS.Data.Repositories
                             tx,
                             pageRemotePriceApply)
                         .ConfigureAwait(false);
-                    result.PendingPricesApplied += pendingReplay.Applied;
+                    result.PendingPricesApplied = checked(result.PendingPricesApplied + pendingReplay.Applied);
                     pendingPriceCollisionIds.UnionWith(pendingReplay.CollisionIds);
 
                     foreach (var tombstone in batch.ProductTombstones ?? Array.Empty<RemoteCatalogProductTombstoneWrite>())
                     {
                         if (tombstone == null || string.IsNullOrWhiteSpace(tombstone.RemoteProductId))
                         {
-                            result.TombstonesSkipped += 1;
+                            result.TombstonesSkipped = checked(result.TombstonesSkipped + 1L);
                             continue;
                         }
 
@@ -512,7 +458,7 @@ namespace Win7POS.Data.Repositories
                             tombstone.RemoteProductId,
                             tombstone.RemoteDeletedAt).ConfigureAwait(false))
                         {
-                            result.ProductTombstonesApplied += 1;
+                            result.ProductTombstonesApplied = checked(result.ProductTombstonesApplied + 1L);
                         }
                     }
 
@@ -533,7 +479,7 @@ AND NOT EXISTS (
                     {
                         if (tombstone == null || string.IsNullOrWhiteSpace(tombstone.RemoteCategoryId))
                         {
-                            result.TombstonesSkipped += 1;
+                            result.TombstonesSkipped = checked(result.TombstonesSkipped + 1L);
                             continue;
                         }
 
@@ -544,7 +490,7 @@ AND NOT EXISTS (
                             tombstone.RemoteDeletedAt,
                             tombstone.RemoteUpdatedAt).ConfigureAwait(false))
                         {
-                            result.CategoryTombstonesApplied += 1;
+                            result.CategoryTombstonesApplied = checked(result.CategoryTombstonesApplied + 1L);
                             appliedCategoryTombstoneIds.Add(tombstone.RemoteCategoryId.Trim());
                         }
                     }
@@ -553,7 +499,7 @@ AND NOT EXISTS (
                     {
                         if (tombstone == null || string.IsNullOrWhiteSpace(tombstone.RemoteSupplierId))
                         {
-                            result.TombstonesSkipped += 1;
+                            result.TombstonesSkipped = checked(result.TombstonesSkipped + 1L);
                             continue;
                         }
 
@@ -564,7 +510,7 @@ AND NOT EXISTS (
                             tombstone.RemoteDeletedAt,
                             tombstone.RemoteUpdatedAt).ConfigureAwait(false))
                         {
-                            result.SupplierTombstonesApplied += 1;
+                            result.SupplierTombstonesApplied = checked(result.SupplierTombstonesApplied + 1L);
                             appliedSupplierTombstoneIds.Add(tombstone.RemoteSupplierId.Trim());
                         }
                     }
@@ -575,7 +521,8 @@ AND NOT EXISTS (
                         relinkProductRemoteIds,
                         relinkCategoryRemoteIds,
                         relinkSupplierRemoteIds).ConfigureAwait(false);
-                    result.ProductReferencesRelinked += relinkResult.RowsAffected;
+                    result.ProductReferencesRelinked = checked(
+                        result.ProductReferencesRelinked + relinkResult.RowsAffected);
 
                     var prices = batch.Prices ?? Array.Empty<RemoteCatalogPriceWrite>();
                     var setBasedPrices = await RemotePriceHistoryRepository
@@ -587,9 +534,9 @@ AND NOT EXISTS (
                         .ConfigureAwait(false);
                     if (setBasedPrices != null)
                     {
-                        result.PricesApplied += setBasedPrices.Applied;
-                        result.PricesQueued += setBasedPrices.Queued;
-                        result.PricesSkipped += setBasedPrices.Skipped;
+                        result.PricesApplied = checked(result.PricesApplied + setBasedPrices.Applied);
+                        result.PricesQueued = checked(result.PricesQueued + setBasedPrices.Queued);
+                        result.PricesSkipped = checked(result.PricesSkipped + setBasedPrices.Skipped);
                     }
                     else
                     {
@@ -597,7 +544,7 @@ AND NOT EXISTS (
                         {
                             if (price == null)
                             {
-                                result.PricesSkipped += 1;
+                                result.PricesSkipped = checked(result.PricesSkipped + 1L);
                                 continue;
                             }
 
@@ -615,7 +562,7 @@ AND NOT EXISTS (
                                         price.Source,
                                         pageRemotePriceApply).ConfigureAwait(false))
                                 {
-                                    result.PricesSkipped += 1;
+                                    result.PricesSkipped = checked(result.PricesSkipped + 1L);
                                     continue;
                                 }
                             }
@@ -630,9 +577,9 @@ AND NOT EXISTS (
                                 price.EffectiveAt,
                                 price.Source,
                                 pageRemotePriceApply).ConfigureAwait(false);
-                            if (applied.Applied) result.PricesApplied += 1;
-                            if (applied.Queued) result.PricesQueued += 1;
-                            if (!applied.Applied && !applied.Queued) result.PricesSkipped += 1;
+                            if (applied.Applied) result.PricesApplied = checked(result.PricesApplied + 1L);
+                            if (applied.Queued) result.PricesQueued = checked(result.PricesQueued + 1L);
+                            if (!applied.Applied && !applied.Queued) result.PricesSkipped = checked(result.PricesSkipped + 1L);
                         }
                     }
 
@@ -642,9 +589,9 @@ AND NOT EXISTS (
                             tx,
                             pageRemotePriceApply)
                         .ConfigureAwait(false);
-                    result.PendingPricesApplied += pendingReplay.Applied;
+                    result.PendingPricesApplied = checked(result.PendingPricesApplied + pendingReplay.Applied);
                     pendingPriceCollisionIds.UnionWith(pendingReplay.CollisionIds);
-                    result.PricesSkipped += pendingPriceCollisionIds.Count;
+                    result.PricesSkipped = checked(result.PricesSkipped + pendingPriceCollisionIds.Count);
 
                     pageState.ProductContext = productBatchContext.WithoutPendingStock();
                     pageState.RemoveTombstonedReferences(
@@ -800,7 +747,7 @@ AND NOT EXISTS (
                 throw new InvalidDataException("Authoritative catalog full run identity is invalid.");
             }
 
-            if (stage.PageNumber <= 0 || stage.PageNumber > 1000000)
+            if (stage.PageNumber <= 0)
                 throw new InvalidDataException("Authoritative catalog page number is invalid.");
             if (commitFence.ExpectedEpoch < 0 ||
                 string.IsNullOrWhiteSpace(commitFence.ShopId) ||
@@ -1415,7 +1362,7 @@ FROM scoped;",
             public string FullRunId { get; private set; } = string.Empty;
             public string GenerationFingerprint { get; private set; } = string.Empty;
             public string GenerationId { get; private set; } = string.Empty;
-            public int PageNumber { get; private set; }
+            public long PageNumber { get; private set; }
             public long ScopeId { get; set; }
             public string ShopCode { get; private set; } = string.Empty;
             public string ShopId { get; private set; } = string.Empty;
@@ -1907,89 +1854,6 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
             }
         }
 
-        public sealed class RemoteCatalogAuthoritativeStageRunContext : IDisposable
-        {
-            private readonly SqliteConnection _connection;
-            private readonly SqliteTransaction _transaction;
-            private bool _committed;
-            private bool _disposed;
-
-            internal RemoteCatalogAuthoritativeStageRunContext(
-                SqliteConnectionFactory factory)
-            {
-                if (factory == null) throw new ArgumentNullException(nameof(factory));
-                _connection = factory.Open();
-                try
-                {
-                    _transaction = _connection.BeginTransaction(deferred: false);
-                }
-                catch
-                {
-                    _connection.Dispose();
-                    throw;
-                }
-            }
-
-            public async Task<CatalogAuthoritativeStageEvidence> StagePageAsync(
-                RemoteCatalogBatch batch,
-                RemoteCatalogCommitFence commitFence,
-                CancellationToken cancellationToken = default)
-            {
-                EnsureActive();
-                cancellationToken.ThrowIfCancellationRequested();
-                ValidateBatchContent(batch);
-                ValidateAuthoritativeStage(batch, commitFence, required: true);
-                await RequireCommitFenceAsync(
-                    _connection,
-                    _transaction,
-                    commitFence).ConfigureAwait(false);
-                await ReplaceAuthoritativeStagePageAsync(
-                    _connection,
-                    _transaction,
-                    batch,
-                    commitFence).ConfigureAwait(false);
-                return await LoadAuthoritativeStageEvidenceAsync(
-                    _connection,
-                    _transaction,
-                    batch.AuthoritativeStagePage,
-                    commitFence).ConfigureAwait(false);
-            }
-
-            public Task CommitAsync(CancellationToken cancellationToken = default)
-            {
-                EnsureActive();
-                cancellationToken.ThrowIfCancellationRequested();
-                _transaction.Commit();
-                _committed = true;
-                return Task.CompletedTask;
-            }
-
-            public void Dispose()
-            {
-                if (_disposed)
-                {
-                    return;
-                }
-
-                _disposed = true;
-                if (!_committed)
-                {
-                    try { _transaction.Rollback(); } catch { }
-                }
-                _transaction.Dispose();
-                _connection.Dispose();
-                CatalogMutationGate.Instance.Release();
-            }
-
-            private void EnsureActive()
-            {
-                if (_disposed)
-                    throw new ObjectDisposedException(nameof(RemoteCatalogAuthoritativeStageRunContext));
-                if (_committed)
-                    throw new InvalidOperationException(
-                        "The authoritative catalog stage run is already committed.");
-            }
-        }
     }
 
     /// <summary>
@@ -2011,7 +1875,7 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
         private RemotePriceApplyDiagnostics _atomicRemotePriceApply =
             new RemotePriceApplyDiagnostics();
         private long _atomicRelinkStageCommandCount;
-        private int _atomicPageCount;
+        private long _atomicPageCount;
         private bool _atomicMutationGateHeld;
         private Dictionary<string, int> _categoryIdsByRemoteId =
             new Dictionary<string, int>(StringComparer.Ordinal);
@@ -2183,7 +2047,71 @@ CREATE INDEX IF NOT EXISTS temp_catalog_page_remote_prices_product_id_idx
             }
         }
 
+        public Task<PosCatalogPullResponse> LoadFullStagePageAsync(
+            string generationId,
+            long pageNumber)
+        {
+            EnsureNotDisposed();
+            if (_atomicTransaction == null)
+            {
+                throw new InvalidOperationException(
+                    "An atomic full refresh transaction is required.");
+            }
+
+            return CatalogFullResponseStageRepository.LoadPageAsync(
+                Connection,
+                _atomicTransaction,
+                generationId,
+                pageNumber);
+        }
+
+        /// <summary>
+        /// Returns the transaction that owns the current authoritative live apply.
+        /// Callers use it only for work that must succeed before that apply can commit.
+        /// </summary>
+        internal SqliteTransaction RequireAtomicFullRefreshTransaction()
+        {
+            EnsureNotDisposed();
+            if (_atomicTransaction == null)
+            {
+                throw new InvalidOperationException(
+                    "An atomic full refresh transaction is required.");
+            }
+
+            return _atomicTransaction;
+        }
+
+        /// <summary>
+        /// Rolls back the in-flight authoritative apply and releases its mutation gate.
+        /// This is intentionally explicit so callers can safely persist a typed failure
+        /// after rejecting pre-commit evidence.
+        /// </summary>
+        public async Task AbortAtomicFullRefreshAsync()
+        {
+            EnsureNotDisposed();
+            await _singleFlight.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                AbortAtomicFullRefresh();
+            }
+            finally
+            {
+                _singleFlight.Release();
+            }
+        }
+
+        public Task CommitAtomicFullRefreshAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return CommitAtomicFullRefreshAsync(null, cancellationToken);
+        }
+
+        /// <summary>
+        /// Commits an authoritative live replacement only after its caller has
+        /// durably finalized the matching catalog state in this same transaction.
+        /// </summary>
         public async Task CommitAtomicFullRefreshAsync(
+            Func<SqliteConnection, SqliteTransaction, Task> finalizeAsync,
             CancellationToken cancellationToken = default)
         {
             EnsureNotDisposed();
@@ -2197,9 +2125,22 @@ CREATE INDEX IF NOT EXISTS temp_catalog_page_remote_prices_product_id_idx
                         "No atomic catalog full refresh is active.");
                 }
 
+                var committedTransactionCount = checked(
+                    Diagnostics.CommittedTransactionCount + 1L);
+                var relinkStageSqlCommandCount = checked(
+                    Diagnostics.RelinkStageSqlCommandCount + _atomicRelinkStageCommandCount);
+                var pagesApplied = checked(Diagnostics.PagesApplied + _atomicPageCount);
+                Diagnostics.RemotePriceApply.EnsureCanMerge(_atomicRemotePriceApply);
+
                 cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
+                    if (finalizeAsync != null)
+                    {
+                        await finalizeAsync(Connection, _atomicTransaction)
+                            .ConfigureAwait(false);
+                    }
+                    cancellationToken.ThrowIfCancellationRequested();
                     _atomicTransaction.Commit();
                 }
                 catch
@@ -2208,15 +2149,13 @@ CREATE INDEX IF NOT EXISTS temp_catalog_page_remote_prices_product_id_idx
                     throw;
                 }
 
-                BindTransaction(null);
-                _atomicTransaction.Dispose();
+                var committedTransaction = _atomicTransaction;
                 _atomicTransaction = null;
-                ReleaseAtomicMutationGate();
-                RecordCommittedTransaction();
-                RecordRelinkStageCommands((int)_atomicRelinkStageCommandCount);
-                RecordRemotePriceApply(_atomicRemotePriceApply);
-                Diagnostics.PagesApplied += _atomicPageCount;
-                ResetAtomicDiagnostics();
+                CompleteCommittedAtomicFullRefresh(
+                    committedTransaction,
+                    committedTransactionCount,
+                    relinkStageSqlCommandCount,
+                    pagesApplied);
             }
             catch
             {
@@ -2271,9 +2210,10 @@ SELECT id AS Id,
 FROM suppliers
 WHERE COALESCE(is_active, 1) = 1
 ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
-            Diagnostics.ReferenceMapRefreshQueryCount += 2;
-            Diagnostics.ScopeSqlQueryCount += 2;
-            Diagnostics.ContextSqlCommandCount += 2;
+            Diagnostics.ReferenceMapRefreshQueryCount = checked(
+                Diagnostics.ReferenceMapRefreshQueryCount + 2L);
+            Diagnostics.ScopeSqlQueryCount = checked(Diagnostics.ScopeSqlQueryCount + 2L);
+            Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 2L);
 
             return new RemoteCatalogPageState(
                 ToRemoteIdMap(categories),
@@ -2295,8 +2235,8 @@ ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
             RemoteCatalogBatch batch,
             SqliteTransaction transaction)
         {
-            var identities = new List<RemoteCatalogProductIdentityRow>(
-                (batch.Products?.Count ?? 0) + (batch.ProductTombstones?.Count ?? 0));
+            var identities = new List<RemoteCatalogProductIdentityRow>(checked(
+                (batch.Products?.Count ?? 0) + (batch.ProductTombstones?.Count ?? 0)));
             foreach (var product in batch.Products ?? Array.Empty<RemoteCatalogProductWrite>())
             {
                 if (product == null)
@@ -2343,9 +2283,10 @@ ORDER BY id ASC;", transaction: transaction).ConfigureAwait(false)).ToArray();
                         BuildProductIdentityRowsJson(identities, offset, rowCount);
                 }
                 await _stagePageProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
-                Diagnostics.ContextSqlCommandCount += 1;
+                Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
             }
-            Diagnostics.StagedProductIdentityCount += identities.Count;
+            Diagnostics.StagedProductIdentityCount = checked(
+                Diagnostics.StagedProductIdentityCount + identities.Count);
         }
 
         internal async Task<IReadOnlyList<RemoteCatalogProductIdentityRow>> LoadPageProductIdentitiesAsync(
@@ -2367,10 +2308,11 @@ JOIN temp_catalog_page_product_identities incoming
 WHERE COALESCE(p.is_active, 1) = 1
   AND TRIM(COALESCE(p.remote_product_id, '')) <> '';",
                 transaction: transaction).ConfigureAwait(false)).ToArray();
-            Diagnostics.ProductIdentityQueryCount += 1;
-            Diagnostics.ProductIdentityRowsLoaded += rows.Length;
-            Diagnostics.ScopeSqlQueryCount += 1;
-            Diagnostics.ContextSqlCommandCount += 1;
+            Diagnostics.ProductIdentityQueryCount = checked(Diagnostics.ProductIdentityQueryCount + 1L);
+            Diagnostics.ProductIdentityRowsLoaded = checked(
+                Diagnostics.ProductIdentityRowsLoaded + rows.Length);
+            Diagnostics.ScopeSqlQueryCount = checked(Diagnostics.ScopeSqlQueryCount + 1L);
+            Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
             return rows;
         }
 
@@ -2399,10 +2341,11 @@ JOIN temp_catalog_page_product_identities incoming
  AND incoming.remote_product_id = p.remote_product_id
 WHERE o.status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
                 transaction: transaction).ConfigureAwait(false)).ToArray();
-            Diagnostics.PendingStockQueryCount += 1;
-            Diagnostics.PendingStockRowsLoaded += rows.Length;
-            Diagnostics.ScopeSqlQueryCount += 1;
-            Diagnostics.ContextSqlCommandCount += 1;
+            Diagnostics.PendingStockQueryCount = checked(Diagnostics.PendingStockQueryCount + 1L);
+            Diagnostics.PendingStockRowsLoaded = checked(
+                Diagnostics.PendingStockRowsLoaded + rows.Length);
+            Diagnostics.ScopeSqlQueryCount = checked(Diagnostics.ScopeSqlQueryCount + 1L);
+            Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
             return rows;
         }
 
@@ -2425,8 +2368,8 @@ SELECT EXISTS (
     )
 );",
                 transaction: transaction).ConfigureAwait(false);
-            Diagnostics.ScopeSqlQueryCount += 1;
-            Diagnostics.ContextSqlCommandCount += 1;
+            Diagnostics.ScopeSqlQueryCount = checked(Diagnostics.ScopeSqlQueryCount + 1L);
+            Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
             return required != 0;
         }
 
@@ -2458,7 +2401,7 @@ SELECT EXISTS (
                         BuildProductRowsJson(rows, offset, rowCount);
                 }
                 await _stagePageSetProduct.ExecuteNonQueryAsync().ConfigureAwait(false);
-                Diagnostics.ContextSqlCommandCount += 1;
+                Diagnostics.ContextSqlCommandCount = checked(Diagnostics.ContextSqlCommandCount + 1L);
             }
         }
 
@@ -2472,7 +2415,7 @@ SELECT EXISTS (
 
         internal void RecordPageApplied()
         {
-            Diagnostics.PagesApplied += 1;
+            Diagnostics.PagesApplied = checked(Diagnostics.PagesApplied + 1L);
         }
 
         internal void RecordRemotePriceApply(RemotePriceApplyDiagnostics pageDiagnostics)
@@ -2480,14 +2423,16 @@ SELECT EXISTS (
             Diagnostics.RemotePriceApply.MergeFrom(pageDiagnostics);
         }
 
-        internal void RecordRelinkStageCommands(int commandCount)
+        internal void RecordRelinkStageCommands(long commandCount)
         {
-            Diagnostics.RelinkStageSqlCommandCount += commandCount;
+            Diagnostics.RelinkStageSqlCommandCount = checked(
+                Diagnostics.RelinkStageSqlCommandCount + commandCount);
         }
 
         internal void RecordCommittedTransaction()
         {
-            Diagnostics.CommittedTransactionCount += 1;
+            Diagnostics.CommittedTransactionCount = checked(
+                Diagnostics.CommittedTransactionCount + 1L);
         }
 
         internal void RecordUncommittedAtomicPage(
@@ -2501,9 +2446,10 @@ SELECT EXISTS (
                     "Atomic catalog page diagnostics require an active transaction.");
             }
 
-            _atomicRelinkStageCommandCount += relinkStageCommandCount;
+            _atomicRelinkStageCommandCount = checked(
+                _atomicRelinkStageCommandCount + relinkStageCommandCount);
             _atomicRemotePriceApply.MergeFrom(remotePriceApply);
-            _atomicPageCount += 1;
+            _atomicPageCount = checked(_atomicPageCount + 1L);
             CommitPageState(pageState);
         }
 
@@ -2555,6 +2501,39 @@ SELECT EXISTS (
             _atomicRemotePriceApply = new RemotePriceApplyDiagnostics();
             _atomicRelinkStageCommandCount = 0;
             _atomicPageCount = 0;
+        }
+
+        /// <summary>
+        /// A physical SQLite commit is authoritative. Cleanup and observability after
+        /// that point are best effort and must never cause the caller to receive a
+        /// failure for data that is already live.
+        /// </summary>
+        private void CompleteCommittedAtomicFullRefresh(
+            SqliteTransaction committedTransaction,
+            long committedTransactionCount,
+            long relinkStageSqlCommandCount,
+            long pagesApplied)
+        {
+            try
+            {
+                try { BindTransaction(null); } catch { }
+                try { committedTransaction?.Dispose(); } catch { }
+
+                // All checked sums were validated before the physical commit.
+                try
+                {
+                    Diagnostics.CommittedTransactionCount = committedTransactionCount;
+                    Diagnostics.RelinkStageSqlCommandCount = relinkStageSqlCommandCount;
+                    Diagnostics.PagesApplied = pagesApplied;
+                    Diagnostics.RemotePriceApply.MergeFrom(_atomicRemotePriceApply);
+                }
+                catch { }
+            }
+            finally
+            {
+                try { ResetAtomicDiagnostics(); } catch { }
+                try { ReleaseAtomicMutationGate(); } catch { }
+            }
         }
 
         private static void AddIdentity(
@@ -2803,18 +2782,18 @@ FROM staged;
     {
         public long CommittedTransactionCount { get; internal set; }
         public long ContextSqlCommandCount { get; internal set; }
-        public int LegacyScopeSqlQueryEstimate => PagesApplied * 6;
-        public int PagesApplied { get; internal set; }
-        public int PendingStockQueryCount { get; internal set; }
+        public long LegacyScopeSqlQueryEstimate => checked(PagesApplied * 6L);
+        public long PagesApplied { get; internal set; }
+        public long PendingStockQueryCount { get; internal set; }
         public long PendingStockRowsLoaded { get; internal set; }
-        public int PreparedCommandCount { get; internal set; }
-        public int ProductIdentityQueryCount { get; internal set; }
+        public long PreparedCommandCount { get; internal set; }
+        public long ProductIdentityQueryCount { get; internal set; }
         public long ProductIdentityRowsLoaded { get; internal set; }
-        public int ReferenceMapRefreshQueryCount { get; internal set; }
+        public long ReferenceMapRefreshQueryCount { get; internal set; }
         public long RelinkStageSqlCommandCount { get; internal set; }
         public RemotePriceApplyDiagnostics RemotePriceApply { get; } =
             new RemotePriceApplyDiagnostics();
-        public int ScopeSqlQueryCount { get; internal set; }
+        public long ScopeSqlQueryCount { get; internal set; }
         public long StagedProductIdentityCount { get; internal set; }
     }
 
@@ -2829,12 +2808,12 @@ FROM staged;
 
         internal void RecordFallbackPage()
         {
-            FallbackPageCount += 1;
+            FallbackPageCount = checked(FallbackPageCount + 1L);
         }
 
         internal void RecordPreparedCommand()
         {
-            PreparedCommandCount += 1;
+            PreparedCommandCount = checked(PreparedCommandCount + 1L);
         }
 
         internal void RecordSetBasedPage(int stagedRows)
@@ -2844,8 +2823,8 @@ FROM staged;
                 throw new ArgumentOutOfRangeException(nameof(stagedRows));
             }
 
-            SetBasedPageCount += 1;
-            StagedRowCount += stagedRows;
+            SetBasedPageCount = checked(SetBasedPageCount + 1L);
+            StagedRowCount = checked(StagedRowCount + stagedRows);
         }
 
         internal void RecordSqlCommand(int statementCount)
@@ -2855,8 +2834,8 @@ FROM staged;
                 throw new ArgumentOutOfRangeException(nameof(statementCount));
             }
 
-            SqlCommandCount += 1;
-            SqlStatementCount += statementCount;
+            SqlCommandCount = checked(SqlCommandCount + 1L);
+            SqlStatementCount = checked(SqlStatementCount + statementCount);
         }
 
         internal void MergeFrom(RemotePriceApplyDiagnostics pageDiagnostics)
@@ -2866,12 +2845,34 @@ FROM staged;
                 throw new ArgumentNullException(nameof(pageDiagnostics));
             }
 
-            FallbackPageCount += pageDiagnostics.FallbackPageCount;
-            PreparedCommandCount += pageDiagnostics.PreparedCommandCount;
-            SetBasedPageCount += pageDiagnostics.SetBasedPageCount;
-            SqlCommandCount += pageDiagnostics.SqlCommandCount;
-            SqlStatementCount += pageDiagnostics.SqlStatementCount;
-            StagedRowCount += pageDiagnostics.StagedRowCount;
+            FallbackPageCount = checked(
+                FallbackPageCount + pageDiagnostics.FallbackPageCount);
+            PreparedCommandCount = checked(
+                PreparedCommandCount + pageDiagnostics.PreparedCommandCount);
+            SetBasedPageCount = checked(
+                SetBasedPageCount + pageDiagnostics.SetBasedPageCount);
+            SqlCommandCount = checked(SqlCommandCount + pageDiagnostics.SqlCommandCount);
+            SqlStatementCount = checked(
+                SqlStatementCount + pageDiagnostics.SqlStatementCount);
+            StagedRowCount = checked(StagedRowCount + pageDiagnostics.StagedRowCount);
+        }
+
+        internal void EnsureCanMerge(RemotePriceApplyDiagnostics pageDiagnostics)
+        {
+            if (pageDiagnostics == null)
+            {
+                throw new ArgumentNullException(nameof(pageDiagnostics));
+            }
+
+            checked
+            {
+                _ = FallbackPageCount + pageDiagnostics.FallbackPageCount;
+                _ = PreparedCommandCount + pageDiagnostics.PreparedCommandCount;
+                _ = SetBasedPageCount + pageDiagnostics.SetBasedPageCount;
+                _ = SqlCommandCount + pageDiagnostics.SqlCommandCount;
+                _ = SqlStatementCount + pageDiagnostics.SqlStatementCount;
+                _ = StagedRowCount + pageDiagnostics.StagedRowCount;
+            }
         }
     }
 
@@ -2934,7 +2935,7 @@ FROM staged;
     {
         public string FullRunId { get; set; } = string.Empty;
         public bool HasMore { get; set; }
-        public int PageNumber { get; set; }
+        public long PageNumber { get; set; }
     }
 
     public sealed class CatalogAuthoritativeStageEvidence
@@ -3056,25 +3057,26 @@ FROM staged;
 
     public sealed class RemoteCatalogBatchApplyResult
     {
-        public int CategoriesApplied { get; internal set; }
-        public int CategoriesSkipped { get; internal set; }
-        public int CategoryTombstonesApplied { get; internal set; }
-        public int PendingPricesApplied { get; internal set; }
-        public int PricesApplied { get; internal set; }
-        public int PricesQueued { get; internal set; }
-        public int PricesSkipped { get; internal set; }
-        public int ProductsApplied { get; internal set; }
-        public int ProductsSkipped { get; internal set; }
-        public int ProductTombstonesApplied { get; internal set; }
-        public int ProductReferencesRelinked { get; internal set; }
-        public int ProductIdentityConflicts { get; internal set; }
-        public int SuppliersApplied { get; internal set; }
-        public int SuppliersSkipped { get; internal set; }
-        public int SupplierTombstonesApplied { get; internal set; }
-        public int TombstonesApplied =>
-            ProductTombstonesApplied + CategoryTombstonesApplied + SupplierTombstonesApplied;
-        public int TombstonesSkipped { get; internal set; }
-        public int RowsSkipped =>
-            CategoriesSkipped + SuppliersSkipped + ProductsSkipped + PricesSkipped + TombstonesSkipped;
+        public long CategoriesApplied { get; internal set; }
+        public long CategoriesSkipped { get; internal set; }
+        public long CategoryTombstonesApplied { get; internal set; }
+        public long PendingPricesApplied { get; internal set; }
+        public long PricesApplied { get; internal set; }
+        public long PricesQueued { get; internal set; }
+        public long PricesSkipped { get; internal set; }
+        public long ProductsApplied { get; internal set; }
+        public long ProductsSkipped { get; internal set; }
+        public long ProductTombstonesApplied { get; internal set; }
+        public long ProductReferencesRelinked { get; internal set; }
+        public long ProductIdentityConflicts { get; internal set; }
+        public long SuppliersApplied { get; internal set; }
+        public long SuppliersSkipped { get; internal set; }
+        public long SupplierTombstonesApplied { get; internal set; }
+        public long TombstonesApplied => checked(
+            checked(ProductTombstonesApplied + CategoryTombstonesApplied) + SupplierTombstonesApplied);
+        public long TombstonesSkipped { get; internal set; }
+        public long RowsSkipped => checked(
+            checked(checked(CategoriesSkipped + SuppliersSkipped) + ProductsSkipped) +
+            checked(PricesSkipped + TombstonesSkipped));
     }
 }

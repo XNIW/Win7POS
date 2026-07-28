@@ -1,0 +1,149 @@
+[CmdletBinding()]
+param()
+
+$ErrorActionPreference = 'Stop'
+$repoRoot = [System.IO.Path]::GetFullPath(
+    (Join-Path $PSScriptRoot '..\..'))
+$modulePath = Join-Path $repoRoot (
+    'scripts\qa\Win7PosAcceptanceProcessRunner.psm1')
+$syntheticHarness = Join-Path $PSScriptRoot (
+    'fixtures\Invoke-SyntheticAcceptanceHarness.ps1')
+$mutexHolder = Join-Path $PSScriptRoot (
+    'fixtures\Hold-Win7PosAcceptanceMutex.ps1')
+Import-Module $modulePath -Force
+
+$testRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
+    'win7pos-acceptance-runner-' + [Guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+
+function Assert-Runner {
+    param(
+        [Parameter(Mandatory = $true)][bool]$Condition,
+        [Parameter(Mandatory = $true)][string]$Message
+    )
+    if (-not $Condition) {
+        throw $Message
+    }
+}
+
+try {
+    $pwshPath = (Get-Process -Id $PID).Path
+    $waitEvidence = Join-Path $testRoot 'wait-evidence'
+    $waitMarker = Join-Path $testRoot 'wait-marker.txt'
+    $timer = [System.Diagnostics.Stopwatch]::StartNew()
+    $waited = Invoke-Win7PosWaitedProcess `
+        -FilePath $pwshPath `
+        -ArgumentList @(
+            '-NoProfile',
+            '-File', $syntheticHarness,
+            '-AcceptanceOutput', $waitEvidence,
+            '-DelayMilliseconds', '800',
+            '-SyntheticExitCode', '7',
+            '-MarkerPath', $waitMarker
+        ) `
+        -TimeoutMilliseconds 10000 `
+        -EvidenceDirectory $waitEvidence
+    $timer.Stop()
+
+    Assert-Runner ($waited.Started) 'Synthetic harness did not start.'
+    Assert-Runner (-not $waited.TimedOut) 'Synthetic harness timed out unexpectedly.'
+    Assert-Runner ($waited.ExitCode -eq 7) 'Harness exit code was not propagated.'
+    Assert-Runner ($timer.ElapsedMilliseconds -ge 700) 'Runner returned before harness exit.'
+    Assert-Runner (-not $waited.OrphanRemaining) 'Completed harness remained orphaned.'
+    Assert-Runner (
+        $waited.EvidenceDirectory -eq
+        [System.IO.Path]::GetFullPath($waitEvidence)
+    ) 'Evidence path was not returned.'
+    Assert-Runner (
+        (Get-Content -LiteralPath $waitMarker).Count -eq 1
+    ) 'Synthetic harness launched more than once.'
+
+    $launchFailureEvidence = Join-Path $testRoot 'launch-failure-evidence'
+    $launchFailure = Invoke-Win7PosWaitedProcess `
+        -FilePath (Join-Path $testRoot 'missing-harness.exe') `
+        -ArgumentList @('--synthetic-unused') `
+        -TimeoutMilliseconds 10000 `
+        -EvidenceDirectory $launchFailureEvidence
+    Assert-Runner (-not $launchFailure.Started) 'Missing harness was reported as started.'
+    Assert-Runner (
+        -not [string]::IsNullOrWhiteSpace($launchFailure.LaunchError)
+    ) 'Harness launch failure did not retain a typed exception name.'
+    Assert-Runner (
+        -not $launchFailure.OrphanRemaining
+    ) 'Failed harness launch reported an orphan process.'
+
+    $timeoutEvidence = Join-Path $testRoot 'timeout-evidence'
+    $timeoutMarker = Join-Path $testRoot 'timeout-marker.txt'
+    $timedOut = Invoke-Win7PosWaitedProcess `
+        -FilePath $pwshPath `
+        -ArgumentList @(
+            '-NoProfile',
+            '-File', $syntheticHarness,
+            '-AcceptanceOutput', $timeoutEvidence,
+            '-DelayMilliseconds', '10000',
+            '-SyntheticExitCode', '0',
+            '-MarkerPath', $timeoutMarker
+        ) `
+        -TimeoutMilliseconds 400 `
+        -EvidenceDirectory $timeoutEvidence
+
+    Assert-Runner ($timedOut.TimedOut) 'Timeout was not reported.'
+    Assert-Runner (-not $timedOut.OrphanRemaining) 'Timed-out harness remained orphaned.'
+    Assert-Runner (
+        $null -eq (Get-Process -Id $timedOut.ProcessId -ErrorAction SilentlyContinue)
+    ) 'Timed-out process still exists.'
+
+    $mutexName = 'Local\Win7POS.RunnerTest.' +
+        [Guid]::NewGuid().ToString('N')
+    $mutexMarker = Join-Path $testRoot 'mutex-marker.txt'
+    $holder = Start-Process `
+        -FilePath $pwshPath `
+        -ArgumentList @(
+            '-NoProfile',
+            '-File', $mutexHolder,
+            '-ModulePath', $modulePath,
+            '-MutexName', $mutexName,
+            '-MarkerPath', $mutexMarker,
+            '-HoldMilliseconds', '1500'
+        ) `
+        -PassThru `
+        -WindowStyle Hidden
+    $deadline = [DateTimeOffset]::UtcNow.AddSeconds(10)
+    while (-not (Test-Path -LiteralPath $mutexMarker) -and
+        [DateTimeOffset]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 50
+    }
+    Assert-Runner (
+        (Test-Path -LiteralPath $mutexMarker)
+    ) 'Mutex holder did not acquire the lock.'
+
+    $blockedLease = Enter-Win7PosAcceptanceLock -Name $mutexName
+    try {
+        Assert-Runner (
+            -not $blockedLease.Acquired
+        ) 'Second acceptance acquired the single-instance mutex.'
+    }
+    finally {
+        Exit-Win7PosAcceptanceLock -Lease $blockedLease
+    }
+    $holder.WaitForExit(10000) | Out-Null
+    Assert-Runner ($holder.HasExited) 'Mutex holder did not exit.'
+    $holder.Dispose()
+
+    $releasedLease = Enter-Win7PosAcceptanceLock -Name $mutexName
+    try {
+        Assert-Runner (
+            $releasedLease.Acquired
+        ) 'Released single-instance mutex was not reusable.'
+    }
+    finally {
+        Exit-Win7PosAcceptanceLock -Lease $releasedLease
+    }
+
+    Write-Output 'WIN7POS_STAGING_ACCEPTANCE_RUNNER_TEST=PASS'
+}
+finally {
+    if (Test-Path -LiteralPath $testRoot) {
+        Remove-Item -LiteralPath $testRoot -Recurse -Force
+    }
+}
