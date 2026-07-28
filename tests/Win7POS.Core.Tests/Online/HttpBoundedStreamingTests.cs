@@ -287,6 +287,118 @@ public sealed class HttpBoundedStreamingTests
     }
 
     [TestMethod]
+    public async Task TruncatedJsonObject_IsClassifiedAsRetryableIoFailure()
+    {
+        const string truncated =
+            "{\"ok\":true,\"catalog\":{\"prices\":[{\"priceId\":\"unterminated";
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(truncated)));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.CatalogPullAsync(
+            new PosCatalogPullRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("io_error", result.Code);
+        Assert.AreEqual(200, result.HttpStatus.GetValueOrDefault());
+        Assert.IsTrue(result.RequestReachedServer);
+        Assert.IsTrue(result.Retryable);
+        Assert.IsFalse(result.Message.Contains(truncated, StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task CompleteJsonWithContractTypeMismatch_RemainsInvalidResponse()
+    {
+        const string typeMismatch = "{\"ok\":true,\"catalog\":5}";
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(typeMismatch)));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.CatalogPullAsync(
+            new PosCatalogPullRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("invalid_response", result.Code);
+        Assert.AreEqual(200, result.HttpStatus.GetValueOrDefault());
+        Assert.IsFalse(result.Retryable);
+        Assert.IsFalse(result.Message.Contains(typeMismatch, StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public async Task TruncationAfterNestedObjectClose_IsClassifiedAsRetryableIoFailure()
+    {
+        const string missingOuterClose = "{\"ok\":true,\"catalog\":{\"prices\":[]}";
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(missingOuterClose)));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.CatalogPullAsync(
+            new PosCatalogPullRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("io_error", result.Code);
+        Assert.IsTrue(result.Retryable);
+    }
+
+    [TestMethod]
+    public async Task TrailingContentAfterCompleteJson_RemainsInvalidResponse()
+    {
+        const string trailingContent = "{\"ok\":true}x";
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(trailingContent)));
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.CatalogPullAsync(
+            new PosCatalogPullRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("invalid_response", result.Code);
+        Assert.IsFalse(result.Retryable);
+    }
+
+    [TestMethod]
+    public async Task CompleteJsonShorterThanDeclaredLength_IsRetryableIoFailure()
+    {
+        const string completeJson = "{\"ok\":true}";
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Encoding.UTF8.GetBytes(completeJson)));
+        content.Headers.ContentLength =
+            Encoding.UTF8.GetByteCount(completeJson) + 8;
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.HeartbeatAsync(
+            new PosHeartbeatRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("io_error", result.Code);
+        Assert.IsTrue(result.Retryable);
+        Assert.IsTrue(result.RequestReachedServer);
+    }
+
+    [TestMethod]
+    public async Task EmptyBodyShorterThanDeclaredLength_IsRetryableIoFailure()
+    {
+        var content = new StreamingOnlyContent(
+            () => new MemoryStream(Array.Empty<byte>()));
+        content.Headers.ContentLength = 32;
+        using var client = CreateClient(HttpStatusCode.OK, content);
+
+        var result = await client.HeartbeatAsync(
+            new PosHeartbeatRequest(),
+            CancellationToken.None);
+
+        Assert.IsFalse(result.Success);
+        Assert.AreEqual("io_error", result.Code);
+        Assert.IsTrue(result.Retryable);
+        Assert.IsTrue(result.RequestReachedServer);
+    }
+
+    [TestMethod]
     public async Task CallerCancellationInterruptsAnInFlightBodyRead()
     {
         using var blockingStream = new BlockingReadStream();
