@@ -1,0 +1,28 @@
+{
+  "ok": true,
+  "code": "success",
+  "schemaVersion": "pos-article-mutation-v1",
+  "serverTime": "2026-07-28T06:45:00.123Z",
+  "results": [
+    {
+      "deliveryStatus": "applied",
+      "ack": {
+        "schemaVersion": "pos-article-mutation-v1",
+        "mutationId": "task145-fixture-create",
+        "idempotencyKey": "task145-idem-fixture-create",
+        "payloadHash": "sha256:998fc3a636e6a99dea7fc6f256d1b7e52e61194592482376249dfee072015707",
+        "attemptToken": "task145-attempt-fixture-create-1",
+        "status": "applied",
+        "code": "applied",
+        "terminal": true,
+        "retryable": false,
+        "remoteProductId": "50000000-0000-4000-8000-000000000145",
+        "priceHistoryId": null,
+        "stockMovementId": null,
+        "authoritativeRevision": "2026-07-28T06:45:00.123456Z",
+        "catalogRevision": "42",
+        "serverTimestamp": "2026-07-28T06:45:00.123456Z"
+      }
+    }
+  ]
+}

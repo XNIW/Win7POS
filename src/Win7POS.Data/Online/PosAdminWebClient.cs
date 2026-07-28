@@ -101,6 +101,22 @@ namespace Win7POS.Data.Online
                 cancellationToken).ConfigureAwait(false);
         }
 
+        public async Task<PosOnlineResult<PosArticleMutationResponse>>
+            ArticleMutationsAsync(
+                PosArticleMutationEnvelope envelope,
+                CancellationToken cancellationToken)
+        {
+            var encodedBody = PosArticleMutationRequestWriter.WriteUtf8(envelope);
+            return await PostJsonAsync<
+                PosArticleMutationEnvelope,
+                PosArticleMutationResponse>(
+                    PosArticleMutationContract.EndpointPath,
+                    envelope,
+                    cancellationToken,
+                    encodedBody,
+                    noStore: true).ConfigureAwait(false);
+        }
+
         public void Dispose()
         {
             if (_disposed)
@@ -212,7 +228,9 @@ namespace Win7POS.Data.Online
         private async Task<PosOnlineResult<TResponse>> PostJsonAsync<TRequest, TResponse>(
             string relativePath,
             TRequest request,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            byte[] encodedBody = null,
+            bool noStore = false)
             where TResponse : class
         {
             if (_disposed) throw new ObjectDisposedException(nameof(PosAdminWebClient));
@@ -225,7 +243,9 @@ namespace Win7POS.Data.Online
             {
                 requestTimeout.CancelAfter(RequestTimeout);
                 var requestToken = requestTimeout.Token;
-                using (var content = new JsonDataContractContent<TRequest>(request))
+                using (var content = encodedBody == null
+                    ? (HttpContent)new JsonDataContractContent<TRequest>(request)
+                    : new EncodedJsonContent(encodedBody))
                 using (var requestMessage = new HttpRequestMessage(
                     HttpMethod.Post,
                     relativePath.TrimStart('/')))
@@ -233,6 +253,15 @@ namespace Win7POS.Data.Online
                     requestMessage.Content = content;
                     requestMessage.Headers.TryAddWithoutValidation("X-Client-Request-Id", clientRequestId);
                     requestMessage.Headers.TryAddWithoutValidation("User-Agent", "Win7POS/online-client");
+                    if (noStore)
+                    {
+                        requestMessage.Headers.TryAddWithoutValidation(
+                            "Cache-Control",
+                            "no-store");
+                        requestMessage.Headers.TryAddWithoutValidation(
+                            "Pragma",
+                            "no-cache");
+                    }
 
                     using (var response = await _httpClient
                         .SendAsync(
@@ -719,6 +748,35 @@ namespace Win7POS.Data.Online
             {
                 length = 0;
                 return false;
+            }
+        }
+
+        private sealed class EncodedJsonContent : HttpContent
+        {
+            private readonly byte[] _value;
+
+            internal EncodedJsonContent(byte[] value)
+            {
+                _value = value ?? throw new ArgumentNullException(nameof(value));
+                Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
+                    "application/json")
+                {
+                    CharSet = "utf-8"
+                };
+                Headers.ContentLength = _value.LongLength;
+            }
+
+            protected override Task SerializeToStreamAsync(
+                Stream stream,
+                TransportContext context)
+            {
+                return stream.WriteAsync(_value, 0, _value.Length);
+            }
+
+            protected override bool TryComputeLength(out long length)
+            {
+                length = _value.LongLength;
+                return true;
             }
         }
 

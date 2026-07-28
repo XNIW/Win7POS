@@ -342,6 +342,39 @@ namespace Win7POS.Data.Repositories
                             throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
                         }
 
+                        var protectedProductId =
+                            await RemoteCatalogProductWriter.FindProtectedProductIdAsync(
+                                conn,
+                                tx,
+                                normalizedRemoteProductId,
+                                normalizedBarcode).ConfigureAwait(false);
+                        if (protectedProductId.HasValue)
+                        {
+                            await RemoteCatalogProductWriter.UpsertRemoteShadowAsync(
+                                conn,
+                                tx,
+                                protectedProductId,
+                                normalizedRemoteProductId,
+                                normalizedBarcode,
+                                product.ArticleCode,
+                                product.Name,
+                                product.SecondName,
+                                product.RemoteCategoryId,
+                                product.RemoteSupplierId,
+                                product.UnitPrice,
+                                product.PurchasePrice,
+                                product.StockQuantity,
+                                true,
+                                product.RemoteUpdatedAt).ConfigureAwait(false);
+                            await preparedReferenceCommand.UpsertAsync(
+                                normalizedRemoteProductId,
+                                product.RemoteCategoryId,
+                                product.RemoteSupplierId).ConfigureAwait(false);
+                            relinkProductRemoteIds.Add(normalizedRemoteProductId);
+                            result.ProductsApplied = checked(result.ProductsApplied + 1L);
+                            continue;
+                        }
+
                         var hasPendingLocalStock = productBatchContext.HasPendingLocalStock(
                             normalizedBarcode,
                             normalizedRemoteProductId);
@@ -371,6 +404,8 @@ namespace Win7POS.Data.Repositories
                                     RemoteProductId = normalizedRemoteProductId,
                                     RemoteSupplierId =
                                         (product.RemoteSupplierId ?? string.Empty).Trim(),
+                                    RemoteUpdatedAt =
+                                        (product.RemoteUpdatedAt ?? string.Empty).Trim(),
                                     SecondName = product.SecondName ?? string.Empty,
                                     StockQuantity = product.StockQuantity,
                                     SupplierId = supplierRef.Id,
@@ -399,7 +434,10 @@ namespace Win7POS.Data.Repositories
                                 product.StockQuantity,
                                 normalizedRemoteProductId,
                                 preparedProductCommands,
-                                productBatchContext).ConfigureAwait(false);
+                                productBatchContext,
+                                product.RemoteUpdatedAt,
+                                product.RemoteCategoryId,
+                                product.RemoteSupplierId).ConfigureAwait(false);
                             await preparedReferenceCommand.UpsertAsync(
                                 normalizedRemoteProductId,
                                 product.RemoteCategoryId,
@@ -454,9 +492,10 @@ namespace Win7POS.Data.Repositories
 
                         if (await RemoteCatalogProductWriter.ApplyRemoteProductTombstoneInTransactionAsync(
                             conn,
-                            tx,
-                            tombstone.RemoteProductId,
-                            tombstone.RemoteDeletedAt).ConfigureAwait(false))
+                             tx,
+                             tombstone.RemoteProductId,
+                             tombstone.RemoteDeletedAt,
+                             tombstone.RemoteUpdatedAt).ConfigureAwait(false))
                         {
                             result.ProductTombstonesApplied = checked(result.ProductTombstonesApplied + 1L);
                         }
@@ -1638,7 +1677,13 @@ SELECT p.barcode
 FROM products p
 JOIN temp_catalog_relink_product_ids target
   ON target.remote_product_id = p.remote_product_id
-WHERE COALESCE(p.is_active, 1) = 1;",
+WHERE COALESCE(p.is_active, 1) = 1
+  AND NOT EXISTS (
+    SELECT 1
+    FROM article_mutation_outbox mutation
+    WHERE mutation.local_product_id = p.id
+      AND mutation.state <> 'completed'
+  );",
                 transaction: tx).ConfigureAwait(false);
 
             var rowsAffected = await conn.ExecuteAsync(@"
@@ -1923,7 +1968,8 @@ CREATE TEMP TABLE IF NOT EXISTS temp_catalog_page_products(
   category_name TEXT NOT NULL,
   stock_quantity INTEGER NOT NULL,
   remote_category_id TEXT NOT NULL,
-  remote_supplier_id TEXT NOT NULL
+  remote_supplier_id TEXT NOT NULL,
+  remote_updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS temp_catalog_page_products_remote_id_idx
   ON temp_catalog_page_products(remote_product_id);
@@ -2614,7 +2660,8 @@ WITH staged AS (
     CAST(json_extract(value, '$[11]') AS TEXT) AS category_name,
     CAST(json_extract(value, '$[12]') AS INTEGER) AS stock_quantity,
     CAST(json_extract(value, '$[13]') AS TEXT) AS remote_category_id,
-    CAST(json_extract(value, '$[14]') AS TEXT) AS remote_supplier_id
+    CAST(json_extract(value, '$[14]') AS TEXT) AS remote_supplier_id,
+    CAST(json_extract(value, '$[15]') AS TEXT) AS remote_updated_at
   FROM json_each(");
                 commandText.Append(JsonChunkParameterName(chunk));
                 commandText.Append(@")
@@ -2634,7 +2681,8 @@ INSERT INTO temp_catalog_page_products(
   category_name,
   stock_quantity,
   remote_category_id,
-  remote_supplier_id)
+  remote_supplier_id,
+  remote_updated_at)
 SELECT
   ordinal,
   barcode,
@@ -2650,7 +2698,8 @@ SELECT
   category_name,
   stock_quantity,
   remote_category_id,
-  remote_supplier_id
+  remote_supplier_id,
+  remote_updated_at
 FROM staged;
 ");
                 command.Parameters.Add(
@@ -2737,6 +2786,8 @@ FROM staged;
                 RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteCategoryId);
                 json.Append(',');
                 RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteSupplierId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteUpdatedAt);
                 json.Append(']');
             }
             json.Append(']');
@@ -2998,6 +3049,7 @@ FROM staged;
         public string RemoteCategoryId { get; set; } = string.Empty;
         public string RemoteProductId { get; set; } = string.Empty;
         public string RemoteSupplierId { get; set; } = string.Empty;
+        public string RemoteUpdatedAt { get; set; } = string.Empty;
         public string SecondName { get; set; } = string.Empty;
         public int StockQuantity { get; set; }
         public int? SupplierId { get; set; }

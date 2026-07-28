@@ -37,6 +37,8 @@ namespace Win7POS.Wpf.Pos.Online
         private const string PolicyTaxStatusSettingKey = "pos.policy.tax_status";
         private const string PolicyWarningSettingKey = "pos.policy.warning";
         private const string CatalogSyncDiagnosticsPrefix = "pos.catalog.sync.";
+        private const string ArticleCompletedViewedSettingKey =
+            "pos.article_mutation.completed_viewed";
 
         private readonly SqliteConnectionFactory _factory;
         private readonly PosTrustedDeviceStore _trustedDeviceStore;
@@ -52,7 +54,8 @@ namespace Win7POS.Wpf.Pos.Online
             _trustedDeviceStore = trustedDeviceStore ?? throw new ArgumentNullException(nameof(trustedDeviceStore));
         }
 
-        public async Task<PosSyncStatusSnapshot> ReadAsync()
+        public async Task<PosSyncStatusSnapshot> ReadAsync(
+            bool markArticleCompletionsViewed = false)
         {
             var settings = new SettingsRepository(_factory);
             var sales = new SaleRepository(_factory);
@@ -64,6 +67,34 @@ namespace Win7POS.Wpf.Pos.Online
             var drainNow = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
             var salesDrain = await sales.GetSalesSyncDrainStateAsync(drainNow).ConfigureAwait(false);
             var importDrain = await catalogOutboxRepository.GetDrainStateAsync(drainNow).ConfigureAwait(false);
+            var articleRepository = new ArticleMutationOutboxRepository(_factory);
+            var articleOutbox = await articleRepository.GetSummaryAsync()
+                .ConfigureAwait(false);
+            var articleDrain = await articleRepository.GetDrainStateAsync()
+                .ConfigureAwait(false);
+            var completedViewedText = await settings.GetStringAsync(
+                ArticleCompletedViewedSettingKey).ConfigureAwait(false);
+            long completedViewed;
+            if (!long.TryParse(
+                    completedViewedText,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out completedViewed) ||
+                completedViewed < 0)
+            {
+                completedViewed = 0;
+            }
+            var articleCompletedSinceLastView = Math.Max(
+                0,
+                articleOutbox.Completed - completedViewed);
+            if (markArticleCompletionsViewed &&
+                completedViewed != articleOutbox.Completed)
+            {
+                await settings.SetStringAsync(
+                    ArticleCompletedViewedSettingKey,
+                    articleOutbox.Completed.ToString(CultureInfo.InvariantCulture))
+                    .ConfigureAwait(false);
+            }
 
             _trustedDeviceStore.TryRead(out var trustedSession);
 
@@ -118,6 +149,7 @@ namespace Win7POS.Wpf.Pos.Online
             var requiresAttention =
                 outbox.Blocked > 0 ||
                 catalogOutbox.Blocked > 0 ||
+                articleOutbox.FailedBlocked > 0 ||
                 restoreNeedsReview ||
                 !string.IsNullOrWhiteSpace(policyWarning) ||
                 !catalogSaleSafety.IsSaleSafe ||
@@ -127,9 +159,47 @@ namespace Win7POS.Wpf.Pos.Online
                 CatalogRequiresAttention(catalogBootstrapStatus, lastCatalogError, lastCatalogHasMore) ||
                 !string.IsNullOrWhiteSpace(lastSalesError);
             var connectivityState = ConnectivityState(trustedSession);
+            var baseSummary = SummaryText(
+                connectivityState,
+                outbox,
+                catalogOutbox,
+                lastCatalog,
+                lastSales,
+                restoreNeedsReview,
+                salesSyncInProgress,
+                catalogBootstrapStatus,
+                lastCatalogError,
+                lastCatalogHasMore,
+                catalogSaleSafeAt,
+                lastSalesError,
+                catalogExactness,
+                catalogSaleSafety);
+            var articleUnresolved = articleOutbox.WaitingDependency +
+                articleOutbox.Pending +
+                articleOutbox.InProgress +
+                articleOutbox.RetryWait +
+                articleOutbox.FailedBlocked;
+            var summaryText = articleUnresolved > 0
+                ? baseSummary + " | " + T("sync.articleChanges") + ": " +
+                    articleUnresolved.ToString(CultureInfo.InvariantCulture)
+                : baseSummary;
 
             return new PosSyncStatusSnapshot
             {
+                ArticleAffectedCount = articleOutbox.AffectedArticleCount,
+                ArticleBlocked = articleOutbox.FailedBlocked,
+                ArticleCompletedSinceLastView = articleCompletedSinceLastView,
+                ArticleInProgress = articleOutbox.InProgress,
+                ArticleLastTypedCode = SafeCode(articleOutbox.LastTypedCode),
+                ArticleNextRetryText = FormatEpochMilliseconds(
+                    articleDrain.NextRetryAt),
+                ArticlePending = articleOutbox.Pending +
+                    articleOutbox.WaitingDependency,
+                ArticleRemainingDue = articleDrain.RemainingDue,
+                ArticleRetry = articleOutbox.RetryWait,
+                ArticleStatusText = ArticleStatusText(
+                    articleOutbox,
+                    articleCompletedSinceLastView),
                 CatalogBootstrapText = CatalogBootstrapText(
                     catalogBootstrapStatus,
                     lastCatalogHasMore,
@@ -208,27 +278,28 @@ namespace Win7POS.Wpf.Pos.Online
                 SalesRemainingDue = salesDrain.RemainingDue,
                 SalesRetry = outbox.Retry,
                 StaffText = StaffText(trustedSession),
-                SummaryText = SummaryText(
-                    connectivityState,
-                    outbox,
-                    catalogOutbox,
-                    lastCatalog,
-                    lastSales,
-                    restoreNeedsReview,
-                    salesSyncInProgress,
-                    catalogBootstrapStatus,
-                    lastCatalogError,
-                    lastCatalogHasMore,
-                    catalogSaleSafeAt,
-                    lastSalesError,
-                    catalogExactness,
-                    catalogSaleSafety)
+                SummaryText = summaryText
             };
         }
 
         private static string T(string key)
         {
             return PosLocalization.Current.Text(key);
+        }
+
+        private static string ArticleStatusText(
+            ArticleMutationOutboxSummary summary,
+            long completedSinceLastView)
+        {
+            return PosLocalization.F(
+                "sync.articleStatus",
+                summary.WaitingDependency + summary.Pending,
+                summary.InProgress,
+                summary.RetryWait,
+                summary.FailedBlocked,
+                completedSinceLastView,
+                summary.AffectedArticleCount,
+                SafeCode(summary.LastTypedCode));
         }
 
         private static string RevisionMatchCode(string observed, string committed)
@@ -910,6 +981,16 @@ namespace Win7POS.Wpf.Pos.Online
 
     public sealed class PosSyncStatusSnapshot
     {
+        public long ArticleAffectedCount { get; set; }
+        public long ArticleBlocked { get; set; }
+        public long ArticleCompletedSinceLastView { get; set; }
+        public long ArticleInProgress { get; set; }
+        public string ArticleLastTypedCode { get; set; } = string.Empty;
+        public string ArticleNextRetryText { get; set; } = string.Empty;
+        public long ArticlePending { get; set; }
+        public long ArticleRemainingDue { get; set; }
+        public long ArticleRetry { get; set; }
+        public string ArticleStatusText { get; set; } = string.Empty;
         public string CatalogBootstrapText { get; set; } = string.Empty;
         public string CatalogCompletenessText { get; set; } = string.Empty;
         public string CatalogCountsText { get; set; } = string.Empty;

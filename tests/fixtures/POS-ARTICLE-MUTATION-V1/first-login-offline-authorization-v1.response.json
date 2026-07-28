@@ -1,0 +1,98 @@
+{
+  "code": "success",
+  "device": {
+    "shopDeviceId": "30000000-0000-4000-8000-000000000144",
+    "status": "active",
+    "trusted": true
+  },
+  "effectiveOfflineAuthorizationExpiresAt": "2026-07-28T15:10:00.123456Z",
+  "ok": true,
+  "policy": {
+    "capabilities": {
+      "catalogPull": "catalog-v2",
+      "fiscalDocumentMode": "local_receipt_redacted",
+      "localReceiptPrinting": true,
+      "localStaffMirror": "current_staff_only",
+      "offlineSales": true,
+      "paymentMethods": [
+        "cash",
+        "card",
+        "other"
+      ],
+      "salesSync": "pos-sales-ledger-v2"
+    },
+    "contractVersion": "pos-policy-v1",
+    "limitations": [
+      "first_activation_requires_online",
+      "offline_revocation_enforced_on_next_online_check",
+      "staff_roster_not_synced",
+      "credential_material_not_synced",
+      "transfer_payments_not_enabled_in_win7pos",
+      "tax_policy_not_configured_online"
+    ],
+    "offlinePolicy": {
+      "authorizationMaxAgeSeconds": 43200,
+      "firstActivationRequiresOnline": true,
+      "mode": "offline_first_after_activation",
+      "pendingSalesRetention": "local_outbox_until_server_ack",
+      "revocationEnforcement": "next_online_check"
+    },
+    "paymentPolicy": {
+      "currency": "CLP",
+      "fallbackMethod": "other",
+      "supportedMethods": [
+        "cash",
+        "card",
+        "other"
+      ],
+      "unsupportedMethods": [
+        "transfer"
+      ]
+    },
+    "staffPolicy": {
+      "credentialMaterial": "not_synced",
+      "mustChangeCredential": "online_required",
+      "offlineMirror": "current_staff_only"
+    },
+    "taxPolicy": {
+      "defaultTaxClp": 0,
+      "fiscalAuthorityIntegration": "not_configured",
+      "status": "not_configured"
+    },
+    "unsupportedCapabilities": [
+      "server_driven_pos_retry_polling",
+      "remote_outbox_mutation",
+      "online_tax_authority_integration",
+      "multi_staff_offline_credential_roster"
+    ]
+  },
+  "serverTime": "2026-07-28T03:10:00.123456Z",
+  "session": {
+    "expiresAt": "2026-07-28T15:10:00.123456Z",
+    "heartbeatAfterSeconds": 60,
+    "posSessionId": "40000000-0000-4000-8000-000000000144",
+    "sessionToken": "redacted"
+  },
+  "shop": {
+    "businessAddress": null,
+    "businessCity": null,
+    "businessGiro": null,
+    "companyRut": null,
+    "fiscalIdentityLockedByPlatform": true,
+    "legalRepresentativeRut": null,
+    "shopCode": "TASK144",
+    "shopId": "10000000-0000-4000-8000-000000000144",
+    "shopName": "Synthetic fixture",
+    "shopStatus": "active",
+    "source": "supabase_admin_server",
+    "updatedAt": "2026-07-28T03:00:00.000000Z"
+  },
+  "staff": {
+    "credentialVersion": 7,
+    "displayName": "Synthetic operator",
+    "roleKey": "pos_admin",
+    "staffCode": "POS144",
+    "staffId": "20000000-0000-4000-8000-000000000144"
+  },
+  "trustedDeviceToken": "redacted"
+}

@@ -155,6 +155,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HasArg(args, "--runtime-observability-smoke");
             var catalogDisplayWarningSmoke =
                 HasArg(args, "--catalog-display-warning-smoke");
+            var articleMutationUiSmoke =
+                HasArg(args, "--article-mutation-ui-smoke");
+            var articleMutationLoopback =
+                HasArg(args, "--article-mutation-loopback");
             var bootstrapContractSmoke =
                 HasArg(args, "--bootstrap-contract-smoke");
             var bootstrapDiagnosticsMatrixSmoke =
@@ -163,13 +167,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HasArg(args, "--authoritative-drain-loopback");
             var stagingAcceptance = HasArg(args, "--staging-acceptance");
             var stagingProfile = ValueAfter(args, "--profile");
+            var stagingRunId = ValueAfter(args, "--run-id");
             var acceptanceOutput = ValueAfter(args, "--acceptance-output");
             if (stagingAcceptance &&
                 (string.IsNullOrWhiteSpace(stagingProfile) ||
+                 string.IsNullOrWhiteSpace(stagingRunId) ||
                  string.IsNullOrWhiteSpace(acceptanceOutput)))
             {
                 throw new InvalidOperationException(
-                    "--staging-acceptance requires --profile and --acceptance-output.");
+                    "--staging-acceptance requires --profile, --run-id and --acceptance-output.");
             }
             if (authoritativeDrainLoopback &&
                 string.IsNullOrWhiteSpace(acceptanceOutput))
@@ -215,6 +221,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                HasArg(args, "--capture-settings-audit") ||
                                runtimeObservabilitySmoke ||
                                catalogDisplayWarningSmoke ||
+                               articleMutationUiSmoke ||
+                               articleMutationLoopback ||
                                bootstrapContractSmoke ||
                                bootstrapDiagnosticsMatrixSmoke ||
                                authoritativeDrainLoopback ||
@@ -263,6 +271,24 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         return;
                     }
 
+                    if (articleMutationLoopback)
+                    {
+                        var result = await ArticleMutationLoopbackHarness
+                            .RunAsync(dataDir)
+                            .ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(
+                                dataDir,
+                                "article-mutation-loopback.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(
+                            result.StartsWith("PASS", StringComparison.Ordinal)
+                                ? 0
+                                : 1);
+                        return;
+                    }
+
                     if (authoritativeDrainLoopback)
                     {
                         var result = await AuthoritativeCatalogDrainLoopbackHarness
@@ -278,7 +304,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     if (stagingAcceptance)
                     {
                         var passed = await StagingAcceptanceWpfHarness
-                            .RunAsync(stagingProfile, acceptanceOutput)
+                            .RunAsync(
+                                stagingProfile,
+                                stagingRunId,
+                                acceptanceOutput)
                             .ConfigureAwait(true);
                         app.Shutdown(passed ? 0 : 1);
                         return;
@@ -450,6 +479,26 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     var launcher = new HarnessWindow();
                     app.MainWindow = launcher;
                     launcher.Show();
+                    if (articleMutationUiSmoke)
+                    {
+                        var outputDirectory = ValueAfter(args, "--output-dir");
+                        if (string.IsNullOrWhiteSpace(outputDirectory))
+                            outputDirectory = dataDir;
+                        var result = await launcher
+                            .RunArticleMutationUiSmokeAsync(outputDirectory)
+                            .ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(
+                                outputDirectory,
+                                "article-mutation-ui-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(
+                            result.StartsWith("PASS", StringComparison.Ordinal)
+                                ? 0
+                                : 1);
+                        return;
+                    }
                     if (runtimeObservabilitySmoke)
                     {
                         var outputDirectory = ValueAfter(args, "--output-dir");
@@ -1601,6 +1650,389 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
 
                 throw new InvalidOperationException("Dialog initialization did not complete within the smoke timeout.");
+            }
+
+            public async Task<string> RunArticleMutationUiSmokeAsync(
+                string outputDirectory)
+            {
+                Directory.CreateDirectory(outputDirectory);
+                Width = 1024;
+                Height = 768;
+                WindowState = WindowState.Normal;
+                var viewportWorkArea = MonitorHelper.GetWorkAreaOrPrimary(this);
+                Left = viewportWorkArea.Left +
+                    Math.Max(0, (viewportWorkArea.Width - Width) / 2);
+                Top = viewportWorkArea.Top +
+                    Math.Max(0, (viewportWorkArea.Height - Height) / 2);
+                UpdateLayout();
+                await Dispatcher.InvokeAsync(
+                    () => { },
+                    System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                if (Math.Abs(ActualWidth - 1024) > 1 ||
+                    Math.Abs(ActualHeight - 768) > 1)
+                {
+                    throw new InvalidOperationException(
+                        "Harness did not enter the 1024x768 viewport: " +
+                        ActualWidth.ToString("F0", CultureInfo.InvariantCulture) +
+                        "x" +
+                        ActualHeight.ToString("F0", CultureInfo.InvariantCulture) +
+                        ".");
+                }
+
+                var options = PosDbOptions.Default();
+                DbInitializer.EnsureCreated(options);
+                var factory = new SqliteConnectionFactory(options);
+                var service = ProductsWorkflowService.CreateDefault();
+                var remoteProductId = Guid.NewGuid().ToString("D");
+                long remoteLocalId;
+                using (var connection = factory.Open())
+                {
+                    remoteLocalId = await connection.ExecuteScalarAsync<long>(@"
+INSERT INTO products(
+  barcode,
+  name,
+  unitPrice,
+  is_active,
+  remote_product_id,
+  client_product_id,
+  remote_base_revision)
+VALUES(
+  'UI-ARTICLE-REMOTE',
+  'UI remote source',
+  150,
+  1,
+  @remoteProductId,
+  'ui-article-remote-client',
+  '2026-07-28T12:00:00.123456Z');
+SELECT last_insert_rowid();",
+                        new { remoteProductId });
+                    await connection.ExecuteAsync(@"
+INSERT INTO product_meta(
+  barcode,
+  article_code,
+  name2,
+  purchase_price,
+  purchase_old,
+  retail_old,
+  supplier_id,
+  supplier_name,
+  category_id,
+  category_name,
+  stock_qty)
+VALUES(
+  'UI-ARTICLE-REMOTE',
+  'UI-ITEM-REMOTE',
+  'UI remote secondary',
+  60,
+  0,
+  0,
+  NULL,
+  '',
+  NULL,
+  '',
+  10);");
+                }
+
+                var create = await CreateArticleViewModelAsync(
+                    ProductEditMode.New,
+                    null,
+                    service).ConfigureAwait(true);
+                create.Barcode = "UI-ARTICLE-CREATE";
+                create.ProductName = "UI article create";
+                create.PriceText = "120";
+                create.PurchasePriceText = "50";
+                create.StockText = "4";
+                create.ArticleCode = "UI-ITEM-CREATE";
+                create.Name2 = "UI create secondary";
+                await SubmitProductViewModelAsync(create).ConfigureAwait(true);
+
+                var source = await service.GetDetailsByIdAsync(remoteLocalId)
+                    .ConfigureAwait(true);
+                if (source == null)
+                    throw new InvalidOperationException(
+                        "Article UI source product was not loaded.");
+                var edit = await CreateArticleViewModelAsync(
+                    ProductEditMode.Edit,
+                    source,
+                    service).ConfigureAwait(true);
+                edit.Barcode = "UI-ARTICLE-REMOTE-EDIT";
+                edit.ProductName = "UI remote edited";
+                edit.PriceText = "175";
+                edit.PurchasePriceText = "70";
+                edit.StockText = "12";
+                edit.ArticleCode = "UI-ITEM-EDIT";
+                edit.Name2 = "UI edited secondary";
+                edit.SelectedStockReason = edit.StockReasons.First(
+                    item => item.Code == "count_correction");
+                await SubmitProductViewModelAsync(edit).ConfigureAwait(true);
+
+                var duplicateSource = await service
+                    .GetDetailsByIdAsync(remoteLocalId)
+                    .ConfigureAwait(true);
+                var duplicate = await CreateArticleViewModelAsync(
+                    ProductEditMode.Duplicate,
+                    duplicateSource,
+                    service).ConfigureAwait(true);
+                duplicate.Barcode = "UI-ARTICLE-DUPLICATE";
+                duplicate.ProductName = "UI duplicate";
+                duplicate.PriceText = "180";
+                duplicate.PurchasePriceText = "75";
+                duplicate.StockText = "3";
+                duplicate.ArticleCode = "UI-ITEM-DUPLICATE";
+                await SubmitProductViewModelAsync(duplicate)
+                    .ConfigureAwait(true);
+
+                var blocked = await CreateArticleViewModelAsync(
+                    ProductEditMode.New,
+                    null,
+                    service).ConfigureAwait(true);
+                blocked.Barcode = "UI-ARTICLE-BLOCKED";
+                blocked.ProductName = "UI blocked article";
+                blocked.PriceText = "90";
+                blocked.PurchasePriceText = "40";
+                blocked.StockText = "2";
+                blocked.CategoryText = "UI local-only category";
+                await SubmitProductViewModelAsync(blocked)
+                    .ConfigureAwait(true);
+
+                using (var staleConnection = factory.Open())
+                {
+                    await staleConnection.ExecuteAsync(@"
+UPDATE products
+SET remote_base_revision = @revision
+WHERE id = @id;",
+                            new
+                            {
+                                id = remoteLocalId,
+                                revision = "2026-07-28T10:00:01.000001Z"
+                            })
+                        .ConfigureAwait(true);
+                }
+
+                var claim = await new ArticleMutationOutboxRepository(factory)
+                    .ClaimBatchAsync("generation-ui-article")
+                    .ConfigureAwait(true);
+                if (claim.Requests.Count < 1)
+                    throw new InvalidOperationException(
+                        "Article UI smoke did not create in-progress work.");
+
+                var pending = await CreateArticleViewModelAsync(
+                    ProductEditMode.New,
+                    null,
+                    service).ConfigureAwait(true);
+                pending.Barcode = "UI-ARTICLE-PENDING";
+                pending.ProductName = "UI pending article";
+                pending.PriceText = "130";
+                pending.PurchasePriceText = "55";
+                pending.StockText = "5";
+                await SubmitProductViewModelAsync(pending)
+                    .ConfigureAwait(true);
+
+                var snapshot = await new PosSyncStatusReader(factory)
+                    .ReadAsync()
+                    .ConfigureAwait(true);
+                if (snapshot.ArticlePending <= 0 ||
+                    snapshot.ArticleInProgress <= 0 ||
+                    snapshot.ArticleBlocked <= 0 ||
+                    !snapshot.RequiresAttention)
+                {
+                    throw new InvalidOperationException(
+                        "Sync Center article pending/in-progress/blocked state is incomplete.");
+                }
+
+                var originalLanguage = PosLocalization.Current.CurrentLanguage;
+                try
+                {
+                    foreach (var language in new[] { "en", "es", "it", "zh-CN" })
+                    {
+                        PosLocalization.Current.SetLanguage(language);
+                        var notice = PosLocalization.Current.Text(
+                            "sync.articleConflictNotice");
+                        if (string.IsNullOrWhiteSpace(notice) ||
+                            string.Equals(
+                                notice,
+                                "sync.articleConflictNotice",
+                                StringComparison.Ordinal))
+                        {
+                            throw new InvalidOperationException(
+                                "Article conflict notice is not localized for " +
+                                language + ".");
+                        }
+
+                        var dialog = CreateSyncCenterDialog();
+                        dialog.Owner = this;
+                        var rendered = new TaskCompletionSource<bool>();
+                        EventHandler renderedHandler = null;
+                        renderedHandler = (_, __) =>
+                        {
+                            dialog.ContentRendered -= renderedHandler;
+                            rendered.TrySetResult(true);
+                        };
+                        dialog.ContentRendered += renderedHandler;
+                        try
+                        {
+                            dialog.Show();
+                            await rendered.Task.ConfigureAwait(true);
+                            await Task.Delay(150).ConfigureAwait(true);
+                            await Dispatcher.InvokeAsync(
+                                () => { },
+                                System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                            if (dialog.ActualWidth > 1024 ||
+                                dialog.ActualHeight > 768)
+                            {
+                                throw new InvalidOperationException(
+                                    "Sync Center exceeds the 1024x768 viewport: " +
+                                    dialog.ActualWidth.ToString(
+                                        "F0",
+                                        CultureInfo.InvariantCulture) +
+                                    "x" +
+                                    dialog.ActualHeight.ToString(
+                                        "F0",
+                                        CultureInfo.InvariantCulture) +
+                                    ".");
+                            }
+                            SaveVisual(
+                                dialog.Content as FrameworkElement,
+                                Path.Combine(
+                                    outputDirectory,
+                                    "article-sync-center-" +
+                                    language.Replace("-", string.Empty) +
+                                    "-1024x768.png"));
+                        }
+                        finally
+                        {
+                            dialog.ContentRendered -= renderedHandler;
+                            if (dialog.IsVisible) dialog.Close();
+                        }
+                    }
+                }
+                finally
+                {
+                    PosLocalization.Current.SetLanguage(originalLanguage);
+                }
+
+                using (var conflictNoticeViewModel =
+                    new PosViewModel())
+                {
+                    var conflictNotice = PosLocalization.Current.Text(
+                        "sync.articleConflictNotice");
+                    conflictNoticeViewModel.SetStatus(
+                        conflictNotice,
+                        PosNoticeSeverity.Warning,
+                        showDetails: false);
+                    if (!conflictNoticeViewModel.IsStatusToastVisible ||
+                        conflictNoticeViewModel.IsStatusToastDetailsVisible ||
+                        conflictNoticeViewModel.StatusToastSeverity !=
+                            PosNoticeSeverity.Warning ||
+                        !string.Equals(
+                            conflictNoticeViewModel.StatusToastMessage,
+                            conflictNotice,
+                            StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "Article conflict notification is not a non-modal warning.");
+                    }
+                }
+
+                var productDialog = new ProductEditDialog(
+                    await CreateArticleViewModelAsync(
+                        ProductEditMode.New,
+                        null,
+                        service).ConfigureAwait(true))
+                {
+                    Owner = this
+                };
+                var productRendered = new TaskCompletionSource<bool>();
+                EventHandler productRenderedHandler = null;
+                productRenderedHandler = (_, __) =>
+                {
+                    productDialog.ContentRendered -= productRenderedHandler;
+                    productRendered.TrySetResult(true);
+                };
+                productDialog.ContentRendered += productRenderedHandler;
+                try
+                {
+                    productDialog.Show();
+                    await productRendered.Task.ConfigureAwait(true);
+                    await Dispatcher.InvokeAsync(
+                        () => { },
+                        System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+                    var buttons = FindVisualDescendants<Button>(productDialog)
+                        .ToArray();
+                    if (!buttons.Any(button => button.IsDefault) ||
+                        !buttons.Any(button => button.IsCancel) ||
+                        productDialog.ActualWidth > 1024 ||
+                        productDialog.ActualHeight > 768)
+                    {
+                        throw new InvalidOperationException(
+                            "Product editor keyboard or 1024x768 layout contract failed.");
+                    }
+                    SaveVisual(
+                        productDialog.Content as FrameworkElement,
+                        Path.Combine(
+                            outputDirectory,
+                            "article-product-editor-1024x768.png"));
+                }
+                finally
+                {
+                    productDialog.ContentRendered -= productRenderedHandler;
+                    if (productDialog.IsVisible) productDialog.Close();
+                }
+
+                return "PASS: create=True; edit=True; duplicate=True; " +
+                    "pending=" + snapshot.ArticlePending.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "; inProgress=" + snapshot.ArticleInProgress.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "; blocked=" + snapshot.ArticleBlocked.ToString(
+                        CultureInfo.InvariantCulture) +
+                    "; conflictNotice=en,es,it,zh; viewport=1024x768; " +
+                    "conflictToast=visible,nonmodal; " +
+                    "keyboard=default,cancel; hardwareActions=0";
+            }
+
+            private static async Task<ProductEditViewModel>
+                CreateArticleViewModelAsync(
+                    ProductEditMode mode,
+                    ProductDetailsRow source,
+                    ProductsWorkflowService service)
+            {
+                var viewModel = new ProductEditViewModel(mode, source, service);
+                viewModel.SetCategories(
+                    await service.GetCategoriesAsync().ConfigureAwait(true));
+                viewModel.SetSuppliers(
+                    await service.GetSuppliersAsync().ConfigureAwait(true));
+                viewModel.SetSelectionFromSource(source);
+                return viewModel;
+            }
+
+            private static async Task SubmitProductViewModelAsync(
+                ProductEditViewModel viewModel)
+            {
+                var completed = new TaskCompletionSource<bool>();
+                Action<bool> handler = null;
+                handler = success =>
+                {
+                    viewModel.RequestClose -= handler;
+                    completed.TrySetResult(success);
+                };
+                viewModel.RequestClose += handler;
+                if (!viewModel.ConfirmCommand.CanExecute(null))
+                    throw new InvalidOperationException(
+                        "Product article Save command is not enabled.");
+                viewModel.ConfirmCommand.Execute(null);
+                var finished = await Task.WhenAny(
+                    completed.Task,
+                    Task.Delay(TimeSpan.FromSeconds(10))).ConfigureAwait(true);
+                if (!ReferenceEquals(finished, completed.Task))
+                {
+                    viewModel.RequestClose -= handler;
+                    throw new TimeoutException(
+                        "Product article Save did not complete.");
+                }
+                if (!await completed.Task.ConfigureAwait(true))
+                    throw new InvalidOperationException(
+                        "Product article Save was cancelled.");
             }
 
             public async Task<string> CaptureUxArtifactsAsync(string outputDirectory)
@@ -5201,11 +5633,12 @@ VALUES(@code, @createdAt, 0, @total, @paidCash, @paidCard, 0, @pdfPrinted);",
                         supplierRows[(i - 1) % supplierRows.Count].Name,
                         categoryRows[(i - 1) % categoryRows.Count].Id,
                         categoryRows[(i - 1) % categoryRows.Count].Name,
-                        20 + i).ConfigureAwait(false);
+                        20 + i,
+                        ProductWriteOrigin.TestFixture).ConfigureAwait(false);
                     if (i <= 12)
                     {
-                        await products.InsertPriceHistoryAsync(barcode, "retail", price - 25, "QA_FIXTURE").ConfigureAwait(false);
-                        await products.InsertPriceHistoryAsync(barcode, "retail", price, "QA_FIXTURE").ConfigureAwait(false);
+                        await products.InsertPriceHistoryAsync(barcode, "retail", price - 25, "QA_FIXTURE", ProductWriteOrigin.TestFixture).ConfigureAwait(false);
+                        await products.InsertPriceHistoryAsync(barcode, "retail", price, "QA_FIXTURE", ProductWriteOrigin.TestFixture).ConfigureAwait(false);
                     }
                 }
             }

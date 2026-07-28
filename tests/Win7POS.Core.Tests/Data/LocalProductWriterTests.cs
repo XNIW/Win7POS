@@ -44,7 +44,8 @@ public sealed class LocalProductWriterTests
             "  Local   Supplier  ",
             null,
             "  Local   Category  ",
-            12);
+            12,
+            ProductWriteOrigin.TestFixture);
 
         await direct.UpdateProductAndMetaWithPriceHistoryAsync(
             directId,
@@ -73,7 +74,8 @@ public sealed class LocalProductWriterTests
             null,
             "  Local   Category  ",
             15,
-            "E3_TEST");
+            "E3_TEST",
+            ProductWriteOrigin.TestFixture);
 
         var directSnapshot = await LoadSnapshotAsync(directDb.Factory, barcode);
         var facadeSnapshot = await LoadSnapshotAsync(facadeDb.Factory, barcode);
@@ -86,7 +88,9 @@ public sealed class LocalProductWriterTests
         Assert.AreEqual("retail", directSnapshot.PriceHistory[1].Type);
 
         Assert.IsTrue(await direct.DeleteByBarcodeAsync(barcode));
-        Assert.IsTrue(await facade.DeleteByBarcodeAsync(barcode));
+        Assert.IsTrue(await facade.DeleteByBarcodeAsync(
+            barcode,
+            ProductWriteOrigin.TestFixture));
 
         directSnapshot = await LoadSnapshotAsync(directDb.Factory, barcode);
         facadeSnapshot = await LoadSnapshotAsync(facadeDb.Factory, barcode);
@@ -167,7 +171,8 @@ public sealed class LocalProductWriterTests
         await AssertThrowsInvalidOperationAsync(() => direct.UpsertAsync(
             NewProduct("DISC:E3-LOCAL", "Reserved barcode", 100)));
         await AssertThrowsInvalidOperationAsync(() => facade.UpsertAsync(
-            NewProduct("DISC:E3-FACADE", "Reserved barcode", 100)));
+            NewProduct("DISC:E3-FACADE", "Reserved barcode", 100),
+            ProductWriteOrigin.TestFixture));
 
         using var directVerify = directDb.Factory.Open();
         using var facadeVerify = facadeDb.Factory.Open();
@@ -191,6 +196,7 @@ public sealed class LocalProductWriterTests
             null,
             "Remote Category",
             9,
+            ProductWriteOrigin.RemoteCatalogApply,
             "remote-e3-identity");
 
         using var verify = db.Factory.Open();

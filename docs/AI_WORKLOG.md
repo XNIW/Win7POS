@@ -1066,3 +1066,28 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
   in `REVIEW`: profilo DPAPI inizializzato e una sola acceptance staging eseguita,
   ma bootstrap `failure` prima del catalog pull. Il controllo redatto conferma
   che i valori profilo non sono nel log; non e' stato eseguito un secondo run.
+
+## 2026-07-28 - POS article mutation sync v1 (in delivery)
+
+- Congelati byte per byte i tre fixture Admin
+  `pos-article-mutation-v1`/first-login e implementati contratto Core,
+  canonical JSON/hash, limiti 25/256 KiB, validazione ACK/replay e base revision
+  UTC a sei frazioni.
+- Aggiunta la migration SQLite additiva
+  `0010-article-mutation-outbox` con outbox/attempt ledger, dipendenze create
+  pre-ACK, shadow remoto, stock manuale, atomicita' Save/outbox, recovery e
+  restore/shop guard.
+- Integrati tutti i Save manuali WPF con origine esplicita, lane supervisor
+  background/fair, auth stop, pull protection/no-echo, Sync Center e toast
+  conflitto EN/ES/IT/ZH. Supplier import e stock sales restano isolati.
+- Acceptance locale corrente: Core/Data `726/726`, required gates `44/44`,
+  dialog standard PASS, WPF/UiSmokeHarness/solution Release net48/x86 senza
+  warning/errori, loopback completo e UI 1024x768 PASS, drain autorevole
+  676 pagine/19.763 prodotti/41.228 prezzi `Verified`, supplier XLSX e DPAPI
+  self-test PASS, Gitleaks working tree e storia completa senza finding.
+- Preparato l'harness di staging esatto-main con profilo DPAPI
+  `asus-staging`, data dir isolata
+  `C:\POSData\Win7POSArticleMutationAcceptance`, run ID `ASUSART_*`, scenario
+  mutazioni/replay/mismatch/conflitto completo, fail-fast senza retry cieco,
+  evidenze redatte, cleanup manifest e prompt Mac generato. Nessuna chiamata
+  staging e nessuna azione hardware sono state ancora eseguite in questa fase.

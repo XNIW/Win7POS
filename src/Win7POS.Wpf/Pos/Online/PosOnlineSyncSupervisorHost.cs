@@ -827,6 +827,8 @@ namespace Win7POS.Wpf.Pos.Online
                     return RunCatalogImportAsync(context, cancellationToken);
                 case OnlineSyncLane.CatalogDelta:
                     return RunCatalogAsync(context, trigger, cancellationToken);
+                case OnlineSyncLane.ArticleMutationOutbox:
+                    return RunArticleMutationsAsync(context, cancellationToken);
                 default:
                     return Task.FromResult(new OnlineSyncLaneOutcome(
                         false,
@@ -1070,6 +1072,47 @@ namespace Win7POS.Wpf.Pos.Online
                     context,
                     cancellationToken).ConfigureAwait(false);
             return FromOutbox(result, requestCatalogNow: result.Acked > 0);
+        }
+
+        private async Task<OnlineSyncLaneOutcome> RunArticleMutationsAsync(
+            OnlineSyncLaneExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            if (!PosAdminWebOptions.TryLoad(out var options, out _))
+                return new OnlineSyncLaneOutcome(false, "admin_web_config_missing");
+            if (!_store.TryReadGeneration(
+                context.Generation,
+                out var trustedSession,
+                out _))
+            {
+                return new OnlineSyncLaneOutcome(
+                    false,
+                    "trusted_generation_changed");
+            }
+
+            var result = await new ArticleMutationSyncService(_factory)
+                .SyncPendingAsync(
+                    options,
+                    trustedSession,
+                    context,
+                    typeof(PosOnlineSyncSupervisorHost)
+                        .Assembly.GetName().Version?.ToString(),
+                    cancellationToken).ConfigureAwait(false);
+            if (result.AuthenticationDenied)
+                return OnlineSyncLaneOutcome.AuthDenied(result.DiagnosticCode);
+            var blockedOnly = result.Blocked > 0 &&
+                result.RemainingDue == 0 &&
+                !result.NextRetryAt.HasValue &&
+                !result.HasImmediateMore;
+            return new OnlineSyncLaneOutcome(
+                result.FailureKind == SyncFailureKind.None,
+                result.DiagnosticCode,
+                offline: result.FailureKind == SyncFailureKind.Network ||
+                    result.FailureKind == SyncFailureKind.Timeout,
+                hasImmediateMore: result.HasImmediateMore,
+                nextRetryAt: result.NextRetryAt,
+                requestCatalogNow: result.RequestCatalogNow,
+                terminal: blockedOnly);
         }
 
         private async Task<OnlineSyncLaneOutcome> RunCatalogAsync(

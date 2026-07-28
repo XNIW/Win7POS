@@ -57,11 +57,22 @@ public sealed class RemotePriceIdempotencyTests
         var directApplied = await direct.UpsertRemotePriceHistoryAsync(
             "parity-applied", "retail", 125, EffectiveAt, "catalog_pull");
         var facadeApplied = await facade.UpsertRemotePriceHistoryAsync(
-            "parity-applied", "retail", 125, EffectiveAt, "catalog_pull");
+            "parity-applied",
+            "retail",
+            125,
+            EffectiveAt,
+            "catalog_pull",
+            ProductWriteOrigin.RemoteCatalogApply);
         var directQueued = await direct.UpsertOrQueueRemotePriceHistoryAsync(
             "parity-queued", "parity-queued-price", "retail", 450, EffectiveAt, "catalog_pull");
         var facadeQueued = await facade.UpsertOrQueueRemotePriceHistoryAsync(
-            "parity-queued", "parity-queued-price", "retail", 450, EffectiveAt, "catalog_pull");
+            "parity-queued",
+            "parity-queued-price",
+            "retail",
+            450,
+            EffectiveAt,
+            "catalog_pull",
+            ProductWriteOrigin.RemoteCatalogApply);
 
         Assert.AreEqual(directApplied, facadeApplied);
         Assert.AreEqual(directQueued.Applied, facadeQueued.Applied);
@@ -71,7 +82,8 @@ public sealed class RemotePriceIdempotencyTests
 
         Assert.AreEqual(
             await direct.ApplyPendingRemotePricesAsync(),
-            await facade.ApplyPendingRemotePricesAsync());
+            await facade.ApplyPendingRemotePricesAsync(
+                ProductWriteOrigin.RemoteCatalogApply));
         Assert.AreEqual(
             await ScalarAsync(directDb.Factory, "SELECT COUNT(1) FROM product_price_history;"),
             await ScalarAsync(facadeDb.Factory, "SELECT COUNT(1) FROM product_price_history;"));

@@ -15,6 +15,7 @@ namespace Win7POS.Data.Repositories
     {
         private readonly ProductQueryRepository _queries;
         private readonly LocalProductWriter _localProductWriter;
+        private readonly LocalArticleMutationWriter _localArticleMutationWriter;
         private readonly RemoteCatalogProductWriter _remoteProductWriter;
         private readonly RemotePriceHistoryRepository _remotePriceHistory;
 
@@ -22,6 +23,7 @@ namespace Win7POS.Data.Repositories
         {
             _queries = new ProductQueryRepository(factory);
             _localProductWriter = new LocalProductWriter(factory);
+            _localArticleMutationWriter = new LocalArticleMutationWriter(factory);
             _remoteProductWriter = new RemoteCatalogProductWriter(factory);
             _remotePriceHistory = new RemotePriceHistoryRepository(factory);
         }
@@ -46,7 +48,11 @@ namespace Win7POS.Data.Repositories
 
         public Task<Product> GetByIdAsync(long id) => _queries.GetByIdAsync(id);
 
-        public Task<long> UpsertAsync(Product p) => _localProductWriter.UpsertAsync(p);
+        public Task<long> UpsertAsync(Product p, ProductWriteOrigin origin)
+        {
+            EnsureLegacyNonUserOrigin(origin);
+            return _localProductWriter.UpsertAsync(p);
+        }
 
         public Task<IReadOnlyList<Product>> ListAllAsync() => _queries.ListAllAsync();
 
@@ -72,27 +78,56 @@ namespace Win7POS.Data.Repositories
         public Task<ProductDetailsRow> GetDetailsByBarcodeAsync(string barcode) =>
             _queries.GetDetailsByBarcodeAsync(barcode);
 
-        public Task UpsertMetaAsync(string barcode, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty) =>
-            _localProductWriter.UpsertMetaAsync(barcode, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty);
+        public Task<LocalArticleWriteResult> CreateLocalArticleAsync(
+            LocalArticleCreateRequest request,
+            ProductWriteOrigin origin) =>
+            _localArticleMutationWriter.CreateAsync(request, origin);
 
-        public Task UpsertMetaFullAsync(string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty) =>
-            _localProductWriter.UpsertMetaFullAsync(barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty);
+        public Task<LocalArticleWriteResult> UpdateLocalArticleAsync(
+            LocalArticleUpdateRequest request,
+            ProductWriteOrigin origin) =>
+            _localArticleMutationWriter.UpdateAsync(request, origin);
 
-        public Task<bool> ApplyRemoteProductTombstoneAsync(string remoteProductId, string remoteDeletedAt) =>
-            _remoteProductWriter.ApplyRemoteProductTombstoneAsync(remoteProductId, remoteDeletedAt);
+        public Task<LocalArticleWriteResult> SetLocalArticleActiveAsync(
+            long productId,
+            bool active,
+            ProductWriteOrigin origin) =>
+            _localArticleMutationWriter.SetActiveAsync(productId, active, origin);
+
+        public Task UpsertMetaAsync(string barcode, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, ProductWriteOrigin origin)
+        {
+            EnsureLegacyNonUserOrigin(origin);
+            return _localProductWriter.UpsertMetaAsync(barcode, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty);
+        }
+
+        public Task UpsertMetaFullAsync(string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, ProductWriteOrigin origin)
+        {
+            EnsureLegacyNonUserOrigin(origin);
+            return _localProductWriter.UpsertMetaFullAsync(barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty);
+        }
+
+        public Task<bool> ApplyRemoteProductTombstoneAsync(string remoteProductId, string remoteDeletedAt, ProductWriteOrigin origin)
+        {
+            EnsureRemoteOrigin(origin);
+            return _remoteProductWriter.ApplyRemoteProductTombstoneAsync(remoteProductId, remoteDeletedAt);
+        }
 
         public Task<bool> UpsertRemotePriceHistoryAsync(
             string remoteProductId,
             string type,
             int price,
             string timestamp,
-            string source) =>
-            _remotePriceHistory.UpsertRemotePriceHistoryAsync(
+            string source,
+            ProductWriteOrigin origin)
+        {
+            EnsureRemoteOrigin(origin);
+            return _remotePriceHistory.UpsertRemotePriceHistoryAsync(
                 remoteProductId,
                 type,
                 price,
                 timestamp,
                 source);
+        }
 
         public Task<RemotePriceHistoryApplyResult> UpsertOrQueueRemotePriceHistoryAsync(
             string remoteProductId,
@@ -100,21 +135,34 @@ namespace Win7POS.Data.Repositories
             string type,
             int price,
             string timestamp,
-            string source) =>
-            _remotePriceHistory.UpsertOrQueueRemotePriceHistoryAsync(
+            string source,
+            ProductWriteOrigin origin)
+        {
+            EnsureRemoteOrigin(origin);
+            return _remotePriceHistory.UpsertOrQueueRemotePriceHistoryAsync(
                 remoteProductId,
                 remotePriceId,
                 type,
                 price,
                 timestamp,
                 source);
+        }
 
-        public Task<int> ApplyPendingRemotePricesAsync() =>
-            _remotePriceHistory.ApplyPendingRemotePricesAsync();
+        public Task<int> ApplyPendingRemotePricesAsync(ProductWriteOrigin origin)
+        {
+            EnsureRemoteOrigin(origin);
+            return _remotePriceHistory.ApplyPendingRemotePricesAsync();
+        }
 
         public Task<long> CountActiveRemoteProductsAsync() => _queries.CountActiveRemoteProductsAsync();
 
-        public Task<bool> DeleteByBarcodeAsync(string barcode) => _localProductWriter.DeleteByBarcodeAsync(barcode);
+        public Task<bool> DeleteByBarcodeAsync(
+            string barcode,
+            ProductWriteOrigin origin)
+        {
+            EnsureLegacyNonUserOrigin(origin);
+            return _localProductWriter.DeleteByBarcodeAsync(barcode);
+        }
 
         /// <summary>Upsert prodotto + meta in una transazione (robustezza negozio).</summary>
         public Task<long> UpsertProductAndMetaInTransactionAsync(
@@ -127,10 +175,16 @@ namespace Win7POS.Data.Repositories
             int? categoryId,
             string categoryName,
             int stockQty,
+            ProductWriteOrigin origin,
             string remoteProductId = null)
         {
-            if (string.IsNullOrWhiteSpace(remoteProductId))
+            if (origin != ProductWriteOrigin.RemoteCatalogApply &&
+                origin != ProductWriteOrigin.ArticleMutationAck)
             {
+                EnsureLegacyNonUserOrigin(origin);
+                if (!string.IsNullOrWhiteSpace(remoteProductId))
+                    throw new ArgumentException(
+                        "A local-origin write cannot assign remote product identity.");
                 return _localProductWriter.UpsertProductAndMetaInTransactionAsync(
                     p,
                     articleCode,
@@ -143,6 +197,7 @@ namespace Win7POS.Data.Repositories
                     stockQty);
             }
 
+            EnsureRemoteOrigin(origin);
             return _remoteProductWriter.UpsertProductAndMetaInTransactionAsync(
                 p,
                 articleCode,
@@ -157,15 +212,24 @@ namespace Win7POS.Data.Repositories
         }
 
         /// <summary>Update prodotto + meta in una transazione.</summary>
-        public Task UpdateProductAndMetaInTransactionAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty) =>
-            _localProductWriter.UpdateProductAndMetaInTransactionAsync(productId, name, unitPriceMinor, barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty);
+        public Task UpdateProductAndMetaInTransactionAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, ProductWriteOrigin origin)
+        {
+            EnsureLegacyNonUserOrigin(origin);
+            return _localProductWriter.UpdateProductAndMetaInTransactionAsync(productId, name, unitPriceMinor, barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty);
+        }
 
         /// <summary>Update prodotto + meta e scrive righe in price_history se prezzi cambiano. source es. MANUAL_EDIT.</summary>
-        public Task UpdateProductAndMetaWithPriceHistoryAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string source) =>
-            _localProductWriter.UpdateProductAndMetaWithPriceHistoryAsync(productId, name, unitPriceMinor, barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty, source);
+        public Task UpdateProductAndMetaWithPriceHistoryAsync(long productId, string name, long unitPriceMinor, string barcode, string articleCode, string name2, int purchasePrice, int? supplierId, string supplierName, int? categoryId, string categoryName, int stockQty, string source, ProductWriteOrigin origin)
+        {
+            EnsureLegacyNonUserOrigin(origin);
+            return _localProductWriter.UpdateProductAndMetaWithPriceHistoryAsync(productId, name, unitPriceMinor, barcode, articleCode, name2, purchasePrice, supplierId, supplierName, categoryId, categoryName, stockQty, source);
+        }
 
-        public Task InsertPriceHistoryAsync(string barcode, string type, int newPrice, string source = "MANUAL") =>
-            _localProductWriter.InsertPriceHistoryAsync(barcode, type, newPrice, source);
+        public Task InsertPriceHistoryAsync(string barcode, string type, int newPrice, string source, ProductWriteOrigin origin)
+        {
+            EnsureLegacyNonUserOrigin(origin);
+            return _localProductWriter.InsertPriceHistoryAsync(barcode, type, newPrice, source);
+        }
 
         /// <summary>Storico prezzi per barcode, ordinato per data DESC.</summary>
         public Task<IReadOnlyList<ProductPriceHistoryRow>> GetPriceHistoryByBarcodeAsync(string barcode) =>
@@ -182,11 +246,41 @@ namespace Win7POS.Data.Repositories
             _queries.ListAllPriceHistoryAsync();
 
         /// <summary>Aggiorna prezzi prodotto e scrive storico nella stessa transazione. source es. MANUAL_EDIT, IMPORT.</summary>
-        public Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source) =>
-            _localProductWriter.UpdateProductPricesAsync(productId, newPurchasePrice, newRetailPrice, source);
+        public Task UpdateProductPricesAsync(long productId, int newPurchasePrice, int newRetailPrice, string source, ProductWriteOrigin origin)
+        {
+            EnsureLegacyNonUserOrigin(origin);
+            return _localProductWriter.UpdateProductPricesAsync(productId, newPurchasePrice, newRetailPrice, source);
+        }
 
-        public Task<bool> UpdateAsync(long productId, string name, long unitPriceMinor) =>
-            _localProductWriter.UpdateAsync(productId, name, unitPriceMinor);
+        public Task<bool> UpdateAsync(long productId, string name, long unitPriceMinor, ProductWriteOrigin origin)
+        {
+            EnsureLegacyNonUserOrigin(origin);
+            return _localProductWriter.UpdateAsync(productId, name, unitPriceMinor);
+        }
+
+        private static void EnsureLegacyNonUserOrigin(ProductWriteOrigin origin)
+        {
+            if (origin == ProductWriteOrigin.LocalUserSave ||
+                origin == ProductWriteOrigin.RemoteCatalogApply ||
+                origin == ProductWriteOrigin.ArticleMutationAck ||
+                origin == ProductWriteOrigin.SalesMovement)
+            {
+                throw new ArgumentException(
+                    "This product write origin must use its dedicated atomic writer.",
+                    nameof(origin));
+            }
+        }
+
+        private static void EnsureRemoteOrigin(ProductWriteOrigin origin)
+        {
+            if (origin != ProductWriteOrigin.RemoteCatalogApply &&
+                origin != ProductWriteOrigin.ArticleMutationAck)
+            {
+                throw new ArgumentException(
+                    "A verified remote write origin is required.",
+                    nameof(origin));
+            }
+        }
     }
 
     public sealed class RemotePriceHistoryApplyResult

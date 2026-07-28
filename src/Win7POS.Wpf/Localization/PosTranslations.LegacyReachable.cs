@@ -339,6 +339,7 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("startOfDay.blockRestoreReview", "DB restore requires sync review before opening POS.", "Restore DB requiere revision sync antes de abrir POS.", "Restore DB richiede revisione sync prima di aprire il POS.", "数据库恢复需要先复核同步。");
             yield return new TranslationEntry("startOfDay.blockSalesBlocked", "Blocked sales require review before opening POS.", "Ventas bloqueadas requieren revision antes de abrir POS.", "Vendite bloccate da revisionare prima di aprire il POS.", "阻塞销售需要先复核。");
             yield return new TranslationEntry("startOfDay.blockCatalogImportBlocked", "Blocked catalog imports require review before opening POS.", "Importaciones catalogo bloqueadas requieren revision antes de abrir POS.", "Import catalogo bloccati da revisionare prima di aprire il POS.", "阻塞目录导入需要先复核。");
+            yield return new TranslationEntry("dbMaintenance.restoreBlockedUnresolvedArticleMutations", "Restore blocked: unresolved article changes must be synchronized or reviewed first.", "Restore bloqueado: primero se deben sincronizar o revisar los cambios de articulos pendientes.", "Restore bloccato: prima sincronizzare o revisionare le modifiche articolo non risolte.", "恢复已阻止：请先同步或检查未解决的商品变更。");
             yield return new TranslationEntry("startOfDay.blockAuthDenied", "Reconnect required. Device session is no longer authorized.", "Se requiere reconectar. La sesion dispositivo ya no esta autorizada.", "Ricollegamento richiesto. La sessione dispositivo non e piu autorizzata.", "需要重新连接。设备会话已无授权。");
             yield return new TranslationEntry("startOfDay.blockLocalDb", "Local database check did not complete. Retry before opening POS.", "Control base local no completado. Reintenta antes de abrir POS.", "Controllo database locale non completato. Riprova prima di aprire il POS.", "本地数据库检查未完成。请重试后再打开 POS。");
             yield return new TranslationEntry("startOfDay.noServerConfig", "Local catalog is ready. Online server is not configured.", "Catalogo local listo. Servidor online no configurado.", "Catalogo locale pronto. Server online non configurato.", "本地目录已就绪。未配置在线服务器。");
@@ -494,6 +495,14 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("products.purchase", "Purchase", "Compra", "Acquisto", "采购");
             yield return new TranslationEntry("products.stock", "Stock", "Stock", "Stock", "库存");
             yield return new TranslationEntry("products.initialStock", "Initial stock", "Stock inicial", "Stock iniziale", "初始库存");
+            yield return new TranslationEntry("products.stockReason", "Stock correction reason", "Motivo de correccion de stock", "Motivo correzione stock", "库存更正原因");
+            yield return new TranslationEntry("products.stockReason.countCorrection", "Count correction", "Correccion de conteo", "Correzione inventario", "盘点更正");
+            yield return new TranslationEntry("products.stockReason.damage", "Damage", "Dano", "Danno", "损坏");
+            yield return new TranslationEntry("products.stockReason.loss", "Loss", "Perdida", "Smarrimento", "丢失");
+            yield return new TranslationEntry("products.stockReason.found", "Found", "Encontrado", "Ritrovato", "盘盈");
+            yield return new TranslationEntry("products.stockReason.returnToStock", "Return to stock", "Devolucion a stock", "Rientro a stock", "退回库存");
+            yield return new TranslationEntry("products.stockReason.transfer", "Transfer", "Transferencia", "Trasferimento", "调拨");
+            yield return new TranslationEntry("products.stockReason.other", "Other", "Otro", "Altro", "其他");
             yield return new TranslationEntry("products.unnamedProduct", "Unnamed product", "Producto sin nombre", "Prodotto senza nome", "未命名商品");
             yield return new TranslationEntry("products.none", "(None)", "(Ninguno)", "(Nessuna)", "（无）");
             yield return new TranslationEntry("products.supplierNoColon", "Supplier", "Proveedor", "Fornitore", "供应商");

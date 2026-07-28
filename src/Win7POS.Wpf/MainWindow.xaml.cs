@@ -40,6 +40,7 @@ namespace Win7POS.Wpf
         private bool _authorizationLeaseBlockHandled;
         private PosStartupCoordinator _startupCoordinator;
         private bool? _lastNetworkOnline;
+        private long _lastArticleBlockedCount = -1;
         private DateTimeOffset _lastForegroundSyncTrigger = DateTimeOffset.MinValue;
         private bool _operatorLoginReached;
         private bool _recoveryTabClampActive;
@@ -1163,6 +1164,7 @@ namespace Win7POS.Wpf
                         status.CatalogVersionText + "\n" +
                         status.CatalogDisplayWarningText + "\n" +
                         status.PendingSalesText + "\n" +
+                        status.ArticleStatusText + "\n" +
                         status.PolicyText + "\n" +
                         status.SalesAttentionText + "\n" +
                         status.RestoreReviewText + "\n" +
@@ -1176,6 +1178,7 @@ namespace Win7POS.Wpf
                 }
 
                 await ShowCatalogDisplayWarningOnceAsync(factory, status).ConfigureAwait(true);
+                ShowArticleConflictWarningOnce(status);
 
                 await RefreshShellTitleAsync(factory).ConfigureAwait(true);
             }
@@ -1187,6 +1190,23 @@ namespace Win7POS.Wpf
                     SyncStatusText.Text = PosLocalization.Current.Text("shell.syncUnavailable");
                 }
             }
+        }
+
+        private void ShowArticleConflictWarningOnce(PosSyncStatusSnapshot status)
+        {
+            if (status == null)
+                return;
+            var blocked = status.ArticleBlocked;
+            if (blocked <= 0 || blocked == _lastArticleBlockedCount)
+            {
+                _lastArticleBlockedCount = blocked;
+                return;
+            }
+            _lastArticleBlockedCount = blocked;
+            GetPosViewModel()?.SetStatus(
+                PosLocalization.Current.Text("sync.articleConflictNotice"),
+                PosNoticeSeverity.Warning,
+                showDetails: false);
         }
 
         private async Task ShowCatalogDisplayWarningOnceAsync(

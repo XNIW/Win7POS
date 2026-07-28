@@ -25,16 +25,19 @@ namespace Win7POS.Wpf.Products
         private string _name2 = string.Empty;
         private string _categoryText = string.Empty;
         private string _supplierText = string.Empty;
+        private StockReasonOption _selectedStockReason;
         private CategoryListItem _selectedCategory;
         private SupplierListItem _selectedSupplier;
 
         public ProductEditMode Mode { get; }
         public long? ProductId { get; }
         public bool IsEditMode => Mode == ProductEditMode.Edit;
-        public bool IsBarcodeReadOnly => IsEditMode;
+        public bool IsBarcodeReadOnly => false;
 
         public ObservableCollection<CategoryListItem> Categories { get; } = new ObservableCollection<CategoryListItem>();
         public ObservableCollection<SupplierListItem> Suppliers { get; } = new ObservableCollection<SupplierListItem>();
+        public ObservableCollection<StockReasonOption> StockReasons { get; } =
+            new ObservableCollection<StockReasonOption>();
 
         public string Title => Mode == ProductEditMode.Edit
             ? PosLocalization.T("products.editTitle")
@@ -54,6 +57,7 @@ namespace Win7POS.Wpf.Products
             Mode = mode;
             ProductId = source?.Id;
             _service = service ?? throw new ArgumentNullException(nameof(service));
+            PopulateStockReasons();
             if (source != null)
             {
                 _barcode = Mode == ProductEditMode.Duplicate ? string.Empty : (source?.Barcode ?? string.Empty);
@@ -82,10 +86,12 @@ namespace Win7POS.Wpf.Products
                 BuildCategorySelection(out var catId, out var catName);
                 BuildSupplierSelection(out var supId, out var supName);
 
-                if (Mode == ProductEditMode.New || Mode == ProductEditMode.Duplicate)
+                if (Mode == ProductEditMode.New)
                     await _service.CreateProductAsync(Barcode, finalName, UnitPriceMinor, finalPurchasePrice, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2);
+                else if (Mode == ProductEditMode.Duplicate)
+                    await _service.DuplicateProductAsync(ProductId.Value, Barcode, finalName, UnitPriceMinor, finalPurchasePrice, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2);
                 else
-                    await _service.UpdateProductFullAsync(ProductId.Value, Barcode, finalName, UnitPriceMinor, finalPurchasePrice, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2);
+                    await _service.UpdateProductFullAsync(ProductId.Value, Barcode, finalName, UnitPriceMinor, finalPurchasePrice, supId, supName, catId, catName, StockQtyInt, ArticleCode, Name2, SelectedStockReason?.Code ?? "count_correction");
                 RequestClose?.Invoke(true);
             }
             catch (Exception ex)
@@ -170,6 +176,16 @@ namespace Win7POS.Wpf.Products
         public string ArticleCode { get => _articleCode; set { _articleCode = value ?? string.Empty; OnPropertyChanged(); } }
         public string Name2 { get => _name2; set { _name2 = value ?? string.Empty; OnPropertyChanged(); } }
 
+        public StockReasonOption SelectedStockReason
+        {
+            get => _selectedStockReason;
+            set
+            {
+                _selectedStockReason = value;
+                OnPropertyChanged();
+            }
+        }
+
         public CategoryListItem SelectedCategory
         {
             get => _selectedCategory;
@@ -232,7 +248,7 @@ namespace Win7POS.Wpf.Products
         }
 
         public bool IsValid =>
-            (Mode == ProductEditMode.Edit || Barcode.Length > 0) &&
+            Barcode.Length > 0 &&
             UnitPriceMinor >= 0 &&
             SalesReceiptContentPolicy.IsValidBarcode(Barcode) &&
             SalesReceiptContentPolicy.IsValidProductName(ProductName);
@@ -250,7 +266,12 @@ namespace Win7POS.Wpf.Products
             supplierName = NormalizeChoiceText(SupplierText);
             supplierId = null;
 
-            if (IsEmptyChoice(supplierName))
+            if ((SelectedSupplier != null &&
+                 SelectedSupplier.Id == 0 &&
+                 TextMatchesSelection(
+                     supplierName,
+                     SelectedSupplier.Name)) ||
+                IsEmptyChoice(supplierName))
             {
                 supplierName = string.Empty;
                 return;
@@ -270,7 +291,12 @@ namespace Win7POS.Wpf.Products
             categoryName = NormalizeChoiceText(CategoryText);
             categoryId = null;
 
-            if (IsEmptyChoice(categoryName))
+            if ((SelectedCategory != null &&
+                 SelectedCategory.Id == 0 &&
+                 TextMatchesSelection(
+                     categoryName,
+                     SelectedCategory.Name)) ||
+                IsEmptyChoice(categoryName))
             {
                 categoryName = string.Empty;
                 return;
@@ -297,6 +323,11 @@ namespace Win7POS.Wpf.Products
         {
             var normalized = NormalizeChoiceText(text);
             return normalized.Length == 0 ||
+                string.Equals(
+                    normalized,
+                    NormalizeChoiceText(
+                        PosLocalization.T("products.none")),
+                    StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(normalized, "(Nessuno)", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(normalized, "(Nessuna)", StringComparison.OrdinalIgnoreCase);
         }
@@ -306,6 +337,44 @@ namespace Win7POS.Wpf.Products
             var value = (text ?? string.Empty).Trim();
             if (value.Length == 0) return string.Empty;
             return string.Join(" ", value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        private void PopulateStockReasons()
+        {
+            StockReasons.Add(new StockReasonOption(
+                "count_correction",
+                PosLocalization.T("products.stockReason.countCorrection")));
+            StockReasons.Add(new StockReasonOption(
+                "damage",
+                PosLocalization.T("products.stockReason.damage")));
+            StockReasons.Add(new StockReasonOption(
+                "loss",
+                PosLocalization.T("products.stockReason.loss")));
+            StockReasons.Add(new StockReasonOption(
+                "found",
+                PosLocalization.T("products.stockReason.found")));
+            StockReasons.Add(new StockReasonOption(
+                "return_to_stock",
+                PosLocalization.T("products.stockReason.returnToStock")));
+            StockReasons.Add(new StockReasonOption(
+                "transfer",
+                PosLocalization.T("products.stockReason.transfer")));
+            StockReasons.Add(new StockReasonOption(
+                "other",
+                PosLocalization.T("products.stockReason.other")));
+            SelectedStockReason = StockReasons.First();
+        }
+
+        public sealed class StockReasonOption
+        {
+            public StockReasonOption(string code, string displayName)
+            {
+                Code = code ?? string.Empty;
+                DisplayName = displayName ?? string.Empty;
+            }
+
+            public string Code { get; }
+            public string DisplayName { get; }
         }
 
         private sealed class RelayCommand : ICommand

@@ -53,7 +53,15 @@ public sealed class LegacyMigrationFixtureTests
         "idx_users_remote_shop_staff",
         "idx_catalog_authoritative_stage_page_identity",
         "idx_catalog_authoritative_stage_reconcile",
-        "idx_catalog_authoritative_stage_cleanup"
+        "idx_catalog_authoritative_stage_cleanup",
+        "idx_article_mutation_state_next",
+        "idx_article_mutation_client_sequence",
+        "idx_article_mutation_remote_product",
+        "idx_article_mutation_local_product",
+        "idx_article_mutation_attempt_mutation",
+        "idx_article_remote_shadow_local",
+        "idx_products_client_product_id",
+        "idx_price_history_article_mutation"
     };
 
     [TestMethod]
@@ -166,10 +174,11 @@ ORDER BY migration_id;").ToArray();
             {
                 "0007-receipt-shop-snapshot",
                 "0008-online-sync-generation",
-                "0009-catalog-authoritative-id-stage"
+                "0009-catalog-authoritative-id-stage",
+                "0010-article-mutation-outbox"
             },
             appliedIds,
-            "The historical pre-PR7 schema must bootstrap 0001-0006 and apply 0007-0009.");
+            "The historical pre-PR7 schema must bootstrap 0001-0006 and apply 0007-0010.");
     }
 
     private static void AssertPostPr7MainWasBootstrappedWithoutReapplying(string databasePath)
@@ -184,10 +193,11 @@ ORDER BY migration_id;").ToArray();
             new[]
             {
                 "0008-online-sync-generation",
-                "0009-catalog-authoritative-id-stage"
+                "0009-catalog-authoritative-id-stage",
+                "0010-article-mutation-outbox"
             },
             appliedIds,
-            "The exact post-PR7 schema must bootstrap through 0007 and apply only 0008-0009.");
+            "The exact post-PR7 schema must bootstrap through 0007 and apply only 0008-0010.");
         Assert.AreEqual(
             "{\"shopName\":\"Negozio QA Ñ\",\"address\":\"Via Unicode 7\"}",
             connection.ExecuteScalar<string>(@"
@@ -206,9 +216,13 @@ FROM schema_migrations
 WHERE app_version IS NOT NULL
 ORDER BY migration_id;").ToArray();
         CollectionAssert.AreEqual(
-            new[] { "0009-catalog-authoritative-id-stage" },
+            new[]
+            {
+                "0009-catalog-authoritative-id-stage",
+                "0010-article-mutation-outbox"
+            },
             appliedIds,
-            "The exact post-SYNC2 schema must bootstrap through 0008 and apply only 0009.");
+            "The exact post-SYNC2 schema must bootstrap through 0008 and apply only 0009-0010.");
         Assert.AreEqual(
             8L,
             connection.ExecuteScalar<long>(@"

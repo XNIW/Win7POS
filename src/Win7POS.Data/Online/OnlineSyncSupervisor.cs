@@ -34,10 +34,11 @@ namespace Win7POS.Data.Online
         public OnlineSyncLaneOutcome CatalogImport { get; internal set; }
         public OnlineSyncLaneOutcome Heartbeat { get; internal set; }
         public OnlineSyncLaneOutcome Sales { get; internal set; }
+        public OnlineSyncLaneOutcome ArticleMutations { get; internal set; }
     }
 
     /// <summary>
-    /// Four independent, generation-scoped lanes. A caller cancellation only stops
+    /// Independent, generation-scoped lanes. A caller cancellation only stops
     /// that caller's wait; relink, shutdown, or a current-generation auth denial are
     /// the only events that cancel shared lane work.
     /// </summary>
@@ -92,6 +93,7 @@ namespace Win7POS.Data.Online
             Signal(OnlineSyncLane.Heartbeat, OnlineSyncLaneTrigger.StartOfDay);
             Signal(OnlineSyncLane.SalesOutbox, OnlineSyncLaneTrigger.StartOfDay);
             Signal(OnlineSyncLane.CatalogImportOutbox, OnlineSyncLaneTrigger.StartOfDay);
+            Signal(OnlineSyncLane.ArticleMutationOutbox, OnlineSyncLaneTrigger.StartOfDay);
         }
 
         public void Signal(OnlineSyncLane lane, OnlineSyncLaneTrigger trigger)
@@ -143,6 +145,10 @@ namespace Win7POS.Data.Online
                 OnlineSyncLane.CatalogImportOutbox,
                 OnlineSyncLaneTrigger.StartOfDay,
                 waiterCancellationToken);
+            var articleMutations = TriggerAsync(
+                OnlineSyncLane.ArticleMutationOutbox,
+                OnlineSyncLaneTrigger.StartOfDay,
+                waiterCancellationToken);
             Task<OnlineSyncLaneOutcome> catalog = catalogRequired
                 ? TriggerAsync(
                     OnlineSyncLane.CatalogDelta,
@@ -150,13 +156,19 @@ namespace Win7POS.Data.Online
                     waiterCancellationToken)
                 : Task.FromResult<OnlineSyncLaneOutcome>(null);
 
-            await Task.WhenAll(heartbeat, sales, catalogImport, catalog).ConfigureAwait(false);
+            await Task.WhenAll(
+                heartbeat,
+                sales,
+                catalogImport,
+                articleMutations,
+                catalog).ConfigureAwait(false);
             return new OnlineSyncStartOfDayResult
             {
                 Heartbeat = heartbeat.Result,
                 Sales = sales.Result,
                 CatalogImport = catalogImport.Result,
-                CatalogDelta = catalog.Result
+                CatalogDelta = catalog.Result,
+                ArticleMutations = articleMutations.Result
             };
         }
 

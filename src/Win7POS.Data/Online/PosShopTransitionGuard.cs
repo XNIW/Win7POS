@@ -169,7 +169,16 @@ SELECT
   +
   (SELECT COUNT(1)
    FROM catalog_import_outbox
-   WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'));",
+   WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'))
+  +
+  (SELECT COUNT(1)
+   FROM article_mutation_outbox
+   WHERE state IN (
+     'waiting_dependency',
+     'pending',
+     'in_progress',
+     'retry_wait',
+     'failed_blocked'));",
                         transaction: tx).ConfigureAwait(false);
                     if (unresolved > 0)
                     {
@@ -251,7 +260,16 @@ SELECT
   +
   (SELECT COUNT(1)
    FROM catalog_import_outbox
-   WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'));"
+   WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'))
+  +
+  (SELECT COUNT(1)
+   FROM article_mutation_outbox
+   WHERE state IN (
+     'waiting_dependency',
+     'pending',
+     'in_progress',
+     'retry_wait',
+     'failed_blocked'));"
                 ).ConfigureAwait(false);
                 return count > 0;
             }

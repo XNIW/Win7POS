@@ -64,6 +64,7 @@ namespace Win7POS.Data.Repositories
                         RemoteCategoryId = Normalize(row.CategoryId),
                         RemoteProductId = Normalize(row.ProductId),
                         RemoteSupplierId = Normalize(row.SupplierId),
+                        RemoteUpdatedAt = Normalize(row.UpdatedAt),
                         SecondName = Normalize(row.SecondProductName),
                         StockQuantity = ToInt(row.StockQuantity),
                         SupplierName = NameFor(suppliers, row.SupplierId),

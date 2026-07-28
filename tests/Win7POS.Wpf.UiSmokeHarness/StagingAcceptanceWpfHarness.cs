@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Security.AccessControl;
@@ -10,6 +11,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Win7POS.Core;
@@ -34,17 +36,19 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private const string AllowedStagingHost =
             "merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev";
         private const string FixedDataDirectory =
-            @"C:\POSData\Win7POSAutomatedStagingAcceptance";
+            @"C:\POSData\Win7POSArticleMutationAcceptance";
         private const string QaSecretsDirectory = @"C:\ProgramData\Win7POS\QaSecrets";
 
         internal static async Task<bool> RunAsync(
             string profileName,
+            string runId,
             string outputDirectory)
         {
             var report = new AcceptanceReport
             {
                 StartedAtUtc = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
                 Profile = SafeProfileName(profileName),
+                RunId = SafeRunId(runId),
                 DataDirectoryIsolated = IsExpectedDataDirectory(),
                 LogicalRuns = 1
             };
@@ -66,6 +70,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 PosAdminWebOptions.SaveBaseUrl(profile.BaseUri);
 
                 host = new PosOnlineSyncSupervisorHost(factory);
+                var trustedStore = new PosTrustedDeviceStore();
                 var request = new PosFirstLoginRequest
                 {
                     Credential = profile.Credential,
@@ -84,7 +89,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 {
                     bootstrap = await new PosOnlineBootstrapService(
                             factory,
-                            new PosTrustedDeviceStore(),
+                            trustedStore,
                             host)
                         .BootstrapAsync(
                             new PosAdminWebOptions(profile.BaseUri),
@@ -125,6 +130,23 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     throw new AcceptanceFailure(
                         "bootstrap_" + SafeCode(bootstrap?.FailureStage) + "_" +
                         SafeCode(bootstrap?.RootCode));
+                }
+
+                PosTrustedDeviceSession trustedSession;
+                report.OfflineAuthorizationValid =
+                    trustedStore.TryRead(out trustedSession) &&
+                    trustedSession.OfflineAuthorizationAttested &&
+                    PosOfflineAuthorizationLeasePolicy.Evaluate(
+                        trustedSession,
+                        DateTimeOffset.UtcNow).Allowed;
+                if (!report.OfflineAuthorizationValid)
+                {
+                    RecordHarnessFailure(
+                        report,
+                        "offline_authorization",
+                        "offline_authorization_invalid");
+                    throw new AcceptanceFailure(
+                        "offline_authorization_invalid");
                 }
 
                 var users = new UserRepository(factory);
@@ -215,14 +237,53 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     throw new AcceptanceFailure("product_list_not_populated");
                 }
 
-                report.LogRedactionPassed = LogsDoNotContainProfileValues(profile);
-                if (!report.LogRedactionPassed)
+                StagingArticleMutationAcceptance
+                    .StagingArticleMutationAcceptanceResult articleResult;
+                using (var mutationTimeout = new CancellationTokenSource(
+                    TimeSpan.FromMinutes(7)))
+                {
+                    articleResult = await StagingArticleMutationAcceptance
+                        .RunAsync(
+                            factory,
+                            host,
+                            trustedSession,
+                            profile.BaseUri,
+                            report.RunId,
+                            outputDirectory,
+                            mutationTimeout.Token)
+                        .ConfigureAwait(true);
+                }
+                host = articleResult.ActiveHost ?? host;
+                ApplyArticleResult(report, articleResult);
+                if (!articleResult.Passed)
                 {
                     RecordHarnessFailure(
                         report,
-                        "local_operator_login",
-                        "secret_log_redaction_failed");
-                    throw new AcceptanceFailure("secret_log_redaction_failed");
+                        "article_mutations",
+                        articleResult.Code);
+                    throw new AcceptanceFailure(articleResult.Code);
+                }
+
+                report.LogRedactionPassed =
+                    LogsDoNotContainProfileValues(profile) &&
+                    LogsDoNotContainValue(report.RunId);
+                WriteFirstLoginEvidence(outputDirectory, report);
+                WriteCatalogEvidence(outputDirectory, report);
+                report.EvidenceRedactionPassed =
+                    EvidenceFilesDoNotContainSecrets(
+                        outputDirectory,
+                        profile,
+                        trustedSession);
+                WriteRedactionEvidence(outputDirectory, report);
+                if (!report.LogRedactionPassed ||
+                    !report.EvidenceRedactionPassed)
+                {
+                    RecordHarnessFailure(
+                        report,
+                        "security_evidence",
+                        "secret_or_payload_redaction_failed");
+                    throw new AcceptanceFailure(
+                        "secret_or_payload_redaction_failed");
                 }
 
                 report.Passed = true;
@@ -257,12 +318,61 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 try { operatorSession?.Logout(); } catch { }
                 OperatorSessionHolder.Current = null;
                 try { host?.Dispose(); } catch { }
-                profile?.Clear();
                 report.CompletedAtUtc = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+                WriteFirstLoginEvidence(outputDirectory, report);
+                WriteCatalogEvidence(outputDirectory, report);
+                if (!File.Exists(Path.Combine(
+                    outputDirectory,
+                    "redaction-scan.txt")))
+                {
+                    WriteRedactionEvidence(outputDirectory, report);
+                }
                 WriteReport(outputDirectory, report);
+                profile?.Clear();
             }
 
             return report.Passed;
+        }
+
+        private static void ApplyArticleResult(
+            AcceptanceReport report,
+            StagingArticleMutationAcceptance
+                .StagingArticleMutationAcceptanceResult article)
+        {
+            report.ArticleMutationsPassed = article.Passed;
+            report.ArticleCode = SafeCode(article.Code);
+            report.HarnessRestartSurvived =
+                article.HarnessRestartSurvived;
+            report.OfflineCreateAtomic = article.OfflineCreateAtomic;
+            report.DependentEditPersisted =
+                article.DependentEditPersisted;
+            report.RemoteIdentityAssigned =
+                article.RemoteIdentityAssigned;
+            report.DependentSequenceApplied =
+                article.DependentSequenceApplied;
+            report.SameMutationReplay = article.SameMutationReplay;
+            report.DifferentPayloadMismatch =
+                article.DifferentPayloadMismatch;
+            report.StaleConflict = article.StaleConflict;
+            report.UnrelatedProductContinued =
+                article.UnrelatedProductContinued;
+            report.CanonicalPull = article.CanonicalPull;
+            report.ZeroEcho = article.ZeroEcho;
+            report.ArticleWaitingDependency =
+                article.WaitingDependency;
+            report.ArticlePending = article.Pending;
+            report.ArticleInProgress = article.InProgress;
+            report.ArticleRetryWait = article.RetryWait;
+            report.ArticleBlockedConflicts =
+                article.BlockedConflicts;
+            report.PriceHistoryDuplicateGroups =
+                article.PriceHistoryDuplicateGroups;
+            report.StockDuplicateGroups =
+                article.StockDuplicateGroups;
+            report.SalesRows = article.SalesRows;
+            report.HardwareActions = article.HardwareActions;
+            report.CleanupManifestCreated =
+                article.CleanupManifestCreated;
         }
 
         private static IOperatorSession CreateProductionOperatorSession(
@@ -371,6 +481,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 window.Show();
                 window.UpdateLayout();
                 await Task.Delay(150).ConfigureAwait(true);
+                RedactVisibleProductRows(window);
+                window.UpdateLayout();
                 CaptureWindow(
                     window,
                     Path.Combine(outputDirectory, "staging-acceptance-products-readonly.png"));
@@ -380,6 +492,36 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 window.Close();
             }
+        }
+
+        private static void RedactVisibleProductRows(DependencyObject root)
+        {
+            if (root == null) return;
+            var textBlock = root as TextBlock;
+            if (textBlock != null && HasVisualAncestor<DataGridRow>(textBlock))
+            {
+                textBlock.SetCurrentValue(
+                    TextBlock.TextProperty,
+                    "[REDACTED]");
+            }
+            var count = VisualTreeHelper.GetChildrenCount(root);
+            for (var index = 0; index < count; index += 1)
+            {
+                RedactVisibleProductRows(
+                    VisualTreeHelper.GetChild(root, index));
+            }
+        }
+
+        private static bool HasVisualAncestor<T>(DependencyObject child)
+            where T : DependencyObject
+        {
+            var current = VisualTreeHelper.GetParent(child);
+            while (current != null)
+            {
+                if (current is T) return true;
+                current = VisualTreeHelper.GetParent(current);
+            }
+            return false;
         }
 
         private static void CaptureWindow(Window window, string path)
@@ -542,6 +684,233 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return true;
         }
 
+        private static bool LogsDoNotContainValue(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) ||
+                !Directory.Exists(AppPaths.LogsDirectory))
+            {
+                return true;
+            }
+            foreach (var path in Directory.EnumerateFiles(
+                AppPaths.LogsDirectory,
+                "*.log",
+                SearchOption.TopDirectoryOnly))
+            {
+                var info = new FileInfo(path);
+                if (info.Length > 2 * 1024 * 1024)
+                    return false;
+                if (File.ReadAllText(path).IndexOf(
+                        value,
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static bool EvidenceFilesDoNotContainSecrets(
+            string outputDirectory,
+            QaCredentialProfile profile,
+            PosTrustedDeviceSession trustedSession)
+        {
+            if (!Directory.Exists(outputDirectory))
+                return false;
+            var forbiddenMarkers = new[]
+            {
+                "\"deviceToken\"",
+                "\"sessionToken\"",
+                "canonical_payload_json",
+                "intent_json",
+                "payload_json"
+            };
+            var requiredRedactedScreenshots = new[]
+            {
+                "staging-acceptance-products-readonly.png",
+                "article-mutation-product-editor-1024x768.png",
+                "article-mutation-sync-center-conflict-1024x768.png"
+            };
+            if (requiredRedactedScreenshots.Any(fileName =>
+                    !File.Exists(Path.Combine(outputDirectory, fileName))))
+            {
+                return false;
+            }
+            foreach (var path in Directory.EnumerateFiles(
+                outputDirectory,
+                "*",
+                SearchOption.TopDirectoryOnly))
+            {
+                var extension = Path.GetExtension(path);
+                if (string.Equals(
+                        extension,
+                        ".png",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    var pngInfo = new FileInfo(path);
+                    if (pngInfo.Length <= 0 || pngInfo.Length > 5 * 1024 * 1024)
+                        return false;
+                    var bytes = File.ReadAllBytes(path);
+                    if (ContainsUtf8Value(bytes, profile?.Credential) ||
+                        ContainsUtf8Value(bytes, trustedSession?.DeviceToken) ||
+                        ContainsUtf8Value(bytes, trustedSession?.SessionToken))
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+                if (!string.Equals(extension, ".json", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(extension, ".md", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                var info = new FileInfo(path);
+                if (info.Length > 2 * 1024 * 1024)
+                    return false;
+                var contents = File.ReadAllText(path);
+                if (SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile?.Credential) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        trustedSession?.DeviceToken) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        trustedSession?.SessionToken) ||
+                    forbiddenMarkers.Any(marker =>
+                        contents.IndexOf(
+                            marker,
+                            StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static bool ContainsUtf8Value(byte[] haystack, string value)
+        {
+            if (haystack == null || haystack.Length == 0 ||
+                string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+            var needle = Encoding.UTF8.GetBytes(value);
+            if (needle.Length < 4 || needle.Length > haystack.Length)
+                return false;
+            for (var start = 0;
+                start <= haystack.Length - needle.Length;
+                start += 1)
+            {
+                var match = true;
+                for (var index = 0; index < needle.Length; index += 1)
+                {
+                    if (haystack[start + index] == needle[index]) continue;
+                    match = false;
+                    break;
+                }
+                if (match) return true;
+            }
+            return false;
+        }
+
+        private static void WriteFirstLoginEvidence(
+            string outputDirectory,
+            AcceptanceReport report)
+        {
+            WriteEvidenceJson(
+                Path.Combine(outputDirectory, "first-login-result.json"),
+                new FirstLoginEvidence
+                {
+                    FirstLoginSucceeded = report.FirstLoginSucceeded,
+                    HttpStatus = report.HttpStatus,
+                    OfflineAuthorizationValid =
+                        report.OfflineAuthorizationValid,
+                    PosUnlocked = report.PosUnlocked,
+                    TrustedSessionPersisted =
+                        report.TrustedSessionPersisted
+                });
+        }
+
+        private static void WriteCatalogEvidence(
+            string outputDirectory,
+            AcceptanceReport report)
+        {
+            WriteEvidenceJson(
+                Path.Combine(outputDirectory, "catalog-exactness.json"),
+                new CatalogEvidence
+                {
+                    CatalogDrained = report.CatalogDrained,
+                    ExactnessVerified = report.ExactnessVerified,
+                    LocalActiveCategories =
+                        report.LocalActiveCategories,
+                    LocalActiveProducts = report.LocalActiveProducts,
+                    LocalActiveSuppliers = report.LocalActiveSuppliers,
+                    ManifestActiveCategories =
+                        report.ManifestActiveCategories,
+                    ManifestActiveProducts =
+                        report.ManifestActiveProducts,
+                    ManifestActiveSuppliers =
+                        report.ManifestActiveSuppliers,
+                    Pages = report.CatalogPages,
+                    PendingRemotePrices = report.PendingRemotePrices,
+                    SaleSafe = report.SaleSafe
+                });
+        }
+
+        private static void WriteRedactionEvidence(
+            string outputDirectory,
+            AcceptanceReport report)
+        {
+            try
+            {
+                Directory.CreateDirectory(outputDirectory);
+                File.WriteAllText(
+                    Path.Combine(outputDirectory, "redaction-scan.txt"),
+                    "logRedactionPassed=" +
+                    report.LogRedactionPassed.ToString(
+                        CultureInfo.InvariantCulture) +
+                    Environment.NewLine +
+                    "evidenceRedactionPassed=" +
+                    report.EvidenceRedactionPassed.ToString(
+                        CultureInfo.InvariantCulture) +
+                    Environment.NewLine +
+                    "requestBodiesCaptured=False" +
+                    Environment.NewLine +
+                    "hardwareActions=" +
+                    report.HardwareActions.ToString(
+                        CultureInfo.InvariantCulture) +
+                    Environment.NewLine,
+                    new UTF8Encoding(false));
+            }
+            catch
+            {
+                report.Passed = false;
+                report.Code = "redaction_evidence_write_failed";
+            }
+        }
+
+        private static void WriteEvidenceJson(string path, object value)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(path));
+                var serializer = new DataContractJsonSerializer(value.GetType());
+                using (var output = new FileStream(
+                    path,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None))
+                {
+                    serializer.WriteObject(output, value);
+                }
+            }
+            catch
+            {
+                // The main result remains authoritative for evidence I/O failure.
+            }
+        }
+
         private static void WriteReport(string outputDirectory, AcceptanceReport report)
         {
             try
@@ -587,6 +956,27 @@ namespace Win7POS.Wpf.UiSmokeHarness
                       (ch == '-' && index > 0)))
                 {
                     throw new AcceptanceFailure("profile_name_invalid");
+                }
+            }
+            return value;
+        }
+
+        private static string SafeRunId(string runId)
+        {
+            var value = (runId ?? string.Empty).Trim();
+            if (value.Length == 0 ||
+                value.Length > 64 ||
+                !value.StartsWith("ASUSART_", StringComparison.Ordinal))
+            {
+                throw new AcceptanceFailure("run_id_invalid");
+            }
+            foreach (var character in value)
+            {
+                if (!((character >= 'A' && character <= 'Z') ||
+                      (character >= '0' && character <= '9') ||
+                      character == '_'))
+                {
+                    throw new AcceptanceFailure("run_id_invalid");
                 }
             }
             return value;
@@ -764,6 +1154,27 @@ namespace Win7POS.Wpf.UiSmokeHarness
         [DataContract]
         private sealed class AcceptanceReport
         {
+            [DataMember(Name = "articleBlockedConflicts")]
+            public long ArticleBlockedConflicts { get; set; }
+
+            [DataMember(Name = "articleCode")]
+            public string ArticleCode { get; set; }
+
+            [DataMember(Name = "articleInProgress")]
+            public long ArticleInProgress { get; set; }
+
+            [DataMember(Name = "articleMutationsPassed")]
+            public bool ArticleMutationsPassed { get; set; }
+
+            [DataMember(Name = "articlePending")]
+            public long ArticlePending { get; set; }
+
+            [DataMember(Name = "articleRetryWait")]
+            public long ArticleRetryWait { get; set; }
+
+            [DataMember(Name = "articleWaitingDependency")]
+            public long ArticleWaitingDependency { get; set; }
+
             [DataMember(Name = "authenticationDenied")]
             public bool AuthenticationDenied { get; set; }
 
@@ -791,11 +1202,29 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "completedAtUtc")]
             public string CompletedAtUtc { get; set; }
 
+            [DataMember(Name = "canonicalPull")]
+            public bool CanonicalPull { get; set; }
+
+            [DataMember(Name = "cleanupManifestCreated")]
+            public bool CleanupManifestCreated { get; set; }
+
             [DataMember(Name = "dataDirectoryIsolated")]
             public bool DataDirectoryIsolated { get; set; }
 
+            [DataMember(Name = "dependentEditPersisted")]
+            public bool DependentEditPersisted { get; set; }
+
+            [DataMember(Name = "dependentSequenceApplied")]
+            public bool DependentSequenceApplied { get; set; }
+
             [DataMember(Name = "deterministicRetrySuppressed")]
             public bool DeterministicRetrySuppressed { get; set; }
+
+            [DataMember(Name = "differentPayloadMismatch")]
+            public bool DifferentPayloadMismatch { get; set; }
+
+            [DataMember(Name = "evidenceRedactionPassed")]
+            public bool EvidenceRedactionPassed { get; set; }
 
             [DataMember(Name = "exactnessVerified")]
             public bool ExactnessVerified { get; set; }
@@ -814,6 +1243,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             [DataMember(Name = "httpStatus")]
             public int? HttpStatus { get; set; }
+
+            [DataMember(Name = "hardwareActions")]
+            public int HardwareActions { get; set; }
+
+            [DataMember(Name = "harnessRestartSurvived")]
+            public bool HarnessRestartSurvived { get; set; }
 
             [DataMember(Name = "localActiveCategories")]
             public long LocalActiveCategories { get; set; }
@@ -845,6 +1280,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "passed")]
             public bool Passed { get; set; }
 
+            [DataMember(Name = "offlineAuthorizationValid")]
+            public bool OfflineAuthorizationValid { get; set; }
+
+            [DataMember(Name = "offlineCreateAtomic")]
+            public bool OfflineCreateAtomic { get; set; }
+
             [DataMember(Name = "pendingRemotePrices")]
             public long PendingRemotePrices { get; set; }
 
@@ -863,6 +1304,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "profileValidated")]
             public bool ProfileValidated { get; set; }
 
+            [DataMember(Name = "priceHistoryDuplicateGroups")]
+            public long PriceHistoryDuplicateGroups { get; set; }
+
+            [DataMember(Name = "remoteIdentityAssigned")]
+            public bool RemoteIdentityAssigned { get; set; }
+
             [DataMember(Name = "requestReachedServer")]
             public bool RequestReachedServer { get; set; }
 
@@ -872,8 +1319,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "rootCode")]
             public string RootCode { get; set; }
 
+            [DataMember(Name = "runId")]
+            public string RunId { get; set; }
+
             [DataMember(Name = "saleSafe")]
             public bool SaleSafe { get; set; }
+
+            [DataMember(Name = "salesRows")]
+            public long SalesRows { get; set; }
+
+            [DataMember(Name = "sameMutationReplay")]
+            public bool SameMutationReplay { get; set; }
 
             [DataMember(Name = "deviceApprovalState")]
             public string DeviceApprovalState { get; set; }
@@ -884,8 +1340,76 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "startedAtUtc")]
             public string StartedAtUtc { get; set; }
 
+            [DataMember(Name = "staleConflict")]
+            public bool StaleConflict { get; set; }
+
+            [DataMember(Name = "stockDuplicateGroups")]
+            public long StockDuplicateGroups { get; set; }
+
             [DataMember(Name = "trustedSessionPersisted")]
             public bool TrustedSessionPersisted { get; set; }
+
+            [DataMember(Name = "unrelatedProductContinued")]
+            public bool UnrelatedProductContinued { get; set; }
+
+            [DataMember(Name = "zeroEcho")]
+            public bool ZeroEcho { get; set; }
+        }
+
+        [DataContract]
+        private sealed class FirstLoginEvidence
+        {
+            [DataMember(Name = "firstLoginSucceeded")]
+            public bool FirstLoginSucceeded { get; set; }
+
+            [DataMember(Name = "httpStatus")]
+            public int? HttpStatus { get; set; }
+
+            [DataMember(Name = "offlineAuthorizationValid")]
+            public bool OfflineAuthorizationValid { get; set; }
+
+            [DataMember(Name = "posUnlocked")]
+            public bool PosUnlocked { get; set; }
+
+            [DataMember(Name = "trustedSessionPersisted")]
+            public bool TrustedSessionPersisted { get; set; }
+        }
+
+        [DataContract]
+        private sealed class CatalogEvidence
+        {
+            [DataMember(Name = "catalogDrained")]
+            public bool CatalogDrained { get; set; }
+
+            [DataMember(Name = "exactnessVerified")]
+            public bool ExactnessVerified { get; set; }
+
+            [DataMember(Name = "localActiveCategories")]
+            public long LocalActiveCategories { get; set; }
+
+            [DataMember(Name = "localActiveProducts")]
+            public long LocalActiveProducts { get; set; }
+
+            [DataMember(Name = "localActiveSuppliers")]
+            public long LocalActiveSuppliers { get; set; }
+
+            [DataMember(Name = "manifestActiveCategories")]
+            public long ManifestActiveCategories { get; set; }
+
+            [DataMember(Name = "manifestActiveProducts")]
+            public long ManifestActiveProducts { get; set; }
+
+            [DataMember(Name = "manifestActiveSuppliers")]
+            public long ManifestActiveSuppliers { get; set; }
+
+            [DataMember(Name = "pages")]
+            public long Pages { get; set; }
+
+            [DataMember(Name = "pendingRemotePrices")]
+            public long PendingRemotePrices { get; set; }
+
+            [DataMember(Name = "saleSafe")]
+            public bool SaleSafe { get; set; }
         }
     }
 }

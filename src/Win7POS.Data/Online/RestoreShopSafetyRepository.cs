@@ -54,7 +54,16 @@ SELECT
   +
   (SELECT COUNT(1)
    FROM catalog_import_outbox
-   WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'));"
+   WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'))
+  +
+  (SELECT COUNT(1)
+   FROM article_mutation_outbox
+   WHERE state IN (
+     'waiting_dependency',
+     'pending',
+     'in_progress',
+     'retry_wait',
+     'failed_blocked'));"
                 ).ConfigureAwait(false);
                 return unresolvedOutbox == 0
                     ? RestoreSafetyResult.Success()
@@ -118,9 +127,27 @@ SELECT COUNT(1)
 FROM catalog_import_outbox
 WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked');",
                     transaction: tx).ConfigureAwait(false);
-                return unresolvedCatalogImports == 0
+                if (unresolvedCatalogImports > 0)
+                {
+                    return RestoreSafetyResult.Failure(
+                        "restore_live_catalog_outbox_unresolved");
+                }
+
+                var unresolvedArticleMutations =
+                    await conn.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM article_mutation_outbox
+WHERE state IN (
+  'waiting_dependency',
+  'pending',
+  'in_progress',
+  'retry_wait',
+  'failed_blocked');",
+                        transaction: tx).ConfigureAwait(false);
+                return unresolvedArticleMutations == 0
                     ? RestoreSafetyResult.Success()
-                    : RestoreSafetyResult.Failure("restore_live_catalog_outbox_unresolved");
+                    : RestoreSafetyResult.Failure(
+                        "restore_live_article_outbox_unresolved");
             }
         }
 
@@ -164,7 +191,15 @@ SELECT
    WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'))
   +
   (SELECT COUNT(1) FROM catalog_import_outbox
-   WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'));",
+   WHERE status IN ('pending', 'retry', 'in_progress', 'failed_blocked'))
+  +
+  (SELECT COUNT(1) FROM article_mutation_outbox
+   WHERE state IN (
+     'waiting_dependency',
+     'pending',
+     'in_progress',
+     'retry_wait',
+     'failed_blocked'));",
                     transaction: tx).ConfigureAwait(false);
                 if (unresolved > 0)
                 {

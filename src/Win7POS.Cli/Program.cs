@@ -1087,6 +1087,7 @@ internal static class Program
                 null,
                 "TASK081 Category",
                 99,
+                ProductWriteOrigin.RemoteCatalogApply,
                 "11111111-1111-4111-8111-111111111111").ConfigureAwait(false);
             Assert(
                 await ReadStockAsync(factory, barcode).ConfigureAwait(false) == 10,
@@ -2928,7 +2929,7 @@ CREATE TABLE users (
                 Barcode = "RECON-REMOTE",
                 Name = "Reconcile remote id",
                 UnitPrice = 1200
-            }).ConfigureAwait(false);
+            }, ProductWriteOrigin.TestFixture).ConfigureAwait(false);
             Assert(
                 await reconciliation.ReconcileRemoteProductIdAsync("RECON-REMOTE", "remote-product-reconciled").ConfigureAwait(false),
                 "Reconciliation must apply barcode-to-remote product id.");
@@ -3273,7 +3274,9 @@ CREATE TABLE users (
             var options = PosDbOptions.ForPath(Path.Combine(tempRoot, "pos.db"));
             await InitializeHarnessDbAsync(options).ConfigureAwait(false);
             var factory = new SqliteConnectionFactory(options);
-            await new ProductRepository(factory).UpsertAsync(new Product { Barcode = "SQLITE-INTEGRITY", Name = "SQLite Integrity", UnitPrice = 100 }).ConfigureAwait(false);
+            await new ProductRepository(factory).UpsertAsync(
+                new Product { Barcode = "SQLITE-INTEGRITY", Name = "SQLite Integrity", UnitPrice = 100 },
+                ProductWriteOrigin.TestFixture).ConfigureAwait(false);
             await new CatalogImportOutboxRepository(factory)
                 .EnqueueAsync(BuildCatalogImportOutboxEntry("integrity", 1, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()))
                 .ConfigureAwait(false);
@@ -4420,9 +4423,9 @@ END;").ConfigureAwait(false);
         var sales = new SaleRepository(factory);
         var session = new PosSession(new DataProductLookup(products), new DataSalesStore(sales));
 
-        await products.UpsertAsync(new Product { Barcode = "1234567890123", Name = "Coca Cola 500ml", UnitPrice = 1000 });
-        await products.UpsertAsync(new Product { Barcode = "9876543210000", Name = "Water 500ml", UnitPrice = 700 });
-        await products.UpsertAsync(new Product { Barcode = "1111111111111", Name = "ProdottoConNomeMoltoLungoPerVerificareIlWrappingSuScontrino42e32Colonne", UnitPrice = 250 });
+        await products.UpsertAsync(new Product { Barcode = "1234567890123", Name = "Coca Cola 500ml", UnitPrice = 1000 }, ProductWriteOrigin.TestFixture);
+        await products.UpsertAsync(new Product { Barcode = "9876543210000", Name = "Water 500ml", UnitPrice = 700 }, ProductWriteOrigin.TestFixture);
+        await products.UpsertAsync(new Product { Barcode = "1111111111111", Name = "ProdottoConNomeMoltoLungoPerVerificareIlWrappingSuScontrino42e32Colonne", UnitPrice = 250 }, ProductWriteOrigin.TestFixture);
 
         try
         {
@@ -4580,8 +4583,8 @@ END;").ConfigureAwait(false);
         PrintImportAnalysis(analysis);
         Console.WriteLine("ImportAnalysis PASS");
 
-        await products.UpsertAsync(new Product { Barcode = "A001", Name = "Old A", UnitPrice = 90 });
-        await products.UpsertAsync(new Product { Barcode = "C001", Name = "Item C", UnitPrice = 300 });
+        await products.UpsertAsync(new Product { Barcode = "A001", Name = "Old A", UnitPrice = 90 }, ProductWriteOrigin.SupplierImportApply);
+        await products.UpsertAsync(new Product { Barcode = "C001", Name = "Item C", UnitPrice = 300 }, ProductWriteOrigin.SupplierImportApply);
         var uniqueRows = UniqueRows(parse.Rows);
         var lookup = new ProductSnapshotLookupAdapter(products);
         var differ = new ImportDiffer(lookup);
@@ -5589,6 +5592,7 @@ SELECT last_insert_rowid();";
                 null,
                 NameFor(categories, remoteProduct.CategoryId),
                 ToInt(remoteProduct.StockQuantity),
+                ProductWriteOrigin.RemoteCatalogApply,
                 Normalize(remoteProduct.ProductId)).ConfigureAwait(false);
         }
 
@@ -5596,7 +5600,8 @@ SELECT last_insert_rowid();";
         {
             await products.ApplyRemoteProductTombstoneAsync(
                 Normalize(tombstone.ProductId),
-                Normalize(tombstone.DeletedAt)).ConfigureAwait(false);
+                Normalize(tombstone.DeletedAt),
+                ProductWriteOrigin.RemoteCatalogApply).ConfigureAwait(false);
         }
 
         foreach (var price in catalog.Prices ?? Array.Empty<PosCatalogPriceResponse>())
@@ -5607,7 +5612,8 @@ SELECT last_insert_rowid();";
                 Normalize(price.Type),
                 ToInt(price.Price),
                 Normalize(price.EffectiveAt),
-                Normalize(price.Source)).ConfigureAwait(false);
+                Normalize(price.Source),
+                ProductWriteOrigin.RemoteCatalogApply).ConfigureAwait(false);
         }
     }
 
@@ -6403,9 +6409,12 @@ SELECT last_insert_rowid();";
             "Soft Supplier Old",
             null,
             "Soft Category Old",
-            1).ConfigureAwait(false);
+            1,
+            ProductWriteOrigin.SupplierImportApply).ConfigureAwait(false);
 
-        Assert(await products.DeleteByBarcodeAsync(barcode).ConfigureAwait(false), "Soft-delete setup must deactivate product.");
+        Assert(await products.DeleteByBarcodeAsync(
+            barcode,
+            ProductWriteOrigin.SupplierImportApply).ConfigureAwait(false), "Soft-delete setup must deactivate product.");
         Assert(await ReadProductIsActiveAsync(factory, barcode).ConfigureAwait(false) == 0, "Soft-delete setup must set is_active=0.");
         Assert(!string.IsNullOrWhiteSpace(await ReadRemoteDeletedAtAsync(factory, barcode).ConfigureAwait(false)), "Soft-delete setup must set remote_deleted_at.");
 

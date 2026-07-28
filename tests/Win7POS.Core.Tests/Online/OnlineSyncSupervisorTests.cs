@@ -162,7 +162,8 @@ public sealed class OnlineSyncSupervisorTests
                         return OnlineSyncLaneOutcome.AuthDenied(code);
                     }
 
-                    if (Interlocked.Increment(ref companionCount) == 3)
+                    if (Interlocked.Increment(ref companionCount) ==
+                        Enum.GetValues<OnlineSyncLane>().Length - 1)
                         companionLanesStarted.TrySetResult(true);
                     return await context.ExecuteRequestAsync(async requestCancellationToken =>
                     {
@@ -178,7 +179,7 @@ public sealed class OnlineSyncSupervisorTests
                     Interlocked.Increment(ref stops);
                     return Task.CompletedTask;
                 },
-                networkConcurrency: 4,
+                networkConcurrency: Enum.GetValues<OnlineSyncLane>().Length,
                 credentialProvider: currentGeneration => Task.FromResult(
                     new OnlineSyncRequestCredentials(
                         currentGeneration,
@@ -202,7 +203,11 @@ public sealed class OnlineSyncSupervisorTests
             Assert.AreEqual(1, stops, deniedLane.ToString());
             Assert.AreEqual(1, networkCalls, deniedLane.ToString());
             Assert.IsTrue(supervisor.GetSnapshot().AuthenticationStopped);
-            CollectionAssert.AreEqual(new[] { 1, 1, 1, 1 }, runsByLane);
+            CollectionAssert.AreEqual(
+                Enumerable.Repeat(
+                    1,
+                    Enum.GetValues<OnlineSyncLane>().Length).ToArray(),
+                runsByLane);
             Assert.IsTrue(outcomes.All(outcome => !outcome.Success));
 
             var future = await supervisor.TriggerAsync(
@@ -211,7 +216,9 @@ public sealed class OnlineSyncSupervisorTests
                     : OnlineSyncLane.Heartbeat,
                 OnlineSyncLaneTrigger.LocalCommit);
             Assert.IsTrue(future.AuthenticationDenied);
-            Assert.AreEqual(4, runsByLane.Sum());
+            Assert.AreEqual(
+                Enum.GetValues<OnlineSyncLane>().Length,
+                runsByLane.Sum());
             Assert.AreEqual(1, networkCalls);
         }
     }
@@ -325,7 +332,7 @@ public sealed class OnlineSyncSupervisorTests
         releaseRequests.TrySetResult(true);
         var outcomes = await Task.WhenAll(laneRuns).WaitAsync(TimeSpan.FromSeconds(5));
         Assert.IsTrue(outcomes.All(outcome => outcome.Success));
-        Assert.AreEqual(4, requests);
+        Assert.AreEqual(Enum.GetValues<OnlineSyncLane>().Length, requests);
         Assert.AreEqual(2, maximumActive);
     }
 
@@ -334,13 +341,14 @@ public sealed class OnlineSyncSupervisorTests
     {
         var allRunnersEntered = NewSignal();
         var twoRequestsStarted = NewSignal();
+        var laneCount = Enum.GetValues<OnlineSyncLane>().Length;
         var runners = 0;
         var requests = 0;
         using var supervisor = new OnlineSyncSupervisor(
             Generation("generation-stop"),
             async (context, _, cancellationToken) =>
             {
-                if (Interlocked.Increment(ref runners) == 4)
+                if (Interlocked.Increment(ref runners) == laneCount)
                     allRunnersEntered.TrySetResult(true);
                 return await context.ExecuteRequestAsync(async requestCancellationToken =>
                 {

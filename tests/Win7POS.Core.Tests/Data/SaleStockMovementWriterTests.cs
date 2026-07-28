@@ -72,6 +72,15 @@ public sealed class SaleStockMovementWriterTests
             102,
             -4,
             "sale_decrement");
+        using var directVerify = directDb.Factory.Open();
+        Assert.AreEqual(
+            0L,
+            await directVerify.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM article_mutation_outbox;"));
+        Assert.AreEqual(
+            0L,
+            await directVerify.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM article_manual_stock_adjustments;"));
     }
 
     [TestMethod]
@@ -281,6 +290,15 @@ WHERE barcode = @barcode;", new { barcode });
             402,
             2,
             "void_reverse");
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(
+            0L,
+            await verify.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM article_mutation_outbox;"));
+        Assert.AreEqual(
+            0L,
+            await verify.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM article_manual_stock_adjustments;"));
     }
 
     [TestMethod]

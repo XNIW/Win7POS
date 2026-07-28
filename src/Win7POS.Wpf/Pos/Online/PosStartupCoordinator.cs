@@ -327,6 +327,7 @@ namespace Win7POS.Wpf.Pos.Online
             host.Signal(OnlineSyncLane.Heartbeat, trigger);
             host.Signal(OnlineSyncLane.SalesOutbox, trigger);
             host.Signal(OnlineSyncLane.CatalogImportOutbox, trigger);
+            host.Signal(OnlineSyncLane.ArticleMutationOutbox, trigger);
         }
 
         public async Task<CatalogSyncRunResult> TriggerAdaptiveOnlineRefreshAsync(
