@@ -122,7 +122,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         350,
                         4,
                         "LOOP-REPLAY-ITEM");
-                    await SubmitAsync(replayCreate).ConfigureAwait(true);
+                    await SubmitAsync(
+                        replayCreate,
+                        exerciseOffDispatcher: true).ConfigureAwait(true);
+                    report.OffDispatcherSubmitMarshaled = true;
 
                     var replayOutcome = await TriggerArticlesAsync(
                         host,
@@ -427,6 +430,7 @@ WHERE state = 'failed_blocked'
 
                 return "PASS: firstLogin=True; offlineAuthority=True; " +
                     "fullCatalog=True; create=True; duplicateReplay=True; " +
+                    "offDispatcherSubmitMarshaled=True; " +
                     "dependentEdit=True; update=True; retail=True; " +
                     "purchase=True; stock=+5,-2; conflict=True; " +
                     "duplicate=True; deactivate=True; reactivate=True; " +
@@ -490,20 +494,32 @@ WHERE state = 'failed_blocked'
         }
 
         private static async Task SubmitAsync(
-            ProductEditViewModel viewModel)
+            ProductEditViewModel viewModel,
+            bool exerciseOffDispatcher = false)
         {
             var completed = new TaskCompletionSource<bool>();
+            var completionOnDispatcher = false;
             Action<bool> handler = null;
             handler = success =>
             {
+                completionOnDispatcher =
+                    System.Windows.Application.Current?.Dispatcher
+                        .CheckAccess() == true;
                 viewModel.RequestClose -= handler;
                 completed.TrySetResult(success);
             };
             viewModel.RequestClose += handler;
-            Require(
-                viewModel.ConfirmCommand.CanExecute(null),
-                "view_model_save_disabled");
-            viewModel.ConfirmCommand.Execute(null);
+            Action submit = () =>
+            {
+                Require(
+                    viewModel.ConfirmCommand.CanExecute(null),
+                    "view_model_save_disabled");
+                viewModel.ConfirmCommand.Execute(null);
+            };
+            if (exerciseOffDispatcher)
+                await Task.Run(submit).ConfigureAwait(true);
+            else
+                submit();
             var finished = await Task.WhenAny(
                 completed.Task,
                 Task.Delay(TimeSpan.FromSeconds(10))).ConfigureAwait(true);
@@ -515,6 +531,12 @@ WHERE state = 'failed_blocked'
             Require(
                 await completed.Task.ConfigureAwait(true),
                 "view_model_save_cancelled");
+            if (exerciseOffDispatcher)
+            {
+                Require(
+                    completionOnDispatcher,
+                    "view_model_save_not_marshaled_to_dispatcher");
+            }
         }
 
         private static async Task<OnlineSyncLaneOutcome>
@@ -888,6 +910,8 @@ GROUP BY mutation_kind;")).ToDictionary(
             public int ArticleRequests { get; set; }
             [DataMember(Order = 27)]
             public int CatalogRequests { get; set; }
+            [DataMember(Order = 28)]
+            public bool OffDispatcherSubmitMarshaled { get; set; }
         }
 
         private sealed class ArticleLoopbackServer : IDisposable
