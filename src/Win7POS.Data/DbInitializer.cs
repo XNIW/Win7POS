@@ -652,6 +652,200 @@ ON catalog_authoritative_id_stage(scope_id, stage_id);
             conn.Execute(CatalogAuthoritativeIdStageSchemaSql, transaction: tx);
         }
 
+        internal static SchemaColumnDefinition[] ArticleMutationColumns { get; } =
+            new[]
+            {
+                Column(
+                    "products",
+                    "client_product_id",
+                    "TEXT",
+                    false,
+                    "",
+                    "TEXT NULL"),
+                Column(
+                    "products",
+                    "remote_base_revision",
+                    "TEXT",
+                    false,
+                    "",
+                    "TEXT NULL"),
+                Column(
+                    "product_price_history",
+                    "article_mutation_id",
+                    "TEXT",
+                    false,
+                    "",
+                    "TEXT NULL")
+            };
+
+        internal static string ArticleMutationColumnMaterial => string.Join(
+            "\n",
+            ArticleMutationColumns.Select(item => item.ToCanonicalMaterial()));
+
+        internal static string ArticleMutationAlterSql => string.Join(
+            "\n",
+            ArticleMutationColumns.Select(item =>
+                "ALTER TABLE " + item.TableName + " ADD COLUMN " +
+                item.ColumnName + " " + item.AlterDefinition + ";"));
+
+        internal static string ArticleMutationTableSql => @"
+CREATE TABLE IF NOT EXISTS article_mutation_outbox (
+  id                         INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  local_product_id           INTEGER NOT NULL,
+  mutation_id                TEXT NOT NULL UNIQUE,
+  idempotency_key            TEXT NOT NULL UNIQUE,
+  client_product_id          TEXT NOT NULL,
+  remote_product_id          TEXT NULL,
+  mutation_kind              TEXT NOT NULL,
+  local_sequence             INTEGER NOT NULL,
+  base_revision              TEXT NULL,
+  field_mask_json            TEXT NOT NULL,
+  intent_json                TEXT NOT NULL,
+  intent_hash                TEXT NOT NULL,
+  canonical_payload_json     TEXT NULL,
+  payload_hash               TEXT NULL,
+  created_at                 TEXT NOT NULL,
+  occurred_at                TEXT NOT NULL,
+  state                      TEXT NOT NULL,
+  attempt_count              INTEGER NOT NULL DEFAULT 0,
+  next_attempt_at            INTEGER NOT NULL DEFAULT 0,
+  last_typed_code            TEXT NULL,
+  authoritative_revision     TEXT NULL,
+  catalog_revision           TEXT NULL,
+  remote_price_history_id    TEXT NULL,
+  remote_stock_movement_id   TEXT NULL,
+  remote_assigned_product_id TEXT NULL,
+  local_price_history_id     INTEGER NULL,
+  local_stock_adjustment_id  INTEGER NULL,
+  ack_status                 TEXT NULL,
+  ack_code                   TEXT NULL,
+  ack_attempt_token          TEXT NULL,
+  ack_server_timestamp       TEXT NULL,
+  ack_terminal               INTEGER NULL,
+  ack_retryable              INTEGER NULL,
+  claim_generation_id        TEXT NULL,
+  claim_token                TEXT NULL,
+  completed_at               TEXT NULL,
+  updated_at                 TEXT NOT NULL,
+  FOREIGN KEY(local_product_id) REFERENCES products(id) ON DELETE RESTRICT,
+  CHECK(local_sequence >= 1),
+  CHECK(state IN (
+    'waiting_dependency',
+    'pending',
+    'in_progress',
+    'retry_wait',
+    'failed_blocked',
+    'completed')),
+  CHECK(
+    (canonical_payload_json IS NULL AND payload_hash IS NULL)
+    OR
+    (canonical_payload_json IS NOT NULL AND payload_hash IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS article_mutation_attempts (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  mutation_id   TEXT NOT NULL,
+  attempt_token TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  started_at    TEXT NULL,
+  completed_at  TEXT NULL,
+  outcome       TEXT NULL,
+  FOREIGN KEY(mutation_id)
+    REFERENCES article_mutation_outbox(mutation_id) ON DELETE RESTRICT,
+  UNIQUE(mutation_id, attempt_token),
+  UNIQUE(attempt_token)
+);
+
+CREATE TABLE IF NOT EXISTS article_manual_stock_adjustments (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  local_product_id INTEGER NOT NULL,
+  mutation_id      TEXT NOT NULL UNIQUE,
+  barcode          TEXT NOT NULL,
+  quantity_delta   INTEGER NOT NULL,
+  reason           TEXT NOT NULL,
+  occurred_at      TEXT NOT NULL,
+  created_at       TEXT NOT NULL,
+  FOREIGN KEY(local_product_id) REFERENCES products(id) ON DELETE RESTRICT,
+  FOREIGN KEY(mutation_id)
+    REFERENCES article_mutation_outbox(mutation_id) ON DELETE RESTRICT,
+  CHECK(quantity_delta <> 0),
+  CHECK(reason IN (
+    'count_correction',
+    'damage',
+    'found',
+    'loss',
+    'other',
+    'return_to_stock',
+    'transfer'))
+);
+
+CREATE TABLE IF NOT EXISTS article_product_remote_shadow (
+  remote_product_id     TEXT PRIMARY KEY NOT NULL,
+  local_product_id      INTEGER NULL,
+  barcode               TEXT NOT NULL,
+  item_number           TEXT NULL,
+  primary_name          TEXT NOT NULL,
+  secondary_name        TEXT NULL,
+  category_remote_id    TEXT NULL,
+  supplier_remote_id    TEXT NULL,
+  retail_price          INTEGER NOT NULL,
+  purchase_price        INTEGER NOT NULL,
+  stock_quantity        INTEGER NOT NULL,
+  is_active             INTEGER NOT NULL,
+  authoritative_revision TEXT NOT NULL,
+  updated_at            TEXT NOT NULL,
+  FOREIGN KEY(local_product_id) REFERENCES products(id) ON DELETE SET NULL
+);
+";
+
+        internal static string ArticleMutationOwnedIndexSql => @"
+CREATE INDEX IF NOT EXISTS idx_article_mutation_state_next
+ON article_mutation_outbox(state, next_attempt_at, id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_article_mutation_client_sequence
+ON article_mutation_outbox(client_product_id, local_sequence);
+CREATE INDEX IF NOT EXISTS idx_article_mutation_remote_product
+ON article_mutation_outbox(remote_product_id)
+WHERE remote_product_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_article_mutation_local_product
+ON article_mutation_outbox(local_product_id, local_sequence);
+CREATE INDEX IF NOT EXISTS idx_article_mutation_attempt_mutation
+ON article_mutation_attempts(mutation_id, id);
+CREATE INDEX IF NOT EXISTS idx_article_remote_shadow_local
+ON article_product_remote_shadow(local_product_id);
+";
+
+        internal static string ArticleMutationExternalIndexSql => @"
+CREATE UNIQUE INDEX IF NOT EXISTS idx_products_client_product_id
+ON products(client_product_id)
+WHERE client_product_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_price_history_article_mutation
+ON product_price_history(article_mutation_id)
+WHERE article_mutation_id IS NOT NULL;
+";
+
+        internal static string ArticleMutationIndexSql =>
+            ArticleMutationOwnedIndexSql + "\n" +
+            ArticleMutationExternalIndexSql;
+
+        internal static string ArticleMutationSchemaSql =>
+            ArticleMutationTableSql + "\n" + ArticleMutationIndexSql;
+
+        internal static void EnsureArticleMutationSchema(
+            SqliteConnection conn,
+            SqliteTransaction tx)
+        {
+            foreach (var column in ArticleMutationColumns)
+            {
+                EnsureColumn(
+                    conn,
+                    tx,
+                    column.TableName,
+                    column.ColumnName,
+                    column.AlterDefinition);
+            }
+            conn.Execute(ArticleMutationSchemaSql, transaction: tx);
+        }
+
         internal static string DependentSchemaSql => @"
 CREATE TABLE IF NOT EXISTS local_stock_movements (
   id        INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -1150,6 +1344,14 @@ ALTER TABLE sales ADD COLUMN sync_status TEXT NOT NULL DEFAULT 'pending';
         internal static string PostPerf2ALedgerlessKnownSchemaSql =>
             PostSync2LedgerlessKnownSchemaSql + "\n" +
             CatalogAuthoritativeIdStageSchemaSql;
+
+        // Frozen whitelist for the article-mutation durable outbox delivery.
+        // Older whitelists remain immutable because migration 0010 owns these
+        // columns and tables.
+        internal static string PostArticleMutationLedgerlessKnownSchemaSql =>
+            PostPerf2ALedgerlessKnownSchemaSql + "\n" +
+            ArticleMutationAlterSql + "\n" +
+            ArticleMutationSchemaSql;
 
         internal static void EnsureIndexes(SqliteConnection conn, SqliteTransaction tx)
         {

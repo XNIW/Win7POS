@@ -880,6 +880,12 @@ SET is_active = 0,
 WHERE TRIM(COALESCE(remote_product_id, '')) <> ''
   AND COALESCE(is_active, 1) = 1
   AND NOT EXISTS (
+    SELECT 1
+    FROM article_mutation_outbox mutation
+    WHERE mutation.local_product_id = products.id
+      AND mutation.state <> 'completed'
+  )
+  AND NOT EXISTS (
     SELECT 1 FROM temp_full_product_ids incoming
     WHERE incoming.id = TRIM(products.remote_product_id)
   );",

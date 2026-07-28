@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Dapper;
 using Microsoft.Data.Sqlite;
 using Win7POS.Core.Models;
+using Win7POS.Core.Online;
 using Win7POS.Core.Receipt;
 
 namespace Win7POS.Data.Repositories
@@ -35,7 +36,8 @@ namespace Win7POS.Data.Repositories
                     conn,
                     null,
                     remoteProductId,
-                    remoteDeletedAt).ConfigureAwait(false);
+                    remoteDeletedAt,
+                    null).ConfigureAwait(false);
             }
             finally
             {
@@ -47,9 +49,60 @@ namespace Win7POS.Data.Repositories
             SqliteConnection conn,
             SqliteTransaction tx,
             string remoteProductId,
-            string remoteDeletedAt)
+            string remoteDeletedAt,
+            string remoteUpdatedAt = null)
         {
             if (string.IsNullOrWhiteSpace(remoteProductId)) return false;
+            var normalizedRemoteProductId = remoteProductId.Trim();
+            var protectedProductId = await FindProtectedProductIdAsync(
+                conn,
+                tx,
+                normalizedRemoteProductId,
+                null).ConfigureAwait(false);
+            if (protectedProductId.HasValue)
+            {
+                if (PosArticleMutationIntentPolicy.IsProductRevision(remoteUpdatedAt))
+                {
+                    var state = await conn.QueryFirstOrDefaultAsync<ProtectedShadowSource>(@"
+SELECT p.barcode AS Barcode,
+       p.name AS PrimaryName,
+       p.unitPrice AS RetailPrice,
+       COALESCE(m.article_code, '') AS ItemNumber,
+       COALESCE(m.name2, '') AS SecondaryName,
+       COALESCE(m.purchase_price, 0) AS PurchasePrice,
+       COALESCE(m.stock_qty, 0) AS StockQuantity,
+       reference.remote_category_id AS RemoteCategoryId,
+       reference.remote_supplier_id AS RemoteSupplierId
+FROM products p
+LEFT JOIN product_meta m ON m.barcode = p.barcode
+LEFT JOIN remote_catalog_product_references reference
+  ON reference.remote_product_id = p.remote_product_id
+WHERE p.id = @productId
+LIMIT 1;",
+                        new { productId = protectedProductId.Value },
+                        tx).ConfigureAwait(false);
+                    if (state != null)
+                    {
+                        await UpsertRemoteShadowAsync(
+                            conn,
+                            tx,
+                            protectedProductId,
+                            normalizedRemoteProductId,
+                            state.Barcode,
+                            state.ItemNumber,
+                            state.PrimaryName,
+                            state.SecondaryName,
+                            state.RemoteCategoryId,
+                            state.RemoteSupplierId,
+                            state.RetailPrice,
+                            state.PurchasePrice,
+                            state.StockQuantity,
+                            false,
+                            remoteUpdatedAt).ConfigureAwait(false);
+                    }
+                }
+                return true;
+            }
 
             var rows = await conn.ExecuteAsync(@"
 UPDATE products
@@ -59,7 +112,7 @@ WHERE remote_product_id = @remoteProductId
   AND COALESCE(is_active, 1) = 1",
                 new
                 {
-                    remoteProductId = remoteProductId.Trim(),
+                    remoteProductId = normalizedRemoteProductId,
                     remoteDeletedAt = string.IsNullOrWhiteSpace(remoteDeletedAt)
                         ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
                         : remoteDeletedAt.Trim()
@@ -67,6 +120,19 @@ WHERE remote_product_id = @remoteProductId
                 tx).ConfigureAwait(false);
 
             return rows > 0;
+        }
+
+        private sealed class ProtectedShadowSource
+        {
+            public string Barcode { get; set; } = string.Empty;
+            public string PrimaryName { get; set; } = string.Empty;
+            public long RetailPrice { get; set; }
+            public string ItemNumber { get; set; } = string.Empty;
+            public string SecondaryName { get; set; } = string.Empty;
+            public int PurchasePrice { get; set; }
+            public int StockQuantity { get; set; }
+            public string RemoteCategoryId { get; set; } = string.Empty;
+            public string RemoteSupplierId { get; set; } = string.Empty;
         }
 
         internal async Task<long> UpsertProductAndMetaInTransactionAsync(
@@ -135,7 +201,10 @@ WHERE remote_product_id = @remoteProductId
             int stockQty,
             string remoteProductId,
             CatalogProductPreparedCommands preparedCommands = null,
-            CatalogProductBatchContext batchContext = null)
+            CatalogProductBatchContext batchContext = null,
+            string remoteUpdatedAt = null,
+            string remoteCategoryId = null,
+            string remoteSupplierId = null)
         {
             if (string.IsNullOrWhiteSpace(remoteProductId))
                 throw new ArgumentException("A remote product identity is required.", nameof(remoteProductId));
@@ -145,6 +214,31 @@ WHERE remote_product_id = @remoteProductId
                 throw new InvalidOperationException("Barcode riservato (DISC:/MANUAL:).");
 
             var normalizedRemoteProductId = remoteProductId.Trim();
+            var protectedProductId = await FindProtectedProductIdAsync(
+                conn,
+                tx,
+                normalizedRemoteProductId,
+                p.Barcode).ConfigureAwait(false);
+            if (protectedProductId.HasValue)
+            {
+                await UpsertRemoteShadowAsync(
+                    conn,
+                    tx,
+                    protectedProductId,
+                    normalizedRemoteProductId,
+                    p.Barcode,
+                    articleCode,
+                    p.Name,
+                    name2,
+                    remoteCategoryId,
+                    remoteSupplierId,
+                    p.UnitPrice,
+                    purchasePrice,
+                    stockQty,
+                    true,
+                    remoteUpdatedAt).ConfigureAwait(false);
+                return protectedProductId.Value;
+            }
             await CanonicalizeRemoteProductBeforeUpsertAsync(
                 conn,
                 tx,
@@ -301,7 +395,186 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
                     stockQtyToWrite).ConfigureAwait(false);
             }
 
+            await UpsertRemoteShadowAsync(
+                conn,
+                tx,
+                id,
+                normalizedRemoteProductId,
+                p.Barcode,
+                articleCode,
+                p.Name,
+                name2,
+                remoteCategoryId,
+                remoteSupplierId,
+                p.UnitPrice,
+                purchasePrice,
+                stockQty,
+                true,
+                remoteUpdatedAt).ConfigureAwait(false);
             return id;
+        }
+
+        internal static async Task<long?> FindProtectedProductIdAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            string remoteProductId,
+            string barcode)
+        {
+            return await connection.ExecuteScalarAsync<long?>(@"
+SELECT p.id
+FROM products p
+WHERE (
+    (TRIM(COALESCE(@remoteProductId, '')) <> ''
+     AND p.remote_product_id = TRIM(@remoteProductId))
+    OR
+    (TRIM(COALESCE(@barcode, '')) <> ''
+     AND p.barcode = TRIM(@barcode) COLLATE NOCASE)
+  )
+  AND EXISTS (
+    SELECT 1
+    FROM article_mutation_outbox mutation
+    WHERE mutation.local_product_id = p.id
+      AND mutation.state <> 'completed'
+  )
+ORDER BY CASE
+  WHEN p.remote_product_id = TRIM(COALESCE(@remoteProductId, '')) THEN 0
+  ELSE 1
+END,
+p.id
+LIMIT 1;",
+                new
+                {
+                    remoteProductId = remoteProductId ?? string.Empty,
+                    barcode = barcode ?? string.Empty
+                },
+                transaction).ConfigureAwait(false);
+        }
+
+        internal static async Task UpsertRemoteShadowAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            long? candidateLocalProductId,
+            string remoteProductId,
+            string barcode,
+            string itemNumber,
+            string primaryName,
+            string secondaryName,
+            string remoteCategoryId,
+            string remoteSupplierId,
+            long retailPrice,
+            int purchasePrice,
+            int stockQuantity,
+            bool active,
+            string authoritativeRevision)
+        {
+            if (connection == null) throw new ArgumentNullException(nameof(connection));
+            if (string.IsNullOrWhiteSpace(remoteProductId) ||
+                !PosArticleMutationIntentPolicy.IsProductRevision(
+                    authoritativeRevision))
+            {
+                return;
+            }
+
+            var normalizedRemoteId = remoteProductId.Trim();
+            var localProductId = await connection.ExecuteScalarAsync<long?>(@"
+SELECT id
+FROM products
+WHERE id = @candidateLocalProductId
+  AND remote_product_id = @remoteProductId
+LIMIT 1;",
+                new
+                {
+                    candidateLocalProductId,
+                    remoteProductId = normalizedRemoteId
+                },
+                transaction).ConfigureAwait(false);
+            if (localProductId.HasValue)
+            {
+                await connection.ExecuteAsync(@"
+UPDATE products
+SET remote_base_revision = @authoritativeRevision
+WHERE id = @localProductId
+  AND remote_product_id = @remoteProductId;",
+                    new
+                    {
+                        localProductId,
+                        remoteProductId = normalizedRemoteId,
+                        authoritativeRevision
+                    },
+                    transaction).ConfigureAwait(false);
+            }
+
+            await connection.ExecuteAsync(@"
+INSERT INTO article_product_remote_shadow(
+  remote_product_id,
+  local_product_id,
+  barcode,
+  item_number,
+  primary_name,
+  secondary_name,
+  category_remote_id,
+  supplier_remote_id,
+  retail_price,
+  purchase_price,
+  stock_quantity,
+  is_active,
+  authoritative_revision,
+  updated_at)
+VALUES(
+  @remoteProductId,
+  @localProductId,
+  @barcode,
+  @itemNumber,
+  @primaryName,
+  @secondaryName,
+  @remoteCategoryId,
+  @remoteSupplierId,
+  @retailPrice,
+  @purchasePrice,
+  @stockQuantity,
+  @isActive,
+  @authoritativeRevision,
+  @updatedAt)
+ON CONFLICT(remote_product_id) DO UPDATE SET
+  local_product_id = excluded.local_product_id,
+  barcode = excluded.barcode,
+  item_number = excluded.item_number,
+  primary_name = excluded.primary_name,
+  secondary_name = excluded.secondary_name,
+  category_remote_id = excluded.category_remote_id,
+  supplier_remote_id = excluded.supplier_remote_id,
+  retail_price = excluded.retail_price,
+  purchase_price = excluded.purchase_price,
+  stock_quantity = excluded.stock_quantity,
+  is_active = excluded.is_active,
+  authoritative_revision = excluded.authoritative_revision,
+  updated_at = excluded.updated_at;",
+                new
+                {
+                    remoteProductId = normalizedRemoteId,
+                    localProductId,
+                    barcode = (barcode ?? string.Empty).Trim(),
+                    itemNumber = string.IsNullOrWhiteSpace(itemNumber)
+                        ? null
+                        : itemNumber.Trim(),
+                    primaryName = (primaryName ?? string.Empty).Trim(),
+                    secondaryName = string.IsNullOrWhiteSpace(secondaryName)
+                        ? null
+                        : secondaryName.Trim(),
+                    remoteCategoryId = string.IsNullOrWhiteSpace(remoteCategoryId)
+                        ? null
+                        : remoteCategoryId.Trim(),
+                    remoteSupplierId = string.IsNullOrWhiteSpace(remoteSupplierId)
+                        ? null
+                        : remoteSupplierId.Trim(),
+                    retailPrice,
+                    purchasePrice,
+                    stockQuantity,
+                    isActive = active ? 1 : 0,
+                    authoritativeRevision,
+                    updatedAt = DateTimeOffset.UtcNow.ToString("O")
+                },
+                transaction).ConfigureAwait(false);
         }
 
         internal sealed class RemoteCatalogSetProductWrite
@@ -315,6 +588,7 @@ VALUES(@barcode, @articleCode, @name2, @purchasePrice, 0, 0, @supplierId, @suppl
             public string RemoteCategoryId { get; set; } = string.Empty;
             public string RemoteProductId { get; set; } = string.Empty;
             public string RemoteSupplierId { get; set; } = string.Empty;
+            public string RemoteUpdatedAt { get; set; } = string.Empty;
             public string SecondName { get; set; } = string.Empty;
             public int StockQuantity { get; set; }
             public int? SupplierId { get; set; }
@@ -341,6 +615,7 @@ INSERT INTO products(
   name,
   unitPrice,
   remote_product_id,
+  remote_base_revision,
   remote_deleted_at,
   is_active)
 SELECT
@@ -348,6 +623,7 @@ SELECT
   staged.name,
   staged.unit_price,
   staged.remote_product_id,
+  NULLIF(staged.remote_updated_at, ''),
   NULL,
   1
 FROM temp_catalog_page_products staged
@@ -356,6 +632,9 @@ ON CONFLICT(barcode) DO UPDATE SET
   name = excluded.name,
   unitPrice = excluded.unitPrice,
   remote_product_id = excluded.remote_product_id,
+  remote_base_revision = COALESCE(
+    excluded.remote_base_revision,
+    products.remote_base_revision),
   remote_deleted_at = NULL,
   is_active = 1;
 
@@ -408,10 +687,59 @@ FROM temp_catalog_page_products
 WHERE 1 = 1
 ON CONFLICT(remote_product_id) DO UPDATE SET
   remote_category_id = excluded.remote_category_id,
-  remote_supplier_id = excluded.remote_supplier_id;",
+  remote_supplier_id = excluded.remote_supplier_id;
+
+INSERT INTO article_product_remote_shadow(
+  remote_product_id,
+  local_product_id,
+  barcode,
+  item_number,
+  primary_name,
+  secondary_name,
+  category_remote_id,
+  supplier_remote_id,
+  retail_price,
+  purchase_price,
+  stock_quantity,
+  is_active,
+  authoritative_revision,
+  updated_at)
+SELECT staged.remote_product_id,
+       product.id,
+       staged.barcode,
+       NULLIF(staged.article_code, ''),
+       staged.name,
+       NULLIF(staged.second_name, ''),
+       NULLIF(staged.remote_category_id, ''),
+       NULLIF(staged.remote_supplier_id, ''),
+       staged.unit_price,
+       staged.purchase_price,
+       staged.stock_quantity,
+       1,
+       staged.remote_updated_at,
+       @shadowUpdatedAt
+FROM temp_catalog_page_products staged
+JOIN products product
+  ON product.remote_product_id = staged.remote_product_id
+WHERE staged.remote_updated_at <> ''
+ON CONFLICT(remote_product_id) DO UPDATE SET
+  local_product_id = excluded.local_product_id,
+  barcode = excluded.barcode,
+  item_number = excluded.item_number,
+  primary_name = excluded.primary_name,
+  secondary_name = excluded.secondary_name,
+  category_remote_id = excluded.category_remote_id,
+  supplier_remote_id = excluded.supplier_remote_id,
+  retail_price = excluded.retail_price,
+  purchase_price = excluded.purchase_price,
+  stock_quantity = excluded.stock_quantity,
+  is_active = excluded.is_active,
+  authoritative_revision = excluded.authoritative_revision,
+  updated_at = excluded.updated_at;",
                 new
                 {
-                    remoteDeletedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                    remoteDeletedAt = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    shadowUpdatedAt = DateTimeOffset.UtcNow.ToString("O")
                 },
                 tx).ConfigureAwait(false);
 

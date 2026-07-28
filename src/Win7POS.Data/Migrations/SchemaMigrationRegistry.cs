@@ -166,8 +166,30 @@ postcondition=current-structural-schema",
                     "Additive durable scratch table and indexes; downgrade requires restoring the verified backup.",
                     true,
                     DbInitializer.EnsureCatalogAuthoritativeIdStageSchema,
+                    IsPostPerf2ASchemaStructurallyValid,
+                    IsRecognizedPostPerf2ALedgerlessBaseline),
+
+                new SchemaMigration(
+                    "0010-article-mutation-outbox",
+                    "Persist manual article mutations, dependencies and durable delivery attempts.",
+                    @"0010-article-mutation-outbox/v1
+product-columns=client_product_id,remote_base_revision
+price-history-column=article_mutation_id
+tables=article_mutation_outbox,article_mutation_attempts,article_manual_stock_adjustments,article_product_remote_shadow
+states=waiting_dependency,pending,in_progress,retry_wait,failed_blocked,completed
+operation=DbInitializer.EnsureArticleMutationSchema
+column-definitions=" + DbInitializer.ArticleMutationColumnMaterial + @"
+alter-sql=" + DbInitializer.ArticleMutationAlterSql + @"
+schema-sql=" + DbInitializer.ArticleMutationSchemaSql + @"
+ledgerless-baseline=" + DbInitializer.PostArticleMutationLedgerlessKnownSchemaSql + @"
+postcondition=current-structural-schema",
+                    "d14708a900419985f3ee34ef93bc77b4627f172562b9fdee451bb8b5b4c11923",
+                    "1.0.0",
+                    "Additive tables and nullable columns; downgrade requires restoring the verified backup.",
+                    true,
+                    DbInitializer.EnsureArticleMutationSchema,
                     IsCurrentSchemaStructurallyValid,
-                    IsRecognizedPostPerf2ALedgerlessBaseline)
+                    IsRecognizedPostArticleMutationLedgerlessBaseline)
             });
 
         public static IReadOnlyList<SchemaMigration> All => Registered;
@@ -196,6 +218,26 @@ postcondition=current-structural-schema",
         }
 
         internal static bool IsCurrentSchemaStructurallyValid(LegacySchemaDetector detector)
+        {
+            if (detector == null)
+                throw new ArgumentNullException(nameof(detector));
+            return
+                HasBaseSchema(
+                    detector,
+                    DbInitializer.PostArticleMutationLedgerlessKnownSchemaSql) &&
+                HasSupportedLegacyColumns(detector) &&
+                HasDependentSchema(
+                    detector,
+                    DbInitializer.PostArticleMutationLedgerlessKnownSchemaSql) &&
+                HasCanonicalIndexes(detector) &&
+                detector.ColumnMatchesDefinition(DbInitializer.ReceiptShopSnapshotColumn) &&
+                HasOnlineSyncGenerationSchema(detector) &&
+                HasCatalogAuthoritativeIdStageSchema(detector) &&
+                HasArticleMutationSchema(detector);
+        }
+
+        private static bool IsPostPerf2ASchemaStructurallyValid(
+            LegacySchemaDetector detector)
         {
             if (detector == null)
                 throw new ArgumentNullException(nameof(detector));
@@ -331,6 +373,21 @@ LIMIT 1;");
                     DbInitializer.CatalogAuthoritativeIdStageIndexSql);
         }
 
+        private static bool HasArticleMutationSchema(LegacySchemaDetector detector)
+        {
+            return
+                detector.HasAllColumnDefinitions(DbInitializer.ArticleMutationColumns) &&
+                detector.HasCanonicalTableDefinitions(
+                    DbInitializer.ArticleMutationTableSql + "\n" +
+                    DbInitializer.ArticleMutationOwnedIndexSql,
+                    "article_mutation_outbox",
+                    "article_mutation_attempts",
+                    "article_manual_stock_adjustments",
+                    "article_product_remote_shadow") &&
+                detector.HasAllIndexDefinitions(
+                    DbInitializer.ArticleMutationIndexSql);
+        }
+
         private static bool HasSafeOutboxBindings(LegacySchemaDetector detector)
         {
             return detector.NoRows(@"
@@ -431,6 +488,18 @@ LIMIT 1;");
         }
 
         private static bool IsRecognizedPostPerf2ALedgerlessBaseline(LegacySchemaDetector detector)
+        {
+            return
+                IsPostPerf2ASchemaStructurallyValid(detector) &&
+                HasRemotePriceOwnership(detector) &&
+                HasSafeOutboxBindings(detector) &&
+                DbInitializer.IsSecuritySeedSatisfied(
+                    detector.Connection,
+                    detector.Transaction);
+        }
+
+        private static bool IsRecognizedPostArticleMutationLedgerlessBaseline(
+            LegacySchemaDetector detector)
         {
             return
                 IsCurrentSchemaStructurallyValid(detector) &&
