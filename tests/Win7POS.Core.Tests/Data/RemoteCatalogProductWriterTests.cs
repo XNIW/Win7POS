@@ -46,6 +46,7 @@ public sealed class RemoteCatalogProductWriterTests
             null,
             "  Remote   Category  ",
             12,
+            ProductWriteOrigin.RemoteCatalogApply,
             " " + remoteProductId + " ");
 
         await direct.UpsertProductAndMetaInTransactionAsync(
@@ -69,6 +70,7 @@ public sealed class RemoteCatalogProductWriterTests
             null,
             "  Remote   Category  ",
             18,
+            ProductWriteOrigin.RemoteCatalogApply,
             remoteProductId);
 
         var directSnapshot = await LoadSnapshotAsync(directDb.Factory, remoteProductId);
@@ -153,6 +155,7 @@ public sealed class RemoteCatalogProductWriterTests
             null,
             string.Empty,
             0,
+            ProductWriteOrigin.RemoteCatalogApply,
             "remote-e4-reserved-facade"));
 
         Assert.AreEqual(0L, await CountRowsAsync(directDb.Factory, "SELECT COUNT(1) FROM products;"));
@@ -190,14 +193,20 @@ public sealed class RemoteCatalogProductWriterTests
             null,
             string.Empty,
             0,
+            ProductWriteOrigin.RemoteCatalogApply,
             remoteProductId);
 
         Assert.IsTrue(await direct.ApplyRemoteProductTombstoneAsync(
             " " + remoteProductId + " ", remoteDeletedAt));
         Assert.IsTrue(await facade.ApplyRemoteProductTombstoneAsync(
-            " " + remoteProductId + " ", remoteDeletedAt));
+            " " + remoteProductId + " ",
+            remoteDeletedAt,
+            ProductWriteOrigin.RemoteCatalogApply));
         Assert.IsFalse(await direct.ApplyRemoteProductTombstoneAsync(remoteProductId, remoteDeletedAt));
-        Assert.IsFalse(await facade.ApplyRemoteProductTombstoneAsync(remoteProductId, remoteDeletedAt));
+        Assert.IsFalse(await facade.ApplyRemoteProductTombstoneAsync(
+            remoteProductId,
+            remoteDeletedAt,
+            ProductWriteOrigin.RemoteCatalogApply));
 
         var directSnapshot = await LoadSnapshotAsync(directDb.Factory, remoteProductId);
         var facadeSnapshot = await LoadSnapshotAsync(facadeDb.Factory, remoteProductId);

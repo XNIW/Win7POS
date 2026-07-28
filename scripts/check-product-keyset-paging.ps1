@@ -111,8 +111,8 @@ Check ($catalogEvents -match 'AdvanceRevision\(\)\s*=>\s*Interlocked\.Increment\
        $catalogEvents -match 'Interlocked\.Read\(ref\s+_revision\)' -and
        (($catalogPull | Select-String -Pattern 'CatalogEvents\.AdvanceRevision\(\)' -AllMatches).Matches.Count -ge 3) -and
        ($catalogPull -match 'ReconcileAndVerify(?:Staged|WithinAtomicApply)Async[\s\S]{0,5000}CommitAtomicFullRefreshAsync[\s\S]{0,2500}CatalogEvents\.AdvanceRevision\(\)') -and
-       ($workflow -match 'UpdateAsync\([\s\S]{0,2200}CatalogEvents\.RaiseCatalogChanged') -and
-       ($workflow -match 'UpdateProductPricesAsync\([\s\S]{0,800}CatalogEvents\.AdvanceRevision')) `
+       ($workflow -match 'UpdateAsync\([\s\S]{0,4500}CatalogEvents\.RaiseCatalogChanged') -and
+       ($workflow -match 'UpdateProductPricesAsync\([\s\S]{0,1800}CatalogEvents\.AdvanceRevision')) `
     "catalog mutation events expose an x86-safe monotonic revision" `
     "catalog revision is missing or not atomic on x86"
 

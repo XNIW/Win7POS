@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "pos-article-mutation-v1",
+  "appVersion": "1.0-fixture",
+  "shopId": "10000000-0000-4000-8000-000000000145",
+  "shopDeviceId": "30000000-0000-4000-8000-000000000145",
+  "staffId": "20000000-0000-4000-8000-000000000145",
+  "staffCredentialVersion": 7,
+  "posSessionId": "40000000-0000-4000-8000-000000000145",
+  "deviceToken": "fixture-device-token-not-a-secret",
+  "sessionToken": "fixture-session-token-not-a-secret",
+  "mutations": [
+    {
+      "mutationId": "task145-fixture-create",
+      "idempotencyKey": "task145-idem-fixture-create",
+      "payloadHash": "sha256:998fc3a636e6a99dea7fc6f256d1b7e52e61194592482376249dfee072015707",
+      "attemptToken": "task145-attempt-fixture-create-1",
+      "mutationKind": "product_create",
+      "clientProductId": "task145-client-fixture-001",
+      "remoteProductId": null,
+      "baseRevision": null,
+      "localSequence": 1,
+      "fieldMask": [],
+      "changes": {
+        "barcode": "TASK145-FIXTURE-001",
+        "itemNumber": "ART-145-FIXTURE",
+        "primaryName": "TASK-145 fixture product",
+        "secondaryName": null,
+        "categoryId": null,
+        "supplierId": null,
+        "purchasePrice": 900,
+        "retailPrice": 1450,
+        "stockQuantity": 10
+      },
+      "createdAt": "2026-07-28T06:45:00.000Z",
+      "occurredAt": "2026-07-28T06:45:00.000Z"
+    }
+  ]
+}

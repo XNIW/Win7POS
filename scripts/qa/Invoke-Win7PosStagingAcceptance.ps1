@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][ValidatePattern('^[a-z0-9][a-z0-9-]{0,63}$')][string]$Profile,
-    [string]$DataDirectory = 'C:\POSData\Win7POSAutomatedStagingAcceptance',
+    [string]$DataDirectory = 'C:\POSData\Win7POSArticleMutationAcceptance',
     [ValidateRange(15, 60)][int]$TimeoutMinutes = 15
 )
 
@@ -18,9 +18,12 @@ $runnerExit = @{
     LaunchFailure = 24
 }
 
+$runId = 'ASUSART_' +
+    [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') +
+    '_' +
+    [Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant()
 $evidenceDirectory = Join-Path 'C:\Dev\_codex-evidence' (
-    'win7pos-staging-acceptance-' +
-    [DateTimeOffset]::UtcNow.ToString('yyyyMMdd-HHmmss-fff'))
+    'win7pos-pos-article-sync-v1-' + $runId)
 New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
 
 function Complete-Win7PosAcceptanceRunner {
@@ -35,6 +38,7 @@ function Complete-Win7PosAcceptanceRunner {
         code = $Code
         completedAtUtc = [DateTimeOffset]::UtcNow.ToString('O')
         evidenceDirectory = $evidenceDirectory
+        runId = $runId
         harnessExitCode = if ($null -ne $ProcessResult) {
             $ProcessResult.ExitCode
         } else {
@@ -67,8 +71,23 @@ function Complete-Win7PosAcceptanceRunner {
         Set-Content -LiteralPath (
             Join-Path $evidenceDirectory 'staging-acceptance-runner-result.json'
         ) -Encoding UTF8
+    @(
+        '# WIN7POS POS ARTICLE SYNC V1 STAGING RESULT'
+        ''
+        '- status: ' + $(if ($Passed) { 'PASS' } else { 'FAIL' })
+        '- code: ' + $Code
+        '- runId: ' + $runId
+        '- exactMain: validated before build'
+        '- logicalRuns: ' + $runnerResult.logicalRuns
+        '- automaticRetry: false'
+        '- hardwareActions: 0'
+        '- evidenceDirectory: ' + $evidenceDirectory
+    ) | Set-Content -LiteralPath (
+        Join-Path $evidenceDirectory 'FINAL-RESULT.md'
+    ) -Encoding UTF8
 
     Write-Output ('WIN7POS_STAGING_ACCEPTANCE_EVIDENCE=' + $evidenceDirectory)
+    Write-Output ('WIN7POS_STAGING_ACCEPTANCE_RUN_ID=' + $runId)
     if ($Passed) {
         Write-Output ('WIN7POS_AUTOMATED_STAGING_ACCEPTANCE=PASS evidence=' +
             $evidenceDirectory)
@@ -107,7 +126,7 @@ try {
 
     $fullDataDirectory = [System.IO.Path]::GetFullPath($DataDirectory)
     $expectedDataDirectory = [System.IO.Path]::GetFullPath(
-        'C:\POSData\Win7POSAutomatedStagingAcceptance')
+        'C:\POSData\Win7POSArticleMutationAcceptance')
     if (-not [string]::Equals(
         $fullDataDirectory,
         $expectedDataDirectory,
@@ -115,6 +134,92 @@ try {
         Complete-Win7PosAcceptanceRunner `
             -ExitCode $runnerExit.LaunchFailure `
             -Code 'acceptance_data_directory_invalid' `
+            -Passed $false
+    }
+
+    $repoRoot = [System.IO.Path]::GetFullPath(
+        (Join-Path $PSScriptRoot '..\..'))
+    $headSha = (& git -C $repoRoot rev-parse HEAD).Trim()
+    $originMainSha = (& git -C $repoRoot rev-parse origin/main).Trim()
+    $trackedChanges = @(& git -C $repoRoot status --porcelain --untracked-files=no)
+    if ($LASTEXITCODE -ne 0 -or
+        [string]::IsNullOrWhiteSpace($headSha) -or
+        -not [string]::Equals(
+            $headSha,
+            $originMainSha,
+            [System.StringComparison]::OrdinalIgnoreCase) -or
+        $trackedChanges.Count -ne 0) {
+        Complete-Win7PosAcceptanceRunner `
+            -ExitCode $runnerExit.LaunchFailure `
+            -Code 'acceptance_exact_main_required' `
+            -Passed $false
+    }
+
+    @(
+        'runId=' + $runId
+        'profile=' + $Profile
+        'dataDirectory=' + $fullDataDirectory
+        'head=' + $headSha
+        'originMain=' + $originMainSha
+        'exactMain=True'
+        'trackedWorktreeClean=True'
+        'logicalRuns=1'
+        'automaticRetry=False'
+        'hardwareActions=0'
+    ) | Set-Content -LiteralPath (
+        Join-Path $evidenceDirectory 'preflight.txt'
+    ) -Encoding UTF8
+
+    $fixtureDirectory = Join-Path $repoRoot (
+        'tests\fixtures\POS-ARTICLE-MUTATION-V1')
+    @(
+        'request=' + (
+            Get-FileHash -Algorithm SHA256 -LiteralPath (
+                Join-Path $fixtureDirectory 'article-mutation-v1.request.json'
+            )
+        ).Hash.ToLowerInvariant()
+        'response=' + (
+            Get-FileHash -Algorithm SHA256 -LiteralPath (
+                Join-Path $fixtureDirectory 'article-mutation-v1.response.json'
+            )
+        ).Hash.ToLowerInvariant()
+        'firstLogin=' + (
+            Get-FileHash -Algorithm SHA256 -LiteralPath (
+                Join-Path $fixtureDirectory (
+                    'first-login-offline-authorization-v1.response.json')
+            )
+        ).Hash.ToLowerInvariant()
+    ) | Set-Content -LiteralPath (
+        Join-Path $evidenceDirectory 'contract-digests.txt'
+    ) -Encoding UTF8
+
+    $dotnetPath = 'C:\Dev\dotnet10\dotnet.exe'
+    if (-not (Test-Path -LiteralPath $dotnetPath -PathType Leaf)) {
+        Complete-Win7PosAcceptanceRunner `
+            -ExitCode $runnerExit.LaunchFailure `
+            -Code 'acceptance_canonical_sdk_missing' `
+            -Passed $false
+    }
+    $buildEvidence = Join-Path $evidenceDirectory 'exact-main-build.txt'
+    & $dotnetPath build (
+        Join-Path $repoRoot 'Win7POS.slnx'
+    ) -c Release --no-restore *> $buildEvidence
+    if ($LASTEXITCODE -ne 0) {
+        Complete-Win7PosAcceptanceRunner `
+            -ExitCode $runnerExit.LaunchFailure `
+            -Code 'acceptance_exact_main_solution_build_failed' `
+            -Passed $false
+    }
+    & $dotnetPath build (
+        Join-Path $repoRoot (
+            'tests\Win7POS.Wpf.UiSmokeHarness\' +
+            'Win7POS.Wpf.UiSmokeHarness.csproj')
+    ) -c Release -p:Platform=x86 -p:PlatformTarget=x86 `
+        --no-restore *>> $buildEvidence
+    if ($LASTEXITCODE -ne 0) {
+        Complete-Win7PosAcceptanceRunner `
+            -ExitCode $runnerExit.LaunchFailure `
+            -Code 'acceptance_exact_main_harness_build_failed' `
             -Passed $false
     }
 
@@ -145,6 +250,7 @@ try {
             '--data-dir', $fullDataDirectory,
             '--staging-acceptance',
             '--profile', $Profile,
+            '--run-id', $runId,
             '--acceptance-output', $evidenceDirectory
         ) `
         -TimeoutMilliseconds ($TimeoutMinutes * 60 * 1000) `
@@ -177,9 +283,55 @@ try {
     try {
         $acceptanceResult = Get-Content -Raw -LiteralPath $resultPath |
             ConvertFrom-Json -ErrorAction Stop
+        $requiredEvidence = @(
+            'preflight.txt',
+            'exact-main-build.txt',
+            'contract-digests.txt',
+            'first-login-result.json',
+            'catalog-exactness.json',
+            'article-mutation-results.json',
+            'local-outbox-state.json',
+            'price-history-counts.txt',
+            'stock-movement-counts.txt',
+            'no-echo-result.txt',
+            'redaction-scan.txt',
+            'article-mutation-product-editor-1024x768.png',
+            'article-mutation-sync-center-conflict-1024x768.png',
+            'staging-acceptance-products-readonly.png',
+            'CLEANUP-MANIFEST.json',
+            'NEXT-CODEX-MAC-FINAL-CLEANUP.md'
+        )
+        $evidenceComplete = $true
+        foreach ($requiredName in $requiredEvidence) {
+            if (-not (Test-Path -LiteralPath (
+                Join-Path $evidenceDirectory $requiredName
+            ) -PathType Leaf)) {
+                $evidenceComplete = $false
+                break
+            }
+        }
         $completePass = $processResult.ExitCode -eq 0 -and
             $acceptanceResult.passed -eq $true -and
-            [int]$acceptanceResult.logicalRuns -eq 1
+            [int]$acceptanceResult.logicalRuns -eq 1 -and
+            $acceptanceResult.offlineAuthorizationValid -eq $true -and
+            $acceptanceResult.exactnessVerified -eq $true -and
+            $acceptanceResult.saleSafe -eq $true -and
+            $acceptanceResult.posUnlocked -eq $true -and
+            $acceptanceResult.articleMutationsPassed -eq $true -and
+            [int]$acceptanceResult.articleWaitingDependency -eq 0 -and
+            [int]$acceptanceResult.articlePending -eq 0 -and
+            [int]$acceptanceResult.articleInProgress -eq 0 -and
+            [int]$acceptanceResult.articleRetryWait -eq 0 -and
+            [int]$acceptanceResult.articleBlockedConflicts -eq 1 -and
+            [int]$acceptanceResult.hardwareActions -eq 0 -and
+            $acceptanceResult.zeroEcho -eq $true -and
+            $acceptanceResult.logRedactionPassed -eq $true -and
+            $acceptanceResult.evidenceRedactionPassed -eq $true -and
+            $evidenceComplete -and
+            [string]::Equals(
+                [string]$acceptanceResult.runId,
+                $runId,
+                [System.StringComparison]::Ordinal)
     }
     catch {
         Complete-Win7PosAcceptanceRunner `

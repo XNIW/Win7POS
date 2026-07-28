@@ -61,6 +61,32 @@ public sealed class PosShopTransitionGuardTests
     }
 
     [TestMethod]
+    public async Task Evaluate_BlocksDifferentShopWhenArticleOutboxIsUnresolved()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        await new ProductRepository(db.Factory).CreateLocalArticleAsync(
+            new LocalArticleCreateRequest
+            {
+                Barcode = "SHOP-ARTICLE-001",
+                PrimaryName = "Pending shop article",
+                RetailPrice = 100,
+                PurchasePrice = 50,
+                InitialStock = 1
+            },
+            ProductWriteOrigin.LocalUserSave);
+
+        var decision = await new PosShopTransitionGuard(db.Factory)
+            .EvaluateAsync("shop-a", "SHOP-A", "shop-b", "SHOP-B");
+
+        Assert.IsFalse(decision.Allowed);
+        Assert.IsTrue(decision.HasUnresolvedOutbox);
+        Assert.AreEqual(
+            "shop_switch_blocked_unresolved_outbox",
+            decision.Code);
+    }
+
+    [TestMethod]
     public async Task ApplyAuthorizedTransition_ResetsShopCacheAndPreservesHistoryAndOfficialSnapshot()
     {
         using var db = TestDb.Create();

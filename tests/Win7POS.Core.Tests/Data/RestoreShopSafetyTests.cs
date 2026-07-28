@@ -63,6 +63,43 @@ INSERT INTO app_settings(key, value) VALUES('pos.catalog.bound_shop_code', 'SHOP
     }
 
     [TestMethod]
+    public async Task CandidateAndLiveValidation_RejectUnresolvedArticleMutations()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        var binding = await new CatalogShopStateRepository(db.Factory)
+            .EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        await new ProductRepository(db.Factory).CreateLocalArticleAsync(
+            new LocalArticleCreateRequest
+            {
+                Barcode = "RESTORE-ARTICLE-001",
+                PrimaryName = "Restore article",
+                RetailPrice = 100,
+                PurchasePrice = 50,
+                InitialStock = 1
+            },
+            ProductWriteOrigin.LocalUserSave);
+
+        var safety = new RestoreShopSafetyRepository(db.Factory);
+        var candidate = await safety.ValidateCandidateAsync(
+            "shop-a",
+            "SHOP-A");
+        var live = await safety.ValidateLivePreSwapAsync(
+            "shop-a",
+            "SHOP-A",
+            binding.Epoch);
+
+        Assert.IsFalse(candidate.IsValid);
+        Assert.AreEqual(
+            "restore_candidate_outbox_unresolved",
+            candidate.Code);
+        Assert.IsFalse(live.IsValid);
+        Assert.AreEqual(
+            "restore_live_article_outbox_unresolved",
+            live.Code);
+    }
+
+    [TestMethod]
     public async Task LivePreSwapValidation_RejectsOutboxCommittedAfterPreliminaryCheck()
     {
         using var db = TestDb.Create();
@@ -178,6 +215,41 @@ VALUES(last_insert_rowid(), 'late-restore-sale', 'late-restore-sale:pos-sales-le
         var complete = await new RestoreShopSafetyRepository(db.Factory).CompleteReviewAsync();
         Assert.IsTrue(complete.IsValid);
         Assert.IsFalse(await settings.GetBoolAsync(RestoreShopSafetyRepository.RestoreNeedsReviewKey));
+    }
+
+    [TestMethod]
+    public async Task CompleteReview_RejectsBlockedArticleMutation()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        await new CatalogShopStateRepository(db.Factory)
+            .EnsureAndLoadCursorAsync("shop-a", "SHOP-A");
+        var settings = new SettingsRepository(db.Factory);
+        await settings.SetBoolAsync(
+            RestoreShopSafetyRepository.RestoreNeedsReviewKey,
+            true);
+        await settings.SetStringAsync(
+            RestoreShopSafetyRepository.RestoreCompletedAtKey,
+            "2026-07-28T01:00:00Z");
+        await new ProductRepository(db.Factory).CreateLocalArticleAsync(
+            new LocalArticleCreateRequest
+            {
+                Barcode = "RESTORE-BLOCKED-001",
+                PrimaryName = "Blocked restore article",
+                RetailPrice = 100,
+                PurchasePrice = 50,
+                InitialStock = 1,
+                CategoryName = "Local category without remote identity"
+            },
+            ProductWriteOrigin.LocalUserSave);
+
+        var result = await new RestoreShopSafetyRepository(db.Factory)
+            .CompleteReviewAsync();
+
+        Assert.IsFalse(result.IsValid);
+        Assert.AreEqual("restore_review_outbox_unresolved", result.Code);
+        Assert.IsTrue(await settings.GetBoolAsync(
+            RestoreShopSafetyRepository.RestoreNeedsReviewKey));
     }
 
     [TestMethod]

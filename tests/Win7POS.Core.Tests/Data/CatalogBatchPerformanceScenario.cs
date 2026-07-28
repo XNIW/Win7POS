@@ -487,10 +487,12 @@ public static class CatalogBatchPerformanceScenario
                 product.CategoryId,
                 product.CategoryName,
                 product.StockQuantity,
+                ProductWriteOrigin.RemoteCatalogApply,
                 product.RemoteProductId);
         }
 
-        await productRepository.ApplyPendingRemotePricesAsync();
+        await productRepository.ApplyPendingRemotePricesAsync(
+            ProductWriteOrigin.RemoteCatalogApply);
         foreach (var price in prices)
         {
             await productRepository.UpsertOrQueueRemotePriceHistoryAsync(
@@ -499,9 +501,11 @@ public static class CatalogBatchPerformanceScenario
                 price.Type,
                 price.Price,
                 price.EffectiveAt,
-                price.Source);
+                price.Source,
+                ProductWriteOrigin.RemoteCatalogApply);
         }
-        await productRepository.ApplyPendingRemotePricesAsync();
+        await productRepository.ApplyPendingRemotePricesAsync(
+            ProductWriteOrigin.RemoteCatalogApply);
     }
 
     private static IReadOnlyList<RemoteCatalogCategoryWrite> BuildCategories()
