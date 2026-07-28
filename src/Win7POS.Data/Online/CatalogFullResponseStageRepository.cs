@@ -15,7 +15,7 @@ namespace Win7POS.Data.Online
     public sealed class CatalogFullResponseStageRepository
     {
         public const int MaximumPageBytes = 8 * 1024 * 1024;
-        public const long MaximumRunBytes = 512L * 1024L * 1024L;
+        public const long MinimumFreeDiskReserveBytes = 256L * 1024L * 1024L;
         private const string Prefix = "pos.catalog.full_stage.";
 
         private readonly SqliteConnectionFactory _factory;
@@ -48,6 +48,63 @@ VALUES(@key, @value);",
             }
         }
 
+        public bool TryCreateResourceBudget(
+            out CatalogFullResponseStageResourceBudget budget,
+            out long availableBytes,
+            out long requiredBytes)
+        {
+            requiredBytes = checked(
+                MinimumFreeDiskReserveBytes + (2L * MaximumPageBytes));
+            try
+            {
+                if (!TryReadAvailableBytes(out availableBytes))
+                {
+                    budget = null;
+                    return false;
+                }
+
+                if (!TryCalculateMaximumStagedBytes(
+                    availableBytes,
+                    out var maximumStagedBytes))
+                {
+                    budget = null;
+                    return false;
+                }
+
+                budget = new CatalogFullResponseStageResourceBudget(
+                    availableBytes,
+                    MinimumFreeDiskReserveBytes,
+                    maximumStagedBytes);
+                return true;
+            }
+            catch
+            {
+                budget = null;
+                availableBytes = 0;
+                return false;
+            }
+        }
+
+        public static bool TryCalculateMaximumStagedBytes(
+            long availableBytes,
+            out long maximumStagedBytes)
+        {
+            var required = checked(
+                MinimumFreeDiskReserveBytes + (2L * MaximumPageBytes));
+            if (availableBytes < required)
+            {
+                maximumStagedBytes = 0;
+                return false;
+            }
+
+            // The scratch blob and SQLite rollback journal can coexist. Deriving
+            // half of post-reserve free space at run start avoids a historical
+            // catalog-size constant while preserving the disk reserve.
+            maximumStagedBytes =
+                (availableBytes - MinimumFreeDiskReserveBytes) / 2L;
+            return maximumStagedBytes >= MaximumPageBytes;
+        }
+
         public async Task ClearAllAsync()
         {
             using (var conn = _factory.Open())
@@ -60,14 +117,24 @@ VALUES(@key, @value);",
 
         public async Task<long> AppendAsync(
             string generationId,
-            int pageNumber,
+            long pageNumber,
+            string cursorFingerprint,
             PosCatalogPullResponse response,
-            long currentRunBytes)
+            long currentRunBytes,
+            CatalogFullResponseStageResourceBudget budget)
         {
             ValidateGeneration(generationId);
             if (pageNumber <= 0) throw new ArgumentOutOfRangeException(nameof(pageNumber));
+            if (string.IsNullOrWhiteSpace(cursorFingerprint) ||
+                cursorFingerprint.Length != 64)
+            {
+                throw new ArgumentException(
+                    "A canonical cursor fingerprint is required.",
+                    nameof(cursorFingerprint));
+            }
             if (response == null) throw new ArgumentNullException(nameof(response));
             if (currentRunBytes < 0) throw new ArgumentOutOfRangeException(nameof(currentRunBytes));
+            if (budget == null) throw new ArgumentNullException(nameof(budget));
 
             var payload = Serialize(response);
             if (payload.LongLength > MaximumPageBytes)
@@ -75,15 +142,52 @@ VALUES(@key, @value);",
                 throw new InvalidOperationException("catalog_full_stage_page_too_large");
             }
 
-            var nextRunBytes = checked(currentRunBytes + payload.LongLength);
-            if (nextRunBytes > MaximumRunBytes)
+            long nextRunBytes;
+            try
             {
-                throw new InvalidOperationException("catalog_full_stage_run_too_large");
+                nextRunBytes = checked(currentRunBytes + payload.LongLength);
+            }
+            catch (OverflowException)
+            {
+                throw new InvalidOperationException(
+                    CatalogAuthoritativeDrainBudgetPolicy.NumericOverflowCode);
+            }
+
+            if (nextRunBytes > budget.MaximumStagedBytes)
+            {
+                throw new InvalidOperationException(
+                    CatalogAuthoritativeDrainBudgetPolicy.StageByteBudgetExceededCode);
+            }
+
+            if (!TryReadAvailableBytes(out var availableBytes) ||
+                availableBytes <
+                checked(budget.MinimumFreeDiskReserveBytes + (2L * payload.LongLength)))
+            {
+                throw new InvalidOperationException(
+                    CatalogAuthoritativeDrainBudgetPolicy.InsufficientDiskCode);
             }
 
             using (var conn = _factory.Open())
+            using (var tx = conn.BeginTransaction())
             {
-                var rows = await conn.ExecuteAsync(@"
+                var cursorRows = await conn.ExecuteAsync(@"
+INSERT INTO app_settings(key, value)
+VALUES(@key, @value)
+ON CONFLICT(key) DO NOTHING;",
+                    new
+                    {
+                        key = CursorKey(generationId, cursorFingerprint),
+                        value = pageNumber.ToString("D20")
+                    },
+                    tx).ConfigureAwait(false);
+                if (cursorRows != 1)
+                {
+                    tx.Rollback();
+                    throw new InvalidOperationException(
+                        CatalogAuthoritativeDrainBudgetPolicy.CursorRepeatedCode);
+                }
+
+                var pageRows = await conn.ExecuteAsync(@"
 INSERT INTO app_settings(key, value)
 VALUES(@key, @payload)
 ON CONFLICT(key) DO NOTHING;",
@@ -91,11 +195,15 @@ ON CONFLICT(key) DO NOTHING;",
                     {
                         key = PageKey(generationId, pageNumber),
                         payload
-                    }).ConfigureAwait(false);
-                if (rows != 1)
+                    },
+                    tx).ConfigureAwait(false);
+                if (pageRows != 1)
                 {
+                    tx.Rollback();
                     throw new InvalidOperationException("catalog_full_stage_page_duplicate");
                 }
+
+                tx.Commit();
             }
 
             return nextRunBytes;
@@ -103,7 +211,7 @@ ON CONFLICT(key) DO NOTHING;",
 
         public async Task<PosCatalogPullResponse> LoadPageAsync(
             string generationId,
-            int pageNumber)
+            long pageNumber)
         {
             ValidateGeneration(generationId);
             if (pageNumber <= 0) throw new ArgumentOutOfRangeException(nameof(pageNumber));
@@ -162,9 +270,59 @@ ON CONFLICT(key) DO NOTHING;",
             return Prefix + generationId + ".run";
         }
 
-        private static string PageKey(string generationId, int pageNumber)
+        internal static async Task<PosCatalogPullResponse> LoadPageAsync(
+            Microsoft.Data.Sqlite.SqliteConnection conn,
+            Microsoft.Data.Sqlite.SqliteTransaction tx,
+            string generationId,
+            long pageNumber)
         {
-            return Prefix + generationId + ".page." + pageNumber.ToString("D6");
+            if (conn == null) throw new ArgumentNullException(nameof(conn));
+            ValidateGeneration(generationId);
+            if (pageNumber <= 0) throw new ArgumentOutOfRangeException(nameof(pageNumber));
+            var payload = await conn.ExecuteScalarAsync<byte[]>(
+                "SELECT value FROM app_settings WHERE key = @key;",
+                new { key = PageKey(generationId, pageNumber) },
+                tx).ConfigureAwait(false);
+            if (payload == null || payload.Length == 0 || payload.Length > MaximumPageBytes)
+            {
+                throw new InvalidOperationException("catalog_full_stage_page_missing");
+            }
+
+            return Deserialize(payload);
+        }
+
+        private bool TryReadAvailableBytes(out long availableBytes)
+        {
+            try
+            {
+                var fullPath = Path.GetFullPath(_factory.DbPath);
+                var root = Path.GetPathRoot(fullPath);
+                if (string.IsNullOrWhiteSpace(root))
+                {
+                    availableBytes = 0;
+                    return false;
+                }
+
+                availableBytes = new DriveInfo(root).AvailableFreeSpace;
+                return availableBytes >= 0;
+            }
+            catch
+            {
+                availableBytes = 0;
+                return false;
+            }
+        }
+
+        private static string CursorKey(
+            string generationId,
+            string cursorFingerprint)
+        {
+            return Prefix + generationId + ".cursor." + cursorFingerprint;
+        }
+
+        private static string PageKey(string generationId, long pageNumber)
+        {
+            return Prefix + generationId + ".page." + pageNumber.ToString("D20");
         }
 
         private static void ValidateGeneration(string generationId)
@@ -176,5 +334,22 @@ ON CONFLICT(key) DO NOTHING;",
                 throw new ArgumentException("A canonical full-stage generation is required.", nameof(generationId));
             }
         }
+    }
+
+    public sealed class CatalogFullResponseStageResourceBudget
+    {
+        internal CatalogFullResponseStageResourceBudget(
+            long availableBytesAtStart,
+            long minimumFreeDiskReserveBytes,
+            long maximumStagedBytes)
+        {
+            AvailableBytesAtStart = availableBytesAtStart;
+            MinimumFreeDiskReserveBytes = minimumFreeDiskReserveBytes;
+            MaximumStagedBytes = maximumStagedBytes;
+        }
+
+        public long AvailableBytesAtStart { get; }
+        public long MaximumStagedBytes { get; }
+        public long MinimumFreeDiskReserveBytes { get; }
     }
 }

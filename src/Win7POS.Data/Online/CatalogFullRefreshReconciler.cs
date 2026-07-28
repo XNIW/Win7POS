@@ -1282,7 +1282,7 @@ SELECT
         public string CatalogVersion { get; set; } = string.Empty;
         public long DurationMilliseconds { get; set; }
         public bool HasMore { get; set; }
-        public int Pages { get; set; }
+        public long Pages { get; set; }
         public long DuplicatePriceRows { get; set; }
         public long InvalidPriceRows { get; set; }
         public long? PriceRowsAccepted { get; set; }

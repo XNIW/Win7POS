@@ -18,8 +18,8 @@ namespace Win7POS.Core.Online
             bool retryable,
             bool authenticationDenied,
             int attemptNumber,
-            int? pageNumber,
-            int pagesProcessed,
+            long? pageNumber,
+            long pagesProcessed,
             int rowsReceived,
             int rowsApplied,
             bool hasMore,
@@ -73,8 +73,8 @@ namespace Win7POS.Core.Online
         public string LocalIncidentId { get; }
         public DateTimeOffset OccurredAtUtc { get; }
         public string Operation { get; }
-        public int? PageNumber { get; }
-        public int PagesProcessed { get; }
+        public long? PageNumber { get; }
+        public long PagesProcessed { get; }
         public int RowsApplied { get; }
         public int RowsReceived { get; }
         public bool Retryable { get; }

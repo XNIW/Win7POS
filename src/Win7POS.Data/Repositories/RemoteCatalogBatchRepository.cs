@@ -54,7 +54,8 @@ namespace Win7POS.Data.Repositories
         public async Task<CatalogAuthoritativeStageEvidence> StageAuthoritativePageAsync(
             RemoteCatalogBatch batch,
             CancellationToken cancellationToken = default,
-            RemoteCatalogCommitFence commitFence = null)
+            RemoteCatalogCommitFence commitFence = null,
+            bool loadCumulativeEvidence = true)
         {
             if (batch == null) throw new ArgumentNullException(nameof(batch));
             ValidateBatchContent(batch);
@@ -75,11 +76,13 @@ namespace Win7POS.Data.Repositories
                         tx,
                         batch,
                         commitFence).ConfigureAwait(false);
-                    var evidence = await LoadAuthoritativeStageEvidenceAsync(
-                        conn,
-                        tx,
-                        batch.AuthoritativeStagePage,
-                        commitFence).ConfigureAwait(false);
+                    var evidence = loadCumulativeEvidence
+                        ? await LoadAuthoritativeStageEvidenceAsync(
+                            conn,
+                            tx,
+                            batch.AuthoritativeStagePage,
+                            commitFence).ConfigureAwait(false)
+                        : null;
                     tx.Commit();
                     return evidence;
                 }
@@ -92,63 +95,6 @@ namespace Win7POS.Data.Repositories
             finally
             {
                 CatalogMutationGate.Instance.Release();
-            }
-        }
-
-        public async Task<IReadOnlyList<CatalogAuthoritativeStageEvidence>>
-            StageAuthoritativePagesAtomicallyAsync(
-                int pageCount,
-                Func<int, CancellationToken, Task<RemoteCatalogBatch>> loadPageAsync,
-                CancellationToken cancellationToken = default,
-                RemoteCatalogCommitFence commitFence = null)
-        {
-            if (pageCount <= 0) throw new ArgumentOutOfRangeException(nameof(pageCount));
-            if (loadPageAsync == null) throw new ArgumentNullException(nameof(loadPageAsync));
-
-            using var run = await BeginAuthoritativeStageRunAsync(cancellationToken)
-                .ConfigureAwait(false);
-            var evidence = new List<CatalogAuthoritativeStageEvidence>(pageCount);
-            for (var pageNumber = 1; pageNumber <= pageCount; pageNumber += 1)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var batch = await loadPageAsync(pageNumber, cancellationToken)
-                    .ConfigureAwait(false);
-                if (batch == null)
-                {
-                    throw new InvalidDataException(
-                        "Authoritative catalog stage page loader returned no batch.");
-                }
-
-                if (batch.AuthoritativeStagePage?.PageNumber != pageNumber)
-                {
-                    throw new InvalidDataException(
-                        "Authoritative catalog stage page loader returned an unexpected page.");
-                }
-
-                evidence.Add(await run.StagePageAsync(
-                    batch,
-                    commitFence,
-                    cancellationToken).ConfigureAwait(false));
-            }
-
-            await run.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return evidence;
-        }
-
-        public async Task<RemoteCatalogAuthoritativeStageRunContext>
-            BeginAuthoritativeStageRunAsync(
-                CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await CatalogMutationGate.Instance.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                return new RemoteCatalogAuthoritativeStageRunContext(_factory);
-            }
-            catch
-            {
-                CatalogMutationGate.Instance.Release();
-                throw;
             }
         }
 
@@ -800,7 +746,7 @@ AND NOT EXISTS (
                 throw new InvalidDataException("Authoritative catalog full run identity is invalid.");
             }
 
-            if (stage.PageNumber <= 0 || stage.PageNumber > 1000000)
+            if (stage.PageNumber <= 0)
                 throw new InvalidDataException("Authoritative catalog page number is invalid.");
             if (commitFence.ExpectedEpoch < 0 ||
                 string.IsNullOrWhiteSpace(commitFence.ShopId) ||
@@ -1415,7 +1361,7 @@ FROM scoped;",
             public string FullRunId { get; private set; } = string.Empty;
             public string GenerationFingerprint { get; private set; } = string.Empty;
             public string GenerationId { get; private set; } = string.Empty;
-            public int PageNumber { get; private set; }
+            public long PageNumber { get; private set; }
             public long ScopeId { get; set; }
             public string ShopCode { get; private set; } = string.Empty;
             public string ShopId { get; private set; } = string.Empty;
@@ -1907,89 +1853,6 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
             }
         }
 
-        public sealed class RemoteCatalogAuthoritativeStageRunContext : IDisposable
-        {
-            private readonly SqliteConnection _connection;
-            private readonly SqliteTransaction _transaction;
-            private bool _committed;
-            private bool _disposed;
-
-            internal RemoteCatalogAuthoritativeStageRunContext(
-                SqliteConnectionFactory factory)
-            {
-                if (factory == null) throw new ArgumentNullException(nameof(factory));
-                _connection = factory.Open();
-                try
-                {
-                    _transaction = _connection.BeginTransaction(deferred: false);
-                }
-                catch
-                {
-                    _connection.Dispose();
-                    throw;
-                }
-            }
-
-            public async Task<CatalogAuthoritativeStageEvidence> StagePageAsync(
-                RemoteCatalogBatch batch,
-                RemoteCatalogCommitFence commitFence,
-                CancellationToken cancellationToken = default)
-            {
-                EnsureActive();
-                cancellationToken.ThrowIfCancellationRequested();
-                ValidateBatchContent(batch);
-                ValidateAuthoritativeStage(batch, commitFence, required: true);
-                await RequireCommitFenceAsync(
-                    _connection,
-                    _transaction,
-                    commitFence).ConfigureAwait(false);
-                await ReplaceAuthoritativeStagePageAsync(
-                    _connection,
-                    _transaction,
-                    batch,
-                    commitFence).ConfigureAwait(false);
-                return await LoadAuthoritativeStageEvidenceAsync(
-                    _connection,
-                    _transaction,
-                    batch.AuthoritativeStagePage,
-                    commitFence).ConfigureAwait(false);
-            }
-
-            public Task CommitAsync(CancellationToken cancellationToken = default)
-            {
-                EnsureActive();
-                cancellationToken.ThrowIfCancellationRequested();
-                _transaction.Commit();
-                _committed = true;
-                return Task.CompletedTask;
-            }
-
-            public void Dispose()
-            {
-                if (_disposed)
-                {
-                    return;
-                }
-
-                _disposed = true;
-                if (!_committed)
-                {
-                    try { _transaction.Rollback(); } catch { }
-                }
-                _transaction.Dispose();
-                _connection.Dispose();
-                CatalogMutationGate.Instance.Release();
-            }
-
-            private void EnsureActive()
-            {
-                if (_disposed)
-                    throw new ObjectDisposedException(nameof(RemoteCatalogAuthoritativeStageRunContext));
-                if (_committed)
-                    throw new InvalidOperationException(
-                        "The authoritative catalog stage run is already committed.");
-            }
-        }
     }
 
     /// <summary>
@@ -2011,7 +1874,7 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
         private RemotePriceApplyDiagnostics _atomicRemotePriceApply =
             new RemotePriceApplyDiagnostics();
         private long _atomicRelinkStageCommandCount;
-        private int _atomicPageCount;
+        private long _atomicPageCount;
         private bool _atomicMutationGateHeld;
         private Dictionary<string, int> _categoryIdsByRemoteId =
             new Dictionary<string, int>(StringComparer.Ordinal);
@@ -2181,6 +2044,24 @@ CREATE INDEX IF NOT EXISTS temp_catalog_page_remote_prices_product_id_idx
             {
                 _singleFlight.Release();
             }
+        }
+
+        public Task<PosCatalogPullResponse> LoadFullStagePageAsync(
+            string generationId,
+            long pageNumber)
+        {
+            EnsureNotDisposed();
+            if (_atomicTransaction == null)
+            {
+                throw new InvalidOperationException(
+                    "An atomic full refresh transaction is required.");
+            }
+
+            return CatalogFullResponseStageRepository.LoadPageAsync(
+                Connection,
+                _atomicTransaction,
+                generationId,
+                pageNumber);
         }
 
         public async Task CommitAtomicFullRefreshAsync(
@@ -2803,8 +2684,8 @@ FROM staged;
     {
         public long CommittedTransactionCount { get; internal set; }
         public long ContextSqlCommandCount { get; internal set; }
-        public int LegacyScopeSqlQueryEstimate => PagesApplied * 6;
-        public int PagesApplied { get; internal set; }
+        public long LegacyScopeSqlQueryEstimate => checked(PagesApplied * 6L);
+        public long PagesApplied { get; internal set; }
         public int PendingStockQueryCount { get; internal set; }
         public long PendingStockRowsLoaded { get; internal set; }
         public int PreparedCommandCount { get; internal set; }
@@ -2934,7 +2815,7 @@ FROM staged;
     {
         public string FullRunId { get; set; } = string.Empty;
         public bool HasMore { get; set; }
-        public int PageNumber { get; set; }
+        public long PageNumber { get; set; }
     }
 
     public sealed class CatalogAuthoritativeStageEvidence

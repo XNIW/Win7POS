@@ -211,22 +211,23 @@ public static class CatalogBatchPerformanceScenario
                     var repository = new RemoteCatalogBatchRepository(factory);
                     var preflightStartedAt = stopwatch.Elapsed.TotalMilliseconds;
                     var fullPageCount = (rows + pageSize - 1) / pageSize;
-                    var stagedEvidence = await repository
-                        .StageAuthoritativePagesAtomicallyAsync(
-                            fullPageCount,
-                            (pageNumber, _) =>
-                            {
-                                var offset = (pageNumber - 1) * pageSize;
-                                var count = Math.Min(pageSize, rows - offset);
-                                return Task.FromResult(new RemoteCatalogBatch
+                    CatalogAuthoritativeStageEvidence? stagedEvidence = null;
+                    for (var pageNumber = 1; pageNumber <= fullPageCount; pageNumber++)
+                    {
+                        var offset = (pageNumber - 1) * pageSize;
+                        var count = Math.Min(pageSize, rows - offset);
+                        stagedEvidence = await repository
+                            .StageAuthoritativePageAsync(
+                                new RemoteCatalogBatch
                                 {
                                     AuthoritativeFullRefresh = true,
-                                    AuthoritativeStagePage = new CatalogAuthoritativeStagePage
-                                    {
-                                        FullRunId = fullRunId,
-                                        HasMore = offset + count < rows,
-                                        PageNumber = pageNumber
-                                    },
+                                    AuthoritativeStagePage =
+                                        new CatalogAuthoritativeStagePage
+                                        {
+                                            FullRunId = fullRunId,
+                                            HasMore = offset + count < rows,
+                                            PageNumber = pageNumber
+                                        },
                                     Categories = offset == 0
                                         ? categoryWrites
                                         : Array.Empty<RemoteCatalogCategoryWrite>(),
@@ -235,13 +236,13 @@ public static class CatalogBatchPerformanceScenario
                                         : Array.Empty<RemoteCatalogSupplierWrite>(),
                                     Products = BuildProductsRange(offset, count),
                                     Prices = BuildPricesRange(offset, count)
-                                });
-                            },
-                            commitFence: CreateBenchmarkFence(fullBinding!))
-                        .ConfigureAwait(false);
-                    var stagedConflict = stagedEvidence
-                        .Select(item => item.ConflictCode)
-                        .FirstOrDefault(code => code.Length > 0);
+                                },
+                                commitFence: CreateBenchmarkFence(fullBinding!),
+                                loadCumulativeEvidence:
+                                    pageNumber == fullPageCount)
+                            .ConfigureAwait(false);
+                    }
+                    var stagedConflict = stagedEvidence?.ConflictCode ?? string.Empty;
                     if (!string.IsNullOrEmpty(stagedConflict))
                     {
                         throw new InvalidOperationException(
@@ -864,7 +865,7 @@ public sealed class CatalogBatchPerformanceSample
     public int Gen2Collections { get; set; }
     public bool Is64BitProcess { get; set; }
     public int Iteration { get; set; }
-    public int LegacyScopeSqlQueryEstimate { get; set; }
+    public long LegacyScopeSqlQueryEstimate { get; set; }
     public int LogicalRequestCount { get; set; }
     public long PendingPriceCount { get; set; }
     public long PeakPrivateBytes { get; set; }

@@ -517,20 +517,29 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
 
                 var contents = File.ReadAllText(path);
-                if (Contains(contents, profile.Credential) ||
-                    Contains(contents, profile.ShopCode) ||
-                    Contains(contents, profile.StaffCode))
+                if (SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.Credential) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.ShopCode) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.StaffCode) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.BaseUrl) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.DeviceIdentifier) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile.DeviceDisplayName))
                 {
                     return false;
                 }
             }
             return true;
-        }
-
-        private static bool Contains(string value, string token)
-        {
-            return !string.IsNullOrEmpty(token) &&
-                (value ?? string.Empty).IndexOf(token, StringComparison.Ordinal) >= 0;
         }
 
         private static void WriteReport(string outputDirectory, AcceptanceReport report)

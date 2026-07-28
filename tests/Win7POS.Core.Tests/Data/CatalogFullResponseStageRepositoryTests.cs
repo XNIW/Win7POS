@@ -11,6 +11,26 @@ namespace Win7POS.Core.Tests.Data;
 public sealed class CatalogFullResponseStageRepositoryTests
 {
     [TestMethod]
+    public void DiskPreflight_UsesTechnicalByteReserve()
+    {
+        var required =
+            CatalogFullResponseStageRepository.MinimumFreeDiskReserveBytes +
+            2L * CatalogFullResponseStageRepository.MaximumPageBytes;
+        Assert.IsFalse(
+            CatalogFullResponseStageRepository.TryCalculateMaximumStagedBytes(
+                required - 1,
+                out var rejectedBudget));
+        Assert.IsTrue(
+            CatalogFullResponseStageRepository.TryCalculateMaximumStagedBytes(
+                required,
+                out var acceptedBudget));
+        Assert.AreEqual(0L, rejectedBudget);
+        Assert.AreEqual(
+            CatalogFullResponseStageRepository.MaximumPageBytes,
+            acceptedBudget);
+    }
+
+    [TestMethod]
     public async Task FullRefreshStage_StoresOnlyTheRecoveredDisplayText()
     {
         using var db = TestDb.Create();
@@ -21,7 +41,13 @@ public sealed class CatalogFullResponseStageRepositoryTests
         var assessment = CatalogDisplayRecoveryPolicy.Recover(response);
 
         await repository.BeginAsync(generation);
-        await repository.AppendAsync(generation, 1, assessment.RecoveredResponse, 0);
+        await repository.AppendAsync(
+            generation,
+            1,
+            Fingerprint("cursor-1"),
+            assessment.RecoveredResponse,
+            0,
+            Budget());
         var staged = await repository.LoadPageAsync(generation, 1);
 
         Assert.IsTrue(assessment.CanContinue);
@@ -48,8 +74,20 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
         var repository = new CatalogFullResponseStageRepository(db.Factory);
         var generation = Guid.NewGuid().ToString("N");
         await repository.BeginAsync(generation);
-        var bytes = await repository.AppendAsync(generation, 1, Response("cursor-1", true, "P-1"), 0);
-        bytes = await repository.AppendAsync(generation, 2, Response("cursor-2", false, "P-2"), bytes);
+        var bytes = await repository.AppendAsync(
+            generation,
+            1,
+            Fingerprint("cursor-1"),
+            Response("cursor-1", true, "P-1"),
+            0,
+            Budget());
+        bytes = await repository.AppendAsync(
+            generation,
+            2,
+            Fingerprint("cursor-2"),
+            Response("cursor-2", false, "P-2"),
+            bytes,
+            Budget());
 
         Assert.IsTrue(bytes > 0L);
         var first = await repository.LoadPageAsync(generation, 1);
@@ -68,7 +106,7 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
         Assert.AreEqual("blob", await verify.ExecuteScalarAsync<string>(@"
 SELECT typeof(value)
 FROM app_settings
-WHERE key GLOB 'pos.catalog.full_stage.*.page.000001';"));
+WHERE key GLOB 'pos.catalog.full_stage.*.page.00000000000000000001';"));
     }
 
     [TestMethod]
@@ -78,12 +116,20 @@ WHERE key GLOB 'pos.catalog.full_stage.*.page.000001';"));
         var repository = new CatalogFullResponseStageRepository(db.Factory);
         var firstGeneration = Guid.NewGuid().ToString("N");
         await repository.BeginAsync(firstGeneration);
-        await repository.AppendAsync(firstGeneration, 1, Response("cursor-1", false, "P-1"), 0);
+        await repository.AppendAsync(
+            firstGeneration,
+            1,
+            Fingerprint("cursor-1"),
+            Response("cursor-1", false, "P-1"),
+            0,
+            Budget());
         await Assert.ThrowsExactlyAsync<InvalidOperationException>(() => repository.AppendAsync(
             firstGeneration,
             1,
+            Fingerprint("cursor-duplicate"),
             Response("cursor-duplicate", false, "P-X"),
-            0));
+            0,
+            Budget()));
 
         var secondGeneration = Guid.NewGuid().ToString("N");
         await repository.BeginAsync(secondGeneration);
@@ -98,13 +144,101 @@ FROM app_settings
 WHERE key GLOB 'pos.catalog.full_stage.*';"));
         }
 
-        await repository.AppendAsync(secondGeneration, 1, Response("cursor-2", false, "P-2"), 0);
+        await repository.AppendAsync(
+            secondGeneration,
+            1,
+            Fingerprint("cursor-2"),
+            Response("cursor-2", false, "P-2"),
+            0,
+            Budget());
         await repository.ClearAsync(secondGeneration);
         using var verify = db.Factory.Open();
         Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1)
 FROM app_settings
 WHERE key GLOB 'pos.catalog.full_stage.*';"));
+    }
+
+    [TestMethod]
+    public async Task Stage_RejectsNonAdjacentRepeatedCursorTransactionally()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogFullResponseStageRepository(db.Factory);
+        var generation = Guid.NewGuid().ToString("N");
+        await repository.BeginAsync(generation);
+        var budget = Budget();
+        var bytes = await repository.AppendAsync(
+            generation,
+            1,
+            Fingerprint("cursor-1"),
+            Response("cursor-1", true, "P-1"),
+            0,
+            budget);
+        bytes = await repository.AppendAsync(
+            generation,
+            2,
+            Fingerprint("cursor-2"),
+            Response("cursor-2", true, "P-2"),
+            bytes,
+            budget);
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => repository.AppendAsync(
+                generation,
+                3,
+                Fingerprint("cursor-1"),
+                Response("cursor-1", false, "P-3"),
+                bytes,
+                budget));
+
+        Assert.AreEqual(
+            CatalogAuthoritativeDrainBudgetPolicy.CursorRepeatedCode,
+            error.Message);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => repository.LoadPageAsync(generation, 3));
+    }
+
+    [TestMethod]
+    public async Task Stage_RejectsCalculatedCumulativeByteBudgetWithTypedCode()
+    {
+        using var db = TestDb.Create();
+        var repository = new CatalogFullResponseStageRepository(db.Factory);
+        var generation = Guid.NewGuid().ToString("N");
+        await repository.BeginAsync(generation);
+        var budget = new CatalogFullResponseStageResourceBudget(
+            availableBytesAtStart: 1024L * 1024L * 1024L,
+            minimumFreeDiskReserveBytes:
+                CatalogFullResponseStageRepository.MinimumFreeDiskReserveBytes,
+            maximumStagedBytes: 1L);
+
+        var error = await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => repository.AppendAsync(
+                generation,
+                1,
+                Fingerprint("cursor-budget"),
+                Response("cursor-budget", false, "P-BUDGET"),
+                0,
+                budget));
+
+        Assert.AreEqual(
+            CatalogAuthoritativeDrainBudgetPolicy.StageByteBudgetExceededCode,
+            error.Message);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(
+            () => repository.LoadPageAsync(generation, 1));
+    }
+
+    private static CatalogFullResponseStageResourceBudget Budget()
+    {
+        return new CatalogFullResponseStageResourceBudget(
+            availableBytesAtStart: 4L * 1024L * 1024L * 1024L,
+            minimumFreeDiskReserveBytes:
+                CatalogFullResponseStageRepository.MinimumFreeDiskReserveBytes,
+            maximumStagedBytes: 1024L * 1024L * 1024L);
+    }
+
+    private static string Fingerprint(string cursor)
+    {
+        return CatalogShopStateRepository.FingerprintValue(cursor);
     }
 
     private static PosCatalogPullResponse Response(string cursor, bool hasMore, string productId)

@@ -159,6 +159,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 HasArg(args, "--bootstrap-contract-smoke");
             var bootstrapDiagnosticsMatrixSmoke =
                 HasArg(args, "--bootstrap-diagnostics-matrix-smoke");
+            var authoritativeDrainLoopback =
+                HasArg(args, "--authoritative-drain-loopback");
             var stagingAcceptance = HasArg(args, "--staging-acceptance");
             var stagingProfile = ValueAfter(args, "--profile");
             var acceptanceOutput = ValueAfter(args, "--acceptance-output");
@@ -168,6 +170,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 throw new InvalidOperationException(
                     "--staging-acceptance requires --profile and --acceptance-output.");
+            }
+            if (authoritativeDrainLoopback &&
+                string.IsNullOrWhiteSpace(acceptanceOutput))
+            {
+                throw new InvalidOperationException(
+                    "--authoritative-drain-loopback requires --acceptance-output.");
             }
             if (restrictedQaData)
             {
@@ -209,6 +217,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                catalogDisplayWarningSmoke ||
                                bootstrapContractSmoke ||
                                bootstrapDiagnosticsMatrixSmoke ||
+                               authoritativeDrainLoopback ||
                                stagingAcceptance ||
                                verifyOfflineSalesSandboxSafety ||
                                HasArg(args, "--lifecycle");
@@ -251,6 +260,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             result,
                             Encoding.UTF8);
                         app.Shutdown(result.StartsWith("PASS", StringComparison.Ordinal) ? 0 : 1);
+                        return;
+                    }
+
+                    if (authoritativeDrainLoopback)
+                    {
+                        var result = await AuthoritativeCatalogDrainLoopbackHarness
+                            .RunAsync(acceptanceOutput)
+                            .ConfigureAwait(true);
+                        app.Shutdown(
+                            result.StartsWith("PASS", StringComparison.Ordinal)
+                                ? 0
+                                : 1);
                         return;
                     }
 
