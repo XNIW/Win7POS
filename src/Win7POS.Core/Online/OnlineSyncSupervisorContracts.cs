@@ -143,7 +143,7 @@ namespace Win7POS.Core.Online
             int? nextPollAfterSeconds = null,
             bool terminal = false,
             long catalogPagesProcessed = 0,
-            int catalogRowsApplied = 0,
+            long catalogRowsApplied = 0,
             bool catalogSaleSafe = false,
             PosRuntimeDiagnostic catalogDiagnostic = null)
         {
@@ -174,7 +174,7 @@ namespace Win7POS.Core.Online
         public bool AuthenticationDenied { get; }
         public bool CatalogHasMore { get; }
         public long CatalogPagesProcessed { get; }
-        public int CatalogRowsApplied { get; }
+        public long CatalogRowsApplied { get; }
         public bool CatalogSaleSafe { get; }
         public PosRuntimeDiagnostic CatalogDiagnostic { get; }
         public string Code { get; }

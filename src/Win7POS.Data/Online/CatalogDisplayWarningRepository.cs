@@ -242,9 +242,9 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
                 new { key, value = value ?? string.Empty }, transaction);
         }
 
-        private static int Parse(string value)
+        private static long Parse(string value)
         {
-            return int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var result)
+            return long.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out var result)
                 ? Math.Max(0, result)
                 : 0;
         }
@@ -259,17 +259,17 @@ ON CONFLICT(key) DO UPDATE SET value = excluded.value;",
     public sealed class CatalogDisplayWarningSnapshot
     {
         public string AcknowledgedRevision { get; set; } = string.Empty;
-        public int CategoriesAffected { get; set; }
+        public long CategoriesAffected { get; set; }
         public string DisplayedRevision { get; set; } = string.Empty;
-        public int FallbackCount { get; set; }
+        public long FallbackCount { get; set; }
         public string FirstWarningAt { get; set; } = string.Empty;
         public string LastWarningAt { get; set; } = string.Empty;
-        public int NormalizedCount { get; set; }
-        public int ProductsAffected { get; set; }
-        public int RemovedControlCount { get; set; }
-        public int ReplacementCharacterCount { get; set; }
+        public long NormalizedCount { get; set; }
+        public long ProductsAffected { get; set; }
+        public long RemovedControlCount { get; set; }
+        public long ReplacementCharacterCount { get; set; }
         public string Revision { get; set; } = string.Empty;
-        public int SuppliersAffected { get; set; }
-        public int WarningCount { get; set; }
+        public long SuppliersAffected { get; set; }
+        public long WarningCount { get; set; }
     }
 }

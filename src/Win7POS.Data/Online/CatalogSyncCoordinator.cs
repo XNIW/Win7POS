@@ -50,7 +50,7 @@ namespace Win7POS.Data.Online
             bool hasMore = false,
             bool receivedChanges = false,
             long pages = 0,
-            int rows = 0,
+            long rows = 0,
             long durationMilliseconds = 0,
             string resumeCursor = null,
             string code = null,
@@ -95,7 +95,7 @@ namespace Win7POS.Data.Online
         public long Pages { get; }
         public bool ReceivedChanges { get; }
         public string ResumeCursor { get; }
-        public int Rows { get; }
+        public long Rows { get; }
         public bool Success { get; }
 
         private static int? NormalizePositiveSeconds(int? value)

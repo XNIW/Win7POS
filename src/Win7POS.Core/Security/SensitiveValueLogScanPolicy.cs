@@ -30,10 +30,12 @@ namespace Win7POS.Core.Security
                     return false;
                 }
 
-                var beforeIsDigit = match > 0 && char.IsDigit(text[match - 1]);
+                var beforeIsTokenCharacter = match > 0 &&
+                    IsTokenCharacter(text[match - 1]);
                 var afterIndex = match + sensitiveValue.Length;
-                var afterIsDigit = afterIndex < text.Length && char.IsDigit(text[afterIndex]);
-                if (!beforeIsDigit && !afterIsDigit)
+                var afterIsTokenCharacter = afterIndex < text.Length &&
+                    IsTokenCharacter(text[afterIndex]);
+                if (!beforeIsTokenCharacter && !afterIsTokenCharacter)
                 {
                     return true;
                 }
@@ -60,6 +62,11 @@ namespace Win7POS.Core.Security
             }
 
             return true;
+        }
+
+        private static bool IsTokenCharacter(char value)
+        {
+            return char.IsLetterOrDigit(value) || value == '_' || value == '-';
         }
     }
 }

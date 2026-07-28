@@ -20,8 +20,8 @@ namespace Win7POS.Core.Online
             int attemptNumber,
             long? pageNumber,
             long pagesProcessed,
-            int rowsReceived,
-            int rowsApplied,
+            long rowsReceived,
+            long rowsApplied,
             bool hasMore,
             bool catalogSaleSafe,
             string clientRequestId,
@@ -75,8 +75,8 @@ namespace Win7POS.Core.Online
         public string Operation { get; }
         public long? PageNumber { get; }
         public long PagesProcessed { get; }
-        public int RowsApplied { get; }
-        public int RowsReceived { get; }
+        public long RowsApplied { get; }
+        public long RowsReceived { get; }
         public bool Retryable { get; }
         public string SafeSummary { get; }
         public string ServerRequestId { get; }

@@ -178,7 +178,7 @@ $physicalAtomicCommitIndex = if ($atomicCommitIndex -ge 0) {
     -1
 }
 $atomicDiagnosticsIndex = if ($atomicCommitIndex -ge 0) {
-    $batchRepository.IndexOf("RecordRemotePriceApply(_atomicRemotePriceApply);", $atomicCommitIndex)
+    $batchRepository.IndexOf("CompleteCommittedAtomicFullRefresh(", $physicalAtomicCommitIndex)
 } else {
     -1
 }
@@ -249,7 +249,7 @@ if ($service -match "MaxAuthoritativeCatalogPullPages|effectiveMaxPages|safePage
     Pass "authoritative full refresh uses checked lane-derived sizing and drains without a page ceiling"
 }
 if ($authoritativeDrainPolicy -notmatch "catalog_authoritative_sqlite_failure" -or
-    $service -notmatch "catch\s*\(Microsoft\.Data\.Sqlite\.SqliteException\s+ex\)\s*when\s*\([\s\S]{0,120}authoritativeRunObserved" -or
+    $service -notmatch "catch\s*\(Exception\s+ex\)\s*when\s*\([\s\S]{0,180}authoritativeRunObserved[\s\S]{0,180}IsSqliteFailure\(ex\)" -or
     $service -notmatch "StoreCatalogFailureForGenerationAsync\([\s\S]{0,240}sqliteCode") {
     Fail "authoritative SQLite failures must retain a typed technical result"
 } else {
@@ -427,25 +427,27 @@ if ($service -notmatch "if\s*\(applyStats\.RowsSkipped\s*>\s*0\)[\s\S]{0,600}Req
 } else {
     Pass "catalog apply conflicts/skips force a full-repair boundary"
 }
-$reconcileIndex = $service.IndexOf(".ReconcileAndVerifyStagedAsync(")
-$storeExactnessIndex = $service.IndexOf(".StoreExactnessAsync(")
-$authoritativeCursorIndex = $service.IndexOf("authoritativeSnapshotCommitted: true")
-$saleSafeIndex = $service.IndexOf("StoreCatalogSaleSafeAsync(")
+$reconcileIndex = $service.IndexOf(".ReconcileAndVerifyWithinAtomicApplyAsync(")
+$finalizeIndex = $service.IndexOf(".FinalizeVerifiedFullRefreshWithinTransactionAsync(")
+$serviceAtomicCommitIndex = $service.IndexOf(".CommitAtomicFullRefreshAsync(")
 if ($reconcileIndex -lt 0 -or
-    $storeExactnessIndex -lt $reconcileIndex -or
-    $authoritativeCursorIndex -lt $storeExactnessIndex -or
-    $saleSafeIndex -lt $authoritativeCursorIndex) {
-    Fail "full_refresh must reconcile, persist exactness, then commit cursor and sale-safe state in order"
+    $serviceAtomicCommitIndex -lt $reconcileIndex -or
+    $finalizeIndex -lt $serviceAtomicCommitIndex -or
+    $service -notmatch "CommitAtomicFullRefreshAsync\(\s*\(connection, transaction\)\s*=>\s*catalogState\.FinalizeVerifiedFullRefreshWithinTransactionAsync" -or
+    $shopState -notmatch "FinalizeVerifiedFullRefreshWithinTransactionAsync" -or
+    $shopState -notmatch "StoreExactnessWithinTransactionAsync" -or
+    $shopState -notmatch "RequireExactnessSaleSafetyAsync") {
+    Fail "full_refresh must atomically finalize exactness, cursor and sale-safe state before live promotion"
 } else {
-    Pass "exactness is persisted before authoritative cursor and sale-safe state"
+    Pass "exactness, cursor and sale-safe state finalize atomically before live promotion"
 }
 $activeProductsIndex = $service.IndexOf("var activeRemoteProducts")
-if ($activeProductsIndex -lt $storeExactnessIndex -or
-    $activeProductsIndex -gt $authoritativeCursorIndex -or
+if ($activeProductsIndex -lt 0 -or
+    $service -notmatch "if\s*\(!fullRefresh\)\s*\{\s*var activeRemoteProducts" -or
     $service -notmatch "catalog_partial_delta_no_active_products") {
-    Fail "zero-active catalogs must fail and request repair before final/full cursor or partial-delta continuation"
+    Fail "zero-active delta catalogs must fail and request repair before continuation"
 } else {
-    Pass "zero-active full and partial-delta states fail closed before sale-safe/cursor completion"
+    Pass "zero-active delta states fail closed before sale-safe completion"
 }
 if ($service -notmatch "AuditCurrentAsync" -or
     $service -notmatch "FindInvariantError\(deltaAudit\)" -or
@@ -456,11 +458,10 @@ if ($service -notmatch "AuditCurrentAsync" -or
 }
 if ($service -notmatch "exactness\.Status\s*!=\s*CatalogCompletenessStatus\.Verified" -or
     $service -notmatch "exactness\.RepairRequired" -or
-    $service.IndexOf("exactness.RepairRequired") -lt $storeExactnessIndex -or
-    $service.IndexOf("exactness.RepairRequired") -gt $authoritativeCursorIndex) {
-    Fail "every non-verified/repair-required exactness result must fail closed before authoritative cursor commit"
+    $service.IndexOf("exactness.RepairRequired") -gt $serviceAtomicCommitIndex) {
+    Fail "every non-verified/repair-required exactness result must fail closed before live promotion"
 } else {
-    Pass "non-verified exactness fails closed before cursor commit"
+    Pass "non-verified exactness fails closed before live promotion"
 }
 if ($service -notmatch "snapshotCatalogVersion" -or
     $service -notmatch "catalog_version_changed_mid_pull" -or
@@ -871,7 +872,7 @@ if ($initializer -notmatch "remote_catalog_price_evidence_quarantine" -or
 }
 if ($batchRepository -notmatch "PricesSkipped" -or
     $service -notmatch "PriceRowsSkipped\s*=\s*applied\.PricesSkipped" -or
-    $service -notmatch "PriceRowsAccepted\s*=\s*totalStats\.PriceRowsApplied\s*\+\s*totalStats\.PriceRowsQueued" -or
+    $service -notmatch "PriceRowsAccepted\s*=\s*(checked\()?\s*totalStats\.PriceRowsApplied\s*\+\s*totalStats\.PriceRowsQueued" -or
     $service -notmatch "InvalidPriceRows\s*=\s*totalStats\.PriceRowsSkipped" -or
     $fullRefresh -notmatch "runContext\.DuplicatePriceRows\s*=\s*evidence\.DuplicatePrices" -or
     $fullRefresh -notmatch "catalog_invalid_price_rows" -or

@@ -881,7 +881,7 @@ public sealed class CatalogBatchPerformanceSample
     public long RemotePriceApplySqlStatementCount { get; set; }
     public long RemotePriceApplyStagedRowCount { get; set; }
     public int Rows { get; set; }
-    public int ScopeSqlQueryCount { get; set; }
+    public long ScopeSqlQueryCount { get; set; }
     public long WorkingSetBytes { get; set; }
 
     public string ToEvidenceLine()

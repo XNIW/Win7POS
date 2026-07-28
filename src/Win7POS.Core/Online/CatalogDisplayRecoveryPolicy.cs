@@ -376,43 +376,44 @@ namespace Win7POS.Core.Online
 
     public sealed class CatalogWarningSummary
     {
-        public int CategoriesAffected { get; private set; }
-        public int FallbackCount { get; private set; }
-        public int NormalizedCount { get; private set; }
-        public int ProductsAffected { get; private set; }
-        public int RemovedControlCount { get; private set; }
-        public int ReplacementCharacterCount { get; private set; }
-        public int SuppliersAffected { get; private set; }
-        public int WarningCount { get; private set; }
+        public long CategoriesAffected { get; private set; }
+        public long FallbackCount { get; private set; }
+        public long NormalizedCount { get; private set; }
+        public long ProductsAffected { get; private set; }
+        public long RemovedControlCount { get; private set; }
+        public long ReplacementCharacterCount { get; private set; }
+        public long SuppliersAffected { get; private set; }
+        public long WarningCount { get; private set; }
 
         public bool HasWarnings => WarningCount > 0;
 
         internal void RecordCategory(IReadOnlyList<CatalogDataQualityWarning> warnings)
         {
-            Record(warnings, () => CategoriesAffected++);
+            Record(warnings, () => CategoriesAffected = checked(CategoriesAffected + 1L));
         }
 
         internal void RecordProduct(IReadOnlyList<CatalogDataQualityWarning> warnings)
         {
-            Record(warnings, () => ProductsAffected++);
+            Record(warnings, () => ProductsAffected = checked(ProductsAffected + 1L));
         }
 
         internal void RecordSupplier(IReadOnlyList<CatalogDataQualityWarning> warnings)
         {
-            Record(warnings, () => SuppliersAffected++);
+            Record(warnings, () => SuppliersAffected = checked(SuppliersAffected + 1L));
         }
 
         public void Add(CatalogWarningSummary value)
         {
             if (value == null) return;
-            CategoriesAffected += value.CategoriesAffected;
-            FallbackCount += value.FallbackCount;
-            NormalizedCount += value.NormalizedCount;
-            ProductsAffected += value.ProductsAffected;
-            RemovedControlCount += value.RemovedControlCount;
-            ReplacementCharacterCount += value.ReplacementCharacterCount;
-            SuppliersAffected += value.SuppliersAffected;
-            WarningCount += value.WarningCount;
+            CategoriesAffected = checked(CategoriesAffected + value.CategoriesAffected);
+            FallbackCount = checked(FallbackCount + value.FallbackCount);
+            NormalizedCount = checked(NormalizedCount + value.NormalizedCount);
+            ProductsAffected = checked(ProductsAffected + value.ProductsAffected);
+            RemovedControlCount = checked(RemovedControlCount + value.RemovedControlCount);
+            ReplacementCharacterCount = checked(
+                ReplacementCharacterCount + value.ReplacementCharacterCount);
+            SuppliersAffected = checked(SuppliersAffected + value.SuppliersAffected);
+            WarningCount = checked(WarningCount + value.WarningCount);
         }
 
         private void Record(IReadOnlyList<CatalogDataQualityWarning> warnings, Action recordAffected)
@@ -422,16 +423,16 @@ namespace Win7POS.Core.Online
             foreach (var warning in warnings)
             {
                 var code = warning?.Code ?? string.Empty;
-                WarningCount++;
+                WarningCount = checked(WarningCount + 1L);
                 if (string.Equals(code, "catalog_display_text_normalized", StringComparison.Ordinal))
-                    NormalizedCount++;
+                    NormalizedCount = checked(NormalizedCount + 1L);
                 else if (string.Equals(code, "catalog_display_text_control_removed", StringComparison.Ordinal))
-                    RemovedControlCount++;
+                    RemovedControlCount = checked(RemovedControlCount + 1L);
                 else if (string.Equals(code, "catalog_display_text_replacement_used", StringComparison.Ordinal))
-                    ReplacementCharacterCount++;
+                    ReplacementCharacterCount = checked(ReplacementCharacterCount + 1L);
                 else if (string.Equals(code, "catalog_display_text_fallback_used", StringComparison.Ordinal) ||
                          string.Equals(code, "catalog_display_text_over_limit_fallback", StringComparison.Ordinal))
-                    FallbackCount++;
+                    FallbackCount = checked(FallbackCount + 1L);
             }
         }
     }

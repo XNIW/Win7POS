@@ -164,8 +164,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var settings = new SettingsRepository(factory);
                 var pages = await settings.GetStringAsync(
                     CatalogShopStateRepository.ExactnessPagesKey).ConfigureAwait(true);
-                var parsedPages = 0;
-                int.TryParse(
+                var parsedPages = 0L;
+                long.TryParse(
                     pages,
                     NumberStyles.Integer,
                     CultureInfo.InvariantCulture,
@@ -777,7 +777,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             public bool CatalogDrained { get; set; }
 
             [DataMember(Name = "catalogPages")]
-            public int CatalogPages { get; set; }
+            public long CatalogPages { get; set; }
 
             [DataMember(Name = "cfRay")]
             public string CfRay { get; set; }

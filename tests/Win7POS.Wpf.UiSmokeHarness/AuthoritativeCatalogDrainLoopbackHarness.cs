@@ -769,13 +769,13 @@ WHERE remote_product_id = @productId
             internal long PendingPrices { get; set; }
 
             [DataMember(Name = "pricesApplied")]
-            internal int PricesApplied { get; set; }
+            internal long PricesApplied { get; set; }
 
             [DataMember(Name = "productListPopulated")]
             internal bool ProductListPopulated { get; set; }
 
             [DataMember(Name = "productsApplied")]
-            internal int ProductsApplied { get; set; }
+            internal long ProductsApplied { get; set; }
 
             [DataMember(Name = "repairRequired")]
             internal bool RepairRequired { get; set; }

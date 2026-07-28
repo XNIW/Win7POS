@@ -50,9 +50,9 @@ namespace Win7POS.Core.Online
         public bool HasSaturatedLane(int requestLimit)
         {
             if (requestLimit <= 0) throw new ArgumentOutOfRangeException(nameof(requestLimit));
-            return Products + ProductTombstones >= requestLimit ||
-                Categories + CategoryTombstones >= requestLimit ||
-                Suppliers + SupplierTombstones >= requestLimit ||
+            return CheckedAdd(Products, ProductTombstones) >= requestLimit ||
+                CheckedAdd(Categories, CategoryTombstones) >= requestLimit ||
+                CheckedAdd(Suppliers, SupplierTombstones) >= requestLimit ||
                 Prices >= requestLimit;
         }
 

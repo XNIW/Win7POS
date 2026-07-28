@@ -17,6 +17,25 @@ public sealed class SensitiveValueLogScanPolicyTests
     }
 
     [TestMethod]
+    public void ShortNumericSubstringInsideIdentifierOrHash_IsNotASecretMatch()
+    {
+        Assert.IsFalse(SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+            "sha256:ab4729cd product=SKU4729X",
+            SyntheticShortCode));
+    }
+
+    [TestMethod]
+    public void ShortNumericSubstringInsideHyphenatedIdentifierOrTimestamp_IsNotASecretMatch()
+    {
+        Assert.IsFalse(SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+            "product=SKU-4729-X at=2026-07-27T12:00:00Z",
+            SyntheticShortCode));
+        Assert.IsFalse(SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+            "product=SKU-2026-X at=2026-07-27T12:00:00Z",
+            "2026"));
+    }
+
+    [TestMethod]
     [DataRow("staff=4729")]
     [DataRow("{\"staffCode\":\"4729\"}")]
     [DataRow("?staff=4729&mode=qa")]

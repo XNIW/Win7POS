@@ -1364,14 +1364,14 @@ namespace Win7POS.Wpf.Pos.Online
             return Math.Min(normalizedFirst.Value, normalizedSecond.Value);
         }
 
-        private static int SumCatalogRows(PosCatalogPullOutcome outcome)
+        private static long SumCatalogRows(PosCatalogPullOutcome outcome)
         {
             if (outcome == null) return 0;
-            var rows = (long)outcome.ProductsApplied +
+            return checked(
+                outcome.ProductsApplied +
                 outcome.PricesApplied +
                 outcome.PricesQueued +
-                outcome.PendingPricesApplied;
-            return rows >= int.MaxValue ? int.MaxValue : (int)rows;
+                outcome.PendingPricesApplied);
         }
 
         private OnlineSyncSupervisor CreateSupervisor(

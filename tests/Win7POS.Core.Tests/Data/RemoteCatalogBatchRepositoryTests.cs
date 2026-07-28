@@ -130,6 +130,64 @@ WHERE remote_product_id = 'product-must-not-apply';"));
     }
 
     [TestMethod]
+    public async Task AtomicFullRefresh_FinalizationFailureRollsBackLivePages()
+    {
+        using var db = TestDb.Create();
+        var stage = await CreateAuthoritativeStageAsync(db, "finalization-rollback");
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        var batch = new RemoteCatalogBatch
+        {
+            AuthoritativeFullRefresh = true,
+            AuthoritativeStagePage = new CatalogAuthoritativeStagePage
+            {
+                FullRunId = stage.FullRunId,
+                HasMore = false,
+                PageNumber = 1
+            },
+            Products = new[] { Product("product-finalization", "FINALIZE-001", 5) }
+        };
+        await repository.StageAuthoritativePageAsync(
+            batch,
+            CancellationToken.None,
+            stage.Fence);
+
+        var generation = new OnlineSyncGeneration(
+            stage.Fence.GenerationId,
+            stage.Fence.PosSessionId,
+            stage.Fence.ShopDeviceId,
+            stage.ShopId,
+            stage.ShopCode);
+        var state = new CatalogShopStateRepository(db.Factory);
+        await state.RequestFullRepairAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            stage.Fence.ExpectedEpoch,
+            generation);
+        var repairedBinding = await state.EnsureAndLoadCursorAsync(
+            stage.ShopId,
+            stage.ShopCode,
+            generation);
+        stage.Fence.ExpectedEpoch = repairedBinding.Epoch;
+        stage.Fence.ExpectedPreviousCursor = repairedBinding.Cursor;
+        stage.Fence.ExpectedPreviousMode = repairedBinding.Mode;
+
+        batch.ReuseValidatedAuthoritativeStagePage = true;
+        using var run = repository.CreateRunContext();
+        await run.BeginAtomicFullRefreshAsync();
+        await run.ApplyAsync(batch, CancellationToken.None, stage.Fence);
+        await Assert.ThrowsExactlyAsync<InvalidOperationException>(() =>
+            run.CommitAtomicFullRefreshAsync(
+                (connection, transaction) => Task.FromException(
+                    new InvalidOperationException("finalization_failure"))));
+
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(0L, await ScalarAsync(verify, @"
+SELECT COUNT(1)
+FROM products
+WHERE remote_product_id = 'product-finalization';"));
+    }
+
+    [TestMethod]
     public async Task AtomicFullRefreshFailureRollsBackEveryAppliedPage()
     {
         using var db = TestDb.Create();
