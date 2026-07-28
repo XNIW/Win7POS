@@ -110,7 +110,7 @@ Check ($workflow -match 'ProductPagingCoordinator' -and
 Check ($catalogEvents -match 'AdvanceRevision\(\)\s*=>\s*Interlocked\.Increment\(ref\s+_revision\)' -and
        $catalogEvents -match 'Interlocked\.Read\(ref\s+_revision\)' -and
        (($catalogPull | Select-String -Pattern 'CatalogEvents\.AdvanceRevision\(\)' -AllMatches).Matches.Count -ge 3) -and
-       ($catalogPull -match 'ReconcileAndVerifyStagedAsync[\s\S]{0,3000}finally[\s\S]{0,300}CatalogEvents\.AdvanceRevision\(\)') -and
+       ($catalogPull -match 'ReconcileAndVerify(?:Staged|WithinAtomicApply)Async[\s\S]{0,5000}CommitAtomicFullRefreshAsync[\s\S]{0,2500}CatalogEvents\.AdvanceRevision\(\)') -and
        ($workflow -match 'UpdateAsync\([\s\S]{0,2200}CatalogEvents\.RaiseCatalogChanged') -and
        ($workflow -match 'UpdateProductPricesAsync\([\s\S]{0,800}CatalogEvents\.AdvanceRevision')) `
     "catalog mutation events expose an x86-safe monotonic revision" `
