@@ -72,7 +72,19 @@ namespace Win7POS.Wpf.Products
             CancelCommand = new RelayCommand(_ => RequestClose?.Invoke(false), _ => true);
         }
 
-        private async void Confirm()
+        private void Confirm()
+        {
+            var dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                dispatcher.BeginInvoke(new Action(ConfirmOnDispatcher));
+                return;
+            }
+
+            ConfirmOnDispatcher();
+        }
+
+        private async void ConfirmOnDispatcher()
         {
             if (!IsValid) return;
             var finalName = string.IsNullOrWhiteSpace(ProductName)
