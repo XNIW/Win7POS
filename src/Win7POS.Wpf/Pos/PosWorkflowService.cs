@@ -388,6 +388,16 @@ namespace Win7POS.Wpf.Pos
                     throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedCatalogImports"));
                 }
 
+                if (await new ArticleMutationOutboxRepository(_factory)
+                    .CountUnresolvedAsync().ConfigureAwait(false) > 0)
+                {
+                    _logger.LogWarning(
+                        "POS DB restore blocked: unresolved article mutation outbox exists.");
+                    throw new InvalidOperationException(
+                        PosLocalization.T(
+                            "dbMaintenance.restoreBlockedUnresolvedArticleMutations"));
+                }
+
                 var restoredAt = DateTimeOffset.UtcNow;
 
                 var tempRestorePath = Path.Combine(
@@ -449,6 +459,16 @@ namespace Win7POS.Wpf.Pos
                                 StringComparison.Ordinal))
                             {
                                 throw new InvalidOperationException(PosLocalization.T("dbMaintenance.restoreBlockedUnresolvedCatalogImports"));
+                            }
+
+                            if (string.Equals(
+                                livePreSwapSafety.Code,
+                                "restore_live_article_outbox_unresolved",
+                                StringComparison.Ordinal))
+                            {
+                                throw new InvalidOperationException(
+                                    PosLocalization.T(
+                                        "dbMaintenance.restoreBlockedUnresolvedArticleMutations"));
                             }
 
                             throw new InvalidOperationException(livePreSwapSafety.Code);
@@ -999,18 +1019,24 @@ namespace Win7POS.Wpf.Pos
                 if (purchasePriceMinor < 0) purchasePriceMinor = 0;
                 if (stockQty < 0) stockQty = 0;
 
-                await _products.UpsertAsync(new Product
-                {
-                    Barcode = code,
-                    Name = productName,
-                    UnitPrice = unitPriceMinor
-                }).ConfigureAwait(false);
-
-                await _products.UpsertMetaAsync(code, purchasePriceMinor, supplierId, supplierName ?? string.Empty, categoryId, categoryName ?? string.Empty, stockQty).ConfigureAwait(false);
-
-                await _products.InsertPriceHistoryAsync(code, "retail", unitPriceMinor, "MANUAL").ConfigureAwait(false);
-                if (purchasePriceMinor > 0)
-                    await _products.InsertPriceHistoryAsync(code, "purchase", purchasePriceMinor, "MANUAL").ConfigureAwait(false);
+                await _products.CreateLocalArticleAsync(
+                    new LocalArticleCreateRequest
+                    {
+                        Barcode = code,
+                        PrimaryName = productName,
+                        RetailPrice = unitPriceMinor,
+                        PurchasePrice = purchasePriceMinor,
+                        SupplierId = supplierId,
+                        SupplierName = supplierName ?? string.Empty,
+                        CategoryId = categoryId,
+                        CategoryName = categoryName ?? string.Empty,
+                        InitialStock = stockQty,
+                        OccurredAt = DateTimeOffset.UtcNow
+                    },
+                    ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
+                PosOnlineSyncSignalBus.Signal(
+                    OnlineSyncLane.ArticleMutationOutbox,
+                    OnlineSyncLaneTrigger.LocalCommit);
             }
             finally
             {
@@ -1027,7 +1053,32 @@ namespace Win7POS.Wpf.Pos
             var product = await _products.GetByBarcodeAsync(code).ConfigureAwait(false);
             if (product == null) return await GetSnapshotAsync().ConfigureAwait(true);
 
-            await _products.UpdateAsync(product.Id, name ?? string.Empty, unitPriceMinor).ConfigureAwait(false);
+            var current = await _products.GetDetailsByIdAsync(product.Id)
+                .ConfigureAwait(false);
+            if (current == null)
+                return await GetSnapshotAsync().ConfigureAwait(true);
+            await _products.UpdateLocalArticleAsync(
+                new LocalArticleUpdateRequest
+                {
+                    ProductId = current.Id,
+                    Barcode = current.Barcode,
+                    PrimaryName = name ?? string.Empty,
+                    RetailPrice = unitPriceMinor,
+                    PurchasePrice = current.PurchasePrice,
+                    SupplierId = current.SupplierId,
+                    SupplierName = current.SupplierName,
+                    CategoryId = current.CategoryId,
+                    CategoryName = current.CategoryName,
+                    StockQuantity = current.StockQty,
+                    ItemNumber = current.ArticleCode,
+                    SecondaryName = current.Name2,
+                    StockReason = "count_correction",
+                    OccurredAt = DateTimeOffset.UtcNow
+                },
+                ProductWriteOrigin.LocalUserSave).ConfigureAwait(false);
+            PosOnlineSyncSignalBus.Signal(
+                OnlineSyncLane.ArticleMutationOutbox,
+                OnlineSyncLaneTrigger.LocalCommit);
 
             await _gate.WaitAsync().ConfigureAwait(false);
             try
@@ -2219,7 +2270,9 @@ namespace Win7POS.Wpf.Pos
             };
 
             foreach (var item in demo)
-                await _products.UpsertAsync(item).ConfigureAwait(false);
+                await _products.UpsertAsync(
+                    item,
+                    ProductWriteOrigin.TestFixture).ConfigureAwait(false);
             _logger.LogInfo("POS demo seed inserted: " + demo.Length);
         }
 
