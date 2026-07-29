@@ -412,6 +412,28 @@ WHERE local_product_id = @id
                 result.DuplicateIdentityIndependent = true;
                 result.DuplicateProduct = true;
 
+                await PullCanonicalAsync(
+                        factory,
+                        activeHost,
+                        trustedSession,
+                        baseUri,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                await RequireCanonicalProductAsync(
+                        factory,
+                        duplicateRow.Id,
+                        barcodeDuplicate,
+                        runId + " DUPLICATE",
+                        string.Empty,
+                        runId + "-ITEM-D",
+                        category.RemoteId,
+                        supplier.RemoteId,
+                        1200,
+                        550,
+                        0,
+                        true)
+                    .ConfigureAwait(false);
+
                 await workflow.SetProductActiveAsync(duplicateRow.Id, false)
                     .ConfigureAwait(true);
                 await DrainArticlesAsync(
