@@ -319,21 +319,36 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     throw new AcceptanceFailure("remote_staff_mirror_missing");
                 }
 
-                operatorSession = CreateProductionOperatorSession(factory);
-                OperatorSessionHolder.Current = operatorSession;
-                var loginResult = await operatorSession.LoginAsync(
-                    username,
-                    profile.Credential).ConfigureAwait(true);
-                report.PosUnlocked = loginResult == LoginResult.Success &&
-                    operatorSession.IsLoggedIn;
-                if (!report.PosUnlocked)
+                if (ShouldAttemptOfflineOperatorLogin(resumeAfterRestart))
+                {
+                    operatorSession = CreateProductionOperatorSession(factory);
+                    OperatorSessionHolder.Current = operatorSession;
+                    var loginResult = await operatorSession.LoginAsync(
+                        username,
+                        profile.Credential).ConfigureAwait(true);
+                    report.PosUnlocked =
+                        loginResult == LoginResult.Success &&
+                        operatorSession.IsLoggedIn;
+                    if (!report.PosUnlocked)
+                    {
+                        RecordHarnessFailure(
+                            report,
+                            "local_operator_login",
+                            "local_operator_login_" +
+                            SafeCode(loginResult.ToString()));
+                        throw new AcceptanceFailure(
+                            "local_operator_login_" +
+                            SafeCode(loginResult.ToString()));
+                    }
+                }
+                else if (!report.PosUnlocked)
                 {
                     RecordHarnessFailure(
                         report,
-                        "local_operator_login",
-                        "local_operator_login_" + SafeCode(loginResult.ToString()));
-                    throw new AcceptanceFailure("local_operator_login_" +
-                        SafeCode(loginResult.ToString()));
+                        "restart_operator_state",
+                        "restart_prepare_operator_login_missing");
+                    throw new AcceptanceFailure(
+                        "restart_prepare_operator_login_missing");
                 }
 
                 var exactness = await new CatalogShopStateRepository(factory)
@@ -799,6 +814,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return new OperatorSession(
                 new UserRepository(factory),
                 new SecurityRepository(factory));
+        }
+
+        internal static bool ShouldAttemptOfflineOperatorLogin(
+            bool resumeAfterRestart)
+        {
+            // Offline authority is deliberately process-scoped. The prepare
+            // phase proves the operator login before the required process
+            // restart; resume verifies bounded online recovery and must not
+            // reinterpret the expected offline-attestation clearing as an
+            // expired operator credential.
+            return !resumeAfterRestart;
         }
 
         private static void RecordHarnessFailure(

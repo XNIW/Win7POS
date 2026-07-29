@@ -43,6 +43,7 @@ $runner = Read-RepoText "scripts/qa/Invoke-Win7PosStagingAcceptance.ps1"
 $staging = Read-RepoText "tests/Win7POS.Wpf.UiSmokeHarness/StagingAcceptanceWpfHarness.cs"
 $article = Read-RepoText "tests/Win7POS.Wpf.UiSmokeHarness/StagingArticleMutationAcceptance.cs"
 $loopback = Read-RepoText "tests/Win7POS.Wpf.UiSmokeHarness/ArticleMutationLoopbackHarness.cs"
+$authorization = Read-RepoText "tests/Win7POS.Wpf.UiSmokeHarness/AuthorizationLeaseWpfSmoke.cs"
 $program = Read-RepoText "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $processRunner = Read-RepoText "scripts/qa/Win7PosAcceptanceProcessRunner.psm1"
 $runnerTest = Read-RepoText "tests/qa/Test-Win7PosStagingAcceptanceRunner.ps1"
@@ -176,6 +177,27 @@ Require-Pattern "resume uses bounded online recovery after process restart" `
     $staging "TryLoadRestartedOnlineRecoverySession"
 Require-Pattern "resume preserves prepare-phase offline authority proof" `
     $staging "report\.OfflineAuthorizationValid[\s\S]*RestartOnlineRecoveryValid"
+Require-Pattern "prepare performs the production offline operator login" `
+    $staging "if\s*\(\s*ShouldAttemptOfflineOperatorLogin\(resumeAfterRestart\)\s*\)\s*\{[\s\S]{0,800}operatorSession\.LoginAsync\("
+$stagingOperatorLoginUses = [regex]::Matches(
+    $staging,
+    "operatorSession\.LoginAsync\("
+).Count
+if ($stagingOperatorLoginUses -ne 1) {
+    Write-Host (
+        "FAIL: staging must perform exactly one guarded operator login"
+    ) -ForegroundColor Red
+    $failed = $true
+}
+else {
+    Write-Host (
+        "PASS: staging performs exactly one guarded operator login"
+    ) -ForegroundColor Green
+}
+Require-Pattern "resume preserves the successful prepare operator login proof" `
+    $staging "else if \(!report\.PosUnlocked\)[\s\S]*restart_prepare_operator_login_missing"
+Require-Pattern "resume never repeats the process-scoped offline login" `
+    $authorization "ShouldAttemptOfflineOperatorLogin\([\s\S]*resumeAfterRestart:\s*true"
 Require-Pattern "offline create is verified in one SQLite transaction" $article `
     "ReadOfflineCreateAtomicSnapshotAsync[\s\S]*BeginTransaction\(\)"
 Require-Pattern "restart verifies the stable client product identity" $article `
