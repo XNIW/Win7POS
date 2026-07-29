@@ -155,6 +155,23 @@ Require-Pattern "staging records the supported resolution" $article `
     "result\.ConflictResolved\s*=\s*true"
 Require-Pattern "staging performs a real process restart checkpoint" $article `
     "article-restart-checkpoint\.json"
+Require-Pattern "staging allows the 676-page catalog to finalize" $staging `
+    "InitialCatalogTimeoutMinutes\s*=\s*12"
+$stagingCatalogTimeoutUses = [regex]::Matches(
+    $staging,
+    "TimeSpan\.FromMinutes\(\s*InitialCatalogTimeoutMinutes\s*\)"
+).Count
+if ($stagingCatalogTimeoutUses -ne 1) {
+    Write-Host (
+        "FAIL: staging bootstrap must use the evidence-backed catalog timeout exactly once"
+    ) -ForegroundColor Red
+    $failed = $true
+}
+else {
+    Write-Host (
+        "PASS: staging bootstrap uses the evidence-backed catalog timeout"
+    ) -ForegroundColor Green
+}
 Require-Pattern "resume uses bounded online recovery after process restart" `
     $staging "TryLoadRestartedOnlineRecoverySession"
 Require-Pattern "resume preserves prepare-phase offline authority proof" `
