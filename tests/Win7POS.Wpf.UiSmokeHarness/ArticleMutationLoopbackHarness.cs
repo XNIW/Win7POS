@@ -50,6 +50,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             try
             {
+                report.StaUiDispatchMarshaled =
+                    await StagingArticleMutationAcceptance
+                        .RunStaUiDispatchRegressionAsync()
+                        .ConfigureAwait(true);
+                Require(
+                    report.StaUiDispatchMarshaled,
+                    "sta_ui_dispatch_regression_failed");
+
                 var options = PosDbOptions.Default();
                 DbInitializer.EnsureCreated(options);
                 var factory = new SqliteConnectionFactory(options);
@@ -519,6 +527,7 @@ WHERE state = 'completed'
 
                 return "PASS: firstLogin=True; offlineAuthority=True; " +
                     "fullCatalog=True; create=True; duplicateReplay=True; " +
+                    "staUiDispatchMarshaled=True; " +
                     "offDispatcherSubmitMarshaled=True; " +
                     "dependentEdit=True; update=True; retail=True; " +
                     "purchase=True; stock=+5,-2; conflict=True; " +
@@ -1017,6 +1026,8 @@ GROUP BY mutation_kind;")).ToDictionary(
             public bool OffDispatcherSubmitMarshaled { get; set; }
             [DataMember(Order = 29)]
             public bool ConflictResolved { get; set; }
+            [DataMember(Order = 30)]
+            public bool StaUiDispatchMarshaled { get; set; }
         }
 
         private sealed class ArticleLoopbackServer : IDisposable

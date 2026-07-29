@@ -163,10 +163,15 @@ WHERE local_product_id = @id
                         "dependent_edit_not_waiting");
                     result.DependentEditPersisted = true;
 
-                    await CaptureOfflineQueueUiAsync(
-                            factory,
-                            outputDirectory)
-                        .ConfigureAwait(true);
+                    await RunOnUiDispatcherAsync(async () =>
+                        {
+                            await CaptureOfflineQueueUiAsync(
+                                    factory,
+                                    outputDirectory)
+                                .ConfigureAwait(true);
+                            return true;
+                        })
+                        .ConfigureAwait(false);
                     WriteJson(
                         checkpointPath,
                         new ArticleRestartCheckpoint
@@ -697,12 +702,13 @@ WHERE local_product_id = @id
                     result.UnrelatedProductContinued,
                     "blocked_conflict_starved_unrelated_product");
 
-                var uiVerification = await CaptureArticleUiAsync(
-                        factory,
-                        workflow,
-                        created.Id,
-                        outputDirectory)
-                    .ConfigureAwait(true);
+                var uiVerification = await RunOnUiDispatcherAsync(
+                        () => CaptureArticleUiAsync(
+                            factory,
+                            workflow,
+                            created.Id,
+                            outputDirectory))
+                    .ConfigureAwait(false);
                 result.UiLanguagesVerified =
                     uiVerification.LanguagesVerified;
                 result.UiKeyboardNavigationVerified =
@@ -880,10 +886,15 @@ WHERE local_product_id = @id
                     "remote_stock_movement_ids_missing");
                 result.RemoteChildIdsAssigned = true;
 
-                await CaptureCleanSyncCenterAsync(
-                        factory,
-                        outputDirectory)
-                    .ConfigureAwait(true);
+                await RunOnUiDispatcherAsync(async () =>
+                    {
+                        await CaptureCleanSyncCenterAsync(
+                                factory,
+                                outputDirectory)
+                            .ConfigureAwait(true);
+                        return true;
+                    })
+                    .ConfigureAwait(false);
                 result.UiScreenshots = Directory.EnumerateFiles(
                         outputDirectory,
                         "article-mutation-*.png",
@@ -1965,6 +1976,72 @@ FROM (
                 "SELECT COUNT(1) FROM article_mutation_outbox " +
                 "WHERE state = @state;",
                 new { state });
+        }
+
+        internal static Task<bool> RunStaUiDispatchRegressionAsync()
+        {
+            var application = Application.Current;
+            if (application == null)
+            {
+                return Task.FromResult(false);
+            }
+
+            return Task.Run(async () =>
+            {
+                var callerIsOffDispatcher =
+                    !application.Dispatcher.CheckAccess();
+                var callerIsNotSta =
+                    Thread.CurrentThread.GetApartmentState() !=
+                    ApartmentState.STA;
+                var marshaledToSta = await RunOnUiDispatcherAsync(() =>
+                {
+                    var probe = new Window
+                    {
+                        Height = 100,
+                        ShowInTaskbar = false,
+                        Width = 100
+                    };
+                    try
+                    {
+                        return Task.FromResult(
+                            application.Dispatcher.CheckAccess() &&
+                            probe.Dispatcher.CheckAccess() &&
+                            Thread.CurrentThread.GetApartmentState() ==
+                                ApartmentState.STA);
+                    }
+                    finally
+                    {
+                        probe.Close();
+                    }
+                }).ConfigureAwait(false);
+
+                return callerIsOffDispatcher &&
+                    callerIsNotSta &&
+                    marshaledToSta;
+            });
+        }
+
+        private static async Task<T> RunOnUiDispatcherAsync<T>(
+            Func<Task<T>> action)
+        {
+            Require(action != null, "article_ui_dispatch_action_missing");
+            var dispatcher = Application.Current?.Dispatcher;
+            Require(
+                dispatcher != null &&
+                !dispatcher.HasShutdownStarted &&
+                !dispatcher.HasShutdownFinished,
+                "article_ui_dispatcher_unavailable");
+
+            if (dispatcher.CheckAccess())
+            {
+                return await action().ConfigureAwait(true);
+            }
+
+            return await dispatcher
+                .InvokeAsync(action, DispatcherPriority.Send)
+                .Task
+                .Unwrap()
+                .ConfigureAwait(false);
         }
 
         private static async Task<UiVerificationResult> CaptureArticleUiAsync(
