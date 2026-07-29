@@ -218,6 +218,62 @@ Require-Pattern "replay ACK equality is required" $article `
     "ReplayAckMatches"
 Require-Pattern "duplicate identities are independent" $article `
     "DuplicateIdentityIndependent\s*=\s*true"
+$duplicateProofIndex = $article.IndexOf(
+    "result.DuplicateProduct = true;",
+    [StringComparison]::Ordinal)
+$duplicateDeactivateIndex = if ($duplicateProofIndex -ge 0) {
+    $article.IndexOf(
+        "await workflow.SetProductActiveAsync(duplicateRow.Id, false)",
+        $duplicateProofIndex,
+        [StringComparison]::Ordinal)
+}
+else {
+    -1
+}
+$duplicateCanonicalBaseline = if (
+    $duplicateProofIndex -ge 0 -and
+    $duplicateDeactivateIndex -gt $duplicateProofIndex
+) {
+    $article.Substring(
+        $duplicateProofIndex,
+        $duplicateDeactivateIndex - $duplicateProofIndex)
+}
+else {
+    ""
+}
+$duplicateCanonicalPullIndex = $duplicateCanonicalBaseline.IndexOf(
+    "await PullCanonicalAsync(",
+    [StringComparison]::Ordinal)
+$duplicateCanonicalVerifyIndex = $duplicateCanonicalBaseline.IndexOf(
+    "await RequireCanonicalProductAsync(",
+    [StringComparison]::Ordinal)
+$duplicateCanonicalVerifyCall = if (
+    $duplicateCanonicalVerifyIndex -ge 0
+) {
+    $duplicateCanonicalBaseline.Substring(
+        $duplicateCanonicalVerifyIndex)
+}
+else {
+    ""
+}
+if (
+    $duplicateCanonicalPullIndex -lt 0 -or
+    $duplicateCanonicalVerifyIndex -le $duplicateCanonicalPullIndex -or
+    $duplicateCanonicalVerifyCall -notmatch
+        "RequireCanonicalProductAsync\([\s\S]{0,240}duplicateRow\.Id," -or
+    $duplicateCanonicalVerifyCall -notmatch
+        ",\s*true\)\s*\.ConfigureAwait\(false\);"
+) {
+    Write-Host (
+        "FAIL: duplicate active canonical baseline must precede lifecycle transition"
+    ) -ForegroundColor Red
+    $failed = $true
+}
+else {
+    Write-Host (
+        "PASS: duplicate active canonical baseline precedes lifecycle transition"
+    ) -ForegroundColor Green
+}
 Require-Pattern "lifecycle canonical readback is required" $article `
     "LifecycleCanonicalReadback\s*=\s*true"
 Require-Pattern "UI exercises keyboard traversal" $article `
