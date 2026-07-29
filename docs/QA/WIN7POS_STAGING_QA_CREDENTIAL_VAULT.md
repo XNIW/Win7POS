@@ -26,10 +26,11 @@ Before the first invocation, build the test-only WPF harness in Release x86:
 
 The runner requires a clean checkout whose `HEAD` exactly equals
 `origin/main`, builds with `C:\Dev\dotnet10\dotnet.exe`, and generates one
-logical run ID in the form `ASUSART_FINAL_<UTC_TIMESTAMP>_<RANDOM>`. It archives any
-previous isolated data directory before starting; it never performs an
-automatic or blind retry. Evidence is written beneath
-`C:\Dev\_codex-evidence\win7pos-final-article-sync-<RUN_ID>`.
+logical run ID in the form
+`ASUSART_POST_PR63_<UTC_TIMESTAMP>_<RANDOM>`. It archives any previous isolated
+data directory before starting; it never performs an automatic or blind retry.
+Evidence is written beneath
+`C:\Dev\_codex-evidence\win7pos-final-post-pr63-<RUN_ID>`.
 
 One logical run contains two bounded harness processes. The `prepare` process
 performs first login/catalog, disables the article lane, persists the synthetic
@@ -60,7 +61,7 @@ the harness does not make the same request again automatically.
 Redacted evidence is written to:
 
 ```text
-C:\Dev\_codex-evidence\win7pos-pos-article-sync-v1-<RUN_ID>
+C:\Dev\_codex-evidence\win7pos-final-post-pr63-<RUN_ID>
 ```
 
 `CLEANUP-MANIFEST.json` is the only evidence file that carries exact

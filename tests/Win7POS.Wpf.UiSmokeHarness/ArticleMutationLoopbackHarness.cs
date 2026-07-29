@@ -94,7 +94,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 StagingAcceptanceWpfHarness
                                     .WriteRunConsumedMarkerAtomically(
                                         markerDirectory,
-                                        "ASUSART_FINAL_CALLBACK_REGRESSION"));
+                                        "ASUSART_POST_PR63_CALLBACK_REGRESSION"));
                     var catalogBlocked = await Task.WhenAny(
                             server.FirstCatalogRequestBlocked,
                             Task.Delay(
