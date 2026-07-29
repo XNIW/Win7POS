@@ -3084,6 +3084,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     restartedSession.GenerationId,
                     StringComparison.Ordinal),
                 "staging resume did not accept bounded online recovery");
+            Require(
+                StagingAcceptanceWpfHarness
+                    .ShouldAttemptOfflineOperatorLogin(
+                        resumeAfterRestart: false) &&
+                !StagingAcceptanceWpfHarness
+                    .ShouldAttemptOfflineOperatorLogin(
+                        resumeAfterRestart: true),
+                "staging resume attempted a process-scoped offline login");
 
             var guard = new PosOfflineAuthorizationLeaseGuard(
                 store,
