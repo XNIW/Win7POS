@@ -41,6 +41,16 @@ try {
         (($wrapperParseErrors | ForEach-Object {
             $_.Message
         }) -join ' | '))
+    $wrapperText = [System.IO.File]::ReadAllText($acceptanceWrapper)
+    Assert-Runner (
+        $wrapperText -match
+        "-c Release -p:PlatformTarget=x86[\s\S]{0,750}" +
+        "bin\\Release\\net48\\Win7POS\.Wpf\.UiSmokeHarness\.exe"
+    ) 'Acceptance wrapper did not run its x86 Release harness output.'
+    Assert-Runner (
+        $wrapperText -notmatch
+        "bin\\x86\\Release\\net48\\Win7POS\.Wpf\.UiSmokeHarness\.exe"
+    ) 'Acceptance wrapper selected the parallel untrusted x86 output path.'
 
     Assert-Runner (
         (Get-Win7PosAcceptanceResultCode `
@@ -107,6 +117,8 @@ try {
     $timeoutRunId = 'ASUSART_POST_PR63_RUNNER_TIMEOUT'
     $runConsumedMarker = Join-Path $timeoutEvidence (
         'run-consumed-redacted.json')
+    # Keep the timeout below the synthetic 10-second delay while allowing a
+    # new pwsh process to start and atomically publish its durable marker.
     $timedOut = Invoke-Win7PosWaitedProcess `
         -FilePath $pwshPath `
         -ArgumentList @(
@@ -119,7 +131,7 @@ try {
             '-RunConsumedMarkerPath', $runConsumedMarker,
             '-RunId', $timeoutRunId
         ) `
-        -TimeoutMilliseconds 400 `
+        -TimeoutMilliseconds 5000 `
         -EvidenceDirectory $timeoutEvidence
 
     Assert-Runner ($timedOut.TimedOut) 'Timeout was not reported.'
@@ -127,6 +139,9 @@ try {
     Assert-Runner (
         $null -eq (Get-Process -Id $timedOut.ProcessId -ErrorAction SilentlyContinue)
     ) 'Timed-out process still exists.'
+    Assert-Runner (
+        Test-Path -LiteralPath $runConsumedMarker -PathType Leaf
+    ) 'Timed-out harness did not publish the durable consumed marker.'
     Assert-Runner (
         (Get-Win7PosAcceptanceLogicalRunCount `
             -EvidenceDirectory $timeoutEvidence `

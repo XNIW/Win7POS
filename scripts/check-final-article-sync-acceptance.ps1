@@ -47,6 +47,8 @@ $authorization = Read-RepoText "tests/Win7POS.Wpf.UiSmokeHarness/AuthorizationLe
 $program = Read-RepoText "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $processRunner = Read-RepoText "scripts/qa/Win7PosAcceptanceProcessRunner.psm1"
 $runnerTest = Read-RepoText "tests/qa/Test-Win7PosStagingAcceptanceRunner.ps1"
+$harnessProject = Read-RepoText (
+    "tests/Win7POS.Wpf.UiSmokeHarness/Win7POS.Wpf.UiSmokeHarness.csproj")
 $bootstrap = Read-RepoText "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 $qaGuide = Read-RepoText "docs/QA/WIN7POS_STAGING_QA_CREDENTIAL_VAULT.md"
 $articleSpec = Read-RepoText "docs/specs/POS_ARTICLE_MUTATION_SYNC_V1.md"
@@ -129,12 +131,20 @@ Require-Pattern "runner rejects every worktree change including untracked files"
     $runner "status\s+--porcelain\)"
 Reject-Pattern "runner does not hide untracked files" $runner `
     "--untracked-files=no"
+Require-Pattern "harness project enforces x86" $harnessProject `
+    "<PlatformTarget>x86</PlatformTarget>"
+Require-Pattern "runner launches the standard x86 Release output" $runner `
+    "bin\\Release\\net48\\Win7POS\.Wpf\.UiSmokeHarness\.exe"
+Reject-Pattern "runner avoids the parallel untrusted x86 output" $runner `
+    "bin\\x86\\Release\\net48\\Win7POS\.Wpf\.UiSmokeHarness\.exe"
 Require-Pattern "repo evidence attests untracked cleanliness" $runner `
     "worktreeCleanIncludingUntracked=True"
 Require-Pattern "runner consumes durable marker or final report" $processRunner `
     "run-consumed-redacted\.json[\s\S]*staging-acceptance-result\.json"
 Require-Pattern "timeout-after-marker preserves logical run accounting" `
     $runnerTest "Timeout after the consumed marker incorrectly restored run budget"
+Require-Pattern "timeout test leaves cold-start margin before synthetic delay" `
+    $runnerTest "'-DelayMilliseconds',\s*'10000'[\s\S]{0,500}-TimeoutMilliseconds\s+5000"
 Require-Pattern "pre-rename marker preserves logical run accounting" `
     $runnerTest "Flushed pre-rename marker incorrectly restored run budget"
 Require-Pattern "runner test parses the complete acceptance wrapper" `

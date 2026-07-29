@@ -441,7 +441,7 @@ try {
         Join-Path $repoRoot (
             'tests\Win7POS.Wpf.UiSmokeHarness\' +
             'Win7POS.Wpf.UiSmokeHarness.csproj')
-    ) -c Release -p:Platform=x86 -p:PlatformTarget=x86 `
+    ) -c Release -p:PlatformTarget=x86 `
         --no-restore *>> $buildEvidence
     if ($LASTEXITCODE -ne 0) {
         Complete-Win7PosAcceptanceRunner `
@@ -456,7 +456,7 @@ try {
     $fullHarnessPath = [System.IO.Path]::GetFullPath(
         (Join-Path $PSScriptRoot (
             '..\..\tests\Win7POS.Wpf.UiSmokeHarness\' +
-            'bin\x86\Release\net48\Win7POS.Wpf.UiSmokeHarness.exe')))
+            'bin\Release\net48\Win7POS.Wpf.UiSmokeHarness.exe')))
     if (-not (Test-Path -LiteralPath $fullHarnessPath -PathType Leaf)) {
         Complete-Win7PosAcceptanceRunner `
             -ExitCode $runnerExit.LaunchFailure `
