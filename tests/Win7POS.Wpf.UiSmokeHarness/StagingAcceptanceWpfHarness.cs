@@ -41,6 +41,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private const string EvidenceStatusFail = "fail";
         private const string EvidenceStatusNotRun = "not_run";
         private const string EvidenceStatusPass = "pass";
+        internal const int InitialCatalogTimeoutMinutes = 12;
         private static readonly string[] RequiredAcceptanceEvidenceFileNames =
         {
             "00-repo-sync.txt",
@@ -175,7 +176,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                     PosOnlineBootstrapResult bootstrap;
                     using (var timeout = new CancellationTokenSource(
-                        TimeSpan.FromMinutes(6)))
+                        TimeSpan.FromMinutes(
+                            InitialCatalogTimeoutMinutes)))
                     {
                         bootstrap = await new PosOnlineBootstrapService(
                                 factory,

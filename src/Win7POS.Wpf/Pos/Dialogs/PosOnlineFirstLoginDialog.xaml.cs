@@ -26,6 +26,7 @@ namespace Win7POS.Wpf.Pos.Dialogs
     {
         private static readonly FileLogger _logger = new FileLogger("PosAccessDialog");
         private const string SafeStartLoopbackOnlyReason = "safe_start_loopback_only";
+        private const int InitialCatalogTimeoutMinutes = 12;
 
         private readonly SqliteConnectionFactory _factory;
         private readonly bool _ownsSyncHost;
@@ -373,7 +374,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
                     _factory,
                     _trustedDeviceStore,
                     _syncHost);
-                using (_activeCts = new CancellationTokenSource(TimeSpan.FromMinutes(6)))
+                using (_activeCts = new CancellationTokenSource(
+                    TimeSpan.FromMinutes(InitialCatalogTimeoutMinutes)))
                 {
                     IProgress<PosCatalogPullProgress> progress = new Progress<PosCatalogPullProgress>(UpdateSetupProgress);
                     LogAccessInfo(attemptId, "online_bootstrap_start", "adminUrlConfigured=yes");
@@ -1211,7 +1213,8 @@ namespace Win7POS.Wpf.Pos.Dialogs
 
             try
             {
-                using (_activeCts = new CancellationTokenSource(TimeSpan.FromMinutes(6)))
+                using (_activeCts = new CancellationTokenSource(
+                    TimeSpan.FromMinutes(InitialCatalogTimeoutMinutes)))
                 {
                     IProgress<PosCatalogPullProgress> progress = new Progress<PosCatalogPullProgress>(UpdateSetupProgress);
                     progress.Report(PosCatalogPullProgress.ForPhase("catalog"));
