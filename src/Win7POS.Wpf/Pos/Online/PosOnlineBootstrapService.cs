@@ -776,6 +776,7 @@ namespace Win7POS.Wpf.Pos.Online
             string failureStage,
             string rootCode,
             int? httpStatus,
+            int? firstLoginHttpStatus,
             bool authenticationDenied,
             bool retryable,
             string deviceApprovalState,
@@ -803,6 +804,11 @@ namespace Win7POS.Wpf.Pos.Online
             RootCode = string.IsNullOrWhiteSpace(rootCode) ? "unknown" : rootCode;
             HttpStatus = httpStatus.HasValue && httpStatus.Value >= 100 && httpStatus.Value <= 599
                 ? httpStatus
+                : null;
+            FirstLoginHttpStatus = firstLoginHttpStatus.HasValue &&
+                firstLoginHttpStatus.Value >= 100 &&
+                firstLoginHttpStatus.Value <= 599
+                ? firstLoginHttpStatus
                 : null;
             AuthenticationDenied = authenticationDenied;
             Retryable = retryable && !authenticationDenied;
@@ -833,6 +839,7 @@ namespace Win7POS.Wpf.Pos.Online
         public string FailureStage { get; }
         public string RootCode { get; }
         public int? HttpStatus { get; }
+        public int? FirstLoginHttpStatus { get; }
         public bool AuthenticationDenied { get; }
         public bool Retryable { get; }
         public string DeviceApprovalState { get; }
@@ -867,6 +874,7 @@ namespace Win7POS.Wpf.Pos.Online
                 catalogOutcome?.Diagnostic,
                 "completed",
                 "success",
+                httpStatus,
                 httpStatus,
                 false,
                 false,
@@ -923,6 +931,7 @@ namespace Win7POS.Wpf.Pos.Online
                     requestReachedServer),
                 resolvedRootCode,
                 httpStatus,
+                httpStatus,
                 resolvedAuthenticationDenied,
                 retryable || PosBootstrapDiagnosticsPolicy.IsRetryable(
                     resolvedRootCode,
@@ -977,6 +986,7 @@ namespace Win7POS.Wpf.Pos.Online
                 "catalog_pull",
                 PosBootstrapDiagnosticsPolicy.GetRootCode(code ?? status, effectiveHttpStatus),
                 effectiveHttpStatus,
+                httpStatus,
                 denied,
                 requiresRetry,
                 "approved",

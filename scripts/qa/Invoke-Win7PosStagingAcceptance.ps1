@@ -283,6 +283,8 @@ try {
     try {
         $acceptanceResult = Get-Content -Raw -LiteralPath $resultPath |
             ConvertFrom-Json -ErrorAction Stop
+        $acceptanceFailureCode = Get-Win7PosAcceptanceResultCode `
+            -Code ([string]$acceptanceResult.code)
         $requiredEvidence = @(
             'preflight.txt',
             'exact-main-build.txt',
@@ -342,9 +344,18 @@ try {
     }
 
     if (-not $completePass) {
+        $completeFailureCode = if ($acceptanceResult.passed -ne $true) {
+            $acceptanceFailureCode
+        }
+        elseif (-not $evidenceComplete) {
+            'acceptance_evidence_incomplete'
+        }
+        else {
+            'acceptance_complete_failure'
+        }
         Complete-Win7PosAcceptanceRunner `
             -ExitCode $runnerExit.CompleteFailure `
-            -Code 'acceptance_complete_failure' `
+            -Code $completeFailureCode `
             -Passed $false `
             -ProcessResult $processResult
     }

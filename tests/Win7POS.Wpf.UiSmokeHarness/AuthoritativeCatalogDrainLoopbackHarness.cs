@@ -51,6 +51,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     outputDirectory,
                     "page-600-failure",
                     LoopbackFailureMode.RepeatCursorAtPage600).ConfigureAwait(false);
+                var http503Failure = await RunScenarioAsync(
+                    outputDirectory,
+                    "page-135-http-503",
+                    LoopbackFailureMode.Http503AtPage135).ConfigureAwait(false);
                 var terminalFailure = await RunScenarioAsync(
                     outputDirectory,
                     "terminal-failure",
@@ -74,6 +78,27 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 result.ProductListPopulated = success.ProductListPopulated;
                 result.Page600FailureCode = pageFailure.Outcome.StatusCode;
                 result.Page600LiveCatalogPreserved = pageFailure.MarkerPreserved;
+                result.Http503Attempt =
+                    http503Failure.Outcome.Diagnostic?.AttemptNumber ?? 0;
+                result.Http503Code =
+                    http503Failure.Outcome.Diagnostic?.Code;
+                result.Http503HttpStatus =
+                    http503Failure.Outcome.Diagnostic?.HttpStatus;
+                result.Http503LiveCatalogPreserved =
+                    http503Failure.MarkerPreserved;
+                result.Http503Page =
+                    http503Failure.Outcome.Diagnostic?.PageNumber;
+                result.Http503PagesProcessed =
+                    http503Failure.Outcome.Diagnostic?.PagesProcessed ?? 0;
+                result.Http503Requests = http503Failure.Requests;
+                result.Http503Retryable =
+                    http503Failure.Outcome.Diagnostic?.Retryable ?? false;
+                result.Http503RowsApplied =
+                    http503Failure.Outcome.Diagnostic?.RowsApplied ?? 0;
+                result.Http503RowsReceived =
+                    http503Failure.Outcome.Diagnostic?.RowsReceived ?? 0;
+                result.Http503Stage =
+                    http503Failure.Outcome.Diagnostic?.Stage;
                 result.TerminalFailureCode = terminalFailure.Outcome.StatusCode;
                 result.TerminalFailureLiveCatalogPreserved =
                     terminalFailure.MarkerPreserved;
@@ -106,6 +131,42 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "page 600 failure did not reject repeated cursor");
                 Require(pageFailure.Requests == 600, "page 600 request count mismatch");
                 Require(pageFailure.MarkerPreserved, "page 600 changed live catalog");
+                Require(
+                    http503Failure.Outcome.Diagnostic != null,
+                    "page 135 HTTP 503 diagnostic was missing");
+                Require(
+                    string.Equals(
+                        http503Failure.Outcome.Diagnostic.Code,
+                        "http_5xx",
+                        StringComparison.Ordinal),
+                    "page 135 HTTP 503 code mismatch");
+                Require(
+                    string.Equals(
+                        http503Failure.Outcome.Diagnostic.Stage,
+                        "server_response",
+                        StringComparison.Ordinal),
+                    "page 135 HTTP 503 stage mismatch");
+                Require(
+                    http503Failure.Outcome.Diagnostic.HttpStatus == 503,
+                    "page 135 HTTP status mismatch");
+                Require(
+                    http503Failure.Outcome.Diagnostic.AttemptNumber == 1 &&
+                    !http503Failure.Outcome.Diagnostic.Retryable,
+                    "page 135 HTTP 503 was retried or marked auto-retryable");
+                Require(
+                    http503Failure.Outcome.Diagnostic.PageNumber == 135 &&
+                    http503Failure.Outcome.Diagnostic.PagesProcessed == 134,
+                    "page 135 HTTP 503 progress mismatch");
+                Require(
+                    http503Failure.Outcome.Diagnostic.RowsReceived == 8093 &&
+                    http503Failure.Outcome.Diagnostic.RowsApplied == 0,
+                    "page 135 HTTP 503 row counts mismatch");
+                Require(
+                    http503Failure.Requests == 135,
+                    "page 135 HTTP 503 request count mismatch");
+                Require(
+                    http503Failure.MarkerPreserved,
+                    "page 135 HTTP 503 changed live catalog");
                 Require(
                     string.Equals(
                         terminalFailure.Outcome.StatusCode,
@@ -379,6 +440,17 @@ WHERE remote_product_id = @productId
                     }
 
                     var page = Interlocked.Increment(ref _requestCount);
+                    if (_failureMode == LoopbackFailureMode.Http503AtPage135 &&
+                        page == 135)
+                    {
+                        await WriteResponseAsync(
+                            stream,
+                            503,
+                            Encoding.UTF8.GetBytes(
+                                "{\"ok\":false}"),
+                            cancellationToken).ConfigureAwait(false);
+                        return;
+                    }
                     var response = BuildResponse(page, _failureMode);
                     await WriteResponseAsync(
                         stream,
@@ -685,7 +757,11 @@ WHERE remote_product_id = @productId
             byte[] body,
             CancellationToken cancellationToken)
         {
-            var reason = statusCode == 200 ? "OK" : "Not Found";
+            var reason = statusCode == 200
+                ? "OK"
+                : statusCode == 503
+                    ? "Service Unavailable"
+                    : "Not Found";
             var header = Encoding.ASCII.GetBytes(
                 "HTTP/1.1 " +
                 statusCode.ToString(CultureInfo.InvariantCulture) +
@@ -710,7 +786,8 @@ WHERE remote_product_id = @productId
         {
             None = 0,
             RepeatCursorAtPage600 = 1,
-            ChangeSummaryAtTerminal = 2
+            ChangeSummaryAtTerminal = 2,
+            Http503AtPage135 = 3
         }
 
         private sealed class ScenarioResult
@@ -752,6 +829,39 @@ WHERE remote_product_id = @productId
 
             [DataMember(Name = "localPriceRows")]
             internal long LocalPriceRows { get; set; }
+
+            [DataMember(Name = "http503Attempt")]
+            internal int Http503Attempt { get; set; }
+
+            [DataMember(Name = "http503Code")]
+            internal string Http503Code { get; set; }
+
+            [DataMember(Name = "http503HttpStatus")]
+            internal int? Http503HttpStatus { get; set; }
+
+            [DataMember(Name = "http503LiveCatalogPreserved")]
+            internal bool Http503LiveCatalogPreserved { get; set; }
+
+            [DataMember(Name = "http503Page")]
+            internal long? Http503Page { get; set; }
+
+            [DataMember(Name = "http503PagesProcessed")]
+            internal long Http503PagesProcessed { get; set; }
+
+            [DataMember(Name = "http503Requests")]
+            internal int Http503Requests { get; set; }
+
+            [DataMember(Name = "http503Retryable")]
+            internal bool Http503Retryable { get; set; }
+
+            [DataMember(Name = "http503RowsApplied")]
+            internal long Http503RowsApplied { get; set; }
+
+            [DataMember(Name = "http503RowsReceived")]
+            internal long Http503RowsReceived { get; set; }
+
+            [DataMember(Name = "http503Stage")]
+            internal string Http503Stage { get; set; }
 
             [DataMember(Name = "page600FailureCode")]
             internal string Page600FailureCode { get; set; }

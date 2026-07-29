@@ -27,6 +27,21 @@ function Assert-Runner {
 }
 
 try {
+    Assert-Runner (
+        (Get-Win7PosAcceptanceResultCode `
+            -Code ' Bootstrap_Catalog_Pull_HTTP_5XX ') -eq
+        'bootstrap_catalog_pull_http_5xx'
+    ) 'Typed harness result code was not preserved.'
+    Assert-Runner (
+        (Get-Win7PosAcceptanceResultCode `
+            -Code '../raw request body') -eq
+        'acceptance_result_invalid_code'
+    ) 'Unsafe harness result code was not rejected.'
+    Assert-Runner (
+        (Get-Win7PosAcceptanceResultCode -Code '') -eq
+        'acceptance_result_invalid_code'
+    ) 'Empty harness result code was not rejected.'
+
     $pwshPath = (Get-Process -Id $PID).Path
     $waitEvidence = Join-Path $testRoot 'wait-evidence'
     $waitMarker = Join-Path $testRoot 'wait-marker.txt'
