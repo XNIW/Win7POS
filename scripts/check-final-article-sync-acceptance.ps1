@@ -94,6 +94,10 @@ Require-Pattern "runner executes a resume process phase" $runner `
     "'--acceptance-phase',\s*'resume'"
 Require-Pattern "runner requires the restart checkpoint exit" $runner `
     "ExitCode\s*-ne\s*75"
+Require-Pattern "runner requires bounded online recovery after restart" `
+    $runner "restartOnlineRecoveryValid\s*-eq\s*\`$true"
+Require-Pattern "runner requires process-scoped offline authority to clear" `
+    $runner "restartOfflineAuthorityCleared\s*-eq\s*\`$true"
 Require-Pattern "runner rejects every worktree change including untracked files" `
     $runner "status\s+--porcelain\)"
 Reject-Pattern "runner does not hide untracked files" $runner `
@@ -151,6 +155,10 @@ Require-Pattern "staging records the supported resolution" $article `
     "result\.ConflictResolved\s*=\s*true"
 Require-Pattern "staging performs a real process restart checkpoint" $article `
     "article-restart-checkpoint\.json"
+Require-Pattern "resume uses bounded online recovery after process restart" `
+    $staging "TryLoadRestartedOnlineRecoverySession"
+Require-Pattern "resume preserves prepare-phase offline authority proof" `
+    $staging "report\.OfflineAuthorizationValid[\s\S]*RestartOnlineRecoveryValid"
 Require-Pattern "offline create is verified in one SQLite transaction" $article `
     "ReadOfflineCreateAtomicSnapshotAsync[\s\S]*BeginTransaction\(\)"
 Require-Pattern "restart verifies the stable client product identity" $article `

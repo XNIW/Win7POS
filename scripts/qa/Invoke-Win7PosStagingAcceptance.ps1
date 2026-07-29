@@ -652,6 +652,8 @@ try {
             $acceptanceResult.offlineAuthorizationValid -eq $true -and
             $acceptanceResult.offlineAuthorityAfterServerTime -eq $true -and
             $acceptanceResult.offlineAuthorityWithinSessionExpiry -eq $true -and
+            $acceptanceResult.restartOnlineRecoveryValid -eq $true -and
+            $acceptanceResult.restartOfflineAuthorityCleared -eq $true -and
             $acceptanceResult.exactnessVerified -eq $true -and
             $acceptanceResult.repairRequired -eq $false -and
             $acceptanceResult.terminalHasMore -eq $false -and

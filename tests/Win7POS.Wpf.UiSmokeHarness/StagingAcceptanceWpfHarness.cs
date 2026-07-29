@@ -216,64 +216,92 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
                 }
 
-                report.OfflineAuthorizationValid =
-                    trustedStore.TryRead(out trustedSession) &&
-                    trustedSession.OfflineAuthorizationAttested &&
-                    PosOfflineAuthorizationLeasePolicy.Evaluate(
-                        trustedSession,
-                        DateTimeOffset.UtcNow).Allowed;
-                var offlineAuthorityExpiresAt = DateTimeOffset.MinValue;
-                var sessionExpiresAt = DateTimeOffset.MinValue;
-                var serverTime = DateTimeOffset.MinValue;
-                report.OfflineAuthorityAfterServerTime =
-                    DateTimeOffset.TryParse(
-                        trustedSession?.EffectiveOfflineAuthorizationExpiresAt,
-                        CultureInfo.InvariantCulture,
-                        DateTimeStyles.RoundtripKind,
-                        out offlineAuthorityExpiresAt) &&
-                    DateTimeOffset.TryParse(
-                        trustedSession?.LastOkServerAt,
-                        CultureInfo.InvariantCulture,
-                        DateTimeStyles.RoundtripKind,
-                        out serverTime) &&
-                    offlineAuthorityExpiresAt > serverTime;
-                report.OfflineAuthorityWithinSessionExpiry =
-                    DateTimeOffset.TryParse(
-                        trustedSession?.SessionExpiresAt,
-                        CultureInfo.InvariantCulture,
-                        DateTimeStyles.RoundtripKind,
-                        out sessionExpiresAt) &&
-                    offlineAuthorityExpiresAt <= sessionExpiresAt;
-                report.EffectiveOfflineAuthorizationExpiresAt =
-                    report.OfflineAuthorityAfterServerTime
-                        ? offlineAuthorityExpiresAt.ToString(
-                            "O",
-                            CultureInfo.InvariantCulture)
-                        : string.Empty;
-                report.SessionExpiresAt =
-                    report.OfflineAuthorityWithinSessionExpiry
-                        ? sessionExpiresAt.ToString(
-                            "O",
-                            CultureInfo.InvariantCulture)
-                        : string.Empty;
-                report.ServerTime =
-                    report.OfflineAuthorityAfterServerTime
-                        ? serverTime.ToString(
-                            "O",
-                            CultureInfo.InvariantCulture)
-                        : string.Empty;
-                report.OfflineAuthorizationValid =
-                    report.OfflineAuthorizationValid &&
-                    report.OfflineAuthorityAfterServerTime &&
-                    report.OfflineAuthorityWithinSessionExpiry;
-                if (!report.OfflineAuthorizationValid)
+                if (!resumeAfterRestart)
                 {
-                    RecordHarnessFailure(
-                        report,
-                        "offline_authorization",
-                        "offline_authorization_invalid");
-                    throw new AcceptanceFailure(
-                        "offline_authorization_invalid");
+                    report.OfflineAuthorizationValid =
+                        trustedStore.TryRead(out trustedSession) &&
+                        trustedSession.OfflineAuthorizationAttested &&
+                        PosOfflineAuthorizationLeasePolicy.Evaluate(
+                            trustedSession,
+                            DateTimeOffset.UtcNow).Allowed;
+                    var offlineAuthorityExpiresAt =
+                        DateTimeOffset.MinValue;
+                    var sessionExpiresAt = DateTimeOffset.MinValue;
+                    var serverTime = DateTimeOffset.MinValue;
+                    report.OfflineAuthorityAfterServerTime =
+                        DateTimeOffset.TryParse(
+                            trustedSession
+                                ?.EffectiveOfflineAuthorizationExpiresAt,
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.RoundtripKind,
+                            out offlineAuthorityExpiresAt) &&
+                        DateTimeOffset.TryParse(
+                            trustedSession?.LastOkServerAt,
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.RoundtripKind,
+                            out serverTime) &&
+                        offlineAuthorityExpiresAt > serverTime;
+                    report.OfflineAuthorityWithinSessionExpiry =
+                        DateTimeOffset.TryParse(
+                            trustedSession?.SessionExpiresAt,
+                            CultureInfo.InvariantCulture,
+                            DateTimeStyles.RoundtripKind,
+                            out sessionExpiresAt) &&
+                        offlineAuthorityExpiresAt <= sessionExpiresAt;
+                    report.EffectiveOfflineAuthorizationExpiresAt =
+                        report.OfflineAuthorityAfterServerTime
+                            ? offlineAuthorityExpiresAt.ToString(
+                                "O",
+                                CultureInfo.InvariantCulture)
+                            : string.Empty;
+                    report.SessionExpiresAt =
+                        report.OfflineAuthorityWithinSessionExpiry
+                            ? sessionExpiresAt.ToString(
+                                "O",
+                                CultureInfo.InvariantCulture)
+                            : string.Empty;
+                    report.ServerTime =
+                        report.OfflineAuthorityAfterServerTime
+                            ? serverTime.ToString(
+                                "O",
+                                CultureInfo.InvariantCulture)
+                            : string.Empty;
+                    report.OfflineAuthorizationValid =
+                        report.OfflineAuthorizationValid &&
+                        report.OfflineAuthorityAfterServerTime &&
+                        report.OfflineAuthorityWithinSessionExpiry;
+                    if (!report.OfflineAuthorizationValid)
+                    {
+                        RecordHarnessFailure(
+                            report,
+                            "offline_authorization",
+                            "offline_authorization_invalid");
+                        throw new AcceptanceFailure(
+                            "offline_authorization_invalid");
+                    }
+                }
+                else
+                {
+                    report.RestartOnlineRecoveryValid =
+                        TryLoadRestartedOnlineRecoverySession(
+                            trustedStore,
+                            out trustedSession,
+                            out var restartOfflineAuthorityCleared);
+                    report.RestartOfflineAuthorityCleared =
+                        restartOfflineAuthorityCleared;
+                    if (!report.OfflineAuthorizationValid ||
+                        !report.OfflineAuthorityAfterServerTime ||
+                        !report.OfflineAuthorityWithinSessionExpiry ||
+                        !report.RestartOnlineRecoveryValid ||
+                        !report.RestartOfflineAuthorityCleared)
+                    {
+                        RecordHarnessFailure(
+                            report,
+                            "restart_online_recovery",
+                            "restart_online_recovery_invalid");
+                        throw new AcceptanceFailure(
+                            "restart_online_recovery_invalid");
+                    }
                 }
 
                 var users = new UserRepository(factory);
@@ -1316,6 +1344,32 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return true;
         }
 
+        internal static bool TryLoadRestartedOnlineRecoverySession(
+            PosTrustedDeviceStore trustedStore,
+            out PosTrustedDeviceSession trustedSession,
+            out bool offlineAuthorityCleared)
+        {
+            trustedSession = null;
+            offlineAuthorityCleared = false;
+            if (trustedStore == null ||
+                !trustedStore.TryRead(out trustedSession))
+            {
+                return false;
+            }
+
+            offlineAuthorityCleared =
+                !trustedSession.OfflineAuthorizationAttested &&
+                string.IsNullOrWhiteSpace(
+                    trustedSession
+                        .EffectiveOfflineAuthorizationExpiresAt);
+            return offlineAuthorityCleared &&
+                PosOfflineAuthorizationLeasePolicy
+                    .ValidateOnlineReceipt(
+                        trustedSession,
+                        DateTimeOffset.UtcNow)
+                    .Allowed;
+        }
+
         private static bool ContainsForbiddenEvidenceMarker(string contents)
         {
             if (string.IsNullOrEmpty(contents))
@@ -1453,6 +1507,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         report.OfflineAuthorityWithinSessionExpiry,
                     PosUnlocked = report.PosUnlocked,
                     RequestReachedServer = report.RequestReachedServer,
+                    RestartOfflineAuthorityCleared =
+                        report.RestartOfflineAuthorityCleared,
+                    RestartOnlineRecoveryValid =
+                        report.RestartOnlineRecoveryValid,
                     ServerTime = report.ServerTime,
                     SessionExpiresAt = report.SessionExpiresAt,
                     TrustedSessionPersisted =
@@ -2187,6 +2245,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "offlineAuthorityWithinSessionExpiry")]
             public bool OfflineAuthorityWithinSessionExpiry { get; set; }
 
+            [DataMember(Name = "restartOfflineAuthorityCleared")]
+            public bool RestartOfflineAuthorityCleared { get; set; }
+
+            [DataMember(Name = "restartOnlineRecoveryValid")]
+            public bool RestartOnlineRecoveryValid { get; set; }
+
             [DataMember(Name = "offlineCreateAtomic")]
             public bool OfflineCreateAtomic { get; set; }
 
@@ -2301,6 +2365,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             [DataMember(Name = "offlineAuthorityWithinSessionExpiry")]
             public bool OfflineAuthorityWithinSessionExpiry { get; set; }
+
+            [DataMember(Name = "restartOfflineAuthorityCleared")]
+            public bool RestartOfflineAuthorityCleared { get; set; }
+
+            [DataMember(Name = "restartOnlineRecoveryValid")]
+            public bool RestartOnlineRecoveryValid { get; set; }
 
             [DataMember(Name = "posUnlocked")]
             public bool PosUnlocked { get; set; }
