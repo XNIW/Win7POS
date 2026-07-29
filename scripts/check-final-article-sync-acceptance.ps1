@@ -48,6 +48,28 @@ $processRunner = Read-RepoText "scripts/qa/Win7PosAcceptanceProcessRunner.psm1"
 $runnerTest = Read-RepoText "tests/qa/Test-Win7PosStagingAcceptanceRunner.ps1"
 $bootstrap = Read-RepoText "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
 
+$acceptanceWrapperPath = Join-Path $repoRoot (
+    "scripts/qa/Invoke-Win7PosStagingAcceptance.ps1")
+$acceptanceWrapperTokens = $null
+$acceptanceWrapperParseErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile(
+    $acceptanceWrapperPath,
+    [ref]$acceptanceWrapperTokens,
+    [ref]$acceptanceWrapperParseErrors) | Out-Null
+if ($acceptanceWrapperParseErrors.Count -ne 0) {
+    Write-Host (
+        "FAIL: acceptance wrapper parser errors: " +
+        (($acceptanceWrapperParseErrors | ForEach-Object {
+            $_.Message
+        }) -join " | ")
+    ) -ForegroundColor Red
+    $failed = $true
+}
+else {
+    Write-Host "PASS: acceptance wrapper parses completely" `
+        -ForegroundColor Green
+}
+
 $finalDataDirectory = [regex]::Escape(
     "C:\POSData\Win7POSFinalArticleSyncAcceptance")
 Require-Pattern "runner uses the final isolated data directory" $runner `
@@ -84,6 +106,8 @@ Require-Pattern "timeout-after-marker preserves logical run accounting" `
     $runnerTest "Timeout after the consumed marker incorrectly restored run budget"
 Require-Pattern "pre-rename marker preserves logical run accounting" `
     $runnerTest "Flushed pre-rename marker incorrectly restored run budget"
+Require-Pattern "runner test parses the complete acceptance wrapper" `
+    $runnerTest "Language\.Parser\]::ParseFile"
 Require-Pattern "program requires explicit acceptance phases" $program `
     "--acceptance-phase prepare\|resume"
 Require-Pattern "first server response invokes the in-flight observation callback" `
