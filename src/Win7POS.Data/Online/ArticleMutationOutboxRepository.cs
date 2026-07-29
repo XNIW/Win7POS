@@ -936,7 +936,9 @@ WHERE state <> 'completed';").ConfigureAwait(false);
 SELECT last_typed_code
 FROM article_mutation_outbox
 WHERE last_typed_code IS NOT NULL
-ORDER BY updated_at DESC, id DESC
+ORDER BY CASE WHEN state = 'failed_blocked' THEN 0 ELSE 1 END,
+         updated_at DESC,
+         id DESC
 LIMIT 1;").ConfigureAwait(false);
                 return summary;
             }

@@ -393,6 +393,63 @@ WHERE completed_at IS NULL;"));
     }
 
     [TestMethod]
+    public async Task Summary_PrioritizesBlockedConflictOverNewerAppliedCode()
+    {
+        using var db = TestDb.Create();
+        var blocked = await CreateLocalProductAsync(
+            db,
+            "SYNC-CONFLICT-DIAGNOSTIC");
+        var applied = await CreateLocalProductAsync(
+            db,
+            "SYNC-UNRELATED-SUCCESS");
+        using (var connection = db.Factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+UPDATE article_mutation_outbox
+SET state = 'failed_blocked',
+    last_typed_code = 'failed_conflict',
+    updated_at = '2026-07-28T12:00:01.000000Z'
+WHERE local_product_id = @blockedProductId;
+
+UPDATE article_mutation_outbox
+SET state = 'completed',
+    last_typed_code = 'applied',
+    updated_at = '2026-07-28T12:00:02.000000Z'
+WHERE local_product_id = @appliedProductId;",
+                new
+                {
+                    blockedProductId = blocked.ProductId,
+                    appliedProductId = applied.ProductId
+                });
+        }
+
+        var summary = await new ArticleMutationOutboxRepository(db.Factory)
+            .GetSummaryAsync();
+
+        Assert.AreEqual(1L, summary.FailedBlocked);
+        Assert.AreEqual(
+            PosArticleMutationStatusPolicy.FailedConflict,
+            summary.LastTypedCode);
+
+        using (var connection = db.Factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+UPDATE article_mutation_outbox
+SET state = 'completed'
+WHERE local_product_id = @blockedProductId;",
+                new { blockedProductId = blocked.ProductId });
+        }
+        var fallbackSummary =
+            await new ArticleMutationOutboxRepository(db.Factory)
+                .GetSummaryAsync();
+
+        Assert.AreEqual(0L, fallbackSummary.FailedBlocked);
+        Assert.AreEqual(
+            PosArticleMutationStatusPolicy.Applied,
+            fallbackSummary.LastTypedCode);
+    }
+
+    [TestMethod]
     public async Task WebClient_UsesCanonicalUtf8BodyRouteAndNoStoreHeaders()
     {
         byte[]? capturedBody = null;
