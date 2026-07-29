@@ -149,6 +149,18 @@ Require-Pattern "run-consumed marker is flushed before atomic rename" `
     $staging "stream\.Flush\(true\);[\s\S]*File\.Move\(temporaryPath, finalPath\)"
 Require-Pattern "loopback holds catalog after durable server-reach marker" `
     $loopback "run_consumed_marker_not_durable_before_catalog_return"
+Require-Pattern "loopback reproduces and verifies MTA-to-STA UI dispatch" `
+    $loopback "RunStaUiDispatchRegressionAsync[\s\S]*sta_ui_dispatch_regression_failed"
+Require-Pattern "staging marshals UI work through the application dispatcher" `
+    $article "RunOnUiDispatcherAsync[\s\S]*DispatcherPriority\.Send[\s\S]*Unwrap\(\)"
+Require-Pattern "staging UI dispatch regression begins off-dispatcher" `
+    $article "Task\.Run[\s\S]*callerIsOffDispatcher[\s\S]*callerIsNotSta[\s\S]*marshaledToSta"
+Require-Pattern "offline queue UI capture uses the explicit dispatcher marshal" `
+    $article "RunOnUiDispatcherAsync\([\s\S]{0,260}CaptureOfflineQueueUiAsync"
+Require-Pattern "conflict UI capture uses the explicit dispatcher marshal" `
+    $article "RunOnUiDispatcherAsync\([\s\S]{0,180}CaptureArticleUiAsync"
+Require-Pattern "clean UI capture uses the explicit dispatcher marshal" `
+    $article "RunOnUiDispatcherAsync\([\s\S]{0,260}CaptureCleanSyncCenterAsync"
 
 $resourceAssignment = $program.IndexOf(
     "Application.ResourceAssembly =",
