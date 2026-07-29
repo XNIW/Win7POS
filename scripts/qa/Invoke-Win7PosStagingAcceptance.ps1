@@ -547,9 +547,9 @@ try {
             -Passed $false `
             -ProcessResult $prepareProcessResult
     }
+    $elapsed = [DateTimeOffset]::UtcNow - $acceptanceStartedAt
     $elapsedMilliseconds = [int][Math]::Ceiling(
-        ([DateTimeOffset]::UtcNow - $acceptanceStartedAt)
-            .TotalMilliseconds)
+        $elapsed.TotalMilliseconds)
     $remainingMilliseconds =
         ($TimeoutMinutes * 60 * 1000) - $elapsedMilliseconds
     if ($remainingMilliseconds -lt 100) {

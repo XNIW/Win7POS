@@ -6,6 +6,8 @@ $repoRoot = [System.IO.Path]::GetFullPath(
     (Join-Path $PSScriptRoot '..\..'))
 $modulePath = Join-Path $repoRoot (
     'scripts\qa\Win7PosAcceptanceProcessRunner.psm1')
+$acceptanceWrapper = Join-Path $repoRoot (
+    'scripts\qa\Invoke-Win7PosStagingAcceptance.ps1')
 $syntheticHarness = Join-Path $PSScriptRoot (
     'fixtures\Invoke-SyntheticAcceptanceHarness.ps1')
 $mutexHolder = Join-Path $PSScriptRoot (
@@ -27,6 +29,19 @@ function Assert-Runner {
 }
 
 try {
+    $wrapperTokens = $null
+    $wrapperParseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+        $acceptanceWrapper,
+        [ref]$wrapperTokens,
+        [ref]$wrapperParseErrors) | Out-Null
+    Assert-Runner (
+        $wrapperParseErrors.Count -eq 0
+    ) ('Acceptance wrapper has parser errors: ' +
+        (($wrapperParseErrors | ForEach-Object {
+            $_.Message
+        }) -join ' | '))
+
     Assert-Runner (
         (Get-Win7PosAcceptanceResultCode `
             -Code ' Bootstrap_Catalog_Pull_HTTP_5XX ') -eq
