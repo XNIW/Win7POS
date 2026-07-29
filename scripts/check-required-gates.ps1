@@ -26,6 +26,7 @@ $sourceGates = @(
     "check-pos-online-linking-task084b.ps1",
     "check-security-hardening.ps1",
     "check-public-staging-config.ps1",
+    "check-final-article-sync-acceptance.ps1",
     "check-supplier-excel-wizard.ps1",
     "check-product-dialog-free-text.ps1",
     "check-product-keyset-paging.ps1",

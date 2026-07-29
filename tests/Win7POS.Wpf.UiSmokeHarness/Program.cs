@@ -169,13 +169,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var stagingProfile = ValueAfter(args, "--profile");
             var stagingRunId = ValueAfter(args, "--run-id");
             var acceptanceOutput = ValueAfter(args, "--acceptance-output");
+            var stagingAcceptancePhase =
+                ValueAfter(args, "--acceptance-phase");
             if (stagingAcceptance &&
                 (string.IsNullOrWhiteSpace(stagingProfile) ||
                  string.IsNullOrWhiteSpace(stagingRunId) ||
-                 string.IsNullOrWhiteSpace(acceptanceOutput)))
+                 string.IsNullOrWhiteSpace(acceptanceOutput) ||
+                 (stagingAcceptancePhase != "prepare" &&
+                  stagingAcceptancePhase != "resume")))
             {
                 throw new InvalidOperationException(
-                    "--staging-acceptance requires --profile, --run-id and --acceptance-output.");
+                    "--staging-acceptance requires --profile, --run-id, " +
+                    "--acceptance-output and --acceptance-phase prepare|resume.");
             }
             if (authoritativeDrainLoopback &&
                 string.IsNullOrWhiteSpace(acceptanceOutput))
@@ -233,6 +238,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
             Environment.SetEnvironmentVariable("WIN7POS_DATA_DIR", dataDir);
             Environment.SetEnvironmentVariable("WIN7POS_SAFE_START", "1");
 
+            if (Application.ResourceAssembly == null)
+            {
+                Application.ResourceAssembly =
+                    typeof(ProductEditDialog).Assembly;
+            }
             var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
             AddApplicationResources(app);
             app.DispatcherUnhandledException += (_, e) =>
@@ -303,13 +313,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                     if (stagingAcceptance)
                     {
-                        var passed = await StagingAcceptanceWpfHarness
+                        var exitCode = await StagingAcceptanceWpfHarness
                             .RunAsync(
                                 stagingProfile,
                                 stagingRunId,
-                                acceptanceOutput)
+                                acceptanceOutput,
+                                stagingAcceptancePhase)
                             .ConfigureAwait(true);
-                        app.Shutdown(passed ? 0 : 1);
+                        app.Shutdown(exitCode);
                         return;
                     }
 
@@ -484,9 +495,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         var outputDirectory = ValueAfter(args, "--output-dir");
                         if (string.IsNullOrWhiteSpace(outputDirectory))
                             outputDirectory = dataDir;
+                        var clippingRegression =
+                            await StagingArticleMutationAcceptance
+                                .RunNonFocusableClippingRegressionAsync()
+                                .ConfigureAwait(true);
                         var result = await launcher
                             .RunArticleMutationUiSmokeAsync(outputDirectory)
                             .ConfigureAwait(true);
+                        if (!clippingRegression)
+                        {
+                            result =
+                                "FAIL non_focusable_clipping_regression";
+                        }
                         File.WriteAllText(
                             Path.Combine(
                                 outputDirectory,

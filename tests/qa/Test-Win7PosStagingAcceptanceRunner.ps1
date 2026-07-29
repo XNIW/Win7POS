@@ -89,6 +89,9 @@ try {
 
     $timeoutEvidence = Join-Path $testRoot 'timeout-evidence'
     $timeoutMarker = Join-Path $testRoot 'timeout-marker.txt'
+    $timeoutRunId = 'ASUSART_FINAL_RUNNER_TIMEOUT'
+    $runConsumedMarker = Join-Path $timeoutEvidence (
+        'run-consumed-redacted.json')
     $timedOut = Invoke-Win7PosWaitedProcess `
         -FilePath $pwshPath `
         -ArgumentList @(
@@ -97,7 +100,9 @@ try {
             '-AcceptanceOutput', $timeoutEvidence,
             '-DelayMilliseconds', '10000',
             '-SyntheticExitCode', '0',
-            '-MarkerPath', $timeoutMarker
+            '-MarkerPath', $timeoutMarker,
+            '-RunConsumedMarkerPath', $runConsumedMarker,
+            '-RunId', $timeoutRunId
         ) `
         -TimeoutMilliseconds 400 `
         -EvidenceDirectory $timeoutEvidence
@@ -107,6 +112,28 @@ try {
     Assert-Runner (
         $null -eq (Get-Process -Id $timedOut.ProcessId -ErrorAction SilentlyContinue)
     ) 'Timed-out process still exists.'
+    Assert-Runner (
+        (Get-Win7PosAcceptanceLogicalRunCount `
+            -EvidenceDirectory $timeoutEvidence `
+            -RunId $timeoutRunId) -eq 1
+    ) 'Timeout after the consumed marker incorrectly restored run budget.'
+
+    $temporaryOnlyEvidence = Join-Path $testRoot (
+        'temporary-marker-evidence')
+    New-Item -ItemType Directory -Path $temporaryOnlyEvidence -Force |
+        Out-Null
+    Set-Content `
+        -LiteralPath (Join-Path $temporaryOnlyEvidence (
+            'run-consumed-redacted.json.' +
+            [Guid]::NewGuid().ToString('N') +
+            '.tmp')) `
+        -Value '{"requestReachedServer":true}' `
+        -Encoding UTF8
+    Assert-Runner (
+        (Get-Win7PosAcceptanceLogicalRunCount `
+            -EvidenceDirectory $temporaryOnlyEvidence `
+            -RunId $timeoutRunId) -eq 1
+    ) 'Flushed pre-rename marker incorrectly restored run budget.'
 
     $mutexName = 'Local\Win7POS.RunnerTest.' +
         [Guid]::NewGuid().ToString('N')

@@ -53,14 +53,22 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 var options = PosDbOptions.Default();
                 DbInitializer.EnsureCreated(options);
                 var factory = new SqliteConnectionFactory(options);
-                using (var server = new ArticleLoopbackServer())
+                using (var server = new ArticleLoopbackServer(
+                    holdFirstCatalogResponse: true))
                 using (var host = new PosOnlineSyncSupervisorHost(factory))
                 using (var timeout = new CancellationTokenSource(
                     TimeSpan.FromMinutes(2)))
                 {
                     PosAdminWebOptions.SaveBaseUrl(new Uri(server.BaseUrl));
                     var store = new PosTrustedDeviceStore();
-                    var bootstrap = await new PosOnlineBootstrapService(
+                    var markerDirectory = Path.Combine(
+                        outputDirectory,
+                        "run-consumed-callback-regression");
+                    Directory.CreateDirectory(markerDirectory);
+                    var markerPath = Path.Combine(
+                        markerDirectory,
+                        "run-consumed-redacted.json");
+                    var bootstrapTask = new PosOnlineBootstrapService(
                             factory,
                             store,
                             host)
@@ -81,8 +89,27 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                 }
                             },
                             "2468",
-                            timeout.Token)
+                            timeout.Token,
+                            requestReachedServerObserved: () =>
+                                StagingAcceptanceWpfHarness
+                                    .WriteRunConsumedMarkerAtomically(
+                                        markerDirectory,
+                                        "ASUSART_FINAL_CALLBACK_REGRESSION"));
+                    var catalogBlocked = await Task.WhenAny(
+                            server.FirstCatalogRequestBlocked,
+                            Task.Delay(
+                                TimeSpan.FromSeconds(10),
+                                timeout.Token))
                         .ConfigureAwait(true);
+                    Require(
+                        ReferenceEquals(
+                            catalogBlocked,
+                            server.FirstCatalogRequestBlocked) &&
+                        File.Exists(markerPath) &&
+                        !bootstrapTask.IsCompleted,
+                        "run_consumed_marker_not_durable_before_catalog_return");
+                    server.ReleaseCatalogResponse();
+                    var bootstrap = await bootstrapTask.ConfigureAwait(true);
                     Require(
                         bootstrap.Success &&
                         bootstrap.FirstLoginSucceeded &&
@@ -409,6 +436,68 @@ WHERE state = 'failed_blocked'
                     report.CanonicalPull = true;
                     report.ZeroEcho = true;
 
+                    remoteSource = await workflow
+                        .GetByBarcodeDetailsAsync("LOOP-REMOTE-EDIT")
+                        .ConfigureAwait(true);
+                    var correction = await CreateViewModelAsync(
+                        ProductEditMode.Edit,
+                        remoteSource,
+                        workflow).ConfigureAwait(true);
+                    Populate(
+                        correction,
+                        remoteSource.Barcode,
+                        "Loopback conflict resolved",
+                        checked((int)remoteSource.UnitPrice),
+                        remoteSource.PurchasePrice,
+                        remoteSource.StockQty,
+                        remoteSource.ArticleCode);
+                    correction.Name2 = remoteSource.Name2;
+                    await SubmitAsync(correction).ConfigureAwait(true);
+                    await DrainArticlesAsync(
+                        factory,
+                        host,
+                        timeout.Token).ConfigureAwait(true);
+                    Require(
+                        await CountAsync(
+                            factory,
+                            @"SELECT COUNT(1)
+FROM article_mutation_outbox
+WHERE state = 'completed'
+  AND last_typed_code = 'failed_conflict'
+  AND resolution_code = 'superseded_by_correction'
+  AND superseded_by_mutation_id IS NOT NULL;")
+                        .ConfigureAwait(false) == 1,
+                        "conflict_not_superseded_by_correction");
+                    report.ConflictResolved = true;
+
+                    var beforeFinalPullOutbox = await CountAsync(
+                        factory,
+                        "SELECT COUNT(1) FROM article_mutation_outbox;")
+                        .ConfigureAwait(false);
+                    var finalPull = await new PosCatalogPullService(factory)
+                        .TryPullCatalogForSupervisorAsync(
+                            new PosAdminWebOptions(
+                                new Uri(server.BaseUrl)),
+                            trustedSession,
+                            generation: host.CurrentGeneration,
+                            executionContext: null,
+                            forceFullRepair: true,
+                            bootstrapRun: false,
+                            cancellationToken: timeout.Token)
+                        .ConfigureAwait(false);
+                    Require(
+                        finalPull.Completed &&
+                        finalPull.CatalogSaleSafe,
+                        "final_canonical_pull_failed_" +
+                        SafeCode(finalPull.StatusCode));
+                    Require(
+                        beforeFinalPullOutbox ==
+                        await CountAsync(
+                            factory,
+                            "SELECT COUNT(1) FROM article_mutation_outbox;")
+                            .ConfigureAwait(false),
+                        "final_canonical_pull_created_outbound_echo");
+
                     await VerifyFinalStateAsync(
                         factory,
                         server,
@@ -417,7 +506,7 @@ WHERE state = 'failed_blocked'
                         duplicate.Barcode)
                         .ConfigureAwait(false);
                     report.PendingWork = 0;
-                    report.BlockedConflicts = 1;
+                    report.BlockedConflicts = 0;
                     report.PriceHistoryDuplicates = 0;
                     report.StockMovementDuplicates = 0;
                     report.SalesRows = 0;
@@ -433,9 +522,10 @@ WHERE state = 'failed_blocked'
                     "offDispatcherSubmitMarshaled=True; " +
                     "dependentEdit=True; update=True; retail=True; " +
                     "purchase=True; stock=+5,-2; conflict=True; " +
+                    "conflictResolved=True; " +
                     "duplicate=True; deactivate=True; reactivate=True; " +
                     "canonicalPull=True; zeroEcho=True; pending=0; " +
-                    "blocked=1; duplicateHistory=0; duplicateMovement=0; " +
+                    "blocked=0; duplicateHistory=0; duplicateMovement=0; " +
                     "sales=0";
             }
             catch (Exception ex)
@@ -647,9 +737,22 @@ WHERE state IN (
                     await connection.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1)
 FROM article_mutation_outbox
-WHERE state = 'failed_blocked'
-  AND last_typed_code = 'failed_conflict';") == 1,
-                    "conflict_block_count_mismatch");
+WHERE state IN (
+  'waiting_dependency',
+  'pending',
+  'in_progress',
+  'retry_wait',
+  'failed_blocked');") == 0,
+                    "unresolved_article_work_remains");
+                Require(
+                    await connection.ExecuteScalarAsync<long>(@"
+SELECT COUNT(1)
+FROM article_mutation_outbox
+WHERE state = 'completed'
+  AND last_typed_code = 'failed_conflict'
+  AND resolution_code = 'superseded_by_correction'
+  AND superseded_by_mutation_id IS NOT NULL;") == 1,
+                    "resolved_conflict_evidence_mismatch");
                 Require(
                     await connection.ExecuteScalarAsync<long>(@"
 SELECT COUNT(1)
@@ -912,6 +1015,8 @@ GROUP BY mutation_kind;")).ToDictionary(
             public int CatalogRequests { get; set; }
             [DataMember(Order = 28)]
             public bool OffDispatcherSubmitMarshaled { get; set; }
+            [DataMember(Order = 29)]
+            public bool ConflictResolved { get; set; }
         }
 
         private sealed class ArticleLoopbackServer : IDisposable
@@ -923,6 +1028,14 @@ GROUP BY mutation_kind;")).ToDictionary(
             private readonly object _gate = new object();
             private readonly CancellationTokenSource _cancellation =
                 new CancellationTokenSource();
+            private readonly TaskCompletionSource<bool>
+                _firstCatalogRequestBlocked =
+                    new TaskCompletionSource<bool>(
+                        TaskCreationOptions.RunContinuationsAsynchronously);
+            private readonly TaskCompletionSource<bool>
+                _releaseCatalogResponse =
+                    new TaskCompletionSource<bool>(
+                        TaskCreationOptions.RunContinuationsAsynchronously);
             private readonly TcpListener _listener;
             private readonly Task _serverTask;
             private readonly Dictionary<string, RemoteProduct> _products =
@@ -942,9 +1055,14 @@ GROUP BY mutation_kind;")).ToDictionary(
             private int _duplicateReplayCount;
             private int _lostResponseCount;
             private bool _lostCreateResponse;
+            private readonly bool _holdFirstCatalogResponse;
+            private int _catalogResponseHeld;
 
-            internal ArticleLoopbackServer()
+            internal ArticleLoopbackServer(
+                bool holdFirstCatalogResponse = false)
             {
+                _holdFirstCatalogResponse =
+                    holdFirstCatalogResponse;
                 var revision =
                     "2026-07-28T12:00:00.123456Z";
                 _products.Add(
@@ -998,6 +1116,8 @@ GROUP BY mutation_kind;")).ToDictionary(
             }
 
             internal string BaseUrl { get; }
+            internal Task FirstCatalogRequestBlocked =>
+                _firstCatalogRequestBlocked.Task;
             internal int ArticleRequestCount =>
                 Volatile.Read(ref _articleRequestCount);
             internal int CatalogRequestCount =>
@@ -1035,8 +1155,14 @@ GROUP BY mutation_kind;")).ToDictionary(
                 }
             }
 
+            internal void ReleaseCatalogResponse()
+            {
+                _releaseCatalogResponse.TrySetResult(true);
+            }
+
             public void Dispose()
             {
+                ReleaseCatalogResponse();
                 _cancellation.Cancel();
                 try
                 {
@@ -1113,6 +1239,16 @@ GROUP BY mutation_kind;")).ToDictionary(
                     {
                         Interlocked.Increment(
                             ref _catalogRequestCount);
+                        if (_holdFirstCatalogResponse &&
+                            Interlocked.CompareExchange(
+                                ref _catalogResponseHeld,
+                                1,
+                                0) == 0)
+                        {
+                            _firstCatalogRequestBlocked.TrySetResult(true);
+                            await _releaseCatalogResponse.Task
+                                .ConfigureAwait(false);
+                        }
                         await WriteResponseAsync(
                             stream,
                             200,
