@@ -57,6 +57,27 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Require(
                     report.StaUiDispatchMarshaled,
                     "sta_ui_dispatch_regression_failed");
+                report.CleanupManifestRemoteChildCounts =
+                    StagingArticleMutationAcceptance
+                        .HasCompleteCleanupRemoteChildIds(
+                            new[] {
+                                "price-1",
+                                "price-2",
+                                "price-3",
+                                "price-4"
+                            },
+                            new[] {
+                                "movement-1",
+                                "movement-2",
+                                "movement-3"
+                            }) &&
+                    !StagingArticleMutationAcceptance
+                        .HasCompleteCleanupRemoteChildIds(
+                            new[] { "price-1", "price-2" },
+                            new[] { "movement-1", "movement-2" });
+                Require(
+                    report.CleanupManifestRemoteChildCounts,
+                    "cleanup_manifest_remote_child_count_regression_failed");
 
                 var options = PosDbOptions.Default();
                 DbInitializer.EnsureCreated(options);
@@ -528,6 +549,7 @@ WHERE state = 'completed'
                 return "PASS: firstLogin=True; offlineAuthority=True; " +
                     "fullCatalog=True; create=True; duplicateReplay=True; " +
                     "staUiDispatchMarshaled=True; " +
+                    "cleanupManifestRemoteChildCounts=True; " +
                     "offDispatcherSubmitMarshaled=True; " +
                     "dependentEdit=True; update=True; retail=True; " +
                     "purchase=True; stock=+5,-2; conflict=True; " +
@@ -1028,6 +1050,8 @@ GROUP BY mutation_kind;")).ToDictionary(
             public bool ConflictResolved { get; set; }
             [DataMember(Order = 30)]
             public bool StaUiDispatchMarshaled { get; set; }
+            [DataMember(Order = 31)]
+            public bool CleanupManifestRemoteChildCounts { get; set; }
         }
 
         private sealed class ArticleLoopbackServer : IDisposable

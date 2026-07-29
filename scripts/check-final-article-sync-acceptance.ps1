@@ -161,6 +161,12 @@ Require-Pattern "loopback holds catalog after durable server-reach marker" `
     $loopback "run_consumed_marker_not_durable_before_catalog_return"
 Require-Pattern "loopback reproduces and verifies MTA-to-STA UI dispatch" `
     $loopback "RunStaUiDispatchRegressionAsync[\s\S]*sta_ui_dispatch_regression_failed"
+Require-Pattern "cleanup manifest requires all duplicate child IDs" `
+    $article "CompleteCleanupPriceHistoryIdCount\s*=\s*4[\s\S]*CompleteCleanupStockMovementIdCount\s*=\s*3"
+Require-Pattern "cleanup manifest preserves safe validation codes" `
+    $article "cleanupCode\.StartsWith\([\s\S]{0,120}cleanup_manifest_[\s\S]{0,180}cleanup_manifest_write_failed"
+Require-Pattern "loopback rejects the obsolete cleanup child counts" `
+    $loopback "HasCompleteCleanupRemoteChildIds[\s\S]{0,650}price-4[\s\S]{0,650}!StagingArticleMutationAcceptance[\s\S]{0,260}price-1[\s\S]{0,180}price-2"
 Require-Pattern "staging marshals UI work through the application dispatcher" `
     $article "RunOnUiDispatcherAsync[\s\S]*DispatcherPriority\.Send[\s\S]*Unwrap\(\)"
 Require-Pattern "staging UI dispatch regression begins off-dispatcher" `

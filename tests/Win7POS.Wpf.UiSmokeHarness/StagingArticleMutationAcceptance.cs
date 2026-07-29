@@ -34,6 +34,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
     /// </summary>
     internal static class StagingArticleMutationAcceptance
     {
+        private const int CompleteCleanupPriceHistoryIdCount = 4;
+        private const int CompleteCleanupStockMovementIdCount = 3;
+
         internal static async Task<StagingArticleMutationAcceptanceResult> RunAsync(
             SqliteConnectionFactory factory,
             PosOnlineSyncSupervisorHost initialHost,
@@ -945,7 +948,12 @@ WHERE local_product_id = @id
                 catch (Exception cleanupFailure)
                 {
                     result.Passed = false;
-                    result.Code = "cleanup_manifest_write_failed";
+                    var cleanupCode = SafeCode(cleanupFailure.Message);
+                    result.Code = cleanupCode.StartsWith(
+                            "cleanup_manifest_",
+                            StringComparison.Ordinal)
+                        ? cleanupCode
+                        : "cleanup_manifest_write_failed";
                     result.ExceptionType = cleanupFailure.GetType().Name;
                 }
                 result.CompletedAtUtc = UtcNow();
@@ -2978,15 +2986,34 @@ ORDER BY local_product_id, local_sequence;",
                     !string.IsNullOrWhiteSpace(item.MutationId)),
                 "cleanup_manifest_conflict_receipts_incomplete");
             Require(
-                cleanup.PriceHistoryIds != null &&
-                cleanup.PriceHistoryIds.Length == 2 &&
-                cleanup.PriceHistoryIds.All(value =>
-                    !string.IsNullOrWhiteSpace(value)) &&
-                cleanup.ManualStockMovementIds != null &&
-                cleanup.ManualStockMovementIds.Length == 2 &&
-                cleanup.ManualStockMovementIds.All(value =>
-                    !string.IsNullOrWhiteSpace(value)),
+                HasCompleteCleanupRemoteChildIds(
+                    cleanup.PriceHistoryIds,
+                    cleanup.ManualStockMovementIds),
                 "cleanup_manifest_remote_child_ids_incomplete");
+        }
+
+        internal static bool HasCompleteCleanupRemoteChildIds(
+            IReadOnlyCollection<string> priceHistoryIds,
+            IReadOnlyCollection<string> stockMovementIds)
+        {
+            return HasExactDistinctIds(
+                    priceHistoryIds,
+                    CompleteCleanupPriceHistoryIdCount) &&
+                HasExactDistinctIds(
+                    stockMovementIds,
+                    CompleteCleanupStockMovementIdCount);
+        }
+
+        private static bool HasExactDistinctIds(
+            IReadOnlyCollection<string> values,
+            int expectedCount)
+        {
+            return values != null &&
+                values.Count == expectedCount &&
+                values.All(value =>
+                    !string.IsNullOrWhiteSpace(value)) &&
+                values.Distinct(StringComparer.Ordinal).Count() ==
+                    expectedCount;
         }
 
         private static void WriteCleanupPrompt(
