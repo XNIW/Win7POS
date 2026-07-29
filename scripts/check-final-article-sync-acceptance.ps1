@@ -218,6 +218,52 @@ Require-Pattern "replay ACK equality is required" $article `
     "ReplayAckMatches"
 Require-Pattern "duplicate identities are independent" $article `
     "DuplicateIdentityIndependent\s*=\s*true"
+$duplicateModeIndex = $article.IndexOf(
+    "ProductEditMode.Duplicate",
+    [StringComparison]::Ordinal)
+$duplicatePopulateIndex = if ($duplicateModeIndex -ge 0) {
+    $article.IndexOf(
+        "Populate(",
+        $duplicateModeIndex,
+        [StringComparison]::Ordinal)
+}
+else {
+    -1
+}
+$duplicateSubmitIndex = if ($duplicatePopulateIndex -ge 0) {
+    $article.IndexOf(
+        "await SubmitAsync(duplicate)",
+        $duplicatePopulateIndex,
+        [StringComparison]::Ordinal)
+}
+else {
+    -1
+}
+$duplicateInputBlock = if (
+    $duplicatePopulateIndex -ge 0 -and
+    $duplicateSubmitIndex -gt $duplicatePopulateIndex
+) {
+    $article.Substring(
+        $duplicatePopulateIndex,
+        $duplicateSubmitIndex - $duplicatePopulateIndex)
+}
+else {
+    ""
+}
+if (
+    $duplicateInputBlock -notmatch
+        'duplicate\.Name2\s*=\s*runId\s*\+\s*" SECONDARY D";'
+) {
+    Write-Host (
+        "FAIL: duplicate acceptance must set a deterministic secondary name"
+    ) -ForegroundColor Red
+    $failed = $true
+}
+else {
+    Write-Host (
+        "PASS: duplicate acceptance sets a deterministic secondary name"
+    ) -ForegroundColor Green
+}
 $duplicateProofIndex = $article.IndexOf(
     "result.DuplicateProduct = true;",
     [StringComparison]::Ordinal)
@@ -261,6 +307,8 @@ if (
     $duplicateCanonicalVerifyIndex -le $duplicateCanonicalPullIndex -or
     $duplicateCanonicalVerifyCall -notmatch
         "RequireCanonicalProductAsync\([\s\S]{0,240}duplicateRow\.Id," -or
+    $duplicateCanonicalVerifyCall -notmatch
+        'runId\s*\+\s*" SECONDARY D"' -or
     $duplicateCanonicalVerifyCall -notmatch
         ",\s*true\)\s*\.ConfigureAwait\(false\);"
 ) {

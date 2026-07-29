@@ -3316,7 +3316,7 @@ CREATE TABLE users (
             var restoreCheck = workflow.IndexOf("_catalogImportOutbox.HasUnresolvedAsync", StringComparison.Ordinal);
             var installIndex = workflow.IndexOf("new AtomicRestoreInstaller().InstallAsync", StringComparison.Ordinal);
             var candidateValidationIndex = workflow.IndexOf("ValidateCandidateAsync", StringComparison.Ordinal);
-            var preBackupIndex = workflow.IndexOf("CreateDbBackupCopyNoLock(\"pos_pre_restore_\"", StringComparison.Ordinal);
+            var preBackupIndex = workflow.IndexOf("CreateDbBackupNoLockAsync(\"pos_pre_restore_\"", StringComparison.Ordinal);
             Assert(restoreCheck >= 0, "Restore flow must check catalog import outbox.");
             Assert(installIndex > restoreCheck, "Restore must check catalog import outbox before live DB install.");
             Assert(candidateValidationIndex > restoreCheck && candidateValidationIndex < installIndex, "Restore candidate must be validated before live DB install.");
@@ -3327,7 +3327,19 @@ CREATE TABLE users (
                     @"InstallAsync\s*\(\s*tempRestorePath",
                     System.Text.RegularExpressions.RegexOptions.CultureInvariant),
                 "Restore must install the already-validated temporary copy.");
-            Assert(atomicInstaller.Contains("File.Copy(rollbackDatabasePath, liveDatabasePath, true)", StringComparison.Ordinal), "Restore install must roll back every post-swap failure.");
+            Assert(
+                atomicInstaller.Contains(
+                    "File.Replace(candidatePath, liveDatabasePath, atomicRollbackPath)",
+                    StringComparison.Ordinal) &&
+                atomicInstaller.Contains(
+                    "File.Replace(rollbackPath, liveDatabasePath, null)",
+                    StringComparison.Ordinal) &&
+                System.Text.RegularExpressions.Regex.IsMatch(
+                    atomicInstaller,
+                    @"catch\s*\(Exception installException\)[\s\S]{0,500}" +
+                    @"RecoverInterruptedInstallCoreAsync\(liveDatabasePath\)",
+                    System.Text.RegularExpressions.RegexOptions.CultureInvariant),
+                "Restore install must roll back every post-swap failure.");
             Assert(workflow.Contains("dbMaintenance.restoreBlockedUnresolvedCatalogImports", StringComparison.Ordinal), "Restore flow must use catalog import blocked message.");
             Assert(catalogRepository.Contains("'pending', 'retry', 'in_progress', 'failed_blocked'", StringComparison.Ordinal), "Catalog import unresolved guard must include pending/retry/in_progress/failed_blocked.");
             Console.WriteLine("DB RESTORE GUARD SELFTEST PASS");

@@ -375,6 +375,7 @@ WHERE local_product_id = @id
                     550,
                     0,
                     runId + "-ITEM-D");
+                duplicate.Name2 = runId + " SECONDARY D";
                 duplicate.SelectedCategory = duplicate.Categories.First(
                     item => item.Id == category.Id);
                 duplicate.SelectedSupplier = duplicate.Suppliers.First(
@@ -424,7 +425,7 @@ WHERE local_product_id = @id
                         duplicateRow.Id,
                         barcodeDuplicate,
                         runId + " DUPLICATE",
-                        string.Empty,
+                        runId + " SECONDARY D",
                         runId + "-ITEM-D",
                         category.RemoteId,
                         supplier.RemoteId,
@@ -454,7 +455,7 @@ WHERE local_product_id = @id
                         duplicateRow.Id,
                         barcodeDuplicate,
                         runId + " DUPLICATE",
-                        string.Empty,
+                        runId + " SECONDARY D",
                         runId + "-ITEM-D",
                         category.RemoteId,
                         supplier.RemoteId,
@@ -483,7 +484,7 @@ WHERE local_product_id = @id
                         duplicateRow.Id,
                         barcodeDuplicate,
                         runId + " DUPLICATE",
-                        string.Empty,
+                        runId + " SECONDARY D",
                         runId + "-ITEM-D",
                         category.RemoteId,
                         supplier.RemoteId,
