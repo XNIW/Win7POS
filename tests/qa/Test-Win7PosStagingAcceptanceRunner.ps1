@@ -104,7 +104,7 @@ try {
 
     $timeoutEvidence = Join-Path $testRoot 'timeout-evidence'
     $timeoutMarker = Join-Path $testRoot 'timeout-marker.txt'
-    $timeoutRunId = 'ASUSART_FINAL_RUNNER_TIMEOUT'
+    $timeoutRunId = 'ASUSART_POST_PR63_RUNNER_TIMEOUT'
     $runConsumedMarker = Join-Path $timeoutEvidence (
         'run-consumed-redacted.json')
     $timedOut = Invoke-Win7PosWaitedProcess `

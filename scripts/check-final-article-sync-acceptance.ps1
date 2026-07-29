@@ -48,6 +48,8 @@ $program = Read-RepoText "tests/Win7POS.Wpf.UiSmokeHarness/Program.cs"
 $processRunner = Read-RepoText "scripts/qa/Win7PosAcceptanceProcessRunner.psm1"
 $runnerTest = Read-RepoText "tests/qa/Test-Win7PosStagingAcceptanceRunner.ps1"
 $bootstrap = Read-RepoText "src/Win7POS.Wpf/Pos/Online/PosOnlineBootstrapService.cs"
+$qaGuide = Read-RepoText "docs/QA/WIN7POS_STAGING_QA_CREDENTIAL_VAULT.md"
+$articleSpec = Read-RepoText "docs/specs/POS_ARTICLE_MUTATION_SYNC_V1.md"
 
 $acceptanceWrapperPath = Join-Path $repoRoot (
     "scripts/qa/Invoke-Win7PosStagingAcceptance.ps1")
@@ -77,12 +79,36 @@ Require-Pattern "runner uses the final isolated data directory" $runner `
     $finalDataDirectory
 Reject-Pattern "obsolete article-mutation data directory is absent" `
     ($runner + $staging) "Win7POSArticleMutationAcceptance"
-Require-Pattern "run IDs use the final acceptance namespace" $runner `
+Require-Pattern "run IDs use the post-PR63 acceptance namespace" $runner `
+    "\`$runId\s*=\s*'ASUSART_POST_PR63_'"
+Reject-Pattern "obsolete pre-PR63 run namespace is absent" $runner `
     "\`$runId\s*=\s*'ASUSART_FINAL_'"
-Require-Pattern "evidence uses the final acceptance directory namespace" `
+Require-Pattern "evidence uses the post-PR63 directory namespace" `
+    $runner "win7pos-final-post-pr63-"
+Reject-Pattern "obsolete pre-PR63 evidence namespace is absent" `
     $runner "win7pos-final-article-sync-"
 Reject-Pattern "obsolete V1 evidence directory namespace is absent" `
     $runner "win7pos-pos-article-sync-v1-"
+Require-Pattern "staging harness validates the post-PR63 run namespace" `
+    $staging '"ASUSART_POST_PR63_"'
+Require-Pattern "article acceptance validates the post-PR63 run namespace" `
+    $article '"ASUSART_POST_PR63_"'
+Reject-Pattern "staging code rejects the obsolete pre-PR63 run namespace" `
+    ($staging + $article) '"ASUSART_FINAL_"'
+Require-Pattern "QA guide documents the post-PR63 run namespace" `
+    $qaGuide "ASUSART_POST_PR63_"
+Require-Pattern "QA guide documents the post-PR63 evidence namespace" `
+    $qaGuide "win7pos-final-post-pr63-"
+Reject-Pattern "QA guide omits obsolete pre-PR63 namespaces" `
+    $qaGuide "ASUSART_FINAL_|win7pos-final-article-sync-|win7pos-pos-article-sync-v1-"
+Require-Pattern "article spec documents the final isolated data directory" `
+    $articleSpec $finalDataDirectory
+Require-Pattern "article spec documents the post-PR63 run namespace" `
+    $articleSpec "ASUSART_POST_PR63_"
+Require-Pattern "article spec documents the post-PR63 evidence namespace" `
+    $articleSpec "win7pos-final-post-pr63-"
+Reject-Pattern "article spec omits obsolete acceptance namespaces" `
+    $articleSpec "Win7POSArticleMutationAcceptance|win7pos-pos-article-sync-v1-|ASUSART_<"
 Require-Pattern "runner requires zero blocked conflicts" $runner `
     "articleBlockedConflicts\s*-eq\s*0"
 Require-Pattern "runner requires supported conflict resolution" $runner `

@@ -231,10 +231,10 @@ Real staging is test-only and exact-main gated:
 
 - profile: `asus-staging`;
 - isolated data:
-  `C:\POSData\Win7POSArticleMutationAcceptance`;
+  `C:\POSData\Win7POSFinalArticleSyncAcceptance`;
 - evidence:
-  `C:\Dev\_codex-evidence\win7pos-pos-article-sync-v1-<RUN_ID>`;
-- run ID: `ASUSART_<UTC_TIMESTAMP>_<RANDOM>`;
+  `C:\Dev\_codex-evidence\win7pos-final-post-pr63-<RUN_ID>`;
+- run ID: `ASUSART_POST_PR63_<UTC_TIMESTAMP>_<RANDOM>`;
 - one logical run per invocation, no automatic retry;
 - fail-fast on retry-wait, auth denial, transport failure or HTTP 5xx;
 - synthetic products only;

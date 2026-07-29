@@ -1852,7 +1852,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             if (value.Length == 0 ||
                 value.Length > 64 ||
                 !value.StartsWith(
-                    "ASUSART_FINAL_",
+                    "ASUSART_POST_PR63_",
                     StringComparison.Ordinal))
             {
                 throw new AcceptanceFailure("run_id_invalid");

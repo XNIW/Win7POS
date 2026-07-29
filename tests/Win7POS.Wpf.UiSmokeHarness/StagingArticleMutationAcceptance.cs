@@ -3078,7 +3078,7 @@ ORDER BY COALESCE(last_typed_code, 'none');")).ToArray();
             if (string.IsNullOrWhiteSpace(value) ||
                 value.Length > 64 ||
                 !value.StartsWith(
-                    "ASUSART_FINAL_",
+                    "ASUSART_POST_PR63_",
                     StringComparison.Ordinal))
             {
                 return false;
