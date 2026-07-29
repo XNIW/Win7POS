@@ -90,18 +90,55 @@ WHERE remote_product_id = @remoteProductId
                 return true;
             }
 
+            var normalizedRemoteDeletedAt =
+                string.IsNullOrWhiteSpace(remoteDeletedAt)
+                    ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+                    : remoteDeletedAt.Trim();
+            var hasAuthoritativeRevision =
+                PosArticleMutationIntentPolicy.IsProductRevision(remoteUpdatedAt);
+            var authoritativeRevision = hasAuthoritativeRevision
+                ? remoteUpdatedAt
+                : string.Empty;
             var rows = await conn.ExecuteAsync(@"
 UPDATE products
 SET is_active = 0,
-    remote_deleted_at = @remoteDeletedAt
+    remote_deleted_at = @remoteDeletedAt,
+    remote_base_revision = CASE
+      WHEN @hasAuthoritativeRevision = 1 THEN @authoritativeRevision
+      ELSE remote_base_revision
+    END
 WHERE remote_product_id = @remoteProductId
-  AND COALESCE(is_active, 1) = 1",
+  AND (
+    COALESCE(is_active, 1) <> 0
+    OR COALESCE(remote_deleted_at, '') <> @remoteDeletedAt
+    OR (
+      @hasAuthoritativeRevision = 1
+      AND COALESCE(remote_base_revision, '') <> @authoritativeRevision
+    )
+  );
+
+UPDATE article_product_remote_shadow
+SET is_active = 0,
+    authoritative_revision = CASE
+      WHEN @hasAuthoritativeRevision = 1 THEN @authoritativeRevision
+      ELSE authoritative_revision
+    END,
+    updated_at = @updatedAt
+WHERE remote_product_id = @remoteProductId
+  AND (
+    COALESCE(is_active, 1) <> 0
+    OR (
+      @hasAuthoritativeRevision = 1
+      AND COALESCE(authoritative_revision, '') <> @authoritativeRevision
+    )
+  );",
                 new
                 {
                     remoteProductId = normalizedRemoteProductId,
-                    remoteDeletedAt = string.IsNullOrWhiteSpace(remoteDeletedAt)
-                        ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
-                        : remoteDeletedAt.Trim()
+                    remoteDeletedAt = normalizedRemoteDeletedAt,
+                    hasAuthoritativeRevision,
+                    authoritativeRevision,
+                    updatedAt = DateTimeOffset.UtcNow.ToString("O")
                 },
                 tx).ConfigureAwait(false);
 
