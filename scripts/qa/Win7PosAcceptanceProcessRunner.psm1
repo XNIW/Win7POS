@@ -54,6 +54,25 @@ function Test-Win7PosAcceptanceProcessActive {
     return $false
 }
 
+function Get-Win7PosAcceptanceResultCode {
+    [CmdletBinding()]
+    param(
+        [AllowNull()][AllowEmptyString()][string]$Code
+    )
+
+    $normalized = if ($null -eq $Code) {
+        ''
+    }
+    else {
+        $Code.Trim().ToLowerInvariant()
+    }
+    if ($normalized -match '^[a-z0-9][a-z0-9_.-]{0,119}$') {
+        return $normalized
+    }
+
+    return 'acceptance_result_invalid_code'
+}
+
 function Invoke-Win7PosWaitedProcess {
     [CmdletBinding()]
     param(
@@ -122,5 +141,6 @@ function Invoke-Win7PosWaitedProcess {
 Export-ModuleMember -Function `
     Enter-Win7PosAcceptanceLock, `
     Exit-Win7PosAcceptanceLock, `
+    Get-Win7PosAcceptanceResultCode, `
     Test-Win7PosAcceptanceProcessActive, `
     Invoke-Win7PosWaitedProcess

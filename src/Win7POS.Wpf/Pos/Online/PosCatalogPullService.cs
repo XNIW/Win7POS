@@ -586,6 +586,7 @@ namespace Win7POS.Wpf.Pos.Online
                                 page,
                                 pagesProcessed,
                                 totalStats,
+                                CountCatalogRows(receivedFullLanes),
                                 incidentId,
                                 syncTimer.ElapsedMilliseconds);
                             if (authenticationDenied && clearStoredStateOnDenied)
@@ -2509,6 +2510,7 @@ namespace Win7POS.Wpf.Pos.Online
             long pageNumber,
             long pagesProcessed,
             CatalogApplyStats stats,
+            long stagedRowsReceived,
             string incidentId,
             long elapsedMilliseconds)
         {
@@ -2522,7 +2524,7 @@ namespace Win7POS.Wpf.Pos.Online
                         : IsNetworkCode(normalizedCode)
                             ? "network"
                             : "request";
-            var rowsReceived = checked(
+            var appliedRowsReceived = checked(
                 checked(
                     checked(
                         checked((stats?.UpdatedProducts ?? 0) +
@@ -2530,6 +2532,9 @@ namespace Win7POS.Wpf.Pos.Online
                         (stats?.SupplierRowsReceived ?? 0)) +
                     (stats?.PriceRowsReceived ?? 0)) +
                 (stats?.TombstonesReceived ?? 0));
+            var rowsReceived = checked(
+                appliedRowsReceived +
+                Math.Max(0L, stagedRowsReceived));
             var rowsApplied = checked(
                 checked(
                     checked((stats?.UpdatedProducts ?? 0) +
@@ -2568,6 +2573,27 @@ namespace Win7POS.Wpf.Pos.Online
                 elapsedMilliseconds,
                 string.Empty,
                 summary);
+        }
+
+        private static long CountCatalogRows(
+            CatalogPaginationLaneCounts lanes)
+        {
+            if (lanes == null)
+            {
+                return 0L;
+            }
+
+            return checked(
+                checked(
+                    checked(
+                        checked(
+                            checked(
+                                checked(lanes.Products + lanes.Categories) +
+                                lanes.Suppliers) +
+                            lanes.Prices) +
+                        lanes.ProductTombstones) +
+                    lanes.CategoryTombstones) +
+                lanes.SupplierTombstones);
         }
 
         private static bool IsDeserializationCode(string code)

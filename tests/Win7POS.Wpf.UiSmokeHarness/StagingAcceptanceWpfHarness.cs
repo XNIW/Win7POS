@@ -38,6 +38,28 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private const string FixedDataDirectory =
             @"C:\POSData\Win7POSArticleMutationAcceptance";
         private const string QaSecretsDirectory = @"C:\ProgramData\Win7POS\QaSecrets";
+        private const string EvidenceStatusFail = "fail";
+        private const string EvidenceStatusNotRun = "not_run";
+        private const string EvidenceStatusPass = "pass";
+        private static readonly string[] RequiredAcceptanceEvidenceFileNames =
+        {
+            "preflight.txt",
+            "exact-main-build.txt",
+            "contract-digests.txt",
+            "first-login-result.json",
+            "catalog-exactness.json",
+            "article-mutation-results.json",
+            "local-outbox-state.json",
+            "price-history-counts.txt",
+            "stock-movement-counts.txt",
+            "no-echo-result.txt",
+            "redaction-scan.txt",
+            "article-mutation-product-editor-1024x768.png",
+            "article-mutation-sync-center-conflict-1024x768.png",
+            "staging-acceptance-products-readonly.png",
+            "CLEANUP-MANIFEST.json",
+            "NEXT-CODEX-MAC-FINAL-CLEANUP.md"
+        };
 
         internal static async Task<bool> RunAsync(
             string profileName,
@@ -50,7 +72,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Profile = SafeProfileName(profileName),
                 RunId = SafeRunId(runId),
                 DataDirectoryIsolated = IsExpectedDataDirectory(),
-                LogicalRuns = 1
+                LogicalRuns = 1,
+                EvidenceCompletenessStatus = EvidenceStatusNotRun,
+                EvidenceRedactionStatus = EvidenceStatusNotRun,
+                LogRedactionStatus = EvidenceStatusNotRun
             };
             QaCredentialProfile profile = null;
             PosOnlineSyncSupervisorHost host = null;
@@ -100,30 +125,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 }
                 request.Credential = string.Empty;
 
-                report.HttpSuccess = bootstrap != null && bootstrap.HttpStatus.HasValue &&
-                    bootstrap.HttpStatus.Value >= 200 && bootstrap.HttpStatus.Value <= 299;
-                report.BootstrapCode = SafeCode(bootstrap?.Code);
-                report.FailureStage = SafeCode(bootstrap?.FailureStage);
-                report.RootCode = SafeCode(bootstrap?.RootCode);
-                report.HttpStatus = bootstrap?.HttpStatus;
-                report.AuthenticationDenied = bootstrap != null && bootstrap.AuthenticationDenied;
-                report.Retryable = bootstrap != null && bootstrap.Retryable;
-                report.DeviceApprovalState = SafeCode(bootstrap?.DeviceApprovalState);
-                report.ClientRequestId = RedactTechnicalIdentifier(bootstrap?.ClientRequestId);
-                report.ServerRequestId = RedactTechnicalIdentifier(bootstrap?.ServerRequestId);
-                report.CfRay = RedactTechnicalIdentifier(bootstrap?.CfRay);
-                report.ExceptionType = SafeCode(bootstrap?.ExceptionType);
-                report.RequestReachedServer = bootstrap != null && bootstrap.RequestReachedServer;
-                report.FirstLoginSucceeded = bootstrap != null && bootstrap.FirstLoginSucceeded;
-                report.TrustedSessionPersisted = bootstrap != null && bootstrap.TrustedSessionPersisted;
-                report.CatalogStarted = bootstrap != null && bootstrap.CatalogStarted;
-                report.CatalogDrained = bootstrap != null &&
-                    bootstrap.CatalogCompleted &&
-                    !bootstrap.RequiresRetry;
-                report.SaleSafe = bootstrap != null && bootstrap.CatalogSaleSafe;
-                report.DeterministicRetrySuppressed = bootstrap == null ||
-                    !CatalogRetryPolicy.IsDeterministicRevisionFailure(bootstrap.Code) ||
-                    !bootstrap.RequiresRetry;
+                ApplyBootstrapResult(report, bootstrap);
 
                 if (bootstrap == null || !bootstrap.CanOpenPos)
                 {
@@ -267,16 +269,43 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 report.LogRedactionPassed =
                     LogsDoNotContainProfileValues(profile) &&
                     LogsDoNotContainValue(report.RunId);
+                report.LogRedactionStatus = EvidenceStatus(
+                    report.LogRedactionPassed == true);
                 WriteFirstLoginEvidence(outputDirectory, report);
                 WriteCatalogEvidence(outputDirectory, report);
+                report.EvidenceComplete =
+                    RequiredAcceptanceEvidenceFilesExist(
+                        outputDirectory,
+                        includeRedactionScan: false);
+                report.EvidenceCompletenessStatus = EvidenceStatus(
+                    report.EvidenceComplete == true);
                 report.EvidenceRedactionPassed =
                     EvidenceFilesDoNotContainSecrets(
                         outputDirectory,
                         profile,
                         trustedSession);
+                report.EvidenceRedactionStatus = EvidenceStatus(
+                    report.EvidenceRedactionPassed == true);
                 WriteRedactionEvidence(outputDirectory, report);
-                if (!report.LogRedactionPassed ||
-                    !report.EvidenceRedactionPassed)
+                report.EvidenceComplete =
+                    report.EvidenceComplete == true &&
+                    RequiredAcceptanceEvidenceFilesExist(
+                        outputDirectory,
+                        includeRedactionScan: true);
+                report.EvidenceCompletenessStatus = EvidenceStatus(
+                    report.EvidenceComplete == true);
+                WriteRedactionEvidence(outputDirectory, report);
+                if (report.EvidenceComplete != true)
+                {
+                    RecordHarnessFailure(
+                        report,
+                        "security_evidence",
+                        "acceptance_evidence_incomplete");
+                    throw new AcceptanceFailure(
+                        "acceptance_evidence_incomplete");
+                }
+                if (report.LogRedactionPassed != true ||
+                    report.EvidenceRedactionPassed != true)
                 {
                     RecordHarnessFailure(
                         report,
@@ -334,6 +363,75 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return report.Passed;
         }
 
+        private static void ApplyBootstrapResult(
+            AcceptanceReport report,
+            PosOnlineBootstrapResult bootstrap)
+        {
+            if (report == null)
+            {
+                return;
+            }
+
+            report.HttpSuccess = bootstrap != null &&
+                bootstrap.HttpStatus.HasValue &&
+                bootstrap.HttpStatus.Value >= 200 &&
+                bootstrap.HttpStatus.Value <= 299;
+            report.BootstrapCode = SafeCode(bootstrap?.Code);
+            report.FailureStage = SafeCode(bootstrap?.FailureStage);
+            report.RootCode = SafeCode(bootstrap?.RootCode);
+            report.HttpStatus = bootstrap?.HttpStatus;
+            report.FirstLoginHttpStatus = bootstrap?.FirstLoginHttpStatus;
+            report.AuthenticationDenied =
+                bootstrap != null && bootstrap.AuthenticationDenied;
+            report.Retryable = bootstrap != null && bootstrap.Retryable;
+            report.DeviceApprovalState =
+                SafeCode(bootstrap?.DeviceApprovalState);
+            report.ClientRequestId =
+                RedactTechnicalIdentifier(bootstrap?.ClientRequestId);
+            report.ServerRequestId =
+                RedactTechnicalIdentifier(bootstrap?.ServerRequestId);
+            report.CfRay =
+                RedactTechnicalIdentifier(bootstrap?.CfRay);
+            report.ExceptionType = SafeCode(bootstrap?.ExceptionType);
+            report.RequestReachedServer =
+                bootstrap != null && bootstrap.RequestReachedServer;
+            report.FirstLoginSucceeded =
+                bootstrap != null && bootstrap.FirstLoginSucceeded;
+            report.TrustedSessionPersisted =
+                bootstrap != null && bootstrap.TrustedSessionPersisted;
+            report.CatalogStarted =
+                bootstrap != null && bootstrap.CatalogStarted;
+            report.CatalogDrained = bootstrap != null &&
+                bootstrap.CatalogCompleted &&
+                !bootstrap.RequiresRetry;
+            report.SaleSafe =
+                bootstrap != null && bootstrap.CatalogSaleSafe;
+            report.DeterministicRetrySuppressed = bootstrap == null ||
+                !CatalogRetryPolicy.IsDeterministicRevisionFailure(
+                    bootstrap.Code) ||
+                !bootstrap.RequiresRetry;
+
+            var diagnostic = bootstrap?.Diagnostic;
+            if (diagnostic == null)
+            {
+                return;
+            }
+
+            report.CatalogAttempt = diagnostic.AttemptNumber;
+            report.CatalogCode = SafeCode(diagnostic.Code);
+            report.CatalogFailureStage = SafeCode(diagnostic.Stage);
+            report.CatalogHttpStatus = diagnostic.HttpStatus;
+            report.CatalogPage = diagnostic.PageNumber;
+            report.CatalogPagesProcessed = diagnostic.PagesProcessed;
+            report.CatalogRetryable = diagnostic.Retryable;
+            report.CatalogRowsReceived = diagnostic.RowsReceived;
+            report.CatalogRowsApplied = diagnostic.RowsApplied;
+            if (!report.CatalogDrained)
+            {
+                report.CatalogPages = diagnostic.PagesProcessed;
+            }
+        }
+
         private static void ApplyArticleResult(
             AcceptanceReport report,
             StagingArticleMutationAcceptance
@@ -373,6 +471,11 @@ namespace Win7POS.Wpf.UiSmokeHarness
             report.HardwareActions = article.HardwareActions;
             report.CleanupManifestCreated =
                 article.CleanupManifestCreated;
+        }
+
+        private static string EvidenceStatus(bool passed)
+        {
+            return passed ? EvidenceStatusPass : EvidenceStatusFail;
         }
 
         private static IOperatorSession CreateProductionOperatorSession(
@@ -451,9 +554,144 @@ namespace Win7POS.Wpf.UiSmokeHarness
             RecordHarnessFailure(report, "local_operator_login", "operator_login_failed");
             var localOperatorTyped = report.FailureStage == "local_operator_login" &&
                 report.RootCode == "operator_login_failed";
-            return localOperatorTyped
-                ? "PASS diagnostics=typed localOperator=typed redaction=required"
-                : "FAIL local_operator_diagnostic";
+            if (!localOperatorTyped)
+            {
+                return "FAIL local_operator_diagnostic";
+            }
+
+            var diagnostic = new PosRuntimeDiagnostic(
+                "catalog.pull",
+                "server_response",
+                "http_5xx",
+                503,
+                false,
+                false,
+                1,
+                135,
+                134,
+                7920,
+                0,
+                true,
+                false,
+                "fixture-client-request",
+                string.Empty,
+                "fixture-cf-ray",
+                "inc-fixture",
+                DateTimeOffset.UtcNow,
+                63000,
+                "HttpRequestException",
+                "bounded fixture");
+            var catalogOutcome = PosCatalogPullOutcome.Failure(
+                "http_5xx",
+                false,
+                true,
+                134,
+                diagnostic: diagnostic);
+            var bootstrap = PosOnlineBootstrapResult.CatalogIncomplete(
+                "http_5xx",
+                "bounded fixture",
+                false,
+                false,
+                catalogOutcome,
+                httpStatus: 200);
+            var evidenceReport = new AcceptanceReport
+            {
+                EvidenceCompletenessStatus = EvidenceStatusNotRun,
+                EvidenceRedactionStatus = EvidenceStatusNotRun,
+                LogRedactionStatus = EvidenceStatusNotRun
+            };
+            ApplyBootstrapResult(evidenceReport, bootstrap);
+            var catalogFailureTyped =
+                evidenceReport.FirstLoginHttpStatus == 200 &&
+                evidenceReport.HttpStatus == 503 &&
+                evidenceReport.CatalogAttempt == 1 &&
+                evidenceReport.CatalogCode == "http_5xx" &&
+                evidenceReport.CatalogFailureStage == "server_response" &&
+                evidenceReport.CatalogHttpStatus == 503 &&
+                evidenceReport.CatalogPage == 135 &&
+                evidenceReport.CatalogPages == 134 &&
+                evidenceReport.CatalogPagesProcessed == 134 &&
+                evidenceReport.CatalogRetryable == false &&
+                evidenceReport.CatalogRowsReceived == 7920 &&
+                evidenceReport.CatalogRowsApplied == 0;
+            if (!catalogFailureTyped)
+            {
+                return "FAIL catalog_failure_evidence";
+            }
+
+            var tempDirectory = Path.Combine(
+                Path.GetTempPath(),
+                "win7pos-redaction-separation-" +
+                Guid.NewGuid().ToString("N"));
+            try
+            {
+                Directory.CreateDirectory(tempDirectory);
+                if (!EvidenceFilesDoNotContainSecrets(
+                        tempDirectory,
+                        null,
+                        null) ||
+                    RequiredAcceptanceEvidenceFilesExist(
+                        tempDirectory,
+                        includeRedactionScan: false))
+                {
+                    return "FAIL redaction_completeness_separation";
+                }
+
+                foreach (var fileName in
+                    RequiredAcceptanceEvidenceFileNames.Where(
+                        name => !string.Equals(
+                            name,
+                            "redaction-scan.txt",
+                            StringComparison.OrdinalIgnoreCase)))
+                {
+                    File.WriteAllBytes(
+                        Path.Combine(tempDirectory, fileName),
+                        new byte[] { 1 });
+                }
+                if (!RequiredAcceptanceEvidenceFilesExist(
+                        tempDirectory,
+                        includeRedactionScan: false))
+                {
+                    return "FAIL complete_evidence_fixture";
+                }
+
+                File.Delete(Path.Combine(
+                    tempDirectory,
+                    "local-outbox-state.json"));
+                if (RequiredAcceptanceEvidenceFilesExist(
+                        tempDirectory,
+                        includeRedactionScan: false))
+                {
+                    return "FAIL missing_non_screenshot_evidence";
+                }
+
+                WriteRedactionEvidence(tempDirectory, evidenceReport);
+                var redactionState = File.ReadAllText(Path.Combine(
+                    tempDirectory,
+                    "redaction-scan.txt"));
+                if (redactionState.IndexOf(
+                        "logRedactionStatus=NOT_RUN",
+                        StringComparison.Ordinal) < 0 ||
+                    redactionState.IndexOf(
+                        "evidenceRedactionStatus=NOT_RUN",
+                        StringComparison.Ordinal) < 0 ||
+                    redactionState.IndexOf(
+                        "evidenceCompletenessStatus=NOT_RUN",
+                        StringComparison.Ordinal) < 0)
+                {
+                    return "FAIL redaction_not_run_serialization";
+                }
+            }
+            finally
+            {
+                if (Directory.Exists(tempDirectory))
+                {
+                    Directory.Delete(tempDirectory, true);
+                }
+            }
+
+            return "PASS diagnostics=typed localOperator=typed " +
+                "catalogFailureEvidence=typed redactionState=separated";
         }
 
         private static async Task<bool> CaptureReadOnlyProductsUiAsync(
@@ -724,17 +962,6 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 "intent_json",
                 "payload_json"
             };
-            var requiredRedactedScreenshots = new[]
-            {
-                "staging-acceptance-products-readonly.png",
-                "article-mutation-product-editor-1024x768.png",
-                "article-mutation-sync-center-conflict-1024x768.png"
-            };
-            if (requiredRedactedScreenshots.Any(fileName =>
-                    !File.Exists(Path.Combine(outputDirectory, fileName))))
-            {
-                return false;
-            }
             foreach (var path in Directory.EnumerateFiles(
                 outputDirectory,
                 "*",
@@ -788,6 +1015,37 @@ namespace Win7POS.Wpf.UiSmokeHarness
             return true;
         }
 
+        private static bool RequiredAcceptanceEvidenceFilesExist(
+            string outputDirectory,
+            bool includeRedactionScan)
+        {
+            if (!Directory.Exists(outputDirectory))
+            {
+                return false;
+            }
+
+            return RequiredAcceptanceEvidenceFileNames
+                .Where(fileName =>
+                    includeRedactionScan ||
+                    !string.Equals(
+                        fileName,
+                        "redaction-scan.txt",
+                        StringComparison.OrdinalIgnoreCase))
+                .All(fileName =>
+            {
+                var path = Path.Combine(outputDirectory, fileName);
+                var maximumLength = string.Equals(
+                    Path.GetExtension(path),
+                    ".png",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? 5 * 1024 * 1024
+                    : 2 * 1024 * 1024;
+                return File.Exists(path) &&
+                    new FileInfo(path).Length > 0 &&
+                    new FileInfo(path).Length <= maximumLength;
+            });
+        }
+
         private static bool ContainsUtf8Value(byte[] haystack, string value)
         {
             if (haystack == null || haystack.Length == 0 ||
@@ -823,7 +1081,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 new FirstLoginEvidence
                 {
                     FirstLoginSucceeded = report.FirstLoginSucceeded,
-                    HttpStatus = report.HttpStatus,
+                    HttpStatus = report.FirstLoginHttpStatus,
                     OfflineAuthorizationValid =
                         report.OfflineAuthorizationValid,
                     PosUnlocked = report.PosUnlocked,
@@ -840,8 +1098,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Path.Combine(outputDirectory, "catalog-exactness.json"),
                 new CatalogEvidence
                 {
+                    Attempt = report.CatalogAttempt,
+                    Code = string.IsNullOrWhiteSpace(report.CatalogCode)
+                        ? report.RootCode
+                        : report.CatalogCode,
                     CatalogDrained = report.CatalogDrained,
                     ExactnessVerified = report.ExactnessVerified,
+                    FailureStage = string.IsNullOrWhiteSpace(
+                        report.CatalogFailureStage)
+                        ? report.FailureStage
+                        : report.CatalogFailureStage,
+                    HttpStatus =
+                        report.CatalogHttpStatus ?? report.HttpStatus,
                     LocalActiveCategories =
                         report.LocalActiveCategories,
                     LocalActiveProducts = report.LocalActiveProducts,
@@ -852,8 +1120,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         report.ManifestActiveProducts,
                     ManifestActiveSuppliers =
                         report.ManifestActiveSuppliers,
+                    Page = report.CatalogPage,
                     Pages = report.CatalogPages,
+                    PagesProcessed = report.CatalogPagesProcessed,
                     PendingRemotePrices = report.PendingRemotePrices,
+                    Retryable =
+                        report.CatalogRetryable ?? report.Retryable,
+                    RowsApplied = report.CatalogRowsApplied,
+                    RowsReceived = report.CatalogRowsReceived,
                     SaleSafe = report.SaleSafe
                 });
         }
@@ -867,13 +1141,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Directory.CreateDirectory(outputDirectory);
                 File.WriteAllText(
                     Path.Combine(outputDirectory, "redaction-scan.txt"),
-                    "logRedactionPassed=" +
-                    report.LogRedactionPassed.ToString(
-                        CultureInfo.InvariantCulture) +
+                    "logRedactionStatus=" +
+                    (report.LogRedactionStatus ??
+                        EvidenceStatusNotRun).ToUpperInvariant() +
                     Environment.NewLine +
-                    "evidenceRedactionPassed=" +
-                    report.EvidenceRedactionPassed.ToString(
-                        CultureInfo.InvariantCulture) +
+                    "evidenceRedactionStatus=" +
+                    (report.EvidenceRedactionStatus ??
+                        EvidenceStatusNotRun).ToUpperInvariant() +
+                    Environment.NewLine +
+                    "evidenceCompletenessStatus=" +
+                    (report.EvidenceCompletenessStatus ??
+                        EvidenceStatusNotRun).ToUpperInvariant() +
                     Environment.NewLine +
                     "requestBodiesCaptured=False" +
                     Environment.NewLine +
@@ -1187,8 +1465,35 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "catalogDrained")]
             public bool CatalogDrained { get; set; }
 
+            [DataMember(Name = "catalogAttempt")]
+            public int CatalogAttempt { get; set; }
+
+            [DataMember(Name = "catalogCode")]
+            public string CatalogCode { get; set; }
+
+            [DataMember(Name = "catalogPage")]
+            public long? CatalogPage { get; set; }
+
+            [DataMember(Name = "catalogFailureStage")]
+            public string CatalogFailureStage { get; set; }
+
+            [DataMember(Name = "catalogHttpStatus")]
+            public int? CatalogHttpStatus { get; set; }
+
             [DataMember(Name = "catalogPages")]
             public long CatalogPages { get; set; }
+
+            [DataMember(Name = "catalogPagesProcessed")]
+            public long CatalogPagesProcessed { get; set; }
+
+            [DataMember(Name = "catalogRowsApplied")]
+            public long CatalogRowsApplied { get; set; }
+
+            [DataMember(Name = "catalogRowsReceived")]
+            public long CatalogRowsReceived { get; set; }
+
+            [DataMember(Name = "catalogRetryable")]
+            public bool? CatalogRetryable { get; set; }
 
             [DataMember(Name = "cfRay")]
             public string CfRay { get; set; }
@@ -1223,8 +1528,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "differentPayloadMismatch")]
             public bool DifferentPayloadMismatch { get; set; }
 
+            [DataMember(Name = "evidenceComplete")]
+            public bool? EvidenceComplete { get; set; }
+
+            [DataMember(Name = "evidenceCompletenessStatus")]
+            public string EvidenceCompletenessStatus { get; set; }
+
             [DataMember(Name = "evidenceRedactionPassed")]
-            public bool EvidenceRedactionPassed { get; set; }
+            public bool? EvidenceRedactionPassed { get; set; }
+
+            [DataMember(Name = "evidenceRedactionStatus")]
+            public string EvidenceRedactionStatus { get; set; }
 
             [DataMember(Name = "exactnessVerified")]
             public bool ExactnessVerified { get; set; }
@@ -1237,6 +1551,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             [DataMember(Name = "firstLoginSucceeded")]
             public bool FirstLoginSucceeded { get; set; }
+
+            [DataMember(Name = "firstLoginHttpStatus")]
+            public int? FirstLoginHttpStatus { get; set; }
 
             [DataMember(Name = "httpSuccess")]
             public bool HttpSuccess { get; set; }
@@ -1263,7 +1580,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             public bool LocalProductsPositive { get; set; }
 
             [DataMember(Name = "logRedactionPassed")]
-            public bool LogRedactionPassed { get; set; }
+            public bool? LogRedactionPassed { get; set; }
+
+            [DataMember(Name = "logRedactionStatus")]
+            public string LogRedactionStatus { get; set; }
 
             [DataMember(Name = "logicalRuns")]
             public int LogicalRuns { get; set; }
@@ -1378,11 +1698,23 @@ namespace Win7POS.Wpf.UiSmokeHarness
         [DataContract]
         private sealed class CatalogEvidence
         {
+            [DataMember(Name = "attempt")]
+            public int Attempt { get; set; }
+
             [DataMember(Name = "catalogDrained")]
             public bool CatalogDrained { get; set; }
 
+            [DataMember(Name = "code")]
+            public string Code { get; set; }
+
             [DataMember(Name = "exactnessVerified")]
             public bool ExactnessVerified { get; set; }
+
+            [DataMember(Name = "failureStage")]
+            public string FailureStage { get; set; }
+
+            [DataMember(Name = "httpStatus")]
+            public int? HttpStatus { get; set; }
 
             [DataMember(Name = "localActiveCategories")]
             public long LocalActiveCategories { get; set; }
@@ -1402,11 +1734,26 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "manifestActiveSuppliers")]
             public long ManifestActiveSuppliers { get; set; }
 
+            [DataMember(Name = "page")]
+            public long? Page { get; set; }
+
             [DataMember(Name = "pages")]
             public long Pages { get; set; }
 
+            [DataMember(Name = "pagesProcessed")]
+            public long PagesProcessed { get; set; }
+
             [DataMember(Name = "pendingRemotePrices")]
             public long PendingRemotePrices { get; set; }
+
+            [DataMember(Name = "retryable")]
+            public bool Retryable { get; set; }
+
+            [DataMember(Name = "rowsApplied")]
+            public long RowsApplied { get; set; }
+
+            [DataMember(Name = "rowsReceived")]
+            public long RowsReceived { get; set; }
 
             [DataMember(Name = "saleSafe")]
             public bool SaleSafe { get; set; }
