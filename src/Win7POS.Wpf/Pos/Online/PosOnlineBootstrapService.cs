@@ -49,7 +49,8 @@ namespace Win7POS.Wpf.Pos.Online
             PosFirstLoginRequest request,
             string localCredential,
             CancellationToken cancellationToken,
-            IProgress<PosCatalogPullProgress> progress = null)
+            IProgress<PosCatalogPullProgress> progress = null,
+            Action requestReachedServerObserved = null)
         {
             if (options == null)
             {
@@ -96,14 +97,18 @@ namespace Win7POS.Wpf.Pos.Online
                 {
                     currentStage = "server_response";
                     result = await client.FirstLoginAsync(request, cancellationToken).ConfigureAwait(false);
+                    requestReachedServer =
+                        result != null && result.RequestReachedServer;
+                    if (requestReachedServer)
+                    {
+                        requestReachedServerObserved?.Invoke();
+                    }
                 }
 
                 clientRequestId = result?.ClientRequestId;
                 serverRequestId = result?.ServerRequestId;
                 cfRay = result?.CfRay;
                 httpStatus = result?.HttpStatus;
-                requestReachedServer = result != null && result.RequestReachedServer;
-
                 if (result == null)
                 {
                     return PosOnlineBootstrapResult.Failure(

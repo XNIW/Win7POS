@@ -73,6 +73,55 @@ function Get-Win7PosAcceptanceResultCode {
     return 'acceptance_result_invalid_code'
 }
 
+function Get-Win7PosAcceptanceLogicalRunCount {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)][string]$EvidenceDirectory,
+        [Parameter(Mandatory = $true)][string]$RunId
+    )
+
+    $fullEvidenceDirectory = [System.IO.Path]::GetFullPath(
+        $EvidenceDirectory)
+    $consumedMarkerPath = Join-Path $fullEvidenceDirectory (
+        'run-consumed-redacted.json')
+
+    # The evidence directory is unique per invocation. Treat marker presence
+    # conservatively as a consumed run even if its bounded JSON was damaged
+    # after the atomic rename; a corrupt marker must never restore run budget.
+    $temporaryConsumedMarkers = @(
+        Get-ChildItem -LiteralPath $fullEvidenceDirectory `
+            -Filter 'run-consumed-redacted.json.*.tmp' `
+            -File `
+            -ErrorAction SilentlyContinue
+    )
+    if ((Test-Path -LiteralPath $consumedMarkerPath -PathType Leaf) -or
+        $temporaryConsumedMarkers.Count -gt 0) {
+        return 1
+    }
+
+    $acceptanceReportPath = Join-Path $fullEvidenceDirectory (
+        'staging-acceptance-result.json')
+    if (-not (Test-Path -LiteralPath $acceptanceReportPath -PathType Leaf)) {
+        return 0
+    }
+
+    try {
+        $boundedReport = Get-Content -Raw -LiteralPath (
+            $acceptanceReportPath) | ConvertFrom-Json -ErrorAction Stop
+        if ($boundedReport.requestReachedServer -eq $true -and
+            [string]::Equals(
+                [string]$boundedReport.runId,
+                $RunId,
+                [System.StringComparison]::Ordinal)) {
+            return 1
+        }
+    }
+    catch {
+    }
+
+    return 0
+}
+
 function Invoke-Win7PosWaitedProcess {
     [CmdletBinding()]
     param(
@@ -141,6 +190,7 @@ function Invoke-Win7PosWaitedProcess {
 Export-ModuleMember -Function `
     Enter-Win7PosAcceptanceLock, `
     Exit-Win7PosAcceptanceLock, `
+    Get-Win7PosAcceptanceLogicalRunCount, `
     Get-Win7PosAcceptanceResultCode, `
     Test-Win7PosAcceptanceProcessActive, `
     Invoke-Win7PosWaitedProcess

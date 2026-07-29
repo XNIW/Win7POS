@@ -26,9 +26,19 @@ Before the first invocation, build the test-only WPF harness in Release x86:
 
 The runner requires a clean checkout whose `HEAD` exactly equals
 `origin/main`, builds with `C:\Dev\dotnet10\dotnet.exe`, and generates one
-logical run ID in the form `ASUSART_<UTC_TIMESTAMP>_<RANDOM>`. It archives any
+logical run ID in the form `ASUSART_FINAL_<UTC_TIMESTAMP>_<RANDOM>`. It archives any
 previous isolated data directory before starting; it never performs an
-automatic or blind retry.
+automatic or blind retry. Evidence is written beneath
+`C:\Dev\_codex-evidence\win7pos-final-article-sync-<RUN_ID>`.
+
+One logical run contains two bounded harness processes. The `prepare` process
+performs first login/catalog, disables the article lane, persists the synthetic
+create plus dependent edit, writes a restart checkpoint, and exits with the
+dedicated restart code. The wrapper verifies that the process is gone and
+starts the `resume` process against the same data directory. Resume attaches
+the persisted trusted session without repeating first login, proves the two
+outbox rows survived the process boundary, and completes the mutation matrix.
+Only a request proven to have reached staging counts as a logical run.
 
 The harness decrypts the profile only inside its process and calls the
 production first-login, offline-authorization, catalog, local operator,
@@ -36,7 +46,7 @@ article repository/outbox, scheduler, ACK and canonical-pull paths. It accepts
 only the verified HTTPS staging hostname and uses only:
 
 ```text
-C:\POSData\Win7POSArticleMutationAcceptance
+C:\POSData\Win7POSFinalArticleSyncAcceptance
 ```
 
 Every staging article created by the harness is synthetic and mapped to the

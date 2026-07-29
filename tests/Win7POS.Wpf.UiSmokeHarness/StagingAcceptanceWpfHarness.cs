@@ -36,16 +36,31 @@ namespace Win7POS.Wpf.UiSmokeHarness
         private const string AllowedStagingHost =
             "merchandise-control-admin-web-staging.merchandise-control-admin-web.workers.dev";
         private const string FixedDataDirectory =
-            @"C:\POSData\Win7POSArticleMutationAcceptance";
+            @"C:\POSData\Win7POSFinalArticleSyncAcceptance";
         private const string QaSecretsDirectory = @"C:\ProgramData\Win7POS\QaSecrets";
         private const string EvidenceStatusFail = "fail";
         private const string EvidenceStatusNotRun = "not_run";
         private const string EvidenceStatusPass = "pass";
         private static readonly string[] RequiredAcceptanceEvidenceFileNames =
         {
+            "00-repo-sync.txt",
+            "01-admin-handoff.txt",
+            "02-profile-preflight.txt",
+            "03-exact-main-build.txt",
+            "04-local-gates.txt",
             "preflight.txt",
             "exact-main-build.txt",
             "contract-digests.txt",
+            "05-first-login-redacted.json",
+            "06-catalog-exactness.json",
+            "07-article-mutation-results-redacted.json",
+            "08-outbox-state-redacted.json",
+            "09-price-history-counts.txt",
+            "10-stock-movement-counts.txt",
+            "11-replay-conflict-results.txt",
+            "12-no-echo-result.txt",
+            "13-ui-smoke-result.txt",
+            "14-redaction-scan.txt",
             "first-login-result.json",
             "catalog-exactness.json",
             "article-mutation-results.json",
@@ -54,30 +69,77 @@ namespace Win7POS.Wpf.UiSmokeHarness
             "stock-movement-counts.txt",
             "no-echo-result.txt",
             "redaction-scan.txt",
+            "article-mutation-create-article-1024x768.png",
             "article-mutation-product-editor-1024x768.png",
+            "article-mutation-duplicate-article-1024x768.png",
+            "article-mutation-sync-center-pending-1024x768.png",
+            "article-mutation-sync-center-in-progress-1024x768.png",
             "article-mutation-sync-center-conflict-1024x768.png",
+            "article-mutation-sync-center-clean-1024x768.png",
             "staging-acceptance-products-readonly.png",
             "CLEANUP-MANIFEST.json",
             "NEXT-CODEX-MAC-FINAL-CLEANUP.md"
         };
 
-        internal static async Task<bool> RunAsync(
+        internal const int RestartRequiredExitCode = 75;
+
+        internal static async Task<int> RunAsync(
             string profileName,
             string runId,
-            string outputDirectory)
+            string outputDirectory,
+            string phase)
         {
-            var report = new AcceptanceReport
+            var resumeAfterRestart = string.Equals(
+                phase,
+                "resume",
+                StringComparison.Ordinal);
+            var restartRequired = false;
+            var report = resumeAfterRestart
+                ? ReadPrepareReport(outputDirectory)
+                : new AcceptanceReport
+                {
+                    StartedAtUtc = DateTimeOffset.UtcNow.ToString(
+                        "O",
+                        CultureInfo.InvariantCulture),
+                    Profile = SafeProfileName(profileName),
+                    RunId = SafeRunId(runId),
+                    DataDirectoryIsolated = IsExpectedDataDirectory(),
+                    LogicalRuns = 0,
+                    EvidenceCompletenessStatus = EvidenceStatusNotRun,
+                    EvidenceRedactionStatus = EvidenceStatusNotRun,
+                    LogRedactionStatus = EvidenceStatusNotRun
+                };
+            if (resumeAfterRestart)
             {
-                StartedAtUtc = DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture),
-                Profile = SafeProfileName(profileName),
-                RunId = SafeRunId(runId),
-                DataDirectoryIsolated = IsExpectedDataDirectory(),
-                LogicalRuns = 1,
-                EvidenceCompletenessStatus = EvidenceStatusNotRun,
-                EvidenceRedactionStatus = EvidenceStatusNotRun,
-                LogRedactionStatus = EvidenceStatusNotRun
-            };
+                if (report == null ||
+                    !string.Equals(
+                        report.Profile,
+                        SafeProfileName(profileName),
+                        StringComparison.Ordinal) ||
+                    !string.Equals(
+                        report.RunId,
+                        SafeRunId(runId),
+                        StringComparison.Ordinal) ||
+                    report.RequestReachedServer != true ||
+                    report.LogicalRuns != 1)
+                {
+                    throw new AcceptanceFailure(
+                        "staging_restart_report_invalid");
+                }
+                report.Passed = false;
+                report.Code = "staging_restart_resumed";
+                report.CompletedAtUtc = string.Empty;
+                report.EvidenceComplete = null;
+                report.EvidenceCompletenessStatus =
+                    EvidenceStatusNotRun;
+                report.EvidenceRedactionPassed = null;
+                report.EvidenceRedactionStatus =
+                    EvidenceStatusNotRun;
+                report.LogRedactionPassed = null;
+                report.LogRedactionStatus = EvidenceStatusNotRun;
+            }
             QaCredentialProfile profile = null;
+            PosTrustedDeviceSession trustedSession = null;
             PosOnlineSyncSupervisorHost host = null;
             IOperatorSession operatorSession = null;
             try
@@ -96,51 +158,114 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
                 host = new PosOnlineSyncSupervisorHost(factory);
                 var trustedStore = new PosTrustedDeviceStore();
-                var request = new PosFirstLoginRequest
+                if (!resumeAfterRestart)
                 {
-                    Credential = profile.Credential,
-                    Device = new PosFirstLoginDevice
+                    var request = new PosFirstLoginRequest
                     {
-                        AppVersion = GetProductionAppVersion(),
-                        DeviceIdentifier = profile.DeviceIdentifier,
-                        DisplayName = profile.DeviceDisplayName
-                    },
-                    ShopCode = profile.ShopCode,
-                    StaffCode = profile.StaffCode
-                };
+                        Credential = profile.Credential,
+                        Device = new PosFirstLoginDevice
+                        {
+                            AppVersion = GetProductionAppVersion(),
+                            DeviceIdentifier = profile.DeviceIdentifier,
+                            DisplayName = profile.DeviceDisplayName
+                        },
+                        ShopCode = profile.ShopCode,
+                        StaffCode = profile.StaffCode
+                    };
 
-                PosOnlineBootstrapResult bootstrap;
-                using (var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(6)))
-                {
-                    bootstrap = await new PosOnlineBootstrapService(
-                            factory,
-                            trustedStore,
-                            host)
-                        .BootstrapAsync(
-                            new PosAdminWebOptions(profile.BaseUri),
-                            request,
-                            profile.Credential,
-                            timeout.Token)
-                        .ConfigureAwait(true);
+                    PosOnlineBootstrapResult bootstrap;
+                    using (var timeout = new CancellationTokenSource(
+                        TimeSpan.FromMinutes(6)))
+                    {
+                        bootstrap = await new PosOnlineBootstrapService(
+                                factory,
+                                trustedStore,
+                                host)
+                            .BootstrapAsync(
+                                new PosAdminWebOptions(profile.BaseUri),
+                                request,
+                                profile.Credential,
+                                timeout.Token,
+                                requestReachedServerObserved: () =>
+                                    WriteRunConsumedMarkerAtomically(
+                                        outputDirectory,
+                                        report.RunId))
+                            .ConfigureAwait(true);
+                    }
+                    request.Credential = string.Empty;
+
+                    ApplyBootstrapResult(report, bootstrap);
+
+                    if (bootstrap == null || !bootstrap.CanOpenPos)
+                    {
+                        throw new AcceptanceFailure(
+                            "bootstrap_" +
+                            SafeCode(bootstrap?.FailureStage) + "_" +
+                            SafeCode(bootstrap?.RootCode));
+                    }
                 }
-                request.Credential = string.Empty;
-
-                ApplyBootstrapResult(report, bootstrap);
-
-                if (bootstrap == null || !bootstrap.CanOpenPos)
+                else
                 {
-                    throw new AcceptanceFailure(
-                        "bootstrap_" + SafeCode(bootstrap?.FailureStage) + "_" +
-                        SafeCode(bootstrap?.RootCode));
+                    var generation = await host.AttachCurrentTrustAsync(
+                            CancellationToken.None)
+                        .ConfigureAwait(false);
+                    if (generation == null)
+                    {
+                        throw new AcceptanceFailure(
+                            "restart_trust_attach_failed");
+                    }
                 }
 
-                PosTrustedDeviceSession trustedSession;
                 report.OfflineAuthorizationValid =
                     trustedStore.TryRead(out trustedSession) &&
                     trustedSession.OfflineAuthorizationAttested &&
                     PosOfflineAuthorizationLeasePolicy.Evaluate(
                         trustedSession,
                         DateTimeOffset.UtcNow).Allowed;
+                var offlineAuthorityExpiresAt = DateTimeOffset.MinValue;
+                var sessionExpiresAt = DateTimeOffset.MinValue;
+                var serverTime = DateTimeOffset.MinValue;
+                report.OfflineAuthorityAfterServerTime =
+                    DateTimeOffset.TryParse(
+                        trustedSession?.EffectiveOfflineAuthorizationExpiresAt,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind,
+                        out offlineAuthorityExpiresAt) &&
+                    DateTimeOffset.TryParse(
+                        trustedSession?.LastOkServerAt,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind,
+                        out serverTime) &&
+                    offlineAuthorityExpiresAt > serverTime;
+                report.OfflineAuthorityWithinSessionExpiry =
+                    DateTimeOffset.TryParse(
+                        trustedSession?.SessionExpiresAt,
+                        CultureInfo.InvariantCulture,
+                        DateTimeStyles.RoundtripKind,
+                        out sessionExpiresAt) &&
+                    offlineAuthorityExpiresAt <= sessionExpiresAt;
+                report.EffectiveOfflineAuthorizationExpiresAt =
+                    report.OfflineAuthorityAfterServerTime
+                        ? offlineAuthorityExpiresAt.ToString(
+                            "O",
+                            CultureInfo.InvariantCulture)
+                        : string.Empty;
+                report.SessionExpiresAt =
+                    report.OfflineAuthorityWithinSessionExpiry
+                        ? sessionExpiresAt.ToString(
+                            "O",
+                            CultureInfo.InvariantCulture)
+                        : string.Empty;
+                report.ServerTime =
+                    report.OfflineAuthorityAfterServerTime
+                        ? serverTime.ToString(
+                            "O",
+                            CultureInfo.InvariantCulture)
+                        : string.Empty;
+                report.OfflineAuthorizationValid =
+                    report.OfflineAuthorizationValid &&
+                    report.OfflineAuthorityAfterServerTime &&
+                    report.OfflineAuthorityWithinSessionExpiry;
                 if (!report.OfflineAuthorizationValid)
                 {
                     RecordHarnessFailure(
@@ -202,10 +327,34 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 report.LocalActiveProducts = audit.ActiveRemoteProducts;
                 report.LocalActiveSuppliers = audit.ActiveRemoteSuppliers;
                 report.PendingRemotePrices = audit.PendingRemotePrices;
+                report.LocalPriceRows = audit.RemotePriceHistoryRows;
+                report.RepairRequired = exactness.RepairRequired;
+                report.TerminalHasMore = string.Equals(
+                    await settings.GetStringAsync(
+                            "pos.catalog.last_has_more")
+                        .ConfigureAwait(true),
+                    "true",
+                    StringComparison.OrdinalIgnoreCase);
+                report.RowsSkipped = 0;
+                var manifestPriceRowsText = await settings.GetStringAsync(
+                        CatalogShopStateRepository.ExactnessPrefix +
+                        "remote_price_history_rows")
+                    .ConfigureAwait(true);
+                long manifestPriceRows;
+                report.ManifestPriceRows = long.TryParse(
+                    manifestPriceRowsText,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out manifestPriceRows)
+                        ? manifestPriceRows
+                        : -1;
                 report.ExactnessVerified =
                     string.Equals(exactness.Status.ToString(), "Verified", StringComparison.Ordinal) &&
                     !exactness.RepairRequired &&
                     audit.PendingRemotePrices == 0 &&
+                    !report.TerminalHasMore &&
+                    report.ManifestPriceRows >= 0 &&
+                    report.ManifestPriceRows == report.LocalPriceRows &&
                     exactness.ActiveCategories == audit.ActiveRemoteCategories &&
                     exactness.ActiveProducts == audit.ActiveRemoteProducts &&
                     exactness.ActiveSuppliers == audit.ActiveRemoteSuppliers;
@@ -252,11 +401,22 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             profile.BaseUri,
                             report.RunId,
                             outputDirectory,
-                            mutationTimeout.Token)
+                            mutationTimeout.Token,
+                            resumeAfterRestart)
                         .ConfigureAwait(true);
                 }
                 host = articleResult.ActiveHost ?? host;
                 ApplyArticleResult(report, articleResult);
+                if (articleResult.RestartRequired)
+                {
+                    restartRequired = true;
+                    report.Code = "article_restart_required";
+                    RecordHarnessFailure(
+                        report,
+                        "application_restart",
+                        report.Code);
+                    throw new AcceptanceRestartRequired();
+                }
                 if (!articleResult.Passed)
                 {
                     RecordHarnessFailure(
@@ -266,13 +426,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     throw new AcceptanceFailure(articleResult.Code);
                 }
 
+                MirrorAcceptanceScreenshots(outputDirectory);
                 report.LogRedactionPassed =
-                    LogsDoNotContainProfileValues(profile) &&
+                    LogsDoNotContainSecrets(profile, trustedSession) &&
                     LogsDoNotContainValue(report.RunId);
                 report.LogRedactionStatus = EvidenceStatus(
                     report.LogRedactionPassed == true);
                 WriteFirstLoginEvidence(outputDirectory, report);
                 WriteCatalogEvidence(outputDirectory, report);
+                WriteNumberedEvidenceAliases(outputDirectory, report);
                 report.EvidenceComplete =
                     RequiredAcceptanceEvidenceFilesExist(
                         outputDirectory,
@@ -318,6 +480,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 report.Passed = true;
                 report.Code = "success";
             }
+            catch (AcceptanceRestartRequired)
+            {
+                report.Passed = false;
+            }
             catch (AcceptanceFailure failure)
             {
                 if (string.IsNullOrWhiteSpace(report.FailureStage) ||
@@ -357,10 +523,54 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     WriteRedactionEvidence(outputDirectory, report);
                 }
                 WriteReport(outputDirectory, report);
+                if (profile != null && trustedSession != null)
+                {
+                    var finalEvidenceRedaction =
+                        EvidenceFilesDoNotContainSecrets(
+                            outputDirectory,
+                            profile,
+                            trustedSession);
+                    report.EvidenceRedactionPassed =
+                        report.EvidenceRedactionPassed != false &&
+                        finalEvidenceRedaction;
+                    report.EvidenceRedactionStatus = EvidenceStatus(
+                        report.EvidenceRedactionPassed == true);
+                    if (report.Passed &&
+                        report.EvidenceRedactionPassed != true)
+                    {
+                        report.Passed = false;
+                        report.Code =
+                            "final_evidence_redaction_failed";
+                        RecordHarnessFailure(
+                            report,
+                            "security_evidence",
+                            report.Code);
+                    }
+                    WriteRedactionEvidence(outputDirectory, report);
+                    WriteReport(outputDirectory, report);
+                    if (report.Passed &&
+                        !EvidenceFilesDoNotContainSecrets(
+                            outputDirectory,
+                            profile,
+                            trustedSession))
+                    {
+                        report.Passed = false;
+                        report.Code =
+                            "final_evidence_redaction_recheck_failed";
+                        RecordHarnessFailure(
+                            report,
+                            "security_evidence",
+                            report.Code);
+                        WriteRedactionEvidence(outputDirectory, report);
+                        WriteReport(outputDirectory, report);
+                    }
+                }
                 profile?.Clear();
             }
 
-            return report.Passed;
+            return restartRequired
+                ? RestartRequiredExitCode
+                : report.Passed ? 0 : 1;
         }
 
         private static void ApplyBootstrapResult(
@@ -395,6 +605,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             report.ExceptionType = SafeCode(bootstrap?.ExceptionType);
             report.RequestReachedServer =
                 bootstrap != null && bootstrap.RequestReachedServer;
+            report.LogicalRuns =
+                report.RequestReachedServer ? 1 : 0;
             report.FirstLoginSucceeded =
                 bootstrap != null && bootstrap.FirstLoginSucceeded;
             report.TrustedSessionPersisted =
@@ -410,6 +622,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 !CatalogRetryPolicy.IsDeterministicRevisionFailure(
                     bootstrap.Code) ||
                 !bootstrap.RequiresRetry;
+            report.AutomaticCompleteRunRetries = 0;
 
             var diagnostic = bootstrap?.Diagnostic;
             if (diagnostic == null)
@@ -429,6 +642,53 @@ namespace Win7POS.Wpf.UiSmokeHarness
             if (!report.CatalogDrained)
             {
                 report.CatalogPages = diagnostic.PagesProcessed;
+            }
+        }
+
+        internal static void WriteRunConsumedMarkerAtomically(
+            string outputDirectory,
+            string runId)
+        {
+            Directory.CreateDirectory(outputDirectory);
+            var finalPath = Path.Combine(
+                outputDirectory,
+                "run-consumed-redacted.json");
+            if (File.Exists(finalPath))
+            {
+                return;
+            }
+
+            var temporaryPath = finalPath + "." +
+                Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                var serializer =
+                    new DataContractJsonSerializer(
+                        typeof(RunConsumedMarker));
+                using (var stream = new FileStream(
+                    temporaryPath,
+                    FileMode.CreateNew,
+                    FileAccess.Write,
+                    FileShare.None))
+                {
+                    serializer.WriteObject(
+                        stream,
+                        new RunConsumedMarker
+                        {
+                            LogicalRuns = 1,
+                            RequestReachedServer = true,
+                            RunId = SafeRunId(runId)
+                        });
+                    stream.Flush(true);
+                }
+                File.Move(temporaryPath, finalPath);
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath))
+                {
+                    File.Delete(temporaryPath);
+                }
             }
         }
 
@@ -463,12 +723,37 @@ namespace Win7POS.Wpf.UiSmokeHarness
             report.ArticleRetryWait = article.RetryWait;
             report.ArticleBlockedConflicts =
                 article.BlockedConflicts;
+            report.ArticleConflictResolved =
+                article.ConflictResolved;
+            report.ArticleCanonicalValuesMatch =
+                article.CanonicalValuesMatch;
+            report.ArticleAckCatalogRevisionMatch =
+                article.AckCatalogRevisionMatch;
+            report.ArticleRemoteChildIdsAssigned =
+                article.RemoteChildIdsAssigned;
+            report.ArticleDuplicateIdentityIndependent =
+                article.DuplicateIdentityIndependent;
+            report.ArticleLifecycleCanonicalReadback =
+                article.LifecycleCanonicalReadback;
+            report.ArticleReplayAckPreserved =
+                article.ReplayAckPreserved;
             report.PriceHistoryDuplicateGroups =
                 article.PriceHistoryDuplicateGroups;
             report.StockDuplicateGroups =
                 article.StockDuplicateGroups;
             report.SalesRows = article.SalesRows;
             report.HardwareActions = article.HardwareActions;
+            report.ArticleUiScreenshots = article.UiScreenshots;
+            report.ArticleUiLanguagesVerified =
+                article.UiLanguagesVerified;
+            report.ArticleUiKeyboardNavigationVerified =
+                article.UiKeyboardNavigationVerified;
+            report.ArticleUiControlsUnclipped =
+                article.UiControlsUnclipped;
+            report.ArticleUiResponsive =
+                article.UiResponsive;
+            report.ArticleUiConflictNonModal =
+                article.UiConflictNonModal;
             report.CleanupManifestCreated =
                 article.CleanupManifestCreated;
         }
@@ -648,6 +933,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         Path.Combine(tempDirectory, fileName),
                         new byte[] { 1 });
                 }
+                MirrorAcceptanceScreenshots(tempDirectory);
                 if (!RequiredAcceptanceEvidenceFilesExist(
                         tempDirectory,
                         includeRedactionScan: false))
@@ -878,11 +1164,13 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
         }
 
-        private static bool LogsDoNotContainProfileValues(QaCredentialProfile profile)
+        private static bool LogsDoNotContainSecrets(
+            QaCredentialProfile profile,
+            PosTrustedDeviceSession trustedSession)
         {
             if (profile == null || !Directory.Exists(AppPaths.LogsDirectory))
             {
-                return true;
+                return false;
             }
 
             foreach (var path in Directory.EnumerateFiles(
@@ -914,7 +1202,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         profile.DeviceIdentifier) ||
                     SensitiveValueLogScanPolicy.ContainsSensitiveValue(
                         contents,
-                        profile.DeviceDisplayName))
+                        profile.DeviceDisplayName) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        trustedSession?.DeviceToken) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        trustedSession?.SessionToken) ||
+                    ContainsForbiddenEvidenceMarker(contents))
                 {
                     return false;
                 }
@@ -954,18 +1249,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
         {
             if (!Directory.Exists(outputDirectory))
                 return false;
-            var forbiddenMarkers = new[]
-            {
-                "\"deviceToken\"",
-                "\"sessionToken\"",
-                "canonical_payload_json",
-                "intent_json",
-                "payload_json"
-            };
+            var scannableExtensions = new[]
+                { ".log", ".json", ".txt", ".md" };
             foreach (var path in Directory.EnumerateFiles(
                 outputDirectory,
                 "*",
-                SearchOption.TopDirectoryOnly))
+                SearchOption.AllDirectories))
             {
                 var extension = Path.GetExtension(path);
                 if (string.Equals(
@@ -985,9 +1274,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     }
                     continue;
                 }
-                if (!string.Equals(extension, ".json", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(extension, ".txt", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(extension, ".md", StringComparison.OrdinalIgnoreCase))
+                if (!scannableExtensions.Contains(
+                        extension,
+                        StringComparer.OrdinalIgnoreCase))
                 {
                     continue;
                 }
@@ -1000,19 +1289,55 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         profile?.Credential) ||
                     SensitiveValueLogScanPolicy.ContainsSensitiveValue(
                         contents,
+                        profile?.ShopCode) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile?.StaffCode) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile?.BaseUrl) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile?.DeviceIdentifier) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
+                        profile?.DeviceDisplayName) ||
+                    SensitiveValueLogScanPolicy.ContainsSensitiveValue(
+                        contents,
                         trustedSession?.DeviceToken) ||
                     SensitiveValueLogScanPolicy.ContainsSensitiveValue(
                         contents,
                         trustedSession?.SessionToken) ||
-                    forbiddenMarkers.Any(marker =>
-                        contents.IndexOf(
-                            marker,
-                            StringComparison.OrdinalIgnoreCase) >= 0))
+                    ContainsForbiddenEvidenceMarker(contents))
                 {
                     return false;
                 }
             }
             return true;
+        }
+
+        private static bool ContainsForbiddenEvidenceMarker(string contents)
+        {
+            if (string.IsNullOrEmpty(contents))
+            {
+                return false;
+            }
+            return new[]
+            {
+                "\"deviceToken\"",
+                "\"sessionToken\"",
+                "Authorization:",
+                "Cookie:",
+                "canonical_payload_json",
+                "intent_json",
+                "payload_json",
+                "rawRequestBody",
+                "rawResponseBody",
+                "rawMutationPayload"
+            }.Any(marker =>
+                contents.IndexOf(
+                    marker,
+                    StringComparison.OrdinalIgnoreCase) >= 0);
         }
 
         private static bool RequiredAcceptanceEvidenceFilesExist(
@@ -1024,13 +1349,17 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 return false;
             }
 
-            return RequiredAcceptanceEvidenceFileNames
+            var filesComplete = RequiredAcceptanceEvidenceFileNames
                 .Where(fileName =>
                     includeRedactionScan ||
-                    !string.Equals(
-                        fileName,
-                        "redaction-scan.txt",
-                        StringComparison.OrdinalIgnoreCase))
+                    (!string.Equals(
+                            fileName,
+                            "redaction-scan.txt",
+                            StringComparison.OrdinalIgnoreCase) &&
+                     !string.Equals(
+                            fileName,
+                            "14-redaction-scan.txt",
+                            StringComparison.OrdinalIgnoreCase)))
                 .All(fileName =>
             {
                 var path = Path.Combine(outputDirectory, fileName);
@@ -1044,6 +1373,36 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     new FileInfo(path).Length > 0 &&
                     new FileInfo(path).Length <= maximumLength;
             });
+            var screenshotDirectory = Path.Combine(
+                outputDirectory,
+                "screenshots");
+            return filesComplete &&
+                Directory.Exists(screenshotDirectory) &&
+                Directory.EnumerateFiles(
+                    screenshotDirectory,
+                    "*.png",
+                    SearchOption.TopDirectoryOnly).Count() >= 8;
+        }
+
+        private static void MirrorAcceptanceScreenshots(
+            string outputDirectory)
+        {
+            var screenshotDirectory = Path.Combine(
+                outputDirectory,
+                "screenshots");
+            Directory.CreateDirectory(screenshotDirectory);
+            foreach (var source in Directory.EnumerateFiles(
+                outputDirectory,
+                "*.png",
+                SearchOption.TopDirectoryOnly))
+            {
+                File.Copy(
+                    source,
+                    Path.Combine(
+                        screenshotDirectory,
+                        Path.GetFileName(source)),
+                    overwrite: true);
+            }
         }
 
         private static bool ContainsUtf8Value(byte[] haystack, string value)
@@ -1080,11 +1439,22 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 Path.Combine(outputDirectory, "first-login-result.json"),
                 new FirstLoginEvidence
                 {
+                    BootstrapCode = report.BootstrapCode,
+                    DeviceApprovalState = report.DeviceApprovalState,
+                    EffectiveOfflineAuthorizationExpiresAt =
+                        report.EffectiveOfflineAuthorizationExpiresAt,
                     FirstLoginSucceeded = report.FirstLoginSucceeded,
                     HttpStatus = report.FirstLoginHttpStatus,
                     OfflineAuthorizationValid =
                         report.OfflineAuthorizationValid,
+                    OfflineAuthorityAfterServerTime =
+                        report.OfflineAuthorityAfterServerTime,
+                    OfflineAuthorityWithinSessionExpiry =
+                        report.OfflineAuthorityWithinSessionExpiry,
                     PosUnlocked = report.PosUnlocked,
+                    RequestReachedServer = report.RequestReachedServer,
+                    ServerTime = report.ServerTime,
+                    SessionExpiresAt = report.SessionExpiresAt,
                     TrustedSessionPersisted =
                         report.TrustedSessionPersisted
                 });
@@ -1114,22 +1484,131 @@ namespace Win7POS.Wpf.UiSmokeHarness
                         report.LocalActiveCategories,
                     LocalActiveProducts = report.LocalActiveProducts,
                     LocalActiveSuppliers = report.LocalActiveSuppliers,
+                    LocalPriceRows = report.LocalPriceRows,
                     ManifestActiveCategories =
                         report.ManifestActiveCategories,
                     ManifestActiveProducts =
                         report.ManifestActiveProducts,
                     ManifestActiveSuppliers =
                         report.ManifestActiveSuppliers,
+                    ManifestPriceRows = report.ManifestPriceRows,
                     Page = report.CatalogPage,
                     Pages = report.CatalogPages,
                     PagesProcessed = report.CatalogPagesProcessed,
                     PendingRemotePrices = report.PendingRemotePrices,
+                    PreviousDiagnosticCleared =
+                        report.PreviousDiagnosticCleared,
+                    ProductListPopulated =
+                        report.ProductListPopulated,
+                    RepairRequired = report.RepairRequired,
                     Retryable =
                         report.CatalogRetryable ?? report.Retryable,
                     RowsApplied = report.CatalogRowsApplied,
                     RowsReceived = report.CatalogRowsReceived,
-                    SaleSafe = report.SaleSafe
+                    RowsSkipped = report.RowsSkipped,
+                    SaleSafe = report.SaleSafe,
+                    TerminalHasMore = report.TerminalHasMore,
+                    AutomaticCompleteRunRetries =
+                        report.AutomaticCompleteRunRetries
                 });
+        }
+
+        private static void WriteNumberedEvidenceAliases(
+            string outputDirectory,
+            AcceptanceReport report)
+        {
+            CopyEvidenceFile(
+                outputDirectory,
+                "first-login-result.json",
+                "05-first-login-redacted.json");
+            CopyEvidenceFile(
+                outputDirectory,
+                "catalog-exactness.json",
+                "06-catalog-exactness.json");
+            CopyEvidenceFile(
+                outputDirectory,
+                "article-mutation-results.json",
+                "07-article-mutation-results-redacted.json");
+            CopyEvidenceFile(
+                outputDirectory,
+                "local-outbox-state.json",
+                "08-outbox-state-redacted.json");
+            CopyEvidenceFile(
+                outputDirectory,
+                "price-history-counts.txt",
+                "09-price-history-counts.txt");
+            CopyEvidenceFile(
+                outputDirectory,
+                "stock-movement-counts.txt",
+                "10-stock-movement-counts.txt");
+            File.WriteAllText(
+                Path.Combine(
+                    outputDirectory,
+                    "11-replay-conflict-results.txt"),
+                "duplicateReplay=" + report.SameMutationReplay +
+                Environment.NewLine +
+                "payloadMismatch=" + report.DifferentPayloadMismatch +
+                Environment.NewLine +
+                "staleConflict=" + report.StaleConflict +
+                Environment.NewLine +
+                "unrelatedFairness=" +
+                report.UnrelatedProductContinued +
+                Environment.NewLine +
+                "conflictResolved=" +
+                report.ArticleConflictResolved +
+                Environment.NewLine +
+                "unresolvedBlocked=" +
+                report.ArticleBlockedConflicts.ToString(
+                    CultureInfo.InvariantCulture) +
+                Environment.NewLine,
+                new UTF8Encoding(false));
+            CopyEvidenceFile(
+                outputDirectory,
+                "no-echo-result.txt",
+                "12-no-echo-result.txt");
+            File.WriteAllText(
+                Path.Combine(
+                    outputDirectory,
+                    "13-ui-smoke-result.txt"),
+                "languages=en,es,it,zh-CN" +
+                Environment.NewLine +
+                "languagesVerified=" +
+                report.ArticleUiLanguagesVerified +
+                Environment.NewLine +
+                "viewport=1024x768" +
+                Environment.NewLine +
+                "keyboardNavigation=" +
+                report.ArticleUiKeyboardNavigationVerified +
+                Environment.NewLine +
+                "controlsUnclipped=" +
+                report.ArticleUiControlsUnclipped +
+                Environment.NewLine +
+                "responsive=" +
+                report.ArticleUiResponsive +
+                Environment.NewLine +
+                "conflictNotificationNonModal=" +
+                report.ArticleUiConflictNonModal +
+                Environment.NewLine +
+                "screenshots=" +
+                report.ArticleUiScreenshots.ToString(
+                    CultureInfo.InvariantCulture) +
+                Environment.NewLine +
+                "hardwareActions=" +
+                report.HardwareActions.ToString(
+                    CultureInfo.InvariantCulture) +
+                Environment.NewLine,
+                new UTF8Encoding(false));
+        }
+
+        private static void CopyEvidenceFile(
+            string outputDirectory,
+            string sourceName,
+            string destinationName)
+        {
+            File.Copy(
+                Path.Combine(outputDirectory, sourceName),
+                Path.Combine(outputDirectory, destinationName),
+                overwrite: true);
         }
 
         private static void WriteRedactionEvidence(
@@ -1139,8 +1618,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
             try
             {
                 Directory.CreateDirectory(outputDirectory);
-                File.WriteAllText(
-                    Path.Combine(outputDirectory, "redaction-scan.txt"),
+                var contents =
                     "logRedactionStatus=" +
                     (report.LogRedactionStatus ??
                         EvidenceStatusNotRun).ToUpperInvariant() +
@@ -1158,7 +1636,16 @@ namespace Win7POS.Wpf.UiSmokeHarness
                     "hardwareActions=" +
                     report.HardwareActions.ToString(
                         CultureInfo.InvariantCulture) +
-                    Environment.NewLine,
+                    Environment.NewLine;
+                File.WriteAllText(
+                    Path.Combine(outputDirectory, "redaction-scan.txt"),
+                    contents,
+                    new UTF8Encoding(false));
+                File.WriteAllText(
+                    Path.Combine(
+                        outputDirectory,
+                        "14-redaction-scan.txt"),
+                    contents,
                     new UTF8Encoding(false));
             }
             catch
@@ -1211,6 +1698,40 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
         }
 
+        private static AcceptanceReport ReadPrepareReport(
+            string outputDirectory)
+        {
+            var path = Path.Combine(
+                outputDirectory,
+                "staging-acceptance-prepare-result.json");
+            if (!File.Exists(path) ||
+                new FileInfo(path).Length <= 0 ||
+                new FileInfo(path).Length > 2 * 1024 * 1024)
+            {
+                throw new AcceptanceFailure(
+                    "staging_restart_report_missing");
+            }
+            try
+            {
+                var serializer = new DataContractJsonSerializer(
+                    typeof(AcceptanceReport));
+                using (var input = new FileStream(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.Read))
+                {
+                    return serializer.ReadObject(input)
+                        as AcceptanceReport;
+                }
+            }
+            catch (Exception)
+            {
+                throw new AcceptanceFailure(
+                    "staging_restart_report_invalid");
+            }
+        }
+
         private static bool IsExpectedDataDirectory()
         {
             return string.Equals(
@@ -1244,7 +1765,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var value = (runId ?? string.Empty).Trim();
             if (value.Length == 0 ||
                 value.Length > 64 ||
-                !value.StartsWith("ASUSART_", StringComparison.Ordinal))
+                !value.StartsWith(
+                    "ASUSART_FINAL_",
+                    StringComparison.Ordinal))
             {
                 throw new AcceptanceFailure("run_id_invalid");
             }
@@ -1301,6 +1824,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             }
 
             internal string Code { get; }
+        }
+
+        private sealed class AcceptanceRestartRequired : Exception
+        {
         }
 
         [DataContract]
@@ -1432,14 +1959,50 @@ namespace Win7POS.Wpf.UiSmokeHarness
         [DataContract]
         private sealed class AcceptanceReport
         {
+            [DataMember(Name = "automaticCompleteRunRetries")]
+            public int AutomaticCompleteRunRetries { get; set; }
+
+            [DataMember(Name = "articleAckCatalogRevisionMatch")]
+            public bool ArticleAckCatalogRevisionMatch { get; set; }
+
             [DataMember(Name = "articleBlockedConflicts")]
             public long ArticleBlockedConflicts { get; set; }
+
+            [DataMember(Name = "articleCanonicalValuesMatch")]
+            public bool ArticleCanonicalValuesMatch { get; set; }
+
+            [DataMember(Name = "articleConflictResolved")]
+            public bool ArticleConflictResolved { get; set; }
+
+            [DataMember(Name = "articleUiLanguagesVerified")]
+            public bool ArticleUiLanguagesVerified { get; set; }
+
+            [DataMember(Name = "articleUiKeyboardNavigationVerified")]
+            public bool ArticleUiKeyboardNavigationVerified { get; set; }
+
+            [DataMember(Name = "articleUiControlsUnclipped")]
+            public bool ArticleUiControlsUnclipped { get; set; }
+
+            [DataMember(Name = "articleUiResponsive")]
+            public bool ArticleUiResponsive { get; set; }
+
+            [DataMember(Name = "articleUiConflictNonModal")]
+            public bool ArticleUiConflictNonModal { get; set; }
+
+            [DataMember(Name = "articleUiScreenshots")]
+            public int ArticleUiScreenshots { get; set; }
 
             [DataMember(Name = "articleCode")]
             public string ArticleCode { get; set; }
 
             [DataMember(Name = "articleInProgress")]
             public long ArticleInProgress { get; set; }
+
+            [DataMember(Name = "articleDuplicateIdentityIndependent")]
+            public bool ArticleDuplicateIdentityIndependent { get; set; }
+
+            [DataMember(Name = "articleLifecycleCanonicalReadback")]
+            public bool ArticleLifecycleCanonicalReadback { get; set; }
 
             [DataMember(Name = "articleMutationsPassed")]
             public bool ArticleMutationsPassed { get; set; }
@@ -1449,6 +2012,12 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             [DataMember(Name = "articleRetryWait")]
             public long ArticleRetryWait { get; set; }
+
+            [DataMember(Name = "articleRemoteChildIdsAssigned")]
+            public bool ArticleRemoteChildIdsAssigned { get; set; }
+
+            [DataMember(Name = "articleReplayAckPreserved")]
+            public bool ArticleReplayAckPreserved { get; set; }
 
             [DataMember(Name = "articleWaitingDependency")]
             public long ArticleWaitingDependency { get; set; }
@@ -1543,6 +2112,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "exactnessVerified")]
             public bool ExactnessVerified { get; set; }
 
+            [DataMember(Name = "effectiveOfflineAuthorizationExpiresAt")]
+            public string EffectiveOfflineAuthorizationExpiresAt { get; set; }
+
             [DataMember(Name = "exceptionType")]
             public string ExceptionType { get; set; }
 
@@ -1579,6 +2151,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "localProductsPositive")]
             public bool LocalProductsPositive { get; set; }
 
+            [DataMember(Name = "localPriceRows")]
+            public long LocalPriceRows { get; set; }
+
             [DataMember(Name = "logRedactionPassed")]
             public bool? LogRedactionPassed { get; set; }
 
@@ -1597,11 +2172,20 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "manifestActiveSuppliers")]
             public long ManifestActiveSuppliers { get; set; }
 
+            [DataMember(Name = "manifestPriceRows")]
+            public long ManifestPriceRows { get; set; }
+
             [DataMember(Name = "passed")]
             public bool Passed { get; set; }
 
             [DataMember(Name = "offlineAuthorizationValid")]
             public bool OfflineAuthorizationValid { get; set; }
+
+            [DataMember(Name = "offlineAuthorityAfterServerTime")]
+            public bool OfflineAuthorityAfterServerTime { get; set; }
+
+            [DataMember(Name = "offlineAuthorityWithinSessionExpiry")]
+            public bool OfflineAuthorityWithinSessionExpiry { get; set; }
 
             [DataMember(Name = "offlineCreateAtomic")]
             public bool OfflineCreateAtomic { get; set; }
@@ -1633,6 +2217,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "requestReachedServer")]
             public bool RequestReachedServer { get; set; }
 
+            [DataMember(Name = "repairRequired")]
+            public bool RepairRequired { get; set; }
+
             [DataMember(Name = "retryable")]
             public bool Retryable { get; set; }
 
@@ -1657,6 +2244,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "serverRequestId")]
             public string ServerRequestId { get; set; }
 
+            [DataMember(Name = "serverTime")]
+            public string ServerTime { get; set; }
+
+            [DataMember(Name = "sessionExpiresAt")]
+            public string SessionExpiresAt { get; set; }
+
+            [DataMember(Name = "rowsSkipped")]
+            public long RowsSkipped { get; set; }
+
             [DataMember(Name = "startedAtUtc")]
             public string StartedAtUtc { get; set; }
 
@@ -1669,6 +2265,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "trustedSessionPersisted")]
             public bool TrustedSessionPersisted { get; set; }
 
+            [DataMember(Name = "terminalHasMore")]
+            public bool TerminalHasMore { get; set; }
+
             [DataMember(Name = "unrelatedProductContinued")]
             public bool UnrelatedProductContinued { get; set; }
 
@@ -1679,6 +2278,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
         [DataContract]
         private sealed class FirstLoginEvidence
         {
+            [DataMember(Name = "bootstrapCode")]
+            public string BootstrapCode { get; set; }
+
+            [DataMember(Name = "deviceApprovalState")]
+            public string DeviceApprovalState { get; set; }
+
+            [DataMember(Name = "effectiveOfflineAuthorizationExpiresAt")]
+            public string EffectiveOfflineAuthorizationExpiresAt { get; set; }
+
             [DataMember(Name = "firstLoginSucceeded")]
             public bool FirstLoginSucceeded { get; set; }
 
@@ -1688,16 +2296,47 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "offlineAuthorizationValid")]
             public bool OfflineAuthorizationValid { get; set; }
 
+            [DataMember(Name = "offlineAuthorityAfterServerTime")]
+            public bool OfflineAuthorityAfterServerTime { get; set; }
+
+            [DataMember(Name = "offlineAuthorityWithinSessionExpiry")]
+            public bool OfflineAuthorityWithinSessionExpiry { get; set; }
+
             [DataMember(Name = "posUnlocked")]
             public bool PosUnlocked { get; set; }
+
+            [DataMember(Name = "requestReachedServer")]
+            public bool RequestReachedServer { get; set; }
+
+            [DataMember(Name = "serverTime")]
+            public string ServerTime { get; set; }
+
+            [DataMember(Name = "sessionExpiresAt")]
+            public string SessionExpiresAt { get; set; }
 
             [DataMember(Name = "trustedSessionPersisted")]
             public bool TrustedSessionPersisted { get; set; }
         }
 
         [DataContract]
+        private sealed class RunConsumedMarker
+        {
+            [DataMember(Name = "logicalRuns")]
+            public int LogicalRuns { get; set; }
+
+            [DataMember(Name = "requestReachedServer")]
+            public bool RequestReachedServer { get; set; }
+
+            [DataMember(Name = "runId")]
+            public string RunId { get; set; }
+        }
+
+        [DataContract]
         private sealed class CatalogEvidence
         {
+            [DataMember(Name = "automaticCompleteRunRetries")]
+            public int AutomaticCompleteRunRetries { get; set; }
+
             [DataMember(Name = "attempt")]
             public int Attempt { get; set; }
 
@@ -1725,6 +2364,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "localActiveSuppliers")]
             public long LocalActiveSuppliers { get; set; }
 
+            [DataMember(Name = "localPriceRows")]
+            public long LocalPriceRows { get; set; }
+
             [DataMember(Name = "manifestActiveCategories")]
             public long ManifestActiveCategories { get; set; }
 
@@ -1733,6 +2375,9 @@ namespace Win7POS.Wpf.UiSmokeHarness
 
             [DataMember(Name = "manifestActiveSuppliers")]
             public long ManifestActiveSuppliers { get; set; }
+
+            [DataMember(Name = "manifestPriceRows")]
+            public long ManifestPriceRows { get; set; }
 
             [DataMember(Name = "page")]
             public long? Page { get; set; }
@@ -1746,6 +2391,15 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "pendingRemotePrices")]
             public long PendingRemotePrices { get; set; }
 
+            [DataMember(Name = "previousDiagnosticCleared")]
+            public bool PreviousDiagnosticCleared { get; set; }
+
+            [DataMember(Name = "productListPopulated")]
+            public bool ProductListPopulated { get; set; }
+
+            [DataMember(Name = "repairRequired")]
+            public bool RepairRequired { get; set; }
+
             [DataMember(Name = "retryable")]
             public bool Retryable { get; set; }
 
@@ -1755,8 +2409,14 @@ namespace Win7POS.Wpf.UiSmokeHarness
             [DataMember(Name = "rowsReceived")]
             public long RowsReceived { get; set; }
 
+            [DataMember(Name = "rowsSkipped")]
+            public long RowsSkipped { get; set; }
+
             [DataMember(Name = "saleSafe")]
             public bool SaleSafe { get; set; }
+
+            [DataMember(Name = "terminalHasMore")]
+            public bool TerminalHasMore { get; set; }
         }
     }
 }
