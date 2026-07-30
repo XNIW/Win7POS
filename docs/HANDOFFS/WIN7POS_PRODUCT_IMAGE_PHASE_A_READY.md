@@ -1,7 +1,7 @@
 # Win7POS product image Phase A ready
 
-Status: implementation complete locally; delivery metadata is filled after the
-draft PR is created.
+Status: Phase A implementation is committed and published in a draft PR; it
+must not merge until final Mac cleanup is complete.
 
 ## Safety statement
 
@@ -144,7 +144,10 @@ Final local gates:
   `codex/asus-product-image-foundation-offline-20260730`
 - Base:
   `f34308b24fd30d0b85845429f1ece97cc5106c6d`
-- Draft PR: pending creation during the delivery step.
+- Implementation commit:
+  `b03d8aaa860cce9ddfc5b38431b5059a90cab35a`
+- Draft PR:
+  `https://github.com/XNIW/Win7POS/pull/72`
 - Merge status: not merged; auto-merge must remain disabled.
 - Required PR banner:
   `DO NOT MERGE UNTIL FINAL MAC CLEANUP IS DONE.`
