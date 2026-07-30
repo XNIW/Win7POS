@@ -4,7 +4,9 @@
 
 - Tracking key: `WIN7POS-CATALOG-TOLERANCE-001`
 - Local task ID: `ASUS-W7POS-013` (next free Win7POS ASUS task ID)
-- Status: `REVIEW`
+- Status: `DONE`
+- Phase: `DONE`
+- Resolution: `USER_CONFIRMED_CLOSURE`
 - Base: `e1dcbe7757d06b9e2ec30102d8654ea5e12412c6`
 
 ## Scope
@@ -49,3 +51,15 @@ is run on Windows 7 SP1 hardware.
   staging acceptance was executed. Bootstrap failed before catalog pull with
   the redacted code `bootstrap_failure`; no second run is permitted until the
   staging-side cause or credential-field mapping is clarified.
+
+## Final closure
+
+The earlier failure was superseded by the final exact-main acceptance recorded
+in `docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`. The public
+staging run completed the 676-page authoritative catalog, matched all product,
+category, supplier and price counts and identities, retained sale safety, and
+completed the article mutation matrix with zero pending or blocked work.
+
+Final staging acceptance is `PASS`; P0/P1/P2/P3 is `0/0/0/0`.
+Cross-repository cleanup is `READY_FOR_MAC_FINAL_CLEANUP`. Windows 7 SP1
+physical validation remains `EXTERNAL_PENDING`.

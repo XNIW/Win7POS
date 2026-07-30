@@ -4,6 +4,22 @@ Cronologia sintetica delle sessioni AI. Aggiornare dopo ogni sessione significat
 
 ---
 
+## 2026-07-30 – Article sync final acceptance e closeout
+
+- Validato Win7POS dall'exact main post-PR68 senza modificare il checkout
+  primario dirty.
+- Integrate PR #69 (namespace isolato post-PR68) e PR #70 (report Gitleaks
+  zero-findings non vuoto), entrambe con CI, CodeQL e supply-chain PASS.
+- Acceptance staging finale PASS: login/trust/restart, catalogo autorevole da
+  676 pagine, matrice article mutation completa, conflitto risolto, zero echo,
+  outbox zero, vendite e hardware zero.
+- Core/Data 746/746; WPF/harness net48/x86 0 warning/error; dialog 34/34;
+  required gates 45/45; soluzione 0 warning/error; Gitleaks 0.
+- Manifest cleanup consolidato a sette gruppi validato SELECT-only e non
+  eseguito; handoff cross-repo `READY_FOR_MAC_FINAL_CLEANUP`.
+- Chiusura: `DONE`, `USER_CONFIRMED_CLOSURE`, P0/P1/P2/P3=0/0/0/0;
+  Windows 7 fisico resta `EXTERNAL_PENDING`.
+
 ## 2026-03-17 – Pulizia doc repo
 - Spostati report storici in `docs/reports/` (DIALOG_REVERT_REPORT, ANALISI_MIGLIORAMENTI, CANDIDATI_PULIZIA).
 - Archiviato piano eseguito in `docs/plans/_archive/dialog-positioning-standardization-plan.md`.
