@@ -3182,7 +3182,7 @@ ORDER BY COALESCE(last_typed_code, 'none');")).ToArray();
             if (string.IsNullOrWhiteSpace(value) ||
                 value.Length > 64 ||
                 !value.StartsWith(
-                    "ASUSART_POST_PR63_",
+                    "ASUSART_POST_PR68_",
                     StringComparison.Ordinal))
             {
                 return false;

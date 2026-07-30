@@ -114,7 +114,7 @@ try {
 
     $timeoutEvidence = Join-Path $testRoot 'timeout-evidence'
     $timeoutMarker = Join-Path $testRoot 'timeout-marker.txt'
-    $timeoutRunId = 'ASUSART_POST_PR63_RUNNER_TIMEOUT'
+    $timeoutRunId = 'ASUSART_POST_PR68_RUNNER_TIMEOUT'
     $runConsumedMarker = Join-Path $timeoutEvidence (
         'run-consumed-redacted.json')
     # Keep the timeout below the synthetic 10-second delay while allowing a
