@@ -9,6 +9,7 @@ using Win7POS.Core.Receipt;
 using Win7POS.Core.Util;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Localization;
+using Win7POS.Wpf.Products.Images;
 
 namespace Win7POS.Wpf.Products
 {
@@ -51,6 +52,12 @@ namespace Win7POS.Wpf.Products
             : PosLocalization.T("products.initialStock");
 
         private readonly ProductsWorkflowService _service;
+
+        public bool ProductImagesPhaseAEnabled =>
+            ProductImageFeatureFlags.IsPhaseAEnabled;
+
+        public ProductImageDisplayViewModel ImageDisplay { get; } =
+            new ProductImageDisplayViewModel();
 
         public ProductEditViewModel(ProductEditMode mode, ProductDetailsRow source, ProductsWorkflowService service)
         {

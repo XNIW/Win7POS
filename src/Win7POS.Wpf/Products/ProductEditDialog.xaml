@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:Win7POS.Wpf.Localization"
         xmlns:chrome="clr-namespace:Win7POS.Wpf.Chrome"
+        xmlns:images="clr-namespace:Win7POS.Wpf.Products.Images"
         Title="{Binding DialogTitle}"
         ShowHeader="False"
         DialogCornerRadius="16"
@@ -24,6 +25,7 @@
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <Grid>
                     <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
@@ -125,6 +127,21 @@
                     <TextBox Grid.Row="9" Grid.Column="1" Margin="8,10,0,0"
                              Text="{Binding Name2, UpdateSourceTrigger=PropertyChanged}"
                              Style="{StaticResource ModernTextBoxStyle}" MinHeight="32"/>
+
+                    <!-- Phase A: static editor preview, deliberately disabled. -->
+                    <TextBlock Grid.Row="10" Grid.Column="0" Margin="0,10,0,0"
+                               VerticalAlignment="Center"
+                               Text="{loc:Loc productImage.preview}"
+                               Visibility="{Binding ProductImagesPhaseAEnabled, Converter={StaticResource BoolToVis}}"/>
+                    <images:ProductImagePresenter Grid.Row="10" Grid.Column="1"
+                                                  Width="160"
+                                                  Height="160"
+                                                  Margin="8,10,0,0"
+                                                  HorizontalAlignment="Left"
+                                                  DataContext="{Binding ImageDisplay}"
+                                                  Visibility="{Binding DataContext.ProductImagesPhaseAEnabled,
+                                                                       RelativeSource={RelativeSource AncestorType={x:Type chrome:DialogShellWindow}},
+                                                                       Converter={StaticResource BoolToVis}}"/>
                 </Grid>
             </ScrollViewer>
         </Border>
