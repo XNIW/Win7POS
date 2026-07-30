@@ -18,12 +18,12 @@ $runnerExit = @{
     LaunchFailure = 24
 }
 
-$runId = 'ASUSART_POST_PR63_' +
+$runId = 'ASUSART_POST_PR68_' +
     [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssfffZ') +
     '_' +
     [Guid]::NewGuid().ToString('N').Substring(0, 8).ToUpperInvariant()
 $evidenceDirectory = Join-Path 'C:\Dev\_codex-evidence' (
-    'win7pos-final-post-pr63-' + $runId)
+    'win7pos-final-post-pr68-' + $runId)
 New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
 
 function Complete-Win7PosAcceptanceRunner {
