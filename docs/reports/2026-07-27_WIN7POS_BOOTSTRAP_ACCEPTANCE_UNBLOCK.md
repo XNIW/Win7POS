@@ -1,9 +1,14 @@
 # Win7POS staging bootstrap acceptance unblock — 2026-07-27
 
-Status: `CODEX_MAC_HANDOFF_READY`.
+Status: `HISTORICAL_SUPERSEDED`.
 
 This is an evidence and design record for the bootstrap unblock. It is not a
 catalog acceptance closeout and does not transition `ASUS-W7POS-013` to `DONE`.
+
+The final transition is now recorded in
+`docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`:
+`ASUS-W7POS-013=DONE`, `Resolution=USER_CONFIRMED_CLOSURE`, final staging
+acceptance `PASS`, and cleanup `READY_FOR_MAC_FINAL_CLEANUP`.
 
 ## Frozen failed-run evidence
 

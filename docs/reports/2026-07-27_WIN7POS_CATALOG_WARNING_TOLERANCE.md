@@ -1,6 +1,8 @@
 # Win7POS catalog warning tolerance — 2026-07-27
 
-Status: `REVIEW`.
+Status: `DONE`.
+
+Resolution: `USER_CONFIRMED_CLOSURE`.
 
 This report will become the closeout record after the feature has passed local
 validation, independent review, normal merge and real staging acceptance.
@@ -43,3 +45,17 @@ unlock. The redacted profile-value scan of the acceptance log passed.
 No second staging run was performed. `DONE` remains prohibited until the
 staging-side failure or credential-field mapping is clarified and a newly
 authorized acceptance run passes.
+
+## Final acceptance supplement
+
+The prerequisite was later satisfied by the exact-main public-staging
+acceptance recorded in
+`docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`. It drained all
+676 pages, verified the authoritative counts and identities, retained
+sale-safety, and completed the full article mutation matrix. The final state
+has zero pending/retry/in-progress/blocked article work.
+
+Phase is `DONE`; final staging acceptance is `PASS`;
+P0/P1/P2/P3 is `0/0/0/0`; cleanup is
+`READY_FOR_MAC_FINAL_CLEANUP`; Windows 7 physical remains
+`EXTERNAL_PENDING`.

@@ -1,6 +1,8 @@
 # Win7POS -> Admin article mutation capability matrix
 
-Status: `BLOCKED_ADMIN_ARTICLE_MUTATION_CONTRACT`
+Status: `DONE`
+
+Resolution: `USER_CONFIRMED_CLOSURE`
 
 Audited: 2026-07-28 UTC, read-only
 
@@ -75,3 +77,15 @@ mutation contract. At minimum it must provide:
 After that Admin contract is merged and its staging deployment is separately
 verified by its owner, Win7POS can implement the Phase B outbox and add only
 synthetic, authorization-approved staging coverage.
+
+## Superseding final closure
+
+The blocking audit above is retained as historical evidence. The required
+Admin contract was subsequently delivered and the Win7POS client was
+implemented and accepted from exact main. The final public-staging proof is
+recorded in
+`docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`.
+
+Article-sync client task and Phase B are `DONE`; final staging acceptance is
+`PASS`; P0/P1/P2/P3 is `0/0/0/0`. The remaining cross-repository action is
+exact-ID synthetic cleanup with status `READY_FOR_MAC_FINAL_CLEANUP`.

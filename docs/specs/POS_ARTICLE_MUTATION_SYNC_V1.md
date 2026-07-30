@@ -243,3 +243,16 @@ Real staging is test-only and exact-main gated:
 The cleanup manifest is the sole evidence artifact containing exact synthetic
 IDs/barcodes. The generated Mac prompt scopes cleanup to those identities,
 preserves immutable audit and prohibits an additional Worker deployment.
+
+## Final closure
+
+- Task: `DONE`.
+- Phase: `DONE`.
+- Resolution: `USER_CONFIRMED_CLOSURE`.
+- Final staging acceptance: `PASS`.
+- P0/P1/P2/P3: `0/0/0/0`.
+- Cross-repository cleanup: `READY_FOR_MAC_FINAL_CLEANUP`.
+- Windows 7 physical: `EXTERNAL_PENDING`.
+
+The accepted exact-main run and redacted evidence summary are recorded in
+`docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`.

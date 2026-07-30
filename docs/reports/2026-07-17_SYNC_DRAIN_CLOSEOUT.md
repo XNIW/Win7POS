@@ -81,3 +81,20 @@ selftest PASS. The deterministic 60-sale policy sequence remains `60 → 35 → 
 0`; it is not a substitute for the mandatory authenticated staging fixture and
 remote duplicate/ACK verification. Task status remains `NOT_DONE` and main is
 unchanged.
+
+## Final staging certification — 2026-07-30
+
+The earlier `NOT_DONE` state is superseded by the final exact-main acceptance
+recorded in
+`docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`.
+
+The authoritative catalog drained 676 pages to terminal `hasMore=false`,
+reported exactness `Verified`, required no repair and remained sale-safe.
+Article waiting/pending/in-progress/retry/blocked counts all finished at zero,
+with zero echo and zero sales or hardware actions.
+
+Authoritative drain task: `DONE`.
+Phase: `DONE`.
+Resolution: `USER_CONFIRMED_CLOSURE`.
+Final staging acceptance: `PASS`.
+Windows 7 physical: `EXTERNAL_PENDING`.
