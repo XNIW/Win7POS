@@ -166,6 +166,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var authoritativeDrainLoopback =
                 HasArg(args, "--authoritative-drain-loopback");
             var stagingAcceptance = HasArg(args, "--staging-acceptance");
+            var productImageStagingAcceptance =
+                HasArg(args, "--product-image-staging-acceptance");
             var productImageProfileSmoke =
                 HasArg(args, "--product-image-profile-smoke");
             var productImageUiSmoke =
@@ -185,6 +187,19 @@ namespace Win7POS.Wpf.UiSmokeHarness
                 throw new InvalidOperationException(
                     "--staging-acceptance requires --profile, --run-id, " +
                     "--acceptance-output and --acceptance-phase prepare|resume.");
+            }
+            if (productImageStagingAcceptance &&
+                (string.IsNullOrWhiteSpace(stagingProfile) ||
+                 string.IsNullOrWhiteSpace(acceptanceOutput) ||
+                 (stagingAcceptancePhase != "prepare" &&
+                  stagingAcceptancePhase != "resume" &&
+                  stagingAcceptancePhase != "cache-restart" &&
+                  stagingAcceptancePhase != "cleanup")))
+            {
+                throw new InvalidOperationException(
+                    "--product-image-staging-acceptance requires --profile, " +
+                    "--acceptance-output and --acceptance-phase " +
+                    "prepare|resume|cache-restart|cleanup.");
             }
             if (authoritativeDrainLoopback &&
                 string.IsNullOrWhiteSpace(acceptanceOutput))
@@ -237,6 +252,7 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                authoritativeDrainLoopback ||
                                productImageProfileSmoke ||
                                productImageUiSmoke ||
+                               productImageStagingAcceptance ||
                                stagingAcceptance ||
                                verifyOfflineSalesSandboxSafety ||
                                HasArg(args, "--lifecycle");
@@ -358,6 +374,18 @@ namespace Win7POS.Wpf.UiSmokeHarness
                             .RunAsync(
                                 stagingProfile,
                                 stagingRunId,
+                                acceptanceOutput,
+                                stagingAcceptancePhase)
+                            .ConfigureAwait(true);
+                        app.Shutdown(exitCode);
+                        return;
+                    }
+
+                    if (productImageStagingAcceptance)
+                    {
+                        var exitCode = await ProductImageStagingAcceptance
+                            .RunAsync(
+                                stagingProfile,
                                 acceptanceOutput,
                                 stagingAcceptancePhase)
                             .ConfigureAwait(true);

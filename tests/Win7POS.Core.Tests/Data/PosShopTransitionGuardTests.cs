@@ -87,6 +87,56 @@ public sealed class PosShopTransitionGuardTests
     }
 
     [TestMethod]
+    public async Task Evaluate_BlocksDifferentShopWhenProductImageOutboxIsUnresolved()
+    {
+        using var db = TestDb.Create();
+        await SaveShopAsync(db.Factory, "shop-a", "SHOP-A");
+        long productId;
+        using (var connection = db.Factory.Open())
+        {
+            await connection.ExecuteAsync(@"
+INSERT INTO products(barcode, name, unitPrice, remote_product_id, is_active)
+VALUES('SHOP-IMAGE-001', 'Pending image', 100, '10000000-0000-4000-8000-000000000150', 1);");
+            productId = await connection.ExecuteScalarAsync<long>(
+                "SELECT id FROM products WHERE barcode = 'SHOP-IMAGE-001';");
+        }
+        await new ProductImageOperationOutboxRepository(db.Factory)
+            .EnqueueReplaceAsync(
+                new ProductImageReplaceEnqueueRequest
+                {
+                    LocalProductId = productId,
+                    IntendedLocalVersionIdentity = "local-image-shop-transition",
+                    PayloadHash = "sha256:" + new string('a', 64),
+                    Main = new ProductImageStagedVariant
+                    {
+                        Bytes = 10,
+                        Height = 2,
+                        Identity = "stage-shop-transition-main.jpg",
+                        Sha256 = new string('b', 64),
+                        Width = 2
+                    },
+                    Thumb = new ProductImageStagedVariant
+                    {
+                        Bytes = 10,
+                        Height = 2,
+                        Identity = "stage-shop-transition-thumb.jpg",
+                        Sha256 = new string('c', 64),
+                        Width = 2
+                    }
+                },
+                (_, _) => "sha256:" + new string('d', 64));
+
+        var decision = await new PosShopTransitionGuard(db.Factory)
+            .EvaluateAsync("shop-a", "SHOP-A", "shop-b", "SHOP-B");
+
+        Assert.IsFalse(decision.Allowed);
+        Assert.IsTrue(decision.HasUnresolvedOutbox);
+        Assert.AreEqual(
+            "shop_switch_blocked_unresolved_outbox",
+            decision.Code);
+    }
+
+    [TestMethod]
     public async Task ApplyAuthorizedTransition_ResetsShopCacheAndPreservesHistoryAndOfficialSnapshot()
     {
         using var db = TestDb.Create();

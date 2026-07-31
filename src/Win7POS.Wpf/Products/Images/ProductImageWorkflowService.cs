@@ -40,12 +40,24 @@ namespace Win7POS.Wpf.Products.Images
         private readonly PosTrustedDeviceStore _trustedStore;
 
         public ProductImageWorkflowService()
+            : this(
+                new SqliteConnectionFactory(PosDbOptions.Default()),
+                new ProductImageStagingStore(),
+                new PosTrustedDeviceStore())
         {
-            var factory = new SqliteConnectionFactory(PosDbOptions.Default());
+        }
+
+        internal ProductImageWorkflowService(
+            SqliteConnectionFactory factory,
+            ProductImageStagingStore staging,
+            PosTrustedDeviceStore trustedStore)
+        {
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
             _preprocess = new ProductImagePreprocessService();
-            _staging = new ProductImageStagingStore();
+            _staging = staging ?? throw new ArgumentNullException(nameof(staging));
             _outbox = new ProductImageOperationOutboxRepository(factory);
-            _trustedStore = new PosTrustedDeviceStore();
+            _trustedStore = trustedStore ??
+                throw new ArgumentNullException(nameof(trustedStore));
         }
 
         public async Task<ProductImageMutationResult> ChooseOrReplaceAsync(

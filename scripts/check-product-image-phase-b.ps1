@@ -29,6 +29,9 @@ $syncHost = Read-Required "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHos
 $editor = Read-Required "src/Win7POS.Wpf/Products/ProductEditDialog.xaml"
 $translations = Read-Required "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs"
 $attributes = Read-Required ".gitattributes"
+$stagingAcceptance = Read-Required "tests/Win7POS.Wpf.UiSmokeHarness/ProductImageStagingAcceptance.cs"
+$stagingRunner = Read-Required "scripts/qa/Invoke-Win7PosProductImageStagingAcceptance.ps1"
+$shopTransition = Read-Required "src/Win7POS.Data/Online/PosShopTransitionGuard.cs"
 
 Require ($flags -match 'IsPhaseAEnabled\s*=>\s*true') `
     "Product image UI must be enabled only after the complete Phase B implementation is present."
@@ -63,6 +66,10 @@ foreach ($state in @(
 }
 Require ($outbox -notmatch '(?i)INSERT[\s\S]{0,500}(signed.?url|session.?token|device.?token|authorization)') `
     "Image outbox SQL must not persist signed URLs or trusted credentials."
+Require ($shopTransition -match 'product_image_operation_outbox' -and
+         $shopTransition -match 'pending_upload' -and
+         $shopTransition -match 'cleanup_pending') `
+    "Shop transitions must fail closed while durable product image work is unresolved."
 Require ($restore -match 'restore_live_product_image_outbox_unresolved' -and
          $restore -match 'restore_(candidate|review)_outbox_unresolved' -and
          $restore -match 'product_image_operation_outbox') `
@@ -101,6 +108,22 @@ foreach ($key in @(
     'productImage.unavailable', 'productImage.corrupt', 'productImage.conflict')) {
     Require ($translations.Contains($key)) "Missing localized product image key: $key"
 }
+Require ($stagingAcceptance -match 'DataProtectionScope\.CurrentUser' -and
+         $stagingAcceptance -match 'AllowAutoRedirect\s*=\s*false' -and
+         $stagingAcceptance -match 'RestartAfterOfflineQueue' -and
+         $stagingAcceptance -match 'VerifyExpiredCapabilitiesAsync' -and
+         $stagingAcceptance -match 'result_issue' -and
+         $stagingAcceptance -match 'CountForbiddenPersistenceMarkers' -and
+         $stagingAcceptance -match 'new ProductsView' -and
+         $stagingAcceptance -match 'new ProductEditDialog' -and
+         $stagingAcceptance -notmatch 'runMarker[^\r\n]*DataMember[^\r\n]*SafeReport') `
+    "Real staging acceptance must preserve DPAPI, no-redirect, restart and capability-expiry coverage."
+Require ($stagingRunner -match 'branch -show-current|branch --show-current' -and
+         $stagingRunner -match 'rev-parse origin/main' -and
+         $stagingRunner -match 'AddHours\(2\)\.AddMinutes\(5\)' -and
+         $stagingRunner -match "Phase 'cleanup'" -and
+         $stagingRunner -notmatch 'TASK150_QA_HMAC_KEY|SUPABASE_SERVICE_ROLE_KEY') `
+    "Staging runner must require exact main, wait the fence and avoid server secrets."
 
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ }
