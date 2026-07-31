@@ -128,7 +128,10 @@ SELECT
   m.supplier_id AS SupplierId,
   COALESCE(m.supplier_name, '') AS SupplierName,
   m.category_id AS CategoryId,
-  COALESCE(m.category_name, '') AS CategoryName
+  COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode";
 
@@ -289,7 +292,10 @@ SELECT
   m.supplier_id AS SupplierId,
   COALESCE(m.supplier_name, '') AS SupplierName,
   m.category_id AS CategoryId,
-  COALESCE(m.category_name, '') AS CategoryName
+  COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 " + where + keyset + "\n" + ordering + "\nLIMIT @limit" + offset;
@@ -370,7 +376,10 @@ SELECT
   m.supplier_id AS SupplierId,
   COALESCE(m.supplier_name, '') AS SupplierName,
   m.category_id AS CategoryId,
-  COALESCE(m.category_name, '') AS CategoryName
+  COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.id = @productId
@@ -396,7 +405,10 @@ SELECT
   m.supplier_id AS SupplierId,
   COALESCE(m.supplier_name, '') AS SupplierName,
   m.category_id AS CategoryId,
-  COALESCE(m.category_name, '') AS CategoryName
+  COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.barcode = @barcode
@@ -429,7 +441,10 @@ SELECT p.id AS Id, p.barcode AS Barcode, p.name AS Name, p.unitPrice AS UnitPric
   COALESCE(m.article_code, '') AS ArticleCode, COALESCE(m.name2, '') AS Name2,
   COALESCE(m.purchase_price, 0) AS PurchasePrice, COALESCE(m.stock_qty, 0) AS StockQty,
   m.supplier_id AS SupplierId, COALESCE(m.supplier_name, '') AS SupplierName,
-  m.category_id AS CategoryId, COALESCE(m.category_name, '') AS CategoryName
+  m.category_id AS CategoryId, COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE COALESCE(p.is_active, 1) = 1
@@ -465,7 +480,10 @@ SELECT p.id AS Id, p.barcode AS Barcode, p.name AS Name, p.unitPrice AS UnitPric
   COALESCE(m.article_code, '') AS ArticleCode, COALESCE(m.name2, '') AS Name2,
   COALESCE(m.purchase_price, 0) AS PurchasePrice, COALESCE(m.stock_qty, 0) AS StockQty,
   m.supplier_id AS SupplierId, COALESCE(m.supplier_name, '') AS SupplierName,
-  m.category_id AS CategoryId, COALESCE(m.category_name, '') AS CategoryName
+  m.category_id AS CategoryId, COALESCE(m.category_name, '') AS CategoryName,
+  p.remote_product_id AS RemoteProductId,
+  p.primary_image_version_id AS PrimaryImageVersionId,
+  p.primary_image_updated_at AS PrimaryImageUpdatedAt
 FROM products p
 LEFT JOIN product_meta m ON m.barcode = p.barcode
 WHERE p.barcode IN @barcodes

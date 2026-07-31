@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "id": "merchandise-control.product-image.v1",
+  "version": 1,
+  "media": {
+    "inputFormatsByPlatform": {
+      "admin": ["image/jpeg", "image/png"],
+      "android": ["image/jpeg", "image/png"],
+      "ios": ["image/jpeg", "image/png", "image/heic"]
+    },
+    "wireFormat": "image/jpeg",
+    "variants": ["main", "thumb"],
+    "originalPersisted": false,
+    "publicBucket": false,
+    "imageTransformations": false
+  },
+  "limits": {
+    "inputMaximumBytes": 26214400,
+    "inputMaximumPixels": 64000000,
+    "jsonBodyMaximumBytes": 16384,
+    "readBatchMaximum": 16,
+    "readRequestConcurrency": 2,
+    "downloadConcurrency": 4,
+    "signedURLTTLSeconds": 300,
+    "signedURLSafetyWindowMilliseconds": 30000
+  },
+  "compression": {
+    "sideFactors": [1.0, 0.85, 0.72, 0.61, 0.52, 0.44, 0.4],
+    "main": {
+      "maximumSide": 1600,
+      "minimumSide": 640,
+      "qualities": [0.82, 0.76, 0.7],
+      "targetBytes": 768000,
+      "hardMaximumBytes": 1048576
+    },
+    "thumb": {
+      "maximumSide": 384,
+      "minimumSide": 128,
+      "qualities": [0.75, 0.68, 0.6, 0.52],
+      "targetBytes": 92160,
+      "hardMaximumBytes": 92160,
+      "source": "normalized-main"
+    },
+    "rounding": "floor-factor-of-initial-maximum-then-clamp-minimum",
+    "alphaBackground": "#ffffff",
+    "colorSpace": "sRGB",
+    "orientationNormalized": true
+  },
+  "jpeg": {
+    "requireSOI": true,
+    "requireTerminalEOI": true,
+    "allowTrailingBytes": false,
+    "allowAPP0OnlyWhenJFIF": true,
+    "forbiddenMarkers": ["COM", "APP1", "APP2", "APP3", "APP4", "APP5", "APP6", "APP7", "APP8", "APP9", "APP10", "APP11", "APP12", "APP13", "APP14", "APP15"],
+    "parser": "bounded-single-pass"
+  },
+  "api": {
+    "intent": {
+      "method": "POST",
+      "path": "/api/shop/product-images/intent",
+      "requestRequired": ["main", "productId", "shopId", "thumb"],
+      "metadataRequired": ["bytes", "height", "mimeType", "sha256", "width"],
+      "responseRequired": ["cacheScope", "ok", "status", "versionId"],
+      "responseRequiredByStatus": {
+        "noop": [],
+        "upload_required": ["expiresAt", "mainUploadUrl", "thumbUploadUrl"]
+      },
+      "statuses": ["noop", "upload_required"]
+    },
+    "finalize": {
+      "method": "POST",
+      "path": "/api/shop/product-images/finalize",
+      "requestRequired": ["productId", "shopId", "versionId"],
+      "responseRequired": ["imageUpdatedAt", "ok", "status", "versionId"],
+      "statuses": ["already_finalized", "finalized"]
+    },
+    "readUrls": {
+      "method": "POST",
+      "path": "/api/shop/product-images/read-urls",
+      "requestRequired": ["refs", "shopId"],
+      "refRequired": ["productId", "variant", "versionId"],
+      "responseRequired": ["cacheScope", "items", "ok"],
+      "itemRequired": ["productId", "status", "variant", "versionId"],
+      "itemRequiredByStatus": {
+        "not_found": [],
+        "ready": ["expiresAt", "metadata", "signedUrl"]
+      },
+      "itemMetadataRequired": ["bytes", "height", "mimeType", "sha256", "width"],
+      "statuses": ["not_found", "ready"]
+    },
+    "remove": {
+      "method": "POST",
+      "path": "/api/shop/product-images/remove",
+      "requestRequired": ["expectedVersionId", "productId", "shopId"],
+      "responseRequired": ["currentImageVersionId", "ok", "operation", "productId", "shopId", "status", "versionId"],
+      "responseRequiredByStatus": {
+        "already_removed": [],
+        "removed": ["cleanupStatus", "imageUpdatedAt"]
+      },
+      "statuses": ["already_removed", "removed"]
+    }
+  },
+  "stateMachine": {
+    "mutation": ["idle", "preprocess", "intent", "upload-main", "upload-thumb", "finalize", "completed"],
+    "terminal": ["cancelled", "failed"],
+    "read": ["placeholder", "loading-thumb", "thumb-ready", "loading-main", "main-ready", "cached", "error"]
+  },
+  "retry": {
+    "upload": {"maximumRetries": 1, "conditions": ["network-transient", "http-5xx"]},
+    "download": {"maximumSignedURLRefreshes": 1, "conditions": ["http-401", "http-403"]},
+    "decodeOrValidation": {"maximumRetries": 0},
+    "readUI": "explicit-user-retry"
+  },
+  "cache": {
+    "keyFields": ["accountScope", "shopId", "productId", "versionId", "variant"],
+    "signedURLs": "memory-only",
+    "purgeOn": ["account-change", "shop-change", "remove", "replace-version"],
+    "validateBeforeWrite": true,
+    "platformBudgets": {
+      "admin": {"diskBytes": 33554432, "entries": 256, "signedURLLeases": 512},
+      "android": {"memoryBytes": 8388608, "diskBytes": 67108864, "signedURLLeases": 256},
+      "ios": {"memoryBytes": 50331648, "memoryEntries": 100, "diskBytes": 134217728, "signedURLLeases": 1000}
+    }
+  },
+  "errors": [
+    "image_operation_cancelled",
+    "image_input_size_invalid",
+    "image_dimensions_invalid",
+    "image_input_format_unsupported",
+    "image_decode_failed",
+    "image_encode_failed",
+    "image_output_budget_exceeded",
+    "image_metadata_forbidden",
+    "image_reference_invalid",
+    "image_session_missing",
+    "image_account_changed",
+    "image_offline_not_cached",
+    "image_signed_url_invalid",
+    "image_read_contract_invalid",
+    "image_download_invalid",
+    "image_request_failed",
+    "image_upload_failed"
+  ],
+  "ui": {
+    "list": "thumb-visible-only",
+    "detail": "thumb-then-main",
+    "empty": "local-placeholder",
+    "failure": "preserve-thumb-and-show-retry",
+    "cancel": "abort-work-when-last-consumer-leaves",
+    "accessibility": ["state-label", "retry-label", "camera-label", "library-label"]
+  },
+  "domainBoundary": {
+    "allowed": ["imageUpdatedAt", "primaryImageVersionId"],
+    "forbidden": ["blob", "bytes", "localPath", "signedURL", "storagePath", "uploadURL"]
+  }
+}

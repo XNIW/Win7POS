@@ -669,7 +669,10 @@ namespace Win7POS.Wpf.Products
                         SupplierId = p.SupplierId,
                         SupplierName = p.SupplierName ?? string.Empty,
                         CategoryId = p.CategoryId,
-                        CategoryName = p.CategoryName ?? string.Empty
+                        CategoryName = p.CategoryName ?? string.Empty,
+                        RemoteProductId = p.RemoteProductId,
+                        PrimaryImageVersionId = p.PrimaryImageVersionId,
+                        PrimaryImageUpdatedAt = p.PrimaryImageUpdatedAt
                     });
                 }
                 TotalCount = page.TotalCount;

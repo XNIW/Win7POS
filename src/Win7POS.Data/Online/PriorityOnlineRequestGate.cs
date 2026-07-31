@@ -151,6 +151,9 @@ namespace Win7POS.Data.Online
                 case OnlineSyncLane.CatalogImportOutbox:
                 case OnlineSyncLane.CatalogDelta:
                     return 1;
+                case OnlineSyncLane.ArticleMutationOutbox:
+                case OnlineSyncLane.ProductImageOutbox:
+                    return 0;
                 default:
                     return 0;
             }

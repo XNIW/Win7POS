@@ -7,6 +7,7 @@ using Win7POS.Data;
 using Win7POS.Data.Online;
 using Win7POS.Data.Repositories;
 using Win7POS.Wpf.Infrastructure;
+using Win7POS.Wpf.Products.Images;
 
 namespace Win7POS.Wpf.Pos.Online
 {
@@ -57,6 +58,7 @@ namespace Win7POS.Wpf.Pos.Online
         private readonly SemaphoreSlim _transitionGate = new SemaphoreSlim(1, 1);
         private readonly SqliteConnectionFactory _factory;
         private readonly FileLogger _logger;
+        private readonly ProductImageSyncService _productImageSyncService;
         private readonly PosTrustedDeviceStore _store;
         private OnlineSyncSupervisor _supervisor;
         private OnlineSyncGeneration _generation;
@@ -80,6 +82,7 @@ namespace Win7POS.Wpf.Pos.Online
             _factory = factory ?? throw new ArgumentNullException(nameof(factory));
             _store = store ?? throw new ArgumentNullException(nameof(store));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+            _productImageSyncService = new ProductImageSyncService(_factory);
         }
 
         public OnlineSyncGeneration CurrentGeneration
@@ -248,6 +251,11 @@ namespace Win7POS.Wpf.Pos.Online
                     }
                     await persistAuthenticatedLocalStateAsync(nextGeneration)
                         .ConfigureAwait(false);
+                    await ProductImageRuntime.ReconcileTrustedIdentityAsync(
+                            nextGeneration.StaffId,
+                            nextGeneration.ShopId,
+                            forcePurge: true)
+                        .ConfigureAwait(false);
                     // The protected trust file is the final local commit marker.
                     // A crash before this write leaves DB/file generations
                     // mismatched and therefore fails closed on restart.
@@ -255,6 +263,14 @@ namespace Win7POS.Wpf.Pos.Online
                         response,
                         generationId,
                         authoritativeReceiptClock);
+                    // Reassert the identity after the trust-file commit so a
+                    // read response that raced the transition cannot restore
+                    // the predecessor cache binding between purge and commit.
+                    await ProductImageRuntime.ReconcileTrustedIdentityAsync(
+                            nextGeneration.StaffId,
+                            nextGeneration.ShopId,
+                            forcePurge: true)
+                        .ConfigureAwait(false);
                 }
                 finally
                 {
@@ -829,6 +845,8 @@ namespace Win7POS.Wpf.Pos.Online
                     return RunCatalogAsync(context, trigger, cancellationToken);
                 case OnlineSyncLane.ArticleMutationOutbox:
                     return RunArticleMutationsAsync(context, cancellationToken);
+                case OnlineSyncLane.ProductImageOutbox:
+                    return RunProductImagesAsync(context, cancellationToken);
                 default:
                     return Task.FromResult(new OnlineSyncLaneOutcome(
                         false,
@@ -1113,6 +1131,45 @@ namespace Win7POS.Wpf.Pos.Online
                 nextRetryAt: result.NextRetryAt,
                 requestCatalogNow: result.RequestCatalogNow,
                 terminal: blockedOnly);
+        }
+
+        private async Task<OnlineSyncLaneOutcome> RunProductImagesAsync(
+            OnlineSyncLaneExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            if (!PosAdminWebOptions.TryLoad(out var options, out _))
+                return new OnlineSyncLaneOutcome(false, "admin_web_config_missing");
+            Uri storageOrigin;
+            string storageCode;
+            if (!PosProductImageStorageOrigin.TryLoad(out storageOrigin, out storageCode))
+                return new OnlineSyncLaneOutcome(false, storageCode, terminal: true);
+            if (!_store.TryReadGeneration(
+                context.Generation,
+                out var trustedSession,
+                out _))
+            {
+                return new OnlineSyncLaneOutcome(
+                    false,
+                    "trusted_generation_changed");
+            }
+            var result = await _productImageSyncService.SyncNextAsync(
+                    options,
+                    storageOrigin,
+                    trustedSession,
+                    context,
+                    typeof(PosOnlineSyncSupervisorHost)
+                        .Assembly.GetName().Version?.ToString(),
+                    cancellationToken).ConfigureAwait(false);
+            if (result.AuthenticationDenied)
+                return OnlineSyncLaneOutcome.AuthDenied(result.Code);
+            return new OnlineSyncLaneOutcome(
+                result.Success,
+                result.Code,
+                offline: result.Offline,
+                hasImmediateMore: result.HasImmediateMore,
+                nextRetryAt: result.NextRetryAt,
+                requestCatalogNow: result.RequestCatalogNow,
+                terminal: result.Terminal);
         }
 
         private async Task<OnlineSyncLaneOutcome> RunCatalogAsync(

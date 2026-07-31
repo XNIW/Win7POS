@@ -589,12 +589,15 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
 
         internal sealed class RemoteCatalogSetProductWrite
         {
+            public bool ApplyImageProjection { get; set; }
             public string ArticleCode { get; set; } = string.Empty;
             public string Barcode { get; set; } = string.Empty;
             public int? CategoryId { get; set; }
             public string CategoryName { get; set; } = string.Empty;
             public string Name { get; set; } = string.Empty;
             public int PurchasePrice { get; set; }
+            public string PrimaryImageUpdatedAt { get; set; } = string.Empty;
+            public string PrimaryImageVersionId { get; set; } = string.Empty;
             public string RemoteCategoryId { get; set; } = string.Empty;
             public string RemoteProductId { get; set; } = string.Empty;
             public string RemoteSupplierId { get; set; } = string.Empty;
@@ -604,6 +607,92 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
             public int? SupplierId { get; set; }
             public string SupplierName { get; set; } = string.Empty;
             public long UnitPrice { get; set; }
+        }
+
+        internal static async Task ApplyImageProjectionInTransactionAsync(
+            SqliteConnection connection,
+            SqliteTransaction transaction,
+            long? localProductId,
+            string remoteProductId,
+            bool apply,
+            string primaryImageVersionId,
+            string primaryImageUpdatedAt,
+            string catalogRevision,
+            bool updateProduct)
+        {
+            if (!apply) return;
+            if (connection == null) throw new ArgumentNullException(nameof(connection));
+            if (transaction == null) throw new ArgumentNullException(nameof(transaction));
+            var normalizedRemoteId = (remoteProductId ?? string.Empty).Trim();
+            if (normalizedRemoteId.Length == 0)
+                throw new ArgumentException("catalog_image_remote_product_required", nameof(remoteProductId));
+            var version = string.IsNullOrWhiteSpace(primaryImageVersionId)
+                ? null
+                : primaryImageVersionId.Trim();
+            var updatedAt = string.IsNullOrWhiteSpace(primaryImageUpdatedAt)
+                ? null
+                : primaryImageUpdatedAt.Trim();
+            var resolvedLocalId = localProductId;
+            if (!resolvedLocalId.HasValue)
+            {
+                resolvedLocalId = await connection.ExecuteScalarAsync<long?>(@"
+SELECT id
+FROM products
+WHERE remote_product_id = @remoteProductId
+LIMIT 1;",
+                    new { remoteProductId = normalizedRemoteId },
+                    transaction).ConfigureAwait(false);
+            }
+            if (updateProduct && resolvedLocalId.HasValue)
+            {
+                await connection.ExecuteAsync(@"
+UPDATE products
+SET primary_image_version_id = @version,
+    primary_image_updated_at = @updatedAt
+WHERE id = @localProductId
+  AND remote_product_id = @remoteProductId;",
+                    new
+                    {
+                        version,
+                        updatedAt,
+                        localProductId = resolvedLocalId.Value,
+                        remoteProductId = normalizedRemoteId
+                    },
+                    transaction).ConfigureAwait(false);
+            }
+            await connection.ExecuteAsync(@"
+INSERT INTO product_image_remote_shadow(
+  remote_product_id,
+  local_product_id,
+  primary_image_version_id,
+  primary_image_updated_at,
+  catalog_revision,
+  updated_at)
+VALUES(
+  @remoteProductId,
+  @localProductId,
+  @version,
+  @updatedAt,
+  @catalogRevision,
+  @shadowUpdatedAt)
+ON CONFLICT(remote_product_id) DO UPDATE SET
+  local_product_id = excluded.local_product_id,
+  primary_image_version_id = excluded.primary_image_version_id,
+  primary_image_updated_at = excluded.primary_image_updated_at,
+  catalog_revision = excluded.catalog_revision,
+  updated_at = excluded.updated_at;",
+                new
+                {
+                    remoteProductId = normalizedRemoteId,
+                    localProductId = resolvedLocalId,
+                    version,
+                    updatedAt,
+                    catalogRevision = string.IsNullOrWhiteSpace(catalogRevision)
+                        ? null
+                        : catalogRevision.Trim(),
+                    shadowUpdatedAt = DateTimeOffset.UtcNow.ToString("O")
+                },
+                transaction).ConfigureAwait(false);
         }
 
         internal static async Task ApplyCleanProductsSetBasedInTransactionAsync(
@@ -627,7 +716,9 @@ INSERT INTO products(
   remote_product_id,
   remote_base_revision,
   remote_deleted_at,
-  is_active)
+  is_active,
+  primary_image_version_id,
+  primary_image_updated_at)
 SELECT
   staged.barcode,
   staged.name,
@@ -635,7 +726,11 @@ SELECT
   staged.remote_product_id,
   NULLIF(staged.remote_updated_at, ''),
   NULL,
-  1
+  1,
+  CASE WHEN staged.apply_image_projection = 1
+    THEN NULLIF(staged.primary_image_version_id, '') ELSE NULL END,
+  CASE WHEN staged.apply_image_projection = 1
+    THEN NULLIF(staged.primary_image_updated_at, '') ELSE NULL END
 FROM temp_catalog_page_products staged
 WHERE 1 = 1
 ON CONFLICT(barcode) DO UPDATE SET
@@ -647,6 +742,25 @@ ON CONFLICT(barcode) DO UPDATE SET
     products.remote_base_revision),
   remote_deleted_at = NULL,
   is_active = 1;
+
+UPDATE products
+SET primary_image_version_id = (
+      SELECT NULLIF(staged.primary_image_version_id, '')
+      FROM temp_catalog_page_products staged
+      WHERE staged.remote_product_id = products.remote_product_id
+        AND staged.apply_image_projection = 1
+      LIMIT 1),
+    primary_image_updated_at = (
+      SELECT NULLIF(staged.primary_image_updated_at, '')
+      FROM temp_catalog_page_products staged
+      WHERE staged.remote_product_id = products.remote_product_id
+        AND staged.apply_image_projection = 1
+      LIMIT 1)
+WHERE EXISTS (
+  SELECT 1
+  FROM temp_catalog_page_products staged
+  WHERE staged.remote_product_id = products.remote_product_id
+    AND staged.apply_image_projection = 1);
 
 UPDATE products
 SET is_active = 0,
@@ -745,6 +859,30 @@ ON CONFLICT(remote_product_id) DO UPDATE SET
   stock_quantity = excluded.stock_quantity,
   is_active = excluded.is_active,
   authoritative_revision = excluded.authoritative_revision,
+  updated_at = excluded.updated_at;
+
+INSERT INTO product_image_remote_shadow(
+  remote_product_id,
+  local_product_id,
+  primary_image_version_id,
+  primary_image_updated_at,
+  catalog_revision,
+  updated_at)
+SELECT staged.remote_product_id,
+       product.id,
+       NULLIF(staged.primary_image_version_id, ''),
+       NULLIF(staged.primary_image_updated_at, ''),
+       NULLIF(staged.remote_updated_at, ''),
+       @shadowUpdatedAt
+FROM temp_catalog_page_products staged
+JOIN products product
+  ON product.remote_product_id = staged.remote_product_id
+WHERE staged.apply_image_projection = 1
+ON CONFLICT(remote_product_id) DO UPDATE SET
+  local_product_id = excluded.local_product_id,
+  primary_image_version_id = excluded.primary_image_version_id,
+  primary_image_updated_at = excluded.primary_image_updated_at,
+  catalog_revision = excluded.catalog_revision,
   updated_at = excluded.updated_at;",
                 new
                 {
@@ -764,6 +902,11 @@ SELECT CASE WHEN
      AND product.name = staged.name
      AND product.unitPrice = staged.unit_price
      AND COALESCE(product.is_active, 1) = 1
+     AND (
+       staged.apply_image_projection = 0
+       OR (
+         product.primary_image_version_id IS NULLIF(staged.primary_image_version_id, '')
+         AND product.primary_image_updated_at IS NULLIF(staged.primary_image_updated_at, '')))
     JOIN product_meta meta
       ON meta.barcode = staged.barcode
      AND meta.article_code = staged.article_code

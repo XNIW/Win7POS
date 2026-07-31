@@ -24,11 +24,8 @@
             <Setter Property="Padding" Value="8,5"/>
             <Setter Property="Margin" Value="6,0,0,6"/>
         </Style>
-        <!-- Phase A compile-time preparation only; not assigned to a live column. -->
-        <DataTemplate x:Key="ProductImagePhaseAThumbnailTemplate">
-            <images:ProductImagePresenter Width="48"
-                                          Height="48"
-                                          DataContext="{Binding ImageDisplay}"/>
+        <DataTemplate x:Key="ProductImageThumbnailTemplate">
+            <images:ProductImageListPresenter Product="{Binding}"/>
         </DataTemplate>
     </UserControl.Resources>
     <UserControl.InputBindings>
@@ -247,9 +244,15 @@
                           VirtualizingPanel.IsVirtualizing="True"
                           VirtualizingPanel.VirtualizationMode="Recycling"
                           ScrollViewer.CanContentScroll="True"
+                          RowHeight="60"
                           MouseDoubleClick="ProductsGrid_MouseDoubleClick"
                           Style="{StaticResource ModernDataGridStyle}">
                     <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="{loc:Loc productImage.image}"
+                                                Width="68"
+                                                MinWidth="68"
+                                                MaxWidth="68"
+                                                CellTemplate="{StaticResource ProductImageThumbnailTemplate}"/>
                         <DataGridTextColumn Header="{loc:Loc pos.cart.barcode}" Binding="{Binding Barcode}" Width="120" MinWidth="100"/>
                         <DataGridTextColumn Header="{loc:Loc products.name}" Binding="{Binding Name}" Width="2*" MinWidth="150"/>
                         <DataGridTextColumn Header="{loc:Loc products.articleCodeShort}" Binding="{Binding ArticleCode}" Width="105" MinWidth="90"/>

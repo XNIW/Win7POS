@@ -183,7 +183,8 @@ $authLatch = $stopAuthBody.IndexOf("PosOnlineSyncRevocationLatch.Revoke(generati
 $authStop = $stopAuthBody.IndexOf("StopIfCurrentAsync(", [System.StringComparison]::Ordinal)
 $authRecheck = $stopAuthBody.IndexOf("IsCurrentAndActiveAsync(generation)", [System.StringComparison]::Ordinal)
 $authClear = $stopAuthBody.IndexOf("_store.TryClear(generation.GenerationId)", [System.StringComparison]::Ordinal)
-if ($service -notmatch 'lanes\.Heartbeat\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,300}lanes\.Sales\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,300}lanes\.CatalogImport\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,300}lanes\.CatalogDelta\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,500}Block\(result,\s*"auth_denied"' -or
+if ($service -notmatch 'if\s*\(lanes\.AuthenticationDenied\)[\s\S]{0,220}Block\(result,\s*"auth_denied"' -or
+    $supervisor -notmatch 'Heartbeat\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,180}Sales\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,180}CatalogImport\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,180}ArticleMutations\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,180}ProductImages\?\.AuthenticationDenied\s*==\s*true[\s\S]{0,180}CatalogDelta\?\.AuthenticationDenied\s*==\s*true' -or
     $syncHost -notmatch "new\s+OnlineSyncSupervisor\([\s\S]{0,700}StopAuthenticationAsync" -or
     $authLatch -lt 0 -or $authStop -le $authLatch -or
     $authRecheck -le $authStop -or $authClear -le $authRecheck) {
@@ -192,9 +193,9 @@ if ($service -notmatch 'lanes\.Heartbeat\?\.AuthenticationDenied\s*==\s*true[\s\
     Pass "start-of-day blocks auth denial and globally revokes the generation"
 }
 
-$startOfDayAuthIndex = $service.IndexOf("if (lanes.Heartbeat?.AuthenticationDenied", [System.StringComparison]::Ordinal)
+$startOfDayAuthIndex = $service.IndexOf("if (lanes.AuthenticationDenied)", [System.StringComparison]::Ordinal)
 $catalogRequiredIndex = $service.IndexOf("var catalogRequired =", [System.StringComparison]::Ordinal)
-if ($service -notmatch "lanes\.Sales\?\.AuthenticationDenied\s*==\s*true" -or
+if ($supervisor -notmatch "Sales\?\.AuthenticationDenied\s*==\s*true" -or
     $startOfDayAuthIndex -lt 0 -or $catalogRequiredIndex -lt 0 -or
     $startOfDayAuthIndex -gt $catalogRequiredIndex) {
     Fail "start-of-day must stop the next lane directly from the typed sales auth result"
@@ -202,12 +203,18 @@ if ($service -notmatch "lanes\.Sales\?\.AuthenticationDenied\s*==\s*true" -or
     Pass "start-of-day uses typed sales auth-stop before the next lane"
 }
 
-if ($service -notmatch "lanes\.CatalogImport\?\.AuthenticationDenied\s*==\s*true" -or
+if ($supervisor -notmatch "CatalogImport\?\.AuthenticationDenied\s*==\s*true" -or
     $startOfDayAuthIndex -lt 0 -or $catalogRequiredIndex -lt 0 -or
     $startOfDayAuthIndex -gt $catalogRequiredIndex) {
     Fail "start-of-day must stop the next lane directly from the typed import auth result"
 } else {
     Pass "start-of-day uses typed import auth-stop before the next lane"
+}
+
+if ($service -notmatch "lanes\.ProductImages\?\.RequestCatalogNow\s*==\s*true") {
+    Fail "start-of-day must request catalog reconciliation after product image completion"
+} else {
+    Pass "start-of-day preserves product-image catalog reconciliation requests"
 }
 
 if ($syncHost -notmatch "decision\.ShouldSkipCatalogPull[\s\S]{0,500}TryConfirmCatalogUnchangedAsync\([\s\S]{0,500}clearStaleError:\s*true[\s\S]{0,400}generation:\s*context\.Generation" -or

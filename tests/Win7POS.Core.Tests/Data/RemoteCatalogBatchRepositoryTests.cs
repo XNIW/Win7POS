@@ -12,6 +12,144 @@ namespace Win7POS.Core.Tests.Data;
 public sealed class RemoteCatalogBatchRepositoryTests
 {
     [TestMethod]
+    public async Task ProductImageProjection_ReplacesRemovesAndNeverEchoes()
+    {
+        using var db = TestDb.Create();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        var product = Product(
+            "20000000-0000-4000-8000-000000000201",
+            "IMG-CATALOG-201",
+            2);
+        product.ApplyImageProjection = true;
+        product.PrimaryImageVersionId = "40000000-0000-4000-8000-000000000201";
+        product.PrimaryImageUpdatedAt = "2026-07-31T10:00:00.000000Z";
+
+        await repository.ApplyAsync(new RemoteCatalogBatch { Products = new[] { product } });
+        await repository.ApplyAsync(new RemoteCatalogBatch { Products = new[] { product } });
+        product.PrimaryImageVersionId = "40000000-0000-4000-8000-000000000202";
+        product.PrimaryImageUpdatedAt = "2026-07-31T10:01:00.000000Z";
+        await repository.ApplyAsync(new RemoteCatalogBatch { Products = new[] { product } });
+
+        using (var verify = db.Factory.Open())
+        {
+            Assert.AreEqual(
+                "40000000-0000-4000-8000-000000000202|2026-07-31T10:01:00.000000Z",
+                await verify.ExecuteScalarAsync<string>(@"
+SELECT COALESCE(primary_image_version_id, '') || '|' ||
+       COALESCE(primary_image_updated_at, '')
+FROM products
+WHERE barcode = 'IMG-CATALOG-201';"));
+            Assert.AreEqual(0L, await verify.ExecuteScalarAsync<long>(
+                "SELECT COUNT(1) FROM product_image_operation_outbox;"));
+        }
+
+        product.PrimaryImageVersionId = string.Empty;
+        product.PrimaryImageUpdatedAt = "2026-07-31T10:02:00.000000Z";
+        await repository.ApplyAsync(new RemoteCatalogBatch { Products = new[] { product } });
+
+        using var removed = db.Factory.Open();
+        Assert.AreEqual(
+            "|2026-07-31T10:02:00.000000Z",
+            await removed.ExecuteScalarAsync<string>(@"
+SELECT COALESCE(primary_image_version_id, '') || '|' ||
+       COALESCE(primary_image_updated_at, '')
+FROM products
+WHERE barcode = 'IMG-CATALOG-201';"));
+        Assert.AreEqual(0L, await removed.ExecuteScalarAsync<long>(
+            "SELECT COUNT(1) FROM product_image_operation_outbox;"));
+    }
+
+    [TestMethod]
+    public async Task InvalidOptionalImageMetadataWarnsButProductRemainsSaleSafe()
+    {
+        using var db = TestDb.Create();
+        var transport = new PosCatalogPullResponse
+        {
+            Catalog = new PosCatalogPayload
+            {
+                Products = new[]
+                {
+                    new PosCatalogProductResponse
+                    {
+                        Barcode = "IMG-WARN-202",
+                        ProductId = "20000000-0000-4000-8000-000000000202",
+                        ProductName = "Sale-safe product",
+                        RetailPrice = 100,
+                        StockQuantity = 3,
+                        PrimaryImageVersionId = "not-a-uuid",
+                        PrimaryImageUpdatedAt = "2026-07-31T10:00:00.000000Z"
+                    }
+                }
+            }
+        };
+        var batch = RemoteCatalogBatchMapper.BuildRemoteCatalogBatch(
+            transport,
+            false,
+            null);
+
+        var applied = await new RemoteCatalogBatchRepository(db.Factory).ApplyAsync(batch);
+
+        Assert.AreEqual(1L, applied.ProductsApplied);
+        Assert.AreEqual(1L, applied.ImageWarnings);
+        Assert.AreEqual(0L, applied.ProductsSkipped);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(
+            "Sale-safe product|100|3||",
+            await verify.ExecuteScalarAsync<string>(@"
+SELECT p.name || '|' || p.unitPrice || '|' || m.stock_qty || '|' ||
+       COALESCE(p.primary_image_version_id, '') || '|' ||
+       COALESCE(p.primary_image_updated_at, '')
+FROM products p
+JOIN product_meta m ON m.barcode = p.barcode
+WHERE p.barcode = 'IMG-WARN-202';"));
+    }
+
+    [TestMethod]
+    public async Task OmittedImageFieldsWarnAndPreserveLastKnownGoodProjection()
+    {
+        using var db = TestDb.Create();
+        var repository = new RemoteCatalogBatchRepository(db.Factory);
+        var seeded = Product(
+            "20000000-0000-4000-8000-000000000203",
+            "IMG-MISSING-203",
+            2);
+        seeded.ApplyImageProjection = true;
+        seeded.PrimaryImageVersionId = "40000000-0000-4000-8000-000000000203";
+        seeded.PrimaryImageUpdatedAt = "2026-07-31T10:00:00.000000Z";
+        await repository.ApplyAsync(new RemoteCatalogBatch { Products = new[] { seeded } });
+
+        var transport = new PosCatalogPullResponse
+        {
+            Catalog = new PosCatalogPayload
+            {
+                Products = new[]
+                {
+                    new PosCatalogProductResponse
+                    {
+                        Barcode = "IMG-MISSING-203",
+                        ProductId = "20000000-0000-4000-8000-000000000203",
+                        ProductName = "Updated without image fields",
+                        RetailPrice = 110,
+                        StockQuantity = 4
+                    }
+                }
+            }
+        };
+        var batch = RemoteCatalogBatchMapper.BuildRemoteCatalogBatch(transport, false, null);
+
+        var applied = await repository.ApplyAsync(batch);
+
+        Assert.AreEqual(1L, applied.ImageWarnings);
+        using var verify = db.Factory.Open();
+        Assert.AreEqual(
+            "Updated without image fields|40000000-0000-4000-8000-000000000203|2026-07-31T10:00:00.000000Z",
+            await verify.ExecuteScalarAsync<string>(@"
+SELECT name || '|' || primary_image_version_id || '|' || primary_image_updated_at
+FROM products
+WHERE barcode = 'IMG-MISSING-203';"));
+    }
+
+    [TestMethod]
     public async Task ApplyAsync_ReusesValidatedAuthoritativeStageWithoutRewritingIt()
     {
         using var db = TestDb.Create();

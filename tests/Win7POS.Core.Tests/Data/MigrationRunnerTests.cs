@@ -29,11 +29,12 @@ public sealed class MigrationRunnerTests
             ["0007-receipt-shop-snapshot"] = "a1d12cca8bbfeb57872ee854e18cc32bf98258937d1f7be4be91d925f2ef6462",
             ["0008-online-sync-generation"] = "a951929521bdb7a73d82fcc308bd2e800ccb4888b6c16c829f51c2b93f49a488",
             ["0009-catalog-authoritative-id-stage"] = "68d57cd65b2d56456d5b2ab5eee83237477aefc85f93aa2d81e5f64699fae659",
-            ["0010-article-mutation-outbox"] = "a881c8100282eef1352df3db13a249eaa200be0ee3fa023b93bfb46ae28197e6"
+            ["0010-article-mutation-outbox"] = "a881c8100282eef1352df3db13a249eaa200be0ee3fa023b93bfb46ae28197e6",
+            ["0011-product-image-outbox"] = "59eff792775e9c2e65f15d158a75ab80430bed6d69c409e9bfb97a425e5f74d0"
         };
 
-        Assert.AreEqual(10, migrations.Count);
-        Assert.AreEqual("0010-article-mutation-outbox", SchemaMigrationRegistry.Latest.MigrationId);
+        Assert.AreEqual(11, migrations.Count);
+        Assert.AreEqual("0011-product-image-outbox", SchemaMigrationRegistry.Latest.MigrationId);
         CollectionAssert.AreEqual(
             migrations.Select(item => item.MigrationId).OrderBy(item => item, StringComparer.Ordinal).ToArray(),
             migrations.Select(item => item.MigrationId).ToArray());
@@ -45,7 +46,10 @@ public sealed class MigrationRunnerTests
         {
             Assert.IsTrue(Regex.IsMatch(migration.MigrationId, "^[0-9]{4}-[a-z0-9-]+$"));
             Assert.IsTrue(Regex.IsMatch(migration.Checksum, "^[0-9a-f]{64}$"));
-            Assert.AreEqual(expectedChecksums[migration.MigrationId], migration.Checksum);
+            Assert.AreEqual(
+                expectedChecksums[migration.MigrationId],
+                migration.Checksum,
+                "actual=" + migration.Checksum);
             Assert.IsTrue(migration.RequiresBackup);
             Assert.IsFalse(string.IsNullOrWhiteSpace(migration.MinimumApplicationVersion));
             Assert.IsFalse(string.IsNullOrWhiteSpace(migration.RollbackCompatibility));
@@ -145,7 +149,8 @@ VALUES('PRE-0007', 2, 750, 750, 0, 0);");
                 "0007-receipt-shop-snapshot",
                 "0008-online-sync-generation",
                 "0009-catalog-authoritative-id-stage",
-                "0010-article-mutation-outbox"
+                "0010-article-mutation-outbox",
+                "0011-product-image-outbox"
             },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
@@ -189,7 +194,8 @@ VALUES('perf2a.migration-probe', 'preserve-before-0009');");
             new[]
             {
                 "0009-catalog-authoritative-id-stage",
-                "0010-article-mutation-outbox"
+                "0010-article-mutation-outbox",
+                "0011-product-image-outbox"
             },
             first.AppliedMigrationIds.ToArray());
         Assert.IsTrue(second.WasNoOp);
@@ -546,7 +552,7 @@ WHERE role_id = (SELECT id FROM roles WHERE code = 'cashier')
 
         Assert.AreEqual(0, result.BootstrappedMigrationIds.Count);
         CollectionAssert.AreEqual(
-            new[] { "0000-custom-predecessor", "0010-article-mutation-outbox" },
+            new[] { "0000-custom-predecessor", "0011-product-image-outbox" },
             result.AppliedMigrationIds.ToArray());
         using var verify = database.Factory.Open();
         Assert.IsTrue(new LegacySchemaDetector(verify).TableExists("custom_predecessor"));

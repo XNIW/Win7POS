@@ -246,10 +246,146 @@ namespace Win7POS.Data.Images
             }
         }
 
+        public async Task<ProductImageCacheEntry> GetPromotedAsync(
+            ProductImageIdentity identity,
+            ProductImageVariant variant,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (identity == null) throw new ArgumentNullException(nameof(identity));
+            if (!ProductImageContractV1.IsSupportedVariant(variant))
+                throw new ArgumentOutOfRangeException(nameof(variant));
+            using (EnterOperation())
+            {
+                await EnsureInitializedAsync().ConfigureAwait(false);
+                await _stateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    return await Task.Run(
+                        () =>
+                        {
+                            var candidate = _entries.Values
+                                .Where(entry => entry.IsPromoted &&
+                                    MetadataMatchesIdentity(entry, identity, variant))
+                                .OrderByDescending(entry => entry.StageSequence)
+                                .FirstOrDefault();
+                            if (candidate == null ||
+                                !TryCreateReference(candidate, out var reference))
+                            {
+                                return null;
+                            }
+                            return TryReadEntry(reference, touch: true);
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _stateGate.Release();
+                }
+            }
+        }
+
+        public async Task<ProductImageCacheEntry> GetPromotedForProductAsync(
+            string accountScope,
+            Guid shopId,
+            Guid productId,
+            ProductImageVariant variant,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            if (string.IsNullOrWhiteSpace(accountScope))
+                throw new ArgumentException("image_cache_account_scope_required", nameof(accountScope));
+            if (!ProductImageContractV1.IsSupportedVariant(variant))
+                throw new ArgumentOutOfRangeException(nameof(variant));
+            using (EnterOperation())
+            {
+                await EnsureInitializedAsync().ConfigureAwait(false);
+                await _stateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    return await Task.Run(
+                        () =>
+                        {
+                            var candidate = _entries.Values
+                                .Where(entry => entry.IsPromoted &&
+                                    string.Equals(entry.AccountScope, accountScope, StringComparison.Ordinal) &&
+                                    string.Equals(entry.ShopId, Canonical(shopId), StringComparison.Ordinal) &&
+                                    string.Equals(entry.ProductId, Canonical(productId), StringComparison.Ordinal) &&
+                                    string.Equals(
+                                        entry.Variant,
+                                        ProductImageContractV1.VariantName(variant),
+                                        StringComparison.Ordinal))
+                                .OrderByDescending(entry => entry.StageSequence)
+                                .FirstOrDefault();
+                            if (candidate == null ||
+                                !TryCreateReference(candidate, out var reference))
+                            {
+                                return null;
+                            }
+                            return TryReadEntry(reference, touch: true);
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _stateGate.Release();
+                }
+            }
+        }
+
+        public Task<int> PurgeProductAsync(
+            string accountScope,
+            Guid shopId,
+            Guid productId,
+            Guid? keepVersionId = null,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return PurgeScopeAsync(
+                metadata =>
+                    string.Equals(metadata.AccountScope, accountScope, StringComparison.Ordinal) &&
+                    string.Equals(metadata.ShopId, Canonical(shopId), StringComparison.Ordinal) &&
+                    string.Equals(metadata.ProductId, Canonical(productId), StringComparison.Ordinal) &&
+                    (!keepVersionId.HasValue ||
+                     !string.Equals(
+                         metadata.VersionId,
+                         Canonical(keepVersionId.Value),
+                         StringComparison.Ordinal)),
+                cancellationToken);
+        }
+
+        public Task<int> PurgeShopAsync(
+            string accountScope,
+            Guid shopId,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return PurgeScopeAsync(
+                metadata =>
+                    string.Equals(metadata.AccountScope, accountScope, StringComparison.Ordinal) &&
+                    string.Equals(metadata.ShopId, Canonical(shopId), StringComparison.Ordinal),
+                cancellationToken);
+        }
+
+        public Task<int> PurgeAccountAsync(
+            string accountScope,
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return PurgeScopeAsync(
+                metadata => string.Equals(
+                    metadata.AccountScope,
+                    accountScope,
+                    StringComparison.Ordinal),
+                cancellationToken);
+        }
+
+        public Task<int> PurgeAllAsync(
+            CancellationToken cancellationToken = default(CancellationToken))
+        {
+            return PurgeScopeAsync(metadata => true, cancellationToken);
+        }
+
         public async Task<ProductImageCacheEntry> GetOrAddAsync(
             ProductImageReference reference,
             Func<CancellationToken, Task<Stream>> streamFactory,
-            CancellationToken cancellationToken = default(CancellationToken))
+            CancellationToken cancellationToken = default(CancellationToken),
+            Func<bool> commitAllowed = null)
         {
             if (reference == null)
             {
@@ -287,7 +423,8 @@ namespace Win7POS.Data.Images
                                 flight,
                                 reference,
                                 stageSequence,
-                                streamFactory);
+                                streamFactory,
+                                commitAllowed);
                         }
 
                         flight.ConsumerCount++;
@@ -423,6 +560,41 @@ namespace Win7POS.Data.Images
             }
         }
 
+        private async Task<int> PurgeScopeAsync(
+            Func<ProductImageCacheMetadata, bool> predicate,
+            CancellationToken cancellationToken)
+        {
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+            using (EnterOperation())
+            {
+                await EnsureInitializedAsync().ConfigureAwait(false);
+                await _stateGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    return await Task.Run(
+                        () =>
+                        {
+                            var victims = _entries.Values
+                                .Where(predicate)
+                                .Select(entry => entry.FileStem)
+                                .ToArray();
+                            foreach (var victim in victims)
+                            {
+                                RemoveEntryFiles(victim);
+                                _entries.Remove(victim);
+                            }
+                            if (victims.Length > 0) WriteIndexAtomically();
+                            return victims.Length;
+                        },
+                        cancellationToken).ConfigureAwait(false);
+                }
+                finally
+                {
+                    _stateGate.Release();
+                }
+            }
+        }
+
         private Task EnsureInitializedAsync()
         {
             lock (_initializeGate)
@@ -469,7 +641,8 @@ namespace Win7POS.Data.Images
             CacheFlight flight,
             ProductImageReference reference,
             long stageSequence,
-            Func<CancellationToken, Task<Stream>> streamFactory)
+            Func<CancellationToken, Task<Stream>> streamFactory,
+            Func<bool> commitAllowed)
         {
             try
             {
@@ -477,6 +650,7 @@ namespace Win7POS.Data.Images
                         reference,
                         stageSequence,
                         streamFactory,
+                        commitAllowed,
                         flight.Cancellation.Token)
                     .ConfigureAwait(false);
             }
@@ -499,6 +673,7 @@ namespace Win7POS.Data.Images
             ProductImageReference reference,
             long stageSequence,
             Func<CancellationToken, Task<Stream>> streamFactory,
+            Func<bool> commitAllowed,
             CancellationToken cancellationToken)
         {
             await EnsureInitializedAsync().ConfigureAwait(false);
@@ -553,7 +728,15 @@ namespace Win7POS.Data.Images
                 try
                 {
                     return await Task.Run(
-                            () => CommitEntry(reference, stageSequence, bytes),
+                            () =>
+                            {
+                                if (commitAllowed != null && !commitAllowed())
+                                {
+                                    throw new IOException(
+                                        "image_cache_binding_changed");
+                                }
+                                return CommitEntry(reference, stageSequence, bytes);
+                            },
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -1005,6 +1188,22 @@ namespace Win7POS.Data.Images
                         metadata.Variant,
                         ProductImageContractV1.VariantName(reference.Variant),
                         StringComparison.Ordinal);
+        }
+
+        private static bool MetadataMatchesIdentity(
+            ProductImageCacheMetadata metadata,
+            ProductImageIdentity identity,
+            ProductImageVariant variant)
+        {
+            return metadata != null && identity != null &&
+                   string.Equals(metadata.AccountScope, identity.AccountScope, StringComparison.Ordinal) &&
+                   string.Equals(metadata.ShopId, Canonical(identity.ShopId), StringComparison.Ordinal) &&
+                   string.Equals(metadata.ProductId, Canonical(identity.ProductId), StringComparison.Ordinal) &&
+                   string.Equals(metadata.VersionId, Canonical(identity.VersionId), StringComparison.Ordinal) &&
+                   string.Equals(
+                       metadata.Variant,
+                       ProductImageContractV1.VariantName(variant),
+                       StringComparison.Ordinal);
         }
 
         private void RemoveUncommittedBlobs()

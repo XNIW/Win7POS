@@ -334,8 +334,9 @@ if ([string]::IsNullOrWhiteSpace($startOfDayRun) -or
     $startOfDayRun -notmatch 'OnlineSyncLane\.SalesOutbox,[\s\S]{0,140}OnlineSyncLaneTrigger\.StartOfDay,[\s\S]{0,140}waiterCancellationToken' -or
     $startOfDayRun -notmatch 'OnlineSyncLane\.CatalogImportOutbox,[\s\S]{0,140}OnlineSyncLaneTrigger\.StartOfDay,[\s\S]{0,140}waiterCancellationToken' -or
     $startOfDayRun -notmatch 'OnlineSyncLane\.ArticleMutationOutbox,[\s\S]{0,140}OnlineSyncLaneTrigger\.StartOfDay,[\s\S]{0,140}waiterCancellationToken' -or
+    $startOfDayRun -notmatch 'OnlineSyncLane\.ProductImageOutbox,[\s\S]{0,140}OnlineSyncLaneTrigger\.StartOfDay,[\s\S]{0,140}waiterCancellationToken' -or
     $startOfDayRun -notmatch 'OnlineSyncLane\.CatalogDelta,[\s\S]{0,140}OnlineSyncLaneTrigger\.StartOfDay,[\s\S]{0,140}waiterCancellationToken' -or
-    $startOfDayRun -notmatch 'Task\.WhenAll\(\s*heartbeat,\s*sales,\s*catalogImport,\s*articleMutations,\s*catalog\)') {
+    $startOfDayRun -notmatch 'Task\.WhenAll\(\s*heartbeat,\s*sales,\s*catalogImport,\s*articleMutations,\s*productImages,\s*catalog\)') {
     Fail "all startup lane waiters must share the bounded preflight token"
 }
 else {

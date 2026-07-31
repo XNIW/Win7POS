@@ -86,11 +86,7 @@ namespace Win7POS.Wpf.Pos.Online
             if (lanes == null)
                 return Block(result, "sync_supervisor_inactive", T("startOfDay.blockAuthDenied"), "session", progress);
 
-            if (lanes.Heartbeat?.AuthenticationDenied == true ||
-                lanes.Sales?.AuthenticationDenied == true ||
-                lanes.CatalogImport?.AuthenticationDenied == true ||
-                lanes.ArticleMutations?.AuthenticationDenied == true ||
-                lanes.CatalogDelta?.AuthenticationDenied == true)
+            if (lanes.AuthenticationDenied)
             {
                 return Block(result, "auth_denied", T("startOfDay.blockAuthDenied"), "session", progress);
             }
@@ -98,7 +94,8 @@ namespace Win7POS.Wpf.Pos.Online
             var catalogRequired = result.RestoreNeedsReview ||
                 lanes.Heartbeat?.RequestCatalogNow == true ||
                 lanes.CatalogImport?.RequestCatalogNow == true ||
-                lanes.ArticleMutations?.RequestCatalogNow == true;
+                lanes.ArticleMutations?.RequestCatalogNow == true ||
+                lanes.ProductImages?.RequestCatalogNow == true;
             var catalogLane = lanes.CatalogDelta;
             if (catalogRequired && catalogLane == null)
             {

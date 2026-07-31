@@ -447,17 +447,25 @@ WHERE barcode = @oldBarcode;",
                             productId).ConfigureAwait(false);
                         if (current == null)
                             throw new InvalidOperationException("Product not found.");
+                        var occurredAt = DateTimeOffset.UtcNow;
+                        var cancelledImages = active
+                            ? Array.Empty<ProductImageCancelledStaging>()
+                            : await CancelWaitingProductImagesAsync(
+                                connection,
+                                transaction,
+                                productId,
+                                occurredAt).ConfigureAwait(false);
                         if (current.IsActive == active)
                         {
                             transaction.Commit();
                             return new LocalArticleWriteResult
                             {
                                 ProductId = productId,
-                                ClientProductId = current.ClientProductId
+                                ClientProductId = current.ClientProductId,
+                                CancelledProductImages = cancelledImages
                             };
                         }
 
-                        var occurredAt = DateTimeOffset.UtcNow;
                         await connection.ExecuteAsync(@"
 UPDATE products
 SET is_active = @active,
@@ -486,6 +494,7 @@ WHERE id = @productId;",
                         {
                             ProductId = productId,
                             ClientProductId = mutation.ClientProductId,
+                            CancelledProductImages = cancelledImages,
                             Mutations = new[] { mutation }
                         };
                     }
@@ -500,6 +509,37 @@ WHERE id = @productId;",
             {
                 CatalogMutationGate.Instance.Release();
             }
+        }
+
+        private static async Task<ProductImageCancelledStaging[]>
+            CancelWaitingProductImagesAsync(
+                SqliteConnection connection,
+                SqliteTransaction transaction,
+                long productId,
+                DateTimeOffset occurredAt)
+        {
+            var rows = (await connection.QueryAsync<ProductImageCancelledStaging>(@"
+SELECT staged_main_identity AS MainIdentity,
+       staged_thumb_identity AS ThumbIdentity
+FROM product_image_operation_outbox
+WHERE local_product_id = @productId
+  AND state = 'waiting_dependency'
+ORDER BY id;",
+                new { productId },
+                transaction).ConfigureAwait(false)).ToArray();
+            await connection.ExecuteAsync(@"
+UPDATE product_image_operation_outbox
+SET state = 'completed',
+    completion_state = 'cancelled_before_remote_identity',
+    staged_main_identity = NULL,
+    staged_thumb_identity = NULL,
+    completed_at = @now,
+    updated_at = @now
+WHERE local_product_id = @productId
+  AND state = 'waiting_dependency';",
+                new { productId, now = FormatTimestamp(occurredAt) },
+                transaction).ConfigureAwait(false);
+            return rows;
         }
 
         private static async Task AddPriceMutationAsync(

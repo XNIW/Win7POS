@@ -298,6 +298,13 @@ namespace Win7POS.Data.Repositories
                             result.ProductsSkipped = checked(result.ProductsSkipped + 1L);
                             continue;
                         }
+                        if (!string.IsNullOrWhiteSpace(product.ImageWarningCode))
+                        {
+                            // Optional image metadata is isolated from the
+                            // sale-critical product row. Preserve the last good
+                            // image projection and continue applying the product.
+                            result.ImageWarnings = checked(result.ImageWarnings + 1L);
+                        }
 
                         if (activeRemoteIdsByBarcode.TryGetValue(
                                 normalizedBarcode,
@@ -370,6 +377,16 @@ namespace Win7POS.Data.Repositories
                                 normalizedRemoteProductId,
                                 product.RemoteCategoryId,
                                 product.RemoteSupplierId).ConfigureAwait(false);
+                            await RemoteCatalogProductWriter.ApplyImageProjectionInTransactionAsync(
+                                conn,
+                                tx,
+                                protectedProductId,
+                                normalizedRemoteProductId,
+                                product.ApplyImageProjection,
+                                product.PrimaryImageVersionId,
+                                product.PrimaryImageUpdatedAt,
+                                product.RemoteUpdatedAt,
+                                updateProduct: false).ConfigureAwait(false);
                             relinkProductRemoteIds.Add(normalizedRemoteProductId);
                             result.ProductsApplied = checked(result.ProductsApplied + 1L);
                             continue;
@@ -394,11 +411,14 @@ namespace Win7POS.Data.Repositories
                                 new RemoteCatalogProductWriter.RemoteCatalogSetProductWrite
                                 {
                                     ArticleCode = product.ArticleCode ?? string.Empty,
+                                    ApplyImageProjection = product.ApplyImageProjection,
                                     Barcode = normalizedBarcode,
                                     CategoryId = categoryRef.Id,
                                     CategoryName = categoryRef.Name ?? string.Empty,
                                     Name = product.Name,
                                     PurchasePrice = product.PurchasePrice,
+                                    PrimaryImageUpdatedAt = product.PrimaryImageUpdatedAt ?? string.Empty,
+                                    PrimaryImageVersionId = product.PrimaryImageVersionId ?? string.Empty,
                                     RemoteCategoryId =
                                         (product.RemoteCategoryId ?? string.Empty).Trim(),
                                     RemoteProductId = normalizedRemoteProductId,
@@ -442,6 +462,16 @@ namespace Win7POS.Data.Repositories
                                 normalizedRemoteProductId,
                                 product.RemoteCategoryId,
                                 product.RemoteSupplierId).ConfigureAwait(false);
+                            await RemoteCatalogProductWriter.ApplyImageProjectionInTransactionAsync(
+                                conn,
+                                tx,
+                                null,
+                                normalizedRemoteProductId,
+                                product.ApplyImageProjection,
+                                product.PrimaryImageVersionId,
+                                product.PrimaryImageUpdatedAt,
+                                product.RemoteUpdatedAt,
+                                updateProduct: true).ConfigureAwait(false);
                         }
                         if (activeBarcodeByRemoteId.TryGetValue(
                                 normalizedRemoteProductId,
@@ -1969,7 +1999,10 @@ CREATE TEMP TABLE IF NOT EXISTS temp_catalog_page_products(
   stock_quantity INTEGER NOT NULL,
   remote_category_id TEXT NOT NULL,
   remote_supplier_id TEXT NOT NULL,
-  remote_updated_at TEXT NOT NULL
+  remote_updated_at TEXT NOT NULL,
+  apply_image_projection INTEGER NOT NULL,
+  primary_image_version_id TEXT NOT NULL,
+  primary_image_updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS temp_catalog_page_products_remote_id_idx
   ON temp_catalog_page_products(remote_product_id);
@@ -2661,7 +2694,10 @@ WITH staged AS (
     CAST(json_extract(value, '$[12]') AS INTEGER) AS stock_quantity,
     CAST(json_extract(value, '$[13]') AS TEXT) AS remote_category_id,
     CAST(json_extract(value, '$[14]') AS TEXT) AS remote_supplier_id,
-    CAST(json_extract(value, '$[15]') AS TEXT) AS remote_updated_at
+    CAST(json_extract(value, '$[15]') AS TEXT) AS remote_updated_at,
+    CAST(json_extract(value, '$[16]') AS INTEGER) AS apply_image_projection,
+    CAST(json_extract(value, '$[17]') AS TEXT) AS primary_image_version_id,
+    CAST(json_extract(value, '$[18]') AS TEXT) AS primary_image_updated_at
   FROM json_each(");
                 commandText.Append(JsonChunkParameterName(chunk));
                 commandText.Append(@")
@@ -2682,7 +2718,10 @@ INSERT INTO temp_catalog_page_products(
   stock_quantity,
   remote_category_id,
   remote_supplier_id,
-  remote_updated_at)
+  remote_updated_at,
+  apply_image_projection,
+  primary_image_version_id,
+  primary_image_updated_at)
 SELECT
   ordinal,
   barcode,
@@ -2699,7 +2738,10 @@ SELECT
   stock_quantity,
   remote_category_id,
   remote_supplier_id,
-  remote_updated_at
+  remote_updated_at,
+  apply_image_projection,
+  primary_image_version_id,
+  primary_image_updated_at
 FROM staged;
 ");
                 command.Parameters.Add(
@@ -2788,6 +2830,12 @@ FROM staged;
                 RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteSupplierId);
                 json.Append(',');
                 RemoteCatalogBatchRepository.AppendJsonString(json, row.RemoteUpdatedAt);
+                json.Append(',');
+                AppendJsonInteger(json, row.ApplyImageProjection ? 1 : 0);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.PrimaryImageVersionId);
+                json.Append(',');
+                RemoteCatalogBatchRepository.AppendJsonString(json, row.PrimaryImageUpdatedAt);
                 json.Append(']');
             }
             json.Append(']');
@@ -3040,12 +3088,16 @@ FROM staged;
 
     public sealed class RemoteCatalogProductWrite
     {
+        public bool ApplyImageProjection { get; set; }
         public string ArticleCode { get; set; } = string.Empty;
         public string Barcode { get; set; } = string.Empty;
         public int? CategoryId { get; set; }
         public string CategoryName { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        public string ImageWarningCode { get; set; } = string.Empty;
         public int PurchasePrice { get; set; }
+        public string PrimaryImageUpdatedAt { get; set; } = string.Empty;
+        public string PrimaryImageVersionId { get; set; } = string.Empty;
         public string RemoteCategoryId { get; set; } = string.Empty;
         public string RemoteProductId { get; set; } = string.Empty;
         public string RemoteSupplierId { get; set; } = string.Empty;
@@ -3112,6 +3164,7 @@ FROM staged;
         public long CategoriesApplied { get; internal set; }
         public long CategoriesSkipped { get; internal set; }
         public long CategoryTombstonesApplied { get; internal set; }
+        public long ImageWarnings { get; internal set; }
         public long PendingPricesApplied { get; internal set; }
         public long PricesApplied { get; internal set; }
         public long PricesQueued { get; internal set; }

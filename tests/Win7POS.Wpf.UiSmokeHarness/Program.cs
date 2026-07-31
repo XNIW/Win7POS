@@ -166,6 +166,10 @@ namespace Win7POS.Wpf.UiSmokeHarness
             var authoritativeDrainLoopback =
                 HasArg(args, "--authoritative-drain-loopback");
             var stagingAcceptance = HasArg(args, "--staging-acceptance");
+            var productImageProfileSmoke =
+                HasArg(args, "--product-image-profile-smoke");
+            var productImageUiSmoke =
+                HasArg(args, "--product-image-ui-smoke");
             var stagingProfile = ValueAfter(args, "--profile");
             var stagingRunId = ValueAfter(args, "--run-id");
             var acceptanceOutput = ValueAfter(args, "--acceptance-output");
@@ -231,6 +235,8 @@ namespace Win7POS.Wpf.UiSmokeHarness
                                bootstrapContractSmoke ||
                                bootstrapDiagnosticsMatrixSmoke ||
                                authoritativeDrainLoopback ||
+                               productImageProfileSmoke ||
+                               productImageUiSmoke ||
                                stagingAcceptance ||
                                verifyOfflineSalesSandboxSafety ||
                                HasArg(args, "--lifecycle");
@@ -259,6 +265,41 @@ namespace Win7POS.Wpf.UiSmokeHarness
             {
                 try
                 {
+                    if (productImageUiSmoke)
+                    {
+                        DbInitializer.EnsureCreated(PosDbOptions.Default());
+                        var result = await ProductImageUiWpfSmoke
+                            .RunAsync(artifactDirectory)
+                            .ConfigureAwait(true);
+                        File.WriteAllText(
+                            Path.Combine(
+                                artifactDirectory,
+                                "product-image-ui-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(
+                            result.StartsWith("PASS", StringComparison.Ordinal)
+                                ? 0
+                                : 1);
+                        return;
+                    }
+
+                    if (productImageProfileSmoke)
+                    {
+                        var result = ProductImageProfileWpfSmoke.Run();
+                        File.WriteAllText(
+                            Path.Combine(
+                                artifactDirectory,
+                                "product-image-profile-smoke.txt"),
+                            result,
+                            Encoding.UTF8);
+                        app.Shutdown(
+                            result.StartsWith("PASS", StringComparison.Ordinal)
+                                ? 0
+                                : 1);
+                        return;
+                    }
+
                     if (bootstrapContractSmoke)
                     {
                         var result = StagingAcceptanceWpfHarness.RunOfflineContractSmoke();

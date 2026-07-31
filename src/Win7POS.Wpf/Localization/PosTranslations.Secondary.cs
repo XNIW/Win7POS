@@ -288,6 +288,7 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("dbMaintenance.openFolderFailed", "Open folder failed: {0}", "Abrir carpeta fallido: {0}", "Open folder fallito: {0}", "打开文件夹失败：{0}");
             yield return new TranslationEntry("dbMaintenance.restoreBlockedUnresolvedSales", "Restore suspended: unsynced or blocked POS sales exist. Sync or have the outbox reviewed before restore.", "Restauracion suspendida: existen ventas POS no sincronizadas o bloqueadas. Sincroniza o solicita revision de outbox antes de restaurar.", "Ripristino sospeso: esistono vendite POS non sincronizzate o bloccate. Sincronizzare o far verificare l'outbox prima del restore.", "恢复已暂停：存在未同步或已阻塞的 POS 销售。恢复前请同步或请人员检查 outbox。");
             yield return new TranslationEntry("dbMaintenance.restoreBlockedUnresolvedCatalogImports", "Restore suspended: pending or blocked catalog imports exist. Sync or have the catalog import outbox reviewed before restore.", "Restauracion suspendida: existen importaciones de catalogo pendientes o bloqueadas. Sincroniza o solicita revision de outbox antes de restaurar.", "Ripristino sospeso: esistono import catalogo pendenti o bloccati. Sincronizzare o far verificare l'outbox catalogo prima del restore.", "恢复已暂停：存在待处理或已阻塞的目录导入。恢复前请同步或请人员检查目录导入 outbox。");
+            yield return new TranslationEntry("dbMaintenance.restoreBlockedUnresolvedProductImages", "Restore suspended: unresolved product image work exists. Complete, retry, or review it before restore.", "Restauración suspendida: hay operaciones de imágenes de productos sin resolver. Complétalas, reinténtalas o revísalas antes de restaurar.", "Ripristino sospeso: esistono operazioni immagine prodotto non risolte. Completarle, riprovarle o revisionarle prima del ripristino.", "恢复已暂停：存在未解决的商品图片操作。请先完成、重试或检查这些操作。");
 
             yield return new TranslationEntry("app.startupError", "Startup error. Check the application log.", "Error de inicio. Revisa el log de la aplicacion.", "Errore in avvio. Controlla il log applicativo.", "启动错误。请检查应用日志。");
             yield return new TranslationEntry("common.permissionDeniedOperation", "Permission denied: {0}", "Permiso denegado: {0}", "Permesso negato: {0}", "权限被拒绝：{0}");
@@ -313,6 +314,23 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("productImage.unavailable", "Image unavailable", "Imagen no disponible", "Immagine non disponibile", "图片不可用");
             yield return new TranslationEntry("productImage.invalid", "Invalid image", "Imagen no válida", "Immagine non valida", "图片无效");
             yield return new TranslationEntry("productImage.preview", "Product image preview", "Vista previa de la imagen del producto", "Anteprima immagine prodotto", "商品图片预览");
+            yield return new TranslationEntry("productImage.image", "Image", "Imagen", "Immagine", "图片");
+            yield return new TranslationEntry("productImage.choose", "Choose image", "Elegir imagen", "Scegli immagine", "选择图片");
+            yield return new TranslationEntry("productImage.replace", "Replace image", "Reemplazar imagen", "Sostituisci immagine", "替换图片");
+            yield return new TranslationEntry("productImage.remove", "Remove image", "Eliminar imagen", "Rimuovi immagine", "移除图片");
+            yield return new TranslationEntry("productImage.removeConfirmation", "Remove the current product image? The image remains visible until the server confirms removal.", "¿Eliminar la imagen actual del producto? Permanecerá visible hasta que el servidor confirme la eliminación.", "Rimuovere l'immagine attuale del prodotto? Resterà visibile finché il server non conferma la rimozione.", "要移除当前商品图片吗？在服务器确认移除前，图片仍会显示。");
+            yield return new TranslationEntry("productImage.queued", "Image queued", "Imagen en cola", "Immagine in coda", "图片已排队");
+            yield return new TranslationEntry("productImage.uploading", "Uploading image", "Subiendo imagen", "Caricamento immagine", "正在上传图片");
+            yield return new TranslationEntry("productImage.finalizing", "Finalizing image", "Finalizando imagen", "Finalizzazione immagine", "正在完成图片处理");
+            yield return new TranslationEntry("productImage.retrying", "Retrying image", "Reintentando imagen", "Nuovo tentativo immagine", "正在重试图片");
+            yield return new TranslationEntry("productImage.offline", "Image available offline only when cached", "La imagen solo está disponible sin conexión si está en caché", "L'immagine è disponibile offline solo se presente nella cache", "仅已缓存的图片可离线使用");
+            yield return new TranslationEntry("productImage.corrupt", "The image is corrupt or unsupported", "La imagen está dañada o no es compatible", "L'immagine è danneggiata o non supportata", "图片已损坏或不受支持");
+            yield return new TranslationEntry("productImage.conflict", "Image conflict: refresh and retry", "Conflicto de imagen: actualiza y vuelve a intentarlo", "Conflitto immagine: aggiorna e riprova", "图片冲突：请刷新后重试");
+            yield return new TranslationEntry("productImage.completed", "Image completed", "Imagen completada", "Immagine completata", "图片处理完成");
+            yield return new TranslationEntry("productImage.cleanupPending", "Image cleanup pending", "Limpieza de imagen pendiente", "Pulizia immagine in attesa", "图片清理待处理");
+            yield return new TranslationEntry("productImage.retry", "Retry image", "Reintentar imagen", "Riprova immagine", "重试图片");
+            yield return new TranslationEntry("productImage.preprocessing", "Preparing image", "Preparando imagen", "Preparazione immagine", "正在准备图片");
+            yield return new TranslationEntry("productImage.fileFilter", "Image files (*.jpg;*.jpeg;*.png)|*.jpg;*.jpeg;*.png", "Archivos de imagen (*.jpg;*.jpeg;*.png)|*.jpg;*.jpeg;*.png", "File immagine (*.jpg;*.jpeg;*.png)|*.jpg;*.jpeg;*.png", "图片文件 (*.jpg;*.jpeg;*.png)|*.jpg;*.jpeg;*.png");
 
             yield return new TranslationEntry("pos.status.manualAdded", "Added (without code): {0}", "Agregado (sin codigo): {0}", "Aggiunto (senza codice): {0}", "已添加（无代码）：{0}");
             yield return new TranslationEntry("pos.status.productAdded", "Product added: {0}", "Producto agregado: {0}", "Prodotto aggiunto: {0}", "已添加商品：{0}");

@@ -20,6 +20,8 @@ dated reports under `docs/reports/`.
 | ASUS-W7POS-011 | Done | Final review and closeout | This final closeout commit | Tasks 001-010 closed, final report created, gates/release drop/smoke/log scan complete, logging redaction bug fixed. |
 | ASUS-W7POS-012 | Done | Shop-scoped sync, offline authorization lease, reversal line binding/economics and runtime matrix | `1b947f3776e8af71450418cfae66e407da92682b` | `docs/HANDOFFS/WIN7POS-ASUS-RUNTIME-VALIDATION-2026-07-14.md`; software/runtime harness chiusi dalla final integration TASK-139 e dai workflow esatti; test su Windows 7/periferiche restano evidence esterna opzionale e non bloccante. |
 | ASUS-W7POS-013 | Done | Non-blocking catalog display-text recovery, authoritative exactness and final article-sync acceptance | Final software main `2eeb58b`; closeout docs PR | `docs/HANDOFFS/WIN7POS_POS_ARTICLE_SYNC_FINAL_ACCEPTANCE.md`; final staging PASS, `USER_CONFIRMED_CLOSURE`, P0/P1/P2/P3=0/0/0/0, cleanup `READY_FOR_MAC_FINAL_CLEANUP`. |
+| ASUS-W7POS-014 | Closed historical | Catalog SQLite batch apply and controlled performance evidence | `bb4178b` | `docs/reports/2026-07-14_ASUS-W7POS-014_CATALOG_BATCH_PERFORMANCE.md`; staging portion historically `BLOCKED_EXTERNAL`. |
+| ASUS-W7POS-015 | Execution | Trusted POS product image Phase B and staging acceptance | Branch `codex/asus-product-image-phase-b-final-20260731` | `docs/plans/ASUS-W7POS-015_PRODUCT_IMAGE_PHASE_B.md`; coordinated with Admin `TASK-150`; physical Windows 7 `NOT_RUN`. |
 
 ## External Hardware Pending
 
