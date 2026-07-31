@@ -93,11 +93,11 @@ try {
     $uniquePackages = @($packages | Sort-Object -Unique)
     if ($licensePolicy.schemaVersion -ne 1 -or
         ($allowed -join "|") -ne ($expectedAllowed -join "|") -or
-        $packages.Count -ne 99 -or $uniquePackages.Count -ne 99 -or
+        $packages.Count -ne 103 -or $uniquePackages.Count -ne 103 -or
         @($packages | Where-Object { $_ -notmatch '^[^@]+@\d+\.\d+\.' }).Count -ne 0) {
-        Fail "License policy must contain 99 unique exact package/version mappings and only reviewed expressions"
+        Fail "License policy must contain 103 unique exact package/version mappings and only reviewed expressions"
     }
-    else { Pass "License policy contains 99 exact mappings with a closed reviewed allowlist" }
+    else { Pass "License policy contains 103 exact mappings with a closed reviewed allowlist" }
 }
 catch { Fail "License policy is invalid JSON" }
 
