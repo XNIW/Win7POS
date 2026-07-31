@@ -205,9 +205,9 @@ namespace Win7POS.Wpf.Products.Images
                 var bitmap = new BitmapImage();
                 bitmap.BeginInit();
                 bitmap.CacheOption = BitmapCacheOption.OnLoad;
-                bitmap.CreateOptions =
-                    BitmapCreateOptions.PreservePixelFormat |
-                    BitmapCreateOptions.IgnoreColorProfile;
+                // Keep WIC color management enabled so embedded ICC profiles are
+                // converted before the canonical metadata-free JPEG is encoded.
+                bitmap.CreateOptions = BitmapCreateOptions.PreservePixelFormat;
                 if (header.Width >= header.Height)
                 {
                     bitmap.DecodePixelWidth = Math.Min(header.Width, maximumSide);

@@ -362,7 +362,9 @@ namespace Win7POS.Core.Images
             }
 
             var offset = 2;
-            while (offset + 3 < bytes.Length)
+            var sawSof = false;
+            var sawEndOfImage = false;
+            while (offset + 1 < bytes.Length)
             {
                 if (bytes[offset] != 0xff)
                 {
@@ -380,13 +382,18 @@ namespace Win7POS.Core.Images
                 }
 
                 var marker = bytes[offset++];
-                if (marker == 0xd9 || marker == 0xda)
+                if (marker == 0xd9)
                 {
+                    sawEndOfImage = offset == bytes.Length;
                     break;
                 }
 
-                if (marker == 0xd8 ||
-                    marker == 0x01 ||
+                if (marker == 0xd8)
+                {
+                    return false;
+                }
+
+                if (marker == 0x01 ||
                     (marker >= 0xd0 && marker <= 0xd7))
                 {
                     continue;
@@ -415,6 +422,11 @@ namespace Win7POS.Core.Images
 
                 if (SofMarkers.Contains(marker))
                 {
+                    if (sawSof)
+                    {
+                        return false;
+                    }
+
                     if (payloadLength < 6)
                     {
                         return false;
@@ -426,12 +438,21 @@ namespace Win7POS.Core.Images
                     {
                         return false;
                     }
+
+                    sawSof = true;
                 }
 
                 offset += length;
+                if (marker == 0xda)
+                {
+                    if (!sawSof || !TrySkipEntropy(bytes, ref offset))
+                    {
+                        return false;
+                    }
+                }
             }
 
-            return width > 0 && height > 0;
+            return sawEndOfImage && sawSof && width > 0 && height > 0;
         }
 
         private static int TryReadExifOrientation(

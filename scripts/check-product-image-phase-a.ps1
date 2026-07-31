@@ -72,6 +72,8 @@ Require ($decoder -match 'DecodePixel(Width|Height)') `
     "The WPF decoder must use bounded DecodePixelWidth/Height."
 Require ($preprocess -match 'Math\.Min\(\s*1\.0') `
     "Preprocessing must not upscale the source image."
+Reject-Match $preprocess 'BitmapCreateOptions\.IgnoreColorProfile' `
+    "Preprocessing must keep WIC color management enabled before canonical encoding."
 Require ($wpfProject -match '<TargetFramework>net48</TargetFramework>') `
     "WPF must remain net48."
 Require ($wpfProject -match '<PlatformTarget>x86</PlatformTarget>') `

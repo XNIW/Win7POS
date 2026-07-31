@@ -71,19 +71,31 @@ Write-Json $cleanDeprecatedPath $cleanDeprecated
 
 $licensePolicyPath = Join-Path $repoRoot "eng\supply-chain\license-policy.json"
 $licensePolicy = Get-Content -Raw -LiteralPath $licensePolicyPath | ConvertFrom-Json
-$mappedPackages = @($licensePolicy.licenseGroups | ForEach-Object { @($_.packages) })
+$licenseExpressionByPackage = @{}
+foreach ($group in @($licensePolicy.licenseGroups)) {
+    foreach ($package in @($group.packages)) {
+        if ($licenseExpressionByPackage.ContainsKey([string]$package)) {
+            throw "Duplicate exact license mapping regression: $package."
+        }
+
+        $licenseExpressionByPackage[[string]$package] = [string]$group.expression
+    }
+}
 $requiredNewMappings = @(
     "Microsoft.TestPlatform.ObjectModel@18.3.0",
     "System.Collections.Immutable@8.0.0",
     "System.Diagnostics.DiagnosticSource@6.0.0",
     "System.Reflection.Metadata@8.0.0"
 )
-$missingNewMappings = @($requiredNewMappings | Where-Object { $mappedPackages -cnotcontains $_ })
-if ($missingNewMappings.Count -ne 0) {
-    throw "Required exact license mapping regression: $($missingNewMappings -join ', ')."
+$incorrectNewMappings = @($requiredNewMappings | Where-Object {
+    -not $licenseExpressionByPackage.ContainsKey($_) -or
+    $licenseExpressionByPackage[$_] -cne "MIT"
+})
+if ($incorrectNewMappings.Count -ne 0) {
+    throw "Required exact MIT license mapping regression: $($incorrectNewMappings -join ', ')."
 }
 $passed++
-Write-Host "PASS: four new transitive package versions have exact license mappings"
+Write-Host "PASS: four new transitive package versions map exactly to MIT"
 
 $vulnerableProblems = New-Report "vulnerable"
 $vulnerableProblems["problems"] = @([ordered]@{ level = "warning"; message = "Synthetic incomplete vulnerability audit." })
