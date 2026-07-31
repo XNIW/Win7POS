@@ -1,1 +1,3 @@
 tests/fixtures/POS-ARTICLE-MUTATION-V1/*.json -text
+tests/fixtures/pos-product-image-v1/** -text
+tests/fixtures/product-image-v1/** -text

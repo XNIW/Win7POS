@@ -75,6 +75,18 @@ Redacted artifacts are stored outside the repositories under the execution
 evidence root. They include TRX results and UI screenshots but no credentials,
 signed URLs, Storage paths or request bodies.
 
+## PR remediation ledger
+
+- Phase B PR `#73`, first CI run: Core/Data reported one failure because the
+  Windows checkout converted the byte-identical vendored `schema.json` from LF
+  to CRLF. The Git blob and local contract were correct; the checkout policy
+  was incomplete.
+- Correction: both product-image fixture trees are now marked `-text` in
+  `.gitattributes`, and the Phase B gate requires those exact attributes.
+- Regression: Git reports `text: unset` for both fixture trees and the focused
+  authoritative digest test passes after a Release x86 rebuild. No contract
+  digest was changed.
+
 ## Redaction rules
 
 Evidence outside repositories may contain only run HMAC/digests, counts,

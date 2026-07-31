@@ -28,11 +28,15 @@ $cacheScopeStore = Read-Required "src/Win7POS.Data/Online/ProductImageCacheScope
 $syncHost = Read-Required "src/Win7POS.Wpf/Pos/Online/PosOnlineSyncSupervisorHost.cs"
 $editor = Read-Required "src/Win7POS.Wpf/Products/ProductEditDialog.xaml"
 $translations = Read-Required "src/Win7POS.Wpf/Localization/PosTranslations.Secondary.cs"
+$attributes = Read-Required ".gitattributes"
 
 Require ($flags -match 'IsPhaseAEnabled\s*=>\s*true') `
     "Product image UI must be enabled only after the complete Phase B implementation is present."
 Require ($contract -match 'MaximumJsonBodyBytes\s*=\s*16\s*\*\s*1024') `
     "Trusted image request bodies must remain bounded at 16 KiB."
+Require ($attributes -match 'tests/fixtures/pos-product-image-v1/\*\*\s+-text' -and
+         $attributes -match 'tests/fixtures/product-image-v1/\*\*\s+-text') `
+    "Byte-identical product image fixtures must be exempt from checkout EOL conversion."
 Require ($contract -match 'ReadUrlTimeToLiveSeconds\s*=\s*300' -and
          $contract -match 'ReadUrlSafetyWindowSeconds\s*=\s*30' -and
          $contract -match 'UploadCapabilitySeconds\s*=\s*7200') `
