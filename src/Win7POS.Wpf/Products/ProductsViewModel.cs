@@ -15,6 +15,7 @@ using Win7POS.Wpf.Import;
 using Win7POS.Wpf.Infrastructure;
 using Win7POS.Wpf.Infrastructure.Security;
 using Win7POS.Wpf.Localization;
+using Win7POS.Wpf.Products.Images;
 
 namespace Win7POS.Wpf.Products
 {
@@ -51,6 +52,9 @@ namespace Win7POS.Wpf.Products
         public ObservableCollection<CategoryListItem> FilteredCategories { get; } = new ObservableCollection<CategoryListItem>();
         public ObservableCollection<SupplierListItem> FilteredSuppliers { get; } = new ObservableCollection<SupplierListItem>();
         public ObservableCollection<ProductCatalogStatChip> CatalogStatsChips { get; } = new ObservableCollection<ProductCatalogStatChip>();
+
+        public bool ProductImagesPhaseAEnabled =>
+            ProductImageFeatureFlags.IsPhaseAEnabled;
 
         public int PageSizeValue => PageSize;
         public int PageIndex { get => _pageIndex; set { var v = value < 1 ? 1 : value; if (_pageIndex == v) return; _pageIndex = v; OnPropertyChanged(); RaiseCanExecuteChanged(); } }

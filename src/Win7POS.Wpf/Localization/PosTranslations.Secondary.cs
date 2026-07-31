@@ -308,6 +308,11 @@ namespace Win7POS.Wpf.Localization
             yield return new TranslationEntry("shell.usersOpenLogError", "Error opening users and roles. Check the application log.", "Error abriendo usuarios y roles. Revisa el log de la aplicacion.", "Errore apertura Utenti e ruoli. Controlla il log applicativo.", "打开用户和角色错误。请检查应用日志。");
             yield return new TranslationEntry("shell.productsPermissionDenied", "You do not have permission to access products.", "No tienes permiso para acceder a productos.", "Non hai il permesso di accedere ai prodotti.", "你没有权限访问商品。");
             yield return new TranslationEntry("shell.productsOpenLogError", "Error opening products. Check the application log.", "Error abriendo productos. Revisa el log de la aplicacion.", "Errore apertura Prodotti. Controlla il log applicativo.", "打开商品错误。请检查应用日志。");
+            yield return new TranslationEntry("productImage.noImage", "No image", "Sin imagen", "Nessuna immagine", "无图片");
+            yield return new TranslationEntry("productImage.loading", "Loading image", "Cargando imagen", "Caricamento immagine", "正在加载图片");
+            yield return new TranslationEntry("productImage.unavailable", "Image unavailable", "Imagen no disponible", "Immagine non disponibile", "图片不可用");
+            yield return new TranslationEntry("productImage.invalid", "Invalid image", "Imagen no válida", "Immagine non valida", "图片无效");
+            yield return new TranslationEntry("productImage.preview", "Product image preview", "Vista previa de la imagen del producto", "Anteprima immagine prodotto", "商品图片预览");
 
             yield return new TranslationEntry("pos.status.manualAdded", "Added (without code): {0}", "Agregado (sin codigo): {0}", "Aggiunto (senza codice): {0}", "已添加（无代码）：{0}");
             yield return new TranslationEntry("pos.status.productAdded", "Product added: {0}", "Producto agregado: {0}", "Prodotto aggiunto: {0}", "已添加商品：{0}");

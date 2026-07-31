@@ -69,6 +69,34 @@ $cleanDeprecatedPath = Join-Path $testRoot "clean-deprecated.json"
 Write-Json $cleanVulnerablePath $cleanVulnerable
 Write-Json $cleanDeprecatedPath $cleanDeprecated
 
+$licensePolicyPath = Join-Path $repoRoot "eng\supply-chain\license-policy.json"
+$licensePolicy = Get-Content -Raw -LiteralPath $licensePolicyPath | ConvertFrom-Json
+$licenseExpressionByPackage = @{}
+foreach ($group in @($licensePolicy.licenseGroups)) {
+    foreach ($package in @($group.packages)) {
+        if ($licenseExpressionByPackage.ContainsKey([string]$package)) {
+            throw "Duplicate exact license mapping regression: $package."
+        }
+
+        $licenseExpressionByPackage[[string]$package] = [string]$group.expression
+    }
+}
+$requiredNewMappings = @(
+    "Microsoft.TestPlatform.ObjectModel@18.3.0",
+    "System.Collections.Immutable@8.0.0",
+    "System.Diagnostics.DiagnosticSource@6.0.0",
+    "System.Reflection.Metadata@8.0.0"
+)
+$incorrectNewMappings = @($requiredNewMappings | Where-Object {
+    -not $licenseExpressionByPackage.ContainsKey($_) -or
+    $licenseExpressionByPackage[$_] -cne "MIT"
+})
+if ($incorrectNewMappings.Count -ne 0) {
+    throw "Required exact MIT license mapping regression: $($incorrectNewMappings -join ', ')."
+}
+$passed++
+Write-Host "PASS: four new transitive package versions map exactly to MIT"
+
 $vulnerableProblems = New-Report "vulnerable"
 $vulnerableProblems["problems"] = @([ordered]@{ level = "warning"; message = "Synthetic incomplete vulnerability audit." })
 $vulnerableProblemsPath = Join-Path $testRoot "vulnerable-problems.json"
@@ -142,14 +170,38 @@ Invoke-ExpectedFailure "deprecated package" (Join-Path $PSScriptRoot "invoke-nug
     "-OutputDirectory", (Join-Path $testRoot "out-deprecated"), "-DotNetExe", $DotNetExe,
     "-VulnerabilityReportPath", $cleanVulnerablePath, "-DeprecationReportPath", $badDeprecatedPath)
 
-$badPolicy = Get-Content -Raw -LiteralPath (Join-Path $repoRoot "eng\supply-chain\license-policy.json") | ConvertFrom-Json
-$badPolicy.licenseGroups[0].packages = @($badPolicy.licenseGroups[0].packages | Select-Object -Skip 1)
+$badPolicy = Get-Content -Raw -LiteralPath $licensePolicyPath | ConvertFrom-Json
+$badPolicy.licenseGroups |
+    Where-Object { $_.expression -ceq "MIT" } |
+    ForEach-Object {
+        $_.packages = @($_.packages | Where-Object {
+            $_ -cne "System.Reflection.Metadata@8.0.0"
+        })
+    }
 $badPolicyPath = Join-Path $testRoot "bad-license-policy.json"
 Write-Json $badPolicyPath $badPolicy
-Invoke-ExpectedFailure "missing exact license mapping" (Join-Path $PSScriptRoot "invoke-nuget-supply-chain-gates.ps1") @(
+Invoke-ExpectedFailure "unknown locked package fails without exact license mapping" (Join-Path $PSScriptRoot "invoke-nuget-supply-chain-gates.ps1") @(
     "-OutputDirectory", (Join-Path $testRoot "out-license"), "-DotNetExe", $DotNetExe,
     "-VulnerabilityReportPath", $cleanVulnerablePath, "-DeprecationReportPath", $cleanDeprecatedPath,
     "-LicensePolicyPath", $badPolicyPath)
+
+$wildcardPolicy = Get-Content -Raw -LiteralPath $licensePolicyPath | ConvertFrom-Json
+$wildcardPolicy.licenseGroups |
+    Where-Object { $_.expression -ceq "MIT" } |
+    ForEach-Object {
+        $_.packages = @($_.packages | ForEach-Object {
+            if ($_ -ceq "System.Reflection.Metadata@8.0.0") {
+                "System.Reflection.Metadata@8.*"
+            }
+            else { $_ }
+        })
+    }
+$wildcardPolicyPath = Join-Path $testRoot "wildcard-license-policy.json"
+Write-Json $wildcardPolicyPath $wildcardPolicy
+Invoke-ExpectedFailure "wildcard license mapping" (Join-Path $PSScriptRoot "invoke-nuget-supply-chain-gates.ps1") @(
+    "-OutputDirectory", (Join-Path $testRoot "out-license-wildcard"), "-DotNetExe", $DotNetExe,
+    "-VulnerabilityReportPath", $cleanVulnerablePath, "-DeprecationReportPath", $cleanDeprecatedPath,
+    "-LicensePolicyPath", $wildcardPolicyPath)
 
 $locked = @{}
 foreach ($lock in @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "src"),(Join-Path $repoRoot "tests") -Filter packages.lock.json -Recurse)) {
